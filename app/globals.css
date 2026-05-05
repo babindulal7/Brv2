@@ -1,0 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+body { @apply bg-[#0B0B0D] text-zinc-100; }
+.card { @apply rounded-2xl border border-zinc-800 bg-[#141417] p-5; }
