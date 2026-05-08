@@ -552,6 +552,18 @@ td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--text2);ve
 
 /* ── KPI strip (6-col today) ── */
 .kpi-strip{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px;}
+
+/* ── Availability Calendar ── */
+.av-cal{border-collapse:collapse;width:100%;background:var(--bg1);border-radius:var(--r2);overflow:hidden;}
+.av-cal th,.av-cal td{border:1px solid var(--border);}
+.av-dh{min-width:28px;padding:4px 2px!important;text-align:center;font-size:9px;color:var(--text3);font-family:var(--fm);background:var(--bg2);white-space:nowrap;}
+.av-today-col{background:rgba(229,9,20,0.08)!important;color:var(--red)!important;}
+.av-name{padding:5px 10px!important;font-size:11px;white-space:nowrap;background:var(--bg2);position:sticky;left:0;z-index:1;}
+.av-cell{width:28px;height:28px;cursor:pointer;transition:opacity 0.1s;}
+.av-cell:hover{opacity:0.65;outline:1px solid var(--text2);}
+.av-green{background:rgba(0,200,83,0.22);}
+.av-yellow{background:rgba(255,179,0,0.28);}
+.av-red{background:rgba(229,9,20,0.28);}
 @media(max-width:900px){.kpi-strip{grid-template-columns:repeat(3,1fr);}}
 @media(max-width:600px){.kpi-strip{grid-template-columns:repeat(2,1fr);}}
 
@@ -1988,6 +2000,76 @@ VIEWS.availability=function(){
   </table></div>`;
 };
 
+// Phase 3: Calendar grid availability view (overrides stub above)
+(function(){
+VIEWS.availability=function(){
+  const vm=window._avView||'month';
+  const todayStr=today();
+  // Build date range
+  let dates=[];
+  if(vm==='week'){
+    const base=window._avBase||todayStr;
+    for(let i=0;i<7;i++)dates.push(addDays(base,i));
+  }else{
+    const base=window._avBase||(todayStr.substring(0,7)+'-01');
+    const[y,m]=base.split('-').map(Number);
+    const dim=new Date(y,m,0).getDate();
+    for(let i=1;i<=dim;i++)dates.push(`${y}-${String(m).padStart(2,'0')}-${String(i).padStart(2,'0')}`);
+  }
+  const catFilter=window._avCat||'All';
+  const cats=[...new Set(DB.inventory.map(i=>i.cat))].sort();
+  const gear=DB.inventory.filter(i=>catFilter==='All'||i.cat===catFilter);
+  const weekEnd=addDays(todayStr,6);
+  const outToday=DB.inventory.filter(i=>availableQty(i,todayStr,todayStr)<(i.qty||1)).length;
+  const weekConf=DB.inventory.filter(i=>availableQty(i,todayStr,weekEnd)<(i.qty||1)).length;
+  const baseLabel=vm==='week'?(window._avBase||todayStr):(window._avBase||todayStr.substring(0,7)+'-01').substring(0,7);
+  const cell=(inv,d)=>{const bk=bookedQty(inv.id,d,d),tot=inv.qty||1,free=Math.max(0,tot-bk);const cls=free===0?'av-red':free<tot?'av-yellow':'av-green';const tip=`${esc(inv.name)} | ${d} | ${free}/${tot} free`;return`<td class="av-cell ${cls}" onclick="navNewRentalDate('${d}')" title="${tip}"></td>`;};
+  $('content').innerHTML=`
+  <div class="sh"><div><div class="st">Availability</div><div class="ss">CALENDAR GRID — CLICK A DATE TO BOOK</div></div>
+    <div class="acts" style="flex-wrap:wrap;gap:6px">
+      <select class="fi" style="width:150px" onchange="window._avCat=this.value;nav('availability')">${['All',...cats].map(c=>`<option value="${esc(c)}"${catFilter===c?' selected':''}>${esc(c)}</option>`).join('')}</select>
+      <input class="fi" style="width:140px" type="month" value="${baseLabel}" onchange="window._avView='month';window._avBase=this.value+'-01';nav('availability')"/>
+      <button class="btn btn-ghost btn-sm" onclick="prevAvP()">‹ Prev</button>
+      <button class="btn btn-ghost btn-sm" onclick="nextAvP()">Next ›</button>
+      <button class="btn ${vm==='week'?'btn-red':'btn-ghost'} btn-sm" onclick="window._avView='week';window._avBase='${todayStr}';nav('availability')">Week</button>
+      <button class="btn ${vm==='month'?'btn-red':'btn-ghost'} btn-sm" onclick="window._avView='month';nav('availability')">Month</button>
+      <button class="btn btn-red btn-sm" onclick="nav('newrental')">+ New Rental</button>
+    </div>
+  </div>
+  <div class="kpi-strip" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+    <div class="kpi"><div class="kpi-bar" style="background:var(--blue)"></div><div class="kpi-lbl">TOTAL ITEMS</div><div class="kpi-val">${DB.inventory.length}</div></div>
+    <div class="kpi"><div class="kpi-bar" style="background:var(--red)"></div><div class="kpi-lbl">OUT TODAY</div><div class="kpi-val" style="color:var(--red)">${outToday}</div></div>
+    <div class="kpi"><div class="kpi-bar" style="background:var(--warn)"></div><div class="kpi-lbl">BUSY THIS WEEK</div><div class="kpi-val" style="color:var(--warn)">${weekConf}</div></div>
+    <div class="kpi"><div class="kpi-bar" style="background:var(--green)"></div><div class="kpi-lbl">FREE NOW</div><div class="kpi-val" style="color:var(--green)">${DB.inventory.length-outToday}</div></div>
+  </div>
+  <div style="overflow-x:auto;border:1px solid var(--border);border-radius:var(--r2)">
+    <table class="av-cal">
+      <thead><tr>
+        <th style="min-width:160px;text-align:left;padding:5px 10px;position:sticky;left:0;background:var(--bg2);z-index:2">GEAR</th>
+        ${dates.map(d=>{const dow=['Su','Mo','Tu','We','Th','Fr','Sa'][new Date(d).getDay()];const isT=d===todayStr;return`<th class="av-dh${isT?' av-today-col':''}">${dow}<br><span style="font-family:var(--fm);font-size:8px">${d.substring(5)}</span></th>`;}).join('')}
+      </tr></thead>
+      <tbody>${gear.length?gear.map(inv=>`<tr>
+        <td class="av-name" title="${esc(inv.cat)} · ×${inv.qty||1} · ${fmtN(inv.daily)}/day">
+          ${esc(inv.name)}<span class="tdm" style="font-size:8px;color:var(--text4);margin-left:4px">×${inv.qty||1}</span>
+        </td>
+        ${dates.map(d=>cell(inv,d)).join('')}
+      </tr>`).join(''):
+      `<tr><td colspan="${dates.length+1}" style="text-align:center;padding:24px;color:var(--text4);font-size:12px">No gear in this category.</td></tr>`}
+      </tbody>
+    </table>
+  </div>
+  <div style="display:flex;gap:16px;margin-top:10px;font-size:10px;color:var(--text3)">
+    <span><span style="display:inline-block;width:10px;height:10px;background:var(--green);opacity:0.6;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Available</span>
+    <span><span style="display:inline-block;width:10px;height:10px;background:var(--warn);opacity:0.7;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Partial</span>
+    <span><span style="display:inline-block;width:10px;height:10px;background:var(--danger);opacity:0.6;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Fully Booked</span>
+    <span style="margin-left:auto">Click any cell to pre-fill New Rental for that date</span>
+  </div>`;
+};
+window.navNewRentalDate=function(d){window._nrPreDate=d;nav('newrental');};
+window.prevAvP=function(){const vm=window._avView||'month';if(vm==='week'){window._avBase=addDays(window._avBase||today(),-7);}else{const d=new Date((window._avBase||today().substring(0,7)+'-01'));d.setMonth(d.getMonth()-1);window._avBase=d.toISOString().substring(0,10);}nav('availability');};
+window.nextAvP=function(){const vm=window._avView||'month';if(vm==='week'){window._avBase=addDays(window._avBase||today(),7);}else{const d=new Date((window._avBase||today().substring(0,7)+'-01'));d.setMonth(d.getMonth()+1);window._avBase=d.toISOString().substring(0,10);}nav('availability');};
+})();
+
 VIEWS.barcodes=function(){
   $('content').innerHTML=`
   <div class="sh"><div><div class="st">Barcodes & QR Codes</div><div class="ss">SCAN TO CHECK OUT, CHECK IN, OR IDENTIFY</div></div><button class="btn btn-red" onclick="printBarcodeLabels()">Print Labels</button></div>
@@ -3182,8 +3264,8 @@ VIEWS.newrental=function(){
       </div>
       <div class="fg"><label class="fl">EMAIL</label><input class="fi" id="v1r-email" placeholder="client@email.com"></div>
       <div class="fr fr3">
-        <div class="fg"><label class="fl">START DATE</label><input class="fi" type="date" id="v1r-start" value="${today()}" oninput="v1RentalCalc()"></div>
-        <div class="fg"><label class="fl">END DATE</label><input class="fi" type="date" id="v1r-end" value="${addDays(today(),1)}" oninput="v1RentalCalc()"></div>
+        <div class="fg"><label class="fl">START DATE</label><input class="fi" type="date" id="v1r-start" value="${window._nrPreDate||today()}" oninput="v1RentalCalc()"></div>
+        <div class="fg"><label class="fl">END DATE</label><input class="fi" type="date" id="v1r-end" value="${window._nrPreDate?addDays(window._nrPreDate,1):addDays(today(),1)}" oninput="v1RentalCalc()"></div>
         <div class="fg"><label class="fl">DURATION</label><input class="fi" id="v1r-duration" readonly></div>
       </div>
       <div class="fr fr2">
@@ -3204,22 +3286,37 @@ VIEWS.newrental=function(){
         <div class="fg"><label class="fl">PAYMENT STATUS</label><select class="fi" id="v1r-paystatus"><option>Pending</option><option>Partial</option><option>Paid</option></select></div>
       </div>
       <div class="fg"><label class="fl">NOTES</label><textarea class="fi" id="v1r-notes" placeholder="Rental notes, ID hold, delivery, terms"></textarea></div>
-      <details style="margin-bottom:12px"><summary class="ct" style="cursor:pointer">ADVANCED OPTIONS</summary><div class="fr fr3" style="margin-top:10px"><div class="fg"><label class="fl">VAT %</label><input class="fi" type="number" id="v1r-vat" value="${DB.settings?.nepalMode?13:(DB.settings?.tax||0)}" oninput="v1RentalCalc()"></div><div class="fg"><label class="fl">TDS %</label><input class="fi" type="number" id="v1r-tds" value="${DB.settings?.tds||0}" oninput="v1RentalCalc()"></div><div class="fg"><label class="fl">PRICE TYPE</label><select class="fi" id="v1r-price-type"><option>Professional Price</option><option>Indie Filmmaker Price</option><option>Student Discount</option></select></div></div><div class="fg"><label class="fl">STAFF ASSIGNED</label><input class="fi" id="v1r-staff" placeholder="Staff name"></div></details>
-      <button class="btn btn-red" style="width:100%" onclick="saveRentalV1()">Confirm Booking</button>
+      <div class="fr fr2" style="margin-bottom:10px">
+        <div class="fg"><label class="fl">VAT %</label><input class="fi" type="number" id="v1r-vat" value="${DB.settings?.nepalMode?13:(DB.settings?.tax||0)}" oninput="v1RentalCalc()"></div>
+        <div class="fg"><label class="fl">TDS %</label><input class="fi" type="number" id="v1r-tds" value="${DB.settings?.tds||0}" oninput="v1RentalCalc()"></div>
+      </div>
+      <details style="margin-bottom:12px"><summary class="ct" style="cursor:pointer">ADVANCED OPTIONS</summary><div class="fr fr2" style="margin-top:10px"><div class="fg"><label class="fl">PRICE TYPE</label><select class="fi" id="v1r-price-type"><option>Professional Price</option><option>Indie Filmmaker Price</option><option>Student Discount</option></select></div><div class="fg"><label class="fl">STAFF ASSIGNED</label><input class="fi" id="v1r-staff" placeholder="Staff name"></div></div></details>
+      <div class="fr fr2" style="gap:8px">
+        <button class="btn btn-ghost" style="flex:1" onclick="saveRentalQuoteV1()">Save as Quote</button>
+        <button class="btn btn-red" style="flex:1" onclick="saveRentalV1()">Confirm Booking</button>
+      </div>
     </div>
     <div class="card" style="position:sticky;top:12px">
-      <div class="ch"><div class="ct">LIVE PRICE SUMMARY</div></div>
-      <div id="v1r-summary" style="font-size:11px;color:var(--text3);margin-bottom:12px">Add equipment or bundle.</div>
+      <div class="ch"><div class="ct">LIVE PRICE SUMMARY</div><span id="v1r-avail-badge"></span></div>
+      <div id="v1r-summary" style="font-size:11px;color:var(--text3);margin-bottom:10px">Add equipment or bundle.</div>
       <div class="price-row"><span>Subtotal</span><strong id="v1r-sub">NPR 0</strong></div>
-      <div class="price-row"><span>Discount</span><strong id="v1r-disc">NPR 0</strong></div>
-      <div class="price-row"><span>VAT</span><strong id="v1r-vatv">NPR 0</strong></div>
-      <div class="price-row"><span>TDS</span><strong id="v1r-tdsv">NPR 0</strong></div>
-      <div class="price-row tr-final"><span>Total</span><strong id="v1r-total">NPR 0</strong></div>
-      <div class="price-row"><span>Advance paid</span><strong id="v1r-adv">NPR 0</strong></div>
+      <div class="price-row"><span>Discount</span><strong id="v1r-disc" style="color:var(--warn)">NPR 0</strong></div>
+      <div class="price-row"><span>VAT <span id="v1r-vat-pct" style="color:var(--text3);font-family:var(--fm)">(0%)</span></span><strong id="v1r-vatv">NPR 0</strong></div>
+      <div class="price-row"><span>TDS <span id="v1r-tds-pct" style="color:var(--text3);font-family:var(--fm)">(0%)</span></span><strong id="v1r-tdsv" style="color:var(--warn)">NPR 0</strong></div>
+      <div class="price-row tr-final"><span>TOTAL</span><strong id="v1r-total" style="font-size:1.15em">NPR 0</strong></div>
+      <div class="price-row"><span>Advance paid</span><strong id="v1r-adv" style="color:var(--green)">NPR 0</strong></div>
       <div class="price-row"><span>Balance due</span><strong id="v1r-bal" style="color:var(--danger)">NPR 0</strong></div>
       <div class="price-row"><span>Deposit</span><strong id="v1r-dep">NPR 0</strong></div>
       <div class="price-row"><span>Payment method</span><strong id="v1r-meth">Cash</strong></div>
-      <div id="v1r-ops" style="display:grid;gap:8px;margin-top:12px"></div>
+      <div style="border-top:1px solid var(--border);margin:10px 0;padding-top:10px">
+        <div class="kpi-lbl" style="margin-bottom:6px">PROFIT ESTIMATE</div>
+        <div class="price-row"><span>Wear cost</span><strong id="v1r-wear" style="color:var(--text2)">NPR 0</strong></div>
+        <div class="price-row"><span>Maint. reserve (5%)</span><strong id="v1r-maint" style="color:var(--text2)">NPR 0</strong></div>
+        <div class="price-row tr-final"><span>Est. profit</span><strong id="v1r-profit">NPR 0</strong></div>
+        <div class="price-row"><span>Margin</span><strong id="v1r-margin">—</strong></div>
+      </div>
+      <div id="v1r-warn" style="display:none;background:var(--danger-d);border:1px solid var(--danger);border-radius:6px;padding:8px 10px;font-size:11px;color:var(--danger);margin-bottom:8px"></div>
+      <div id="v1r-ops" style="display:grid;gap:6px;margin-top:10px"></div>
     </div>
   </div>`;
   window._v1RentalItems=[];v1RentalCalc();
@@ -3251,16 +3348,43 @@ function v1RentalCalc(){
   const s=$('v1r-start')?.value||today(),e=$('v1r-end')?.value||addDays(today(),1),days=Math.max(1,diffDays(s,e)||1);
   if($('v1r-duration'))$('v1r-duration').value=days+' day'+(days!==1?'s':'');
   const items=window._v1RentalItems||[];let sub=0;
-  const lineHtml=items.map((it,idx)=>{const total=it.rate*it.qty*days;sub+=total;return`<div class="di"><span style="flex:1">${esc(it.name)} ${it.qty>1?'x'+it.qty:''}</span><span class="tdm">${v1Money(total)}</span><button class="btn btn-ghost btn-xs" onclick="v1RemoveRentalLine(${idx})">Remove</button></div>`;}).join('');
+  const lineHtml=items.map((it,idx)=>{const total=it.rate*it.qty*days;sub+=total;const inv=it.invId?DB.inventory.find(i=>i.id===it.invId):null;const free=inv?availableQty(inv,s,e):99;const avColour=free>=(+it.qty||1)?'var(--green)':'var(--danger)';return`<div class="di"><span style="flex:1">${esc(it.name)}${it.qty>1?' x'+it.qty:''} <span style="font-family:var(--fm);font-size:9px;color:${avColour}">${inv?(free>=(+it.qty||1)?'✓ free':'✗ conflict'):''}</span></span><span class="tdm">${v1Money(total)}</span><button class="btn btn-ghost btn-xs" onclick="v1RemoveRentalLine(${idx})">✕</button></div>`;}).join('');
   if($('v1r-lines'))$('v1r-lines').innerHTML=lineHtml;
-  if($('v1r-summary'))$('v1r-summary').innerHTML=lineHtml||'Add equipment or bundle.';
+  if($('v1r-summary'))$('v1r-summary').innerHTML=lineHtml||'<span style="color:var(--text4)">Add equipment or bundle.</span>';
   const disc=+$('v1r-discount')?.value||0,adv=+$('v1r-advance')?.value||0,dep=+$('v1r-deposit')?.value||0,vatPct=+$('v1r-vat')?.value||0,tdsPct=+$('v1r-tds')?.value||0,net=Math.max(0,sub-disc),vat=Math.round(net*vatPct/100),tds=Math.round(net*tdsPct/100),total=Math.max(0,net+vat-tds),bal=Math.max(0,total-adv);
   [['v1r-sub',sub],['v1r-disc',disc],['v1r-vatv',vat],['v1r-tdsv',tds],['v1r-total',total],['v1r-adv',adv],['v1r-bal',bal],['v1r-dep',dep]].forEach(([id,v])=>{if($(id))$(id).textContent=v1Money(v);});
   if($('v1r-meth'))$('v1r-meth').textContent=$('v1r-method')?.value||'Cash';
   if($('v1r-paystatus'))$('v1r-paystatus').value=bal<=0&&total>0?'Paid':adv>0?'Partial':'Pending';
-  const conflicts=items.filter(it=>it.invId).map(it=>({it,inv:DB.inventory.find(i=>i.id===it.invId)})).filter(x=>x.inv).filter(x=>readinessV1(x.inv).label!=='Ready'||availableQty(x.inv,s,e)<(+x.it.qty||1));
-  if($('v1r-ops'))$('v1r-ops').innerHTML=`<div class="di"><span>Availability check</span>${conflicts.length?sb('Conflict Warning'):sb('Available')}</div><div class="di"><span>Rental duration</span><span class="tdm">${days} day${days!==1?'s':''}</span></div><div class="di"><span>Suggested accessories</span><span class="muted">batteries, chargers, cables, cards</span></div><div class="acts"><a class="btn btn-ghost btn-xs" href="#" onclick="toast('Confirm booking first for WhatsApp');return false">WhatsApp</a><a class="btn btn-ghost btn-xs" href="#" onclick="toast('Confirm booking first for email');return false">Email</a></div>`;
-  window._v1RentalTotals={days,sub,disc,vat,tds,total,adv,bal,dep};
+  if($('v1r-vat-pct'))$('v1r-vat-pct').textContent='('+vatPct+'%)';
+  if($('v1r-tds-pct'))$('v1r-tds-pct').textContent='('+tdsPct+'%)';
+  // Profit estimate: wear cost based on purchase cost & asset life, plus 5% maintenance reserve
+  const wearCost=Math.round(items.reduce((sum,it)=>{const inv=it.invId?DB.inventory.find(i=>i.id===it.invId):null;if(!inv)return sum;const dw=(+inv.purchaseCost||0)/(Math.max(1,+inv.life||5)*365);return sum+dw*(+it.qty||1)*days;},0));
+  const maintR=Math.round(total*0.05);
+  const profit=Math.max(0,total-wearCost-maintR);
+  const margin=total>0?Math.round(profit/total*100):0;
+  const pCol=margin>=50?'var(--green)':margin>=30?'var(--warn)':'var(--danger)';
+  if($('v1r-wear'))$('v1r-wear').textContent=v1Money(wearCost);
+  if($('v1r-maint'))$('v1r-maint').textContent=v1Money(maintR);
+  if($('v1r-profit')){$('v1r-profit').textContent=v1Money(profit);$('v1r-profit').style.color=pCol;}
+  if($('v1r-margin')){$('v1r-margin').textContent=margin+'%';$('v1r-margin').style.color=pCol;}
+  // Availability badge
+  const conflicts=items.filter(it=>it.invId).map(it=>({it,inv:DB.inventory.find(i=>i.id===it.invId)})).filter(x=>x.inv&&availableQty(x.inv,s,e)<(+x.it.qty||1));
+  if($('v1r-avail-badge'))$('v1r-avail-badge').innerHTML=conflicts.length?'<span class="badge bd">⚠ CONFLICT</span>':items.length?'<span class="badge bg">✓ AVAILABLE</span>':'';
+  // Warnings
+  const discPct=sub>0?Math.round(disc/sub*100):0;
+  const warns=[];
+  if(conflicts.length)warns.push('Conflict: '+conflicts.map(x=>x.inv.name).join(', ')+' not available for selected dates');
+  if(discPct>20)warns.push('Discount is '+discPct+'% of subtotal — margin may be low');
+  if(total>0&&margin<20)warns.push('Estimated margin is only '+margin+'% — consider adjusting discount or rates');
+  const wDiv=$('v1r-warn');
+  if(wDiv){if(warns.length){wDiv.innerHTML=warns.map(w=>'⚠ '+w).join('<br>');wDiv.style.display='block';}else wDiv.style.display='none';}
+  // Action buttons with live WhatsApp quote
+  const clientName=($('v1r-client')?.value||'').trim();
+  const ph=String($('v1r-phone')?.value||'').replace(/\D/g,'');
+  const waNum=ph?(ph.startsWith('977')?ph:'977'+ph):null;
+  const waText=waNum?`https://wa.me/${waNum}?text=${encodeURIComponent('Hi '+clientName+',\n\nQuote from Babin Rentals:\n'+items.map(i=>i.name+(i.qty>1?' x'+i.qty:'')+' — '+v1Money(i.rate*i.qty*days)).join('\n')+'\n\nDuration: '+days+' day'+(days!==1?'s':'')+'\nTotal: '+v1Money(total)+'\n\nReply to confirm.')}`:null;
+  if($('v1r-ops'))$('v1r-ops').innerHTML=`${waText?`<a class="btn btn-green btn-sm" href="${waText}" target="_blank" style="text-align:center;display:block">Send WhatsApp Quote</a>`:'<button class="btn btn-ghost btn-sm" disabled style="opacity:0.4;width:100%">WhatsApp (add phone first)</button>'}<button class="btn btn-ghost btn-sm" style="width:100%" onclick="toast('PDF generation — connect document module')">Generate PDF Quote</button>`;
+  window._v1RentalTotals={days,sub,disc,vat,tds,total,adv,bal,dep,wearCost,maintR,profit,margin};
 }
 function saveRentalV1(){
   v1RentalCalc();const client=($('v1r-client')?.value||'').trim();if(!client){toast('Client required','e');return;}
@@ -3273,6 +3397,15 @@ function saveRentalV1(){
   // Inventory becomes physically out only after staff marks the booking as picked up.
   if(!c)DB.clients.push({id:nid('c'),name:client,fullName:client,phone:r.phone,email:r.email,company:'',addr:'',grade:'Normal',notes:'',createdAt:today()});
   realSaveDB();toast('Booking confirmed '+v1Booking(r));nav('rentals');
+}
+function saveRentalQuoteV1(){
+  v1RentalCalc();const client=($('v1r-client')?.value||'').trim();if(!client){toast('Client required','e');return;}
+  const items=window._v1RentalItems||[];if(!items.length){toast('Add equipment or bundle','e');return;}
+  const t=window._v1RentalTotals||{};const method=$('v1r-method')?.value||'Cash';
+  const r={id:nid('r'),client,phone:$('v1r-phone')?.value,email:$('v1r-email')?.value,start:$('v1r-start')?.value,end:$('v1r-end')?.value,days:t.days,items,subtotal:t.sub,discount:t.disc,vat:t.vat,tds:t.tds,total:t.total,advance:0,balance:t.total,deposit:t.dep,paymentMethod:method,payStatus:'Pending',status:'Quote',notes:$('v1r-notes')?.value,staff:$('v1r-staff')?.value,priceType:$('v1r-price-type')?.value,createdAt:today(),usagePosted:false,packingChecks:{},returnChecks:{},packingSteps:{},packingPhotos:[],returnPhotos:[]};
+  DB.rentals.push(r);
+  const c=v1ClientByName(client);if(!c)DB.clients.push({id:nid('c'),name:client,fullName:client,phone:r.phone,email:r.email,company:'',addr:'',grade:'Normal',notes:'',createdAt:today()});
+  realSaveDB();toast('Saved as quote '+v1Booking(r));nav('rentals');
 }
 
 // Rentals
