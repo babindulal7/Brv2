@@ -1,0 +1,17 @@
+# Next.js
+.next/
+out/
+
+# Dependencies
+node_modules/
+
+# Env files
+.env
+.env.local
+.env*.local
+
+# Package lock (optional — remove if you want to commit it)
+# package-lock.json
+
+# OS
+.DS_Store

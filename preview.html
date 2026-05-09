@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Babin Rentals v2 — Design Preview</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root { color-scheme: dark; }
+
+  body {
+    background: #0B0B0D;
+    color: #f4f4f5;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+  }
+
+  /* ── Sidebar ── */
+  aside {
+    width: 256px;
+    min-height: 100vh;
+    border-right: 1px solid #27272a;
+    background: rgba(0,0,0,0.4);
+    padding: 1.5rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    flex-shrink: 0;
+  }
+
+  .brand {
+    font-size: 1.125rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: #fff;
+  }
+
+  nav { display: flex; flex-direction: column; gap: 4px; }
+
+  nav a {
+    display: block;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    color: #a1a1aa;
+    text-decoration: none;
+    font-size: 0.875rem;
+    text-transform: capitalize;
+    transition: background 0.12s, color 0.12s;
+  }
+
+  nav a:hover { background: #18181b; color: #fff; }
+  nav a.active { background: #18181b; color: #fff; }
+
+  /* ── Main content ── */
+  main { flex: 1; padding: 1.5rem; overflow-y: auto; }
+
+  /* ── Card ── */
+  .card {
+    border-radius: 1rem;
+    border: 1px solid #27272a;
+    background: #141417;
+    padding: 1.25rem;
+  }
+
+  /* ── KPI grid ── */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-top: 1.5rem;
+  }
+
+  .kpi-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3em;
+    color: #71717a;
+  }
+
+  .kpi-value {
+    font-size: 2.25rem;
+    font-weight: 700;
+    line-height: 1;
+    margin-top: 0.5rem;
+    color: #fff;
+  }
+
+  .kpi-sub {
+    font-size: 0.875rem;
+    color: #a1a1aa;
+    margin-top: 0.25rem;
+  }
+
+  /* ── Section heading ── */
+  h2 { font-size: 1.875rem; font-weight: 600; }
+
+  /* ── AI Panel ── */
+  .ai-panel { margin-top: 1.5rem; }
+  .ai-panel h3 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+  .ai-panel p { font-size: 0.875rem; color: #71717a; }
+
+  /* ── Stub pages demo ── */
+  .stub-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-top: 1.5rem;
+  }
+
+  .stub-card { opacity: 0.6; }
+  .stub-title {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: #52525b;
+    margin-bottom: 0.4rem;
+  }
+  .stub-body { font-size: 0.8rem; color: #52525b; }
+
+  /* ── Accent colors for demo ── */
+  .positive { color: #4ade80; }
+  .warning  { color: #facc15; }
+  .danger   { color: #f87171; }
+
+  /* ── Divider between sections ── */
+  .section-gap { margin-top: 2.5rem; }
+
+  /* ── Badge ── */
+  .badge {
+    display: inline-block;
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    padding: 2px 7px;
+    border-radius: 999px;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .badge-green { background: #14532d; color: #4ade80; }
+  .badge-yellow { background: #422006; color: #facc15; }
+</style>
+</head>
+<body>
+
+<!-- ── Sidebar ── -->
+<aside>
+  <span class="brand">Babin Rentals v2</span>
+  <nav>
+    <a href="#" class="active">dashboard</a>
+    <a href="#">inventory</a>
+    <a href="#">rentals</a>
+    <a href="#">clients</a>
+    <a href="#">finance</a>
+    <a href="#">expenses</a>
+    <a href="#">depreciation</a>
+    <a href="#">maintenance</a>
+    <a href="#">cleaning</a>
+    <a href="#">damage-log</a>
+    <a href="#">bundles</a>
+    <a href="#">pricing</a>
+    <a href="#">settings</a>
+  </nav>
+</aside>
+
+<!-- ── Main ── -->
+<main>
+
+  <!-- Dashboard page -->
+  <section>
+    <h2>Command Center</h2>
+
+    <div class="kpi-grid">
+      <div class="card">
+        <p class="kpi-label">Revenue</p>
+        <h3 class="kpi-value">NPR 0</h3>
+        <p class="kpi-sub">Month to date</p>
+      </div>
+      <div class="card">
+        <p class="kpi-label">Profit</p>
+        <h3 class="kpi-value">NPR 0</h3>
+        <p class="kpi-sub">After expenses</p>
+      </div>
+      <div class="card">
+        <p class="kpi-label">Utilization</p>
+        <h3 class="kpi-value">0%</h3>
+        <p class="kpi-sub">0 of 0 active</p>
+      </div>
+      <div class="card">
+        <p class="kpi-label">Overdue Payments</p>
+        <h3 class="kpi-value">NPR 0</h3>
+        <p class="kpi-sub">Past due invoices</p>
+      </div>
+    </div>
+
+    <div class="card ai-panel">
+      <h3>AI Panel</h3>
+      <p>Connect the analytics API to populate AI-driven insights.</p>
+    </div>
+  </section>
+
+  <!-- Stub modules preview -->
+  <section class="section-gap">
+    <h2 style="font-size:1rem;color:#52525b;text-transform:uppercase;letter-spacing:0.15em;">
+      Scaffold modules (stub state)
+    </h2>
+
+    <div class="stub-grid" style="margin-top:1rem;">
+      <div class="card stub-card">
+        <p class="stub-title">Inventory</p>
+        <p class="stub-body">Production module scaffold for inventory with CRUD, analytics, and automation hooks.</p>
+      </div>
+      <div class="card stub-card">
+        <p class="stub-title">Rentals</p>
+        <p class="stub-body">Production module scaffold for rentals with CRUD, analytics, and automation hooks.</p>
+      </div>
+      <div class="card stub-card">
+        <p class="stub-title">Clients</p>
+        <p class="stub-body">Production module scaffold for clients with CRUD, analytics, and automation hooks.</p>
+      </div>
+      <div class="card stub-card">
+        <p class="stub-title">Finance</p>
+        <p class="stub-body">Production module scaffold for finance with CRUD, analytics, and automation hooks.</p>
+      </div>
+      <div class="card stub-card">
+        <p class="stub-title">Expenses</p>
+        <p class="stub-body">Production module scaffold for expenses with CRUD, analytics, and automation hooks.</p>
+      </div>
+      <div class="card stub-card">
+        <p class="stub-title">Pricing</p>
+        <p class="stub-body">Production module scaffold for pricing with CRUD, analytics, and automation hooks.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+</body>
+</html>
