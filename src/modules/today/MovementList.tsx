@@ -6,6 +6,7 @@ import type { StatusKey } from '../../lib/status'
 import type { Movement } from '../../types/today'
 import { ROWS_PER_COLUMN, ROW_MENU, HOVER, HOVER_FALLBACK, timeOf, statusKeyOf, has } from '../../data/today'
 import { cardStyle } from '../../components/ui/Page'
+import { useCanViewMoney } from './useMoneyVisibility'
 
 interface MovementListProps {
   title: string
@@ -46,6 +47,28 @@ function Pill({ text, status }: { text: string; status: StatusKey }) {
  */
 function HoverCard({ m }: { m: Movement }) {
   const f = HOVER[m.bookingNo] ?? HOVER_FALLBACK
+  /*
+   * §8.3 — Deposit and Payment are money, so for a money-blind session the two
+   * rows are **not rendered**: the grid closes from eight facts to six. The
+   * "Receive Payment" quick action goes with them, because `canRecordPayment`
+   * would refuse it anyway and a button that cannot act is worse than no
+   * button.
+   */
+  const money = useCanViewMoney()
+  const facts: Array<[string, string]> = [
+    ['Project', f.project],
+    ['Duration', f.duration],
+    ...(money ? ([['Deposit', f.deposit], ['Payment', f.payment]] as Array<[string, string]>) : []),
+    ['Equipment', f.equipment],
+    ['Documents', f.documents],
+    ['Staff', f.staff],
+    ['Notes', f.notes],
+  ]
+  const actions: Array<[string, string]> = [
+    ['Open Booking', `/rentals/${m.bookingNo}`],
+    ...(money ? ([['Receive Payment', '/finance']] as Array<[string, string]>) : []),
+    ['Print Checklist', `/rentals/${m.bookingNo}/packing`],
+  ]
   return (
     <div
       role="tooltip"
@@ -73,16 +96,7 @@ function HoverCard({ m }: { m: Movement }) {
         </span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px 16px' }}>
-        {[
-          ['Project', f.project],
-          ['Duration', f.duration],
-          ['Deposit', f.deposit],
-          ['Payment', f.payment],
-          ['Equipment', f.equipment],
-          ['Documents', f.documents],
-          ['Staff', f.staff],
-          ['Notes', f.notes],
-        ].map(([l, v]) => (
+        {facts.map(([l, v]) => (
           <div key={l} style={{ minWidth: 0 }}>
             <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
               {l}
@@ -93,14 +107,10 @@ function HoverCard({ m }: { m: Movement }) {
       </div>
       {/* §12's "quick actions" — real destinations, not decoration. */}
       <div style={{ display: 'flex', gap: 6, marginTop: 11, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-        {[
-          ['Open Booking', `/rentals/${m.bookingNo}`],
-          ['Receive Payment', '/finance'],
-          ['Print Checklist', `/rentals/${m.bookingNo}/packing`],
-        ].map(([label, to]) => (
+        {actions.map(([label, to]) => (
           <Link
             key={label}
-            to={to as string}
+            to={to}
             onClick={(e) => e.stopPropagation()}
             style={{
               height: 26,
@@ -159,7 +169,12 @@ function VipBadge() {
  */
 function RowMenu({ onClose, m }: { onClose: () => void; m: Movement }) {
   const navigate = useNavigate()
+  const money = useCanViewMoney()
   const booking = `/rentals/${m.bookingNo}`
+  // §8.3 — "Invoice" opens a document that is a rupee figure. For a money-blind
+  // session the entry is absent from the menu, not greyed: a disabled item still
+  // says an invoice exists.
+  const entries = ROW_MENU.filter((e) => money || e !== 'Invoice')
 
   const actions: Partial<Record<(typeof ROW_MENU)[number], () => void>> = {
     Open: () => navigate(booking),
@@ -196,7 +211,7 @@ function RowMenu({ onClose, m }: { onClose: () => void; m: Movement }) {
         textAlign: 'left',
       }}
     >
-      {ROW_MENU.map((entry) => {
+      {entries.map((entry) => {
         const act = actions[entry]
         return (
           <button

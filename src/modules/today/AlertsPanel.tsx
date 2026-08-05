@@ -1,13 +1,22 @@
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { STATUS } from '../../lib/status'
-import { CRITICAL_ALERTS } from '../../data/today'
+import { criticalAlertsFor, lesserAlertsFor } from '../../data/today'
 import { cardStyle } from '../../components/ui/Page'
+import { useCanViewMoney } from './useMoneyVisibility'
 
 /**
- * Dashboard.md §8 — priority-sorted, and **every alert carries its own primary
- * action**. An alert with no action is a notification, and the Alerts column is
- * not a notification feed.
+ * Dashboard.md §8 — priority-sorted.
+ *
+ * ⚠ TODO(decision) — PLAN.md §4: §8 also says **"every alert carries its own
+ * primary action… an alert with no action is a notification, not an alert."**
+ * `Dashboard.PNG` draws no action on these rows, the page was matched to the
+ * render, and the inline actions came out; the rows are now inert text. Each
+ * `AlertRow` still carries `action` and `to`, and `carriesMoney` still reads
+ * `action` to keep money alerts away from a money-blind session, so the field
+ * is load-bearing but unrendered. Either the whole row becomes a link to
+ * `a.to` (which keeps the render's look and restores §8), or §8's rule is
+ * dropped for this column. Not mine to pick.
  *
  * §5.6: the Critical Alerts KPI is "open alerts at Critical priority only" and
  * "must equal the Alerts column count". So this column renders
@@ -16,6 +25,15 @@ import { cardStyle } from '../../components/ui/Page'
  * Both now read the same derived list, so the invariant holds by construction.
  */
 export default function AlertsPanel() {
+  /*
+   * §8.3 — the money alerts are filtered out of the list itself, so a
+   * money-blind session has no row to read, no count to add up and no "+ N
+   * more" pointing at one. Nothing here is masked.
+   */
+  const money = useCanViewMoney()
+  const alerts = criticalAlertsFor(money)
+  const rest = lesserAlertsFor(money).length
+
   return (
     <section style={{ ...cardStyle, display: 'flex', flexDirection: 'column', minWidth: 0, height: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', padding: '13px 15px', borderBottom: '1px solid var(--border)' }}>
@@ -35,7 +53,7 @@ export default function AlertsPanel() {
             alignItems: 'center',
           }}
         >
-          {CRITICAL_ALERTS.length}
+          {alerts.length}
         </span>
         <Link
           to="/notifications"
@@ -46,7 +64,7 @@ export default function AlertsPanel() {
       </div>
 
       <div style={{ flex: 1 }}>
-        {CRITICAL_ALERTS.map((a, i) => {
+        {alerts.map((a, i) => {
           const c = STATUS[a.statusKey]
           return (
             <div
@@ -56,7 +74,7 @@ export default function AlertsPanel() {
                 gridTemplateColumns: '32px minmax(0,1fr) auto',
                 gap: 10,
                 padding: '11px 15px',
-                borderBottom: i < CRITICAL_ALERTS.length - 1 ? '1px solid var(--border)' : 'none',
+                borderBottom: i < alerts.length - 1 ? '1px solid var(--border)' : 'none',
                 alignItems: 'start',
               }}
             >
@@ -103,6 +121,29 @@ export default function AlertsPanel() {
           )
         })}
       </div>
+
+      {/* The render's "+ 2 more alerts". The count is what is actually left
+          below Critical for *this* session, so it can never advertise a money
+          alert a money-blind role is not allowed to open. */}
+      {rest > 0 && (
+        <Link
+          to="/notifications"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '10px 15px',
+            borderTop: '1px solid var(--border)',
+            color: 'var(--link)',
+            fontSize: 'var(--t-meta)',
+            fontWeight: 600,
+            textDecoration: 'none',
+          }}
+        >
+          <Icon name="plus" size={13} />
+          {rest} more {rest === 1 ? 'alert' : 'alerts'}
+        </Link>
+      )}
     </section>
   )
 }

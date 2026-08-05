@@ -1,81 +1,572 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
+import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
-import { Donut, Legend } from '../../components/ui/Charts'
+import { Donut, Legend, catColor } from '../../components/ui/Charts'
+import { EmptyState } from '../../components/ui/StateViews'
 import { STATUS } from '../../lib/status'
+import { toBs, formatBs, formatAd } from '../../lib/bs'
+import { canViewMoney } from '../../lib/rbac'
+import type { Role as SystemRole } from '../../lib/rbac'
+import { useAuth } from '../../lib/auth'
+import type { Role as ShiftRole } from '../../lib/auth'
 import {
-  TABS,
-  FILTER_GROUPS,
-  KPIS,
+  ALL_TAB,
+  ALL_BRANCHES,
+  ALL_RELATED,
+  ALL_STATUS,
+  ALL_TYPES,
+  ARCHIVED_NOT_RECYCLE_BIN,
+  BRANCHES,
   DOC_STATUS,
-  DOCUMENTS,
-  SUMMARY_MIX,
-  SUMMARY_TOTAL,
-  MISSING,
-  PENDING_SIGNATURES,
-  EXPIRING,
-  QUICK_ACTIONS,
-  MORE_ACTIONS,
-  SHOWING,
+  DOC_STATUSES,
+  MISSING_TOTAL,
+  NOT_BUILT,
+  PENDING_SIGNATURE_TOTAL,
+  PER_PAGE,
+  RELATED_TARGET,
+  ROW_MENU,
+  SORTS,
+  categoriesFor,
+  documentsFor,
+  expiringFor,
+  kpisFor,
+  missingFor,
+  quickActionsFor,
+  summarySlices,
 } from '../../data/documents'
+import type { CategoryKey, DocRow, RelatedKind, SortKey } from '../../data/documents'
+
+/**
+ * `lib/auth.tsx` carries eight *shift* roles; `lib/rbac.ts` is written against
+ * Foundation §11's six *system* roles. Mapping rather than casting matters: a
+ * cast hands `canViewMoney` a string it has no rule for and it answers `true`.
+ * Same table as `RentalsList` — it belongs in `lib/rbac.ts`, which this pass
+ * does not own.
+ */
+const SYSTEM_ROLE: Record<ShiftRole, SystemRole> = {
+  Owner: 'Owner',
+  Manager: 'Manager',
+  Coordinator: 'Manager',
+  Warehouse: 'Warehouse',
+  Technician: 'Warehouse',
+  Driver: 'Warehouse',
+  Accounts: 'Accounts',
+  Client: 'Viewer',
+}
 
 const th = {
   textAlign: 'left' as const,
-  padding: '9px 10px',
+  padding: '9px 8px',
   fontSize: 'var(--t-th)',
   fontWeight: 600,
   color: 'var(--text2)',
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
-const link = { fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' } as const
+const td = {
+  padding: '9px 8px',
+  fontSize: 'var(--t-meta)',
+  color: 'var(--text)',
+  verticalAlign: 'top' as const,
+  whiteSpace: 'nowrap' as const,
+}
+/** Pins the Actions column so it survives the table's horizontal scroll. */
+const stickyRight = {
+  position: 'sticky' as const,
+  right: 0,
+  textAlign: 'right' as const,
+  borderLeft: '1px solid var(--border)',
+}
+const fieldStyle = {
+  width: '100%',
+  height: 32,
+  padding: '0 8px',
+  borderRadius: 8,
+  border: '1px solid var(--input-border)',
+  background: 'var(--input-bg)',
+  color: 'var(--text)',
+  fontSize: 'var(--t-meta)',
+  fontFamily: 'inherit',
+} as const
+const labelStyle = {
+  display: 'block',
+  marginBottom: 4,
+  fontSize: 'var(--t-th)',
+  fontWeight: 600,
+  color: 'var(--text2)',
+} as const
+
+/** `<input type="date">` speaks ISO; the seed speaks `Date`. */
+function isoToDate(v: string): number | null {
+  if (!v) return null
+  const [y, m, d] = v.split('-').map(Number)
+  if (!y || !m || !d) return null
+  return Date.UTC(y, m - 1, d)
+}
+
+/** Outline chip — the render draws Type as a bordered pill, not a filled one. */
+function TypeChip({ text }: { text: string }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        height: 20,
+        padding: '0 7px',
+        borderRadius: 6,
+        border: '1px solid var(--border2)',
+        background: 'var(--card2)',
+        color: 'var(--text2)',
+        fontSize: 'var(--t-th)',
+        fontWeight: 600,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {text}
+    </span>
+  )
+}
+
+function StatusPill({ status }: { status: DocRow['status'] }) {
+  const tone = STATUS[DOC_STATUS[status]]
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        height: 21,
+        padding: '0 9px',
+        borderRadius: 'var(--r-badge)',
+        background: tone.bg,
+        color: tone.fg,
+        border: tone.border ? `1px solid ${tone.border}` : undefined,
+        fontSize: 'var(--t-meta)',
+        fontWeight: 600,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {status}
+    </span>
+  )
+}
+
+/** Square glyph tile in front of the document name, tinted by its category. */
+function DocTile({ icon, index }: { icon: IconName; index: number }) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        width: 30,
+        height: 30,
+        borderRadius: 8,
+        flexShrink: 0,
+        display: 'grid',
+        placeItems: 'center',
+        background: 'var(--card2)',
+        border: '1px solid var(--border2)',
+        color: catColor(index),
+      }}
+    >
+      <Icon name={icon} size={15} fill />
+    </span>
+  )
+}
 
 /**
- * **Documents** — spec-derived (`Documents.md` v2.1, Build Locked). No render
- * in the reference set covers this screen.
+ * A control whose destination does not exist yet. It stays visible and states
+ * the reason on hover and focus — never an `href="#"` and never a no-op click.
+ */
+function Unavailable({ children, why, style }: { children: ReactNode; why: string; style?: CSSProperties }) {
+  return (
+    <span
+      aria-disabled
+      tabIndex={0}
+      title={why}
+      style={{ color: 'var(--muted)', cursor: 'not-allowed', ...style }}
+    >
+      {children}
+    </span>
+  )
+}
+
+function ActionIcon({ name, label, why }: { name: IconName; label: string; why: string }) {
+  return (
+    <button
+      type="button"
+      disabled
+      aria-label={`${label} — unavailable`}
+      title={`${label} — ${why}`}
+      style={{
+        width: 24,
+        height: 24,
+        borderRadius: 6,
+        border: 'none',
+        background: 'transparent',
+        color: 'var(--disabled)',
+        cursor: 'not-allowed',
+        display: 'grid',
+        placeItems: 'center',
+      }}
+    >
+      <Icon name={name} size={14} />
+    </button>
+  )
+}
+
+/**
+ * §11's row menu — Download · Print · Email · WhatsApp · Share Link ·
+ * Duplicate · Archive. **No Delete**: §6 keeps every document for ever.
  *
- * Two of the spec's corrections are load-bearing:
- *  · §5 **document lifecycle is not record state.** `Paid` is a record state and
- *    is never a document status; they are separate columns.
- *  · §6 there is no Recycle Bin — documents are archived, never deleted — so
- *    the row menu offers Archive and no Delete.
+ * The menu itself is real; each entry that needs storage or delivery says why
+ * it cannot run. `Open related record` is the one that works today.
+ */
+function RowMenu({ row, open, onToggle }: { row: DocRow; open: boolean; onToggle: () => void }) {
+  const target = RELATED_TARGET[row.relatedKind]
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex' }}>
+      <button
+        type="button"
+        aria-label={`Actions for ${row.id}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={onToggle}
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: 6,
+          border: 'none',
+          background: open ? 'var(--hover-card)' : 'transparent',
+          color: 'var(--muted)',
+          cursor: 'pointer',
+          display: 'grid',
+          placeItems: 'center',
+        }}
+      >
+        <Icon name="more_vert" size={14} />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: 'absolute',
+            right: 0,
+            top: 30,
+            minWidth: 208,
+            padding: 6,
+            borderRadius: 'var(--r-btn)',
+            background: 'var(--dropdown)',
+            border: '1px solid var(--border)',
+            boxShadow: 'var(--shadow-modal)',
+            zIndex: 30,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {row.relatedKind === 'booking' ? (
+            <Link
+              to={`/rentals/${row.relatedTo}`}
+              role="menuitem"
+              style={{ ...menuItem, color: 'var(--text)', cursor: 'pointer' }}
+            >
+              <Icon name="external_link" size={15} style={{ color: 'var(--text2)' }} />
+              <span style={{ flex: 1 }}>Open {row.relatedTo}</span>
+            </Link>
+          ) : (
+            <span
+              role="menuitem"
+              aria-disabled
+              tabIndex={0}
+              title={`${target.label} screen is not built yet`}
+              style={{ ...menuItem, color: 'var(--muted)', cursor: 'not-allowed' }}
+            >
+              <Icon name="external_link" size={15} style={{ color: 'var(--disabled)' }} />
+              <span style={{ flex: 1 }}>Open {row.relatedTo}</span>
+            </span>
+          )}
+
+          <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0' }} />
+
+          {ROW_MENU.map((m) => (
+            <span
+              key={m.label}
+              role="menuitem"
+              aria-disabled
+              tabIndex={0}
+              title={NOT_BUILT}
+              style={{ ...menuItem, color: 'var(--muted)', cursor: 'not-allowed' }}
+            >
+              <Icon name={m.icon} size={15} style={{ color: 'var(--disabled)' }} />
+              <span style={{ flex: 1 }}>{m.label}</span>
+              <Icon name="close" size={12} style={{ color: 'var(--disabled)' }} />
+            </span>
+          ))}
+
+          {/* §6 — the absence of Delete is the point, so the menu says so. */}
+          <p style={{ margin: '6px 8px 2px', fontSize: 'var(--t-th)', color: 'var(--muted)', whiteSpace: 'normal', lineHeight: 1.4 }}>
+            {ARCHIVED_NOT_RECYCLE_BIN}
+          </p>
+        </div>
+      )}
+    </span>
+  )
+}
+
+const menuItem = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 9,
+  width: '100%',
+  height: 32,
+  padding: '0 9px',
+  borderRadius: 8,
+  border: 'none',
+  background: 'transparent',
+  fontSize: 'var(--t-meta)',
+  fontFamily: 'inherit',
+  textAlign: 'left' as const,
+  textDecoration: 'none',
+}
+
+function PageBtn({ label, active, disabled, onClick }: { label: string; active?: boolean; disabled?: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-current={active ? 'page' : undefined}
+      style={{
+        minWidth: 26,
+        height: 26,
+        borderRadius: 7,
+        border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
+        background: active ? 'var(--btn-primary-bg)' : 'transparent',
+        color: active ? 'var(--btn-primary-fg)' : 'var(--text2)',
+        fontSize: 'var(--t-meta)',
+        fontWeight: active ? 700 : 500,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.45 : 1,
+        fontFamily: 'inherit',
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
+/**
+ * **Documents** — built against `03 Core Modules/Documents.PNG` with the
+ * `Documents.md` v2.1 corrections applied where the render and the lock
+ * disagree on meaning rather than on layout:
+ *
+ *  · §5 **document lifecycle is not record state.** The render puts `Paid`,
+ *    `Sent` and `Completed` in the status pill; those belong to the invoice,
+ *    the delivery and the maintenance job. Pill = lifecycle, line below =
+ *    record state.
+ *  · §6 **there is no Recycle Bin** — the ninth tab is Archived, same slot,
+ *    same count, and the row menu offers Archive with no Delete.
+ *  · §4 one prefix per document type — the render's `DOC-RNT-`, `RPT-`, `MNT-`
+ *    and its duplicate `INV-VAT-` row are gone.
+ *  · §14 / Foundation §8.3 **Warehouse sees no finance documents at all** —
+ *    the rows, the tab, the category, the donut slice and the finance quick
+ *    actions are removed from the arrays before render, not masked.
  */
 export default function Documents() {
-  const [tab, setTab] = useState<(typeof TABS)[number]>('All')
-  const [selected, setSelected] = useState(0)
+  const { user } = useAuth()
+  const role: SystemRole = user ? SYSTEM_ROLE[user.role] : 'Viewer'
+  const money = canViewMoney(role)
+
+  const categories = useMemo(() => categoriesFor(money), [money])
+  const allDocs = useMemo(() => documentsFor(money), [money])
+  const kpis = useMemo(() => kpisFor(money), [money])
+  const slices = useMemo(() => summarySlices(categories), [categories])
+  const missing = useMemo(() => missingFor(money), [money])
+  const expiring = useMemo(() => expiringFor(money), [money])
+  const quickActions = useMemo(() => quickActionsFor(money), [money])
+  const total = useMemo(() => categories.reduce((a, c) => a + c.count, 0), [categories])
+
+  const [category, setCategory] = useState<CategoryKey | 'All'>('All')
+  const [query, setQuery] = useState('')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [type, setType] = useState(ALL_TYPES)
+  const [status, setStatus] = useState<string>(ALL_STATUS)
+  const [related, setRelated] = useState(ALL_RELATED)
+  const [branch, setBranch] = useState(ALL_BRANCHES)
+  const [sort, setSort] = useState<SortKey>('Created Date')
+  const [cards, setCards] = useState(false)
+  const [perPage, setPerPage] = useState<number>(PER_PAGE[0] ?? 10)
+  const [page, setPage] = useState(1)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [menuFor, setMenuFor] = useState<string | null>(null)
+
+  const types = useMemo(() => {
+    const set = new Set(allDocs.map((d) => d.type))
+    return [ALL_TYPES, ...Array.from(set).sort()]
+  }, [allDocs])
+
+  const relatedKinds = useMemo(() => {
+    const set = new Set(allDocs.map((d) => d.relatedKind))
+    return [ALL_RELATED, ...Array.from(set)]
+  }, [allDocs])
+
+  const dirty = query !== '' || from !== '' || to !== '' || type !== ALL_TYPES || status !== ALL_STATUS || related !== ALL_RELATED || branch !== ALL_BRANCHES
+
+  function clearAll() {
+    setQuery('')
+    setFrom('')
+    setTo('')
+    setType(ALL_TYPES)
+    setStatus(ALL_STATUS)
+    setRelated(ALL_RELATED)
+    setBranch(ALL_BRANCHES)
+    setPage(1)
+  }
+
+  function pickCategory(c: CategoryKey | 'All') {
+    setCategory(c)
+    setPage(1)
+    setMenuFor(null)
+  }
+
+  const rows = useMemo(() => {
+    const f = isoToDate(from)
+    const t = isoToDate(to)
+    const q = query.trim().toLowerCase()
+
+    const list = allDocs.filter((d) => {
+      // §6 — archived documents are hidden from every other view, never deleted.
+      if (category === 'Archived') {
+        if (!d.archived) return false
+      } else {
+        if (d.archived) return false
+        if (category !== 'All' && d.category !== category) return false
+      }
+      if (q && ![d.name, d.id, d.type, d.relatedTo, d.party].some((s) => s.toLowerCase().includes(q))) return false
+      if (type !== ALL_TYPES && d.type !== type) return false
+      if (status !== ALL_STATUS && d.status !== status) return false
+      if (related !== ALL_RELATED && d.relatedKind !== related) return false
+      if (branch !== ALL_BRANCHES && d.branch !== branch && d.branch !== ALL_BRANCHES) return false
+      const ms = d.createdAd.getTime()
+      if (f !== null && ms < f) return false
+      if (t !== null && ms > t) return false
+      return true
+    })
+
+    const sorted = [...list]
+    if (sort === 'Created Date') sorted.sort((a, b) => b.createdAd.getTime() - a.createdAd.getTime())
+    else if (sort === 'Document Name') sorted.sort((a, b) => a.name.localeCompare(b.name))
+    else if (sort === 'Type') sorted.sort((a, b) => a.type.localeCompare(b.type))
+    else if (sort === 'Status') sorted.sort((a, b) => a.status.localeCompare(b.status))
+    else sorted.sort((a, b) => a.party.localeCompare(b.party))
+    return sorted
+  }, [allDocs, category, query, type, status, related, branch, from, to, sort])
+
+  const pageCount = Math.max(1, Math.ceil(rows.length / perPage))
+  const current = Math.min(page, pageCount)
+  const visible = rows.slice((current - 1) * perPage, current * perPage)
+  const allOnPageSelected = visible.length > 0 && visible.every((r) => selected.has(r.id))
+
+  /** The render's `Export`. Nothing else on this screen can produce a file. */
+  function exportCsv() {
+    const head = ['ID', 'Document', 'Type', 'Related To', 'Client / Vendor', 'Status', 'Record State', 'Created']
+    const cell = (v: string) => `"${v.replace(/"/g, '""')}"`
+    const body = rows.map((r) =>
+      [r.id, r.name, r.type, r.relatedTo, r.party, r.status, r.recordState, `${formatAd(r.createdAd)} ${r.createdTime}`]
+        .map(cell)
+        .join(','),
+    )
+    const blob = new Blob([[head.map(cell).join(','), ...body].join('\r\n')], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'documents.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const categoryIndex = (key: CategoryKey) => categories.findIndex((c) => c.key === key)
+
+  function toggleRow(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const sortHeader = (label: string, key: SortKey) => (
+    <button
+      type="button"
+      onClick={() => setSort(key)}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        border: 'none',
+        background: 'transparent',
+        padding: 0,
+        color: sort === key ? 'var(--text)' : 'var(--text2)',
+        fontSize: 'var(--t-th)',
+        fontWeight: sort === key ? 700 : 600,
+        fontFamily: 'inherit',
+        cursor: 'pointer',
+      }}
+    >
+      {label}
+      {sort === key && <Icon name="chevron_down" size={11} />}
+    </button>
+  )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }} onClick={() => setMenuFor(null)}>
       <PageHeader
         icon="file"
         title="Documents"
-        description="The single repository for every document generated or uploaded. A document exists once."
+        description="Every rental and finance document in one place. Create, manage, send and track — a document exists once."
         actions={
           <>
-            {QUICK_ACTIONS.map((q, i) => (
-              <Button key={q} icon={i === 0 ? 'plus' : 'download'} variant={i === 0 ? 'primary' : 'secondary'}>
-                {q}
+            <Unavailable why={NOT_BUILT}>
+              <Button icon="upload" disabled>
+                Upload Document
               </Button>
-            ))}
-            <Button icon="more_vert">More</Button>
+            </Unavailable>
+            <Unavailable why={NOT_BUILT}>
+              <Button icon="upload" disabled>
+                Import
+              </Button>
+            </Unavailable>
+            <Button icon="download" onClick={exportCsv}>
+              Export
+            </Button>
+            <Unavailable why={NOT_BUILT}>
+              <Button icon="plus" variant="primary" disabled>
+                Create Document
+              </Button>
+            </Unavailable>
           </>
         }
       />
 
-      {/* §2 — tabs. The rail below holds filters only and does not repeat them. */}
+      <KpiStrip items={kpis} columns={kpis.length} />
+
+      {/* §2 — tabs. The rail's category list below shares this one selection,
+          so the two controls can never disagree about what is on screen. */}
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
-        {TABS.map((t) => {
-          const on = tab === t
+        {[{ key: 'All' as const, tab: ALL_TAB }, ...categories].map((t) => {
+          const on = category === t.key
           return (
             <button
-              key={t}
+              key={t.key}
               type="button"
-              onClick={() => setTab(t)}
+              onClick={() => pickCategory(t.key)}
               aria-current={on ? 'page' : undefined}
               style={{
-                height: 34,
-                padding: '0 13px',
+                height: 36,
+                padding: '0 12px',
                 border: 'none',
                 borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
                 background: 'transparent',
@@ -87,57 +578,274 @@ export default function Documents() {
                 marginBottom: -1,
               }}
             >
-              {t}
+              {t.tab}
             </button>
           )
         })}
       </div>
 
-      <KpiStrip items={KPIS} columns={4} />
+      {/* The render's three columns: a ~200px category + filter rail, the list,
+          and a 300px summary rail. The left rail is a little wider here so
+          "Maintenance Documents" sets on one line at the theme's UI size. */}
+      <div style={{ display: 'grid', gridTemplateColumns: '228px minmax(0,1fr) 300px', gap: 'var(--sp-md)', alignItems: 'start' }}>
+        {/* ── left rail ─────────────────────────────────────────────────── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
+          <Card title="Document Categories" bodyStyle={{ padding: 6 }}>
+            {[{ key: 'All' as const, rail: ALL_TAB, icon: 'file' as IconName, count: total }, ...categories].map((c) => {
+              const on = category === c.key
+              const tint = c.key === 'All' ? 'var(--text2)' : catColor(categoryIndex(c.key as CategoryKey))
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={() => pickCategory(c.key)}
+                  aria-pressed={on}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    width: '100%',
+                    height: 32,
+                    padding: '0 8px',
+                    borderRadius: 8,
+                    border: 'none',
+                    background: on ? 'var(--nav-active-bg)' : 'transparent',
+                    color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: on ? 700 : 500,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  <Icon name={c.icon} size={14} style={{ color: on ? 'var(--nav-active-accent)' : tint, flexShrink: 0 }} />
+                  <span
+                    style={{
+                      flex: 1,
+                      textAlign: 'left',
+                      minWidth: 0,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {c.rail}
+                  </span>
+                  <span className="figure" style={{ color: on ? 'var(--nav-active-accent)' : 'var(--muted)', flexShrink: 0 }}>
+                    {c.count.toLocaleString('en-IN')}
+                  </span>
+                </button>
+              )
+            })}
+          </Card>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '190px minmax(0,1fr) 288px', gap: 'var(--sp-md)', alignItems: 'start' }}>
-        <Card
-          title="Filters"
-          action={
-            <span style={{ ...link, fontSize: 'var(--t-meta)' }} aria-disabled title="Not built yet — see SCREENS.md for what is done">
-              Clear all
-            </span>
-          }
-          bodyStyle={{ padding: 8 }}
-        >
-          {FILTER_GROUPS.map((f) => (
-            <button
-              key={f}
-              type="button"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                width: '100%',
-                height: 32,
-                padding: '0 8px',
-                borderRadius: 8,
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              <span style={{ flex: 1, textAlign: 'left' }}>{f}</span>
-              <Icon name="chevron_down" size={12} style={{ color: 'var(--muted)' }} />
-            </button>
-          ))}
-          {/* §2 — filters apply instantly; there is no Apply button. */}
-          <p style={{ margin: '8px 4px 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.4 }}>
-            Filters apply instantly.
-          </p>
-        </Card>
+          <Card
+            title="Filters"
+            action={
+              <button
+                type="button"
+                onClick={clearAll}
+                disabled={!dirty}
+                title={dirty ? 'Reset every filter' : 'No filters applied'}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: dirty ? 'var(--link)' : 'var(--disabled)',
+                  fontSize: 'var(--t-meta)',
+                  fontWeight: 600,
+                  cursor: dirty ? 'pointer' : 'not-allowed',
+                  fontFamily: 'inherit',
+                  padding: 0,
+                }}
+              >
+                Clear All
+              </button>
+            }
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+              <div>
+                <span style={labelStyle}>Date Range</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <input
+                    type="date"
+                    aria-label="Created from"
+                    value={from}
+                    onChange={(e) => {
+                      setFrom(e.target.value)
+                      setPage(1)
+                    }}
+                    style={fieldStyle}
+                  />
+                  <input
+                    type="date"
+                    aria-label="Created to"
+                    value={to}
+                    onChange={(e) => {
+                      setTo(e.target.value)
+                      setPage(1)
+                    }}
+                    style={fieldStyle}
+                  />
+                </div>
+              </div>
 
+              <label>
+                <span style={labelStyle}>Document Type</span>
+                <select
+                  value={type}
+                  onChange={(e) => {
+                    setType(e.target.value)
+                    setPage(1)
+                  }}
+                  style={fieldStyle}
+                >
+                  {types.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span style={labelStyle}>Status</span>
+                <select
+                  value={status}
+                  onChange={(e) => {
+                    setStatus(e.target.value)
+                    setPage(1)
+                  }}
+                  style={fieldStyle}
+                >
+                  {[ALL_STATUS, ...DOC_STATUSES].map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span style={labelStyle}>Related To</span>
+                <select
+                  value={related}
+                  onChange={(e) => {
+                    setRelated(e.target.value)
+                    setPage(1)
+                  }}
+                  style={fieldStyle}
+                >
+                  {relatedKinds.map((k) => (
+                    <option key={k} value={k}>
+                      {k === ALL_RELATED ? ALL_RELATED : RELATED_TARGET[k as RelatedKind].label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {/* §16 — the branch filter shows because Settings carries more
+                  than one branch; with a single branch it would be hidden. */}
+              <label>
+                <span style={labelStyle}>Branch</span>
+                <select
+                  value={branch}
+                  onChange={(e) => {
+                    setBranch(e.target.value)
+                    setPage(1)
+                  }}
+                  style={fieldStyle}
+                >
+                  {BRANCHES.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {/* §2 — filters apply instantly; the render's Apply Filters button
+                  would be a control with nothing left to do. */}
+              <p style={{ margin: 0, fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.45 }}>
+                Filters apply instantly — there is no Apply step.
+              </p>
+            </div>
+          </Card>
+        </div>
+
+        {/* ── centre ────────────────────────────────────────────────────── */}
         <Card bodyStyle={{ padding: 0 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 12px',
+              borderBottom: '1px solid var(--border)',
+              flexWrap: 'wrap',
+            }}
+          >
+            <span style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1, minWidth: 190 }}>
+              <Icon name="search" size={14} style={{ position: 'absolute', left: 10, color: 'var(--muted)' }} />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value)
+                  setPage(1)
+                }}
+                placeholder="Search in documents…"
+                aria-label="Search documents by name, ID, type, record or client"
+                style={{ ...fieldStyle, height: 34, paddingLeft: 30 }}
+              />
+            </span>
+
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+              Sort by
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value as SortKey)}
+                style={{ ...fieldStyle, width: 'auto', height: 34 }}
+              >
+                {SORTS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <span style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 10, background: 'var(--card2)', border: '1px solid var(--border)' }}>
+              {([['Table', false], ['Cards', true]] as const).map(([label, isCards]) => {
+                const on = cards === isCards
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setCards(isCards)}
+                    aria-pressed={on}
+                    aria-label={`${label} view`}
+                    title={`${label} view`}
+                    style={{
+                      width: 30,
+                      height: 28,
+                      borderRadius: 7,
+                      border: 'none',
+                      background: on ? 'var(--card)' : 'transparent',
+                      color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
+                      cursor: 'pointer',
+                      display: 'grid',
+                      placeItems: 'center',
+                      boxShadow: on ? 'var(--shadow-card)' : 'none',
+                    }}
+                  >
+                    <Icon name={isCards ? 'queues' : 'checklist'} size={15} />
+                  </button>
+                )
+              })}
+            </span>
+          </div>
+
           {/* §11 — the bulk bar appears only on selection. */}
-          {selected > 0 && (
+          {selected.size > 0 && (
             <div
               style={{
                 display: 'flex',
@@ -149,170 +857,476 @@ export default function Documents() {
                 flexWrap: 'wrap',
               }}
             >
-              <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--nav-active-accent)' }}>{selected} selected</span>
+              <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--nav-active-accent)' }}>
+                {selected.size} selected
+              </span>
               {['Download', 'Email', 'Archive'].map((b) => (
-                <Button key={b}>{b}</Button>
+                <Unavailable key={b} why={NOT_BUILT}>
+                  <Button disabled>{b}</Button>
+                </Unavailable>
               ))}
               <button
                 type="button"
-                onClick={() => setSelected(0)}
-                style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: 'var(--text2)', fontSize: 'var(--t-meta)', cursor: 'pointer', fontFamily: 'inherit' }}
+                onClick={() => setSelected(new Set())}
+                style={{
+                  marginLeft: 'auto',
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--link)',
+                  fontSize: 'var(--t-meta)',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
               >
-                Clear
+                Clear selection
               </button>
             </div>
           )}
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
-              <thead>
-                <tr style={{ background: 'var(--th-bg)' }}>
-                  {['', 'Document', 'ID', 'Type', 'Related To', 'Client / Vendor', 'Status', 'Record State', 'Created (BS / AD)', 'Actions'].map(
-                    (h, i) => (
-                      <th key={h || `c${i}`} style={th}>
-                        {h}
-                      </th>
-                    ),
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {DOCUMENTS.map((d) => (
-                  <tr key={d.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ ...td, width: 26 }}>
+          {visible.length === 0 ? (
+            <div style={{ padding: '26px 16px' }}>
+              <EmptyState
+                title="No documents match this view"
+                description={
+                  category === 'All'
+                    ? 'Nothing matches the current filters.'
+                    : `No ${category} documents match the current filters.`
+                }
+                actionLabel={dirty ? 'Clear All filters' : 'Back to All Documents'}
+                onAction={dirty ? clearAll : () => pickCategory('All')}
+              />
+            </div>
+          ) : cards ? (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(238px, 1fr))',
+                gap: 'var(--sp-md)',
+                padding: 'var(--sp-md)',
+              }}
+            >
+              {visible.map((d) => {
+                const cat = categories.find((c) => c.key === d.category)
+                return (
+                  <article key={d.id} style={{ ...cardStyle, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+                      <DocTile icon={cat?.icon ?? 'file'} index={categoryIndex(d.category)} />
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+                          {d.name}
+                        </span>
+                        <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                          {d.id}
+                        </span>
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <TypeChip text={d.type} />
+                      <StatusPill status={d.status} />
+                    </div>
+                    <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{d.party}</span>
+                    <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                      {d.recordState} · <span className="figure">{formatAd(d.createdAd)}</span>
+                    </span>
+                  </article>
+                )
+              })}
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+                <thead>
+                  <tr style={{ background: 'var(--th-bg)' }}>
+                    <th style={{ ...th, width: 30 }}>
                       <input
                         type="checkbox"
-                        aria-label={`Select ${d.name}`}
-                        onChange={(e) => setSelected((n) => (e.currentTarget.checked ? n + 1 : Math.max(0, n - 1)))}
+                        aria-label="Select every document on this page"
+                        checked={allOnPageSelected}
+                        onChange={() =>
+                          setSelected((prev) => {
+                            const next = new Set(prev)
+                            if (allOnPageSelected) visible.forEach((r) => next.delete(r.id))
+                            else visible.forEach((r) => next.add(r.id))
+                            return next
+                          })
+                        }
                       />
-                    </td>
-                    <td style={{ ...td, fontWeight: 600 }}>{d.name}</td>
-                    <td className="identifier" style={{ ...td, color: 'var(--link)', fontWeight: 600, fontSize: 'var(--t-meta)' }}>{d.id}</td>
-                    <td style={{ ...td, color: 'var(--text2)' }}>{d.type}</td>
-                    <td style={td}>
-                      <span className="figure" style={{ ...link, fontSize: 'var(--t-meta)' }} aria-disabled title="Not built yet — see SCREENS.md for what is done">
-                        {d.relatedTo}
-                      </span>
-                    </td>
-                    <td style={{ ...td, color: 'var(--text2)' }}>{d.party}</td>
-                    {/* §5 — lifecycle … */}
-                    <td style={td}>
-                      <span
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          height: 20,
-                          padding: '0 8px',
-                          borderRadius: 'var(--r-badge)',
-                          background: STATUS[DOC_STATUS[d.status]].bg,
-                          color: STATUS[DOC_STATUS[d.status]].fg,
-                          fontSize: 'var(--t-meta)',
-                          fontWeight: 600,
-                        }}
-                      >
-                        {d.status}
-                      </span>
-                    </td>
-                    {/* … and record state, which is a different thing entirely. */}
-                    <td style={{ ...td, color: d.recordState === '—' ? 'var(--muted)' : 'var(--text2)' }}>{d.recordState}</td>
-                    <td style={td}>
-                      <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)' }}>{d.createdBs}</span>
-                      <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{d.createdAd}</span>
-                    </td>
-                    <td style={td}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Button>View</Button>
-                        <Icon name="more_vert" size={14} style={{ color: 'var(--muted)' }} />
-                      </span>
-                    </td>
+                    </th>
+                    <th style={th}>{sortHeader('Document Name', 'Document Name')}</th>
+                    <th style={th}>{sortHeader('Type', 'Type')}</th>
+                    <th style={th}>Related To</th>
+                    {/* The render's header reads "Client / Vendor"; the word
+                        "customer" appears nowhere in this product. */}
+                    <th style={th}>{sortHeader('Client / Vendor', 'Client / Vendor')}</th>
+                    <th style={th}>{sortHeader('Status', 'Status')}</th>
+                    <th style={th}>{sortHeader('Created On', 'Created Date')}</th>
+                    {/* Eight columns do not fit a 300px-rail layout below a very
+                        wide viewport, so the actions pin to the right edge and
+                        stay reachable instead of scrolling out of sight. */}
+                    <th style={{ ...th, ...stickyRight, background: 'var(--th-bg)' }}>Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {visible.map((d) => {
+                    const cat = categories.find((c) => c.key === d.category)
+                    const bs = toBs(d.createdAd)
+                    const target = RELATED_TARGET[d.relatedKind]
+                    return (
+                      <tr key={d.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ ...td, width: 30 }}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${d.id}`}
+                            checked={selected.has(d.id)}
+                            onChange={() => toggleRow(d.id)}
+                          />
+                        </td>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', flexWrap: 'wrap', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-            <span>{SHOWING}</span>
-            <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-              {/* §11 — 25 rows default. */}
-              Rows per page
-              <span className="figure" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 26, padding: '0 8px', borderRadius: 7, border: '1px solid var(--border)' }}>
-                25
-                <Icon name="chevron_down" size={11} style={{ color: 'var(--muted)' }} />
-              </span>
+                        <td style={td}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                            <DocTile icon={cat?.icon ?? 'file'} index={categoryIndex(d.category)} />
+                            <span style={{ minWidth: 0 }}>
+                              <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+                                {d.name}
+                              </span>
+                              {/* §4 — one prefix per type; templates carry id · version. */}
+                              <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 1 }}>
+                                {d.id}
+                              </span>
+                            </span>
+                          </span>
+                        </td>
+
+                        <td style={td}>
+                          <TypeChip text={d.type} />
+                        </td>
+
+                        <td style={td}>
+                          {d.relatedKind === 'booking' ? (
+                            <Link
+                              to={`/rentals/${d.relatedTo}`}
+                              className="identifier"
+                              style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--link)', textDecoration: 'none' }}
+                            >
+                              {d.relatedTo}
+                            </Link>
+                          ) : d.relatedTo === '—' ? (
+                            <span style={{ color: 'var(--muted)' }}>—</span>
+                          ) : (
+                            <Unavailable why={`The ${target.label} screen is not built yet`}>
+                              <span className="identifier" style={{ fontSize: 'var(--t-meta)', fontWeight: 700 }}>
+                                {d.relatedTo}
+                              </span>
+                            </Unavailable>
+                          )}
+                        </td>
+
+                        <td style={{ ...td, color: 'var(--text2)', whiteSpace: 'normal' }}>{d.party}</td>
+
+                        <td style={td}>
+                          <StatusPill status={d.status} />
+                          {/* §5.2 — the record's state, never merged into the pill. */}
+                          <span
+                            style={{
+                              display: 'block',
+                              marginTop: 4,
+                              fontSize: 'var(--t-th)',
+                              fontWeight: 600,
+                              color: STATUS[d.recordTone].fg,
+                              whiteSpace: 'normal',
+                            }}
+                          >
+                            {d.recordState}
+                          </span>
+                        </td>
+
+                        <td style={td}>
+                          {/* §3 — BS above AD, both from the one Date Engine. */}
+                          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text)' }}>
+                            {bs ? formatBs(bs) : '—'}
+                          </span>
+                          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 1 }}>
+                            {formatAd(d.createdAd)}, {d.createdTime}
+                          </span>
+                        </td>
+
+                        <td
+                          style={{ ...td, ...stickyRight, padding: '9px 6px', background: 'var(--card)' }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}>
+                            <ActionIcon name="eye" label="View" why={NOT_BUILT} />
+                            <ActionIcon name="download" label="Download" why={NOT_BUILT} />
+                            <ActionIcon name="upload" label="Send" why={NOT_BUILT} />
+                            <RowMenu
+                              row={d}
+                              open={menuFor === d.id}
+                              onToggle={() => setMenuFor((m) => (m === d.id ? null : d.id))}
+                            />
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '10px 12px',
+              flexWrap: 'wrap',
+              fontSize: 'var(--t-meta)',
+              color: 'var(--text2)',
+              borderTop: '1px solid var(--border)',
+            }}
+          >
+            <span>
+              {rows.length === 0
+                ? 'Showing 0 documents'
+                : `Showing ${(current - 1) * perPage + 1} to ${Math.min(current * perPage, rows.length)} of ${rows.length} documents`}
             </span>
+
+            <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+              <PageBtn label="‹" disabled={current === 1} onClick={() => setPage(current - 1)} />
+              {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
+                <PageBtn key={p} label={String(p)} active={p === current} onClick={() => setPage(p)} />
+              ))}
+              <PageBtn label="›" disabled={current === pageCount} onClick={() => setPage(current + 1)} />
+            </span>
+
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+              Rows per page
+              <select
+                value={perPage}
+                onChange={(e) => {
+                  setPerPage(Number(e.target.value))
+                  setPage(1)
+                }}
+                className="figure"
+                style={{ ...fieldStyle, width: 'auto', height: 28 }}
+              >
+                {PER_PAGE.map((n) => (
+                  <option key={n} value={n}>
+                    {n} / page
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         </Card>
 
+        {/* ── right rail ────────────────────────────────────────────────── */}
         <Rail>
           <Card title="Document Summary">
             <div style={{ display: 'flex', gap: 11, alignItems: 'center' }}>
-              <Donut slices={SUMMARY_MIX} centreLabel="Total" centreValue={SUMMARY_TOTAL} size={104} />
-              <Legend slices={SUMMARY_MIX} showPercent={false} />
+              <Donut slices={slices} centreLabel="Total" centreValue={total.toLocaleString('en-IN')} size={96} />
+              <Legend slices={slices} />
             </div>
           </Card>
 
-          <Card title={`Missing Documents (${MISSING.length})`}>
+          <Card
+            title="Pending Signatures"
+            action={
+              <button
+                type="button"
+                onClick={() => {
+                  pickCategory('All')
+                  setStatus('Pending Signature')
+                  setPage(1)
+                }}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--link)',
+                  fontSize: 'var(--t-meta)',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  padding: 0,
+                }}
+              >
+                View All
+              </button>
+            }
+          >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-              {MISSING.map((m) => (
-                <div key={m.doc + m.booking} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 'var(--t-meta)' }}>
-                  <Icon name="alert_triangle" size={13} style={{ color: 'var(--danger-text)', flexShrink: 0, marginTop: 1 }} />
-                  <span style={{ minWidth: 0 }}>
+              {allDocs
+                .filter((d) => d.status === 'Pending Signature' && !d.archived)
+                .map((p) => (
+                  <div key={p.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 'var(--t-meta)' }}>
+                    <Icon name="crew" size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {p.type}
+                      </span>
+                      <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                        <span className="identifier">{p.relatedTo}</span> · {p.party}
+                      </span>
+                    </span>
+                    <span
+                      className="figure"
+                      style={{
+                        fontSize: 'var(--t-th)',
+                        fontWeight: 700,
+                        flexShrink: 0,
+                        color: p.ageingSevere ? 'var(--danger-text)' : 'var(--progress-text)',
+                      }}
+                    >
+                      {p.ageing ?? '—'}
+                    </span>
+                  </div>
+                ))}
+              <p style={{ margin: 0, paddingTop: 2, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                <span className="figure">{PENDING_SIGNATURE_TOTAL}</span> documents pending signature across the
+                installation.
+              </p>
+            </div>
+          </Card>
+
+          <Card
+            title="Missing Documents"
+            action={
+              <Unavailable
+                why="A missing document has no row to open — the gate that requires it lives on the booking"
+                style={{ fontSize: 'var(--t-meta)', fontWeight: 600 }}
+              >
+                View All
+              </Unavailable>
+            }
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+              {missing.map((m) => (
+                <div key={m.doc + m.booking} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 'var(--t-meta)' }}>
+                  <Icon name="alert_triangle" size={13} style={{ color: 'var(--danger-text)', flexShrink: 0 }} />
+                  <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'block', fontWeight: 600, color: 'var(--text)' }}>{m.doc}</span>
                     {/* §0 — the panel names the booking and the client. */}
-                    <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                      <span className="figure">{m.booking}</span> · {m.client}
+                    <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                      <Link to={`/rentals/${m.booking}`} className="identifier" style={{ color: 'var(--link)', textDecoration: 'none' }}>
+                        {m.booking}
+                      </Link>{' '}
+                      · {m.client}
                     </span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          <Card title="Pending Signatures">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-              {PENDING_SIGNATURES.map((p) => (
-                <div key={p.doc} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 'var(--t-meta)' }}>
-                  <Icon name="crew" size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: 'block', color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {p.doc}
-                    </span>
-                    <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{p.party}</span>
                   </span>
                   <span
-                    className="figure"
-                    style={{ fontSize: 'var(--t-meta)', fontWeight: 600, flexShrink: 0, color: p.severe ? 'var(--danger-text)' : 'var(--text2)' }}
+                    style={{
+                      flexShrink: 0,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      height: 19,
+                      padding: '0 7px',
+                      borderRadius: 'var(--r-badge)',
+                      background: STATUS.danger.bg,
+                      color: STATUS.danger.fg,
+                      fontSize: 'var(--t-th)',
+                      fontWeight: 700,
+                    }}
                   >
-                    {p.ageing}
+                    Missing
                   </span>
                 </div>
               ))}
+              <p style={{ margin: 0, paddingTop: 2, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                <span className="figure">{MISSING_TOTAL}</span> missing in active rentals — each blocks its own gate.
+              </p>
             </div>
           </Card>
 
-          <Card title="Expiring Soon">
+          {/* §9 — the render only counts what is expiring. This says what.
+              §14 — the list is role-filtered like every other panel here, so a
+              Warehouse session is never told a quotation exists. */}
+          <Card title="Expiring / Due Soon">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-              {EXPIRING.map((e) => (
+              {expiring.map((e) => (
                 <div key={e.doc} style={{ fontSize: 'var(--t-meta)' }}>
                   <span style={{ display: 'block', color: 'var(--text)', fontWeight: 600 }}>{e.doc}</span>
-                  {/* §9 — say *what* expires, not just that something does. */}
-                  <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                    {e.what} <span style={{ color: 'var(--progress-text)', fontWeight: 600 }}>{e.when}</span>
+                  <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--text2)' }}>
+                    {e.what} <span style={{ color: 'var(--progress-text)', fontWeight: 700 }}>{e.when}</span>
                   </span>
+                  <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{e.action}</span>
                 </div>
               ))}
             </div>
           </Card>
 
-          <div style={{ ...cardStyle, padding: 12, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
-            Documents are archived, never deleted — there is no recycle bin. The row menu holds{' '}
-            {MORE_ACTIONS.length + 4} actions ending in Archive.
-          </div>
+          <Card title="Quick Actions" bodyStyle={{ padding: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(quickActions.length, 4)}, minmax(0,1fr))`, gap: 7 }}>
+              {quickActions.map((q) => (
+                <button
+                  key={q.label}
+                  type="button"
+                  disabled
+                  title={`${q.label} — ${NOT_BUILT}`}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '10px 4px',
+                    borderRadius: 10,
+                    border: '1px solid var(--border)',
+                    background: 'var(--card2)',
+                    color: 'var(--disabled)',
+                    fontSize: 'var(--t-th)',
+                    fontWeight: 600,
+                    fontFamily: 'inherit',
+                    cursor: 'not-allowed',
+                    textAlign: 'center',
+                    lineHeight: 1.25,
+                  }}
+                >
+                  <Icon name={q.icon} size={17} />
+                  {q.label}
+                </button>
+              ))}
+            </div>
+
+            {/* The one tile with somewhere real to go. */}
+            <button
+              type="button"
+              onClick={() => pickCategory('Templates')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 7,
+                width: '100%',
+                height: 34,
+                marginTop: 8,
+                borderRadius: 'var(--r-btn)',
+                border: '1px solid var(--btn-secondary-border)',
+                background: 'var(--btn-secondary-bg)',
+                color: 'var(--text)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: 600,
+                fontFamily: 'inherit',
+                cursor: 'pointer',
+              }}
+            >
+              <Icon name="checklist" size={14} />
+              Document Templates
+            </button>
+
+            <p style={{ margin: '8px 2px 0', fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.45 }}>
+              Creating and uploading documents needs storage, which is unwired — the tiles stay visible and say so.
+            </p>
+          </Card>
         </Rail>
       </div>
 
-      <FooterNote extra={['A document exists once and is linked wherever needed']} />
+      <FooterNote
+        extra={[
+          'A document exists once and is linked wherever needed',
+          ARCHIVED_NOT_RECYCLE_BIN,
+          'Category counts are installation totals; the table lists the seeded sample',
+        ]}
+      />
     </div>
   )
 }

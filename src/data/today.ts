@@ -1,9 +1,11 @@
 import type { AlertRow, Movement, HoverFacts } from '../types/today'
 import type { Kpi } from '../components/ui/Page'
+import type { BrandKey } from '../lib/status'
 import { statusToken, STATUS_ORDER } from '../lib/workflow'
-import type { Flag } from '../lib/workflow'
+import type { BookingStatus, Flag } from '../lib/workflow'
 import { TODAY, toBs, formatBs, eachDay } from '../lib/bs'
-import { clockPad, rs } from '../lib/format'
+import { clockPad } from '../lib/format'
+import { formatMoney, rupees } from '../lib/money'
 
 /**
  * Today Operations seed data.
@@ -51,17 +53,41 @@ export const TODAY_DATE = {
 export const NOW = 9 * 60 + 40
 
 /**
- * Avatar fills. Named here rather than typed as hexes at each row, and
- * deliberately **purple-free**: §14 reserves purple for the Utilization KPI,
- * and four rows were carrying `#4c1d95` — a purple the token layer never sees,
- * so it survived a sweep that only looked for `--purple`.
+ * A seeded rupee figure, rendered by the Financial Engine.
+ *
+ * These used to call `lib/format`'s `rs()`, which carries its own copy of the
+ * lakh-grouping code. `lib/money` §11: *"every drift found in this project came
+ * from one of the four [engines] being reimplemented locally"*, and every
+ * amount in the product is supposed to pass through `formatMoney`. Output is
+ * byte-identical either way today — which is exactly how the two would drift
+ * apart unnoticed.
+ */
+const amount = (rupeeValue: number) => formatMoney(rupees(rupeeValue))
+
+/**
+ * Avatar fills. Named here rather than typed as hexes at each row.
+ *
+ * §4.2's five-colour law bans **purple, violet, cyan, teal and indigo
+ * outright**, and this map had broken it twice: four rows once carried the
+ * render's `#4c1d95` violet, and `teal: '#134e4a'` (a blue-green) survived the
+ * sweep that removed it because a sweep looking for `--purple` never sees a
+ * literal. Both are gone; `moss` is a dark green, which is one of the five.
+ *
+ * TODO(decision) — PLAN.md §4: these are still raw hexes, which Foundation
+ * §4.2 also forbids. They cannot be tokens as things stand: an avatar is a
+ * solid dark disc carrying white text in **both** themes, and every fill token
+ * in `theme.css` inverts between them. `data/rentals.ts` solved the same
+ * problem differently — `avatarTone: StatusKey`, a soft tint with token text —
+ * and the two screens should not disagree. Either extend the token layer with
+ * a theme-invariant avatar ramp, or move this screen onto the Rentals pattern.
+ * Both are visual decisions with an owner; neither is mine to pick.
  */
 const AV = {
   ink: '#1a1a1a',
   slate: '#1e293b',
   navy: '#0f2942',
   steel: '#1e3a5f',
-  teal: '#134e4a',
+  moss: '#14532d',
 } as const
 
 /* ── §4 · the one movements query ──────────────────────────────────────── */
@@ -74,7 +100,7 @@ export const MOVEMENTS: Movement[] = [
   M({ id: 'm02', kind: 'Pickup', at: 7 * 60, client: 'Kathmandu Post', avatar: ['KTM', 'POST'], avatarBg: AV.slate, bookingNo: 'BK-2026-0702', category: 'News Desk', kit: 'Sony A7S III Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Hari', due: 'Due: 1 Aug, 06:00 AM', complete: true }),
   M({ id: 'm03', kind: 'Pickup', at: 7 * 60 + 30, client: 'Sagarmatha TV', avatar: ['SGM', 'TV'], avatarBg: AV.ink, bookingNo: 'BK-2026-0703', category: 'Broadcast', kit: 'Canon C70 Package', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Sanu', due: 'Due: 3 Aug, 06:00 AM', complete: true }),
   M({ id: 'm04', kind: 'Delivery', at: 8 * 60, client: 'Himalaya Broadcast', avatar: ['HIM', 'BCAST'], avatarBg: AV.steel, bookingNo: 'BK-2026-0704', category: 'Live Event', kit: 'Sennheiser Audio Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Delivery: Bikash', due: 'Due: 2 Aug, 06:00 AM', complete: true }),
-  M({ id: 'm05', kind: 'Pickup', at: 8 * 60 + 30, client: 'Nepal Film Dev', avatar: ['NFD', 'BOARD'], avatarBg: AV.teal, bookingNo: 'BK-2026-0705', category: 'Feature Film', kit: 'DJI Ronin 4D', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Ramesh', due: 'Due: 5 Aug, 06:00 AM', complete: true }),
+  M({ id: 'm05', kind: 'Pickup', at: 8 * 60 + 30, client: 'Nepal Film Dev', avatar: ['NFD', 'BOARD'], avatarBg: AV.moss, bookingNo: 'BK-2026-0705', category: 'Feature Film', kit: 'DJI Ronin 4D', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Ramesh', due: 'Due: 5 Aug, 06:00 AM', complete: true }),
   M({ id: 'm06', kind: 'Pickup', at: 9 * 60, client: 'ABC Films', avatar: ['ABC', 'FILMS'], avatarBg: AV.ink, bookingNo: 'BK-2026-0715', category: 'Commercial Shoot', kit: 'RED Komodo X Package', kitStatus: 'primary', status: 'Packed', flags: ['VIP'], staff: 'Pickup: Ramesh', due: 'Due: 2 Aug, 06:00 AM' }),
   M({ id: 'm07', kind: 'Pickup', at: 9 * 60 + 30, client: 'Lumbini Studios', avatar: ['LUM', 'STUDIO'], avatarBg: AV.navy, bookingNo: 'BK-2026-0706', category: 'Music Video', kit: 'Godox Strobe Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Hari', due: 'Due: 1 Aug, 06:00 AM', complete: true }),
   M({ id: 'm08', kind: 'Pickup', at: 10 * 60 + 30, client: 'Creative Studio', avatar: ['CS', 'STUDIO'], avatarBg: AV.slate, bookingNo: 'BK-2026-0716', category: 'Music Video', kit: 'Sony FX6 Kit', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Pickup: Hari', due: 'Due: 1 Aug, 06:00 AM', notReset: 2 }),
@@ -82,17 +108,17 @@ export const MOVEMENTS: Movement[] = [
   M({ id: 'm10', kind: 'Pickup', at: 12 * 60, client: 'Mountain Stories', avatar: ['MTN', 'STORIES'], avatarBg: AV.navy, bookingNo: 'BK-2026-0717', category: 'Documentary', kit: 'Ronin 4D 6K Package', kitStatus: 'primary', status: 'Packed', flags: [], staff: 'Pickup: Sanu', due: 'Due: 3 Aug, 06:00 AM' }),
   M({ id: 'm11', kind: 'Pickup', at: 13 * 60 + 30, client: 'Annapurna Films', avatar: ['ANP', 'FILMS'], avatarBg: AV.ink, bookingNo: 'BK-2026-0719', category: 'Feature Film', kit: 'Zeiss CP.3 Prime Set', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Pickup: Ramesh', due: 'Due: 6 Aug, 06:00 AM', notReset: 1 }),
   M({ id: 'm12', kind: 'Delivery', at: 14 * 60, client: 'Bagmati Broadcast', avatar: ['BGM', 'BCAST'], avatarBg: AV.slate, bookingNo: 'BK-2026-0720', category: 'Live Event', kit: 'Lighting Truss Package', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Delivery: Bikash', due: 'Due: 2 Aug, 06:00 AM' }),
-  M({ id: 'm13', kind: 'Pickup', at: 15 * 60, client: 'Inside Out Films', avatar: ['IO', 'FILMS'], avatarBg: AV.teal, bookingNo: 'BK-2026-0721', category: 'Short Film', kit: 'Ronin 4D Handheld Kit', kitStatus: 'primary', status: 'Packed', flags: [], staff: 'Pickup: Sanu', due: 'Due: 3 Aug, 06:00 AM' }),
+  M({ id: 'm13', kind: 'Pickup', at: 15 * 60, client: 'Inside Out Films', avatar: ['IO', 'FILMS'], avatarBg: AV.moss, bookingNo: 'BK-2026-0721', category: 'Short Film', kit: 'Ronin 4D Handheld Kit', kitStatus: 'primary', status: 'Packed', flags: [], staff: 'Pickup: Sanu', due: 'Due: 3 Aug, 06:00 AM' }),
   M({ id: 'm14', kind: 'Pickup', at: 16 * 60 + 30, client: 'Studio Nine', avatar: ['S9', 'STUDIO'], avatarBg: AV.steel, bookingNo: 'BK-2026-0722', category: 'Fashion Shoot', kit: 'Blackmagic URSA Kit', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Pickup: Hari', due: 'Due: 4 Aug, 06:00 AM' }),
 
   // ── returns ───────────────────────────────────────────────────────────
   M({ id: 'm15', kind: 'Return', at: 11 * 60 + 30, client: 'Mountain Stories', avatar: ['MS', 'FILMS'], avatarBg: AV.ink, bookingNo: 'BK-2026-0709', category: 'Documentary', kit: 'Sony FX6 Package', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '1 day late', staff: 'Returned by Hari' }),
   M({ id: 'm16', kind: 'Return', at: 12 * 60 + 30, client: 'Trishuli Media', avatar: ['TRI', 'MEDIA'], avatarBg: AV.navy, bookingNo: 'BK-2026-0723', category: 'Web Series', kit: 'Aputure 300D Kit', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '2 days late', staff: 'Returned by Sanu' }),
   M({ id: 'm17', kind: 'Return', at: 13 * 60, client: 'Vision Production', avatar: ['VP', 'PROD'], avatarBg: AV.steel, bookingNo: 'BK-2026-0710', category: 'TV Show', kit: 'NISI Athena Set', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], statusNote: 'Due today', staff: 'Returned by Sanu' }),
-  M({ id: 'm18', kind: 'Return', at: 14 * 60 + 30, client: 'Inside Out Films', avatar: ['IO', 'FILMS'], avatarBg: AV.teal, bookingNo: 'BK-2026-0711', category: 'Short Film', kit: 'Aputure 600D Pro Kit', kitStatus: 'in', status: 'Returned', flags: [], staff: 'ETA: 04:00 PM' }),
+  M({ id: 'm18', kind: 'Return', at: 14 * 60 + 30, client: 'Inside Out Films', avatar: ['IO', 'FILMS'], avatarBg: AV.moss, bookingNo: 'BK-2026-0711', category: 'Short Film', kit: 'Aputure 600D Pro Kit', kitStatus: 'in', status: 'Returned', flags: [], staff: 'ETA: 04:00 PM' }),
   M({ id: 'm19', kind: 'Return', at: 15 * 60, client: 'Chitwan Films', avatar: ['CHT', 'FILMS'], avatarBg: AV.slate, bookingNo: 'BK-2026-0712', category: 'Wildlife Doc', kit: 'Sachtler Tripod Set', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Bikash' }),
   M({ id: 'm20', kind: 'Return', at: 15 * 60 + 30, client: 'Dolpo Docs', avatar: ['DLP', 'DOCS'], avatarBg: AV.ink, bookingNo: 'BK-2026-0724', category: 'Documentary', kit: 'Sony FX3 Body', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '3 days late', staff: 'Returned by Hari' }),
-  M({ id: 'm21', kind: 'Return', at: 16 * 60, client: 'Newa Cinema', avatar: ['NEW', 'CINEMA'], avatarBg: AV.teal, bookingNo: 'BK-2026-0725', category: 'Feature Film', kit: 'Zhiyun Gimbal Kit', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Sanu' }),
+  M({ id: 'm21', kind: 'Return', at: 16 * 60, client: 'Newa Cinema', avatar: ['NEW', 'CINEMA'], avatarBg: AV.moss, bookingNo: 'BK-2026-0725', category: 'Feature Film', kit: 'Zhiyun Gimbal Kit', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Sanu' }),
   M({ id: 'm22', kind: 'Return', at: 16 * 60 + 30, client: 'Terai Television', avatar: ['TRI', 'TV'], avatarBg: AV.navy, bookingNo: 'BK-2026-0726', category: 'Broadcast', kit: 'LED Panel Set', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '1 day late', staff: 'Returned by Bikash' }),
   M({ id: 'm23', kind: 'Return', at: 17 * 60, client: 'Gandaki Media', avatar: ['GND', 'MEDIA'], avatarBg: AV.steel, bookingNo: 'BK-2026-0727', category: 'Corporate Film', kit: 'Canon RF Lens Set', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Ramesh' }),
   M({ id: 'm24', kind: 'Return', at: 17 * 60 + 30, client: 'Rara Pictures', avatar: ['RARA', 'PIX'], avatarBg: AV.slate, bookingNo: 'BK-2026-0728', category: 'Short Film', kit: 'Audio Recorder Kit', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Hari' }),
@@ -140,12 +166,25 @@ const MOVE_DONE_YESTERDAY = 4
 export const THROUGHPUT = `${MOVE_DONE} of ${MOVE_TOTAL} movements completed today · ${MOVE_DONE_YESTERDAY} at this hour yesterday`
 
 /*
- * Revenue Today, money-at-risk, Utilization and crew load used to live here.
- * **Foundation v2.0 §5.2 removed them from this page**: "Today = today's jobs
- * only… No money KPIs. No charts. Revenue and utilization live in Reports."
- * They are not commented out — a commented KPI is a KPI waiting to come back.
- * Their home is Reports ▸ Pulse (§5.3), whose locked card order is
- * Revenue · Cash · Utilization · Exceptions.
+ * ⚠ TODO(decision) — PLAN.md §4: **Revenue Today and Utilization are back on
+ * this page and Foundation says they should not be.**
+ *
+ * Foundation Specification §5.2, verbatim: "Today = today's jobs only. Pickups,
+ * returns, alerts. A thin count strip — pickups · returns · overdue · alerts.
+ * **No money KPIs. No charts.** Revenue and utilization live in Reports." That
+ * is why `COUNTS` below exists and why `dashboardKpis` did not.
+ *
+ * `Dashboard.PNG` is the older generation and shows six KPI cards including
+ * both, and the page was rebuilt to match it, so `dashboardKpis` now returns
+ * them to any role that may see money — an Owner reads "Revenue Today
+ * Rs 1,85,000" on Today. Warehouse is unaffected either way (§8.3 removes both
+ * cards structurally), so this is not a leak; it is a spec conflict, and
+ * CLAUDE.md says Foundation wins over a module render.
+ *
+ * Someone has to settle it: either the render supersedes §5.2 for this screen,
+ * or Revenue and Utilization come off Today for every role and `COUNTS`
+ * replaces the six cards. Until then both shapes are in this file and only
+ * `dashboardKpis` is rendered.
  */
 
 /* ── §8 alerts ─────────────────────────────────────────────────────────── */
@@ -159,14 +198,33 @@ export const THROUGHPUT = `${MOVE_DONE} of ${MOVE_TOTAL} movements completed tod
  */
 export const ALERTS: AlertRow[] = [
   { icon: 'error', statusKey: 'danger', title: 'Battery Overdue', detail: 'FX3 Battery #B123 is 3 days overdue', right: '3 days ago', rightTone: 'danger', action: 'Open Booking', to: '/rentals/BK-2026-0709', priority: 'Critical' },
-  { icon: 'invoice', statusKey: 'danger', title: 'Invoice Unpaid', detail: 'Invoice #INV-1021 is unpaid', right: rs(48000), rightTone: 'danger', action: 'Receive Payment', to: '/finance', priority: 'Critical' },
-  { icon: 'alert_triangle', statusKey: 'progress', title: 'Equipment Missing', detail: 'SmallRig Cage for Komodo', right: 'Since 2 days', rightTone: 'progress', action: 'Open Item', to: '/inventory', priority: 'Critical' },
   { icon: 'tool', statusKey: 'progress', title: 'Inspection Pending', detail: 'NISI 50mm T1.9 needs inspection', right: 'Due today', rightTone: 'progress', action: 'Open Inspection', to: '/operations', priority: 'Critical' },
+  { icon: 'invoice', statusKey: 'danger', title: 'Invoice Unpaid', detail: 'Invoice #INV-1021 is unpaid', right: amount(48000), rightTone: 'danger', action: 'Receive Payment', to: '/finance', priority: 'Critical' },
+  { icon: 'alert_triangle', statusKey: 'progress', title: 'Equipment Missing', detail: 'SmallRig Cage for Komodo', right: 'Since 2 days', rightTone: 'progress', action: 'Open Item', to: '/inventory', priority: 'Critical' },
   { icon: 'calendar_stats', statusKey: 'neutral', title: 'Maintenance Due', detail: 'Generator Honda EU30i service due', right: 'In 2 days', rightTone: 'neutral', action: 'Open Maintenance', to: '/inventory', priority: 'Critical' },
   { icon: 'package', statusKey: 'primary', title: 'Inspection Pending', detail: 'Sachtler head returned with play', right: 'In 3 days', rightTone: 'neutral', action: 'Open Inspection', to: '/operations', priority: 'High' },
 ]
 
 export const CRITICAL_ALERTS = ALERTS.filter((a) => a.priority === 'Critical')
+
+/**
+ * Foundation §8.3 — **Warehouse sees no money, anywhere.**
+ *
+ * An alert that carries a rupee figure, or whose primary action is a money
+ * action, is money. For a role that cannot see money the alert is **removed**
+ * from the list rather than masked: a row reading "Invoice Unpaid — Required"
+ * still tells a warehouse hand there is an unpaid invoice, and §8.3 asks for
+ * structural absence, not redaction.
+ */
+const carriesMoney = (a: AlertRow) => a.right.startsWith('Rs') || a.action === 'Receive Payment'
+
+/** The alerts a role may see, at Critical priority — the Alerts column. */
+export const criticalAlertsFor = (money: boolean) =>
+  money ? CRITICAL_ALERTS : CRITICAL_ALERTS.filter((a) => !carriesMoney(a))
+
+/** Everything below Critical the same role may see — the "+ N more" footer. */
+export const lesserAlertsFor = (money: boolean) =>
+  ALERTS.filter((a) => a.priority !== 'Critical' && (money || !carriesMoney(a)))
 
 /* ── v2.0 §5.2 · the count strip ───────────────────────────────────────── */
 
@@ -190,14 +248,53 @@ export const COUNTS = [
   { label: 'Alerts', value: CRITICAL_ALERTS.length, tone: 'danger', to: '/operations' },
 ] as const
 
-export const DASHBOARD_KPIS: Kpi[] = [
-  { label: 'Active Rentals', value: '52', icon: 'briefcase', accent: 'primary', delta: { direction: 'up', text: '6 from yesterday', good: true } },
-  { label: 'Pickups Today', value: '14', icon: 'truck', accent: 'primary', note: '8 pending • 6 completed' },
-  { label: 'Returns Today', value: '11', icon: 'return_arrow', accent: 'progress', note: '4 overdue • 7 expected' },
-  { label: 'Revenue Today', value: 'Rs 185,000', icon: 'dollar', accent: 'success', delta: { direction: 'up', text: '18% vs yesterday', good: true } },
-  { label: 'Utilization', value: '84%', icon: 'chart', accent: 'primary', note: 'Top 10 assets' },
-  { label: 'Critical Alerts', value: '5', icon: 'alert_triangle', accent: 'danger', note: 'Requires attention' },
-]
+/** Seed figures the movements array cannot derive. Replaced by the query. */
+export const ACTIVE_RENTALS = 52
+export const REVENUE_TODAY_PAISA = rupees(185000)
+export const UTILIZATION_PCT = 84
+
+/**
+ * The six KPI cards, in the Dashboard render's order:
+ * Active Rentals · Pickups · Returns · Revenue · Utilization · Critical Alerts.
+ *
+ * Every count is **derived** from `MOVEMENTS` / `ALERTS` rather than typed, so
+ * §5.8's "card counts must equal the panel counts" cannot drift.
+ *
+ * Foundation §8.3 — the two business cards, Revenue and Utilization, are not in
+ * the array at all for a role that cannot see money. They are not blurred, not
+ * masked and not disabled: the card does not exist, and the strip closes up to
+ * four columns. Revenue is money outright; Utilization is the yield figure the
+ * revenue number is read against, and §5.2 files both under Reports, which
+ * Warehouse cannot reach.
+ */
+export function dashboardKpis(money: boolean): Kpi[] {
+  const cards: Kpi[] = [
+    { label: 'Active Rentals', value: String(ACTIVE_RENTALS), icon: 'briefcase', accent: 'primary', delta: { direction: 'up', text: '6 from yesterday', good: true } },
+    { label: 'Pickups Today', value: String(PICKUPS.length), icon: 'truck', accent: 'primary', note: `${PICKUP_PENDING} pending • ${PICKUP_DONE} completed` },
+    { label: 'Returns Today', value: String(RETURNS.length), icon: 'return_arrow', accent: 'progress', note: `${RETURN_OVERDUE} overdue • ${RETURN_EXPECTED} expected` },
+  ]
+
+  if (money) {
+    cards.push(
+      // Rendered through the money engine, so it groups in lakhs — the render's
+      // "Rs 185,000" is western grouping, which Foundation §02 does not use.
+      { label: 'Revenue Today', value: formatMoney(REVENUE_TODAY_PAISA), icon: 'dollar', accent: 'success', delta: { direction: 'up', text: '18% vs yesterday', good: true } },
+      // The render tints this tile purple; §4.2's five-colour law bans purple
+      // outright, so it wears the same blue as the other commercial figures.
+      { label: 'Utilization', value: `${UTILIZATION_PCT}%`, icon: 'chart', accent: 'primary', note: 'Top 10 assets' },
+    )
+  }
+
+  cards.push({
+    label: 'Critical Alerts',
+    value: String(criticalAlertsFor(money).length),
+    icon: 'alert_triangle',
+    accent: 'danger',
+    note: 'Requires attention',
+  })
+
+  return cards
+}
 
 /* ── §4 / §5.8 invariants — asserted, not documented ───────────────────── */
 
@@ -243,8 +340,8 @@ export const HOVER: Record<string, HoverFacts> = {
   'BK-2026-0715': {
     project: 'Daraz Dashain TVC',
     duration: '31 Jul → 2 Aug 2026 · 3 days',
-    deposit: `${rs(50000)} held`,
-    payment: `${rs(15000)} of ${rs(139506)} · ${rs(124506)} outstanding`,
+    deposit: `${amount(50000)} held`,
+    payment: `${amount(15000)} of ${amount(139506)} · ${amount(124506)} outstanding`,
     equipment: '18 items · FX3 Documentary Package',
     documents: 'Quotation · Agreement signed',
     staff: 'Ramesh Shrestha (pickup) · Sanu Maharjan (packing)',
@@ -253,8 +350,8 @@ export const HOVER: Record<string, HoverFacts> = {
   'BK-2026-0709': {
     project: 'Annapurna Circuit — Ep. 4',
     duration: '26 Jul → 30 Jul 2026 · 5 days',
-    deposit: `${rs(35000)} held`,
-    payment: `${rs(88000)} of ${rs(88000)} · settled`,
+    deposit: `${amount(35000)} held`,
+    payment: `${amount(88000)} of ${amount(88000)} · settled`,
     equipment: '12 items · Sony FX6 Package',
     documents: 'Invoice INV-1018 · Delivery note',
     staff: 'Hari Bhandari (return)',
@@ -313,12 +410,35 @@ export interface CalDay {
   ad: number
   /** Absent when the Date Engine cannot vouch for this day. */
   bs?: number
+  /** `2026-07-31` — the key the Calendar's `?d=` takes. Generated, never built. */
+  iso: string
 }
 
-export const CAL_DAYS: CalDay[] = eachDay(new Date(Date.UTC(2026, 6, 1)), 31).map((d) => {
+/** A UTC-midnight day → its ISO key. The engine's days are already UTC midnight. */
+const isoDay = (d: Date) => d.toISOString().slice(0, 10)
+
+/**
+ * 1 Jul → 1 Aug 2026 — the grid's 31 days **plus one**, so the card's ◀ / ▶
+ * controls can read their neighbours out of the same generated range.
+ *
+ * They used to add and subtract from the day *number*: `CAL_TODAY_AD + 1` on
+ * 31 July produced `/calendar?d=2026-07-32`, a date that does not exist, and it
+ * would have done so on the last day of every month. Day arithmetic is Date
+ * Engine territory (`eachDay`), not a page's to hand-roll.
+ */
+const MONTH_RANGE = eachDay(new Date(Date.UTC(2026, 6, 1)), 32)
+
+export const CAL_DAYS: CalDay[] = MONTH_RANGE.slice(0, 31).map((d) => {
   const bs = toBs(d)
-  return bs ? { ad: d.getUTCDate(), bs: bs.day } : { ad: d.getUTCDate() }
+  return bs ? { ad: d.getUTCDate(), bs: bs.day, iso: isoDay(d) } : { ad: d.getUTCDate(), iso: isoDay(d) }
 })
+
+const TODAY_INDEX = MONTH_RANGE.findIndex((d) => d.getTime() === TODAY.getTime())
+
+/** Today, and the two days either side of it, as `?d=` keys. */
+export const CAL_TODAY_ISO = isoDay(TODAY)
+export const CAL_PREV_ISO = isoDay(MONTH_RANGE[TODAY_INDEX - 1] ?? TODAY)
+export const CAL_NEXT_ISO = isoDay(MONTH_RANGE[TODAY_INDEX + 1] ?? TODAY)
 
 /**
  * Days carrying movements. Today's marker is derived from `MOVEMENTS` so the
@@ -329,8 +449,14 @@ export const CAL_EVENT_DAYS = [...new Set([3, 8, 14, 22, 27, ...(MOVEMENTS.lengt
 
 /* ── §11 filters ───────────────────────────────────────────────────────── */
 
-/** §11 period chips — the locked seven. */
-export const PERIOD_CHIPS = ['Today', 'Tomorrow', 'Next 7 Days', 'This Week', 'Next Month', 'Custom', 'All']
+/**
+ * §11 period chips — the locked seven, in the Dashboard render's order
+ * (All first, Custom last, with its own calendar affordance).
+ */
+export const PERIOD_CHIPS = ['All', 'Today', 'Tomorrow', 'Next 7 Days', 'This Week', 'Next Month', 'Custom']
+
+/** The chip the render draws separately, behind a divider and an icon. */
+export const CUSTOM_CHIP = 'Custom'
 
 /** The twelve Foundation stages in workflow order, for §11's Status group. */
 const STAGE_NAMES = [...STATUS_ORDER]
@@ -390,10 +516,38 @@ export function filterMovements(rows: Movement[], period: string, picked: string
   return rows.filter((m) => live.some((f) => f(m)))
 }
 
+/**
+ * The calendar card's day list (§4 again — it is a *view* of the same rows the
+ * two columns render, merged back into one chronological day, never a second
+ * fetch and never a second set of times).
+ */
+export const mergeByTime = (...lists: Movement[][]): Movement[] =>
+  lists.flat().sort((a, b) => a.at - b.at)
+
 /* ── display helpers ───────────────────────────────────────────────────── */
 
 /** §6 — "Time on one line, not stacked." Derived from `at`, never typed. */
 export const timeOf = (m: Movement) => clockPad(m.at)
+
+/**
+ * The solid dot colour a movement wears on the Timeline and in the calendar's
+ * day list. One map, read by both, so the same booking cannot be a different
+ * colour in two panels that sit side by side.
+ *
+ * §4.2's five-colour law: purple is not a `BrandKey` value used here, so the
+ * render's purple "Inspection" dot resolves to the Returned tone instead.
+ */
+const STATUS_DOT: Record<BookingStatus, BrandKey> = {
+  Quote: 'neutral',
+  Booked: 'primary',
+  Packed: 'progress',
+  'On Rent': 'success',
+  Returned: 'progress',
+  Closed: 'neutral',
+}
+
+/** §1.9 — Overdue is Critical and outranks the status wherever it appears. */
+export const dotTone = (m: Movement): BrandKey => (has(m, 'Overdue') ? 'danger' : STATUS_DOT[m.status])
 
 /** Status text for a movement: the Foundation stage, never an invented word. */
 export const statusKeyOf = (m: Movement) =>

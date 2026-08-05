@@ -5,6 +5,7 @@ import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { useToast } from '../../components/ui/Toast'
 import { parseMoney, rupees } from '../../lib/money'
+import { useCanViewMoney } from '../today/useMoneyVisibility'
 import type { ClientRecord, ClientType, MembershipTier } from '../../data/clients'
 
 interface AddClientModalProps {
@@ -33,6 +34,12 @@ const MEMBERSHIP_TIERS = [
 
 export function AddClientModal({ isOpen, onClose, onClientAdded }: AddClientModalProps) {
   const { showSuccessToast } = useToast()
+  /**
+   * §8.3 — the credit-limit field is a rupee field. For a role that may not see
+   * money it is **absent from the form**, and the new client starts on the plan
+   * default (Rs 0) until someone who may set a limit sets one.
+   */
+  const money = useCanViewMoney()
 
   const [name, setName] = useState('')
   const [company, setCompany] = useState('')
@@ -70,7 +77,7 @@ export function AddClientModal({ isOpen, onClose, onClientAdded }: AddClientModa
     e.preventDefault()
     if (!validate()) return
 
-    const parsedCredit = parseMoney(creditLimit) ?? rupees(100000)
+    const parsedCredit = money ? (parseMoney(creditLimit) ?? rupees(100000)) : rupees(0)
 
     const newRecord: ClientRecord = {
       id: `CL-2026-${String(Math.floor(Math.random() * 9000) + 1000)}`,
@@ -114,7 +121,11 @@ export function AddClientModal({ isOpen, onClose, onClientAdded }: AddClientModa
       isOpen={isOpen}
       onClose={onClose}
       title="Register New Client"
-      subtitle="Create a client profile, set membership tier, assign credit limits, and capture KYC documentation."
+      subtitle={
+        money
+          ? 'Create a client profile, set membership tier, assign credit limits, and capture KYC documentation.'
+          : 'Create a client profile, set membership tier, and capture KYC documentation.'
+      }
       size="lg"
       footer={
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, width: '100%' }}>
@@ -191,8 +202,8 @@ export function AddClientModal({ isOpen, onClose, onClientAdded }: AddClientModa
           />
         </div>
 
-        {/* Row 4: PAN & Credit Limit */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        {/* Row 4: PAN & Credit Limit — the limit is absent for a money-blind role. */}
+        <div style={{ display: 'grid', gridTemplateColumns: money ? '1fr 1fr' : '1fr', gap: 16 }}>
           <Input
             label="PAN Number (9 Digits)"
             placeholder="601928473"
@@ -203,12 +214,14 @@ export function AddClientModal({ isOpen, onClose, onClientAdded }: AddClientModa
             }}
             error={errors.pan ?? null}
           />
-          <Input
-            label="Approved Credit Limit (Rs)"
-            placeholder="1,00,000"
-            value={creditLimit}
-            onChange={(e) => setCreditLimit(e.target.value)}
-          />
+          {money && (
+            <Input
+              label="Approved Credit Limit (Rs)"
+              placeholder="1,00,000"
+              value={creditLimit}
+              onChange={(e) => setCreditLimit(e.target.value)}
+            />
+          )}
         </div>
 
         {/* Row 5: Physical Address */}

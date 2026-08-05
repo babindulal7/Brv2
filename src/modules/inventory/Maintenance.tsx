@@ -1,11 +1,37 @@
-import { useState, useMemo } from 'react'
-import { Card } from '../../components/ui/Card'
-import { Button } from '../../components/ui/Button'
-import { Input } from '../../components/ui/Input'
+import { useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
+import Icon from '../../components/ui/Icon'
+import type { IconName } from '../../components/ui/Icon'
+import { Card, Button, KpiStrip } from '../../components/ui/Page'
+import type { Kpi } from '../../components/ui/Page'
 import { EmptyState } from '../../components/ui/StateViews'
-import { useToast } from '../../components/ui/Toast'
+import { STATUS } from '../../lib/status'
+import type { StatusKey } from '../../lib/status'
 import { formatMoney, rupees, type Paisa } from '../../lib/money'
-import { IconSearch, IconPlus, IconDownload, IconTool, IconShieldCheck, IconAlertCircle, IconClock } from '@tabler/icons-react'
+import { toBs, formatBs, formatAd, TODAY } from '../../lib/bs'
+import { useCanViewMoney } from '../today/useMoneyVisibility'
+
+/**
+ * **Maintenance** — the Inventory workspace's fourth tab (Foundation §5.1).
+ *
+ * Rewritten 6 Aug for three defects:
+ *
+ *  1. **Invisible chrome.** `components/ui/Card`, `Button` and `Input` are
+ *     written in Tailwind classes and no stylesheet in this app imports
+ *     Tailwind, so every one of them computed to a transparent, padding-less
+ *     box. Rebuilt on `theme.css` tokens like the rest of the workspace.
+ *  2. **A money leak.** The Cost column and the "Total Cost (This Month)" tile
+ *     rendered for every role, including the Warehouse session this build signs
+ *     in as. §8.3 makes money *structurally absent*, so both are omitted.
+ *  3. **A banned colour.** `At Vendor` was painted `var(--purple)` — a hue §4.2
+ *     bans, and a token `theme.css` does not even define, so it resolved to
+ *     nothing. It now takes the gold *outline* §4.2 reserves for equipment in an
+ *     external party's hands, which is exactly what At Vendor means.
+ *
+ * Dates are stored AD and rendered through `lib/bs`; no BS arithmetic is done
+ * here (Foundation §2 — BS is rendered, never stored).
+ */
 
 type MaintenanceStatus = 'Scheduled' | 'In Progress' | 'Waiting Parts' | 'At Vendor' | 'Completed' | 'Cancelled'
 type MaintenanceFlag = 'Overdue' | 'Warranty' | 'Blocked Booking' | 'Awaiting Approval'
@@ -22,27 +48,26 @@ interface MaintenanceRecord {
   flags: MaintenanceFlag[]
   technician?: string
   vendor?: string
-  estCompletionBs?: string
-  estCompletionAd?: string
-  daysUntilCompletion?: number
+  /** AD, UTC. BS is derived at render time. */
+  estCompletion?: Date
   costEstPaisa: Paisa
   costActualPaisa?: Paisa
   bookingImpact?: string
 }
 
+const ad = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d))
+
 const MAINTENANCE_DATA: MaintenanceRecord[] = [
   {
     id: 'MNT-1042',
     equipmentName: 'RED Komodo X Brain',
-    serialNumber: 'SN-Rkx-001',
+    serialNumber: 'SN-RKX-001',
     type: 'Repair',
     priority: 'Critical',
     status: 'In Progress',
     flags: ['Overdue', 'Warranty', 'Blocked Booking'],
     technician: 'Ramesh Dulal',
-    estCompletionBs: '2083/04/10',
-    estCompletionAd: '25 Jul 2026',
-    daysUntilCompletion: -2,
+    estCompletion: ad(2026, 7, 25),
     costEstPaisa: rupees(0),
     bookingImpact: 'BK-2026-0715',
   },
@@ -55,9 +80,7 @@ const MAINTENANCE_DATA: MaintenanceRecord[] = [
     status: 'At Vendor',
     flags: ['Awaiting Approval'],
     vendor: 'ARRI Service Center',
-    estCompletionBs: '2083/04/15',
-    estCompletionAd: '30 Jul 2026',
-    daysUntilCompletion: 3,
+    estCompletion: ad(2026, 8, 3),
     costEstPaisa: rupees(15000),
   },
   {
@@ -69,27 +92,180 @@ const MAINTENANCE_DATA: MaintenanceRecord[] = [
     status: 'Waiting Parts',
     flags: [],
     technician: 'Hari Shrestha',
-    estCompletionBs: '2083/04/20',
-    estCompletionAd: '04 Aug 2026',
-    daysUntilCompletion: 8,
+    estCompletion: ad(2026, 8, 8),
     costEstPaisa: rupees(3000),
     costActualPaisa: rupees(3500),
-  }
+  },
 ]
 
 type FilterKey = MaintenanceStatus | MaintenanceFlag | 'All'
 
+const STATUS_CHIPS: Array<{ label: FilterKey; count: number }> = [
+  { label: 'All', count: 86 },
+  { label: 'Scheduled', count: 12 },
+  { label: 'In Progress', count: 8 },
+  { label: 'Waiting Parts', count: 6 },
+  { label: 'At Vendor', count: 4 },
+  { label: 'Completed', count: 54 },
+  { label: 'Cancelled', count: 2 },
+]
+
+const CHIP_TOTAL = STATUS_CHIPS.find((c) => c.label === 'All')?.count ?? 0
+const CHIP_SUM = STATUS_CHIPS.filter((c) => c.label !== 'All').reduce((a, c) => a + c.count, 0)
+if (CHIP_SUM !== CHIP_TOTAL) {
+  throw new Error(`Maintenance chip counts do not reconcile: ${CHIP_SUM} vs total ${CHIP_TOTAL}`)
+}
+
+const FLAG_CHIPS: Array<{ label: MaintenanceFlag; count: number }> = [
+  { label: 'Overdue', count: 4 },
+  { label: 'Warranty', count: 12 },
+  { label: 'Blocked Booking', count: 3 },
+  { label: 'Awaiting Approval', count: 5 },
+]
+
+/**
+ * §4.2 — five hues plus gold. `At Vendor` takes the gold outline: the spec
+ * reserves it for kit in an external party's hands, and a service centre is
+ * exactly that. Everything else lands on the five.
+ */
+const STATUS_TONE: Record<MaintenanceStatus, StatusKey> = {
+  Scheduled: 'primary',
+  'In Progress': 'progress',
+  'Waiting Parts': 'progress',
+  'At Vendor': 'ext',
+  Completed: 'in',
+  Cancelled: 'neutral',
+}
+
+const STATUS_ICON: Record<MaintenanceStatus, IconName> = {
+  Scheduled: 'calendar',
+  'In Progress': 'tool',
+  'Waiting Parts': 'timer',
+  'At Vendor': 'external_link',
+  Completed: 'checklist',
+  Cancelled: 'close',
+}
+
+const FLAG_TONE: Record<MaintenanceFlag, StatusKey> = {
+  Overdue: 'danger',
+  Warranty: 'in',
+  'Blocked Booking': 'progress',
+  'Awaiting Approval': 'neutral',
+}
+
+const FLAG_ICON: Record<MaintenanceFlag, IconName> = {
+  Overdue: 'timer',
+  Warranty: 'checklist',
+  'Blocked Booking': 'alert_triangle',
+  'Awaiting Approval': 'flag',
+}
+
+const th = {
+  textAlign: 'left' as const,
+  padding: '9px 10px',
+  fontSize: 'var(--t-th)',
+  fontWeight: 600,
+  color: 'var(--text2)',
+  whiteSpace: 'nowrap' as const,
+  borderBottom: '1px solid var(--border)',
+}
+const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
+
+/** Whole days between two UTC midnights — no calendar arithmetic, so no engine is bypassed. */
+const DAY_MS = 86_400_000
+const daysFromToday = (d: Date) => Math.round((d.getTime() - TODAY.getTime()) / DAY_MS)
+
+function Unavailable({ children, reason }: { children: ReactNode; reason: string }) {
+  return (
+    <span title={reason} aria-label={reason} style={{ display: 'inline-flex', cursor: 'not-allowed' }}>
+      {children}
+    </span>
+  )
+}
+
+function Pill({ tone, icon, children }: { tone: StatusKey; icon: IconName; children: ReactNode }) {
+  const c = STATUS[tone]
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        height: 21,
+        padding: '0 8px',
+        borderRadius: 'var(--r-badge)',
+        background: c.bg,
+        color: c.fg,
+        border: `1px solid ${c.border ?? 'transparent'}`,
+        fontSize: 'var(--t-meta)',
+        fontWeight: 600,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <Icon name={icon} size={11} />
+      {children}
+    </span>
+  )
+}
+
+function exportCsv(rows: MaintenanceRecord[], money: boolean) {
+  const head = ['Job', 'Equipment', 'Serial', 'Type', 'Priority', 'Status', 'Flags', 'Technician', 'Vendor', 'Est. completion (AD)']
+  if (money) head.push('Cost')
+  const body = rows.map((m) => {
+    const cells = [
+      m.id,
+      m.equipmentName,
+      m.serialNumber,
+      m.type,
+      m.priority,
+      m.status,
+      m.flags.join(' · ') || '—',
+      m.technician ?? '—',
+      m.vendor ?? '—',
+      m.estCompletion ? formatAd(m.estCompletion) : '—',
+    ]
+    if (money) cells.push(formatMoney(m.costActualPaisa ?? m.costEstPaisa))
+    return cells
+  })
+  const csv = [head, ...body]
+    .map((cells) => cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+    .join('\r\n')
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'maintenance.csv'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export function Maintenance() {
-  const { showSuccessToast } = useToast()
+  const money = useCanViewMoney()
 
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
 
+  /**
+   * §8.3 — the cost tile is *added* for a role that may see money; it is not a
+   * placeholder that a Warehouse session sees blanked. Blocked Bookings is the
+   * figure the floor actually needs, so it is there for everyone.
+   */
+  const kpis: Kpi[] = [
+    { label: 'Active Maintenance', value: '18', icon: 'tool', accent: 'progress', note: 'In progress, waiting parts, at vendor' },
+    { label: 'Scheduled', value: '12', icon: 'calendar', accent: 'primary', note: 'Upcoming jobs' },
+    { label: 'Overdue', value: '4', icon: 'timer', accent: 'danger', note: 'Past estimated completion' },
+    { label: 'Blocked Bookings', value: '3', icon: 'alert_triangle', accent: 'danger', note: 'A booking is waiting on a repair' },
+  ]
+  if (money) {
+    kpis.push({ label: 'Cost This Month', value: formatMoney(rupees(45000)), icon: 'receipt', accent: 'neutral', note: 'Actual, jobs completed' })
+  }
+
   const filteredRecords = useMemo(() => {
     return MAINTENANCE_DATA.filter((m) => {
       if (activeFilter !== 'All') {
-        const isStatus = ['Scheduled', 'In Progress', 'Waiting Parts', 'At Vendor', 'Completed', 'Cancelled'].includes(activeFilter)
+        const isStatus = (['Scheduled', 'In Progress', 'Waiting Parts', 'At Vendor', 'Completed', 'Cancelled'] as string[]).includes(
+          activeFilter,
+        )
         if (isStatus && m.status !== activeFilter) return false
         if (!isStatus && !m.flags.includes(activeFilter as MaintenanceFlag)) return false
       }
@@ -99,8 +275,8 @@ export function Maintenance() {
           m.id.toLowerCase().includes(q) ||
           m.equipmentName.toLowerCase().includes(q) ||
           m.serialNumber.toLowerCase().includes(q) ||
-          m.technician?.toLowerCase().includes(q) ||
-          m.vendor?.toLowerCase().includes(q)
+          Boolean(m.technician?.toLowerCase().includes(q)) ||
+          Boolean(m.vendor?.toLowerCase().includes(q))
         )
       }
       return true
@@ -119,306 +295,278 @@ export function Maintenance() {
     setSelectedRowIds(next)
   }
 
-  const getStatusColor = (status: MaintenanceStatus) => {
-    switch (status) {
-      case 'Completed': return 'var(--good)'
-      case 'Scheduled': return 'var(--info)'
-      case 'In Progress': return 'var(--accent)'
-      case 'Waiting Parts': return 'var(--warn)'
-      case 'At Vendor': return 'var(--purple)'
-      case 'Cancelled': return 'var(--muted)'
-    }
+  const filtersOn = activeFilter !== 'All' || searchQuery.trim().length > 0
+  const clearFilters = () => {
+    setActiveFilter('All')
+    setSearchQuery('')
   }
 
+  const chipStyle = (on: boolean) => ({
+    display: 'inline-flex' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+    height: 30,
+    padding: '0 10px',
+    borderRadius: 8,
+    border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+    background: on ? 'var(--nav-active-bg)' : 'var(--card)',
+    color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
+    fontSize: 'var(--t-meta)',
+    fontWeight: on ? 600 : 500,
+    cursor: 'pointer' as const,
+    fontFamily: 'inherit',
+    whiteSpace: 'nowrap' as const,
+  })
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
-        <Card padding="md">
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
-            Active Maintenance
-          </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', marginTop: 4 }}>
-            18
-          </div>
-          <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-            In Progress, Waiting Parts, At Vendor
-          </span>
-        </Card>
-        <Card padding="md">
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
-            Scheduled
-          </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--info)', marginTop: 4 }}>
-            12
-          </div>
-          <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-            Upcoming jobs
-          </span>
-        </Card>
-        <Card padding="md">
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
-            Overdue (Flag)
-          </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--bad)', marginTop: 4 }}>
-            4
-          </div>
-          <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-            Past estimated completion
-          </span>
-        </Card>
-        <Card padding="md">
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
-            Total Cost (This Month)
-          </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--text)', marginTop: 4 }}>
-            {formatMoney(rupees(45000))}
-          </div>
-          <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-            Actual cost of jobs completed
-          </span>
-        </Card>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+      <KpiStrip items={kpis} columns={money ? 5 : 4} />
 
-      {/* Toolbar & Chips */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {[
-            { label: 'All', count: 86 },
-            { label: 'Scheduled', count: 12 },
-            { label: 'In Progress', count: 8 },
-            { label: 'Waiting Parts', count: 6 },
-            { label: 'At Vendor', count: 4 },
-            { label: 'Completed', count: 54 },
-            { label: 'Cancelled', count: 2 },
-          ].map((chip) => (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {STATUS_CHIPS.map((c) => (
+          <button key={c.label} type="button" onClick={() => setActiveFilter(c.label)} aria-pressed={activeFilter === c.label} style={chipStyle(activeFilter === c.label)}>
+            {c.label}
+            <span className="figure" style={{ color: activeFilter === c.label ? 'var(--nav-active-accent)' : 'var(--muted)' }}>
+              {c.count}
+            </span>
+          </button>
+        ))}
+
+        <span aria-hidden style={{ width: 1, height: 22, background: 'var(--border)', margin: '0 2px' }} />
+
+        {FLAG_CHIPS.map((c) => {
+          const on = activeFilter === c.label
+          const tone = STATUS[FLAG_TONE[c.label]]
+          return (
             <button
-              key={chip.label}
-              onClick={() => setActiveFilter(chip.label as FilterKey)}
+              key={c.label}
+              type="button"
+              onClick={() => setActiveFilter(c.label)}
+              aria-pressed={on}
               style={{
-                padding: '6px 14px',
-                borderRadius: 20,
-                fontSize: 13,
-                fontWeight: 500,
-                cursor: 'pointer',
-                border: activeFilter === chip.label ? '1px solid var(--nav-active-accent)' : '1px solid var(--border)',
-                background: activeFilter === chip.label ? 'var(--nav-active-accent)' : 'var(--card)',
-                color: activeFilter === chip.label ? '#ffffff' : 'var(--text)',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              {chip.label} <span className="figure" style={{ opacity: 0.85, marginLeft: 4 }}>{chip.count}</span>
-            </button>
-          ))}
-          
-          <div style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 4px' }} />
-          
-          {[
-            { label: 'Overdue', count: 4 },
-            { label: 'Warranty', count: 12 },
-            { label: 'Blocked Booking', count: 3 },
-            { label: 'Awaiting Approval', count: 5 },
-          ].map((chip) => (
-            <button
-              key={chip.label}
-              onClick={() => setActiveFilter(chip.label as FilterKey)}
-              style={{
-                padding: '4px 10px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                height: 26,
+                padding: '0 9px',
                 borderRadius: 6,
-                fontSize: 12,
-                fontWeight: 500,
+                border: `1px solid ${on ? tone.fg : 'var(--border)'}`,
+                background: on ? tone.bg : 'transparent',
+                color: on ? tone.fg : 'var(--muted)',
+                fontSize: 'var(--t-th)',
+                fontWeight: 600,
                 cursor: 'pointer',
-                border: activeFilter === chip.label ? '1px solid var(--text)' : '1px solid transparent',
-                background: activeFilter === chip.label ? 'var(--bg)' : 'transparent',
-                color: activeFilter === chip.label ? 'var(--text)' : 'var(--muted)',
-                transition: 'all 0.15s ease',
+                fontFamily: 'inherit',
+                whiteSpace: 'nowrap',
               }}
             >
-              {chip.label}
+              <Icon name={FLAG_ICON[c.label]} size={11} />
+              {c.label}
+              <span className="figure">{c.count}</span>
             </button>
-          ))}
-        </div>
+          )
+        })}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 240 }}>
-            <Input
-              placeholder="Search equipment, serial..."
+        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 10px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)' }}>
+            <Icon name="search" size={14} style={{ color: 'var(--muted)' }} />
+            <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              icon={<IconSearch size={16} />}
+              placeholder="Search job, equipment, serial…"
+              aria-label="Search maintenance jobs"
+              style={{ width: 190, border: 'none', outline: 'none', background: 'transparent', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
             />
-          </div>
-          <Button
-            variant="secondary"
-            onClick={() => showSuccessToast('Exporting', 'Generating maintenance report...')}
-            icon={<IconDownload size={16} />}
-          >
+          </label>
+          <Button icon="download" onClick={() => exportCsv(filteredRecords, money)}>
             Export
           </Button>
-          <Button
-            variant="primary"
-            onClick={() => showSuccessToast('New Job', 'Opening maintenance log')}
-            icon={<IconPlus size={16} />}
-          >
-            Log Maintenance
-          </Button>
-        </div>
+          <Unavailable reason="Logging a job needs the maintenance intake form, which is not built in this release.">
+            <Button icon="plus" variant="primary" disabled>
+              Log Maintenance
+            </Button>
+          </Unavailable>
+        </span>
       </div>
 
-      {/* Main Table */}
-      <Card padding="none" style={{ overflow: 'hidden' }}>
+      <Card bodyStyle={{ padding: 0 }}>
         {filteredRecords.length === 0 ? (
-          <EmptyState
-            title="No maintenance records found"
-            description="Adjust your filters or search query."
-            actionLabel="Clear Filters"
-            onAction={() => {
-              setActiveFilter('All')
-              setSearchQuery('')
-            }}
-          />
+          <div style={{ padding: '24px 16px' }}>
+            <EmptyState
+              title="No maintenance jobs match"
+              description="Adjust the status chips, the flag chips or the search."
+              actionLabel="Clear filters"
+              onAction={clearFilters}
+            />
+          </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
               <thead>
-                <tr style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  <th style={{ width: 36, padding: '12px 14px' }}>
+                <tr style={{ background: 'var(--th-bg)' }}>
+                  <th style={{ ...th, width: 30 }}>
                     <input
                       type="checkbox"
+                      aria-label="Select every job"
                       checked={selectedRowIds.size === filteredRecords.length && filteredRecords.length > 0}
                       onChange={(e) => handleSelectAll(e.target.checked)}
                       style={{ accentColor: 'var(--nav-active-accent)' }}
                     />
                   </th>
-                  <th style={{ padding: '12px 14px', cursor: 'pointer' }}>ID & Equipment</th>
-                  <th style={{ padding: '12px 14px' }}>Type & Priority</th>
-                  <th style={{ padding: '12px 14px' }}>Status & Flags</th>
-                  <th style={{ padding: '12px 14px' }}>Technician</th>
-                  <th style={{ padding: '12px 14px' }}>Vendor</th>
-                  <th style={{ padding: '12px 14px' }}>Est. Completion</th>
-                  <th style={{ padding: '12px 14px' }}>Cost (Est/Actual)</th>
-                  <th style={{ padding: '12px 14px' }}>Booking Impact</th>
-                  <th style={{ padding: '12px 14px', textAlign: 'right' }}>Actions</th>
+                  <th style={th}>Job / Equipment</th>
+                  <th style={th}>Type &amp; Priority</th>
+                  <th style={th}>Status &amp; Flags</th>
+                  <th style={th}>Technician</th>
+                  <th style={th}>Vendor</th>
+                  <th style={th}>Est. Completion</th>
+                  {/* §8.3 — omitted for Warehouse, never blanked. */}
+                  {money && <th style={{ ...th, textAlign: 'right' }}>Cost (Est / Actual)</th>}
+                  <th style={th}>Booking Impact</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredRecords.map((m) => (
-                  <tr
-                    key={m.id}
-                    style={{ borderBottom: '1px solid var(--border)', transition: 'background-color 0.1s ease' }}
-                  >
-                    <td style={{ padding: '12px 14px' }}>
-                      <input
-                        type="checkbox"
-                        checked={selectedRowIds.has(m.id)}
-                        onChange={() => handleToggleRow(m.id)}
-                        style={{ accentColor: 'var(--nav-active-accent)' }}
-                      />
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>{m.id}</div>
-                      <div style={{ fontWeight: 600, color: 'var(--text)' }}>{m.equipmentName}</div>
-                      <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{m.serialNumber}</div>
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500, color: 'var(--text)' }}>
-                        <IconTool size={14} style={{ color: 'var(--muted)' }} /> {m.type}
-                      </div>
-                      <div style={{ fontSize: 11, color: m.priority === 'Critical' ? 'var(--bad)' : m.priority === 'High' ? 'var(--warn)' : 'var(--muted)', marginTop: 4 }}>
-                        {m.priority} Priority
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: getStatusColor(m.status) }}></span>
-                        <span style={{ fontWeight: 600, color: getStatusColor(m.status) }}>{m.status}</span>
-                      </div>
-                      {m.flags.length > 0 && (
-                        <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
-                          {m.flags.map(f => {
-                            let icon = null
-                            let color = 'var(--muted)'
-                            if (f === 'Overdue') { icon = <IconClock size={12}/>; color = 'var(--bad)' }
-                            if (f === 'Warranty') { icon = <IconShieldCheck size={12}/>; color = 'var(--good)' }
-                            if (f === 'Blocked Booking') { icon = <IconAlertCircle size={12}/>; color = 'var(--warn)' }
-                            return (
-                              <span key={f} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 4, border: `1px solid ${color}`, color: color }}>
-                                {icon} {f}
+                {filteredRecords.map((m) => {
+                  const overdue = m.flags.includes('Overdue')
+                  const bs = m.estCompletion ? toBs(m.estCompletion) : null
+                  const days = m.estCompletion ? daysFromToday(m.estCompletion) : null
+                  return (
+                    <tr key={m.id} style={{ borderBottom: '1px solid var(--border)', background: overdue ? 'var(--danger-soft)' : 'transparent' }}>
+                      <td style={td}>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${m.id}`}
+                          checked={selectedRowIds.has(m.id)}
+                          onChange={() => handleToggleRow(m.id)}
+                          style={{ accentColor: 'var(--nav-active-accent)' }}
+                        />
+                      </td>
+                      <td style={td}>
+                        <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{m.id}</span>
+                        <span style={{ display: 'block', fontWeight: 600 }}>{m.equipmentName}</span>
+                        <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 2 }}>{m.serialNumber}</span>
+                      </td>
+                      <td style={td}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <Icon name="tool" size={13} style={{ color: 'var(--muted)' }} />
+                          {m.type}
+                        </span>
+                        <span
+                          style={{
+                            display: 'block',
+                            fontSize: 'var(--t-th)',
+                            marginTop: 4,
+                            fontWeight: 600,
+                            color:
+                              m.priority === 'Critical'
+                                ? 'var(--danger-text)'
+                                : m.priority === 'High'
+                                  ? 'var(--progress-text)'
+                                  : 'var(--muted)',
+                          }}
+                        >
+                          {m.priority} priority
+                        </span>
+                      </td>
+                      <td style={td}>
+                        <Pill tone={STATUS_TONE[m.status]} icon={STATUS_ICON[m.status]}>
+                          {m.status}
+                        </Pill>
+                        {m.flags.length > 0 && (
+                          <span style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
+                            {m.flags.map((f) => (
+                              <Pill key={f} tone={FLAG_TONE[f]} icon={FLAG_ICON[f]}>
+                                {f}
+                              </Pill>
+                            ))}
+                          </span>
+                        )}
+                      </td>
+                      <td style={td}>{m.technician ?? <span style={{ color: 'var(--muted)' }}>—</span>}</td>
+                      <td style={td}>{m.vendor ?? <span style={{ color: 'var(--muted)' }}>—</span>}</td>
+                      <td style={td}>
+                        {m.estCompletion ? (
+                          <>
+                            <span className="figure" style={{ display: 'block', fontWeight: 600, color: overdue ? 'var(--danger-text)' : 'var(--text)' }}>
+                              {bs ? formatBs(bs, { suffix: true }) : formatAd(m.estCompletion)}
+                            </span>
+                            <span className="figure" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 2 }}>
+                              {formatAd(m.estCompletion)}
+                            </span>
+                            {days !== null && (
+                              <span
+                                className="figure"
+                                style={{ display: 'block', fontSize: 'var(--t-th)', marginTop: 3, fontWeight: 600, color: days < 0 ? 'var(--danger-text)' : 'var(--success-text)' }}
+                              >
+                                {days < 0 ? `${Math.abs(days)} days ago` : days === 0 ? 'today' : `in ${days} days`}
                               </span>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      {m.technician ? (
-                        <div style={{ fontWeight: 500, color: 'var(--text)' }}>{m.technician}</div>
-                      ) : (
-                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      {m.vendor ? (
-                        <div style={{ fontWeight: 500, color: 'var(--text)' }}>{m.vendor}</div>
-                      ) : (
-                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      {m.estCompletionBs ? (
-                        <>
-                          <div className="figure" style={{ fontWeight: 500, color: m.flags.includes('Overdue') ? 'var(--bad)' : 'var(--text)' }}>
-                            {m.estCompletionBs}
-                          </div>
-                          <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                            {m.estCompletionAd}
-                          </div>
-                          {typeof m.daysUntilCompletion === 'number' && (
-                            <div className="figure" style={{ fontSize: 11, color: m.flags.includes('Overdue') ? 'var(--bad)' : 'var(--good)', marginTop: 4 }}>
-                              {m.daysUntilCompletion < 0 ? `${Math.abs(m.daysUntilCompletion)} days ago` : `in ${m.daysUntilCompletion} days`}
-                            </div>
+                            )}
+                          </>
+                        ) : (
+                          <span style={{ color: 'var(--muted)' }}>—</span>
+                        )}
+                      </td>
+                      {money && (
+                        <td style={{ ...td, textAlign: 'right' }}>
+                          {m.costActualPaisa ? (
+                            <>
+                              <span className="figure" style={{ display: 'block', fontWeight: 600 }}>{formatMoney(m.costActualPaisa)}</span>
+                              <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Actual</span>
+                            </>
+                          ) : m.costEstPaisa > 0 ? (
+                            <>
+                              <span className="figure" style={{ display: 'block' }}>{formatMoney(m.costEstPaisa)}</span>
+                              <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Estimate</span>
+                            </>
+                          ) : (
+                            <span style={{ color: 'var(--muted)' }}>Not quoted</span>
                           )}
-                        </>
-                      ) : (
-                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
+                        </td>
                       )}
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      {m.costActualPaisa ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          <div className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>{formatMoney(m.costActualPaisa)}</div>
-                          <div className="figure" style={{ fontSize: 10, color: 'var(--muted)' }}>Actual</div>
-                        </div>
-                      ) : m.costEstPaisa > 0 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          <div className="figure" style={{ fontWeight: 500, color: 'var(--text)' }}>{formatMoney(m.costEstPaisa)}</div>
-                          <div className="figure" style={{ fontSize: 10, color: 'var(--muted)' }}>Est.</div>
-                        </div>
-                      ) : (
-                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>TBD</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      {m.bookingImpact ? (
-                        <div className="figure" style={{ fontSize: 11, color: 'var(--link)', cursor: 'pointer', fontWeight: 500 }}>
-                          {m.bookingImpact}
-                        </div>
-                      ) : (
-                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>None</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                      <Button variant="secondary" size="sm">
-                        Open Maintenance
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                      <td style={td}>
+                        {m.bookingImpact ? (
+                          <Link to={`/rentals/${m.bookingImpact}`} className="identifier" style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none', fontSize: 'var(--t-meta)' }}>
+                            {m.bookingImpact}
+                          </Link>
+                        ) : (
+                          <span style={{ color: 'var(--muted)' }}>None</span>
+                        )}
+                      </td>
+                      <td style={{ ...td, textAlign: 'right' }}>
+                        <Unavailable reason="The maintenance job detail screen is not built yet.">
+                          <Button icon="external_link" disabled>
+                            Open job
+                          </Button>
+                        </Unavailable>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
         )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderTop: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--text2)', flexWrap: 'wrap' }}>
+          <span>
+            Showing {filteredRecords.length} of {MAINTENANCE_DATA.length} seeded jobs{filtersOn ? ' (filtered)' : ''}
+          </span>
+          {filtersOn && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              style={{ border: 'none', background: 'transparent', color: 'var(--link)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer', padding: 0 }}
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
       </Card>
+
+      <p style={{ margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+        <Icon name="info" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+        A job holds its equipment out of stock for its whole life. Dates are stored AD and rendered BS · AD.
+      </p>
     </div>
   )
 }

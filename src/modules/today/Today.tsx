@@ -10,15 +10,17 @@ import {
   PICKUPS,
   RETURNS,
   TODAY_DATE,
-  PERIOD_CHIPS,
   MORE_FILTERS,
   UNSUPPORTED_FILTERS,
   SEEDED_PERIODS,
   filterMovements,
+  mergeByTime,
   PICKUP_PENDING,
   RETURN_OVERDUE,
-  DASHBOARD_KPIS,
+  CAL_TODAY_ISO,
+  dashboardKpis,
 } from '../../data/today'
+import { useCanViewMoney } from './useMoneyVisibility'
 
 /**
  * §3 Nepal Mode date pill — BS leads at field size, AD one step smaller
@@ -26,9 +28,15 @@ import {
  * the two can never disagree.
  */
 function DatePill() {
+  const navigate = useNavigate()
   return (
     <button
       type="button"
+      /* The render draws a chevron here. It opens the full Calendar at this
+         date — a real destination — rather than a picker this page has nothing
+         to do with: the period chips already scope the panels. */
+      onClick={() => navigate(`/calendar?d=${CAL_TODAY_ISO}`)}
+      aria-label="Open the Calendar at today's date"
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -55,19 +63,17 @@ function DatePill() {
 }
 
 /**
- * §11 — period chips on the page, everything else behind **one** entry point.
- * The chips govern all four panels because all four read one movements query
- * (§4); scoping them to the calendar card, as the reference render did, implies
- * a filter that only moves one panel.
+ * §11 — everything that is not a period chip lives behind **one** entry point.
+ *
+ * The period chips themselves moved into the calendar card's header, where the
+ * Dashboard render draws them. They still scope every panel, because every
+ * panel reads the one movements query (§4) — so this button sits beside the
+ * date pill rather than on a filter strip the render does not have.
  */
-function FilterBar({
-  period,
-  setPeriod,
+function MoreFilters({
   picked,
   setPicked,
 }: {
-  period: string
-  setPeriod: (p: string) => void
   picked: string[]
   setPicked: (fn: (p: string[]) => string[]) => void
 }) {
@@ -77,84 +83,45 @@ function FilterBar({
 
   return (
     <div style={{ position: 'relative' }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          flexWrap: 'wrap',
-          padding: '8px 10px',
-          borderRadius: 'var(--r-card)',
-          background: 'var(--card)',
-          border: '1px solid var(--border)',
-        }}
-      >
-        {PERIOD_CHIPS.map((p) => {
-          const on = period === p
-          return (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setPeriod(p)}
-              aria-pressed={on}
-              style={{
-                height: 27,
-                padding: '0 10px',
-                borderRadius: 7,
-                border: on ? '1px solid transparent' : '1px solid var(--border)',
-                background: on ? 'var(--st-primary-bg)' : 'transparent',
-                color: on ? 'var(--st-primary-fg)' : 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              {p}
-            </button>
-          )
-        })}
-
-        <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-          {picked.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setPicked(() => [])}
-              style={{ border: 'none', background: 'transparent', color: 'var(--link)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-            >
-              Clear {picked.length}
-            </button>
-          )}
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+        {picked.length > 0 && (
           <button
             type="button"
-            onClick={() => setMore((m) => !m)}
-            aria-expanded={more}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              height: 27,
-              padding: '0 10px',
-              borderRadius: 7,
-              border: '1px solid var(--border)',
-              background: more ? 'var(--nav-active-bg)' : 'transparent',
-              color: more ? 'var(--nav-active-accent)' : 'var(--text2)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
+            onClick={() => setPicked(() => [])}
+            style={{ border: 'none', background: 'transparent', color: 'var(--link)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
           >
-            <Icon name="settings" size={13} />
-            More Filters
-            {picked.length > 0 && (
-              <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--nav-active-accent)' }}>
-                {picked.length}
-              </span>
-            )}
+            Clear {picked.length}
           </button>
-        </span>
-      </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setMore((m) => !m)}
+          aria-expanded={more}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            height: 36,
+            padding: '0 11px',
+            borderRadius: 'var(--r-btn)',
+            border: '1px solid var(--border)',
+            background: more ? 'var(--nav-active-bg)' : 'var(--card)',
+            color: more ? 'var(--nav-active-accent)' : 'var(--text2)',
+            fontSize: 'var(--t-meta)',
+            fontWeight: 600,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          <Icon name="settings" size={13} />
+          More Filters
+          {picked.length > 0 && (
+            <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--nav-active-accent)' }}>
+              {picked.length}
+            </span>
+          )}
+        </button>
+      </span>
 
       {more && (
         <div
@@ -163,7 +130,9 @@ function FilterBar({
             top: 'calc(100% + 6px)',
             right: 0,
             zIndex: 35,
-            width: 'min(760px, 100%)',
+            /* The button is no longer a full-width bar, so the panel sizes to
+               the viewport instead of to its trigger. */
+            width: 'min(760px, calc(100vw - 340px))',
             padding: 14,
             borderRadius: 'var(--r-card)',
             background: 'var(--card)',
@@ -230,8 +199,10 @@ function FilterBar({
 /**
  * Today Operations — the landing page.
  *
- * Layout is Dashboard.md §2: KPI cards → throughput strip → three columns
- * (Pickups · Returns · Alerts) → Timeline beside the mini-calendar.
+ * Layout is the Dashboard render: KPI cards → three columns (Pickups · Returns
+ * · Alerts) → Timeline beside the calendar card. §5.7's throughput strip is not
+ * in the render and is not drawn here; `THROUGHPUT` in `data/today` is
+ * currently unrendered because of it.
  *
  * §4 Single Source Rule: every panel here reads one movements query. The seed
  * array stands in for it until the engines exist (PLAN.md Phase 1–3), so the
@@ -249,24 +220,42 @@ export default function Today() {
   const [period, setPeriod] = useState('Today')
   const [picked, setPicked] = useState<string[]>([])
 
+  /*
+   * Foundation §8.3 — the one question this page asks about the signed-in
+   * session. It decides which KPI cards exist at all, which alerts are in the
+   * list, and which facts the hover card carries. Nothing is masked anywhere
+   * below: `money === false` means the markup was never built.
+   */
+  const money = useCanViewMoney()
+
   // §11 + §4 — the chips scope every panel, because every panel reads one query.
   const pickups = filterMovements(PICKUPS, period, picked)
   const returns = filterMovements(RETURNS, period, picked)
+  const day = mergeByTime(pickups, returns)
   const seeded = SEEDED_PERIODS.includes(period)
   const emptyNote = seeded
     ? 'No movements match these filters.'
     : `Nothing seeded for “${period}”. The movements query lands in Phase 3; until then only Today and All carry data.`
 
+  /*
+   * The render titles the columns "Pickups Today" / "Returns Today". That is
+   * only true while the period *is* Today — with the chips now inside the
+   * calendar card, a heading that keeps saying "Today" over next month's rows
+   * is the one way this layout could mislead. The default reads exactly as the
+   * render does.
+   */
+  const on = (noun: string) => (period === 'Today' ? `${noun} Today` : `${noun} · ${period}`)
+
   return (
-    /* §14 — the page scope that keeps purple to Utilization alone. See theme.css. */
-    <div data-page="today" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      {/* §3 — the title is "Today". No number prefix; the sidebar numbers it. */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+      {/* §3 — the title is "Today". No number prefix, in the page or the sidebar. */}
       <PageHeader
         title="Today"
         description="Overview of today's activities"
         actions={
           <>
             <DatePill />
+            <MoreFilters picked={picked} setPicked={setPicked} />
             <Button icon="plus" variant="primary" onClick={() => navigate('/rentals/new')}>
               New Rental
             </Button>
@@ -274,10 +263,13 @@ export default function Today() {
         }
       />
 
-      <FilterBar period={period} setPeriod={setPeriod} picked={picked} setPicked={setPicked} />
-
-      {/* Reverted to 6-card KPI strip as shown in the Dashboard mockup */}
-      <KpiStrip items={DASHBOARD_KPIS} columns={6} />
+      {/*
+        The render's six cards: Active Rentals · Pickups · Returns · Revenue ·
+        Utilization · Critical Alerts. A money-blind session gets four — the
+        strip is built from `dashboardKpis(money)` and lays out however many
+        cards that returns, so Revenue and Utilization leave no gap behind.
+      */}
+      <KpiStrip items={dashboardKpis(money)} />
 
       {/* §2 — "Three columns fill equal height." `stretch`, not `start`. */}
       <div
@@ -289,7 +281,7 @@ export default function Today() {
         }}
       >
         <MovementList
-          title="Pickups Today"
+          title={on('Pickups')}
           badge={`${PICKUP_PENDING} Pending`}
           badgeStatus="primary"
           rows={pickups}
@@ -298,7 +290,7 @@ export default function Today() {
           emptyNote={emptyNote}
         />
         <MovementList
-          title="Returns Today"
+          title={on('Returns')}
           badge={`${RETURN_OVERDUE} Overdue`}
           badgeStatus="danger"
           rows={returns}
@@ -309,16 +301,22 @@ export default function Today() {
         <AlertsPanel />
       </div>
 
+      {/* The render gives the calendar card the wider half of this row, because
+          it carries the day list *and* the month. */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'minmax(0,1.45fr) minmax(0,1fr)',
+          gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.35fr)',
           gap: 'var(--sp-md)',
           alignItems: 'stretch',
         }}
       >
-        <TimelinePanel />
-        <CalendarPanel />
+        <TimelinePanel
+          title={period === 'Today' ? "Today's Timeline" : `Timeline · ${period}`}
+          rows={day}
+          emptyNote={emptyNote}
+        />
+        <CalendarPanel period={period} setPeriod={setPeriod} rows={day} emptyNote={emptyNote} />
       </div>
 
       <FooterNote />

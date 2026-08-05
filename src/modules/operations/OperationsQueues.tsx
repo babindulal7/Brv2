@@ -4,6 +4,7 @@ import { Card, PageHeader, Button, Rail, FooterNote, cardStyle } from '../../com
 import { STATUS, BRAND } from '../../lib/status'
 import { statusToken, JOBS as JOBS_META } from '../../lib/workflow'
 import { QUEUES, JOBS, CREW_LOAD, NO_MONEY_NOTE } from '../../data/operations'
+import CasesQueue from './CasesQueue'
 
 const th = {
   textAlign: 'left' as const,
@@ -141,6 +142,16 @@ export default function OperationsQueues() {
         })}
       </section>
 
+      {/*
+        Cases is a queue with its own owner, not one of §1.5's four jobs, so it
+        has no row in `JOBS` and its columns (Type, Disposition, Priority,
+        Counterparty, Assessed, Outstanding) do not fit the generic job table.
+        Selecting it used to filter `JOBS` to nothing and render an empty table.
+        The queue cards stay above so this is still a place you can leave.
+      */}
+      {active === 'Cases' ? (
+        <CasesQueue />
+      ) : (
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 288px', gap: 'var(--sp-md)', alignItems: 'start' }}>
         <Card
           title={active ? `${active} — ${jobs.length} jobs` : `All jobs — ${jobs.length}`}
@@ -255,6 +266,7 @@ export default function OperationsQueues() {
           </div>
         </Rail>
       </div>
+      )}
 
       <FooterNote extra={['Queues are stages — no page defines its own status names']} />
     </div>

@@ -1,12 +1,33 @@
-import { useState, useMemo } from 'react'
-import { Card } from '../../components/ui/Card'
-import { Button } from '../../components/ui/Button'
-import { Input } from '../../components/ui/Input'
-import { EmptyState } from '../../components/ui/StateViews'
-import { useToast } from '../../components/ui/Toast'
-import { formatMoney, rupees, type Paisa } from '../../lib/money'
-import { IconSearch, IconPlus, IconDownload, IconChevronDown } from '@tabler/icons-react'
+import { Fragment, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
+import Icon from '../../components/ui/Icon'
+import { Card, Button, KpiStrip } from '../../components/ui/Page'
+import type { Kpi } from '../../components/ui/Page'
+import { EmptyState } from '../../components/ui/StateViews'
+import { STATUS } from '../../lib/status'
+import type { StatusKey } from '../../lib/status'
+import { formatMoney, rupees, type Paisa } from '../../lib/money'
+import { toBs, formatBs, formatAd } from '../../lib/bs'
+import { useCanViewMoney } from '../today/useMoneyVisibility'
+
+/**
+ * **Bundles** — the Inventory workspace's second tab (Foundation §5.1 makes it a
+ * tab, not a sidebar entry).
+ *
+ * Rewritten 6 Aug for two defects, not for looks:
+ *
+ *  1. **It was invisible.** Every surface came from `components/ui/Card`,
+ *     `Button` and `Input`, which are written in Tailwind utility classes — and
+ *     no stylesheet in this app imports Tailwind (`main.tsx` loads
+ *     `styles/theme.css` alone). `.bg-slate-900` computes to `transparent`, so
+ *     the cards, buttons and inputs rendered as unstyled boxes. Everything here
+ *     is on `theme.css` tokens now, which is what the rest of the rebuild uses.
+ *  2. **It leaked money.** The Daily Rate column rendered for every role. The
+ *     session on this build is Warehouse; Foundation §8.3 makes money
+ *     *structurally absent* for that role, so the column is now omitted rather
+ *     than blanked.
+ */
 
 type BundleStatus = 'Available' | 'Reserved' | 'On Rent' | 'Partially Available' | 'On Maintenance' | 'Archived'
 
@@ -27,13 +48,18 @@ interface BundleRecord {
   status: BundleStatus
   linkedBooking?: string
   clientName?: string
-  startDateBs?: string
-  endDateBs?: string
-  startDateAd?: string
-  endDateAd?: string
+  /**
+   * AD, UTC. Foundation §3.1 / CLAUDE.md — **BS is rendered, never stored.**
+   * These were seeded as `'2083/04/10'` BS strings, which stores the rendered
+   * form of a date the app cannot then convert, compare or sort.
+   */
+  startAd?: Date
+  endAd?: Date
   sumOfPartsPaisa: Paisa
   bundleRatePaisa: Paisa
 }
+
+const ad = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d))
 
 const BUNDLES_DATA: BundleRecord[] = [
   {
@@ -66,10 +92,8 @@ const BUNDLES_DATA: BundleRecord[] = [
     status: 'On Rent',
     linkedBooking: 'BK-2026-0715',
     clientName: 'Kathmandu Cinema Works',
-    startDateBs: '2083/04/10',
-    endDateBs: '2083/04/14',
-    startDateAd: '25 Jul 2026',
-    endDateAd: '29 Jul 2026',
+    startAd: ad(2026, 7, 25),
+    endAd: ad(2026, 7, 29),
     sumOfPartsPaisa: rupees(85000),
     bundleRatePaisa: rupees(75000),
   },
@@ -88,29 +112,137 @@ const BUNDLES_DATA: BundleRecord[] = [
     status: 'Partially Available',
     sumOfPartsPaisa: rupees(9500),
     bundleRatePaisa: rupees(8000),
-  }
+  },
 ]
 
 type FilterKey = BundleStatus | 'All'
 
+/**
+ * §1.1 chip invariant. The previous build shipped chips that summed to 51 beside
+ * an `All` chip reading 42 — and a green tick asserting "All 51" next to it. The
+ * counts are corrected and the assertion now *throws* on a mismatch rather than
+ * decorating one.
+ */
+const CHIPS: Array<{ label: FilterKey; count: number }> = [
+  { label: 'All', count: 51 },
+  { label: 'Available', count: 28 },
+  { label: 'Reserved', count: 6 },
+  { label: 'On Rent', count: 9 },
+  { label: 'Partially Available', count: 5 },
+  { label: 'On Maintenance', count: 3 },
+]
+
+const CHIP_TOTAL = CHIPS.find((c) => c.label === 'All')?.count ?? 0
+const CHIP_SUM = CHIPS.filter((c) => c.label !== 'All').reduce((a, c) => a + c.count, 0)
+if (CHIP_SUM !== CHIP_TOTAL) {
+  throw new Error(`Bundle chip counts do not reconcile: ${CHIP_SUM} vs total ${CHIP_TOTAL}`)
+}
+
+/** §4.2 — five hues. Colour never travels alone; the label rides with it. */
+const BUNDLE_TONE: Record<BundleStatus, StatusKey> = {
+  Available: 'in',
+  Reserved: 'primary',
+  'On Rent': 'out',
+  'Partially Available': 'progress',
+  'On Maintenance': 'progress',
+  Archived: 'neutral',
+}
+
+const KPIS: Kpi[] = [
+  { label: 'Total Bundles', value: '51', icon: 'queues', accent: 'primary', note: 'Excludes archived (7)' },
+  { label: 'Available', value: '28', icon: 'checklist', accent: 'success', note: 'Every required item ready' },
+  { label: 'On Rent', value: '9', icon: 'truck', accent: 'success', note: 'Currently out with a client' },
+  { label: 'Needs Attention', value: '8', icon: 'alert_triangle', accent: 'danger', note: 'Partially available + maintenance' },
+]
+
+const th = {
+  textAlign: 'left' as const,
+  padding: '9px 10px',
+  fontSize: 'var(--t-th)',
+  fontWeight: 600,
+  color: 'var(--text2)',
+  whiteSpace: 'nowrap' as const,
+  borderBottom: '1px solid var(--border)',
+}
+const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
+
+function Unavailable({ children, reason }: { children: ReactNode; reason: string }) {
+  return (
+    <span title={reason} aria-label={reason} style={{ display: 'inline-flex', cursor: 'not-allowed' }}>
+      {children}
+    </span>
+  )
+}
+
+function StatusPill({ status }: { status: BundleStatus }) {
+  const c = STATUS[BUNDLE_TONE[status]]
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        height: 21,
+        padding: '0 8px',
+        borderRadius: 'var(--r-badge)',
+        background: c.bg,
+        color: c.fg,
+        border: `1px solid ${c.border ?? 'transparent'}`,
+        fontSize: 'var(--t-meta)',
+        fontWeight: 600,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <Icon name={status === 'On Maintenance' ? 'tool' : status === 'On Rent' ? 'truck' : 'box'} size={11} />
+      {status}
+    </span>
+  )
+}
+
+function exportCsv(rows: BundleRecord[], money: boolean) {
+  const head = ['Bundle ID', 'Bundle', 'Category', 'Items', 'Ready', 'Status', 'Booking']
+  if (money) head.push('Daily Rate', 'Sum of Parts')
+  const body = rows.map((b) => {
+    const equip = b.items.reduce((s, i) => s + i.quantity, 0)
+    const ready = b.items.reduce((s, i) => s + Math.min(i.quantity, i.availableStock), 0)
+    const cells = [
+      b.id,
+      b.name,
+      b.category,
+      String(equip + b.crewCount + b.vehicleCount + b.boxCount),
+      `${ready} / ${equip}`,
+      b.status,
+      b.linkedBooking ?? '—',
+    ]
+    if (money) cells.push(formatMoney(b.bundleRatePaisa), formatMoney(b.sumOfPartsPaisa))
+    return cells
+  })
+  const csv = [head, ...body]
+    .map((cells) => cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+    .join('\r\n')
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'bundles.csv'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export function Bundles() {
   const navigate = useNavigate()
-  const { showSuccessToast } = useToast()
+  const money = useCanViewMoney()
 
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   const filteredBundles = useMemo(() => {
     return BUNDLES_DATA.filter((b) => {
       if (activeFilter !== 'All' && b.status !== activeFilter) return false
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
-        return (
-          b.id.toLowerCase().includes(q) ||
-          b.name.toLowerCase().includes(q) ||
-          b.category.toLowerCase().includes(q)
-        )
+        return b.id.toLowerCase().includes(q) || b.name.toLowerCase().includes(q) || b.category.toLowerCase().includes(q)
       }
       return true
     })
@@ -128,15 +260,11 @@ export function Bundles() {
     setSelectedRowIds(next)
   }
 
-  const getStatusColor = (status: BundleStatus) => {
-    switch (status) {
-      case 'Available': return 'var(--good)'
-      case 'Reserved': return 'var(--info)'
-      case 'On Rent': return 'var(--warn)'
-      case 'Partially Available': return 'var(--bad)'
-      case 'On Maintenance': return 'var(--bad)'
-      case 'Archived': return 'var(--muted)'
-    }
+  const toggleExpanded = (id: string) => {
+    const next = new Set(expanded)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setExpanded(next)
   }
 
   const calculateSavingPct = (sumOfParts: Paisa, bundleRate: Paisa) => {
@@ -144,152 +272,102 @@ export function Bundles() {
     return Math.round(((sumOfParts - bundleRate) / sumOfParts) * 100)
   }
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
-        <Card padding="md">
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
-            Total Bundles
-          </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--text)', marginTop: 4 }}>
-            42
-          </div>
-          <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-            Excludes Archived (7)
-          </span>
-        </Card>
-        <Card padding="md">
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
-            Available
-          </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--good)', marginTop: 4 }}>
-            28
-          </div>
-          <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-            Every required item ready
-          </span>
-        </Card>
-        <Card padding="md">
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
-            On Rent
-          </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--warn)', marginTop: 4 }}>
-            9
-          </div>
-          <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-            Currently out with a client
-          </span>
-        </Card>
-        <Card padding="md">
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
-            Needs Attention
-          </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--bad)', marginTop: 4 }}>
-            8
-          </div>
-          <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-            Partially Available + Maintenance + Blocked
-          </span>
-        </Card>
-      </div>
+  const filtersOn = activeFilter !== 'All' || searchQuery.trim().length > 0
+  // checkbox · Bundle · Items · Availability · Booking · [Daily Rate] · Actions
+  const columns = money ? 7 : 6
 
-      {/* Toolbar & Chips */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {[
-            { label: 'All', count: 42 },
-            { label: 'Available', count: 28 },
-            { label: 'Reserved', count: 6 },
-            { label: 'On Rent', count: 9 },
-            { label: 'Partially Available', count: 5 },
-            { label: 'On Maintenance', count: 3 },
-          ].map((chip) => (
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+      <KpiStrip items={KPIS} columns={4} />
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {CHIPS.map((c) => {
+          const on = activeFilter === c.label
+          return (
             <button
-              key={chip.label}
-              onClick={() => setActiveFilter(chip.label as FilterKey)}
+              key={c.label}
+              type="button"
+              onClick={() => setActiveFilter(c.label)}
+              aria-pressed={on}
               style={{
-                padding: '6px 14px',
-                borderRadius: 20,
-                fontSize: 13,
-                fontWeight: 500,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                height: 30,
+                padding: '0 10px',
+                borderRadius: 8,
+                border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+                background: on ? 'var(--nav-active-bg)' : 'var(--card)',
+                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: on ? 600 : 500,
                 cursor: 'pointer',
-                border: activeFilter === chip.label ? '1px solid var(--nav-active-accent)' : '1px solid var(--border)',
-                background: activeFilter === chip.label ? 'var(--nav-active-accent)' : 'var(--card)',
-                color: activeFilter === chip.label ? '#ffffff' : 'var(--text)',
-                transition: 'all 0.15s ease',
+                fontFamily: 'inherit',
+                whiteSpace: 'nowrap',
               }}
             >
-              {chip.label} <span className="figure" style={{ opacity: 0.85, marginLeft: 4 }}>{chip.count}</span>
+              {c.label}
+              <span className="figure" style={{ color: on ? 'var(--nav-active-accent)' : 'var(--muted)' }}>
+                {c.count}
+              </span>
             </button>
-          ))}
-          {/* Invariant check badge from §1.1 */}
-          <div style={{ marginLeft: 8, padding: '4px 10px', fontSize: 12, fontWeight: 600, color: 'var(--good)', background: 'rgba(34, 197, 94, 0.1)', borderRadius: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span>✓</span>
-            <span className="figure">28 + 6 + 9 + 5 + 3 = 51 · All 51</span>
-          </div>
-        </div>
+          )
+        })}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 240 }}>
-            <Input
-              placeholder="Search ID, bundle, category…"
+        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 10px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)' }}>
+            <Icon name="search" size={14} style={{ color: 'var(--muted)' }} />
+            <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              icon={<IconSearch size={16} />}
+              placeholder="Search ID, bundle, category…"
+              aria-label="Search bundles"
+              style={{ width: 190, border: 'none', outline: 'none', background: 'transparent', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
             />
-          </div>
-          <Button
-            variant="secondary"
-            onClick={() => showSuccessToast('Exporting', 'Generating bundles report...')}
-            icon={<IconDownload size={16} />}
-          >
+          </label>
+          <Button icon="download" onClick={() => exportCsv(filteredBundles, money)}>
             Export
           </Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-               navigate('/inventory/bundles/new')
-            }}
-            icon={<IconPlus size={16} />}
-          >
+          <Button icon="plus" variant="primary" onClick={() => navigate('/inventory/bundles/new')}>
             New Bundle
           </Button>
-        </div>
+        </span>
       </div>
 
-      {/* Main Table */}
-      <Card padding="none" style={{ overflow: 'hidden' }}>
+      <Card bodyStyle={{ padding: 0 }}>
         {filteredBundles.length === 0 ? (
-          <EmptyState
-            title="No bundles found"
-            description="Adjust your filters or search query to find equipment bundles."
-            actionLabel="Clear Filters"
-            onAction={() => {
-              setActiveFilter('All')
-              setSearchQuery('')
-            }}
-          />
+          <div style={{ padding: '24px 16px' }}>
+            <EmptyState
+              title="No bundles found"
+              description="Adjust the status chips or the search to find equipment bundles."
+              actionLabel="Clear filters"
+              onAction={() => {
+                setActiveFilter('All')
+                setSearchQuery('')
+              }}
+            />
+          </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
               <thead>
-                <tr style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  <th style={{ width: 36, padding: '12px 14px' }}>
+                <tr style={{ background: 'var(--th-bg)' }}>
+                  <th style={{ ...th, width: 30 }}>
                     <input
                       type="checkbox"
+                      aria-label="Select every bundle"
                       checked={selectedRowIds.size === filteredBundles.length && filteredBundles.length > 0}
                       onChange={(e) => handleSelectAll(e.target.checked)}
                       style={{ accentColor: 'var(--nav-active-accent)' }}
                     />
                   </th>
-                  <th style={{ width: 48, padding: '12px 14px' }}></th>
-                  <th style={{ padding: '12px 14px', cursor: 'pointer' }}>Bundle</th>
-                  <th style={{ padding: '12px 14px' }}>Items (Breakdown)</th>
-                  <th style={{ padding: '12px 14px' }}>Availability</th>
-                  <th style={{ padding: '12px 14px' }}>Current Booking</th>
-                  <th style={{ padding: '12px 14px' }}>Daily Rate (Equipment Only)</th>
-                  <th style={{ padding: '12px 14px', textAlign: 'right' }}>Actions</th>
+                  <th style={th}>Bundle</th>
+                  <th style={th}>Items (Breakdown)</th>
+                  <th style={th}>Availability</th>
+                  <th style={th}>Current Booking</th>
+                  {/* §8.3 — omitted for Warehouse, never blanked. */}
+                  {money && <th style={{ ...th, textAlign: 'right' }}>Daily Rate (Equipment Only)</th>}
+                  <th style={{ ...th, textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -297,94 +375,150 @@ export function Bundles() {
                   const equipCount = b.items.reduce((sum, i) => sum + i.quantity, 0)
                   const totalItems = equipCount + b.crewCount + b.vehicleCount + b.boxCount
                   const readyEquip = b.items.reduce((sum, i) => sum + Math.min(i.quantity, i.availableStock), 0)
-                  const totalEquipRequired = equipCount
-                  
+                  const open = expanded.has(b.id)
+                  // BS derived at render through the one Date Engine; never stored.
+                  const startBs = b.startAd ? toBs(b.startAd) : null
+                  const endBs = b.endAd ? toBs(b.endAd) : null
+
                   return (
-                  <tr
-                    key={b.id}
-                    style={{ borderBottom: '1px solid var(--border)', transition: 'background-color 0.1s ease' }}
-                  >
-                    <td style={{ padding: '12px 14px' }}>
-                      <input
-                        type="checkbox"
-                        checked={selectedRowIds.has(b.id)}
-                        onChange={() => handleToggleRow(b.id)}
-                        style={{ accentColor: 'var(--nav-active-accent)' }}
-                      />
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <div style={{ width: 40, height: 40, borderRadius: 6, background: 'var(--card2)', border: '1px solid var(--border)' }}></div>
-                    </td>
-                    <td style={{ padding: '12px 14px', maxWidth: 220 }}>
-                      <div style={{ fontWeight: 600, color: 'var(--text)' }}>{b.name}</div>
-                      <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{b.id}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text)', marginTop: 6, fontWeight: 500 }}>
-                        {b.category} <span style={{ color: 'var(--muted)' }}>(Primary)</span>
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <div className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>
-                        {totalItems} Items
-                      </div>
-                      <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                        {equipCount} Equipment · {b.crewCount} Crew · {b.vehicleCount} Vehicle · {b.boxCount} Boxes
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: getStatusColor(b.status) }}></span>
-                        <span style={{ fontWeight: 600, color: getStatusColor(b.status) }}>{b.status}</span>
-                      </div>
-                      <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                        {readyEquip} / {totalEquipRequired} Ready
-                      </div>
-                      {readyEquip < totalEquipRequired && (
-                        <div style={{ fontSize: 11, color: 'var(--bad)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, cursor: 'pointer' }}>
-                          {totalEquipRequired - readyEquip} blocked <IconChevronDown size={12} />
-                        </div>
+                    <Fragment key={b.id}>
+                      <tr style={{ borderBottom: '1px solid var(--border)', background: open ? 'var(--card2)' : 'transparent' }}>
+                        <td style={td}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${b.name}`}
+                            checked={selectedRowIds.has(b.id)}
+                            onChange={() => handleToggleRow(b.id)}
+                            style={{ accentColor: 'var(--nav-active-accent)' }}
+                          />
+                        </td>
+                        <td style={{ ...td, maxWidth: 240 }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                            <span
+                              aria-hidden
+                              style={{ width: 34, height: 34, flexShrink: 0, borderRadius: 7, display: 'grid', placeItems: 'center', background: 'var(--card2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
+                            >
+                              <Icon name="queues" size={17} />
+                            </span>
+                            <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                              <span style={{ fontWeight: 600 }}>{b.name}</span>
+                              <span className="identifier" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{b.id}</span>
+                              <span style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>
+                                {b.category} <span style={{ color: 'var(--muted)' }}>(Primary)</span>
+                              </span>
+                            </span>
+                          </span>
+                        </td>
+                        <td style={td}>
+                          <span className="figure" style={{ fontWeight: 600 }}>{totalItems} Items</span>
+                          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 2 }}>
+                            {equipCount} Equipment · {b.crewCount} Crew · {b.vehicleCount} Vehicle · {b.boxCount} Boxes
+                          </span>
+                        </td>
+                        <td style={td}>
+                          <StatusPill status={b.status} />
+                          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 4 }}>
+                            {readyEquip} / {equipCount} ready
+                          </span>
+                          {readyEquip < equipCount && (
+                            <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--danger-text)', marginTop: 3, fontWeight: 600 }}>
+                              {equipCount - readyEquip} blocked
+                            </span>
+                          )}
+                        </td>
+                        <td style={td}>
+                          {b.linkedBooking ? (
+                            <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              <span style={{ color: 'var(--text)' }}>{b.clientName}</span>
+                              <span className="identifier" style={{ fontSize: 'var(--t-th)', color: 'var(--link)', fontWeight: 600 }}>{b.linkedBooking}</span>
+                              {b.startAd && b.endAd && (
+                                <span className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                                  {startBs ? formatBs(startBs, { suffix: false }) : formatAd(b.startAd)} —{' '}
+                                  {endBs ? formatBs(endBs) : formatAd(b.endAd)}
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--muted)' }}>No active booking</span>
+                          )}
+                        </td>
+                        {money && (
+                          <td style={{ ...td, textAlign: 'right' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, justifyContent: 'flex-end' }}>
+                              <span className="figure" style={{ fontWeight: 600 }}>{formatMoney(b.bundleRatePaisa)}</span>
+                              <span
+                                className="figure"
+                                style={{ fontSize: 'var(--t-th)', fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'var(--st-in-bg)', color: 'var(--st-in-fg)' }}
+                              >
+                                Save {calculateSavingPct(b.sumOfPartsPaisa, b.bundleRatePaisa)}%
+                              </span>
+                            </span>
+                            <span className="figure" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 2, textDecoration: 'line-through' }}>
+                              {formatMoney(b.sumOfPartsPaisa)}
+                            </span>
+                          </td>
+                        )}
+                        <td style={{ ...td, textAlign: 'right' }}>
+                          <Button icon={open ? 'chevron_up' : 'chevron_down'} onClick={() => toggleExpanded(b.id)}>
+                            {open ? 'Hide items' : 'View items'}
+                          </Button>
+                        </td>
+                      </tr>
+
+                      {open && (
+                        <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
+                          <td style={td} />
+                          <td style={td} colSpan={columns - 1}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                              {b.items.map((i) => {
+                                const short = i.availableStock < i.quantity
+                                return (
+                                  <span key={i.model} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)' }}>
+                                    <span className="figure" style={{ minWidth: 28, fontWeight: 600 }}>{i.quantity}×</span>
+                                    <span style={{ color: 'var(--text)' }}>{i.model}</span>
+                                    <span
+                                      className="figure"
+                                      style={{ marginLeft: 'auto', color: short ? 'var(--danger-text)' : 'var(--success-text)', fontWeight: 600 }}
+                                    >
+                                      {i.availableStock} in stock
+                                    </span>
+                                  </span>
+                                )
+                              })}
+                              <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                                Crew, vehicles and boxes are counted on the bundle, not listed per line.
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      {b.linkedBooking ? (
-                        <>
-                          <div style={{ fontWeight: 500, color: 'var(--text)' }}>{b.clientName}</div>
-                          <div className="figure" style={{ fontSize: 11, color: 'var(--link)', marginTop: 2, cursor: 'pointer' }}>
-                            {b.linkedBooking}
-                          </div>
-                          <div className="figure" style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
-                            {b.startDateBs} — {b.endDateBs}
-                          </div>
-                        </>
-                      ) : (
-                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>No active booking</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>
-                          {formatMoney(b.bundleRatePaisa)}
-                        </div>
-                        <span className="figure" style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(34,197,94,0.1)', color: 'var(--good)' }}>
-                          Save {calculateSavingPct(b.sumOfPartsPaisa, b.bundleRatePaisa)}%
-                        </span>
-                      </div>
-                      <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, textDecoration: 'line-through' }}>
-                        {formatMoney(b.sumOfPartsPaisa)}
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                      <Button variant="secondary" size="sm">
-                        View Details
-                      </Button>
-                    </td>
-                  </tr>
+                    </Fragment>
                   )
                 })}
               </tbody>
             </table>
           </div>
         )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderTop: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--text2)', flexWrap: 'wrap' }}>
+          <span>
+            Showing {filteredBundles.length} of {BUNDLES_DATA.length} seeded bundles
+            {filtersOn ? ' (filtered)' : ''}
+          </span>
+          <span style={{ marginLeft: 'auto' }}>
+            <Unavailable reason="Bundle detail has no screen yet — only the New Bundle route is built.">
+              <Button icon="external_link" disabled>
+                Open bundle detail
+              </Button>
+            </Unavailable>
+          </span>
+        </div>
       </Card>
+
+      <p style={{ margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+        <Icon name="info" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+        A bundle is available only when every required line is. Availability is derived from stock, never set by hand.
+      </p>
     </div>
   )
 }

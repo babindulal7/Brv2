@@ -35,7 +35,6 @@ const AddBundle         = lazy(() => import('./modules/inventory/AddBundle').the
 const Calendar          = lazy(() => import('./modules/calendar/Calendar'))
 const Documents         = lazy(() => import('./modules/documents/Documents'))
 const OperationsQueues  = lazy(() => import('./modules/operations/OperationsQueues'))
-const CasesQueueTEMP    = lazy(() => import('./modules/operations/CasesQueue'))
 const Finance           = lazy(() => import('./modules/finance/Finance'))
 const SystemMonitor     = lazy(() => import('./modules/system/SystemMonitor'))
 const AiAssistant       = lazy(() => import('./modules/ai/AiAssistant'))
@@ -221,15 +220,6 @@ export default function App() {
           element={
             <Shell crumbs={[{ label: 'Operations Queues' }]} search="Search job, booking, client, kit…">
               <OperationsQueues />
-            </Shell>
-          }
-        />
-
-        <Route
-          path="/temp-cases-review"
-          element={
-            <Shell crumbs={[{ label: 'TEMP REVIEW' }]} search="temp">
-              <CasesQueueTEMP />
             </Shell>
           }
         />
