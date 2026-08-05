@@ -74,6 +74,63 @@ Newest entry first. Log what was **verified**, not what was written — "typeche
 - Global ⌘K keyboard listeners and scanner shortcuts work out of the box with the search UI.
 - Clean separation between success notifications (toasts) and validation failures (inline surfaces) simplifies user error recovery.
 
+## 2026-08-06 — Git initialised · Core screens matched to the 03 Core Modules mockups
+**Phase:** build-every-page · **Status:** partial
+
+### Did
+- **Version control, finally.** The project had none. `git init` on `babin-rentals-os`, 152 files
+  on `main` (the existing `.gitignore` already excluded `node_modules`/`dist`/`.env`; checked
+  nothing secret was staged). Three commits so far: baseline, mockup match, calendar fix.
+- **Matched six screens to their mockup PNGs** in `md and photos/Babin Rentals OS/03 Core Modules/`
+  — Today/Dashboard, Rentals, Inventory, Clients, Calendar, Documents — each built by one agent and
+  then adversarially checked by a second (12 agents, ~2.4M tokens).
+- **Wired the Cases queue.** `?queue=cases` filtered `JOBS` to nothing and rendered an empty table,
+  because Cases is not one of §1.5's four jobs. It now renders the spec-driven `CasesQueue`
+  (built earlier from `04 Operations/Cases.md` v1.1) with the queue cards kept above it, so the
+  screen is not a dead end. Removed a stray `/temp-cases-review` debug route from `App.tsx`.
+- **Calendar now reads `?d=`** (see Found — it was ignoring it).
+
+### Verified
+- `npx tsc --noEmit` exits 0; `npm run build` succeeds (34.9s, PWA precache 56 entries).
+- **The Warehouse money leak is closed, verified both ways by driving the app** — not by reading
+  code. As `Warehouse`: 0 rupee figures on `/rentals`, the Payment `<th>`/`<td>` and the Payment Due
+  KPI card absent from the DOM, no blur/mask/redact class anywhere. As `Owner`: 18 figures, Payment
+  column and Payment Due card both back. Structural omission via `rbac.canViewMoney`, not masking.
+- All 8 main routes render with no console error and no occurrence of the banned word "customer".
+- Calendar `?d=` verified live: `?d=2026-08-01` opens 31 Jul–6 Aug (previously every value opened
+  the same 30 Jul–5 Aug); `?d=2026-07-32` and out-of-BS-range dates fall back to today with no
+  Invalid Date or NaN.
+
+### Found
+- **A concurrent writer had been editing this repo.** ~70 files changed 00:16–02:42 that this
+  session did not author — an auth system, offline queue, a UI component kit, and Cases/Crew/
+  Sub-Rental screens. It had stopped before this work began and the tree typechecked, so the work
+  was built on top of it. This is exactly why the repo now has git.
+- **Real defects the verify pass caught and fixed:** 13 dead controls on Rentals (Import, Export,
+  More Filters, Save View, 8 warehouse chips) plus a row dropdown clipped by an `overflow-x` wrapper;
+  a banned teal `#134e4a` shipping as a Today avatar fill; `CalendarPanel` emitting the impossible
+  `/calendar?d=2026-07-32` on the last day of any month; seven Today rupee figures bypassing
+  `money.ts` for a duplicate local formatter; `inventory.ts` storing pre-formatted money strings;
+  `Bundles.tsx` storing hand-typed BS date strings (breaks "BS is rendered, never stored"); an
+  invented `Poor` condition not in any spec; a `colspan` of 8 on a 6-column table.
+- **⭐ NEEDS A RULING — money KPIs on Today and Inventory.** Foundation §5.2 says verbatim of Today:
+  "A thin count strip — pickups · returns · overdue · alerts. **No money KPIs. No charts.** Revenue
+  and utilization live in Reports." The mockup shows Revenue Today and Utilization, and the build now
+  renders them for money-capable roles. `Inventory.md` §4.4 is the same conflict ("KPI Cards — four"
+  vs the mockup's six). Either the renders supersede those sections, or both screens lose the extra
+  cards. **Currently the mockup wins on screen and the spec text is contradicted** — flagged
+  `TODO(decision)` in `data/today.ts`. Do not treat this as settled.
+- Still open, not fixed: Today's Alerts rows lost their actions (`Dashboard.md` §8 — "an alert with
+  no action is a notification, not an alert"); five raw hex avatar fills in `data/today.ts` that
+  cannot be tokenised without editing `theme.css` (note `data/rentals.ts` already solved this the
+  token-correct way via `avatarTone: StatusKey` — the two screens now disagree); white glyph on
+  `--progress: #fbbf24` measures ~1.7:1, under the 3:1 WCAG non-text minimum; `Maintenance.tsx`
+  declares its own four-value flag type instead of the 17-entry registry; several data files
+  `throw` at module scope, the same uncatchable failure mode already fixed once in `money.ts`;
+  `membership.ts` and `clients.ts` are unlinked universes with no shared ids.
+- Remaining `03 Core Modules` mockups not yet matched: Expenses, Reports, Tools, and the five
+  Settings screens (Organization, Branch Management, Business Hours, Communication, Numbering).
+
 ## 2026-08-06 — Typography v2.2, IA Correction, Floor Workspace Build (Handover/Return/Reset)
 
 **Phase:** build-every-page (post-schema) · **Status:** partial
