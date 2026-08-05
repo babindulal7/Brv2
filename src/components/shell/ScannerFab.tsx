@@ -1,0 +1,310 @@
+import { useEffect, useRef, useState } from 'react'
+import Icon from '../ui/Icon'
+import { BrowserMultiFormatReader } from '@zxing/browser'
+
+/**
+ * **Scanner — Foundation v2.0 §5.5.**
+ *
+ * > "One FAB, bottom-right, at **every** width — not mobile-only, never a
+ * > sidebar item. Six contexts. Continuous mode. Audible and haptic feedback
+ * > first, with wrong-job as the key state."
+ */
+
+const CONTEXTS = [
+  { key: 'pack', label: 'Packing', hint: 'Tick items against the packing list' },
+  { key: 'handover', label: 'Handover', hint: 'Confirm what physically leaves' },
+  { key: 'return', label: 'Return', hint: 'Receive and count items back' },
+  { key: 'reset', label: 'Reset', hint: 'Clear items back to Available' },
+  { key: 'stock', label: 'Stock Check', hint: 'Verify shelf against record' },
+  { key: 'lookup', label: 'Lookup', hint: 'Find any item by code' },
+] as const
+
+type Feedback = { tone: 'ok' | 'wrong-job' | 'unknown' | 'duplicate'; text: string } | null
+
+export default function ScannerFab() {
+  const [open, setOpen] = useState(false)
+  const [context, setContext] = useState<(typeof CONTEXTS)[number]['key']>('pack')
+  const [continuous, setContinuous] = useState(true)
+  const [feedback, setFeedback] = useState<Feedback>(null)
+  
+  const panel = useRef<HTMLDivElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const codeReader = useRef<BrowserMultiFormatReader | null>(null)
+
+  // 1. Keyboard Wedge Shortcut & Esc/Outside Click
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
+        e.preventDefault()
+        setOpen(true)
+        setTimeout(() => inputRef.current?.focus(), 50)
+      }
+      if (open && e.key === 'Escape') setOpen(false)
+    }
+    const away = (e: Event) => {
+      if (open && e.target instanceof Element && !e.target.closest('[data-scanner]')) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('keydown', handleKey)
+    document.addEventListener('pointerdown', away)
+    return () => {
+      document.removeEventListener('keydown', handleKey)
+      document.removeEventListener('pointerdown', away)
+    }
+  }, [open])
+
+  // 2. Camera Mount/Unmount (ZXing Web Fallback)
+  useEffect(() => {
+    if (!open) {
+      (codeReader.current as any)?.reset()
+      codeReader.current = null
+      return
+    }
+
+    if (!codeReader.current) {
+      codeReader.current = new BrowserMultiFormatReader()
+    }
+
+    let isMounted = true
+    if (videoRef.current) {
+      // Decode from default video device
+      codeReader.current.decodeFromVideoDevice(undefined, videoRef.current, (result) => {
+        if (result && isMounted) {
+          handleScan(result.getText())
+        }
+      }).catch(e => console.warn('Scanner init failed', e))
+    }
+
+    return () => {
+      isMounted = false
+      ;(codeReader.current as any)?.reset()
+    }
+  }, [open, continuous]) // re-mounts on open
+
+  // 3. Audio & Haptic Feedback Engine
+  const playTone = (type: NonNullable<Feedback>['tone']) => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+      if (!AudioContextClass) return
+      const ctx = new AudioContextClass()
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+
+      if (type === 'ok') {
+        osc.type = 'sine'
+        osc.frequency.setValueAtTime(880, ctx.currentTime)
+        gain.gain.setValueAtTime(0.5, ctx.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1)
+        osc.start(ctx.currentTime)
+        osc.stop(ctx.currentTime + 0.1)
+      } else if (type === 'duplicate') {
+        osc.type = 'sine'
+        osc.frequency.setValueAtTime(440, ctx.currentTime)
+        gain.gain.setValueAtTime(0.3, ctx.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1)
+        osc.start(ctx.currentTime)
+        osc.stop(ctx.currentTime + 0.1)
+        
+        const osc2 = ctx.createOscillator()
+        const gain2 = ctx.createGain()
+        osc2.type = 'sine'
+        osc2.frequency.setValueAtTime(440, ctx.currentTime + 0.15)
+        gain2.gain.setValueAtTime(0.3, ctx.currentTime + 0.15)
+        gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25)
+        osc2.connect(gain2)
+        gain2.connect(ctx.destination)
+        osc2.start(ctx.currentTime + 0.15)
+        osc2.stop(ctx.currentTime + 0.25)
+      } else {
+        // Error / Unknown buzz
+        osc.type = 'sawtooth'
+        osc.frequency.setValueAtTime(150, ctx.currentTime)
+        gain.gain.setValueAtTime(0.4, ctx.currentTime)
+        gain.gain.linearRampToValueAtTime(0.01, ctx.currentTime + 0.3)
+        osc.start(ctx.currentTime)
+        osc.stop(ctx.currentTime + 0.3)
+      }
+    } catch(e) {}
+  }
+
+  const fire = (tone: NonNullable<Feedback>['tone'], text: string) => {
+    playTone(tone)
+    if ('vibrate' in navigator) navigator.vibrate(tone === 'ok' ? 30 : tone === 'duplicate' ? [30, 40, 30] : [40, 60, 40])
+    
+    setFeedback({ tone, text })
+    window.setTimeout(() => setFeedback(null), 2600)
+  }
+
+  const handleScan = (code: string) => {
+    const c = code.trim().toUpperCase()
+    if (!c) return
+    
+    // Simulate real responses (since Engine isn't fully wired)
+    if (c.includes('ERR')) fire('wrong-job', `${c} belongs to another job`)
+    else if (c.includes('XXX')) fire('unknown', 'Not a Babin code')
+    else if (c.includes('DUP')) fire('duplicate', `${c} already scanned`)
+    else fire('ok', `${c} — ticked`)
+
+    if (inputRef.current) inputRef.current.value = ''
+    if (!continuous) setOpen(false)
+  }
+
+  const tone = feedback?.tone
+  const bannerBg = tone === 'ok' ? 'var(--st-in-bg)' : tone === 'wrong-job' ? 'var(--st-danger-bg)' : 'var(--st-progress-bg)'
+  const bannerFg = tone === 'ok' ? 'var(--st-in-fg)' : tone === 'wrong-job' ? 'var(--st-danger-fg)' : 'var(--st-progress-fg)'
+
+  return (
+    <div data-scanner data-floor="true" style={{ position: 'fixed', right: 20, bottom: 20, zIndex: 60 }}>
+      {open && (
+        <div
+          ref={panel}
+          role="dialog"
+          aria-label="Scanner"
+          style={{
+            position: 'absolute',
+            right: 0,
+            bottom: 62,
+            width: 292,
+            padding: 14,
+            borderRadius: 'var(--r-card)',
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            boxShadow: 'var(--shadow-modal)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+            <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>Scanner</div>
+            <button 
+              onClick={() => setOpen(false)}
+              style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 4 }}
+              title="Close (Esc)"
+            >
+              <Icon name="close" size={16} />
+            </button>
+          </div>
+          <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginBottom: 10 }}>
+            {CONTEXTS.find(c => c.key === context)?.hint || 'Select context'}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginBottom: 12 }}>
+            {CONTEXTS.map((c) => {
+              const on = context === c.key
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={() => setContext(c.key)}
+                  aria-pressed={on}
+                  title={c.hint}
+                  style={{
+                    height: 30,
+                    borderRadius: 7,
+                    border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
+                    background: on ? 'var(--st-primary-bg)' : 'transparent',
+                    color: on ? 'var(--st-primary-fg)' : 'var(--text2)',
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: on ? 600 : 500,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {c.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Camera Viewfinder */}
+          <div style={{ 
+            position: 'relative', 
+            height: 160, 
+            background: '#000', 
+            borderRadius: 8, 
+            overflow: 'hidden',
+            marginBottom: 10,
+            border: feedback ? `2px solid ${bannerBg}` : '1px solid transparent'
+          }}>
+            <video ref={videoRef} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            
+            {/* Viewfinder crosshairs overlay */}
+            <div style={{ position: 'absolute', inset: '15%', border: '1.5px dashed rgba(255,255,255,0.4)', borderRadius: 12, pointerEvents: 'none' }} />
+          </div>
+
+          {/* Manual Entry */}
+          <div style={{ position: 'relative' }}>
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder="Type code or use wedge scanner..."
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleScan(e.currentTarget.value)
+              }}
+              style={{
+                width: '100%',
+                height: 36,
+                padding: '0 12px',
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: 'var(--app-bg)',
+                color: 'var(--text)',
+                fontSize: 'var(--t-ui)',
+                fontFamily: 'inherit'
+              }}
+            />
+          </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 11, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            <input type="checkbox" checked={continuous} onChange={() => setContinuous((v) => !v)} />
+            Continuous mode — keep scanning
+          </label>
+
+          {feedback && (
+            <div
+              role="status"
+              style={{
+                marginTop: 10,
+                padding: '8px 10px',
+                borderRadius: 8,
+                background: bannerBg,
+                color: bannerFg,
+                fontSize: 'var(--t-meta)',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+              }}
+            >
+              <Icon name={tone === 'ok' ? 'checklist' : tone === 'wrong-job' ? 'alert_triangle' : 'error'} size={14} fill />
+              {feedback.text}
+            </div>
+          )}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Scanner"
+        aria-expanded={open}
+        style={{
+          width: 52,
+          height: 52,
+          borderRadius: 999,
+          border: 'none',
+          background: 'var(--btn-primary-bg)',
+          color: 'var(--btn-primary-fg)',
+          boxShadow: 'var(--shadow-modal)',
+          cursor: 'pointer',
+          display: 'grid',
+          placeItems: 'center',
+        }}
+      >
+        <Icon name="search" size={22} />
+      </button>
+    </div>
+  )
+}

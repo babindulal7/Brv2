@@ -1,0 +1,542 @@
+/* ============================================================================
+   THEME DESIGN SYSTEM v1.0 — token layer
+   Source: 01 Design System/Theme Design System.md
+
+   Every value here is transcribed from that document. Components read these
+   tokens and never hardcode a colour (Buttons & Status Colors, Developer Rules:
+   "Use design tokens only. Never hardcode colors.").
+
+   Light = clean · professional · enterprise · spacious
+   Dark  = cinematic · premium · OLED friendly · long working hours
+   ========================================================================== */
+
+:root,
+:root[data-theme='light'] {
+  /* brand */
+  --gold: #c9982f;
+  /* The wordmark's own gold. Brand --gold measures 2.62:1 on white — fine as a
+     fill behind dark text (its job in the dark theme), not as ink. This step is
+     the same hue at 4.54:1, so the mark stays gold and stays readable. Dark
+     theme keeps brand gold, which is already well clear against #111827. */
+  --brand-mark: #96700f;
+  --blue: #2563eb;
+  --success: #16a34a;
+  --warning: #ea580c;
+  --danger: #dc2626;
+  /* §4.2 — the five. --primary/--progress are the canonical names; --blue and
+     --warning remain as aliases only until the last inline style is migrated. */
+  --primary: #2563eb;
+  --progress: #d97706;
+  --primary-text: #1d4ed8;
+  --progress-text: #b45309;
+
+  /* surfaces */
+  --app: #f6f8fb;
+  --sidebar: #ffffff;
+  --card: #ffffff;
+  --card2: #f9fafb;
+  --modal: #ffffff;
+  --dropdown: #ffffff;
+
+  /* borders */
+  --border: #e5e7eb;
+  --border2: #f1f5f9;
+  --divider: #eceff3;
+
+  /* text
+     ⚠ DEVIATION, light theme only. The spec's --muted #9ca3af measures 2.54:1
+     on white — it carries real content here (calendar day numbers, row meta,
+     KPI secondary lines), so every level shifts one step down the same gray
+     ramp to clear AA. --disabled inherits the old --muted value and is now
+     reserved for genuinely inert marks: out-of-month days, bullet separators.
+     TODO(decision): confirm or overrule alongside the status-colour deviation. */
+  --text: #111827;
+  --text2: #4b5563; /* spec #6b7280 */
+  --muted: #6b7280; /* spec #9ca3af — 2.54:1, below AA */
+  --disabled: #9ca3af; /* spec #d1d5db */
+
+  /* hover */
+  --hover-card: #f8fafc;
+  --hover-sidebar: #eef4ff;
+  --hover-button: #1d4ed8;
+  --hover-row: #f5f7fa;
+
+  /* primary button — LIGHT: blue bg, white text */
+  --btn-primary-bg: #2563eb;
+  --btn-primary-fg: #ffffff;
+  --btn-secondary-bg: #ffffff;
+  --btn-secondary-border: #d1d5db;
+
+  /* sidebar active — LIGHT: blue */
+  --nav-active-accent: #2563eb;
+  --nav-active-bg: #eef4ff;
+  --nav-icon: #6b7280;
+
+  /* inputs — LIGHT: blue focus */
+  --input-bg: #ffffff;
+  --input-border: #d1d5db;
+  --input-placeholder: #9ca3af;
+  --input-focus: #2563eb;
+
+  /* tables */
+  --th-bg: #f8fafc;
+  --tr-bg: #ffffff;
+  --tr-hover: #f5f7fa;
+
+  /* elevation */
+  --shadow-card: 0 2px 8px rgba(15, 23, 42, 0.05);
+  --shadow-kpi: 0 4px 12px rgba(0, 0, 0, 0.05);
+  --shadow-modal: 0 15px 40px rgba(15, 23, 42, 0.12);
+
+  /* status — background / text pairs.
+     ⚠ DEVIATION from Theme Design System §Status Colors, light theme only.
+     Five of the spec's pairs measure below WCAG AA 4.5:1 at badge size
+     (11.5px/600): maintenance 2.86, return 3.35, damage 3.95, reserved 4.24,
+     cancelled 4.39. Backgrounds are kept exactly as specified; only those five
+     foregrounds are darkened one step to clear 4.5:1. The dark theme's pairs
+     already pass and are untouched.
+     TODO(decision): confirm or overrule — logged with the T-series conflicts. */
+  --st-neutral-bg: #f3f4f6;     --st-neutral-fg: #4b5563;
+  --st-primary-bg: #dbeafe;     --st-primary-fg: #1d4ed8;
+  --st-progress-bg: #fef3c7;    --st-progress-fg: #92400e;
+  /* §4.2 — green separates On Rent from Returned by *fill weight*, not by hue.
+     Solid = out, soft = in. Same green, two weights, so the pair reads as one
+     colour doing two jobs rather than as two colours. */
+  --st-out-bg: #15803d;         --st-out-fg: #ffffff; /* white on green-600 was 3.30:1 */
+  --st-in-bg: #dcfce7;          --st-in-fg: #15803d;
+  --st-danger-bg: #fee2e2;      --st-danger-fg: #b91c1c;
+  --st-purple-bg: #f3e8ff;      --st-purple-fg: #7e22ce; /* Sub-Rental */
+  /* Gold, outline only. Never a fill, never a button (§4.2). */
+  --ext-line: #c9982f;          --ext-fg: #96700f;
+
+  /* Overdue row wash — Dashboard.md §7. Tinted so the left border is not the
+     only signal ("never colour alone"); the row still states "Overdue" in text. */
+  /* Kept light enough that --muted meta text on an overdue row still clears
+     4.5:1; a deeper wash drags the row's own body copy under. */
+  --danger-soft: #fff7f7;
+
+  /* Text-safe warning/danger/success — see BRAND_TEXT in lib/status.ts. */
+  --warning-text: #b45309;
+  --danger-text: #b91c1c;
+  --success-text: #15803d;
+  --blue-text: #1d4ed8;
+
+  /*
+    charts — re-validated 5 Aug against §4.2's five-colour law.
+
+    §4.2 bans purple, cyan, teal, indigo and violet outright, which had left
+    the categorical set on a placeholder — three slots replaced by darker
+    shades of already-used families, with the dataviz six-checks known broken
+    and logged as a TODO(decision). That is resolved: eight hues *do* fit
+    inside the allowed families (blue, orange, green, red, plus pink/magenta
+    and gold/olive, neither of which §4.2 mentions), re-picked and run through
+    `dataviz/scripts/validate_palette.js` against this exact surface.
+
+    Light — surface #ffffff: lightness band PASS, chroma floor PASS, CVD
+    separation PASS (worst adjacent ΔE 8.4 protan, target 8), normal-vision
+    floor PASS (worst 15.2, floor 15 — the tightest margin in the set),
+    contrast PASS all 8 ≥ 3:1. ALL CHECKS PASS, zero WARNs.
+  */
+  --chart-grid: #e5e7eb;
+  --cat-1: #0072b2; /* blue        */
+  --cat-2: #c87a00; /* orange      */
+  --cat-3: #009e73; /* green       */
+  --cat-4: #d55e00; /* red         */
+  --cat-5: #3d5a9e; /* blue, dark  */
+  --cat-6: #b23a6b; /* pink        */
+  --cat-7: #6b7a00; /* olive       */
+  --cat-8: #8b3a0e; /* rust        */
+}
+
+:root[data-theme='dark'] {
+  --gold: #d8a93a;
+  --brand-mark: #d8a93a;
+  --blue: #3b82f6;
+  --success: #22c55e;
+  --warning: #fb923c;
+  --danger: #ef4444;
+  --primary: #3b82f6;
+  --progress: #fbbf24;
+  --primary-text: #60a5fa;
+  --progress-text: #fbbf24;
+
+  --app: #0b1220;
+  --sidebar: #111827;
+  --card: #161f2e;
+  --card2: #1b2435;
+  --modal: #161f2e;
+  --dropdown: #1b2435;
+
+  --border: #2b3648;
+  --border2: #374151;
+  --divider: #2f3a4f;
+
+  --text: #f8fafc;
+  --text2: #cbd5e1;
+  --muted: #94a3b8;
+  --disabled: #64748b;
+
+  --hover-card: #202c3e;
+  --hover-sidebar: #1e293b;
+  --hover-button: #2563eb;
+  --hover-row: #233047;
+
+  /* primary button — DARK: gold bg, black text.
+     Ruled 5 Aug: two specs agree (Theme Design System + Buttons & Status
+     Colors B1). Design Tokens v2.0's "gold is not primary" is the outlier,
+     and its concern — gold colliding with the external-gear marker — applies
+     to the light theme where --ext gold outlines actually appear. */
+  --btn-primary-bg: #d8a93a;
+  --btn-primary-fg: #000000;
+  --btn-secondary-bg: #1f2937;
+  --btn-secondary-border: #374151;
+
+  /* sidebar active — DARK: gold */
+  --nav-active-accent: #d8a93a;
+  --nav-active-bg: #1a2233;
+  --nav-icon: #94a3b8;
+
+  /* inputs — DARK: gold focus */
+  --input-bg: #111827;
+  --input-border: #334155;
+  --input-placeholder: #64748b;
+  --input-focus: #d8a93a;
+
+  --th-bg: #111827;
+  --tr-bg: #161f2e;
+  --tr-hover: #1f2937;
+  --tr-alt: #1a2233;
+
+  --shadow-card: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --shadow-kpi: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.65);
+
+  --st-neutral-bg: #2d3748;     --st-neutral-fg: #cbd5e1;
+  --st-primary-bg: #102c56;     --st-primary-fg: #60a5fa;
+  --st-progress-bg: #47340c;    --st-progress-fg: #fbbf24;
+  /* §4.2 — solid = out, soft = in. Same green, two weights. */
+  --st-out-bg: #22c55e;         --st-out-fg: #06240f;
+  --st-in-bg: #123524;          --st-in-fg: #4ade80;
+  --st-danger-bg: #4b1515;      --st-danger-fg: #f87171;
+  --st-purple-bg: #3b0764;      --st-purple-fg: #c084fc; /* Sub-Rental */
+  --ext-line: #d8a93a;          --ext-fg: #d8a93a;
+
+  --danger-soft: #1f1517;
+
+  --warning-text: #fdba74;
+  --danger-text: #fca5a5;
+  --success-text: #4ade80;
+  --blue-text: #60a5fa;
+
+  /*
+    Dark is a *selected* set from the same hue order — not an automatic flip of
+    the light values, since a hue that clears the light card at L 0.43–0.77
+    usually sits outside dark's 0.48–0.67 band. Re-validated 5 Aug against
+    #161f2e: lightness band PASS, chroma floor PASS, CVD separation PASS
+    (worst adjacent ΔE 8.7 protan/deutan), normal-vision floor PASS (worst
+    18.1), contrast PASS all 8 ≥ 3:1. ALL CHECKS PASS, zero WARNs.
+  */
+  --chart-grid: #334155;
+  --cat-1: #3b82d6; /* blue        */
+  --cat-2: #b87a1e; /* orange      */
+  --cat-3: #249e76; /* green       */
+  --cat-4: #d9613c; /* red         */
+  --cat-5: #5a76c2; /* blue, dark  */
+  --cat-6: #c25588; /* pink        */
+  --cat-7: #7a8c3e; /* olive       */
+  --cat-8: #5d71b0; /* blue, light */
+}
+
+/* ---- scale: identical in both themes ---- */
+:root {
+  /* radius */
+  --r-btn: 12px;
+  --r-card: 14px; /* §4.4 — allowed radii are 6 / 8 / 14 / 999 */
+  --r-input: 12px;
+  --r-modal: 20px;
+  --r-badge: 999px;
+
+  /* Inline links follow the theme's blue in both modes — gold is reserved for
+     the dark primary and would read as a warning inline. This is the *text*
+     blue: brand --blue measures 4.23:1 on the dark card. */
+  --link: var(--blue-text);
+
+  /* spacing */
+  --sp-xs: 4px;
+  --sp-sm: 8px;
+  --sp-md: 12px;
+  --sp-lg: 16px;
+  --sp-xl: 24px;
+  --sp-2xl: 32px;
+  --sp-3xl: 40px;
+
+  /* type scale */
+  --fs-display: 40px;
+  --fs-h1: 32px;
+  --fs-h2: 28px;
+  --fs-h3: 24px;
+  --fs-h4: 20px;
+  --fs-title: 18px;
+  --fs-body: 16px;
+  --fs-small: 14px;
+  --fs-caption: 12px;
+
+  --dur: 150ms;
+  --dur-theme: 200ms;
+}
+
+/* ---- base ---- */
+* {
+  box-sizing: border-box;
+}
+
+/* min-height, not height: a fixed 100% caps the document at one viewport and
+   clips anything below the fold instead of scrolling it. */
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+/* ── Foundation v2.2 §4.3.8 · reference declaration ────────────────────── */
+
+:root {
+  --font-display: 'Outfit', system-ui, sans-serif;
+  --font-body: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-id: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  /* Declared, not loaded — §4.3.7 keeps Devanagari off the English path. */
+  --font-ne-display: 'Asar', serif;
+  --font-ne-body: 'Hind', system-ui, sans-serif;
+
+  /*
+    §4.3.6 — **fluid, not fixed.** Every value is `rem`, so the whole scale
+    follows the root below and one variable moves the entire application.
+    At 1280 / at 1920:
+  */
+  --t-h1: 2.1rem;    /* 31 / 36 */
+  --t-h2: 1.45rem;   /* 22 / 25 */
+  --t-h3: 1.2rem;    /* 18 / 20 */
+  --t-kpi: 1.6rem;   /* 24 / 27 */
+  --t-body: 1rem;    /* 15 / 17 */
+  --t-ui: 0.93rem;   /* 14 / 16 */
+  --t-meta: 0.85rem; /* 13 / 14 */
+  --t-th: 0.75rem;   /* 11 / 13 — the floor; nothing renders below it */
+}
+
+/*
+  §4.3.6 — the root. 15px at 1280 → 17px at 1920, then it stops: on a wide
+  screen a dense operations tool should show *more information*, not bigger
+  letters, so the extra width goes to columns.
+
+  Two things make this correct rather than merely clever:
+   1. the middle term is `rem + vw`, **never pure `vw`** — pure vw ignores
+      browser zoom, so Ctrl+ would do nothing, a WCAG 1.4.4 failure;
+   2. the root is **never a fixed px** — `html { font-size: 16px }` would
+      override the text size the user chose in their OS or browser.
+
+  `--ui-scale` is §4.3.11's per-user setting, multiplied in here so it is
+  additive to browser zoom rather than a replacement for it.
+*/
+html {
+  font-size: calc(clamp(0.9375rem, 0.6875rem + 0.3125vw, 1.0625rem) * var(--ui-scale, 1));
+}
+
+/*
+  §4.3.6 — "Floor screens run one step up." Pack, Handover, Return, Reset and
+  the Scanner are read at arm's length, often in motion, sometimes one-handed.
+
+  This re-declares the *tokens* rather than setting `--ui-scale`, because
+  `--ui-scale` is only read by `html { font-size: … }` and `rem` always resolves
+  against the root — setting it on a subtree looks like it works and moves
+  nothing. `--ui-scale` stays §4.3.11's per-user control; this is the per-screen
+  step, and the two multiply.
+*/
+[data-floor='true'] {
+  --floor-step: 1.1;
+  --t-h1: calc(2.1rem * var(--floor-step));
+  --t-h2: calc(1.45rem * var(--floor-step));
+  --t-h3: calc(1.2rem * var(--floor-step));
+  --t-kpi: calc(1.6rem * var(--floor-step));
+  --t-body: calc(1rem * var(--floor-step));
+  --t-ui: calc(0.93rem * var(--floor-step));
+  --t-meta: calc(0.85rem * var(--floor-step));
+  --t-th: calc(0.75rem * var(--floor-step));
+  font-size: var(--t-body);
+}
+
+body {
+  margin: 0;
+  background: var(--app);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: var(--t-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  /* "smooth 200ms transition" on theme switch */
+  transition: background-color var(--dur-theme) ease, color var(--dur-theme) ease;
+}
+
+/* §4.3.2 — Outfit carries the brand voice, never body copy. */
+h1,
+h2,
+h3,
+.title,
+.card-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* §4.3.2 — "tabular-nums is not optional. Without it a column of money does
+   not align and the eye cannot scan down it." */
+.kpi-value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+  §4.3.4 — **identifiers only**: serials, booking IDs, QR payloads, PAN.
+  "and only they do." A packer matching `SN-FX3-102` off a label under warehouse
+  light needs `1`/`l`/`I` and `0`/`O` separated and the width fixed, so a
+  mistyped serial shows as a length difference before anyone reads a character.
+*/
+.identifier,
+.serial,
+.booking-id {
+  font-family: var(--font-id);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+  §4.3.1 — a *figure* is not an identifier. Money, counts, percentages and
+  times keep the body face and only take tabular figures, because §4.3.2 bars
+  Outfit below 16px and these sit at 12–15. The class used to be `.mono` and
+  applied JetBrains to every number; that was the pre-v2.2 rule.
+*/
+.figure,
+td,
+.money {
+  font-variant-numeric: tabular-nums;
+}
+
+/* §4.3.6 — the KPI band is the one place figures take the display face. */
+.kpi-value,
+.figure-lg {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── §4.3.5 · Nepali ───────────────────────────────────────────────────── */
+
+:root[lang='ne'] body,
+:root[lang='ne'] td,
+:root[lang='ne'] th,
+:root[lang='ne'] button,
+:root[lang='ne'] label {
+  font-family: var(--font-ne-body);
+  /* Devanagari matras need the vertical room (§4.3.6). */
+  line-height: 1.6;
+}
+
+/*
+  §4.3.5 point 1 — **never bold Asar.** It ships in one weight; a component
+  asking for 600 makes the browser synthesise a fake bold, which smears
+  Devanagari conjuncts. Nepali hierarchy comes from size alone.
+*/
+:root[lang='ne'] h1,
+:root[lang='ne'] h2,
+:root[lang='ne'] h3,
+:root[lang='ne'] .title,
+:root[lang='ne'] .kpi-value {
+  font-family: var(--font-ne-display);
+  font-weight: 400;
+}
+
+/* Focus ring 2px, theme-aware — matches the input focus colour. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--input-focus);
+  outline-offset: 2px;
+}
+
+/*
+  ⛔ Removed 5 Aug — this block scoped a status token, `--st-inspection-*`, that
+  no longer exists. v2.0 replaced the eight status tokens with the five §4.2
+  names (neutral/primary/progress/out/in/danger), and v2.2's design review
+  caught that the override survived the rename: it referenced dead variables
+  and did nothing. The purple it was guarding against is banned outright by
+  §4.2 now — "No purple, cyan, teal, indigo, violet" — with no reservation for
+  Utilization or anything else, so no page-level exception is needed or legal.
+  `[data-page='today']` itself is unused elsewhere and removed with it.
+*/
+
+/*
+  The movement row's geometry lives here rather than inline, because the
+  breakpoint below has to be able to win — an inline grid-template-columns
+  beats any stylesheet rule that isn't !important.
+  62px, not 56: "09:00 AM" needs 58px at 11.5px mono, and §6 keeps the time on
+  one line.
+*/
+.movement-row {
+  display: grid;
+  grid-template-columns: 62px 34px minmax(0, 1fr) auto;
+}
+.row-avatar {
+  display: grid;
+}
+
+/*
+  §2 targets 1920px. Below roughly 1560 the three columns get narrow enough
+  that the client name and the package start clipping, and the first things
+  worth losing are the two that carry no information the row doesn't repeat:
+  the decorative avatar, and the *label* on Open Booking — the icon and its
+  aria-label survive, so the primary action never disappears.
+*/
+@media (max-width: 1560px) {
+  .movement-row {
+    grid-template-columns: 58px minmax(0, 1fr) auto;
+  }
+  .row-avatar,
+  .row-open-label {
+    display: none;
+  }
+}
+
+/* Hover: 150ms, scale 1.02, shadow increases slightly. */
+.lift {
+  transition: transform var(--dur) ease, box-shadow var(--dur) ease, border-color var(--dur) ease;
+}
+.lift:hover {
+  /* Dashboard.md §17: "Hover — lift 2px, shadow increases, border → accent."
+     A card sets --lift-accent to its own accent; anything that doesn't keeps
+     its border, so the rule is opt-in rather than a surprise. */
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-modal);
+  border-color: var(--lift-accent, var(--border));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  .lift {
+    transition: none !important;
+    animation: none !important;
+  }
+  .lift:hover {
+    transform: none;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+/* ── lazy-load spinner ──────────────────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg) } }

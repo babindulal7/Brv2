@@ -1,0 +1,127 @@
+/**
+ * The Date Engine — one conversion, one month-length table, one `today`.
+ *
+ * `Calendar.md` v3.2 §4.2 marks this ⭐ **"the highest-priority correctness bug
+ * in the product"**: the system held three different BS offsets at once, so the
+ * same AD day rendered as two different BS days depending on the page. "A
+ * Nepali client reading a delivery date one day out is the first thing anyone
+ * will notice."
+ *
+ * Every BS date in the app must come from here. Nothing computes its own.
+ *
+ * The anchor is the one §4.2 names as correct — the offset used by Cases,
+ * Handover and Maintenance: **16 Jul 2026 = 1 Shrawan 2083**, which puts
+ * 26 Jul at 11 Shrawan. That is a spec-supplied fact, not a conversion I
+ * derived; a real BS calendar table replaces this file's arithmetic later.
+ */
+
+/** Locked month spellings — never "Shravan". */
+export const BS_MONTHS = [
+  'Baishakh',
+  'Jestha',
+  'Ashadh',
+  'Shrawan',
+  'Bhadra',
+  'Ashwin',
+  'Kartik',
+  'Mangsir',
+  'Poush',
+  'Magh',
+  'Falgun',
+  'Chaitra',
+] as const
+
+export interface BsDate {
+  year: number
+  /** 1-based, indexes `BS_MONTHS`. */
+  month: number
+  day: number
+}
+
+/** 16 Jul 2026 (AD) === 1 Shrawan 2083 (BS). `Calendar.md` §4.2. */
+const ANCHOR_AD = Date.UTC(2026, 6, 16)
+const ANCHOR_BS: BsDate = { year: 2083, month: 4, day: 1 }
+
+/**
+ * Days in Shrawan 2083. BS month lengths vary year to year and come from a
+ * table; only the anchor month is known here, so conversion is valid within it
+ * and `toBs` returns null outside — an honest gap beats a wrong date.
+ */
+const SHRAWAN_2083_DAYS = 32
+
+const DAY = 86400000
+
+/**
+ * Nepal Time is **UTC+05:45** — Foundation §3.1: "stored UTC, rendered in user
+ * timezone (Asia/Kathmandu, UTC+05:45)".
+ */
+const NPT_OFFSET_MIN = 345
+
+/**
+ * An instant → the civil date it falls on **in Kathmandu**.
+ *
+ * ⛔ This used to truncate on `getUTCDate()`, which is a different date for
+ * 5 hours 45 minutes of every day: any instant from 18:15 UTC onward is already
+ * tomorrow in Kathmandu, so the BS day, the AD day and every "days left" chip
+ * derived from them rendered one day early. It happened to look right only
+ * because every seeded timestamp is midnight UTC — 05:45 in Kathmandu — so the
+ * window was never crossed. It would have started failing the moment real
+ * `timestamptz` values arrived.
+ *
+ * Shifting by the offset before truncating is correct for Nepal specifically,
+ * because NPT has no daylight saving and has not changed since 1986.
+ */
+function kathmanduCivil(ad: Date): number {
+  const shifted = new Date(ad.getTime() + NPT_OFFSET_MIN * 60_000)
+  return Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate())
+}
+
+/** AD → BS. Returns null outside the month this file can vouch for. */
+export function toBs(ad: Date): BsDate | null {
+  const utc = kathmanduCivil(ad)
+  const offset = Math.round((utc - ANCHOR_AD) / DAY)
+  const day = ANCHOR_BS.day + offset
+  if (day < 1 || day > SHRAWAN_2083_DAYS) return null
+  return { year: ANCHOR_BS.year, month: ANCHOR_BS.month, day }
+}
+
+/** "16 Shrawan 2083 BS" — Latin digits always (Foundation §03). */
+export function formatBs(bs: BsDate, opts: { suffix?: boolean } = {}): string {
+  const name = BS_MONTHS[bs.month - 1] ?? ''
+  return `${bs.day} ${name} ${bs.year}${opts.suffix === false ? '' : ' BS'}`
+}
+
+/**
+ * "31 Jul 2026" — rendered in Kathmandu, not UTC.
+ *
+ * Same defect as `toBs` had: `timeZone: 'UTC'` puts the AD line a day behind
+ * the BS line above it for the last 5h45m of every UTC day, so the pair would
+ * have disagreed with each other on the same screen.
+ */
+export function formatAd(ad: Date): string {
+  return ad.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kathmandu' })
+}
+
+/**
+ * §4.1 — columns are **generated from a range, never hand-listed**. The build
+ * the spec reviewed rendered 28 Jul twice and WED twice: seven days occupying
+ * eight columns, which no generated range can produce.
+ */
+export function eachDay(startAd: Date, days: number): Date[] {
+  const start = Date.UTC(startAd.getUTCFullYear(), startAd.getUTCMonth(), startAd.getUTCDate())
+  return Array.from({ length: days }, (_, i) => new Date(start + i * DAY))
+}
+
+/**
+ * §4.3 — one `today`, resolved once per render. The Today marker, the summary
+ * heading, every countdown and every "days left" chip read this single value.
+ *
+ * Fixed to the seeded operating day so the static build stays self-consistent;
+ * it becomes the real clock when data is wired.
+ */
+export const TODAY = new Date(Date.UTC(2026, 6, 31))
+
+/** Nepal's weekend is Saturday. `Calendar.md` §0 — Saturday shaded, not Sunday. */
+export function isWeekend(ad: Date): boolean {
+  return ad.getUTCDay() === 6
+}

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#050b12" />
+    <title>Babin Rentals OS</title>
+
+    <!--
+      No font <link> here on purpose. Fonts are self-hosted and imported in
+      src/main.tsx so they are bundled and precacheable — the app has to render
+      correctly offline, and a CDN cannot be reached from a warehouse with no
+      signal. See Platform Build Instructions §4.1.
+    -->
+  </head>
+  <body>
+    <div id="root"></div>
+    <!--
+      Foundation v2.2 §4.3.11 — "applied before first paint so nothing reflows
+      on load." This runs ahead of the bundle for that reason; the same value is
+      written by lib/textSize.ts when the user changes it in Settings.
+    -->
+    <script>
+      (function () {
+        var v = localStorage.getItem('br-text-size')
+        var s = v === 'compact' ? 0.9 : v === 'large' ? 1.15 : 1
+        document.documentElement.style.setProperty('--ui-scale', String(s))
+      })()
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
