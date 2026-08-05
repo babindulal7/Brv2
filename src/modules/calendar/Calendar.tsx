@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, FooterNote, cardStyle } from '../../components/ui/Page'
@@ -103,6 +103,32 @@ function bsMonthStart(from: Date): Date {
     d = adDay(dayDiff(d, TODAY) - 1)
   }
   return d
+}
+
+/**
+ * Reads `?d=YYYY-MM-DD` into a UTC-midnight AD date.
+ *
+ * Returns `null` for anything the Date Engine cannot name — a malformed string,
+ * a real date outside the BS table's range, or the `2026-07-32` that Today's
+ * next-day button used to emit before its own day arithmetic was fixed. A bad
+ * parameter falls back to today rather than throwing or rendering a blank grid.
+ */
+function requestedDay(raw: string | null): Date | null {
+  if (!raw) return null
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw)
+  if (!m) return null
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  const ad = new Date(Date.UTC(y, mo - 1, d))
+  // Rejects overflow like 2026-07-32, which Date would roll into August.
+  if (ad.getUTCMonth() !== mo - 1 || ad.getUTCDate() !== d) return null
+  return toBs(ad) ? ad : null
+}
+
+/** Where the window starts so `day` is visible — one column in, as the render shows. */
+function anchorFor(day: Date | null, view: ViewName): Date {
+  const offset = view === 'Day' ? 0 : -1
+  if (!day) return adDay(offset)
+  return adDay(dayDiff(day, TODAY) + offset)
 }
 
 /** Every AD day the engine can still name inside that BS month. */
@@ -904,12 +930,24 @@ export default function Calendar() {
   const role: SystemRole = user ? SYSTEM_ROLE[user.role] : 'Viewer'
   const money = canViewMoney(role)
 
-  const [view, setView] = useState<ViewName>('Resource Timeline')
+  const [params] = useSearchParams()
+  const dParam = params.get('d')
+  const view0: ViewName = 'Resource Timeline'
+
+  const [view, setView] = useState<ViewName>(view0)
   const [full, setFull] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [zoom, setZoom] = useState<number>(DEFAULT_ZOOM)
-  /** The window's first day. `TODAY` sits one column in, as the render shows. */
-  const [start, setStart] = useState<Date>(adDay(-1))
+  /**
+   * The window's first day. `TODAY` sits one column in, as the render shows.
+   *
+   * Today's date pill, its prev/next day and month buttons and every cell of its
+   * mini month all link here as `/calendar?d=YYYY-MM-DD`. This screen used to
+   * read no query string at all, so all six landed on the same fixed week — the
+   * controls navigated and scoped nothing. Anchoring the window on `d` is what
+   * makes them mean what they say, and it makes a date linkable and shareable.
+   */
+  const [start, setStart] = useState<Date>(() => anchorFor(requestedDay(dParam), view0))
   const [rowType, setRowType] = useState<'All' | RowType>('All')
   const [client, setClient] = useState('All')
   const [kinds, setKinds] = useState<Set<BarKind>>(new Set())
