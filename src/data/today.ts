@@ -166,25 +166,19 @@ const MOVE_DONE_YESTERDAY = 4
 export const THROUGHPUT = `${MOVE_DONE} of ${MOVE_TOTAL} movements completed today · ${MOVE_DONE_YESTERDAY} at this hour yesterday`
 
 /*
- * ⚠ TODO(decision) — PLAN.md §4: **Revenue Today and Utilization are back on
- * this page and Foundation says they should not be.**
+ * SETTLED 6 Aug 2026 — Today carries six KPI cards, Revenue and Utilization
+ * among them.
  *
- * Foundation Specification §5.2, verbatim: "Today = today's jobs only. Pickups,
- * returns, alerts. A thin count strip — pickups · returns · overdue · alerts.
- * **No money KPIs. No charts.** Revenue and utilization live in Reports." That
- * is why `COUNTS` below exists and why `dashboardKpis` did not.
+ * Foundation §5.2 used to read "No money KPIs. No charts. Revenue and
+ * utilization live in Reports", which is why `COUNTS` exists and `dashboardKpis`
+ * did not. `Dashboard.PNG` shows six cards; Babin ruled the render correct and
+ * §5.2 now records that ruling, so the conflict is closed rather than pending.
  *
- * `Dashboard.PNG` is the older generation and shows six KPI cards including
- * both, and the page was rebuilt to match it, so `dashboardKpis` now returns
- * them to any role that may see money — an Owner reads "Revenue Today
- * Rs 1,85,000" on Today. Warehouse is unaffected either way (§8.3 removes both
- * cards structurally), so this is not a leak; it is a spec conflict, and
- * CLAUDE.md says Foundation wins over a module render.
- *
- * Someone has to settle it: either the render supersedes §5.2 for this screen,
- * or Revenue and Utilization come off Today for every role and `COUNTS`
- * replaces the six cards. Until then both shapes are in this file and only
- * `dashboardKpis` is rendered.
+ * Both are money KPIs, so §8.3 still governs who sees them: `dashboardKpis`
+ * takes `money` and simply omits the two cards when it is false. They are absent
+ * from the array — and therefore from the DOM — never masked. `KpiStrip` lays
+ * out `items.length` columns, so the strip closes up to four rather than leaving
+ * two holes.
  */
 
 /* ── §8 alerts ─────────────────────────────────────────────────────────── */

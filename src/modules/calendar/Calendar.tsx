@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, FooterNote, cardStyle } from '../../components/ui/Page'
-import { BRAND } from '../../lib/status'
+import { BRAND, BRAND_ON } from '../../lib/status'
 import { TODAY, toBs, formatBs, formatAd, eachDay, isWeekend, BS_MONTHS } from '../../lib/bs'
 import { canViewMoney } from '../../lib/rbac'
 import type { Role as SystemRole } from '../../lib/rbac'
@@ -1631,12 +1631,12 @@ export default function Calendar() {
         {KPIS.map((k) => (
           <article key={k.label} className="lift" style={{ ...cardStyle, padding: '13px 14px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              {/* The one literal on this screen. `KpiStrip` in `components/ui/Page.tsx`
-                  paints its tile glyph the same way, and `theme.css` has no
-                  theme-invariant white token to point at — every candidate
-                  (--card, --text, --st-out-fg) inverts between themes and would
-                  put dark ink on a saturated fill in one of them. */}
-              <span style={{ width: 30, height: 30, borderRadius: 8, background: BRAND[k.accent], color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+              {/* `--on-brand`/`--on-progress` are the theme-invariant inks this
+                  used to say did not exist. They do now: white on four of the
+                  five fills, dark amber on `--progress`, which is #fbbf24 in
+                  dark theme where white measured ~1.7:1. `KpiStrip` in
+                  `components/ui/Page.tsx` paints its tile the same way. */}
+              <span style={{ width: 30, height: 30, borderRadius: 8, background: BRAND[k.accent], color: BRAND_ON[k.accent], display: 'grid', placeItems: 'center', flexShrink: 0 }}>
                 <Icon name={k.icon} size={16} fill />
               </span>
               <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

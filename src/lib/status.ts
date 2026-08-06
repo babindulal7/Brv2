@@ -88,6 +88,24 @@ export const BRAND: Record<BrandKey, string> = {
  * a red fill and red micro-copy to stay recognisably the same colour without
  * the text being the failing one. §6 requires 4.5:1 verified in both themes.
  */
+/**
+ * The ink that sits **on** a brand fill — an icon glyph inside a coloured tile.
+ *
+ * Callers used to hard-code `#fff`, which is both a raw hex (§4.2) and wrong on
+ * two tiles. Dark theme lightens the fills, and measuring them in the browser
+ * showed `--progress` (#fbbf24) at 1.7:1 and `--success` (#22c55e) at 2.3:1
+ * against white — both under the 3:1 WCAG minimum for non-text. Those two take
+ * dark ink from their own family; the rest keep white.
+ */
+export const BRAND_ON: Record<BrandKey, string> = {
+  neutral: 'var(--on-brand)',
+  primary: 'var(--on-brand)',
+  progress: 'var(--on-progress)',
+  success: 'var(--on-success)',
+  danger: 'var(--on-brand)',
+  purple: 'var(--on-brand)',
+}
+
 export const BRAND_TEXT: Record<BrandKey, string> = {
   neutral: 'var(--muted)',
   primary: 'var(--primary-text)',

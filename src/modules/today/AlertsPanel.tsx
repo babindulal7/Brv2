@@ -8,15 +8,14 @@ import { useCanViewMoney } from './useMoneyVisibility'
 /**
  * Dashboard.md §8 — priority-sorted.
  *
- * ⚠ TODO(decision) — PLAN.md §4: §8 also says **"every alert carries its own
- * primary action… an alert with no action is a notification, not an alert."**
- * `Dashboard.PNG` draws no action on these rows, the page was matched to the
- * render, and the inline actions came out; the rows are now inert text. Each
- * `AlertRow` still carries `action` and `to`, and `carriesMoney` still reads
- * `action` to keep money alerts away from a money-blind session, so the field
- * is load-bearing but unrendered. Either the whole row becomes a link to
- * `a.to` (which keeps the render's look and restores §8), or §8's rule is
- * dropped for this column. Not mine to pick.
+ * §8: **"every alert carries its own primary action… an alert with no action is
+ * a notification, not an alert."** `Dashboard.PNG` draws no button on these
+ * rows, and matching the render had left them inert text — which satisfied the
+ * render and broke §8, while `action`/`to` stayed load-bearing but unrendered
+ * (`carriesMoney` reads `action` to keep money alerts off a money-blind
+ * session). **The whole row is the action instead**: it is a `<Link>` to `a.to`
+ * carrying `a.action` as its accessible name. That is pixel-identical to the
+ * render — no button appears — while every alert is openable and §8 holds.
  *
  * §5.6: the Critical Alerts KPI is "open alerts at Critical priority only" and
  * "must equal the Alerts column count". So this column renders
@@ -67,8 +66,11 @@ export default function AlertsPanel() {
         {alerts.map((a, i) => {
           const c = STATUS[a.statusKey]
           return (
-            <div
+            <Link
               key={a.title + a.detail}
+              to={a.to}
+              aria-label={`${a.action}: ${a.title} — ${a.detail}`}
+              className="lift"
               style={{
                 display: 'grid',
                 gridTemplateColumns: '32px minmax(0,1fr) auto',
@@ -76,6 +78,8 @@ export default function AlertsPanel() {
                 padding: '11px 15px',
                 borderBottom: i < alerts.length - 1 ? '1px solid var(--border)' : 'none',
                 alignItems: 'start',
+                color: 'inherit',
+                textDecoration: 'none',
               }}
             >
               <span
@@ -107,8 +111,6 @@ export default function AlertsPanel() {
                 >
                   {a.detail}
                 </div>
-
-                {/* Reverted inline actions to match Dashboard.PNG */}
               </div>
 
               <span
@@ -117,7 +119,7 @@ export default function AlertsPanel() {
               >
                 {a.right}
               </span>
-            </div>
+            </Link>
           )
         })}
       </div>

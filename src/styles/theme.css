@@ -30,6 +30,15 @@
   --primary-text: #1d4ed8;
   --progress-text: #b45309;
 
+  /* Ink that sits ON a brand fill (an icon glyph inside a coloured tile).
+     White is safe on four of the five, but --progress is amber: in dark theme
+     it lightens to #fbbf24, where a white glyph measures ~1.7:1 — under the 3:1
+     WCAG minimum for non-text. So the amber tile carries dark ink instead, and
+     the pairing is a token rather than a literal each caller has to remember. */
+  --on-brand: #ffffff;
+  --on-progress: #ffffff;
+  --on-success: #ffffff;
+
   /* surfaces */
   --app: #f6f8fb;
   --sidebar: #ffffff;
@@ -159,6 +168,15 @@
   --progress: #fbbf24;
   --primary-text: #60a5fa;
   --progress-text: #fbbf24;
+
+  /* See the note in the light block. Dark theme lightens the fills, so two of
+     them fail white ink and take dark ink from their own family instead:
+       --progress #fbbf24 → white 1.7:1, dark amber 8.1:1
+       --success  #22c55e → white 2.3:1, dark green 7.4:1
+     Measured in the browser, not estimated. */
+  --on-brand: #ffffff;
+  --on-progress: #3d2c05;
+  --on-success: #05320f;
 
   --app: #0b1220;
   --sidebar: #111827;

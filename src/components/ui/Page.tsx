@@ -1,7 +1,7 @@
 import type { ReactNode, CSSProperties } from 'react'
 import Icon from './Icon'
 import type { IconName } from './Icon'
-import { BRAND, BRAND_TEXT } from '../../lib/status'
+import { BRAND, BRAND_ON, BRAND_TEXT } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
 import { FOOTER_NOTE } from '../../data/nav'
 
@@ -204,7 +204,7 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
                 height: 30,
                 borderRadius: 8,
                 background: BRAND[k.accent],
-                color: '#fff',
+                color: BRAND_ON[k.accent],
                 display: 'grid',
                 placeItems: 'center',
                 flexShrink: 0,
