@@ -74,6 +74,53 @@ Newest entry first. Log what was **verified**, not what was written — "typeche
 - Global ⌘K keyboard listeners and scanner shortcuts work out of the box with the search UI.
 - Clean separation between success notifications (toasts) and validation failures (inline surfaces) simplifies user error recovery.
 
+## 2026-08-06 — Expenses rebuilt · tree repaired · Inventory screens routed
+**Phase:** build-every-page · **Status:** partial
+
+### Did
+- **Expenses rebuilt against `Expenses.PNG`.** A prior agent had rewritten
+  `data/expenseReports.ts` (+974 lines) and hit the usage limit before updating the component,
+  leaving the screen non-compiling. Rewrote `ExpenseReports.tsx` on the new API: 5 linked KPI
+  tiles, category chips with live counts, five filters + search, a 10-column table with BS under
+  AD, and a rail of Summary / Top Categories donut / Upcoming Payments / Quick Actions.
+- **Repaired the tree**, which was red with 29 errors from eight half-written untracked screens.
+  Added `check`, `phone` and `mail` to the icon registry — six of the eight failed on nothing
+  else. Declared `AssetDetail`'s eleven missing fields as optional and explicitly unseeded.
+- **Routed the `06 Inventory` screens.** Add Equipment, Asset Detail, Warehouses, Stock Check and
+  Purchase Requests were all written but wired to nothing — no route, no link, invisible.
+- **Moved `useCanViewMoney`** from `modules/today/` to `lib/moneyVisibility.ts`; nine files were
+  importing it across module boundaries and Expenses would have been a fourth copy of the map.
+
+### Verified
+- `npx tsc --noEmit` exits 0 (from 29 errors); `npm run build` succeeds.
+- Expenses driven live: seed-reconciliation banner gone, no `NPR` in the DOM, and the KPIs match
+  the render exactly — Rs 5,82,500 total, 12 pending, Rs 4,96,000 paid.
+- **§8.3 checked both ways on Expenses.** As Warehouse the page renders **0 money figures and 0
+  table rows**, with a stated reason rather than an empty husk — the rows never enter the DOM.
+  As Owner, all figures return.
+- All six `/inventory/*` routes driven: Warehouses & Depots, Stock Check Audit SC-2083-004,
+  Purchase Requests and Add Equipment all render, and `/inventory/EQ-00104` resolves to the Sony
+  FX6 Cinema Camera. No console errors beyond the pre-existing `Header.tsx` nested-button warning.
+
+### Found
+- **A genuine seed bug the data file's own assertion caught**: ten rows carried VAT rounded to
+  whole rupees, which 13% of a VAT-inclusive total is not. The assertion was *also* unsatisfiable
+  as written — it asked `vat` to be a fixed point of a twice-rounding function, and for Rs 1,250
+  no integer paisa value exists (it oscillates between 14380 and 14381 forever). Now derived in
+  one direction, and all ten seed values corrected.
+- `AssetDetail` displayed `120h`, `24 runs` and `Today 09:12` as fallbacks when a unit had no
+  data — fabricated figures that read as measurements. Now an em dash.
+- **`Asset Detail.md` has no matching render** in `06 Inventory/`, so its field list is spec-only.
+  The eleven new fields are declared but deliberately unseeded: seeding them would mean inventing
+  a purchase price, a utilisation percentage and a metered hour count per asset. `TODO(decision)`.
+- **A concurrent writer is still active in this repo.** The eight broken files were not from this
+  session. The tree was red when this work started.
+- **Agents are unavailable** — the weekly limit was hit, killing 5 of 8 in the last workflow
+  (resets 8 Aug, 12:45pm). Everything above was done directly, without subagents.
+- Still unmatched: `Reports.PNG`, `Tools.PNG`, the five `Settings/*` mockups, and `06 Inventory`'s
+  `Add Bundle.PNG` / `Bundles.PNG` / `Warehouse.PNG` have screens routed but not yet diffed
+  against their renders.
+
 ## 2026-08-06 — Git initialised · Core screens matched to the 03 Core Modules mockups
 **Phase:** build-every-page · **Status:** partial
 
