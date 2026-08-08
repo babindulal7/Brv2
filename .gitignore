@@ -17,3 +17,6 @@ npm-debug.log*
 # Supabase local stack
 supabase/.temp
 supabase/.branches
+
+# scratch
+typecheck_output.txt
