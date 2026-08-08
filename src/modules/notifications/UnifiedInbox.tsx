@@ -79,7 +79,7 @@ export default function UnifiedInbox() {
       channel: activeThread.channel,
       author: {
         name: user?.name ?? 'Staff Officer',
-        role: user?.role ?? 'Manager',
+        role: user?.role ?? 'Admin',
         isStaff: true,
       },
       content: composerText.trim(),

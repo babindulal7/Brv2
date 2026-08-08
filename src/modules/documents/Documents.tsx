@@ -11,7 +11,6 @@ import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { canViewMoney } from '../../lib/rbac'
 import type { Role as SystemRole } from '../../lib/rbac'
 import { useAuth } from '../../lib/auth'
-import type { Role as ShiftRole } from '../../lib/auth'
 import {
   ALL_TAB,
   ALL_BRANCHES,
@@ -46,16 +45,6 @@ import type { CategoryKey, DocRow, RelatedKind, SortKey } from '../../data/docum
  * Same table as `RentalsList` — it belongs in `lib/rbac.ts`, which this pass
  * does not own.
  */
-const SYSTEM_ROLE: Record<ShiftRole, SystemRole> = {
-  Owner: 'Owner',
-  Manager: 'Manager',
-  Coordinator: 'Manager',
-  Warehouse: 'Warehouse',
-  Technician: 'Warehouse',
-  Driver: 'Warehouse',
-  Accounts: 'Accounts',
-  Client: 'Viewer',
-}
 
 const th = {
   textAlign: 'left' as const,
@@ -375,7 +364,7 @@ function PageBtn({ label, active, disabled, onClick }: { label: string; active?:
  */
 export default function Documents() {
   const { user } = useAuth()
-  const role: SystemRole = user ? SYSTEM_ROLE[user.role] : 'Viewer'
+  const role: SystemRole = user ? user.role : 'Client'
   const money = canViewMoney(role)
 
   const categories = useMemo(() => categoriesFor(money), [money])

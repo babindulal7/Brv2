@@ -12,7 +12,6 @@ import { formatAd, TODAY } from '../../lib/bs'
 import { canViewMoney } from '../../lib/rbac'
 import type { Role as SystemRole } from '../../lib/rbac'
 import { useAuth } from '../../lib/auth'
-import type { Role as ShiftRole } from '../../lib/auth'
 import { OPERATIONS } from '../../data/booking'
 import {
   VIEWS,
@@ -51,16 +50,6 @@ const RENTAL_TABS = ['Bookings', 'Productions', 'Sub-Rental'] as const
  * belongs in `lib/rbac.ts` beside `canViewMoney`, not on a list page — it is
  * duplicated the moment a second screen needs it.
  */
-const SYSTEM_ROLE: Record<ShiftRole, SystemRole> = {
-  Owner: 'Owner',
-  Manager: 'Manager',
-  Coordinator: 'Manager',
-  Warehouse: 'Warehouse',
-  Technician: 'Warehouse',
-  Driver: 'Warehouse',
-  Accounts: 'Accounts',
-  Client: 'Viewer',
-}
 
 function Tag({ text, status }: { text: string; status: StatusKey }) {
   const c = STATUS[status]
@@ -409,7 +398,7 @@ function isoToDate(v: string): Date | null {
 export default function RentalsList() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const role: SystemRole = user ? SYSTEM_ROLE[user.role] : 'Viewer'
+  const role: SystemRole = user ? user.role : 'Client'
   const money = canViewMoney(role)
 
   const [tab, setTab] = useState<(typeof RENTAL_TABS)[number]>('Bookings')

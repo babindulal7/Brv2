@@ -1,38 +1,27 @@
 import { useAuth } from './auth'
-import type { Role as SessionRole } from './auth'
 import { canViewMoney } from './rbac'
-import type { SystemRole } from '../types/database'
 
 /**
- * Foundation §8.3 / CLAUDE.md — **Warehouse sees no money, anywhere.**
+ * Foundation §8.3 / CLAUDE.md — **the floor sees no money, anywhere.**
  *
- * The session (`lib/auth`) carries eight role names; the RBAC engine
- * (`lib/rbac`) is defined over the six canonical `SystemRole`s. This map exists
- * for exactly one question — *may this session see a rupee figure* — and is
- * deliberately restrictive: a role the engine does not know falls into the
- * zero-money bucket, because showing money to someone who should not see it is
- * the unrecoverable direction of that mistake.
+ * This file used to carry a `MONEY_ROLE` map collapsing Coordinator, Technician,
+ * Driver and Client onto Warehouse, because the session knew eight role names and
+ * the RBAC engine only knew six. Its own TODO(decision) asked for that to be
+ * settled by either folding the four in or extending `SystemRole`.
  *
- * TODO(decision) — PLAN.md §4: Coordinator, Technician, Driver and Client are
- * not among the six canonical roles. Either fold them into the six or extend
- * `SystemRole`; until then they are treated as money-blind.
+ * Ruled 8 Aug 2026: `SystemRole` is the business 8. The two vocabularies are now
+ * one, so the map is gone — a lossy translation between them cannot go stale if
+ * it does not exist. `canViewMoney` in `lib/rbac` is the single rule, mirroring
+ * `auth_can_view_money()` in migration 0014 so the UI and RLS cannot disagree.
  */
-const MONEY_ROLE: Record<SessionRole, SystemRole> = {
-  Owner: 'Owner',
-  Manager: 'Manager',
-  Accounts: 'Accounts',
-  Warehouse: 'Warehouse',
-  Coordinator: 'Warehouse',
-  Technician: 'Warehouse',
-  Driver: 'Warehouse',
-  Client: 'Warehouse',
-}
 
 /**
  * True when the signed-in session may see money at all. Call sites must use it
  * to **omit** the figure — the card, the column, the field — never to mask it.
+ *
+ * No session is money-blind: an unidentified user is not shown rupees.
  */
 export function useCanViewMoney(): boolean {
   const { user } = useAuth()
-  return user ? canViewMoney(MONEY_ROLE[user.role]) : false
+  return user ? canViewMoney(user.role) : false
 }

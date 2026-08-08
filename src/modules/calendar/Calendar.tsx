@@ -8,7 +8,6 @@ import { TODAY, toBs, formatBs, formatAd, eachDay, isWeekend, BS_MONTHS } from '
 import { canViewMoney } from '../../lib/rbac'
 import type { Role as SystemRole } from '../../lib/rbac'
 import { useAuth } from '../../lib/auth'
-import type { Role as ShiftRole } from '../../lib/auth'
 import {
   VIEWS,
   ROW_TYPES,
@@ -65,16 +64,6 @@ import type { Bar, BarKind, ResourceRow, RowType, ViewName } from '../../data/ca
  * TODO(decision): this table is now duplicated on Rentals and Calendar. It
  * belongs in `lib/rbac.ts`, which this screen does not own.
  */
-const SYSTEM_ROLE: Record<ShiftRole, SystemRole> = {
-  Owner: 'Owner',
-  Manager: 'Manager',
-  Coordinator: 'Manager',
-  Warehouse: 'Warehouse',
-  Technician: 'Warehouse',
-  Driver: 'Warehouse',
-  Accounts: 'Accounts',
-  Client: 'Viewer',
-}
 
 const LABEL_W = 212
 
@@ -927,7 +916,7 @@ function SelectedEventPanel({ bar, row, onClose }: { bar: Bar; row: ResourceRow;
 export default function Calendar() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const role: SystemRole = user ? SYSTEM_ROLE[user.role] : 'Viewer'
+  const role: SystemRole = user ? user.role : 'Client'
   const money = canViewMoney(role)
 
   const [params] = useSearchParams()

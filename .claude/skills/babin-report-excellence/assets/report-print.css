@@ -1,0 +1,41 @@
+/* Babin Report Excellence — export / print overrides (LIGHT).
+   Apply by adding class="export" to the root element, or via @media print.
+   Same token NAMES as report.css — only the values flip. Keep this file's
+   token block in sync via scripts/build_light_variant.py (_light-tokens.css). */
+
+.export, .export :root { }
+
+.export {
+  --surface-base:#FFFFFF; --surface-sunken:#F4F6F9; --surface-card:#FFFFFF;
+  --surface-raised:#FAFBFC; --surface-inset:#F0F3F7;
+  --border-subtle:#E3E8EF; --border-strong:#C7D0DB;
+  --text-primary:#12202E; --text-secondary:#3A4A5C; --text-muted:#6B7889;
+  --accent:#1F5FD0; --accent-brand:#9A7620;
+  background:#FFFFFF; color:var(--text-primary);
+}
+/* cards use a border for elevation on light (no surface tiers, no shadow) */
+.export .card, .export .kpi{ border:1px solid var(--border-subtle); background:#FFFFFF; }
+.export tbody tr:nth-child(even){ background:var(--surface-sunken); }
+
+@media print {
+  :root{
+    --surface-base:#FFFFFF; --surface-sunken:#F4F6F9; --surface-card:#FFFFFF;
+    --surface-raised:#FAFBFC; --surface-inset:#F0F3F7;
+    --border-subtle:#E3E8EF; --border-strong:#C7D0DB;
+    --text-primary:#12202E; --text-secondary:#3A4A5C; --text-muted:#6B7889;
+    --accent:#1F5FD0; --accent-brand:#9A7620;
+  }
+  @page{ margin:16mm; }
+  body{ background:#FFFFFF; color:var(--text-primary); }
+  .report{ padding:0; max-width:none; }
+  .card,.kpi{ border:1px solid var(--border-subtle); background:#FFFFFF; }
+
+  /* keep status color on small elements only; browsers strip backgrounds otherwise */
+  .badge, .kpi-delta, .callout, td.highlight, .chart-fill{
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  /* repeat table headers, don't split cards/rows across pages */
+  thead{ display:table-header-group; }
+  tr, .card, .kpi{ break-inside:avoid; }
+  h1,h2,h3{ break-after:avoid; }
+}

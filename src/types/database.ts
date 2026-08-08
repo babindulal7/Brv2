@@ -51,7 +51,27 @@ export type InventoryState =
 
 export type ProductTrackingMode = 'Serialised' | 'Quantity' | 'Consumable'
 export type ClientTypeParent = 'Organisation' | 'Individual'
-export type SystemRole = 'Owner' | 'Manager' | 'Warehouse' | 'Billing' | 'Accounts' | 'Viewer'
+/**
+ * The business 8 — ruled 8 Aug 2026, closing Foundation §14.2.
+ *
+ * Renamed in place from the Foundation 6 by migration 0013 so the 22 RLS
+ * policies survived untouched: Manager→Admin, Billing→Coordinator, Viewer→Client.
+ * Technician and Driver are new — two real floor jobs the old set could not
+ * represent, which is why neither could hold a permission of its own.
+ *
+ * `Client` is EXTERNAL: portal only, never a staff surface. Guard with
+ * `isStaff()`, and note it is also the deny-by-default fallback for an
+ * unidentified session.
+ */
+export type SystemRole =
+  | 'Owner'
+  | 'Admin'
+  | 'Coordinator'
+  | 'Warehouse'
+  | 'Technician'
+  | 'Accounts'
+  | 'Driver'
+  | 'Client'
 export type InvoiceStatus = 'Draft' | 'Sent' | 'Partially Paid' | 'Paid' | 'Overdue' | 'Void'
 export type PaymentStatus = 'Received' | 'Refunded' | 'Failed' | 'Cancelled'
 export type PaymentType = 'Advance Payment' | 'Security Deposit' | 'Refund'

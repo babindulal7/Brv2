@@ -1,0 +1,109 @@
+<!-- Babin Report Excellence — copy-paste component templates.
+     All classes resolve through report.css (dark) / report-print.css (light). -->
+
+<!-- ============ KPI STRIP (3–5 cards) ============ -->
+<div class="kpi-strip">
+
+  <!-- Standard KPI card: Label → Value → Delta → Context -->
+  <div class="kpi">
+    <div class="kpi-label">Revenue</div>
+    <div class="kpi-value">NPR 2.4M</div>
+    <div class="kpi-delta kpi-up">▲ 12% MoM</div>
+    <div class="kpi-context">vs 8% target · updated 08:35</div>
+  </div>
+
+  <!-- Inverted metric (lower is better): use kpi-good / kpi-bad -->
+  <div class="kpi">
+    <div class="kpi-label">Avg Turnaround</div>
+    <div class="kpi-value">1.6 days</div>
+    <div class="kpi-delta kpi-good">▼ 0.3 days WoW</div>
+    <div class="kpi-context">target ≤ 2.0 days · updated 08:35</div>
+  </div>
+
+  <!-- Critical KPI -->
+  <div class="kpi">
+    <div class="kpi-label">Overdue Receivables</div>
+    <div class="kpi-value">NPR 180K</div>
+    <div class="kpi-delta kpi-bad">▲ 4 clients &gt;30d</div>
+    <div class="kpi-context">Q2: NPR 95K · updated 08:35</div>
+  </div>
+
+</div>
+
+<!-- ============ STATUS BADGES (color + icon + label, never color alone) ============ -->
+<span class="badge badge-success">
+  <svg viewBox="0 0 12 12" fill="currentColor"><circle cx="6" cy="6" r="5"/></svg> Paid
+</span>
+<span class="badge badge-attention">
+  <svg viewBox="0 0 12 12" fill="currentColor"><path d="M6 1l5 10H1z"/></svg> Due Soon
+</span>
+<span class="badge badge-critical">
+  <svg viewBox="0 0 12 12" fill="currentColor"><rect x="1" y="1" width="10" height="10" rx="2"/></svg> Overdue
+</span>
+<span class="badge badge-external">
+  <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="6" r="4.5"/></svg> Sub-rental
+</span>
+
+<!-- ============ CALLOUT (must-not-miss stat, 1–2 sentences) ============ -->
+<div class="callout">
+  <strong>70% of Q3 revenue came from 3 clients.</strong>
+  <span class="meta">Concentration risk — losing one drops revenue ~<span class="mono">NPR 560K</span>/quarter.</span>
+</div>
+
+<!-- ============ COMPARISON TABLE (this period | last | Δ) ============ -->
+<table>
+  <thead>
+    <tr>
+      <th>Category</th>
+      <th class="num">Q3 Revenue</th>
+      <th class="num">Q2 Revenue</th>
+      <th class="num">Δ</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Cameras</td>
+      <td class="num">NPR 1,120,000</td>
+      <td class="num">NPR 980,000</td>
+      <td class="num kpi-up">+14%</td>
+    </tr>
+    <tr>
+      <td>Lighting</td>
+      <td class="num">NPR 410,000</td>
+      <td class="num">NPR 505,000</td>
+      <td class="num kpi-down">−19%</td>
+    </tr>
+    <tr class="highlight">
+      <td>Total</td>
+      <td class="num">NPR 2,400,000</td>
+      <td class="num">NPR 2,143,000</td>
+      <td class="num kpi-up">+12%</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============ ACTION PLAN ROW ============ -->
+<table>
+  <thead>
+    <tr><th>Action</th><th>Owner</th><th>Resource</th><th class="num">Expected impact</th><th>Proof metric</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Collect overdue from 4 clients</td>
+      <td>Accounts</td>
+      <td>Draft reminders (OS)</td>
+      <td class="num">+NPR 180K cash</td>
+      <td>Overdue &lt; NPR 50K by Bhadra end</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============ EXEC SUMMARY HEADER BLOCK ============ -->
+<div class="card">
+  <span class="badge badge-success">
+    <svg viewBox="0 0 12 12" fill="currentColor"><circle cx="6" cy="6" r="5"/></svg> On Track
+  </span>
+  <h1>Q3 Financial Report</h1>
+  <p class="meta"><span class="mono">Shrawan–Asoj 2083 · 16 Jul – 16 Oct 2026</span> · 3 min read</p>
+  <p><strong>Recommendation:</strong> Collect <span class="mono">NPR 180K</span> overdue from 4 clients and shift idle lighting stock into bundles before Dashain season.</p>
+</div>

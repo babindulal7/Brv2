@@ -225,7 +225,7 @@ export default function ExpenseReports() {
         <EmptyState
           icon={<Icon name="settings" size={26} />}
           title="Expenses is not available for your role"
-          description="Every figure on this page is a monetary amount, so there is no version of it your role can see. Ask an Owner, Manager or Accounts user if you need an expense recorded."
+          description="Every figure on this page is a monetary amount, so there is no version of it your role can see. Ask an Owner, Admin, Coordinator or Accounts user if you need an expense recorded."
         />
         <FooterNote />
       </div>

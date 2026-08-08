@@ -64,10 +64,10 @@ import type { Case, CaseStatus, CaseFlag } from '../../data/cases'
 const BLUE_PRIMARY = { background: 'var(--cat-1)', color: '#fff', border: '1px solid transparent' } as const
 /** `CASES` is asserted non-empty at module load in `data/cases.ts`; this names that guarantee once instead of an unchecked index everywhere below. */
 const FIRST_CASE = CASES[0] as Case
-const ROLES: Role[] = ['Owner', 'Manager', 'Billing', 'Warehouse', 'Accounts', 'Viewer']
+const ROLES: Role[] = ['Owner', 'Admin', 'Coordinator', 'Warehouse', 'Technician', 'Accounts', 'Driver', 'Client']
 /** §11 — Resolution is Manager/Owner only. */
 function canResolve(role: Role): boolean {
-  return role === 'Owner' || role === 'Manager'
+  return role === 'Owner' || role === 'Admin'
 }
 
 function Pill({ token, icon, label, solid, strike }: { token: StatusKey; icon: IconName; label: string; solid?: boolean | undefined; strike?: boolean | undefined }) {
@@ -122,7 +122,7 @@ const th = { textAlign: 'left' as const, padding: '9px 10px', fontSize: 'var(--t
 const td = { padding: '9px 10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
 
 export default function CasesQueue() {
-  const [role, setRole] = useState<Role>('Manager')
+  const [role, setRole] = useState<Role>('Admin')
   const [statusFilter, setStatusFilter] = useState<'All' | CaseStatus>('All')
   const [flagFilter, setFlagFilter] = useState<CaseFlag | null>(null)
   const [query, setQuery] = useState('')

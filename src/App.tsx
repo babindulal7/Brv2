@@ -30,6 +30,8 @@ const ProductReports    = lazy(() => import('./modules/reports/ProductReports'))
 const BackupRestore     = lazy(() => import('./modules/admin/BackupRestore'))
 const AuditSettings     = lazy(() => import('./modules/admin/AuditSettings'))
 const NumberingSequences = lazy(() => import('./modules/admin/NumberingSequences'))
+const CashFlowReport    = lazy(() => import('./modules/reports/CashFlowReport'))
+const WorkingCapital    = lazy(() => import('./modules/reports/WorkingCapitalReport'))
 const Inventory         = lazy(() => import('./modules/inventory/Inventory'))
 const AddBundle         = lazy(() => import('./modules/inventory/AddBundle').then(m => ({ default: m.AddBundle })))
 /* 06 Inventory renders — these screens existed but were unreachable. */
@@ -365,6 +367,24 @@ export default function App() {
         />
 
         <Route
+          path="/reports/cash-flow"
+          element={
+            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Cash Flow' }]} search="Search reports…">
+              <CashFlowReport />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/reports/working-capital"
+          element={
+            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Working Capital' }]} search="Search reports…">
+              <WorkingCapital />
+            </Shell>
+          }
+        />
+
+        <Route
           path="/clients/memberships"
           element={
             <Shell crumbs={[{ label: 'Clients' }, { label: 'Directory & Membership' }]}>
@@ -525,6 +545,8 @@ const BUILT = new Set([
   '/admin',
   '/finance/documents',
   '/reports/pulse',
+  '/reports/cash-flow',
+  '/reports/working-capital',
   '/rentals/new',
   '/rentals/BK-2026-0715/packing',
   '/rentals/BK-2026-0715/handover',

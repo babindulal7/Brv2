@@ -1,6 +1,13 @@
 import { createContext, useContext, useState, ReactNode } from 'react'
 
-export type Role = 'Owner' | 'Manager' | 'Coordinator' | 'Warehouse' | 'Technician' | 'Accounts' | 'Driver' | 'Client'
+/**
+ * The session role IS the system role. They were separate unions until 8 Aug 2026,
+ * which forced a lossy shim on every screen that needed a capability check.
+ * `SystemRole` is now the business 8, so there is one vocabulary and no mapping.
+ */
+export type { SystemRole as Role } from '../types/database'
+import type { SystemRole } from '../types/database'
+type Role = SystemRole
 
 interface AuthUser {
   id: string
