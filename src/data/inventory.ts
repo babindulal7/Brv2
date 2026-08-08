@@ -179,6 +179,21 @@ export interface ChildRow {
    * string cannot be summed or checked.
    */
   replacement: Paisa
+
+  /*
+   * Asset Detail per-unit fields — declared, deliberately NOT seeded. See the
+   * matching note on `ParentRow`; the same TODO(decision) governs them.
+   */
+  /** Physical tag stuck to the unit, distinct from the manufacturer serial. */
+  assetTag?: string
+  /** Metered running hours, where the unit reports them (cameras, generators). */
+  usageHours?: number
+  /** How many bookings this unit has been out on. */
+  rentalCount?: number
+  /** Accessories that belong to this unit rather than to the parent SKU. */
+  childAccessories?: Array<{ id: string; name: string; quantity: number; required: boolean }>
+  /** Last scan that saw this unit, AD. BS is rendered, never stored. */
+  lastSeen?: Date
 }
 
 /** §3.1 — a parent states a *breakdown*, never one badge. */
@@ -202,6 +217,32 @@ export interface ParentRow {
   replacement: Paisa
   /** §3.4 — non-serialised SKUs are a parent with no children. */
   children?: ChildRow[]
+
+  /*
+   * ── Asset Detail fields — declared, deliberately NOT seeded ──────────────
+   *
+   * `modules/inventory/AssetDetail.tsx` reads these. They are optional because
+   * no row carries one yet: seeding them would mean inventing a purchase price,
+   * a utilisation percentage and a recovery percentage per asset, which are
+   * business facts nobody has supplied. The screen renders an honest gap where
+   * a value is absent rather than a fabricated figure.
+   *
+   * TODO(decision) — PLAN.md §4: `Asset Detail.md` has no matching render in
+   * `06 Inventory/`, so the field list is spec-only and unconfirmed. Settle the
+   * source of `utilizationPct` and `recoveryPct` (derived from booking history,
+   * or stored?) before seeding either.
+   */
+  /** Internal asset code, e.g. `EQ-00104`. Distinct from a unit's serial. */
+  code?: string
+  brand?: string
+  /** Object-store key or data URI. No image is bundled with the seed. */
+  image?: string
+  /** True while the unit is on loan from a partner (§ Sub Rental). */
+  isSubRented?: boolean
+  /** Share of the period this asset was on rent. Derived, never typed. */
+  utilizationPct?: number
+  /** Share of purchase price recovered in rental income to date. */
+  recoveryPct?: number
 }
 
 export const PARENTS: ParentRow[] = [

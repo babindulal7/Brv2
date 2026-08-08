@@ -1,5 +1,8 @@
 import type { CSSProperties } from 'react'
 import {
+  IconCheck,
+  IconPhone,
+  IconMail,
   IconSun,
   IconX,
   IconChevronRight,
@@ -136,6 +139,18 @@ const REGISTRY = {
   upload: IconUpload,
   folder: IconFolder,
   photo: IconPhoto,
+
+  /*
+   * Added for the Inventory screens (Stock Check, Warehouses, Purchase
+   * Requests, Add Equipment) and the Unified Inbox, which each reached for a
+   * tick, a phone or an envelope and found nothing. A screen that needs a glyph
+   * the registry lacks has two bad options — ship a raw SVG or ship a wrong
+   * icon — so the registry grows instead. `check` in particular is what every
+   * completed checklist row, verified gate and satisfied condition wants.
+   */
+  check: IconCheck,
+  phone: IconPhone,
+  mail: IconMail,
 } satisfies Record<string, TablerIconType>
 
 export type IconName = keyof typeof REGISTRY
