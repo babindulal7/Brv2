@@ -196,7 +196,7 @@ export default function CashFlowReport() {
         <KpiStrip items={kpis} columns={5} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 'var(--sp-md)', marginTop: 'var(--sp-md)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', marginTop: 'var(--sp-md)' }}>
         <Card title={`Cash movement · ${period}`}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <caption style={{ captionSide: 'top', textAlign: 'left', paddingBottom: 8, fontSize: 'var(--fs-meta)', color: 'var(--text-3)' }}>
@@ -249,7 +249,7 @@ export default function CashFlowReport() {
           </p>
         </Card>
 
-        <Rail>
+        <Rail width={300}>
           <Card title="Reconciliation">
             <SummaryRows
               rows={[

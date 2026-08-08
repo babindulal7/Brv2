@@ -5,6 +5,64 @@
 Newest entry first. Log what was **verified**, not what was written — "typechecks" and
 "works" are different claims, and only the second one counts.
 
+## 2026-08-08 — Phone card rows on Operations, Rentals, Clients (DEVICES.md item 1)
+**Phase:** device/responsive (ad hoc, driven by `DEVICE/DEVICES.md`) · **Status:** done
+
+### Did
+- Copied `src/lib/device.ts` in from `DEVICE/device.ts`: `Viewport`, `BREAKPOINT` (phone
+  768 / desktop 1180), `useViewport()`, `Capability`/`useCapability()` (coarse pointer,
+  hover, standalone PWA, reduced motion via matchMedia), `useTabularLayout()`
+  (`viewport !== 'phone'`), `FLOOR_UI_SCALE`.
+- `DEVICES.md`'s finding: the app had 2 `@media` rules total and every list screen used a
+  hardcoded-`minWidth` `<table>` (720–1180px) with no phone fallback — unusable below 768.
+  Fixed the three screens it names as broken, plus the one it missed (Cases is its own
+  component, not a branch of Operations' generic table):
+  - `src/modules/rentals/RentalsList.tsx` — phone card rows ahead of the desktop table,
+    gated on `useTabularLayout()`. One primary "Open Booking" button + the existing
+    overflow menu per card (previously done, carried forward into this entry).
+  - `src/modules/clients/ClientsDirectory.tsx` — this is the live table behind the
+    Clients tab (`Clients.tsx`'s own two `<table>`s are the Referral/Credit tabs, a
+    separate, lower-traffic surface not touched here). Forced the screen's existing
+    `Cards` view on phone (hid the Table/Cards toggle so it can't be switched back), and
+    collapsed both fixed-width side columns (`210px` filter rail, `330px` profile rail)
+    to a single stacked column below 768.
+  - `src/modules/operations/OperationsQueues.tsx` — added a phone card list for the job
+    table (Job/Status/Booking/Client/Kit/Assignee/Due/Open Job), collapsed the fixed
+    `288px` Crew Load rail to stack below on phone.
+  - `src/modules/operations/CasesQueue.tsx` — same treatment for the 14-column Cases
+    table (12 without money) and its fixed `340px` case-detail rail.
+  - Branch is on `useTabularLayout()` (capability/width), never on a platform check —
+    CLAUDE.md's Law 13.
+
+### Verified
+- `npx tsc --noEmit`: 0 errors in all four edited files. (One pre-existing error in
+  `src/modules/reports/Pulse.tsx` / `src/data/pulse.ts` — untouched by this change, owned
+  by a concurrent session editing those files live; see Known issues below.)
+- Drove the app in a second dev server (this session's own, on an auto-assigned port —
+  another session's dev server was already running on 5173) at a sub-768 viewport and at
+  1920px, both with a hard reload so the `matchMedia` breakpoint re-evaluates:
+  - Sub-768: `Clients`, `Rentals`, `Operations` (all jobs) and `Operations?queue=cases`
+    all render **zero** `<table>` elements and card layouts instead, with
+    `document.documentElement.scrollWidth === window.innerWidth` (no horizontal
+    overflow) on every one.
+  - 1920px: all four render exactly one `<table>` each — the desktop path is unchanged.
+
+### Known issues / not done
+- `src/modules/reports/Pulse.tsx` and `src/data/pulse.ts` currently fail
+  `tsc --noEmit` (`exactOptionalPropertyTypes` mismatch on a `sub?: string` field,
+  Pulse.tsx:868) — this is mid-edit by another concurrent session in this same working
+  tree, not something introduced or fixed here.
+- Remaining `DEVICES.md` build-order items not started: (2) phone bottom bar built from
+  permissions with Scanner centered, (3) automatic `FLOOR_UI_SCALE`/`data-floor`
+  application by capability instead of manual per-screen opt-in, (4) long-press wherever
+  hover currently carries information, gated on `!hasHover`, (5) five page states per
+  page type, (6) wall display.
+- `Clients.tsx`'s own two tables (Referral tab, Credit tab, both `minWidth: 720`) were
+  identified but intentionally left desktop-only — out of `DEVICES.md`'s named scope for
+  this pass.
+- `.claude/launch.json` added (`dev-verify`, `npm run dev -- --port 5180`) so a session
+  can spin up its own preview server without colliding with another session's.
+
 ## 2026-08-06 — Phase B, C, D, E Complete
 **Phase:** B, C, D, E · **Status:** done
 

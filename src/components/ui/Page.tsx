@@ -4,6 +4,7 @@ import type { IconName } from './Icon'
 import { BRAND, BRAND_ON, BRAND_TEXT } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
 import { FOOTER_NOTE } from '../../data/nav'
+import { CollapsibleAside } from './CollapsibleAside'
 
 /**
  * Page furniture shared by every Generation C screen.
@@ -283,16 +284,52 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
   )
 }
 
-/* ── right rail ────────────────────────────────────────────────────────── */
+/* ── side rails ────────────────────────────────────────────────────────── */
 
-export function Rail({ children }: { children: ReactNode }) {
+/**
+ * The right-hand summary/detail rail every deep screen carries. Collapsible —
+ * the parent grid's rail track must be sized `auto` (not a fixed px) so the
+ * column actually shrinks when this collapses to its handle. `width` should
+ * match whatever px the track used before switching to `auto`, so the
+ * expanded layout is pixel-identical to before.
+ */
+export function Rail({
+  children,
+  id,
+  width = 288,
+  label = 'Page summary',
+}: {
+  children: ReactNode
+  id?: string
+  width?: number
+  label?: string
+}) {
   return (
-    <aside
-      aria-label="Page summary"
-      style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}
-    >
+    <CollapsibleAside side="right" width={width} label={label} {...(id !== undefined ? { id } : {})}>
       {children}
-    </aside>
+    </CollapsibleAside>
+  )
+}
+
+/**
+ * The left-hand filter/navigation rail a handful of list screens carry.
+ * Same collapse mechanics as `Rail`, mirrored to the left edge.
+ */
+export function SideRail({
+  children,
+  id,
+  width = 210,
+  label = 'Filters',
+}: {
+  children: ReactNode
+  id?: string
+  width?: number
+  label?: string
+}) {
+  return (
+    <CollapsibleAside side="left" width={width} label={label} {...(id !== undefined ? { id } : {})}>
+      {children}
+    </CollapsibleAside>
   )
 }
 

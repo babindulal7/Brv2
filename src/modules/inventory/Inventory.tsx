@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle, SideRail } from '../../components/ui/Page'
 import { EmptyState } from '../../components/ui/StateViews'
 import { STATUS } from '../../lib/status'
 import { formatMoney, grouped } from '../../lib/money'
@@ -831,14 +831,16 @@ export default function Inventory() {
           </div>
 
           {/* Mockup: a filter rail on the left, the table to its right. */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(190px, 216px) minmax(0, 1fr)', gap: 'var(--sp-md)', alignItems: 'start' }}>
-            <FilterRail
-              facets={facets}
-              onToggle={toggleFacet}
-              onReset={clearFilters}
-              money={money}
-              activeCount={activeFacetCount}
-            />
+          <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', gap: 'var(--sp-md)', alignItems: 'start' }}>
+            <SideRail width={216} label="Categories">
+              <FilterRail
+                facets={facets}
+                onToggle={toggleFacet}
+                onReset={clearFilters}
+                money={money}
+                activeCount={activeFacetCount}
+              />
+            </SideRail>
 
             <Card bodyStyle={{ padding: 0 }}>
               {/* toolbar */}

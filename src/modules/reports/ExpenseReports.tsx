@@ -357,7 +357,7 @@ export default function ExpenseReports() {
         })}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           {/* Filter bar. The period is the seeded ledger's own range, rendered
               BS above AD from the Date Engine — never a stored BS string. */}
@@ -461,7 +461,7 @@ export default function ExpenseReports() {
           </Card>
         </div>
 
-        <Rail>
+        <Rail width={300}>
           <Card title="Expense Summary">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
               <SumRow label="Total Expenses" value={formatMoney(totals.total as Paisa)} />

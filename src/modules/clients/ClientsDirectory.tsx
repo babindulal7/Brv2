@@ -2,12 +2,13 @@ import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, Button, KpiStrip, cardStyle } from '../../components/ui/Page'
+import { Card, Button, KpiStrip, cardStyle, Rail, SideRail } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { EmptyState } from '../../components/ui/StateViews'
 import { STATUS } from '../../lib/status'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useTabularLayout } from '../../lib/device'
 import {
   TIER_TONE,
   clientMetrics,
@@ -166,6 +167,10 @@ export function ClientsDirectory({
   const navigate = useNavigate()
   const money = useCanViewMoney()
   const [params] = useSearchParams()
+  /* DEVICES.md §7 build order item 1 — below 768 the table can't be read even
+     scrolled, so the phone gets the card view unconditionally (Law 13: branch
+     on capability, not platform). */
+  const tabular = useTabularLayout()
 
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all')
   /**
@@ -423,16 +428,17 @@ export function ClientsDirectory({
             />
           </label>
 
-          {(['Table', 'Cards'] as ViewKey[]).map((v) => (
-            <Button
-              key={v}
-              icon={v === 'Table' ? 'queues' : 'box'}
-              variant={view === v ? 'primary' : 'secondary'}
-              onClick={() => setView(v)}
-            >
-              {v}
-            </Button>
-          ))}
+          {tabular &&
+            (['Table', 'Cards'] as ViewKey[]).map((v) => (
+              <Button
+                key={v}
+                icon={v === 'Table' ? 'queues' : 'box'}
+                variant={view === v ? 'primary' : 'secondary'}
+                onClick={() => setView(v)}
+              >
+                {v}
+              </Button>
+            ))}
 
           <Unavailable reason="Advanced client filters are not built yet — the chips, search and column sort on this screen are the ones that exist">
             <Button icon="tool" disabled>
@@ -443,8 +449,16 @@ export function ClientsDirectory({
       </div>
 
       {/* ── filter rail + list ────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '210px minmax(0,1fr)', gap: 'var(--sp-md)', alignItems: 'start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: tabular ? 'auto minmax(0,1fr)' : '1fr',
+          gap: 'var(--sp-md)',
+          alignItems: 'start',
+        }}
+      >
+        {tabular && (
+        <SideRail width={210} label="Filters">
           <Card
             title="Filters"
             action={
@@ -538,9 +552,17 @@ export function ClientsDirectory({
               </Unavailable>
             </div>
           </Card>
-        </div>
+        </SideRail>
+        )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: selectedClient ? 'minmax(0,1fr) 330px' : 'minmax(0,1fr)', gap: 'var(--sp-md)', alignItems: 'start' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: tabular && selectedClient ? 'minmax(0,1fr) auto' : 'minmax(0,1fr)',
+            gap: 'var(--sp-md)',
+            alignItems: 'start',
+          }}
+        >
           <Card bodyStyle={{ padding: 0 }}>
             <div
               style={{
@@ -627,7 +649,7 @@ export function ClientsDirectory({
                   onAction={emptyBecauseNoClients ? onRequestAdd : clearAll}
                 />
               </div>
-            ) : view === 'Cards' ? (
+            ) : !tabular || view === 'Cards' ? (
               <div
                 style={{
                   display: 'grid',
@@ -1014,6 +1036,7 @@ export function ClientsDirectory({
 
           {/* ── client profile rail ─────────────────────────────────── */}
           {selectedClient && (
+            <Rail width={330} label="Client profile">
             <Card bodyStyle={{ padding: 0 }}>
               <div
                 style={{
@@ -1210,6 +1233,7 @@ export function ClientsDirectory({
                 </div>
               </div>
             </Card>
+            </Rail>
           )}
         </div>
       </div>

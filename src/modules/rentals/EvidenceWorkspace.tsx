@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { Card, Button, cardStyle, Rail, SideRail } from '../../components/ui/Page'
 import { Donut, Legend } from '../../components/ui/Charts'
 import { STATUS } from '../../lib/status'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
@@ -177,9 +177,9 @@ export default function EvidenceWorkspace() {
         })}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '210px minmax(0,1fr) 290px', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
         {/* ── §5 left ─────────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
+        <SideRail width={210} label="Categories">
           <Card title="Upload Sources">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {UPLOAD_SOURCES.map((u) => (
@@ -241,7 +241,7 @@ export default function EvidenceWorkspace() {
               )
             })}
           </Card>
-        </div>
+        </SideRail>
 
         {/* ── §6 / §8 centre ──────────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
@@ -392,7 +392,7 @@ export default function EvidenceWorkspace() {
         </div>
 
         {/* ── §8 right — selected photo ───────────────────────────────── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
+        <Rail width={290} label="Selected photo">
           <Card title="Selected Photo">
             {current ? (
               <>
@@ -512,7 +512,7 @@ export default function EvidenceWorkspace() {
             One file, many references — a photo is stored once and referenced by booking, item, serial, bundle and
             stage. Evidence locks at status Closed.
           </div>
-        </div>
+        </Rail>
       </div>
     </div>
   )

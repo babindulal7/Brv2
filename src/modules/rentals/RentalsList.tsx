@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle, SideRail } from '../../components/ui/Page'
 import { EmptyState } from '../../components/ui/StateViews'
 import Placeholder from '../Placeholder'
 import { STATUS, BRAND } from '../../lib/status'
@@ -12,6 +12,7 @@ import { formatAd, TODAY } from '../../lib/bs'
 import { canViewMoney } from '../../lib/rbac'
 import type { Role as SystemRole } from '../../lib/rbac'
 import { useAuth } from '../../lib/auth'
+import { useTabularLayout } from '../../lib/device'
 import { OPERATIONS } from '../../data/booking'
 import {
   VIEWS,
@@ -410,6 +411,14 @@ export default function RentalsList() {
   const [hiddenCols, setHiddenCols] = useState<Set<OptionalColumn>>(new Set())
   const [perPage, setPerPage] = useState<number>(20)
   const [page, setPage] = useState(1)
+  /**
+   * DEVICES.md §7 build order item 1 — Rentals is one of the three screens
+   * whose table (`minWidth: 1040`) produces a horizontal scrollbar rather than
+   * a layout below 768px. `useTabularLayout()` reads only capability, never a
+   * platform name (Law 13), so this is the same branch a desktop window
+   * narrowed past 768px takes.
+   */
+  const tabular = useTabularLayout()
 
   const kpis = useMemo(() => kpisFor(money), [money])
   const chips = useMemo(() => chipsFor(money), [money])
@@ -666,11 +675,12 @@ export default function RentalsList() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '210px minmax(0,1fr)',
+              gridTemplateColumns: 'auto minmax(0,1fr)',
               gap: 'var(--sp-md)',
               alignItems: 'start',
             }}
           >
+            <SideRail width={210} label="Filters">
             <Card
               title="Filters"
               action={
@@ -726,6 +736,7 @@ export default function RentalsList() {
                 </Unavailable>
               </div>
             </Card>
+            </SideRail>
 
             {view !== 'Table' ? (
               <div style={{ ...cardStyle, padding: 18, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
@@ -801,6 +812,124 @@ export default function RentalsList() {
                   </div>
                 )}
 
+                {!tabular && (
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    {visible.length === 0 ? (
+                      <div style={{ padding: '24px 16px' }}>
+                        <EmptyState
+                          title="No bookings match this filter"
+                          description={`No rentals found in "${chip}". Try switching to another quick filter.`}
+                          actionLabel="Reset to Today"
+                          onAction={() => pickChip('Today')}
+                        />
+                      </div>
+                    ) : (
+                      visible.map((r) => (
+                        <div
+                          key={r.bookingNo}
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 8,
+                            padding: '13px 14px',
+                            borderBottom: '1px solid var(--border)',
+                          }}
+                        >
+                          <span style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                            <Avatar row={r} />
+                            <span style={{ minWidth: 0, flex: 1 }}>
+                              <span style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                                {r.client}
+                              </span>
+                              <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 1 }}>
+                                {r.project}
+                              </span>
+                            </span>
+                            {/* §12's masking rule, restated for the card face: omitted, never shown blank. */}
+                            {show('Payment') && r.amount !== undefined && (
+                              <span style={{ textAlign: 'right', flexShrink: 0 }}>
+                                <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+                                  {formatMoney(r.amount)}
+                                </span>
+                                {r.due !== undefined && (
+                                  <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: r.due === 0 ? 'var(--st-in-fg)' : 'var(--st-progress-fg)', fontWeight: 600 }}>
+                                    {r.due === 0 ? 'Paid' : `Due ${formatMoney(r.due)}`}
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                          </span>
+
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <Link
+                              to={`/rentals/${r.bookingNo}`}
+                              className="identifier"
+                              style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--link)', textDecoration: 'none' }}
+                            >
+                              {r.bookingNo}
+                            </Link>
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                height: 20,
+                                padding: '0 8px',
+                                borderRadius: 'var(--r-badge)',
+                                background: STATUS[r.statusKey].bg,
+                                color: STATUS[r.statusKey].fg,
+                                fontSize: 'var(--t-meta)',
+                                fontWeight: 600,
+                              }}
+                            >
+                              {r.status}
+                            </span>
+                            {r.tag && <Tag text={r.tag.text} status={r.tag.status} />}
+                          </span>
+
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                            <Icon name="box" size={12} style={{ color: 'var(--muted)' }} />
+                            {r.kit}
+                          </span>
+
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                            <Icon name="calendar" size={12} style={{ color: 'var(--muted)' }} />
+                            Pickup <span className="figure">{formatAd(r.pickup.ad)}</span> {r.pickup.time}
+                          </span>
+
+                          {/* §7: "one primary button each" on a phone card row. */}
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                            <Link
+                              to={`/rentals/${r.bookingNo}`}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 6,
+                                height: 40,
+                                flex: 1,
+                                borderRadius: 'var(--r-btn)',
+                                border: '1px solid var(--border)',
+                                background: 'var(--card2)',
+                                color: 'var(--text)',
+                                fontSize: 'var(--t-ui)',
+                                fontWeight: 600,
+                                textDecoration: 'none',
+                              }}
+                            >
+                              <Icon name="external_link" size={14} />
+                              Open Booking
+                            </Link>
+                            <span style={{ flexShrink: 0 }}>
+                              <RowOperations row={r} />
+                            </span>
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {tabular && (
                 <div data-table-scroll style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1040 }}>
                     <thead>
@@ -1084,6 +1213,7 @@ export default function RentalsList() {
                     </tbody>
                   </table>
                 </div>
+                )}
 
                 <div
                   style={{

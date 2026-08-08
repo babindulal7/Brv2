@@ -102,7 +102,7 @@ export function AddBundle() {
         }
       />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) 300px', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
           <Card padding="lg">
             <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 16 }}>1. Bundle Details</h3>
@@ -230,7 +230,7 @@ export function AddBundle() {
           </Card>
         </div>
 
-        <Rail>
+        <Rail width={300}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
             <Card padding="md">
               <h4 style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 16 }}>Bundle Summary</h4>

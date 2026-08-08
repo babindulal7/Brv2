@@ -5,6 +5,10 @@ import { useTheme } from '../../lib/theme'
 import { NAV, SETTINGS_NAV, BRANCH } from '../../data/nav'
 import type { NavSection } from '../../data/nav'
 import { useAuth } from '../../lib/auth'
+import { useCollapsed } from '../../lib/collapse'
+
+const EXPANDED_W = 220
+const COLLAPSED_W = 68
 
 interface SidebarProps {
   /** Current pathname — decides both the active row and which section opens. */
@@ -36,7 +40,10 @@ function owns(section: NavSection, path: string): boolean {
 export default function Sidebar({ active }: SidebarProps) {
   const { theme, setMode } = useTheme()
   const { user } = useAuth()
-  
+  /* Persisted independently of any one rail — this is the app shell, not a
+     page panel, so it gets its own fixed key rather than a route-derived one. */
+  const [collapsed, toggleCollapsed] = useCollapsed('sidebar:main', false)
+
   // Basic RBAC filtering for Sidebar (Warehouse role hides Finance, Admin, Reports)
   const allowedNav = NAV.filter((s) => {
     if (!user) return false
@@ -68,7 +75,7 @@ export default function Sidebar({ active }: SidebarProps) {
   return (
     <aside
       style={{
-        width: 220,
+        width: collapsed ? COLLAPSED_W : EXPANDED_W,
         flexShrink: 0,
         background: 'var(--sidebar)',
         borderRight: '1px solid var(--border)',
@@ -77,19 +84,75 @@ export default function Sidebar({ active }: SidebarProps) {
         height: '100vh',
         position: 'sticky',
         top: 0,
-        transition: 'background-color var(--dur-theme) ease',
+        transition: 'background-color var(--dur-theme) ease, width var(--dur) ease',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '18px 16px 16px', flexShrink: 0 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: collapsed ? '18px 10px 16px' : '18px 16px 16px',
+          flexShrink: 0,
+          justifyContent: collapsed ? 'center' : 'flex-start',
+        }}
+      >
         {/* The wordmark is brand voice, not a figure — §4.3.2 gives it Outfit. */}
-        <span className="title" style={{ fontWeight: 700, fontSize: 'var(--t-kpi)', color: 'var(--brand-mark)', lineHeight: 1 }}>
+        <span className="title" style={{ fontWeight: 700, fontSize: 'var(--t-kpi)', color: 'var(--brand-mark)', lineHeight: 1, flexShrink: 0 }}>
           BR
         </span>
-        <span style={{ lineHeight: 1.15 }}>
-          <span style={{ display: 'block', fontWeight: 700, fontSize: 'var(--t-ui)', color: 'var(--text)' }}>Babin</span>
-          <span style={{ display: 'block', fontWeight: 700, fontSize: 'var(--t-ui)', color: 'var(--text)' }}>Rentals OS</span>
-        </span>
+        {!collapsed && (
+          <span style={{ lineHeight: 1.15, minWidth: 0, flex: 1 }}>
+            <span style={{ display: 'block', fontWeight: 700, fontSize: 'var(--t-ui)', color: 'var(--text)' }}>Babin</span>
+            <span style={{ display: 'block', fontWeight: 700, fontSize: 'var(--t-ui)', color: 'var(--text)' }}>Rentals OS</span>
+          </span>
+        )}
+        {!collapsed && (
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            aria-label="Collapse navigation"
+            title="Collapse navigation"
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 7,
+              border: '1px solid var(--border)',
+              background: 'var(--card)',
+              color: 'var(--text2)',
+              display: 'grid',
+              placeItems: 'center',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            <Icon name="chevron_left" size={13} />
+          </button>
+        )}
       </div>
+      {collapsed && (
+        <div style={{ display: 'flex', justifyContent: 'center', paddingBottom: 8, flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            aria-label="Expand navigation"
+            title="Expand navigation"
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 7,
+              border: '1px solid var(--border)',
+              background: 'var(--card)',
+              color: 'var(--text2)',
+              display: 'grid',
+              placeItems: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <Icon name="chevron_right" size={13} />
+          </button>
+        </div>
+      )}
 
       <nav
         aria-label="Main"
@@ -111,15 +174,17 @@ export default function Sidebar({ active }: SidebarProps) {
                 to={s.to}
                 aria-current={selfActive ? 'page' : undefined}
                 aria-expanded={s.children ? isOpen : undefined}
+                title={collapsed ? s.label : undefined}
                 onClick={() => {
                   if (s.children) setOpen(s.to)
                 }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
+                  justifyContent: collapsed ? 'center' : 'flex-start',
                   gap: 10,
                   height: 38,
-                  padding: '0 10px',
+                  padding: collapsed ? '0' : '0 10px',
                   borderRadius: 9,
                   textDecoration: 'none',
                   fontSize: 'var(--t-ui)',
@@ -156,10 +221,12 @@ export default function Sidebar({ active }: SidebarProps) {
                   size={16}
                   style={{ color: owned ? 'var(--nav-active-accent)' : 'var(--nav-icon)', flexShrink: 0 }}
                 />
-                <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {s.label}
-                </span>
-                {s.children && (
+                {!collapsed && (
+                  <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {s.label}
+                  </span>
+                )}
+                {!collapsed && s.children && (
                   <Icon
                     name={isOpen ? 'chevron_up' : 'chevron_right'}
                     size={14}
@@ -168,7 +235,7 @@ export default function Sidebar({ active }: SidebarProps) {
                 )}
               </Link>
 
-              {s.children && isOpen && (
+              {!collapsed && s.children && isOpen && (
                 <div style={{ padding: '2px 0 4px' }}>
                   {s.children.map((c) => {
                     const on = c.to === active
@@ -229,12 +296,14 @@ export default function Sidebar({ active }: SidebarProps) {
         <Link
           to={SETTINGS_NAV.to}
           aria-current={active === SETTINGS_NAV.to ? 'page' : undefined}
+          title={collapsed ? SETTINGS_NAV.label : undefined}
           style={{
             display: 'flex',
             alignItems: 'center',
+            justifyContent: collapsed ? 'center' : 'flex-start',
             gap: 10,
             height: 36,
-            padding: '0 10px',
+            padding: collapsed ? '0' : '0 10px',
             borderRadius: 8,
             textDecoration: 'none',
             fontSize: 'var(--t-ui)',
@@ -254,85 +323,111 @@ export default function Sidebar({ active }: SidebarProps) {
             size={16}
             style={{ color: active === SETTINGS_NAV.to ? 'var(--nav-active-accent)' : 'var(--nav-icon)', flexShrink: 0 }}
           />
-          <span style={{ flex: 1 }}>{SETTINGS_NAV.label}</span>
+          {!collapsed && <span style={{ flex: 1 }}>{SETTINGS_NAV.label}</span>}
         </Link>
       </nav>
 
       <div style={{ flexShrink: 0, borderTop: '1px solid var(--border)', padding: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '4px 4px 10px' }}>
-          <span
-            className="title"
-            aria-hidden
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              display: 'grid',
-              placeItems: 'center',
-              border: '1px solid var(--border)',
-              color: 'var(--brand-mark)',
-              fontWeight: 700,
-              fontSize: 'var(--t-ui)',
-              flexShrink: 0,
-            }}
-          >
-            BR
-          </span>
-          <span style={{ lineHeight: 1.3, minWidth: 0 }}>
+        {!collapsed && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '4px 4px 10px' }}>
             <span
+              className="title"
+              aria-hidden
               style={{
-                display: 'block',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                color: 'var(--text)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                display: 'grid',
+                placeItems: 'center',
+                border: '1px solid var(--border)',
+                color: 'var(--brand-mark)',
+                fontWeight: 700,
+                fontSize: 'var(--t-ui)',
+                flexShrink: 0,
               }}
             >
-              {BRANCH.name}
+              BR
             </span>
-            <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{BRANCH.address}</span>
-            <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-              {BRANCH.vat}
-            </span>
-          </span>
-        </div>
-
-        {/* Two labelled halves, not an icon button — the renders always show both
-            options with the current one filled. */}
-        <div role="group" aria-label="Theme" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-          {(['dark', 'light'] as const).map((m) => {
-            const on = theme === m
-            return (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                aria-pressed={on}
+            <span style={{ lineHeight: 1.3, minWidth: 0 }}>
+              <span
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  height: 34,
-                  borderRadius: 'var(--r-btn)',
-                  border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                  background: on ? 'var(--nav-active-bg)' : 'transparent',
-                  color: on ? 'var(--text)' : 'var(--text2)',
+                  display: 'block',
                   fontSize: 'var(--t-meta)',
-                  fontWeight: on ? 600 : 500,
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                  textTransform: 'capitalize',
+                  fontWeight: 600,
+                  color: 'var(--text)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
                 }}
               >
-                <Icon name={m === 'dark' ? 'moon' : 'sun'} size={14} />
-                {m}
-              </button>
-            )
-          })}
-        </div>
+                {BRANCH.name}
+              </span>
+              <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{BRANCH.address}</span>
+              <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                {BRANCH.vat}
+              </span>
+            </span>
+          </div>
+        )}
+
+        {/* Two labelled halves, not an icon button — the renders always show both
+            options with the current one filled. Collapsed to one icon toggle when
+            the rail itself is collapsed, since there is no room for either label. */}
+        {collapsed ? (
+          <button
+            type="button"
+            onClick={() => setMode(theme === 'dark' ? 'light' : 'dark')}
+            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+            title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '100%',
+              height: 34,
+              borderRadius: 'var(--r-btn)',
+              border: '1px solid var(--border)',
+              background: 'transparent',
+              color: 'var(--text2)',
+              cursor: 'pointer',
+            }}
+          >
+            <Icon name={theme === 'dark' ? 'moon' : 'sun'} size={15} />
+          </button>
+        ) : (
+          <div role="group" aria-label="Theme" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            {(['dark', 'light'] as const).map((m) => {
+              const on = theme === m
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMode(m)}
+                  aria-pressed={on}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    height: 34,
+                    borderRadius: 'var(--r-btn)',
+                    border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+                    background: on ? 'var(--nav-active-bg)' : 'transparent',
+                    color: on ? 'var(--text)' : 'var(--text2)',
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: on ? 600 : 500,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    textTransform: 'capitalize',
+                  }}
+                >
+                  <Icon name={m === 'dark' ? 'moon' : 'sun'} size={14} />
+                  {m}
+                </button>
+              )
+            })}
+          </div>
+        )}
       </div>
     </aside>
   )

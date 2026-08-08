@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Card, PageHeader, Button, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, Button, FooterNote, cardStyle, Rail } from '../../components/ui/Page'
 import { BRAND, BRAND_ON } from '../../lib/status'
 import { TODAY, toBs, formatBs, formatAd, eachDay, isWeekend, BS_MONTHS } from '../../lib/bs'
 import { canViewMoney } from '../../lib/rbac'
@@ -1505,14 +1505,14 @@ export default function Calendar() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: showFilters ? '230px minmax(0,1fr) 300px' : 'minmax(0,1fr) 300px',
+            gridTemplateColumns: showFilters ? '230px minmax(0,1fr) auto' : 'minmax(0,1fr) auto',
             gap: 'var(--sp-md)',
             alignItems: 'start',
           }}
         >
           {showFilters && filtersPanel}
           <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>{centre}</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+          <Rail width={300} label="Event detail">
             {selected ? (
               <SelectedEventPanel bar={selected.bar} row={selected.row} onClose={() => setSelectedId(null)} />
             ) : (
@@ -1540,7 +1540,7 @@ export default function Calendar() {
               </div>
             </Card>
             {shortcutsCard}
-          </div>
+          </Rail>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
@@ -1687,7 +1687,7 @@ export default function Calendar() {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: showFilters ? '230px minmax(0,1fr) 300px' : 'minmax(0,1fr) 300px',
+          gridTemplateColumns: showFilters ? '230px minmax(0,1fr) auto' : 'minmax(0,1fr) auto',
           gap: 'var(--sp-md)',
           alignItems: 'start',
         }}
@@ -1697,10 +1697,10 @@ export default function Calendar() {
           {centre}
           {selected && <SelectedEventPanel bar={selected.bar} row={selected.row} onClose={() => setSelectedId(null)} />}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+        <Rail width={300} label="Event detail">
           {railDefault}
           {shortcutsCard}
-        </div>
+        </Rail>
       </div>
 
       {showShortcuts && (

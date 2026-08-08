@@ -182,7 +182,7 @@ export default function WorkingCapitalReport() {
         <KpiStrip items={kpis} columns={5} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 'var(--sp-md)', marginTop: 'var(--sp-md)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', marginTop: 'var(--sp-md)' }}>
         <Card title={`The position · ${asAt}`}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -236,7 +236,7 @@ export default function WorkingCapitalReport() {
           </table>
         </Card>
 
-        <Rail>
+        <Rail width={300}>
           <Card title="Liquidity">
             <SummaryRows
               rows={[

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { Card, Button, cardStyle, Rail } from '../../components/ui/Page'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
@@ -393,7 +393,7 @@ export default function ReturnWorkspace() {
         <p style={{ margin: '9px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Scan any item to mark as returned and start inspection</p>
       </Card>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
         {/* ── centre column ────────────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <Card title="1 · Equipment Table" bodyStyle={{ padding: 0 }}>
@@ -527,7 +527,7 @@ export default function ReturnWorkspace() {
         </div>
 
         {/* ── right rail ────────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
+        <Rail width={300} label="Return summary">
           <Card title="Sessions">
             {(['S1', 'S2'] as SessionId[]).map((sid) => {
               const s = sessions[sid]
@@ -614,7 +614,7 @@ export default function ReturnWorkspace() {
               </div>
             </div>
           )}
-        </div>
+        </Rail>
       </div>
 
       {/* ── §11 footer — two buttons, primary blue, autosave, no Save Draft ── */}

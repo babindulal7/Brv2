@@ -4,6 +4,7 @@ import { Card, PageHeader, Button, Rail, FooterNote, cardStyle } from '../../com
 import { STATUS, BRAND } from '../../lib/status'
 import { statusToken, JOBS as JOBS_META } from '../../lib/workflow'
 import { QUEUES, JOBS, CREW_LOAD, NO_MONEY_NOTE } from '../../data/operations'
+import { useTabularLayout } from '../../lib/device'
 import CasesQueue from './CasesQueue'
 
 const th = {
@@ -47,6 +48,9 @@ const QUEUE_PARAM: Record<string, string> = {
 export default function OperationsQueues() {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
+  /* DEVICES.md §7 build order item 1 — the job table and the fixed 288px Crew
+     Load rail both break below 768. Law 13: branch on capability. */
+  const tabular = useTabularLayout()
   const active = QUEUE_PARAM[params.get('queue') ?? ''] ?? null
   const setActive = (job: string | null) => {
     const key = Object.keys(QUEUE_PARAM).find((k) => QUEUE_PARAM[k] === job)
@@ -152,12 +156,118 @@ export default function OperationsQueues() {
       {active === 'Cases' ? (
         <CasesQueue />
       ) : (
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 288px', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: tabular ? 'minmax(0,1fr) 288px' : '1fr',
+          gap: 'var(--sp-md)',
+          alignItems: 'start',
+        }}
+      >
         <Card
           title={active ? `${active} — ${jobs.length} jobs` : `All jobs — ${jobs.length}`}
           action={active ? <Button onClick={() => setActive(null)}>Clear filter</Button> : undefined}
-          bodyStyle={{ padding: 0 }}
+          bodyStyle={{ padding: tabular ? 0 : 10 }}
         >
+          {!tabular && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {jobs.map((j) => {
+                const tok = STATUS[statusToken(j.status)]
+                return (
+                  <article
+                    key={j.id}
+                    style={{
+                      ...cardStyle,
+                      padding: 12,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 6,
+                      borderLeft: j.overdue ? '2px solid var(--danger)' : '1px solid var(--border)',
+                      background: j.overdue ? 'var(--danger-soft)' : 'var(--card)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <span className="identifier" style={{ fontWeight: 700, color: 'var(--text)' }}>
+                        {j.id}
+                      </span>
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          height: 20,
+                          padding: '0 8px',
+                          borderRadius: 'var(--r-badge)',
+                          background: tok.bg,
+                          color: tok.fg,
+                          fontSize: 'var(--t-meta)',
+                          fontWeight: 600,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {j.status}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)' }}>
+                      <Link
+                        to={`/rentals/${j.booking}`}
+                        className="identifier"
+                        style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }}
+                      >
+                        {j.booking}
+                      </Link>
+                      <span style={{ color: 'var(--muted)' }}>·</span>
+                      <span style={{ color: 'var(--text2)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {j.client}
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                      {j.kit}
+                      <span style={{ color: 'var(--muted)', marginLeft: 6 }}>{j.items}</span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 'var(--t-meta)' }}>
+                      <span style={{ color: 'var(--text2)' }}>{j.assignee}</span>
+                      <span className="figure" style={{ color: j.overdue ? 'var(--danger-text)' : 'var(--text2)', fontWeight: j.overdue ? 700 : 400 }}>
+                        {j.due}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if ((j.job as string) === 'Cases') {
+                          navigate('/operations/cases')
+                        } else {
+                          navigate(`/rentals/${j.booking}/${j.job.toLowerCase()}`)
+                        }
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '100%',
+                        height: 40,
+                        marginTop: 2,
+                        borderRadius: 'var(--r-btn)',
+                        border: '1px solid transparent',
+                        background: 'var(--btn-primary-bg)',
+                        color: 'var(--btn-primary-fg)',
+                        fontSize: 'var(--t-meta)',
+                        fontWeight: 600,
+                        fontFamily: 'inherit',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Open Job
+                    </button>
+                  </article>
+                )
+              })}
+            </div>
+          )}
+          {tabular && (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
               <thead>
@@ -232,6 +342,7 @@ export default function OperationsQueues() {
               </tbody>
             </table>
           </div>
+          )}
         </Card>
 
         <Rail>

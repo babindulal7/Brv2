@@ -10,6 +10,7 @@ import { canViewMoney } from '../../lib/rbac'
 import type { Role } from '../../lib/rbac'
 import { formatMoney } from '../../lib/money'
 import { formatAd } from '../../lib/bs'
+import { useTabularLayout } from '../../lib/device'
 import {
   CASES,
   CASE_TYPE_ICON,
@@ -122,6 +123,10 @@ const th = { textAlign: 'left' as const, padding: '9px 10px', fontSize: 'var(--t
 const td = { padding: '9px 10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
 
 export default function CasesQueue() {
+  /* DEVICES.md §7 build order item 1 — the 14-column table (minWidth up to
+     1180) is unreadable below 768; the right rail's fixed 340px column breaks
+     too. Law 13: branch on capability, not platform. */
+  const tabular = useTabularLayout()
   const [role, setRole] = useState<Role>('Admin')
   const [statusFilter, setStatusFilter] = useState<'All' | CaseStatus>('All')
   const [flagFilter, setFlagFilter] = useState<CaseFlag | null>(null)
@@ -373,7 +378,14 @@ export default function CasesQueue() {
       </div>
 
       {/* ── table + rail ────────────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 340px', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: tabular ? 'minmax(0,1fr) 340px' : '1fr',
+          gap: 'var(--sp-md)',
+          alignItems: 'start',
+        }}
+      >
         <Card bodyStyle={{ padding: 0 }}>
           {checked.size > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderBottom: '1px solid var(--border)', background: 'var(--nav-active-bg)' }}>
@@ -384,6 +396,97 @@ export default function CasesQueue() {
               </button>
             </div>
           )}
+          {!tabular && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 10 }}>
+              {pageRows.length === 0 && (
+                <EmptyState
+                  title="No cases found"
+                  description="Try another filter, or clear filters to see every case."
+                  actionLabel="Clear Filters"
+                  onAction={() => {
+                    setStatusFilter('All')
+                    setFlagFilter(null)
+                    setQuery('')
+                  }}
+                />
+              )}
+              {pageRows.map((c) => {
+                const isSel = c.id === selectedId
+                const note = agingNote(c)
+                return (
+                  <article
+                    key={c.id}
+                    onClick={() => selectRow(c.id)}
+                    style={{
+                      ...cardStyle,
+                      padding: 12,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 7,
+                      cursor: 'pointer',
+                      borderColor: isSel ? 'var(--nav-active-accent)' : 'var(--border)',
+                      background: isSel ? 'var(--nav-active-bg)' : 'var(--card)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <span className="identifier" style={{ fontWeight: 700, color: 'var(--text)' }}>{c.id}</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                        <Icon name={CASE_TYPE_ICON[c.type]} size={13} />
+                        {c.type}
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600 }}>{c.title}</div>
+
+                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                      {c.counterpartyKind} · {c.counterpartyName}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <PriorityPill priority={c.priority} />
+                      <StatusPill status={c.status} />
+                      {c.flags.map((f) => (
+                        <FlagPill key={f} flag={f} />
+                      ))}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 'var(--t-meta)' }}>
+                      <span className="figure" style={{ color: note ? 'var(--danger-text)' : 'var(--text2)', fontWeight: note ? 700 : 400 }}>
+                        {ageDays(c.openedAd)}d open
+                        {note && <Icon name="alert_triangle" size={11} style={{ color: 'var(--danger-text)', marginLeft: 3 }} />}
+                      </span>
+                      {money && (
+                        <span className="figure" style={{ fontWeight: 700, color: outstandingOf(c) > 0 ? 'var(--danger-text)' : 'var(--success-text)' }}>
+                          {formatMoney(outstandingOf(c))} outstanding
+                        </span>
+                      )}
+                    </div>
+
+                    <Link
+                      to={CASE_WORKSPACE_ROUTE(c.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '100%',
+                        height: 40,
+                        marginTop: 2,
+                        borderRadius: 'var(--r-btn)',
+                        fontSize: 'var(--t-meta)',
+                        fontWeight: 600,
+                        textDecoration: 'none',
+                        ...BLUE_PRIMARY,
+                      }}
+                    >
+                      Open Case
+                    </Link>
+                  </article>
+                )
+              })}
+            </div>
+          )}
+          {tabular && (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: money ? 1180 : 940 }}>
               <thead>
@@ -509,6 +612,7 @@ export default function CasesQueue() {
               </tbody>
             </table>
           </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', flexWrap: 'wrap', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
             <span>
               Showing {filtered.length === 0 ? 0 : (pageSafe - 1) * rowsPerPage + 1} to {Math.min(pageSafe * rowsPerPage, filtered.length)} of {filtered.length} cases

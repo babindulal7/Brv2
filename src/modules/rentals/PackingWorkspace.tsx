@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { Card, Button, cardStyle, Rail, SideRail } from '../../components/ui/Page'
 import { STATUS } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
 import type { JobState } from '../../lib/workflow'
@@ -241,8 +241,9 @@ export default function PackingWorkspace() {
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '260px minmax(0,1fr) 290px', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
         {/* ── §5 left — bundle tree, counts derived ─────────────────────── */}
+        <SideRail width={260} label="Bundle / Item Tree">
         <Card title="1 · Bundle / Item Tree">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 9, borderBottom: '1px solid var(--border)' }}>
             <Icon name="box" size={17} style={{ color: 'var(--st-progress-fg)' }} />
@@ -312,6 +313,7 @@ export default function PackingWorkspace() {
             </p>
           </div>
         </Card>
+        </SideRail>
 
         {/* ── §6 centre — checklist ─────────────────────────────────────── */}
         <Card
@@ -480,7 +482,7 @@ export default function PackingWorkspace() {
         </Card>
 
         {/* ── §9 right — summary, missing, evidence, notes, quick actions ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
+        <Rail width={290} label="Packing summary">
           <Card title="3 · Packing Summary">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <Ring pct={pct} />
@@ -630,7 +632,7 @@ export default function PackingWorkspace() {
               </div>
             </div>
           )}
-        </div>
+        </Rail>
       </div>
 
       {/* §11 — footer. Two buttons. No Previous, no Next, no second Complete. */}

@@ -288,7 +288,7 @@ export default function NewRental() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <Section
             no={1}
@@ -760,7 +760,7 @@ export default function NewRental() {
           </div>
         </div>
 
-        <Rail>
+        <Rail width={300}>
           {/* §13 — summary, one button, no payment history here. */}
           <Card title="Booking Summary">
             {[

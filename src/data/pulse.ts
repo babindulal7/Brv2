@@ -1,4 +1,4 @@
-import { rupees, roundHalfUp, formatMoney } from '../lib/money'
+import { rupees, roundHalfUp, toRupees, formatMoney } from '../lib/money'
 import type { Paisa } from '../lib/money'
 import { TODAY, toBs, formatBs, formatAd, isWeekend } from '../lib/bs'
 import { UTILIZATION_PCT, REVENUE_TODAY_PAISA, COUNTS } from './today'
@@ -33,8 +33,18 @@ import { UTILIZATION_PCT, REVENUE_TODAY_PAISA, COUNTS } from './today'
 
 const DAY = 86_400_000
 
-/** The ledger's coverage. Anything asked of a date outside it answers `null`. */
-export const LEDGER_FROM = new Date(Date.UTC(2026, 5, 1))
+/**
+ * The ledger's coverage. Anything asked of a date outside it answers `null`.
+ *
+ * It starts **1 May 2026** rather than 1 June so that §9's comparison is real on
+ * the periods an owner actually opens: "this month" (1–31 Jul) compares against
+ * the 31 days before it, which start 31 May. With a 1 June start every default
+ * view of this page would have had to print "comparison unavailable", and a
+ * comparison mode nobody can reach is not a comparison mode. Nothing here is
+ * typed in — the extra days come from the same deterministic generator as the
+ * rest, under the same per-model cap.
+ */
+export const LEDGER_FROM = new Date(Date.UTC(2026, 4, 1))
 export const LEDGER_TO = TODAY
 export const LEDGER_COVERAGE = `${formatAd(LEDGER_FROM)} – ${formatAd(LEDGER_TO)}`
 
@@ -49,6 +59,19 @@ function daysBetween(a: Date, b: Date): number {
 }
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n))
+}
+
+/**
+ * A share of an amount, **half-up to the whole rupee**, returned in paisa.
+ *
+ * Foundation §2.4 rounds at each step, and `price()` in `lib/money` takes every
+ * one of its steps to a whole rupee. A seed that rounded to the paisa instead
+ * printed headline KPIs like `Rs 39,12,581.49`: arithmetically fine, but it puts
+ * two decimal places on a lakh figure that no invoice in this business carries.
+ * The rounding goes through `lib/money`'s own helpers, never a local formula.
+ */
+function share(amount: Paisa, ratio: number): Paisa {
+  return rupees(roundHalfUp(toRupees(amount) * ratio))
 }
 
 /** "26 Jul" — the axis/label form. Full dates always go through `lib/bs.ts`. */
@@ -151,7 +174,7 @@ const COLLECT_SAME_DAY = 0.62
 const COLLECT_LAGGED = 0.345
 const COLLECT_LAG_DAYS = 12
 const PAYABLE_LAG_DAYS = 3
-/** Receivable carried into 1 Jun 2026 from before the ledger starts. */
+/** Receivable carried into the ledger's first day from before it starts. */
 export const OPENING_RECEIVABLE = rupees(158_000)
 /** A capital purchase — cash out, no effect on profit. §6.1's whole point. */
 const CAPITAL_ON = Date.UTC(2026, 6, 12)
@@ -202,9 +225,9 @@ const WEIGHTS = FLEET.map((m) => m.weight)
 export const LEDGER: LedgerDay[] = DATES.map((ad, i) => {
   const onRent = distribute(fleetOnRent[i] ?? 0, CAPS, WEIGHTS)
   const equipment = onRent.reduce((s, units, m) => s + units * (FLEET[m]?.dayRate ?? 0), 0) as Paisa
-  const services = roundHalfUp(equipment * SERVICES_RATIO) as Paisa
+  const services = share(equipment, SERVICES_RATIO)
   const revenue = (equipment + services) as Paisa
-  const expenses = (EXPENSE_FIXED + roundHalfUp(revenue * EXPENSE_VARIABLE)) as Paisa
+  const expenses = (EXPENSE_FIXED + share(revenue, EXPENSE_VARIABLE)) as Paisa
   const deposits = rupees(4_000 * Math.round(1 + 7 * noise(i + 211))) as Paisa
   const capital = (utc(ad) === CAPITAL_ON ? CAPITAL_AMOUNT : 0) as Paisa
   return {
@@ -232,14 +255,14 @@ const LAST = LEDGER[LEDGER.length - 1]
 if (LAST && REVENUE_TODAY_PAISA - LAST.equipment >= 0) {
   LAST.services = (REVENUE_TODAY_PAISA - LAST.equipment) as Paisa
   LAST.revenue = REVENUE_TODAY_PAISA
-  LAST.expenses = (EXPENSE_FIXED + roundHalfUp(LAST.revenue * EXPENSE_VARIABLE)) as Paisa
+  LAST.expenses = (EXPENSE_FIXED + share(LAST.revenue, EXPENSE_VARIABLE)) as Paisa
 }
 
 /* Collections and cash, which need yesterday's rows and so run in a second pass. */
 LEDGER.forEach((d, i) => {
   const lagged = LEDGER[Math.max(0, i - COLLECT_LAG_DAYS)]
-  d.collected = (roundHalfUp(d.revenue * COLLECT_SAME_DAY) +
-    roundHalfUp((lagged?.revenue ?? 0) * COLLECT_LAGGED)) as Paisa
+  d.collected = (share(d.revenue, COLLECT_SAME_DAY) +
+    share((lagged?.revenue ?? 0) as Paisa, COLLECT_LAGGED)) as Paisa
   const paid = LEDGER[Math.max(0, i - PAYABLE_LAG_DAYS)]
   d.cashIn = (d.collected + d.deposits) as Paisa
   d.cashOut = ((paid?.expenses ?? 0) + d.capital) as Paisa
@@ -719,15 +742,23 @@ export function exportHeader(
 ): string[] {
   const p = rangeLabel(f.from, f.to)
   const c = compare ? rangeLabel(compare.from, compare.to) : null
+  /* Quoted, because half of these values carry a comma of their own — the
+     recognition basis and the snapshot line both do — and an export whose
+     columns shift under the reader is worse than no export. */
+  const cell = (s: string) => `"${s.replace(/"/g, '""')}"`
+  const row = (k: string, v: string) => `${cell(k)},${cell(v)}`
   return [
-    'Babin Rentals OS — Reports ▸ Pulse',
-    `Period,${p.bs ? `${p.bs} / ` : ''}${p.ad}`,
-    `Compared with,${c ? `${c.bs ? `${c.bs} / ` : ''}${c.ad}` : 'None'}`,
-    'Filters,None — Pulse reports the whole business',
-    `Revenue recognition,${PERIOD_BASIS}`,
-    `Generated by,${generatedBy}`,
-    `Generated on,${formatAd(TODAY)} (Asia/Kathmandu)`,
-    `Data freshness,${f.live ? 'Live — the period is still open' : `Snapshot, refreshed nightly (period closed ${formatAd(f.to)})`}`,
+    cell('Babin Rentals OS — Reports ▸ Pulse'),
+    row('Period', `${p.bs ? `${p.bs} / ` : ''}${p.ad}`),
+    row('Compared with', c ? `${c.bs ? `${c.bs} / ` : ''}${c.ad}` : 'None'),
+    row('Filters', 'None — Pulse reports the whole business'),
+    row('Revenue recognition', PERIOD_BASIS),
+    row('Generated by', generatedBy),
+    row('Generated on', `${formatAd(TODAY)} (Asia/Kathmandu)`),
+    row(
+      'Data freshness',
+      f.live ? 'Live — the period is still open' : `Snapshot, refreshed nightly (period closed ${formatAd(f.to)})`,
+    ),
   ]
 }
 
