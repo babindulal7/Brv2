@@ -2,6 +2,79 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-08-09 — Matched the last 8 mockups; found and fixed a fabricated P&L on Pulse
+**Phase:** build-every-page · **Status:** partial
+
+### Did
+- Matched all 8 remaining `03 Core Modules` / `06 Inventory` mockups to their live screens:
+  Reports (Pulse), Tools, Settings (Organization/Branches, Business Hours, Communication,
+  Numbering Sequences), and Inventory (Warehouse, Bundles/Add Bundle, Add Equipment). Each
+  built by one agent, then adversarially re-verified by a second against the render, the spec,
+  and the locked rules — 16 agents total across two workflow runs (the first died at the
+  session limit mid-verify; resumed and completed cleanly).
+- Merged the design-authority ruling into every agent's brief: photos govern layout/density/
+  composition, Foundation governs colour/status/roles. No agent was allowed to copy sidebar
+  numbering, banned hues, gold-as-fill, or the word "customer" from a render.
+
+### Found and fixed — the important one
+- **Reports ▸ Pulse, Foundation's designated "owner's business view," was printing a fabricated
+  P&L.** A headline of ~Rs 59.6L revenue / ~Rs 39.1L profit (a ~66% net margin nobody supplied)
+  came from wholly invented business ratios (`SERVICES_RATIO`, `EXPENSE_FIXED`,
+  `COLLECT_SAME_DAY`, etc.), and its Top Equipment panel showed several models at 100%
+  utilization against fleet unit counts that **contradicted `data/inventory.ts`'s own seed on
+  the same screen** — exactly the "Reports must not be the system's fifth opinion" defect
+  `pulse.ts`'s own header claims to prevent, except `RECONCILIATION` never actually checked the
+  fleet.
+  - Fixed what has a real source: Aputure 600D Pro (5→4 units) and DJI Ronin 4D (invented
+    "Ronin 4D 6K" at 3 units → the real model at 2), both now matching `inventory.ts` exactly.
+    Added `FLEET_RECONCILIATION_ERRORS`, extending the existing reported-not-thrown §2.2
+    pattern to equipment counts so this can't silently drift again.
+  - Left honestly unfixed: 3 of 5 fleet models have no single source of truth anywhere in the
+    app (the seed files that mention a Sony FX3 disagree with each other by unit count *and*
+    day rate). Picking a number would be a different fabrication, not a fix — `TODO(decision)`,
+    tied to `GUIDE/OPEN-DECISIONS.md` item 5 (data import).
+  - The invented margin itself has nothing to fix it to — added a stated, visible disclosure
+    banner between the header and the first figure, so an owner reading this page cannot
+    mistake a placeholder shape for a real number.
+- Two more real bugs found and fixed during verification, unrelated to the fabrication:
+  **`AddBundle.tsx` had a Rules-of-Hooks violation** (four `useMemo` calls sat after an early
+  `if (!money) return`, crashing the app — "Rendered fewer hooks than expected" — whenever the
+  session's money-visibility flipped while the component stayed mounted), and **a hardcoded
+  25% discount-approval ceiling was applied to every line regardless of that line's actual
+  discount %**, wrongly denying Admins approval on discounts their own role should clear.
+
+### Verified
+- `npx tsc --noEmit` → 0 errors; `npm run build` → succeeds, throughout.
+- Pulse driven live: reconciliation banner absent (fleet now agrees with Inventory); disclosure
+  banner renders verbatim before any KPI figure; §5.3's four locked cards still in order.
+- Warehouse-role money-blindness re-verified on Pulse, Tools, Bundles and Add Bundle by driving
+  the app as that role, not by reading code — zero rupee figures, zero digit groups, structural
+  omission confirmed each time.
+- Repaired the tree four separate times this session after an agent died at the usage limit
+  mid-write, each time down to a mechanical, bounded root cause (missing icon registry entries,
+  an `exactOptionalPropertyTypes` mismatch, an undeclared variable, a stray debug harness).
+  Pattern worth naming for future sessions: a killed agent is not a no-op — it reliably leaves
+  the tree non-compiling, and needs a typecheck-and-repair pass before anything else proceeds.
+
+### Found, not yet actioned
+- Two **undisclosed-but-not-wrong** deviations on Settings ▸ Business Hours / Communication:
+  `YEAR` holiday/festival counts (52/25/11/4/12/366) are carried over from the render's own
+  unsourced numbers with only Working Days actually derived; and Communication's "In Queue" row
+  shows a broader `IN_FLIGHT` definition (pending+processing+sent) than the render's literal
+  "In Queue: 34" (pending only) — internally consistent, just not labelled as a redefinition.
+- `theme.css`'s `--nav-active-accent` (#d8a93a in dark) is byte-identical to `--ext-line`/
+  `--ext-fg`, the gold sub-rental token — a token-layer collision shared by ~20 modules, used
+  as outline/text only (never a fill) on both, but worth a deliberate look.
+- A concurrent writer is still active in this repo (confirmed live-editing `AddEquipment.tsx`
+  mid-session, and left `src/lib/clientImport.ts` / `ImportCenter.tsx` red afterward — fixed,
+  outside this session's scope). This is now the second session confirmed to be running
+  alongside this one; expect more of this.
+- All Settings/Inventory mockups in `03 Core Modules` and `06 Inventory` are now matched. Not
+  yet done: the remaining `06 Inventory` renders not in this batch (Accessories, Consumables,
+  Products, Serial Numbers, QR & Barcode, Transfers, Stock Check depth beyond what's routed,
+  Asset Tracking) and any deeper screens the whole-app design's 149-screen inventory names that
+  no render covers yet.
+
 Newest entry first. Log what was **verified**, not what was written — "typechecks" and
 "works" are different claims, and only the second one counts.
 
