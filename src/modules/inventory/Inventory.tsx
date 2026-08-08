@@ -7,7 +7,7 @@ import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle } from '../..
 import { EmptyState } from '../../components/ui/StateViews'
 import { STATUS } from '../../lib/status'
 import { formatMoney, grouped } from '../../lib/money'
-import { useCanViewMoney } from '../today/useMoneyVisibility'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { Bundles } from './Bundles'
 import { Maintenance } from './Maintenance'
 import { SubRental } from '../operations/SubRental'

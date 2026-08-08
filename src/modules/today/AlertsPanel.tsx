@@ -3,7 +3,7 @@ import Icon from '../../components/ui/Icon'
 import { STATUS } from '../../lib/status'
 import { criticalAlertsFor, lesserAlertsFor } from '../../data/today'
 import { cardStyle } from '../../components/ui/Page'
-import { useCanViewMoney } from './useMoneyVisibility'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
 
 /**
  * Dashboard.md §8 — priority-sorted.

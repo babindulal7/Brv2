@@ -119,9 +119,25 @@ export const CHIP_COUNTS: Array<{ label: 'All' | InvStatus; count: number }> = [
  */
 const TOTAL = CHIP_COUNTS.find((c) => c.label === 'All')?.count ?? 0
 const SUM_EXCL_RETIRED = CHIP_COUNTS.filter((c) => c.label !== 'All' && c.label !== 'Retired').reduce((a, c) => a + c.count, 0)
-if (SUM_EXCL_RETIRED !== TOTAL) {
-  throw new Error(`Inventory chip counts do not reconcile: ${SUM_EXCL_RETIRED} vs total ${TOTAL}`)
-}
+
+/**
+ * ⛔ This check used to `throw`. A module-evaluation throw is **uncatchable** —
+ * it runs while the module graph is still being built, before React mounts, so
+ * no boundary exists to catch it and the operator gets a blank white screen
+ * with nothing in it. `lib/money.ts` hit exactly this and fixed it by
+ * *reporting* the failure instead of throwing; the same pattern is used here.
+ *
+ * The invariant still runs on every load — §4.3's "the chip row reconciles on
+ * every load, or the numbers are not trusted" is not weakened. The failure is
+ * exported so the screen can state it, and logged so a broken seed is never
+ * silent even before a screen reads it.
+ */
+export const INVENTORY_SEED_ERROR: string | null =
+  SUM_EXCL_RETIRED === TOTAL
+    ? null
+    : `Inventory chip counts do not reconcile: the status chips sum to ${SUM_EXCL_RETIRED}, but the All chip reads ${TOTAL}. §4.3 requires Σ status counts = Total, excluding Retired — see src/data/inventory.ts.`
+
+if (INVENTORY_SEED_ERROR) console.error(INVENTORY_SEED_ERROR)
 
 const chip = (label: 'All' | InvStatus) => CHIP_COUNTS.find((c) => c.label === label)?.count ?? 0
 const pctOfTotal = (n: number) => `${((n / TOTAL) * 100).toFixed(1)}% of total`

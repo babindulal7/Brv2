@@ -28,7 +28,12 @@ export interface Movement {
   at: number
   client: string
   avatar: string[]
-  avatarBg: string
+  /**
+   * §4.2 token key, not a hex — the same field `data/rentals.ts` carries, so the
+   * two screens resolve a client avatar the same way. Resolved through `STATUS`
+   * at the call site; the theme decides what it looks like.
+   */
+  avatarTone: StatusKey
   bookingNo: string
   category: string
   /** The package. One string, shared by every panel that shows this booking. */

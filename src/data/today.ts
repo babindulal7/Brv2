@@ -1,6 +1,6 @@
 import type { AlertRow, Movement, HoverFacts } from '../types/today'
 import type { Kpi } from '../components/ui/Page'
-import type { BrandKey } from '../lib/status'
+import type { BrandKey, StatusKey } from '../lib/status'
 import { statusToken, STATUS_ORDER } from '../lib/workflow'
 import type { BookingStatus, Flag } from '../lib/workflow'
 import { TODAY, toBs, formatBs, eachDay } from '../lib/bs'
@@ -65,30 +65,37 @@ export const NOW = 9 * 60 + 40
 const amount = (rupeeValue: number) => formatMoney(rupees(rupeeValue))
 
 /**
- * Avatar fills. Named here rather than typed as hexes at each row.
+ * Avatar tints — `StatusKey` token pairs, never hexes.
  *
- * §4.2's five-colour law bans **purple, violet, cyan, teal and indigo
- * outright**, and this map had broken it twice: four rows once carried the
- * render's `#4c1d95` violet, and `teal: '#134e4a'` (a blue-green) survived the
- * sweep that removed it because a sweep looking for `--purple` never sees a
- * literal. Both are gone; `moss` is a dark green, which is one of the five.
+ * SETTLED — this was a `TODO(decision)`: the five fills below were raw hexes
+ * (`#1a1a1a`, `#1e293b`, `#0f2942`, `#1e3a5f`, `#14532d`) carrying `#fff` text,
+ * which Foundation §4.2 forbids twice over, and it left Today and Rentals
+ * disagreeing about how a client avatar is coloured. The ruling is to move this
+ * screen onto `data/rentals.ts`'s pattern — `avatarTone: StatusKey`, a soft
+ * tint with token text — rather than extend the token layer with a second,
+ * avatar-only ramp.
  *
- * TODO(decision) — PLAN.md §4: these are still raw hexes, which Foundation
- * §4.2 also forbids. They cannot be tokens as things stand: an avatar is a
- * solid dark disc carrying white text in **both** themes, and every fill token
- * in `theme.css` inverts between them. `data/rentals.ts` solved the same
- * problem differently — `avatarTone: StatusKey`, a soft tint with token text —
- * and the two screens should not disagree. Either extend the token layer with
- * a theme-invariant avatar ramp, or move this screen onto the Rentals pattern.
- * Both are visual decisions with an owner; neither is mine to pick.
+ * The tone is **client identity, not state**: it says which client, and the
+ * row's status is already carried three other ways (pill, left border, and the
+ * tinted background an Overdue row wears). So the ramp is the four tokens that
+ * carry no hard meaning of their own —
+ *
+ *   `neutral` · `primary` · `progress` · `in`
+ *
+ * — and deliberately excludes `danger` (reserved for the Overdue alarm on this
+ * screen: a red disc on a Returned row would read as an alert), `out` (a solid
+ * fill meaning "gear is out") and `ext` (gold outline, sub-rental).
+ *
+ * The four clients Today shares with Rentals take the tone Rentals already gave
+ * them, which is the whole point of the change: ABC Films `neutral`, Creative
+ * Studio `primary`, Mountain Stories `in`, Vision Production `primary`. Rentals
+ * tints Inside Out Films `danger` — that echoes *that row's* Overdue state, not
+ * the client — so here it takes a ramp tone instead.
+ *
+ * Every pair was measured in both themes; the weakest is `in` in light theme at
+ * 4.57:1, above the 4.5:1 floor.
  */
-const AV = {
-  ink: '#1a1a1a',
-  slate: '#1e293b',
-  navy: '#0f2942',
-  steel: '#1e3a5f',
-  moss: '#14532d',
-} as const
+const AVATAR_RAMP = ['neutral', 'primary', 'progress', 'in'] as const satisfies readonly StatusKey[]
 
 /* ── §4 · the one movements query ──────────────────────────────────────── */
 
@@ -96,33 +103,33 @@ const M = (m: Movement) => m
 
 export const MOVEMENTS: Movement[] = [
   // ── pickups & deliveries ──────────────────────────────────────────────
-  M({ id: 'm01', kind: 'Delivery', at: 6 * 60, client: 'Everest Media', avatar: ['EVR', 'MEDIA'], avatarBg: AV.navy, bookingNo: 'BK-2026-0701', category: 'Corporate Film', kit: 'Aputure Lighting Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Delivery: Ramesh', due: 'Due: 2 Aug, 06:00 AM', complete: true }),
-  M({ id: 'm02', kind: 'Pickup', at: 7 * 60, client: 'Kathmandu Post', avatar: ['KTM', 'POST'], avatarBg: AV.slate, bookingNo: 'BK-2026-0702', category: 'News Desk', kit: 'Sony A7S III Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Hari', due: 'Due: 1 Aug, 06:00 AM', complete: true }),
-  M({ id: 'm03', kind: 'Pickup', at: 7 * 60 + 30, client: 'Sagarmatha TV', avatar: ['SGM', 'TV'], avatarBg: AV.ink, bookingNo: 'BK-2026-0703', category: 'Broadcast', kit: 'Canon C70 Package', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Sanu', due: 'Due: 3 Aug, 06:00 AM', complete: true }),
-  M({ id: 'm04', kind: 'Delivery', at: 8 * 60, client: 'Himalaya Broadcast', avatar: ['HIM', 'BCAST'], avatarBg: AV.steel, bookingNo: 'BK-2026-0704', category: 'Live Event', kit: 'Sennheiser Audio Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Delivery: Bikash', due: 'Due: 2 Aug, 06:00 AM', complete: true }),
-  M({ id: 'm05', kind: 'Pickup', at: 8 * 60 + 30, client: 'Nepal Film Dev', avatar: ['NFD', 'BOARD'], avatarBg: AV.moss, bookingNo: 'BK-2026-0705', category: 'Feature Film', kit: 'DJI Ronin 4D', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Ramesh', due: 'Due: 5 Aug, 06:00 AM', complete: true }),
-  M({ id: 'm06', kind: 'Pickup', at: 9 * 60, client: 'ABC Films', avatar: ['ABC', 'FILMS'], avatarBg: AV.ink, bookingNo: 'BK-2026-0715', category: 'Commercial Shoot', kit: 'RED Komodo X Package', kitStatus: 'primary', status: 'Packed', flags: ['VIP'], staff: 'Pickup: Ramesh', due: 'Due: 2 Aug, 06:00 AM' }),
-  M({ id: 'm07', kind: 'Pickup', at: 9 * 60 + 30, client: 'Lumbini Studios', avatar: ['LUM', 'STUDIO'], avatarBg: AV.navy, bookingNo: 'BK-2026-0706', category: 'Music Video', kit: 'Godox Strobe Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Hari', due: 'Due: 1 Aug, 06:00 AM', complete: true }),
-  M({ id: 'm08', kind: 'Pickup', at: 10 * 60 + 30, client: 'Creative Studio', avatar: ['CS', 'STUDIO'], avatarBg: AV.slate, bookingNo: 'BK-2026-0716', category: 'Music Video', kit: 'Sony FX6 Kit', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Pickup: Hari', due: 'Due: 1 Aug, 06:00 AM', notReset: 2 }),
-  M({ id: 'm09', kind: 'Delivery', at: 11 * 60, client: 'Pokhara Productions', avatar: ['PKR', 'PROD'], avatarBg: AV.steel, bookingNo: 'BK-2026-0718', category: 'Travel Series', kit: 'Grip & Rigging Set', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Delivery: Bikash', due: 'Due: 4 Aug, 06:00 AM' }),
-  M({ id: 'm10', kind: 'Pickup', at: 12 * 60, client: 'Mountain Stories', avatar: ['MTN', 'STORIES'], avatarBg: AV.navy, bookingNo: 'BK-2026-0717', category: 'Documentary', kit: 'Ronin 4D 6K Package', kitStatus: 'primary', status: 'Packed', flags: [], staff: 'Pickup: Sanu', due: 'Due: 3 Aug, 06:00 AM' }),
-  M({ id: 'm11', kind: 'Pickup', at: 13 * 60 + 30, client: 'Annapurna Films', avatar: ['ANP', 'FILMS'], avatarBg: AV.ink, bookingNo: 'BK-2026-0719', category: 'Feature Film', kit: 'Zeiss CP.3 Prime Set', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Pickup: Ramesh', due: 'Due: 6 Aug, 06:00 AM', notReset: 1 }),
-  M({ id: 'm12', kind: 'Delivery', at: 14 * 60, client: 'Bagmati Broadcast', avatar: ['BGM', 'BCAST'], avatarBg: AV.slate, bookingNo: 'BK-2026-0720', category: 'Live Event', kit: 'Lighting Truss Package', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Delivery: Bikash', due: 'Due: 2 Aug, 06:00 AM' }),
-  M({ id: 'm13', kind: 'Pickup', at: 15 * 60, client: 'Inside Out Films', avatar: ['IO', 'FILMS'], avatarBg: AV.moss, bookingNo: 'BK-2026-0721', category: 'Short Film', kit: 'Ronin 4D Handheld Kit', kitStatus: 'primary', status: 'Packed', flags: [], staff: 'Pickup: Sanu', due: 'Due: 3 Aug, 06:00 AM' }),
-  M({ id: 'm14', kind: 'Pickup', at: 16 * 60 + 30, client: 'Studio Nine', avatar: ['S9', 'STUDIO'], avatarBg: AV.steel, bookingNo: 'BK-2026-0722', category: 'Fashion Shoot', kit: 'Blackmagic URSA Kit', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Pickup: Hari', due: 'Due: 4 Aug, 06:00 AM' }),
+  M({ id: 'm01', kind: 'Delivery', at: 6 * 60, client: 'Everest Media', avatar: ['EVR', 'MEDIA'], avatarTone: 'primary', bookingNo: 'BK-2026-0701', category: 'Corporate Film', kit: 'Aputure Lighting Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Delivery: Ramesh', due: 'Due: 2 Aug, 06:00 AM', complete: true }),
+  M({ id: 'm02', kind: 'Pickup', at: 7 * 60, client: 'Kathmandu Post', avatar: ['KTM', 'POST'], avatarTone: 'progress', bookingNo: 'BK-2026-0702', category: 'News Desk', kit: 'Sony A7S III Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Hari', due: 'Due: 1 Aug, 06:00 AM', complete: true }),
+  M({ id: 'm03', kind: 'Pickup', at: 7 * 60 + 30, client: 'Sagarmatha TV', avatar: ['SGM', 'TV'], avatarTone: 'neutral', bookingNo: 'BK-2026-0703', category: 'Broadcast', kit: 'Canon C70 Package', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Sanu', due: 'Due: 3 Aug, 06:00 AM', complete: true }),
+  M({ id: 'm04', kind: 'Delivery', at: 8 * 60, client: 'Himalaya Broadcast', avatar: ['HIM', 'BCAST'], avatarTone: 'in', bookingNo: 'BK-2026-0704', category: 'Live Event', kit: 'Sennheiser Audio Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Delivery: Bikash', due: 'Due: 2 Aug, 06:00 AM', complete: true }),
+  M({ id: 'm05', kind: 'Pickup', at: 8 * 60 + 30, client: 'Nepal Film Dev', avatar: ['NFD', 'BOARD'], avatarTone: 'progress', bookingNo: 'BK-2026-0705', category: 'Feature Film', kit: 'DJI Ronin 4D', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Ramesh', due: 'Due: 5 Aug, 06:00 AM', complete: true }),
+  M({ id: 'm06', kind: 'Pickup', at: 9 * 60, client: 'ABC Films', avatar: ['ABC', 'FILMS'], avatarTone: 'neutral', bookingNo: 'BK-2026-0715', category: 'Commercial Shoot', kit: 'RED Komodo X Package', kitStatus: 'primary', status: 'Packed', flags: ['VIP'], staff: 'Pickup: Ramesh', due: 'Due: 2 Aug, 06:00 AM' }),
+  M({ id: 'm07', kind: 'Pickup', at: 9 * 60 + 30, client: 'Lumbini Studios', avatar: ['LUM', 'STUDIO'], avatarTone: 'neutral', bookingNo: 'BK-2026-0706', category: 'Music Video', kit: 'Godox Strobe Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Hari', due: 'Due: 1 Aug, 06:00 AM', complete: true }),
+  M({ id: 'm08', kind: 'Pickup', at: 10 * 60 + 30, client: 'Creative Studio', avatar: ['CS', 'STUDIO'], avatarTone: 'primary', bookingNo: 'BK-2026-0716', category: 'Music Video', kit: 'Sony FX6 Kit', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Pickup: Hari', due: 'Due: 1 Aug, 06:00 AM', notReset: 2 }),
+  M({ id: 'm09', kind: 'Delivery', at: 11 * 60, client: 'Pokhara Productions', avatar: ['PKR', 'PROD'], avatarTone: 'in', bookingNo: 'BK-2026-0718', category: 'Travel Series', kit: 'Grip & Rigging Set', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Delivery: Bikash', due: 'Due: 4 Aug, 06:00 AM' }),
+  M({ id: 'm10', kind: 'Pickup', at: 12 * 60, client: 'Mountain Stories', avatar: ['MTN', 'STORIES'], avatarTone: 'in', bookingNo: 'BK-2026-0717', category: 'Documentary', kit: 'Ronin 4D 6K Package', kitStatus: 'primary', status: 'Packed', flags: [], staff: 'Pickup: Sanu', due: 'Due: 3 Aug, 06:00 AM' }),
+  M({ id: 'm11', kind: 'Pickup', at: 13 * 60 + 30, client: 'Annapurna Films', avatar: ['ANP', 'FILMS'], avatarTone: 'progress', bookingNo: 'BK-2026-0719', category: 'Feature Film', kit: 'Zeiss CP.3 Prime Set', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Pickup: Ramesh', due: 'Due: 6 Aug, 06:00 AM', notReset: 1 }),
+  M({ id: 'm12', kind: 'Delivery', at: 14 * 60, client: 'Bagmati Broadcast', avatar: ['BGM', 'BCAST'], avatarTone: 'neutral', bookingNo: 'BK-2026-0720', category: 'Live Event', kit: 'Lighting Truss Package', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Delivery: Bikash', due: 'Due: 2 Aug, 06:00 AM' }),
+  M({ id: 'm13', kind: 'Pickup', at: 15 * 60, client: 'Inside Out Films', avatar: ['IO', 'FILMS'], avatarTone: 'in', bookingNo: 'BK-2026-0721', category: 'Short Film', kit: 'Ronin 4D Handheld Kit', kitStatus: 'primary', status: 'Packed', flags: [], staff: 'Pickup: Sanu', due: 'Due: 3 Aug, 06:00 AM' }),
+  M({ id: 'm14', kind: 'Pickup', at: 16 * 60 + 30, client: 'Studio Nine', avatar: ['S9', 'STUDIO'], avatarTone: 'primary', bookingNo: 'BK-2026-0722', category: 'Fashion Shoot', kit: 'Blackmagic URSA Kit', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Pickup: Hari', due: 'Due: 4 Aug, 06:00 AM' }),
 
   // ── returns ───────────────────────────────────────────────────────────
-  M({ id: 'm15', kind: 'Return', at: 11 * 60 + 30, client: 'Mountain Stories', avatar: ['MS', 'FILMS'], avatarBg: AV.ink, bookingNo: 'BK-2026-0709', category: 'Documentary', kit: 'Sony FX6 Package', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '1 day late', staff: 'Returned by Hari' }),
-  M({ id: 'm16', kind: 'Return', at: 12 * 60 + 30, client: 'Trishuli Media', avatar: ['TRI', 'MEDIA'], avatarBg: AV.navy, bookingNo: 'BK-2026-0723', category: 'Web Series', kit: 'Aputure 300D Kit', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '2 days late', staff: 'Returned by Sanu' }),
-  M({ id: 'm17', kind: 'Return', at: 13 * 60, client: 'Vision Production', avatar: ['VP', 'PROD'], avatarBg: AV.steel, bookingNo: 'BK-2026-0710', category: 'TV Show', kit: 'NISI Athena Set', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], statusNote: 'Due today', staff: 'Returned by Sanu' }),
-  M({ id: 'm18', kind: 'Return', at: 14 * 60 + 30, client: 'Inside Out Films', avatar: ['IO', 'FILMS'], avatarBg: AV.moss, bookingNo: 'BK-2026-0711', category: 'Short Film', kit: 'Aputure 600D Pro Kit', kitStatus: 'in', status: 'Returned', flags: [], staff: 'ETA: 04:00 PM' }),
-  M({ id: 'm19', kind: 'Return', at: 15 * 60, client: 'Chitwan Films', avatar: ['CHT', 'FILMS'], avatarBg: AV.slate, bookingNo: 'BK-2026-0712', category: 'Wildlife Doc', kit: 'Sachtler Tripod Set', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Bikash' }),
-  M({ id: 'm20', kind: 'Return', at: 15 * 60 + 30, client: 'Dolpo Docs', avatar: ['DLP', 'DOCS'], avatarBg: AV.ink, bookingNo: 'BK-2026-0724', category: 'Documentary', kit: 'Sony FX3 Body', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '3 days late', staff: 'Returned by Hari' }),
-  M({ id: 'm21', kind: 'Return', at: 16 * 60, client: 'Newa Cinema', avatar: ['NEW', 'CINEMA'], avatarBg: AV.moss, bookingNo: 'BK-2026-0725', category: 'Feature Film', kit: 'Zhiyun Gimbal Kit', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Sanu' }),
-  M({ id: 'm22', kind: 'Return', at: 16 * 60 + 30, client: 'Terai Television', avatar: ['TRI', 'TV'], avatarBg: AV.navy, bookingNo: 'BK-2026-0726', category: 'Broadcast', kit: 'LED Panel Set', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '1 day late', staff: 'Returned by Bikash' }),
-  M({ id: 'm23', kind: 'Return', at: 17 * 60, client: 'Gandaki Media', avatar: ['GND', 'MEDIA'], avatarBg: AV.steel, bookingNo: 'BK-2026-0727', category: 'Corporate Film', kit: 'Canon RF Lens Set', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Ramesh' }),
-  M({ id: 'm24', kind: 'Return', at: 17 * 60 + 30, client: 'Rara Pictures', avatar: ['RARA', 'PIX'], avatarBg: AV.slate, bookingNo: 'BK-2026-0728', category: 'Short Film', kit: 'Audio Recorder Kit', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Hari' }),
-  M({ id: 'm25', kind: 'Return', at: 18 * 60, client: 'Vision Production', avatar: ['VP', 'PROD'], avatarBg: AV.steel, bookingNo: 'BK-2026-0713', category: 'TV Show', kit: 'Alexa Mini LF', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Sanu' }),
+  M({ id: 'm15', kind: 'Return', at: 11 * 60 + 30, client: 'Mountain Stories', avatar: ['MS', 'FILMS'], avatarTone: 'in', bookingNo: 'BK-2026-0709', category: 'Documentary', kit: 'Sony FX6 Package', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '1 day late', staff: 'Returned by Hari' }),
+  M({ id: 'm16', kind: 'Return', at: 12 * 60 + 30, client: 'Trishuli Media', avatar: ['TRI', 'MEDIA'], avatarTone: 'progress', bookingNo: 'BK-2026-0723', category: 'Web Series', kit: 'Aputure 300D Kit', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '2 days late', staff: 'Returned by Sanu' }),
+  M({ id: 'm17', kind: 'Return', at: 13 * 60, client: 'Vision Production', avatar: ['VP', 'PROD'], avatarTone: 'primary', bookingNo: 'BK-2026-0710', category: 'TV Show', kit: 'NISI Athena Set', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], statusNote: 'Due today', staff: 'Returned by Sanu' }),
+  M({ id: 'm18', kind: 'Return', at: 14 * 60 + 30, client: 'Inside Out Films', avatar: ['IO', 'FILMS'], avatarTone: 'in', bookingNo: 'BK-2026-0711', category: 'Short Film', kit: 'Aputure 600D Pro Kit', kitStatus: 'in', status: 'Returned', flags: [], staff: 'ETA: 04:00 PM' }),
+  M({ id: 'm19', kind: 'Return', at: 15 * 60, client: 'Chitwan Films', avatar: ['CHT', 'FILMS'], avatarTone: 'neutral', bookingNo: 'BK-2026-0712', category: 'Wildlife Doc', kit: 'Sachtler Tripod Set', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Bikash' }),
+  M({ id: 'm20', kind: 'Return', at: 15 * 60 + 30, client: 'Dolpo Docs', avatar: ['DLP', 'DOCS'], avatarTone: 'in', bookingNo: 'BK-2026-0724', category: 'Documentary', kit: 'Sony FX3 Body', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '3 days late', staff: 'Returned by Hari' }),
+  M({ id: 'm21', kind: 'Return', at: 16 * 60, client: 'Newa Cinema', avatar: ['NEW', 'CINEMA'], avatarTone: 'primary', bookingNo: 'BK-2026-0725', category: 'Feature Film', kit: 'Zhiyun Gimbal Kit', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Sanu' }),
+  M({ id: 'm22', kind: 'Return', at: 16 * 60 + 30, client: 'Terai Television', avatar: ['TRI', 'TV'], avatarTone: 'progress', bookingNo: 'BK-2026-0726', category: 'Broadcast', kit: 'LED Panel Set', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '1 day late', staff: 'Returned by Bikash' }),
+  M({ id: 'm23', kind: 'Return', at: 17 * 60, client: 'Gandaki Media', avatar: ['GND', 'MEDIA'], avatarTone: 'neutral', bookingNo: 'BK-2026-0727', category: 'Corporate Film', kit: 'Canon RF Lens Set', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Ramesh' }),
+  M({ id: 'm24', kind: 'Return', at: 17 * 60 + 30, client: 'Rara Pictures', avatar: ['RARA', 'PIX'], avatarTone: 'in', bookingNo: 'BK-2026-0728', category: 'Short Film', kit: 'Audio Recorder Kit', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Hari' }),
+  M({ id: 'm25', kind: 'Return', at: 18 * 60, client: 'Vision Production', avatar: ['VP', 'PROD'], avatarTone: 'primary', bookingNo: 'BK-2026-0713', category: 'TV Show', kit: 'Alexa Mini LF', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Sanu' }),
 ]
 
 /* ── derived views — never re-typed ────────────────────────────────────── */
@@ -308,6 +315,30 @@ for (const m of MOVEMENTS) {
     throw new Error(
       `§4 Single Source Rule violated: ${m.bookingNo} appears twice with different client/package/status — ` +
         `"${seen.client} · ${seen.kit} · ${seen.status}" vs "${m.client} · ${m.kit} · ${m.status}"`,
+    )
+  }
+}
+
+/**
+ * The avatar tone is **client identity**, so one client cannot wear two tones.
+ * It could before this was asserted: Mountain Stories was `navy` on its pickup
+ * row and `ink` on its return, which is the same drift the Single Source Rule
+ * above exists to stop — one client, two colours, in two panels side by side.
+ *
+ * The second check keeps the ramp closed. `danger`, `out` and `ext` typecheck
+ * as `StatusKey` but each carries a hard meaning on this screen, and a red or
+ * solid-green disc would read as a state rather than as a name.
+ */
+const toneByClient = new Map<string, StatusKey>()
+for (const m of MOVEMENTS) {
+  const seen = toneByClient.get(m.client)
+  if (seen && seen !== m.avatarTone) {
+    throw new Error(`Avatar tone drift: ${m.client} is both "${seen}" and "${m.avatarTone}"`)
+  }
+  toneByClient.set(m.client, m.avatarTone)
+  if (!(AVATAR_RAMP as readonly StatusKey[]).includes(m.avatarTone)) {
+    throw new Error(
+      `Avatar tone "${m.avatarTone}" (${m.client}) is outside the identity ramp ${AVATAR_RAMP.join(' · ')}`,
     )
   }
 }

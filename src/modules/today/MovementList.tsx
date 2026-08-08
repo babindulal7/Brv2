@@ -6,7 +6,7 @@ import type { StatusKey } from '../../lib/status'
 import type { Movement } from '../../types/today'
 import { ROWS_PER_COLUMN, ROW_MENU, HOVER, HOVER_FALLBACK, timeOf, statusKeyOf, has } from '../../data/today'
 import { cardStyle } from '../../components/ui/Page'
-import { useCanViewMoney } from './useMoneyVisibility'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
 
 interface MovementListProps {
   title: string
@@ -378,6 +378,14 @@ export default function MovementList({ title, badge, badgeStatus, rows, moreNoun
               <span style={{ fontSize: 11, color: 'var(--muted)', marginTop: -2 }}>{timeOf(r).split(' ')[1]}</span>
             </div>
 
+            {/*
+              §4.2 — the tint is a token pair, resolved here exactly as
+              `RentalsList`'s `Avatar` resolves it, so the same client cannot be
+              one colour on Today and another on Rentals. This carried a raw hex
+              fill with `color: '#fff'` on top; both are forbidden, and the
+              white also had to be right in two themes by luck rather than by
+              the token layer.
+            */}
             <div
               aria-hidden
               className="row-avatar"
@@ -385,8 +393,9 @@ export default function MovementList({ title, badge, badgeStatus, rows, moreNoun
                 width: 34,
                 height: 34,
                 borderRadius: 999,
-                background: r.avatarBg,
-                color: '#fff',
+                background: STATUS[r.avatarTone].bg,
+                color: STATUS[r.avatarTone].fg,
+                border: STATUS[r.avatarTone].border ? `1px solid ${STATUS[r.avatarTone].border}` : undefined,
                 placeItems: 'center',
                 textAlign: 'center',
                 lineHeight: 1.05,

@@ -5,7 +5,7 @@ import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { useToast } from '../../components/ui/Toast'
 import { parseMoney, rupees } from '../../lib/money'
-import { useCanViewMoney } from '../today/useMoneyVisibility'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
 import type { ClientRecord, ClientType, MembershipTier } from '../../data/clients'
 
 interface AddClientModalProps {

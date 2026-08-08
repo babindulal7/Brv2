@@ -7,7 +7,7 @@ import type { Kpi } from '../../components/ui/Page'
 import { EmptyState } from '../../components/ui/StateViews'
 import { STATUS } from '../../lib/status'
 import { formatMoney } from '../../lib/money'
-import { useCanViewMoney } from '../today/useMoneyVisibility'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
 import {
   TIER_TONE,
   clientMetrics,

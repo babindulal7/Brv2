@@ -874,40 +874,63 @@ export function statusAfterDisposition(disposition: string): CaseStatus {
 
 /* ── module-load assertions — mirrors `reset.ts`'s GROUP_SUM / TOTAL_TASKS checks ── */
 
-const sumOfChips = CASE_STATUSES.reduce((s, k) => s + STATUS_COUNTS[k], 0)
-if (sumOfChips !== CASES.length) {
-  throw new Error(`Cases §2 chip reconciliation violated: chips sum to ${sumOfChips}, CASES has ${CASES.length} rows`)
-}
+/**
+ * ⛔ Every check below used to `throw` at module scope. A module-evaluation
+ * throw is **uncatchable** — it runs before React mounts, so no boundary can
+ * catch it and the operator gets a blank white screen with nothing in it.
+ * `lib/money.ts` hit exactly this and fixed it by *reporting* the failure
+ * instead of throwing; the same pattern is used here.
+ *
+ * Every invariant still runs on every load — §2, §3, §4.2, §5.2, §7.1 and §7.3
+ * are all still checked, and the loop now collects *all* violations rather than
+ * stopping at the first, which is strictly more information than the throw gave.
+ * The result is exported so the screen can state it, and logged so a broken seed
+ * is never silent even before a screen reads it.
+ */
+export const CASES_SEED_ERROR: string | null = (() => {
+  const problems: string[] = []
 
-const openByFormula = STATUS_COUNTS.Open + STATUS_COUNTS['Under Review'] + STATUS_COUNTS['Awaiting Decision'] + STATUS_COUNTS['In Progress']
-const openByFilter = openCasesCount()
-if (openByFormula !== openByFilter) {
-  throw new Error(`Cases §3 "Open Cases" formula violated: chip sum gives ${openByFormula}, isOpenStatus() filter gives ${openByFilter}`)
-}
+  const sumOfChips = CASE_STATUSES.reduce((s, k) => s + STATUS_COUNTS[k], 0)
+  if (sumOfChips !== CASES.length) {
+    problems.push(`§2 chip reconciliation violated: chips sum to ${sumOfChips}, CASES has ${CASES.length} rows`)
+  }
 
-for (const c of CASES) {
-  if (!/^CASE-\d{4}-\d{4}$/.test(c.id)) {
-    throw new Error(`Cases §4.2 ID registry violated: "${c.id}" is not CASE-YYYY-NNNN (four digits)`)
+  const openByFormula = STATUS_COUNTS.Open + STATUS_COUNTS['Under Review'] + STATUS_COUNTS['Awaiting Decision'] + STATUS_COUNTS['In Progress']
+  const openByFilter = openCasesCount()
+  if (openByFormula !== openByFilter) {
+    problems.push(`§3 "Open Cases" formula violated: chip sum gives ${openByFormula}, isOpenStatus() filter gives ${openByFilter}`)
   }
-  if (c.linked.linkedRecordKind === 'Sub-Rental' && !/^SR-\d{4}-\d{4}$/.test(c.linked.linkedRecordId)) {
-    throw new Error(`Cases §4.2 ID registry violated: "${c.linked.linkedRecordId}" is not SR-YYYY-NNNN (four digits) — §0 defect #6`)
-  }
-  if (c.disposition !== null && !DISPOSITIONS_BY_TYPE[c.type].includes(c.disposition)) {
-    throw new Error(`Cases §5.2 violated: "${c.disposition}" is not a valid disposition for type ${c.type} on ${c.id}`)
-  }
-  // §7.1 / §0 defect #3 — no allocation before a disposition is set.
-  if (c.disposition === null) {
-    const a = allocationOf(c)
-    const untouched = a.chargedToClient === 0 && a.depositApplied === 0 && a.insuranceClaimed === 0 && a.warrantyCovered === 0 && a.recoveredFromPartner === 0 && a.absorbed === 0
-    if (!untouched || outstandingOf(c) !== c.assessedPaisa) {
-      throw new Error(`Cases §7.1 violated: ${c.id} has no disposition yet but carries a non-zero allocation`)
+
+  for (const c of CASES) {
+    if (!/^CASE-\d{4}-\d{4}$/.test(c.id)) {
+      problems.push(`§4.2 ID registry violated: "${c.id}" is not CASE-YYYY-NNNN (four digits)`)
+    }
+    if (c.linked.linkedRecordKind === 'Sub-Rental' && !/^SR-\d{4}-\d{4}$/.test(c.linked.linkedRecordId)) {
+      problems.push(`§4.2 ID registry violated: "${c.linked.linkedRecordId}" is not SR-YYYY-NNNN (four digits) — §0 defect #6`)
+    }
+    if (c.disposition !== null && !DISPOSITIONS_BY_TYPE[c.type].includes(c.disposition)) {
+      problems.push(`§5.2 violated: "${c.disposition}" is not a valid disposition for type ${c.type} on ${c.id}`)
+    }
+    // §7.1 / §0 defect #3 — no allocation before a disposition is set.
+    if (c.disposition === null) {
+      const a = allocationOf(c)
+      const untouched = a.chargedToClient === 0 && a.depositApplied === 0 && a.insuranceClaimed === 0 && a.warrantyCovered === 0 && a.recoveredFromPartner === 0 && a.absorbed === 0
+      if (!untouched || outstandingOf(c) !== c.assessedPaisa) {
+        problems.push(`§7.1 violated: ${c.id} has no disposition yet but carries a non-zero allocation`)
+      }
+    }
+    // §7.3 — allocation must balance before Closed.
+    if (c.status === 'Closed' && allocatedTotal(c) !== c.assessedPaisa) {
+      problems.push(`§7.3 violated: ${c.id} is Closed but Assessed ${String(c.assessedPaisa)} ≠ allocated ${String(allocatedTotal(c))}`)
     }
   }
-  // §7.3 — allocation must balance before Closed.
-  if (c.status === 'Closed' && allocatedTotal(c) !== c.assessedPaisa) {
-    throw new Error(`Cases §7.3 violated: ${c.id} is Closed but Assessed ${String(c.assessedPaisa)} ≠ allocated ${String(allocatedTotal(c))}`)
-  }
-}
+
+  return problems.length === 0
+    ? null
+    : `Cases seed data does not reconcile: ${problems.join('; ')}. Figures on this screen cannot be trusted — see src/data/cases.ts.`
+})()
+
+if (CASES_SEED_ERROR) console.error(CASES_SEED_ERROR)
 
 /* ── misc seed reference data ─────────────────────────────────────────── */
 

@@ -10,7 +10,16 @@ import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { formatMoney, rupees, type Paisa } from '../../lib/money'
 import { toBs, formatBs, formatAd, TODAY } from '../../lib/bs'
-import { useCanViewMoney } from '../today/useMoneyVisibility'
+import {
+  MAINTENANCE_REGISTRY_FLAGS,
+  MAINTENANCE_REGISTRY_FLAG_ICON,
+  MAINTENANCE_CONDITIONS,
+  MAINTENANCE_CONDITION_META,
+  REGISTRY_FLAG_TITLE,
+  registryFlagTone,
+} from '../../data/maintenance'
+import type { MaintenanceRegistryFlag, MaintenanceCondition } from '../../data/maintenance'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
 
 /**
  * **Maintenance** — the Inventory workspace's fourth tab (Foundation §5.1).
@@ -28,15 +37,31 @@ import { useCanViewMoney } from '../today/useMoneyVisibility'
  *     bans, and a token `theme.css` does not even define, so it resolved to
  *     nothing. It now takes the gold *outline* §4.2 reserves for equipment in an
  *     external party's hands, which is exactly what At Vendor means.
+ *  4. **A redefined Flag registry** (fixed 6 Aug). This file declared its own
+ *     `MaintenanceFlag` union carrying `Overdue` — a `lib/workflow.ts` §1.9
+ *     registry entry — plus three words that sat close enough to registry
+ *     entries to be mistaken for them. `Overdue` now comes from the registry;
+ *     the other three are renamed maintenance-record *conditions* and live in
+ *     `src/data/maintenance.ts` with the reason each is not a booking flag.
+ *     One open question is marked `TODO(decision)` in that file.
  *
  * Dates are stored AD and rendered through `lib/bs`; no BS arithmetic is done
  * here (Foundation §2 — BS is rendered, never stored).
  */
 
+/** A vocabulary for the repair job, not the booking — it does not shadow `BookingStatus`. */
 type MaintenanceStatus = 'Scheduled' | 'In Progress' | 'Waiting Parts' | 'At Vendor' | 'Completed' | 'Cancelled'
-type MaintenanceFlag = 'Overdue' | 'Warranty' | 'Blocked Booking' | 'Awaiting Approval'
 type MaintenanceType = 'Repair' | 'Service' | 'Calibration' | 'Inspection'
 type Priority = 'Low' | 'Medium' | 'High' | 'Critical'
+
+const MAINTENANCE_STATUSES: MaintenanceStatus[] = [
+  'Scheduled',
+  'In Progress',
+  'Waiting Parts',
+  'At Vendor',
+  'Completed',
+  'Cancelled',
+]
 
 interface MaintenanceRecord {
   id: string
@@ -45,7 +70,10 @@ interface MaintenanceRecord {
   type: MaintenanceType
   priority: Priority
   status: MaintenanceStatus
-  flags: MaintenanceFlag[]
+  /** §1.9 registry flags carried by this record — never a local re-declaration. */
+  flags: MaintenanceRegistryFlag[]
+  /** Repair-job conditions. Not registry flags; see `data/maintenance.ts`. */
+  conditions: MaintenanceCondition[]
   technician?: string
   vendor?: string
   /** AD, UTC. BS is derived at render time. */
@@ -65,7 +93,8 @@ const MAINTENANCE_DATA: MaintenanceRecord[] = [
     type: 'Repair',
     priority: 'Critical',
     status: 'In Progress',
-    flags: ['Overdue', 'Warranty', 'Blocked Booking'],
+    flags: ['Overdue'],
+    conditions: ['Under Warranty', 'Holding a Booking'],
     technician: 'Ramesh Dulal',
     estCompletion: ad(2026, 7, 25),
     costEstPaisa: rupees(0),
@@ -78,7 +107,8 @@ const MAINTENANCE_DATA: MaintenanceRecord[] = [
     type: 'Calibration',
     priority: 'High',
     status: 'At Vendor',
-    flags: ['Awaiting Approval'],
+    flags: [],
+    conditions: ['Repair Approval Pending'],
     vendor: 'ARRI Service Center',
     estCompletion: ad(2026, 8, 3),
     costEstPaisa: rupees(15000),
@@ -91,6 +121,7 @@ const MAINTENANCE_DATA: MaintenanceRecord[] = [
     priority: 'Medium',
     status: 'Waiting Parts',
     flags: [],
+    conditions: [],
     technician: 'Hari Shrestha',
     estCompletion: ad(2026, 8, 8),
     costEstPaisa: rupees(3000),
@@ -98,7 +129,7 @@ const MAINTENANCE_DATA: MaintenanceRecord[] = [
   },
 ]
 
-type FilterKey = MaintenanceStatus | MaintenanceFlag | 'All'
+type FilterKey = MaintenanceStatus | MaintenanceRegistryFlag | MaintenanceCondition | 'All'
 
 const STATUS_CHIPS: Array<{ label: FilterKey; count: number }> = [
   { label: 'All', count: 86 },
@@ -112,15 +143,58 @@ const STATUS_CHIPS: Array<{ label: FilterKey; count: number }> = [
 
 const CHIP_TOTAL = STATUS_CHIPS.find((c) => c.label === 'All')?.count ?? 0
 const CHIP_SUM = STATUS_CHIPS.filter((c) => c.label !== 'All').reduce((a, c) => a + c.count, 0)
-if (CHIP_SUM !== CHIP_TOTAL) {
-  throw new Error(`Maintenance chip counts do not reconcile: ${CHIP_SUM} vs total ${CHIP_TOTAL}`)
+
+/**
+ * ⛔ This check used to `throw` here, at module scope. A module-evaluation throw
+ * is **uncatchable** — the module is evaluated while React is still loading the
+ * lazy route, before anything is mounted, so no boundary catches it and the
+ * operator gets a blank white screen with nothing in it. `lib/money.ts` hit
+ * exactly this and fixed it by *reporting* the failure instead of throwing.
+ *
+ * The invariant still runs on every load; the failure is now stated on the
+ * screen, above the chips it contradicts, instead of blanking the app.
+ */
+const CHIP_ERROR: string | null =
+  CHIP_SUM === CHIP_TOTAL
+    ? null
+    : `The status chips sum to ${CHIP_SUM}, but the All chip reads ${CHIP_TOTAL}. They are required to reconcile, so these counts are wrong — see src/modules/inventory/Maintenance.tsx.`
+
+/** Seeded pill counts, keyed by the same union the pills and the filter use. */
+const PILL_COUNTS: Record<MaintenanceRegistryFlag | MaintenanceCondition, number> = {
+  Overdue: 4,
+  'Under Warranty': 12,
+  'Holding a Booking': 3,
+  'Repair Approval Pending': 5,
 }
 
-const FLAG_CHIPS: Array<{ label: MaintenanceFlag; count: number }> = [
-  { label: 'Overdue', count: 4 },
-  { label: 'Warranty', count: 12 },
-  { label: 'Blocked Booking', count: 3 },
-  { label: 'Awaiting Approval', count: 5 },
+interface PillChip {
+  key: MaintenanceRegistryFlag | MaintenanceCondition
+  tone: StatusKey
+  icon: IconName
+  title: string
+  count: number
+}
+
+/**
+ * The registry flag first, then the repair-job conditions. Tone for the
+ * registry flag is read out of §1.9; the conditions bring their own, and each
+ * carries the tooltip explaining why it is not a registry flag.
+ */
+const PILL_CHIPS: PillChip[] = [
+  ...MAINTENANCE_REGISTRY_FLAGS.map<PillChip>((f) => ({
+    key: f,
+    tone: registryFlagTone(f),
+    icon: MAINTENANCE_REGISTRY_FLAG_ICON[f],
+    title: REGISTRY_FLAG_TITLE,
+    count: PILL_COUNTS[f],
+  })),
+  ...MAINTENANCE_CONDITIONS.map<PillChip>((c) => ({
+    key: c,
+    tone: MAINTENANCE_CONDITION_META[c].token,
+    icon: MAINTENANCE_CONDITION_META[c].icon,
+    title: MAINTENANCE_CONDITION_META[c].why,
+    count: PILL_COUNTS[c],
+  })),
 ]
 
 /**
@@ -146,20 +220,6 @@ const STATUS_ICON: Record<MaintenanceStatus, IconName> = {
   Cancelled: 'close',
 }
 
-const FLAG_TONE: Record<MaintenanceFlag, StatusKey> = {
-  Overdue: 'danger',
-  Warranty: 'in',
-  'Blocked Booking': 'progress',
-  'Awaiting Approval': 'neutral',
-}
-
-const FLAG_ICON: Record<MaintenanceFlag, IconName> = {
-  Overdue: 'timer',
-  Warranty: 'checklist',
-  'Blocked Booking': 'alert_triangle',
-  'Awaiting Approval': 'flag',
-}
-
 const th = {
   textAlign: 'left' as const,
   padding: '9px 10px',
@@ -183,10 +243,11 @@ function Unavailable({ children, reason }: { children: ReactNode; reason: string
   )
 }
 
-function Pill({ tone, icon, children }: { tone: StatusKey; icon: IconName; children: ReactNode }) {
+function Pill({ tone, icon, title, children }: { tone: StatusKey; icon: IconName; title?: string; children: ReactNode }) {
   const c = STATUS[tone]
   return (
     <span
+      title={title}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -209,7 +270,20 @@ function Pill({ tone, icon, children }: { tone: StatusKey; icon: IconName; child
 }
 
 function exportCsv(rows: MaintenanceRecord[], money: boolean) {
-  const head = ['Job', 'Equipment', 'Serial', 'Type', 'Priority', 'Status', 'Flags', 'Technician', 'Vendor', 'Est. completion (AD)']
+  // Two columns, not one: a booking flag and a repair-job condition are not the same thing.
+  const head = [
+    'Job',
+    'Equipment',
+    'Serial',
+    'Type',
+    'Priority',
+    'Status',
+    'Booking flags',
+    'Repair conditions',
+    'Technician',
+    'Vendor',
+    'Est. completion (AD)',
+  ]
   if (money) head.push('Cost')
   const body = rows.map((m) => {
     const cells = [
@@ -220,6 +294,7 @@ function exportCsv(rows: MaintenanceRecord[], money: boolean) {
       m.priority,
       m.status,
       m.flags.join(' · ') || '—',
+      m.conditions.join(' · ') || '—',
       m.technician ?? '—',
       m.vendor ?? '—',
       m.estCompletion ? formatAd(m.estCompletion) : '—',
@@ -238,6 +313,38 @@ function exportCsv(rows: MaintenanceRecord[], money: boolean) {
   URL.revokeObjectURL(url)
 }
 
+/**
+ * Foundation §6 — "A blank page is never acceptable. 'Something went wrong' is
+ * never acceptable." A reconciliation failure is stated, in place, naming the
+ * figures that disagree. Tokens only: `components/ui/StateViews` is written in
+ * Tailwind classes that this app never loads (see the file header).
+ */
+function SeedDefectBanner({ message }: { message: string }) {
+  return (
+    <div
+      role="alert"
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 10,
+        padding: '10px 12px',
+        borderRadius: 'var(--r-card)',
+        border: '1px solid var(--danger)',
+        background: 'var(--st-danger-bg)',
+        color: 'var(--st-danger-fg)',
+        fontSize: 'var(--t-meta)',
+        lineHeight: 1.55,
+      }}
+    >
+      <Icon name="alert_triangle" size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+      <span>
+        <strong style={{ display: 'block', marginBottom: 2 }}>These counts do not reconcile.</strong>
+        {message}
+      </span>
+    </div>
+  )
+}
+
 export function Maintenance() {
   const money = useCanViewMoney()
 
@@ -247,14 +354,16 @@ export function Maintenance() {
 
   /**
    * §8.3 — the cost tile is *added* for a role that may see money; it is not a
-   * placeholder that a Warehouse session sees blanked. Blocked Bookings is the
+   * placeholder that a Warehouse session sees blanked. Bookings Held is the
    * figure the floor actually needs, so it is there for everyone.
    */
   const kpis: Kpi[] = [
     { label: 'Active Maintenance', value: '18', icon: 'tool', accent: 'progress', note: 'In progress, waiting parts, at vendor' },
     { label: 'Scheduled', value: '12', icon: 'calendar', accent: 'primary', note: 'Upcoming jobs' },
     { label: 'Overdue', value: '4', icon: 'timer', accent: 'danger', note: 'Past estimated completion' },
-    { label: 'Blocked Bookings', value: '3', icon: 'alert_triangle', accent: 'danger', note: 'A booking is waiting on a repair' },
+    // Paired with the `Holding a Booking` chip below, and worded so it cannot be read
+    // as §1.9's client-scoped `Blocked` flag.
+    { label: 'Bookings Held', value: '3', icon: 'alert_triangle', accent: 'danger', note: 'A booking is waiting on a repair' },
   ]
   if (money) {
     kpis.push({ label: 'Cost This Month', value: formatMoney(rupees(45000)), icon: 'receipt', accent: 'neutral', note: 'Actual, jobs completed' })
@@ -263,11 +372,14 @@ export function Maintenance() {
   const filteredRecords = useMemo(() => {
     return MAINTENANCE_DATA.filter((m) => {
       if (activeFilter !== 'All') {
-        const isStatus = (['Scheduled', 'In Progress', 'Waiting Parts', 'At Vendor', 'Completed', 'Cancelled'] as string[]).includes(
-          activeFilter,
-        )
-        if (isStatus && m.status !== activeFilter) return false
-        if (!isStatus && !m.flags.includes(activeFilter as MaintenanceFlag)) return false
+        if ((MAINTENANCE_STATUSES as string[]).includes(activeFilter)) {
+          if (m.status !== activeFilter) return false
+        } else if (
+          !(m.flags as string[]).includes(activeFilter) &&
+          !(m.conditions as string[]).includes(activeFilter)
+        ) {
+          return false
+        }
       }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
@@ -320,6 +432,7 @@ export function Maintenance() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+      {CHIP_ERROR && <SeedDefectBanner message={CHIP_ERROR} />}
       <KpiStrip items={kpis} columns={money ? 5 : 4} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -334,15 +447,16 @@ export function Maintenance() {
 
         <span aria-hidden style={{ width: 1, height: 22, background: 'var(--border)', margin: '0 2px' }} />
 
-        {FLAG_CHIPS.map((c) => {
-          const on = activeFilter === c.label
-          const tone = STATUS[FLAG_TONE[c.label]]
+        {PILL_CHIPS.map((c) => {
+          const on = activeFilter === c.key
+          const tone = STATUS[c.tone]
           return (
             <button
-              key={c.label}
+              key={c.key}
               type="button"
-              onClick={() => setActiveFilter(c.label)}
+              onClick={() => setActiveFilter(c.key)}
               aria-pressed={on}
+              title={c.title}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -360,8 +474,8 @@ export function Maintenance() {
                 whiteSpace: 'nowrap',
               }}
             >
-              <Icon name={FLAG_ICON[c.label]} size={11} />
-              {c.label}
+              <Icon name={c.icon} size={11} />
+              {c.key}
               <span className="figure">{c.count}</span>
             </button>
           )
@@ -472,11 +586,23 @@ export function Maintenance() {
                         <Pill tone={STATUS_TONE[m.status]} icon={STATUS_ICON[m.status]}>
                           {m.status}
                         </Pill>
-                        {m.flags.length > 0 && (
+                        {(m.flags.length > 0 || m.conditions.length > 0) && (
                           <span style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
+                            {/* §1.9 registry flags. */}
                             {m.flags.map((f) => (
-                              <Pill key={f} tone={FLAG_TONE[f]} icon={FLAG_ICON[f]}>
+                              <Pill key={f} tone={registryFlagTone(f)} icon={MAINTENANCE_REGISTRY_FLAG_ICON[f]} title={REGISTRY_FLAG_TITLE}>
                                 {f}
+                              </Pill>
+                            ))}
+                            {/* Repair-job conditions — not registry flags; each says why on hover. */}
+                            {m.conditions.map((c) => (
+                              <Pill
+                                key={c}
+                                tone={MAINTENANCE_CONDITION_META[c].token}
+                                icon={MAINTENANCE_CONDITION_META[c].icon}
+                                title={MAINTENANCE_CONDITION_META[c].why}
+                              >
+                                {c}
                               </Pill>
                             ))}
                           </span>

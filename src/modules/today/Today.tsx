@@ -20,7 +20,7 @@ import {
   CAL_TODAY_ISO,
   dashboardKpis,
 } from '../../data/today'
-import { useCanViewMoney } from './useMoneyVisibility'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
 
 /**
  * §3 Nepal Mode date pill — BS leads at field size, AD one step smaller

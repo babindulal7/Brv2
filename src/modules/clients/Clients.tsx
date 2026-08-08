@@ -8,7 +8,7 @@ import Membership from './Membership'
 import { AddClientModal } from './AddClientModal'
 import { useToast } from '../../components/ui/Toast'
 import { formatMoney, rupees, type Paisa } from '../../lib/money'
-import { useCanViewMoney } from '../today/useMoneyVisibility'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { CLIENTS_DATA, TIER_TONE, type ClientRecord, type MembershipTier } from '../../data/clients'
 import { STATUS } from '../../lib/status'
 

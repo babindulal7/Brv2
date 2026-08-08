@@ -199,21 +199,41 @@ export const CATEGORIES: Array<{ name: Category; count: number }> = Object.entri
 ).map(([name, count]) => ({ name: name as Category, count }))
 
 const CATEGORY_SUM = CATEGORIES.reduce((a, c) => a + c.count, 0)
-if (CATEGORY_SUM !== TOTAL_ITEMS) {
-  throw new Error(`Reset category tree does not reconcile: categories sum to ${CATEGORY_SUM}, booking has ${TOTAL_ITEMS} items`)
-}
 
 /**
  * §6.3's arithmetic, asserted the way `packing.ts` asserts `GROUP_SUM`: hand
- * count the expected total once, then fail loudly the moment a category task
+ * count the expected total once, then report the moment a category task
  * list or a unit's clean/reset flags drift out of sync with it — the exact
  * "0 / 30 is correct arithmetic" trap §6.3 warns about, caught before it ships.
  */
 export const TOTAL_TASKS = UNITS.reduce((sum, u) => sum + allTasksFor(u).length, 0)
 const EXPECTED_TOTAL_TASKS = 97
-if (TOTAL_TASKS !== EXPECTED_TOTAL_TASKS) {
-  throw new Error(`Reset checklist does not reconcile: units sum to ${TOTAL_TASKS} tasks, expected ${EXPECTED_TOTAL_TASKS}`)
-}
+
+/**
+ * ⛔ Both checks above used to `throw` at module scope. A module-evaluation
+ * throw is **uncatchable** — it runs before React mounts, so no boundary can
+ * catch it and the operator gets a blank white screen with nothing in it.
+ * `lib/money.ts` hit exactly this and fixed it by *reporting* the failure
+ * instead of throwing; the same pattern is used here.
+ *
+ * Both invariants still run on every load, and both are still reported — the
+ * value is exported so the screen can state it, and logged so a broken seed is
+ * never silent even before a screen reads it.
+ */
+export const RESET_SEED_ERROR: string | null = (() => {
+  const problems: string[] = []
+  if (CATEGORY_SUM !== TOTAL_ITEMS) {
+    problems.push(`the category tree sums to ${CATEGORY_SUM} units but the booking has ${TOTAL_ITEMS} items`)
+  }
+  if (TOTAL_TASKS !== EXPECTED_TOTAL_TASKS) {
+    problems.push(`the checklist sums to ${TOTAL_TASKS} tasks, expected ${EXPECTED_TOTAL_TASKS}`)
+  }
+  return problems.length === 0
+    ? null
+    : `Reset seed data does not reconcile: ${problems.join('; ')}. Counts on this screen cannot be trusted — see src/data/reset.ts.`
+})()
+
+if (RESET_SEED_ERROR) console.error(RESET_SEED_ERROR)
 
 /* ── misc seed reference data ─────────────────────────────────────────────── */
 

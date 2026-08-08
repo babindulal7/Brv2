@@ -297,15 +297,29 @@ export const TIMELINE: TimelineEvent[] = [
   { id: 'e5', what: 'Handover Started (Session 2)', who: 'by Sagar Maharjan', at: new Date('2026-07-16T14:00:00+05:45') },
 ]
 
-for (let i = 1; i < TIMELINE.length; i++) {
-  const prev = TIMELINE[i - 1] as TimelineEvent
-  const cur = TIMELINE[i] as TimelineEvent
-  if (cur.at.getTime() < prev.at.getTime()) {
-    throw new Error(
-      `§14 timeline violated: "${cur.what}" (${cur.at.toISOString()}) precedes "${prev.what}" (${prev.at.toISOString()})`,
-    )
+/**
+ * ⛔ This check used to `throw` at module scope. A module-evaluation throw is
+ * **uncatchable** — it runs before React mounts, so no boundary can catch it and
+ * the operator gets a blank white screen with nothing in it. `lib/money.ts` hit
+ * exactly this and fixed it by *reporting* the failure instead of throwing; the
+ * same pattern is used here.
+ *
+ * §14's ordering invariant still runs on every load. The failure is exported so
+ * the screen can state it, and logged so a broken seed is never silent even
+ * before a screen reads it.
+ */
+export const HANDOVER_SEED_ERROR: string | null = (() => {
+  for (let i = 1; i < TIMELINE.length; i++) {
+    const prev = TIMELINE[i - 1] as TimelineEvent
+    const cur = TIMELINE[i] as TimelineEvent
+    if (cur.at.getTime() < prev.at.getTime()) {
+      return `§14 timeline violated: "${cur.what}" (${cur.at.toISOString()}) precedes "${prev.what}" (${prev.at.toISOString()}). The handover timeline is out of order — see src/data/handover.ts.`
+    }
   }
-}
+  return null
+})()
+
+if (HANDOVER_SEED_ERROR) console.error(HANDOVER_SEED_ERROR)
 
 /**
  * ⭐ TODO(decision) — `Handover Workflow.md` §17 leaves mandatory evidence

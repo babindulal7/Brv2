@@ -1,7 +1,7 @@
-import { useAuth } from '../../lib/auth'
-import type { Role as SessionRole } from '../../lib/auth'
-import { canViewMoney } from '../../lib/rbac'
-import type { SystemRole } from '../../types/database'
+import { useAuth } from './auth'
+import type { Role as SessionRole } from './auth'
+import { canViewMoney } from './rbac'
+import type { SystemRole } from '../types/database'
 
 /**
  * Foundation §8.3 / CLAUDE.md — **Warehouse sees no money, anywhere.**

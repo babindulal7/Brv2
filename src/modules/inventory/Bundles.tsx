@@ -9,7 +9,7 @@ import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { formatMoney, rupees, type Paisa } from '../../lib/money'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
-import { useCanViewMoney } from '../today/useMoneyVisibility'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
 
 /**
  * **Bundles** — the Inventory workspace's second tab (Foundation §5.1 makes it a
@@ -120,7 +120,7 @@ type FilterKey = BundleStatus | 'All'
 /**
  * §1.1 chip invariant. The previous build shipped chips that summed to 51 beside
  * an `All` chip reading 42 — and a green tick asserting "All 51" next to it. The
- * counts are corrected and the assertion now *throws* on a mismatch rather than
+ * counts are corrected and the assertion now *reports* a mismatch rather than
  * decorating one.
  */
 const CHIPS: Array<{ label: FilterKey; count: number }> = [
@@ -134,9 +134,21 @@ const CHIPS: Array<{ label: FilterKey; count: number }> = [
 
 const CHIP_TOTAL = CHIPS.find((c) => c.label === 'All')?.count ?? 0
 const CHIP_SUM = CHIPS.filter((c) => c.label !== 'All').reduce((a, c) => a + c.count, 0)
-if (CHIP_SUM !== CHIP_TOTAL) {
-  throw new Error(`Bundle chip counts do not reconcile: ${CHIP_SUM} vs total ${CHIP_TOTAL}`)
-}
+
+/**
+ * ⛔ This check used to `throw` here, at module scope. A module-evaluation throw
+ * is **uncatchable** — the module is evaluated while React is still loading the
+ * lazy route, before anything is mounted, so no boundary catches it and the
+ * operator gets a blank white screen with nothing in it. `lib/money.ts` hit
+ * exactly this and fixed it by *reporting* the failure instead of throwing.
+ *
+ * The invariant still runs on every load; the failure is now stated on the
+ * screen, above the chips it contradicts, instead of blanking the app.
+ */
+const CHIP_ERROR: string | null =
+  CHIP_SUM === CHIP_TOTAL
+    ? null
+    : `The status chips sum to ${CHIP_SUM}, but the All chip reads ${CHIP_TOTAL}. §1.1 requires them to reconcile, so these counts are wrong — see src/modules/inventory/Bundles.tsx.`
 
 /** §4.2 — five hues. Colour never travels alone; the label rides with it. */
 const BUNDLE_TONE: Record<BundleStatus, StatusKey> = {
@@ -228,6 +240,38 @@ function exportCsv(rows: BundleRecord[], money: boolean) {
   URL.revokeObjectURL(url)
 }
 
+/**
+ * Foundation §6 — "A blank page is never acceptable. 'Something went wrong' is
+ * never acceptable." A reconciliation failure is stated, in place, naming the
+ * figures that disagree. Tokens only: `components/ui/StateViews` is written in
+ * Tailwind classes that this app never loads (see the file header).
+ */
+function SeedDefectBanner({ message }: { message: string }) {
+  return (
+    <div
+      role="alert"
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 10,
+        padding: '10px 12px',
+        borderRadius: 'var(--r-card)',
+        border: '1px solid var(--danger)',
+        background: 'var(--st-danger-bg)',
+        color: 'var(--st-danger-fg)',
+        fontSize: 'var(--t-meta)',
+        lineHeight: 1.55,
+      }}
+    >
+      <Icon name="alert_triangle" size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+      <span>
+        <strong style={{ display: 'block', marginBottom: 2 }}>These counts do not reconcile.</strong>
+        {message}
+      </span>
+    </div>
+  )
+}
+
 export function Bundles() {
   const navigate = useNavigate()
   const money = useCanViewMoney()
@@ -278,6 +322,7 @@ export function Bundles() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+      {CHIP_ERROR && <SeedDefectBanner message={CHIP_ERROR} />}
       <KpiStrip items={KPIS} columns={4} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
