@@ -74,6 +74,48 @@ Newest entry first. Log what was **verified**, not what was written — "typeche
 - Global ⌘K keyboard listeners and scanner shortcuts work out of the box with the search UI.
 - Clean separation between success notifications (toasts) and validation failures (inline surfaces) simplifies user error recovery.
 
+## 2026-08-08 — Merged the COMPLETE/GUIDE archive; business-8 roles land
+**Phase:** build-every-page · **Status:** partial
+
+### Did
+- Read `COMPLETE/00 START HERE.md` and the six `GUIDE/` documents, and merged
+  `COMPLETE/02 App/babin-rentals-os-source.zip` into this tree **file by file**. A blind
+  extract would have reverted this session's last three commits — the archive was packaged
+  before them.
+- **Took from the archive** (newer on roles): `SystemRole` is now the business 8 (Owner ·
+  Admin · Coordinator · Warehouse · Technician · Accounts · Driver · Client); the per-screen
+  `SYSTEM_ROLE` shims deleted from Documents, RentalsList and Calendar; `lib/moneyVisibility.ts`
+  with its lossy four-roles-onto-Warehouse map removed; migrations `0013`/`0014`;
+  `liquidityReports.ts`; Cash Flow and Working Capital reports; the `babin-report-excellence`
+  skill.
+- **Kept from this tree** (newer): `App.tsx`, `Icon.tsx`, `data/inventory.ts`,
+  `AssetDetail.tsx`. Added the two report routes to `App.tsx` by hand and to the `BUILT` set.
+
+### Verified
+- `npx tsc --noEmit` → **0 errors**. `npm run build` → **succeeds**. HANDOFF.md §3 records the
+  build as the one step that could not be verified there, because the packaged `node_modules`
+  was Windows-only; it is verified now.
+- HANDOFF.md §5, driven both ways: as Owner, Cash Flow renders 34 rupee figures and Working
+  Capital 29. As Warehouse, both render the permission body with **0 rupee figures and 0 digit
+  groups of any kind** in the DOM, unmasked. `/reports/expenses` behaves identically.
+- HANDOFF.md §4's 29 errors were already cleared earlier today (icons + optional fields), so
+  the "do not commit them as they are" warning no longer applies — they typecheck.
+
+### Found
+- **Task #7 is unblocked.** The role set was the thing Foundation v2.2 marked "Blocks the
+  schema"; `SystemRole` is now the business 8 and the UI/RLS vocabularies are one.
+- **`GUIDE/DESIGN.md` §1 cites this session's commit `15210f6`** and the measured contrast fix
+  (`--progress` 1.7:1, `--success` 2.28:1) as the reason the morning ruling is expensive to
+  unpick. Both GUIDE docs recommend the split this code already implements.
+- **NOT DONE, needs explicit approval:** HANDOFF.md §1 applies `0013`/`0014` to the live
+  Supabase project. **No migration has been run.** It renames enum values that 22 RLS policies
+  depend on and the doc requires a database snapshot first.
+- Still open from `GUIDE/OPEN-DECISIONS.md`: design authority (item 1), the grouped sidebar
+  (item 2), Operations one-page-with-chips (item 3), fake AI panels (item 4), and the go-live
+  figures — cancellation tiers, deposit percentages, opening-balance import (item 5).
+- `booking_stage` still carries the retired 12 stages while `lib/workflow.ts` uses the
+  canonical six. HANDOFF.md §7 calls it one migration and no code change.
+
 ## 2026-08-06 — Expenses rebuilt · tree repaired · Inventory screens routed
 **Phase:** build-every-page · **Status:** partial
 
