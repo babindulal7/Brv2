@@ -32,6 +32,12 @@ const AuditSettings     = lazy(() => import('./modules/admin/AuditSettings'))
 const NumberingSequences = lazy(() => import('./modules/admin/NumberingSequences'))
 const Inventory         = lazy(() => import('./modules/inventory/Inventory'))
 const AddBundle         = lazy(() => import('./modules/inventory/AddBundle').then(m => ({ default: m.AddBundle })))
+/* 06 Inventory renders — these screens existed but were unreachable. */
+const AddEquipment      = lazy(() => import('./modules/inventory/AddEquipment'))
+const AssetDetail       = lazy(() => import('./modules/inventory/AssetDetail'))
+const Warehouses        = lazy(() => import('./modules/inventory/Warehouses'))
+const StockCheck        = lazy(() => import('./modules/inventory/StockCheck'))
+const PurchaseRequests  = lazy(() => import('./modules/inventory/PurchaseRequests'))
 const Calendar          = lazy(() => import('./modules/calendar/Calendar'))
 const Documents         = lazy(() => import('./modules/documents/Documents'))
 const OperationsQueues  = lazy(() => import('./modules/operations/OperationsQueues'))
@@ -184,6 +190,56 @@ export default function App() {
           element={
             <Shell crumbs={[{ label: 'Inventory' }]} search="Search equipment, serial, SKU, category…">
               <Inventory />
+            </Shell>
+          }
+        />
+
+        {/*
+          `06 Inventory` renders. Declared before `/inventory/:code` so a word
+          like "new" is never read as an equipment code.
+        */}
+        <Route
+          path="/inventory/new"
+          element={
+            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Add Equipment' }]} search="Search equipment, serial, SKU, category…">
+              <AddEquipment />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/inventory/warehouses"
+          element={
+            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Warehouses' }]} search="Search warehouse, zone, bay…">
+              <Warehouses />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/inventory/stock-check"
+          element={
+            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Stock Check' }]} search="Scan or search equipment, serial…">
+              <StockCheck />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/inventory/purchase-requests"
+          element={
+            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Purchase Requests' }]} search="Search request, item, supplier…">
+              <PurchaseRequests />
+            </Shell>
+          }
+        />
+
+        {/* Last of the /inventory/* group — a bare segment is an asset code. */}
+        <Route
+          path="/inventory/:code"
+          element={
+            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Asset' }]} search="Search equipment, serial, SKU, category…">
+              <AssetDetail />
             </Shell>
           }
         />
