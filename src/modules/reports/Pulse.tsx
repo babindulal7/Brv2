@@ -21,6 +21,8 @@ import {
   SCHEDULES,
   UPCOMING,
   LEDGER_ASSERTION_ERRORS,
+  FLEET_RECONCILIATION_ERRORS,
+  MODEL_DISCLOSURE,
   figuresFor,
   previousPeriod,
   rangeLabel,
@@ -435,17 +437,45 @@ export default function Pulse() {
     />
   )
 
-  const assertions = LEDGER_ASSERTION_ERRORS.length > 0 && (
+  const boundErrors = [...LEDGER_ASSERTION_ERRORS, ...FLEET_RECONCILIATION_ERRORS]
+  const assertions = boundErrors.length > 0 && (
     <div
       role="alert"
       style={{ ...cardStyle, padding: 12, borderColor: 'var(--danger)', display: 'flex', flexDirection: 'column', gap: 4 }}
     >
       <strong style={{ fontSize: 'var(--t-ui)', color: 'var(--danger-text)' }}>The seed ledger broke a bound</strong>
-      {LEDGER_ASSERTION_ERRORS.map((e) => (
+      {boundErrors.map((e) => (
         <span key={e} style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
           {e}
         </span>
       ))}
+    </div>
+  )
+
+  /*
+   * §2.2's reconciliation checks Revenue, Utilization and Overdue against
+   * their engines, but the ledger's SIZE — its expense ratios, collection
+   * timing, three of five fleet day rates — has no engine yet, because the
+   * business has not supplied real ones. That gap doesn't fail a check the
+   * way a mismatch does; it just means the totals below are a shape, not a
+   * confirmed number. Stated plainly rather than left for a reader to
+   * discover the hard way. See MODEL_DISCLOSURE's doc comment in data/pulse.ts.
+   */
+  const disclosure = (
+    <div
+      style={{
+        ...cardStyle,
+        padding: '10px 12px',
+        display: 'flex',
+        gap: 8,
+        alignItems: 'flex-start',
+        fontSize: 'var(--t-meta)',
+        color: 'var(--text2)',
+        borderColor: 'var(--border2)',
+      }}
+    >
+      <Icon name="info" size={14} style={{ flexShrink: 0, marginTop: 1, color: 'var(--muted)' }} />
+      {MODEL_DISCLOSURE}
     </div>
   )
 
@@ -669,6 +699,7 @@ export default function Pulse() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       {header}
       {assertions}
+      {disclosure}
       {periodBar}
 
       {/* §4.2's preset list stays complete: the ones the engines cannot answer

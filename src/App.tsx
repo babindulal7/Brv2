@@ -6,6 +6,8 @@ import BottomBar, { BOTTOM_BAR_HEIGHT } from './components/shell/BottomBar'
 import HeaderBar from './components/shell/Header'
 import type { Crumb } from './components/shell/Header'
 import ScannerFab from './components/shell/ScannerFab'
+import { ErrorBoundary } from './components/shell/ErrorBoundary'
+import { LoadingSkeleton, RestrictedState } from './components/ui/StateViews'
 import Placeholder from './modules/Placeholder'
 import { NAV } from './data/nav'
 import { ToastProvider } from './components/ui/Toast'
@@ -692,20 +694,15 @@ function Shell({
           style={{ flex: 1, padding: phone ? `16px 20px ${24 + BOTTOM_BAR_HEIGHT}px` : '16px 20px 24px' }}
         >
           {isForbidden ? (
-            <div style={{ textAlign: 'center', marginTop: '20vh' }}>
-              <h1 style={{ color: 'var(--danger)', margin: '0 0 8px' }}>Permission Denied</h1>
-              <p style={{ color: 'var(--text2)', margin: 0 }}>
-                Your role ({user.role}) does not have access to this module.
-              </p>
+            <div style={{ maxWidth: 420, margin: '10vh auto 0' }}>
+              <RestrictedState reason={`Your role (${user.role}) does not have access to this module.`} />
             </div>
           ) : (
-            <Suspense fallback={
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '40vh' }}>
-                <div style={{ width: 28, height: 28, border: '3px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-              </div>
-            }>
-              {children}
-            </Suspense>
+            <ErrorBoundary>
+              <Suspense fallback={<LoadingSkeleton type="card" label="Loading…" />}>
+                {children}
+              </Suspense>
+            </ErrorBoundary>
           )}
         </main>
       </div>

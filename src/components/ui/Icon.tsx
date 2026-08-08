@@ -65,6 +65,7 @@ import {
   IconUser,
   IconSchool,
   IconId,
+  IconLock,
   type Icon as TablerIconType,
 } from '@tabler/icons-react'
 
@@ -161,6 +162,9 @@ const REGISTRY = {
   person: IconUser,
   student: IconSchool,
   id_card: IconId,
+
+  // Restricted state (StateViews.tsx) — no permission-gate icon existed
+  lock: IconLock,
 } satisfies Record<string, TablerIconType>
 
 export type IconName = keyof typeof REGISTRY

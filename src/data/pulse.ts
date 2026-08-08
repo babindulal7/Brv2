@@ -2,6 +2,7 @@ import { rupees, roundHalfUp, toRupees, formatMoney } from '../lib/money'
 import type { Paisa } from '../lib/money'
 import { TODAY, toBs, formatBs, formatAd, isWeekend } from '../lib/bs'
 import { UTILIZATION_PCT, REVENUE_TODAY_PAISA, COUNTS } from './today'
+import { PARENTS } from './inventory'
 
 /**
  * **Reports ▸ Pulse — the seed ledger.**
@@ -100,14 +101,48 @@ export interface FleetModel {
   weight: number
 }
 
-/** The five models the render's Top Equipment panel names, with a real fleet size. */
+/**
+ * The five models the render's Top Equipment panel names.
+ *
+ * §2.2 says Reports must not be the system's fifth opinion, and two of these
+ * five ARE modelled in `data/inventory.ts`'s `PARENTS` — the app's actual
+ * equipment register — so their **owned** unit counts (this field's own
+ * documented meaning, unchanged) are taken from there rather than chosen
+ * independently. `FLEET_RECONCILIATION` below re-checks the tie on every
+ * load, the same way `RECONCILIATION` ties Revenue and Utilization.
+ *
+ *   Aputure 600D Pro — inventory.ts: 4 units (2 In Stock, 1 Returning, 1
+ *     Maintenance). This file previously said 5.
+ *   DJI Ronin 4D — inventory.ts: 2 units (1 In Stock, 1 Missing). This file
+ *     previously invented a 3-unit model under the name "Ronin 4D 6K", which
+ *     does not exist in the equipment register at all. One of the two real
+ *     units is currently Missing, so today's actual rentable count is lower
+ *     than 2 — a real, useful fact — but that is a *utilization* input, not a
+ *     reason to redefine what "owned units" means for this field. Silently
+ *     shrinking the cap to "currently available" would be a second invented
+ *     policy layered on top of the first; the Missing unit stays owned.
+ *
+ * The other three — Sony FX3, DJI RS 3 Pro, Sony FE 24-70mm GM II — are NOT in
+ * `PARENTS`, and the seed files that do mention a Sony FX3 disagree with each
+ * other (`bundles.ts`: 3 units at Rs 9,000/day; `stockCheck.ts`: 4 physical
+ * serials; `booking.ts`: one unit renting at Rs 6,500/day). "DJI RS 3 Pro"
+ * appears nowhere else in the app. There is no single source to reconcile
+ * against, which is a data-import gap, not a units question — TODO(decision):
+ * GUIDE/OPEN-DECISIONS.md item 5 ("data import: opening balances, existing
+ * clients, live bookings, and pre-OS earnings"). Their unit counts and day
+ * rates below remain what they were: unowned assumptions, not sourced facts,
+ * disclosed on-screen via `MODEL_DISCLOSURE` rather than presented as real.
+ */
 export const FLEET: FleetModel[] = [
   { name: 'Sony FX3', units: 6, dayRate: rupees(9500), weight: 26 },
-  { name: 'Aputure 600d Pro', units: 5, dayRate: rupees(7200), weight: 20 },
-  { name: 'Ronin 4D 6K', units: 3, dayRate: rupees(12500), weight: 13 },
+  { name: 'Aputure 600D Pro', units: 4, dayRate: rupees(7200), weight: 20 },
+  { name: 'DJI Ronin 4D', units: 2, dayRate: rupees(12500), weight: 13 },
   { name: 'DJI RS 3 Pro', units: 7, dayRate: rupees(3800), weight: 20 },
   { name: 'Sony FE 24-70mm GM II', units: 9, dayRate: rupees(2600), weight: 21 },
 ]
+
+/** Which `FLEET` entries `FLEET_RECONCILIATION` is entitled to check. */
+const RECONCILED_MODELS = new Set(['Aputure 600D Pro', 'DJI Ronin 4D'])
 
 export const FLEET_UNITS = FLEET.reduce((s, m) => s + m.units, 0)
 
@@ -731,6 +766,57 @@ export const LEDGER_ASSERTION_ERRORS: string[] = (() => {
     errs.push('The ledger carries a day after today — §3 forbids actuals in a future period.')
   return errs
 })()
+
+/**
+ * §2.2, for `FLEET`'s two `RECONCILED_MODELS` — the same "Reports must not be
+ * the system's fifth opinion" rule `RECONCILIATION` enforces for Revenue,
+ * Utilization and Overdue, extended to equipment counts. `inventory.ts`'s
+ * `stock` field is a free-text string ("4 units"); parsed rather than
+ * retyped, so a future edit to that string cannot silently stop being checked.
+ */
+export const FLEET_RECONCILIATION_ERRORS: string[] = (() => {
+  const errs: string[] = []
+  for (const model of FLEET) {
+    if (!RECONCILED_MODELS.has(model.name)) continue
+    const row = PARENTS.find((p) => p.name === model.name)
+    if (!row) {
+      errs.push(`${model.name}: marked reconciled but no longer found in inventory.ts's PARENTS.`)
+      continue
+    }
+    const owned = Number(row.stock.match(/\d+/)?.[0])
+    if (!Number.isFinite(owned)) {
+      errs.push(`${model.name}: inventory.ts's stock string "${row.stock}" could not be parsed.`)
+      continue
+    }
+    if (owned !== model.units) {
+      errs.push(`${model.name}: FLEET says ${model.units} owned units, inventory.ts says ${owned} (§2.2).`)
+    }
+  }
+  return errs
+})()
+
+/**
+ * Disclosed on the page itself, not just in this comment — §2.2's whole point
+ * is that a reader should never have to trust a number this file cannot back.
+ *
+ * The daily ledger's shape is real (§5.3's bounds, the per-model cap, the
+ * BS/AD engines), but the ratios that decide its SIZE — how much of revenue is
+ * services, what expenses run day to day, how fast clients pay — were never
+ * supplied by the business. `SERVICES_RATIO` through `CAPITAL_AMOUNT` above,
+ * and the three unreconciled `FLEET` day rates, are placeholders standing in
+ * for real ones. They produce a page that computes correctly from numbers
+ * nobody has confirmed, which is a different and easier-to-miss problem than
+ * computing incorrectly from numbers that are right.
+ *
+ * GUIDE/OPEN-DECISIONS.md item 5 names exactly this gap: "cancellation fee
+ * tiers… deposit percentage per gear category… data import… the last things
+ * standing between the build and real use." This is that gap, on the page an
+ * owner is most likely to read a number off of and act on.
+ */
+export const MODEL_DISCLOSURE =
+  'The figures below follow a real daily ledger, but its expense, collection ' +
+  'and fleet-pricing assumptions are placeholders — no one has supplied the ' +
+  "actual ones yet. Treat this page's totals as a shape, not a number to act on."
 
 /* ── §11 export header ─────────────────────────────────────────────────── */
 

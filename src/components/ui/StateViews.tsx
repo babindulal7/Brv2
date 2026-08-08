@@ -84,37 +84,57 @@ export function EmptyState({
 }
 
 /** §2.1 Loading — "skeleton with text… never a bare spinner, never a blank container." */
-export function LoadingSkeleton({ rows = 4, type = 'table' }: { rows?: number; type?: 'card' | 'table' | 'kpi' }) {
+export function LoadingSkeleton({
+  rows = 4,
+  type = 'table',
+  label,
+}: {
+  rows?: number
+  type?: 'card' | 'table' | 'kpi'
+  /** The "Loading rentals…" text §2.1 requires — omit only where the skeleton sits right under a heading that already says what's loading. */
+  label?: string
+}) {
   const pulse = { background: 'var(--card2)', borderRadius: 6, animation: 'pulse 1.5s ease-in-out infinite' } as const
+  const labelEl = label && (
+    <p style={{ margin: '0 0 10px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{label}</p>
+  )
 
   if (type === 'kpi') {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
-        {Array.from({ length: 4 }, (_, i) => (
-          <div key={i} style={{ ...cardStyle, padding: '13px 14px', display: 'flex', flexDirection: 'column', gap: 9 }}>
-            <div style={{ ...pulse, width: 80, height: 12 }} />
-            <div style={{ ...pulse, width: 120, height: 22 }} />
-            <div style={{ ...pulse, width: 64, height: 10 }} />
-          </div>
-        ))}
+      <div>
+        {labelEl}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+          {Array.from({ length: 4 }, (_, i) => (
+            <div key={i} style={{ ...cardStyle, padding: '13px 14px', display: 'flex', flexDirection: 'column', gap: 9 }}>
+              <div style={{ ...pulse, width: 80, height: 12 }} />
+              <div style={{ ...pulse, width: 120, height: 22 }} />
+              <div style={{ ...pulse, width: 64, height: 10 }} />
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
 
   if (type === 'card') {
     return (
-      <div style={{ ...cardStyle, padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ ...pulse, width: '33%', height: 18 }} />
-        <div style={{ ...pulse, width: '100%', height: 90 }} />
-        <div style={{ display: 'flex', gap: 8 }}>
-          <div style={{ ...pulse, width: 90, height: 30 }} />
-          <div style={{ ...pulse, width: 90, height: 30 }} />
+      <div>
+        {labelEl}
+        <div style={{ ...cardStyle, padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ ...pulse, width: '33%', height: 18 }} />
+          <div style={{ ...pulse, width: '100%', height: 90 }} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ ...pulse, width: 90, height: 30 }} />
+            <div style={{ ...pulse, width: 90, height: 30 }} />
+          </div>
         </div>
       </div>
     )
   }
 
   return (
+    <div>
+      {labelEl}
     <div style={{ ...cardStyle, overflow: 'hidden' }}>
       <div
         style={{
@@ -139,6 +159,7 @@ export function LoadingSkeleton({ rows = 4, type = 'table' }: { rows?: number; t
           </div>
         ))}
       </div>
+    </div>
     </div>
   )
 }

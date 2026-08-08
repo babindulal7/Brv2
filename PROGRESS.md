@@ -5,6 +5,75 @@
 Newest entry first. Log what was **verified**, not what was written — "typechecks" and
 "works" are different claims, and only the second one counts.
 
+## 2026-08-08 — The five page states, fixed and wired app-wide (DEVICES.md item 5)
+**Phase:** device/responsive (`DEVICE/DEVICES.md` §7 build order) · **Status:** done
+
+### Did
+- Traced "the five page states" to `System States & Patterns v2.0` §2 (Loading / Empty /
+  Warning / Error / Offline·Maintenance·Session·Permission·NotFound) — the one section of
+  that document's predecessor `Page Standard.md` explicitly carried forward as still Build
+  Locked even where the renders overrode everything else in it ("the five page-state
+  requirement... is content law, not layout law, and the renders do not contradict them").
+- Found the actual gap wasn't "pages don't call state components" — `src/components/ui/
+  StateViews.tsx` already existed with `EmptyState` (32 real call sites), `LoadingSkeleton`,
+  `ErrorBanner` and `RestrictedState` (both currently unused), a duplicate `OfflineBanner`.
+  The real bug: **all five were written in Tailwind utility classNames, and Tailwind is
+  installed + its Vite plugin registered but no CSS file anywhere imports `tailwindcss`**, so
+  every class compiled to nothing. `EmptyState` — used on 32 real screens — has been
+  rendering completely unstyled this whole time.
+- Rewrote all four live components in `StateViews.tsx` using the app's real inline-style +
+  `theme.css`-custom-property system (matching `cardStyle`, `STATUS` tokens, `Icon`,
+  `Button` from `Page.tsx`), preserving every existing prop shape exactly so none of the 32
+  `EmptyState` call sites needed to change. Dropped the dead duplicate `OfflineBanner` export
+  — the real one (`App.tsx`, `useNetwork()`-driven, already functional) is unaffected.
+  Added a `pulse` keyframe to `theme.css` for the new `LoadingSkeleton`, and a `lock` icon to
+  `Icon.tsx`'s registry (didn't exist — needed for `RestrictedState`).
+- Wired the previously-unused components into the single highest-leverage point, `App.tsx`'s
+  `Shell`, which every route passes through:
+  - The route-level `<Suspense>` fallback was a bare CSS spinner — a direct violation of
+    §2.1's "never a bare spinner, never a blank container." Replaced with
+    `<LoadingSkeleton type="card" label="Loading…" />`.
+  - New `src/components/shell/ErrorBoundary.tsx` — **the app had zero protection against a
+    render-time crash anywhere in the tree.** `main.tsx` only guards the §2.8 reference-case
+    check, which runs *before* mount; any component throwing during render would unmount the
+    whole app to a blank white screen with no message, which is exactly what "a blank page is
+    never acceptable" (carried into v2.0 unchanged) forbids. Wraps `<Suspense>{children}
+    </Suspense>` specifically (not the whole Shell), so Sidebar/Header/BottomBar stay usable
+    and a user can navigate away even if one page's render throws. Shows `ErrorBanner` with a
+    reload-triggered retry.
+  - The inline "Permission Denied" text block (Warehouse hitting `/finance`) now renders
+    `RestrictedState` instead of a hand-rolled `<h1>`/`<p>` pair — same message, on-system
+    styling.
+
+### Verified
+- `npx tsc --noEmit`: 0 errors, whole repo.
+- Drove the app: navigated to `/clients/duplicates`, which renders `EmptyState` on real seed
+  data ("No duplicates found" — 26 clients, none matching). Read the rendered DOM node's
+  `getComputedStyle`: `border: 1px dashed`, `border-radius: 14px`, a real background color,
+  `32px 20px` padding, `display: flex` column — confirmed styled, not the unstyled
+  Tailwind-dead render it would have been before this fix. Confirmed the icon (`<svg>`)
+  renders inside the expected wrapper.
+- **Not dynamically triggered:** the `LoadingSkeleton` Suspense fallback (route chunks load
+  too fast in dev to reliably catch mid-flight) and `RestrictedState`'s live render (needs a
+  Warehouse-role session hitting `/finance`; no dev role-switcher exists to force that state
+  quickly). Both share the exact same styling primitives already confirmed working for
+  `EmptyState` above, and both typecheck clean, but neither was watched rendering with real
+  data — flagging honestly rather than claiming a verification that didn't happen.
+
+### Known issues / not done
+- `DEVICES.md`'s build order is now fully worked through (items 1–5); item 6, the wall
+  display, remains — "mostly a scale and a route away once 1–5 are done" per the spec.
+- Found in passing, **flagged as a separate background task, not fixed here**: the exact
+  same dead-Tailwind bug also affects `src/components/ui/Button.tsx` (and likely Card/Modal/
+  Table/Badge/Input/Select siblings), which is imported for real by `PurchaseRequests.tsx`,
+  `StockCheck.tsx`, `UnifiedInbox.tsx`, `CasesWorkspace.tsx`, `CrewBooking.tsx` and
+  `SubRental.tsx` — six more screens likely rendering unstyled buttons right now. Out of
+  scope for "the five page states" specifically; a real, separate defect.
+- §2.3 Warning has no dedicated component — existing amber/progress-toned status badges and
+  the Today page's `AlertsPanel`/flag registry (§1.9) already cover that state's intent
+  app-wide, so nothing new was added for it here; worth confirming that reading is right
+  before assuming the state is fully covered.
+
 ## 2026-08-08 — Long-press for hover-only info, gated on `!hasHover` (DEVICES.md item 4)
 **Phase:** device/responsive (`DEVICE/DEVICES.md` §7 build order) · **Status:** done, one
 verification gap noted below
