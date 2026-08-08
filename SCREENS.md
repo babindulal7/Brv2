@@ -49,7 +49,8 @@ complete, matches the documentation tree, and appears in the newest renders (foo
 Administration child. `13590713` and `F134F2C8` both drop the top-level copy and renumber;
 two renders against one, and one destination should not appear in the nav twice.
 
-Footer: branch card (`Babin Rentals Pvt. Ltd.` · `Boudha, Kathmandu` · `VAT: 609876543`),
+Footer: branch card (`Babin Rentals Pvt. Ltd.` · `Boudha, Kathmandu` · `VAT: 609876543`) —
+the PAN is wrong on the render; the correct value is `623587106` (Decisions — 8 Aug 2026 §1A) —
 then a **Dark / Light** segmented toggle. Not a single icon button — two labelled halves.
 
 **This settles the 13-vs-7 sidebar conflict left open in `data/today.ts`:** neither. It is

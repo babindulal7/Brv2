@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
-import { useAuth } from '../../lib/auth'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { rupees, formatMoney } from '../../lib/money'
 import { formatAd } from '../../lib/bs'
 import { PARENTS } from '../../data/inventory'
@@ -12,8 +12,16 @@ type AssetTab = 'Units' | 'Timeline' | 'Maintenance' | 'Money' | 'Documents' | '
 export default function AssetDetail() {
   const { assetId } = useParams<{ assetId?: string }>()
   const navigate = useNavigate()
-  const { user } = useAuth()
-  const isFloorRole = user?.role === ('technician' as any)
+  /*
+   * Was `user?.role === ('technician' as any)` — a lowercase literal forced
+   * past the type checker because SystemRole is Title Case, so the real
+   * runtime value ('Technician') never matched and this comparison was always
+   * false. Beyond the case bug, it also only checked for Technician, not the
+   * full money-blind set (Warehouse/Driver/Client also shouldn't see this
+   * page's Money tab). useCanViewMoney() is the one gate every other money
+   * check in the app uses; this page should not have had its own.
+   */
+  const money = useCanViewMoney()
 
   const [activeTab, setActiveTab] = useState<AssetTab>('Units')
   const [expandedUnits, setExpandedUnits] = useState<Set<string>>(new Set(['SN-FX3-001', 'SN-FX3-002']))
@@ -39,7 +47,7 @@ export default function AssetDetail() {
     'Units',
     'Timeline',
     'Maintenance',
-    ...(!isFloorRole ? ['Money' as const] : []),
+    ...(money ? ['Money' as const] : []),
     'Documents',
     'Activity',
   ]
@@ -187,7 +195,7 @@ export default function AssetDetail() {
       </div>
 
       {/* Answer Strip: 4 Figures (No donuts) */}
-      <div style={{ display: 'grid', gridTemplateColumns: isFloorRole ? 'repeat(3, 1fr)' : 'repeat(4, 1fr)', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: money ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)', gap: 14 }}>
         <div style={{ ...cardStyle, padding: '14px 16px' }}>
           <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>AVAILABLE NOW</div>
           <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success-text)', marginTop: 4 }}>
@@ -212,7 +220,7 @@ export default function AssetDetail() {
           <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', marginTop: 2 }}>70 shoot days</div>
         </div>
 
-        {!isFloorRole && (
+        {money && (
           <div style={{ ...cardStyle, padding: '14px 16px' }}>
             <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>RECOVERY %</div>
             <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success-text)', marginTop: 4 }}>
@@ -453,7 +461,7 @@ export default function AssetDetail() {
       )}
 
       {/* Tab 4: Money (Omitted for Floor Roles) */}
-      {activeTab === 'Money' && !isFloorRole && (
+      {activeTab === 'Money' && money && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
             <div style={{ ...cardStyle, padding: 16 }}>

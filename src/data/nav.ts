@@ -142,11 +142,21 @@ export const TABS: Record<string, string[]> = {
   '/clients': ['Clients', 'Memberships', 'Crew'],
 }
 
-/** Sidebar footer — the operating branch, not the signed-in user. */
+/**
+ * Sidebar footer — the operating branch, not the signed-in user.
+ *
+ * `vat` was `609876543` — the PAN the old renders show, and the Decisions doc
+ * (8 Aug 2026, §1A + footer) rules the correct number is `623587106`,
+ * asserting the wrong one appears "only in the renders, not in any markdown."
+ * It was here too: live TypeScript, rendered in the Sidebar footer and in
+ * Settings' VAT field, not a render and not markdown. supabase/migrations/
+ * 0007_admin_security.sql and 0012_seed_data.sql already had the right number
+ * — only this file was still carrying the wrong one forward.
+ */
 export const BRANCH = {
   name: 'Babin Rentals Pvt. Ltd.',
   address: 'Boudha, Kathmandu',
-  vat: 'VAT: 609876543',
+  vat: 'VAT: 623587106',
 }
 
 /** Top-right identity chip. */
