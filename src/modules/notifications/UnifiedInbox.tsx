@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader } from '../../components/ui/Page'
+import { Card, PageHeader, Rail, SideRail } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
 import { formatMoney } from '../../lib/money'
 import { useAuth } from '../../lib/auth'
@@ -240,12 +240,13 @@ export default function UnifiedInbox() {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '200px 320px 1fr 300px',
+          gridTemplateColumns: 'auto 320px 1fr auto',
           gap: 16,
           minHeight: 640,
         }}
       >
         {/* Col 1: Filters & Channels */}
+        <SideRail width={200} label="Mailboxes">
         <Card style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
             <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 }}>
@@ -342,6 +343,7 @@ export default function UnifiedInbox() {
             </div>
           </div>
         </Card>
+        </SideRail>
 
         {/* Col 2: Conversation List */}
         <Card style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -827,6 +829,7 @@ export default function UnifiedInbox() {
         </Card>
 
         {/* Col 4: Client Context Panel (Right Rail) */}
+        <Rail width={300} label="Details">
         <Card style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
           {activeThread && (
             <>
@@ -960,6 +963,7 @@ export default function UnifiedInbox() {
             </>
           )}
         </Card>
+        </Rail>
       </div>
 
       {/* Template Selection Modal */}

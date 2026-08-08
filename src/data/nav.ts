@@ -1,4 +1,5 @@
 import type { IconName } from '../components/ui/Icon'
+import type { SystemRole } from '../types/database'
 
 /**
  * The application's navigation tree — **Foundation v2.0 §5.1**.
@@ -80,6 +81,23 @@ export const NAV: NavSection[] = [
 
 /** §5.1 — pinned below the divider, outside the eight. */
 export const SETTINGS_NAV: NavSection = { label: 'Settings', icon: 'settings', to: '/settings' }
+
+/**
+ * The single filter both the Sidebar and the phone bottom bar read, so the two
+ * surfaces cannot drift into showing a different set for the same role — the
+ * exact failure mode §0 exists to prevent. Warehouse's exclusion is the only
+ * rule that exists today; a role gaining its own curated order beyond simple
+ * exclusion is `TODO(decision)` — nothing in Foundation or `Branch
+ * Management.md` specifies one, and inventing it here would be exactly the
+ * kind of unbacked product decision `CLAUDE.md` rules out.
+ */
+export function permittedNav(role: SystemRole | undefined): NavSection[] {
+  if (!role) return []
+  if (role === 'Warehouse') {
+    return NAV.filter((s) => !['/finance', '/reports', '/admin'].includes(s.to))
+  }
+  return NAV
+}
 
 /**
  * Tabs, per §5.1's nesting rule. These are views of one subject and belong on

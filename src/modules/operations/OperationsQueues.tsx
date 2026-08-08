@@ -183,7 +183,6 @@ export default function OperationsQueues() {
                       flexDirection: 'column',
                       gap: 6,
                       borderLeft: j.overdue ? '2px solid var(--danger)' : '1px solid var(--border)',
-                      background: j.overdue ? 'var(--danger-soft)' : 'var(--card)',
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
@@ -288,7 +287,6 @@ export default function OperationsQueues() {
                       style={{
                         borderBottom: '1px solid var(--border)',
                         borderLeft: j.overdue ? '2px solid var(--danger)' : '2px solid transparent',
-                        background: j.overdue ? 'var(--danger-soft)' : 'transparent',
                       }}
                     >
                       <td className="identifier" style={{ ...td, fontWeight: 700 }}>{j.id}</td>

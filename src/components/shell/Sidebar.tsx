@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../ui/Icon'
 import { useTheme } from '../../lib/theme'
-import { NAV, SETTINGS_NAV, BRANCH } from '../../data/nav'
+import { SETTINGS_NAV, BRANCH, permittedNav } from '../../data/nav'
 import type { NavSection } from '../../data/nav'
 import { useAuth } from '../../lib/auth'
 import { useCollapsed } from '../../lib/collapse'
@@ -44,14 +44,7 @@ export default function Sidebar({ active }: SidebarProps) {
      page panel, so it gets its own fixed key rather than a route-derived one. */
   const [collapsed, toggleCollapsed] = useCollapsed('sidebar:main', false)
 
-  // Basic RBAC filtering for Sidebar (Warehouse role hides Finance, Admin, Reports)
-  const allowedNav = NAV.filter((s) => {
-    if (!user) return false
-    if (user.role === 'Warehouse') {
-      return !['/finance', '/reports', '/admin'].includes(s.to)
-    }
-    return true
-  })
+  const allowedNav = permittedNav(user?.role)
 
   const owner = allowedNav.find((s) => owns(s, active))?.to ?? null
 
@@ -84,7 +77,7 @@ export default function Sidebar({ active }: SidebarProps) {
         height: '100vh',
         position: 'sticky',
         top: 0,
-        transition: 'background-color var(--dur-theme) ease, width var(--dur) ease',
+        transition: 'background-color var(--dur-theme) ease',
       }}
     >
       <div

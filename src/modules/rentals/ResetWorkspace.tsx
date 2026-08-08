@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { Card, Button, cardStyle, Rail, SideRail } from '../../components/ui/Page'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { JOBS } from '../../lib/workflow'
@@ -343,8 +343,9 @@ export default function ResetWorkspace() {
 
   const jobsReset = JOBS.Reset
 
+  // Floor scale (DEVICES.md item 3) is applied automatically by route in App.tsx's Shell, not here.
   return (
-    <div data-floor="true" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       {/* ── header — booking status is fixed at Returned; only the job state moves ── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0, flex: 1 }}>
@@ -472,8 +473,9 @@ export default function ResetWorkspace() {
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '220px minmax(0,1fr) 320px', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
         {/* ── left — categories, derived counts ──────────────────────────── */}
+        <SideRail width={220} label="Categories">
         <Card title="Categories">
           {CATEGORIES.map((c) => {
             const units = UNITS.filter((u) => u.category === c.name)
@@ -490,6 +492,7 @@ export default function ResetWorkspace() {
             Category counts are derived from the queue and always sum to {TOTAL_ITEMS}.
           </p>
         </Card>
+        </SideRail>
 
         {/* ── centre — the queue ──────────────────────────────────────────── */}
         <Card
@@ -588,6 +591,7 @@ export default function ResetWorkspace() {
         </Card>
 
         {/* ── right — the batch action panel, the one primary (§9.3) ──────── */}
+        <Rail width={320} label="Reset selected items">
         <Card title={`Reset Selected Items (${selected.size})`} action={selected.size > 0 ? <button type="button" onClick={clearSelection} style={{ border: 'none', background: 'transparent', color: 'var(--link)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'var(--t-meta)' }}>Clear</button> : undefined}>
           {selUnits.length === 0 ? (
             <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Select items from the queue to work a batch.</p>
@@ -803,6 +807,7 @@ export default function ResetWorkspace() {
             </>
           )}
         </Card>
+        </Rail>
       </div>
 
       {/* §9.3 — the selection bar shows only the count and Clear Selection. No second primary. */}

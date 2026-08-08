@@ -365,7 +365,7 @@ export default function MovementList({ title, badge, badgeStatus, rows, moreNoun
               padding: '10px 12px 10px 10px',
               borderBottom: i < shown.length - 1 ? '1px solid var(--border)' : 'none',
               borderLeft: has(r, 'Overdue') ? '2px solid var(--danger)' : r.kind === 'Pickup' || r.kind === 'Delivery' ? '2px solid var(--primary)' : has(r, 'Due Soon') ? '2px solid var(--warn)' : '2px solid transparent',
-              background: has(r, 'Overdue') ? 'var(--danger-soft)' : 'transparent',
+              background: 'transparent',
               alignItems: 'start',
               cursor: 'pointer',
             }}
@@ -515,8 +515,10 @@ export default function MovementList({ title, badge, badgeStatus, rows, moreNoun
                 </button>
               </div>
 
-              {/* --st-danger-fg, not --danger: this note sits on the tinted
-                  overdue row, where the brighter --danger falls under 4.5:1. */}
+              {/* --st-danger-fg, not --danger: measured 5.98:1 against --card,
+                  --danger measures 4.40:1 — under the 4.5:1 floor for this text
+                  size. The row itself stays the plain card surface; only the
+                  border-left and this note carry the overdue signal. */}
               {r.statusNote && (
                 <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: has(r, 'Overdue') ? 'var(--st-danger-fg)' : 'var(--muted)' }}>
                   {r.statusNote}

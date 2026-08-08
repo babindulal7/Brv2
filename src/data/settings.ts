@@ -706,6 +706,36 @@ export const SYSTEM_QUICK_ACTIONS: QuickAction[] = [
   { label: 'Update system', icon: 'download', dest: NO('Releases are deployed from the build pipeline, not from this page.') },
 ]
 
+/**
+ * `Branch Management.md` §Quick Actions — "exactly four", in the render's order.
+ *
+ * Two of them are performed **by the page**, not navigated to, and `Dest` has no
+ * case for that on purpose: it exists so a link cannot go nowhere. So an action
+ * carries a `dest` when it navigates and a `kind` the pane wires up when it does
+ * not — there is still no fourth, silent case.
+ */
+export type BranchActionKind = 'add-branch' | 'transfer-equipment' | 'export-report' | 'print-labels'
+
+export interface BranchQuickAction {
+  kind: BranchActionKind
+  label: string
+  icon: IconName
+  /** Present when the tile navigates; absent when the pane performs it in place. */
+  dest?: Dest
+}
+
+export const BRANCH_QUICK_ACTIONS: BranchQuickAction[] = [
+  { kind: 'add-branch', label: 'Add Branch', icon: 'plus' },
+  { kind: 'transfer-equipment', label: 'Transfer Equipment', icon: 'truck', dest: TO('/inventory/warehouses') },
+  { kind: 'export-report', label: 'Export Report', icon: 'download' },
+  {
+    kind: 'print-labels',
+    label: 'Print QR Labels',
+    icon: 'package',
+    dest: NO('QR labels are printed one asset at a time, from Inventory ▸ the asset ▸ Label. No bulk branch label run exists in this build.'),
+  },
+]
+
 /* ── the render's own figures, asserted ────────────────────────────────── */
 
 /**

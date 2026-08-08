@@ -346,3 +346,107 @@ Money `numeric(14,2)` — never float. snake_case in the DB, camelCase in TS.
 
 **Never**: a `DELETE`; an `UPDATE` on payments or audit; a hardcoded VAT rate; a hex value
 in a component; a per-screen seed array; a second dashboard; a second codebase.
+
+---
+
+# 6. External audit reconciliation — 8 Aug 2026
+
+The user pasted a 44-section "Full Product Audit & Development Blueprint" (external, source
+unstated) proposing a from-scratch IA and a 40-page build list. Reconciled against this file
+and the current build rather than actioned wholesale — most of it either restates a law
+already here or repeats a fight already settled. Two genuine, previously-unknown bugs came
+out of doing this properly; those are the real yield.
+
+## 6.1 Settled, not reopened — "Customer" naming and sidebar width
+
+The audit's §4/§39 propose renaming Clients → Customers and a 13-section sidebar. This is
+the **third** time this exact shape has surfaced:
+
+1. The original Generation C renders carried a 15-item numbered sidebar — `data/nav.ts`'s own
+   header comment documents rejecting it ("the renders were the defect").
+2. Earlier this session, a design pack (2 screenshots + 2 spec `.md`s) proposed the same
+   13-item "Customers" nav from Global spec §6. Asked the user directly; they chose **Client**
+   — keep law 17 and the existing 8-item nav.
+3. This audit proposes it again.
+
+**Ruling: closed.** Law 17 and the 8-item nav (§5.1 in `data/nav.ts`) stand. Do not re-ask
+this question from a fourth source without new information — cite this entry instead.
+
+One thing the audit's §39 gets right without realizing it already happened: Operations
+Queues → "Operations" with Packing/Handover/Return/Reset/Cases as **children**, not flat
+top-level items, is exactly what `data/nav.ts` already does. Same for Crew Assist (kept,
+because `CrewBooking.tsx` is a real workflow, not a stub) and Calendar (top-level). The
+8-item nesting nav already satisfies most of §39's actual complaint (flat-list sprawl)
+without adopting its 13-item structure.
+
+## 6.2 Two real bugs this audit corroborated
+
+**1. Dark theme's primary button is still gold, not blue.** Measured live in this session
+(`getComputedStyle` on the Save button, dark theme): `background: rgb(216,169,58)`,
+`color: rgb(0,0,0)` — i.e. `--btn-primary-bg`/`--btn-primary-fg` in `theme.css`'s dark block
+are still `#d8a93a`/`#000`. This audit's §30 ("avoid yellow as the primary action color")
+and the earlier design pack's Global spec §2.2 ("blue replaces yellow/gold... never the
+default CTA color") both say the same thing independently — and the 5 Aug PROGRESS.md entry
+claims *"the gold-as-primary problem in the older design system was already fixed in the
+capsule build."* That claim is about the **reference render**, not this codebase:
+`theme.css`'s dark tokens were never actually migrated. `NewRental.tsx` §13 already worked
+around this locally ("the workspace primary is blue in *both* themes... where the app
+primary is gold") rather than fixing the token — so every other screen using
+`<Button variant="primary">` in dark mode ships gold. TODO(decision): settle this as part of
+§4.1 (token drift, already blocks Phase 4) rather than patching it screen by screen again.
+
+**2. §4.3 ("roles: six") is stale.** `lib/rbac.ts`'s own header comment: *"the business 8
+(ruled 8 Aug 2026)"* — Owner · Admin · Coordinator · Warehouse · Technician · Accounts ·
+Driver · Client. That is eight, live in code, dated **today**, and it does not match this
+file's §4.3 ruling of six (Owner · Manager · Warehouse · Billing · Accounts · Viewer). One of
+these two rulings is the one actually in force; §4.3 needs a re-ruling entry pointing at
+whichever is current, not two documents disagreeing about how many roles the RBAC engine has.
+
+## 6.3 Already covered — no new decision needed
+
+Payment immutability (§13/§25/§27 ↔ laws 4/5/10, already enforced and verified —
+"§10.8 discount hard-block verified in four states"), single source of truth (§2 ↔ law 2,
+Phase 3's ten engines), rental lifecycle (§10 ↔ the 12-stage status engine in
+`lib/workflow.ts`), return/inspection flow (§12 ↔ `ReturnWorkspace.tsx`, already built and
+verified), responsive/capability rules (§29/§30 ↔ laws 13/14, `lib/device.ts`), five-states
+gate (§32 ↔ Phase 4's own gate), offline conflict handling (§35 ↔ all of Phase 9), AI
+restraint (§37 ↔ law 16), command palette (§16 — `CommandPalette.tsx` already exists),
+audit log (§18 — `lib/audit.ts` + `/admin/audit` already exist, though nothing calls
+`logAuditEvent` yet), notification triage (§17 — `BroadcastCenter.tsx`/`SmsCenter.tsx`/
+`UnifiedInbox.tsx` already exist).
+
+## 6.4 Genuinely missing — confirmed by reading the code, not assumed
+
+- **Client/Customer Detail page.** No `/clients/:id` route exists — `ClientsDirectory.tsx`
+  only ever shows a right-rail summary panel, never a full profile page. Audit §7/§38#8.
+- **Import Center.** `ClientsDirectory.tsx`'s Import button is `disabled`, reason on file:
+  *"no CSV mapping or duplicate-merge step exists."* Audit §21/§38#15.
+- **Duplicate/Merge Center.** Same disabled-button reason names this directly. This session's
+  Add Client page added a first, narrow instance (phone-match warning on one form) — not a
+  merge workflow. Audit §22/§38#16.
+- **Bulk Actions.** `ClientsDirectory.tsx` has row-selection checkboxes and a "N selected"
+  counter with nothing wired to them yet. Audit §20/§38#27.
+
+Everything else in the audit's §38 "must build" list needs a one-by-one check against
+`src/modules/*` before being trusted as missing — several (Rental Detail, Equipment Unit
+Detail, Damage/Missing workflow, System Health, Audit Log, Notification Center) already exist
+under the names this codebase settled on, just not the audit's names.
+
+## 6.5 Likely not applicable to this product
+
+§3 P0.6 and §37 both carry an oddly specific "no charging functionality/workflows/statuses"
+exclusion. Nothing in this product's domain (camera, grip, lighting, audio rental) has a
+charging concept — reads like a carried-over constraint from a different template the audit
+was built from. Not adopted as a law; flag to the user if it turns out to mean something
+domain-specific.
+
+## 6.6 Process note — Phase 1 is still open while Phase 4–6 work continues
+
+This file's own rule (§2): *"Do not start a phase until the one before it passes its gate."*
+Phase 1 (schema) is marked current and its checklist is unchecked, yet PROGRESS.md shows
+extensive Phase 4 (design system), Phase 5 (shell/nav) and Phase 6 (screens — Today, Rentals,
+Booking, Inventory, Calendar, Operations, Finance, Clients all substantially built) already
+done on mock/seed data. The audit's own §41 phase order would have the schema finished before
+more screens — which is just this file's rule, restated by an outside reader. Not re-litigating
+the sequencing choice here, only naming it: it is a live divergence from this file's own gate,
+not a hidden one.

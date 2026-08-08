@@ -9,6 +9,12 @@ export type ClientType =
   | 'NGO'
   | 'Broadcaster'
   | 'Individual'
+  /* Added for the Add Client page's broad segmented control — a coarser
+     classification than the granular values above, not a replacement for
+     them. New records from that page carry these two; existing records keep
+     their original granular value. */
+  | 'Company'
+  | 'Student'
 
 export type MembershipTier =
   | 'Academy'
@@ -71,6 +77,12 @@ export interface ClientRecord {
   lastRentalAd: string // '18 Jul 2026'
   lastRentalBs: string // '2083/04/03'
   address: string
+  /** Optional address breakdown, captured by the Add Client page. `address` above stays the single line the rest of the app already reads. */
+  city?: string
+  district?: string
+  postalCode?: string
+  country?: string
+  businessRegistrationNo?: string
   contactPerson: {
     name: string
     designation: string
@@ -80,6 +92,13 @@ export interface ClientRecord {
   kycDocsCount: number
   totalRentalsCount: number
   totalSpentPaisa: Paisa
+  /** AD, ISO date. Law: store AD, render BS via lib/bs.ts — never store BS. */
+  clientSinceAd?: string
+  source?: string
+  referredBy?: string
+  paymentTerms?: string
+  preferredContactMethods?: string[]
+  notes?: string
 }
 
 export const CLIENTS_DATA: ClientRecord[] = [
@@ -874,3 +893,62 @@ export function clientFilterGroupsFor(canSeeMoney: boolean): ClientFilterGroup[]
 }
 
 export const CLIENT_ROWS_PER_PAGE = [10, 25, 50] as const
+
+/* ── Add Client page reference data ───────────────────────────────────── */
+
+export const NEPAL_DISTRICTS: readonly string[] = [
+  'Kathmandu',
+  'Lalitpur',
+  'Bhaktapur',
+  'Kavrepalanchok',
+  'Chitwan',
+  'Makwanpur',
+  'Kaski',
+  'Rupandehi',
+  'Morang',
+  'Sunsari',
+  'Jhapa',
+  'Dhanusha',
+  'Mustang',
+  'Rasuwa',
+  'Sindhupalchok',
+  'Nuwakot',
+  'Dolakha',
+  'Gorkha',
+  'Tanahun',
+  'Syangja',
+  'Baglung',
+  'Dang',
+  'Banke',
+  'Bardiya',
+  'Kailali',
+  'Kanchanpur',
+]
+
+export const CLIENT_SOURCES: readonly string[] = [
+  'Walk-in',
+  'Phone',
+  'WhatsApp',
+  'Instagram',
+  'Facebook',
+  'Website',
+  'Google',
+  'Referral',
+  'Existing client',
+  'College',
+  'Production company',
+  'Staff referral',
+  'Other',
+]
+
+export const PAYMENT_TERMS_OPTIONS: readonly string[] = [
+  'Due on Pickup',
+  'Due on Return',
+  'Net 7',
+  'Net 15',
+  'Net 30',
+  'Prepaid',
+  'Custom',
+]
+
+export const PREFERRED_CONTACT_METHODS: readonly string[] = ['Phone', 'Email', 'WhatsApp']

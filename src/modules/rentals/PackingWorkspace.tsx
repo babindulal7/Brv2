@@ -158,8 +158,9 @@ export default function PackingWorkspace() {
   const retBs = toBs(new Date('2026-07-19'))
   const outstanding = SUMMARY.find((s) => s.label === 'Rental Outstanding')?.value ?? '—'
 
+  // Floor scale (DEVICES.md item 3) is applied automatically by route in App.tsx's Shell, not here.
   return (
-    <div data-floor="true" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       {/* §3 — header. No Back, no ✕, and Complete Packing is NOT here. */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0, flex: 1 }}>

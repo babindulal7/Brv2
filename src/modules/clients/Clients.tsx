@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, FooterNote } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { ClientsDirectory } from './ClientsDirectory'
 import Membership from './Membership'
-import { AddClientModal } from './AddClientModal'
+import { Unavailable } from '../../components/ui/Unavailable'
 import { useToast } from '../../components/ui/Toast'
 import { formatMoney, rupees, type Paisa } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
@@ -38,14 +38,6 @@ const TAB_DEFS: TabDef[] = [
   { key: 'credit', label: 'Credit', money: true },
 ]
 
-function Unavailable({ reason, children }: { reason: string; children: React.ReactNode }) {
-  return (
-    <span title={reason} aria-label={reason} style={{ display: 'inline-flex' }}>
-      {children}
-    </span>
-  )
-}
-
 /** Escapes a value for a CSV cell — the export is real, so quoting has to be. */
 function csvCell(v: string | number): string {
   const s = String(v)
@@ -53,12 +45,12 @@ function csvCell(v: string | number): string {
 }
 
 export default function Clients() {
+  const navigate = useNavigate()
   const money = useCanViewMoney()
   const { showSuccessToast } = useToast()
   const [params, setParams] = useSearchParams()
 
-  const [clients, setClients] = useState<ClientRecord[]>(CLIENTS_DATA)
-  const [isAddOpen, setAddOpen] = useState(false)
+  const [clients] = useState<ClientRecord[]>(CLIENTS_DATA)
 
   const tabs = useMemo(() => TAB_DEFS.filter((t) => money || !t.money), [money])
 
@@ -127,7 +119,7 @@ export default function Clients() {
         description="Manage your clients, memberships, referrals and credit"
         actions={
           <>
-            <Button variant="primary" icon="plus" onClick={() => setAddOpen(true)}>
+            <Button variant="primary" icon="plus" onClick={() => navigate('/clients/new')}>
               New Client
             </Button>
             <Unavailable reason="Bulk import is not built yet — no CSV mapping or duplicate-merge step exists">
@@ -171,21 +163,12 @@ export default function Clients() {
         })}
       </div>
 
-      {activeTab === 'clients' && <ClientsDirectory clients={clients} onRequestAdd={() => setAddOpen(true)} />}
+      {activeTab === 'clients' && <ClientsDirectory clients={clients} onRequestAdd={() => navigate('/clients/new')} />}
       {activeTab === 'membership' && <Membership embedded />}
       {activeTab === 'referral' && <ReferralView money={money} />}
       {activeTab === 'credit' && money && <CreditView />}
 
       <FooterNote extra={['Clients are never deleted — a closed account is retained and marked']} />
-
-      <AddClientModal
-        isOpen={isAddOpen}
-        onClose={() => setAddOpen(false)}
-        onClientAdded={(record) => {
-          setClients((prev) => [record, ...prev])
-          setTab('clients')
-        }}
-      />
     </div>
   )
 }

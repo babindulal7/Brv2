@@ -3,7 +3,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Card, PageHeader, Button, KpiStrip, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, Button, KpiStrip, Rail, SideRail, FooterNote, cardStyle } from '../../components/ui/Page'
 import { Donut, Legend, catColor } from '../../components/ui/Charts'
 import { EmptyState } from '../../components/ui/StateViews'
 import { STATUS } from '../../lib/status'
@@ -576,9 +576,9 @@ export default function Documents() {
       {/* The render's three columns: a ~200px category + filter rail, the list,
           and a 300px summary rail. The left rail is a little wider here so
           "Maintenance Documents" sets on one line at the theme's UI size. */}
-      <div style={{ display: 'grid', gridTemplateColumns: '228px minmax(0,1fr) 300px', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
         {/* ── left rail ─────────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
+        <SideRail width={228} label="Categories">
           <Card title="Document Categories" bodyStyle={{ padding: 6 }}>
             {[{ key: 'All' as const, rail: ALL_TAB, icon: 'file' as IconName, count: total }, ...categories].map((c) => {
               const on = category === c.key
@@ -758,7 +758,7 @@ export default function Documents() {
               </p>
             </div>
           </Card>
-        </div>
+        </SideRail>
 
         {/* ── centre ────────────────────────────────────────────────────── */}
         <Card bodyStyle={{ padding: 0 }}>
@@ -1111,7 +1111,7 @@ export default function Documents() {
         </Card>
 
         {/* ── right rail ────────────────────────────────────────────────── */}
-        <Rail>
+        <Rail width={300} label="Document summary">
           <Card title="Document Summary">
             <div style={{ display: 'flex', gap: 11, alignItems: 'center' }}>
               <Donut slices={slices} centreLabel="Total" centreValue={total.toLocaleString('en-IN')} size={96} />

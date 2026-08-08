@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, Button } from '../../components/ui/Page'
+import { Card, Button, Rail, SideRail } from '../../components/ui/Page'
 import { useAuth } from '../../lib/auth'
 import { rupees, formatMoney } from '../../lib/money'
 import { WAREHOUSES } from '../../data/warehouse'
@@ -187,52 +187,56 @@ export default function AddEquipment() {
       </div>
 
       {/* Main Grid: Sticky Nav (Left) | Main Form (Center) | Intelligence Rail (Right) */}
-      <div style={{ display: 'grid', gridTemplateColumns: '200px minmax(0, 1fr) 320px', gap: 20, alignItems: 'start' }}>
-        
-        {/* Left Sticky Section Navigation */}
-        <aside style={{ position: 'sticky', top: 20, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <span style={{ fontSize: 'var(--t-th)', textTransform: 'uppercase', color: 'var(--muted)', fontWeight: 700, paddingLeft: 8 }}>
-            Sections
-          </span>
-          {sections.map(sec => {
-            const isActive = activeSection === sec.id
-            return (
-              <a
-                key={sec.id}
-                href={`#${sec.id}`}
-                onClick={() => setActiveSection(sec.id)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '8px 10px',
-                  borderRadius: 6,
-                  textDecoration: 'none',
-                  fontSize: 'var(--t-meta)',
-                  fontWeight: isActive ? 700 : 500,
-                  color: isActive ? 'var(--text)' : 'var(--text2)',
-                  background: isActive ? 'var(--card2)' : 'transparent',
-                  border: isActive ? '1px solid var(--border)' : '1px solid transparent',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                <span>{sec.label}</span>
-                <span
-                  style={{
-                    width: 7,
-                    height: 7,
-                    borderRadius: 999,
-                    background: sec.complete ? 'var(--success-text)' : 'var(--border)',
-                  }}
-                />
-              </a>
-            )
-          })}
+      <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', gap: 20, alignItems: 'start' }}>
 
-          <div style={{ marginTop: 20, padding: 12, borderRadius: 8, background: 'var(--card2)', border: '1px solid var(--border)', fontSize: 'var(--t-th)', color: 'var(--text2)' }}>
-            <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>Three-Level Model</div>
-            <div>Fleet Item › Unit › Child Accessory</div>
-          </div>
+        {/* Left Sticky Section Navigation */}
+        <aside style={{ position: 'sticky', top: 20 }}>
+          <SideRail width={200} label="Steps">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={{ fontSize: 'var(--t-th)', textTransform: 'uppercase', color: 'var(--muted)', fontWeight: 700, paddingLeft: 8 }}>
+                Sections
+              </span>
+              {sections.map(sec => {
+                const isActive = activeSection === sec.id
+                return (
+                  <a
+                    key={sec.id}
+                    href={`#${sec.id}`}
+                    onClick={() => setActiveSection(sec.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '8px 10px',
+                      borderRadius: 6,
+                      textDecoration: 'none',
+                      fontSize: 'var(--t-meta)',
+                      fontWeight: isActive ? 700 : 500,
+                      color: isActive ? 'var(--text)' : 'var(--text2)',
+                      background: isActive ? 'var(--card2)' : 'transparent',
+                      border: isActive ? '1px solid var(--border)' : '1px solid transparent',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <span>{sec.label}</span>
+                    <span
+                      style={{
+                        width: 7,
+                        height: 7,
+                        borderRadius: 999,
+                        background: sec.complete ? 'var(--success-text)' : 'var(--border)',
+                      }}
+                    />
+                  </a>
+                )
+              })}
+
+              <div style={{ marginTop: 20, padding: 12, borderRadius: 8, background: 'var(--card2)', border: '1px solid var(--border)', fontSize: 'var(--t-th)', color: 'var(--text2)' }}>
+                <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>Three-Level Model</div>
+                <div>Fleet Item › Unit › Child Accessory</div>
+              </div>
+            </div>
+          </SideRail>
         </aside>
 
         {/* Center Form Sections */}
@@ -1230,7 +1234,7 @@ export default function AddEquipment() {
         </div>
 
         {/* Right Live Intelligence Rail */}
-        <aside style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <Rail width={320} label="Summary">
           {/* Quick Info & Identifiers */}
           <Card title="Quick Preview">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1325,7 +1329,7 @@ export default function AddEquipment() {
               ))}
             </div>
           </Card>
-        </aside>
+        </Rail>
       </div>
     </div>
   )

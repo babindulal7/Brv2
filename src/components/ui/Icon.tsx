@@ -61,6 +61,10 @@ import {
   IconUpload,
   IconFolder,
   IconPhoto,
+  IconBuilding,
+  IconUser,
+  IconSchool,
+  IconId,
   type Icon as TablerIconType,
 } from '@tabler/icons-react'
 
@@ -151,6 +155,12 @@ const REGISTRY = {
   check: IconCheck,
   phone: IconPhone,
   mail: IconMail,
+
+  // Add Client — client type segmented control + document rows
+  company: IconBuilding,
+  person: IconUser,
+  student: IconSchool,
+  id_card: IconId,
 } satisfies Record<string, TablerIconType>
 
 export type IconName = keyof typeof REGISTRY

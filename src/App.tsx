@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { lazy, Suspense } from 'react'
 import type { ReactNode } from 'react'
 import Sidebar from './components/shell/Sidebar'
+import BottomBar, { BOTTOM_BAR_HEIGHT } from './components/shell/BottomBar'
 import HeaderBar from './components/shell/Header'
 import type { Crumb } from './components/shell/Header'
 import ScannerFab from './components/shell/ScannerFab'
@@ -12,6 +13,7 @@ import { CommandPalette } from './components/shell/CommandPalette'
 import Login from './modules/auth/Login'
 import ScreenLock from './modules/auth/ScreenLock'
 import { useAuth } from './lib/auth'
+import { useViewport } from './lib/device'
 
 /* ── lazy-loaded route pages (code-splitting) ─────────────────────────── */
 const Today             = lazy(() => import('./modules/today/Today'))
@@ -51,6 +53,8 @@ const EventTriggers     = lazy(() => import('./modules/automation/EventTriggers'
 const SmsCenter         = lazy(() => import('./modules/notifications/SmsCenter'))
 const Membership        = lazy(() => import('./modules/clients/Membership'))
 const Clients           = lazy(() => import('./modules/clients/Clients'))
+const AddClient         = lazy(() => import('./modules/clients/AddClient'))
+const ClientDetail      = lazy(() => import('./modules/clients/ClientDetail'))
 const BroadcastCenter   = lazy(() => import('./modules/notifications/BroadcastCenter'))
 const CasesWorkspace    = lazy(() => import('./modules/operations/CasesWorkspace').then(m => ({ default: m.CasesWorkspace })))
 const CrewBooking       = lazy(() => import('./modules/operations/CrewBooking').then(m => ({ default: m.CrewBooking })))
@@ -85,6 +89,17 @@ export default function App() {
           element={
             <Shell crumbs={[{ label: 'Clients' }, { label: 'Directory & Membership' }]} search="Search client, company, PAN, phone…">
               <Clients />
+            </Shell>
+          }
+        />
+
+        {/* Declared before nothing needs it — /new is a static segment, not a
+            client ID, so there is no :id route to collide with. */}
+        <Route
+          path="/clients/new"
+          element={
+            <Shell crumbs={[{ label: 'Clients' }, { label: 'Add New Client' }]} search="Search client, company, PAN, phone…">
+              <AddClient />
             </Shell>
           }
         />
@@ -393,6 +408,18 @@ export default function App() {
           }
         />
 
+        {/* Last of the /clients/* group, same reasoning as /inventory/:code —
+            a bare segment here is a client ID, so it's declared after every
+            named static sibling. */}
+        <Route
+          path="/clients/:id"
+          element={
+            <Shell crumbs={[{ label: 'Clients' }, { label: 'Client Profile' }]} search="Search client, company, PAN, phone…">
+              <ClientDetail />
+            </Shell>
+          }
+        />
+
         <Route
           path="/notifications"
           element={
@@ -541,6 +568,8 @@ const BUILT = new Set([
   '/ai',
   '/settings',
   '/clients',
+  '/clients/new',
+  '/clients/CL-2026-0001',
   '/reports',
   '/admin',
   '/finance/documents',
@@ -594,6 +623,20 @@ function OfflineBanner() {
   )
 }
 
+/**
+ * DEVICES.md §7 build order item 3 — "apply `FLOOR_UI_SCALE` on Pack /
+ * Handover / Return / Reset / Scanner rather than leaving it a manual
+ * preference." These five suffixes are the one place that decides "is this a
+ * floor screen" — previously each workspace hardcoded its own
+ * `data-floor="true"` on its root div, which meant a screen renamed or a new
+ * floor route added could silently lose the scale. Evidence carries it too:
+ * it was already opted in from earlier work and belongs to the same
+ * pack/return/reset family read at arm's length. Scanner needs no entry here
+ * — `ScannerFab` is a single global component, not a route, and already
+ * carries its own `data-floor="true"` correctly.
+ */
+const FLOOR_ROUTE_SUFFIXES = ['/packing', '/handover', '/return', '/reset', '/evidence']
+
 function Shell({
   crumbs,
   search,
@@ -605,6 +648,12 @@ function Shell({
 }) {
   const { pathname, search: query } = useLocation()
   const { user, isLocked, setLocked } = useAuth()
+  /* DEVICES.md §7 build order item 2 — below 768 the bottom bar replaces the
+     Sidebar as primary navigation rather than sitting alongside a squeezed
+     rail. Law 13: branch on capability (viewport), not platform. */
+  const viewport = useViewport()
+  const phone = viewport === 'phone'
+  const isFloor = FLOOR_ROUTE_SUFFIXES.some((s) => pathname.endsWith(s))
 
   // Redirect to login if not authenticated
   if (!user) {
@@ -623,11 +672,14 @@ function Shell({
         transition: 'background-color var(--dur-theme) ease',
       }}
     >
-      <Sidebar active={pathname + query} />
+      {!phone && <Sidebar active={pathname + query} />}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <OfflineBanner />
         <HeaderBar crumbs={crumbs} {...(search ? { searchPlaceholder: search } : {})} />
-        <main style={{ flex: 1, padding: '16px 20px 24px' }}>
+        <main
+          data-floor={isFloor ? 'true' : undefined}
+          style={{ flex: 1, padding: phone ? `16px 20px ${24 + BOTTOM_BAR_HEIGHT}px` : '16px 20px 24px' }}
+        >
           {isForbidden ? (
             <div style={{ textAlign: 'center', marginTop: '20vh' }}>
               <h1 style={{ color: 'var(--danger)', margin: '0 0 8px' }}>Permission Denied</h1>
@@ -646,8 +698,9 @@ function Shell({
           )}
         </main>
       </div>
+      {phone && <BottomBar active={pathname + query} />}
       <ScannerFab />
-      
+
       {/* Screen Lock Overlay */}
       {isLocked && <ScreenLock onUnlock={() => setLocked(false)} />}
     </div>

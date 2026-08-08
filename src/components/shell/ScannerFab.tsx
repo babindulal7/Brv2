@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import Icon from '../ui/Icon'
 import { BrowserMultiFormatReader } from '@zxing/browser'
+import { useViewport } from '../../lib/device'
+import { BOTTOM_BAR_HEIGHT } from './BottomBar'
 
 /**
  * **Scanner — Foundation v2.0 §5.5.**
@@ -22,6 +24,12 @@ const CONTEXTS = [
 type Feedback = { tone: 'ok' | 'wrong-job' | 'unknown' | 'duplicate'; text: string } | null
 
 export default function ScannerFab() {
+  /*
+   * §5.5 locks this "bottom-right, at every width" — the phone bottom bar
+   * (BottomBar.tsx) never carries a Scanner slot itself, it only makes room
+   * beneath this FAB so the two don't overlap.
+   */
+  const phone = useViewport() === 'phone'
   const [open, setOpen] = useState(false)
   const [context, setContext] = useState<(typeof CONTEXTS)[number]['key']>('pack')
   const [continuous, setContinuous] = useState(true)
@@ -158,7 +166,7 @@ export default function ScannerFab() {
   const bannerFg = tone === 'ok' ? 'var(--st-in-fg)' : tone === 'wrong-job' ? 'var(--st-danger-fg)' : 'var(--st-progress-fg)'
 
   return (
-    <div data-scanner data-floor="true" style={{ position: 'fixed', right: 20, bottom: 20, zIndex: 60 }}>
+    <div data-scanner data-floor="true" style={{ position: 'fixed', right: 20, bottom: phone ? BOTTOM_BAR_HEIGHT + 16 : 20, zIndex: 60 }}>
       {open && (
         <div
           ref={panel}

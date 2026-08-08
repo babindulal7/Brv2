@@ -5,6 +5,377 @@
 Newest entry first. Log what was **verified**, not what was written — "typechecks" and
 "works" are different claims, and only the second one counts.
 
+## 2026-08-08 — Client Detail page (`/clients/:id`)
+
+**Phase:** post-shell feature work · **Status:** done
+
+### Context
+The biggest confirmed gap from this session's audit reconciliation (`PLAN.md §6.4`):
+`ClientsDirectory.tsx` never had a full profile page, only a right-rail quick view. This
+closes it.
+
+### Did
+- New `src/modules/clients/ClientDetail.tsx`. Header (name, type, company, VIP/Blocked
+  badges), a money-gated KPI strip (Total Rentals, Outstanding, Deposit Held, Lifetime
+  Spend), six tabs — Overview / Rentals / Payments (money-gated) / Documents / Notes /
+  Activity.
+- **Cross-referencing problem, found and worked around, not papered over:**
+  `CLIENTS_DATA`, `data/rentals.ts` and `data/documents.ts` were authored independently
+  and use disjoint client *names* for the same booking numbers — `BK-2026-0715` belongs to
+  "Kathmandu Cinema Works" in `data/clients.ts` but "ABC Films" in `data/rentals.ts`.
+  Matching by name would silently attach the wrong client's history. Every cross-reference
+  (Rentals tab, Documents tab) goes through `client.activeBookings` — a booking-number
+  array that already lives on the record — never through a name comparison. Where a
+  booking number in `activeBookings` has no matching row in `rentals.ts` (most of them,
+  given the disjoint casts), it's just omitted rather than faked, and the Rentals tab says
+  so explicitly ("Rentals (1 of 38 total shown)").
+- Payments tab is a financial summary from the client record's own fields only — no
+  per-invoice list, because Finance's `INVOICES` array is a local const inside
+  `Finance.tsx`, not exported through `data/`, and reaching into a component file from
+  another module would violate the project's own data-layer convention. Disclosed inline
+  rather than silently left out.
+- Notes tab reads `client.notes` (added this session for the Add Client page) but "Add
+  Note" is `disabled` — there's no update path for an existing record yet.
+- Activity tab is a short list of facts **derived from fields that already exist** on the
+  record (KYC status, active-rental count, last rental date) — not a fabricated
+  audit-log timeline. `lib/audit.ts`'s `logAuditEvent` exists but nothing calls it for
+  client records, and inventing timestamped events it never produced would be exactly the
+  "invent business truth" CLAUDE.md rules out.
+- **Block/Unblock Client is real**, not a stub: requires a ≥10-character reason (same
+  pattern as the discount-approval law elsewhere in the app), shows an alert banner with
+  the reason, and disables Start Rental while blocked. State is local-only (no backend),
+  same disclosed limitation as everything else pre-Phase 1 — reverts on reload.
+  "Edit Client" and "Merge Duplicate" are `disabled` with reasons rather than silently
+  missing.
+- Wired `/clients/:id` in `App.tsx`, declared after `/clients/new` and
+  `/clients/memberships` (same convention as `/inventory/:code`). Added a "View Full
+  Profile" button to `ClientsDirectory.tsx`'s existing rail panel — the rail itself is
+  untouched, this is a drill-down from it, not a replacement.
+
+### Verified
+- `npx tsc --noEmit` — clean.
+- Drove `/clients/CL-2026-0001` (Kathmandu Cinema Works, has 2 real cross-referenceable
+  bookings): Overview's credit-headroom arithmetic checked by hand (5,00,000 − 1,24,506 =
+  3,75,494 — matches what rendered); Rentals tab correctly shows 1 of 2 `activeBookings`
+  entries (`BK-2026-0718` has no row in `rentals.ts`, honestly omitted); Documents tab
+  shows 5 real rows, all linked to `BK-2026-0715`; Payments and Activity tabs read
+  correctly.
+- Drove `/clients/CL-2026-0006` (Nepal Tourism Board, `activeBookings: []`): Rentals tab
+  shows the empty state with the explanatory note, not a blank table.
+- Drove `/clients/CL-9999-9999` (nonexistent id): "Client not found" state, not a crash.
+- Ran the Block Client flow end to end: confirm button starts disabled, enables at 10
+  characters, confirming shows the Blocked badge + alert banner + disables Start Rental;
+  Unblock reverses it. Re-navigating (fresh mount) reverts to unblocked, confirming the
+  "not persisted" limitation is real and disclosed, not just claimed.
+- Dark theme: VIP badge measures 7.13:1 (reused the existing `STATUS.progress` token pair
+  rather than a new one, so no fresh contrast bug this time).
+
+## 2026-08-08 — Automatic floor scale by route (DEVICES.md item 3)
+**Phase:** device/responsive (`DEVICE/DEVICES.md` §7 build order) · **Status:** done
+
+### Did
+- `App.tsx`'s `Shell` now decides "is this a floor screen" in exactly one place: a
+  `FLOOR_ROUTE_SUFFIXES` list (`/packing`, `/handover`, `/return`, `/reset`, `/evidence`)
+  checked against `pathname`, setting `data-floor="true"` on `<main>` itself. Previously each
+  of the five workspace components hardcoded its own `data-floor="true"` on its own root
+  div — functionally similar, but five separate places a future rename or refactor could
+  silently lose the attribute, which is exactly the drift `DEVICES.md`'s "rather than
+  leaving it a manual preference" line is about.
+- Removed the now-redundant hardcoded attribute from all five workspace files
+  (`PackingWorkspace.tsx`, `HandoverWorkspace.tsx`, `ReturnWorkspace.tsx`,
+  `ResetWorkspace.tsx`, `EvidenceWorkspace.tsx`), each replaced with a one-line comment
+  pointing at `App.tsx`'s `Shell` as the new single source of truth.
+- `ScannerFab.tsx` was left untouched — it's a single global component, not a route, and
+  already carries its own `data-floor="true"` directly and correctly; it doesn't belong in a
+  route-suffix list.
+
+### Verified
+- `npx tsc --noEmit` filtered to every file touched: 0 errors.
+- Drove the app in a fresh dev server and navigated to all five floor routes plus one
+  non-floor route (`/today`), reading each page's `<main>` element directly after
+  navigation: `/rentals/BK-2026-0715/packing`, `/handover`, `/return`, `/reset`, `/evidence`
+  all report `data-floor="true"` with `getComputedStyle(main).getPropertyValue('--t-h1')`
+  resolving to `calc(2.1rem * 1.1)` (the floor-scaled value); `/today` reports `data-floor`
+  as `null`.
+
+## 2026-08-08 — Removed full-surface red backgrounds for overdue/danger rows
+
+**Phase:** post-shell feature work · **Status:** done
+
+### Context
+User spec: red must stay a semantic accent (badge/border/text) and never fill an entire
+card, row, or panel — named the exact reference case (Today's overdue returns: Mountain
+Stories/Trishuli Media/Dolpo Docs, `src/data/today.ts`).
+
+### Did
+Grepped the whole `src/` tree for `--danger-soft`, raw `rgba(239,68,68,…)` at higher
+opacity, and hardcoded danger hexes, then classified every hit per the user's own rule
+(small badge/border/text = keep; full card/row/panel fill = fix). Found and fixed **6
+files, 7 sites** — all the same shape: a container's `background` set to
+`var(--danger-soft)` (or an equivalent low-opacity red) conditional on an overdue/danger
+flag, with a border-left and/or red text already carrying the same signal redundantly:
+
+- `modules/today/MovementList.tsx` — the exact reported row. Background now always
+  `transparent`; left border + red `statusNote` text unchanged. Updated the stale comment
+  that justified the old text colour by the tint that no longer exists.
+- `modules/rentals/NewRental.tsx` + `BookingDetail.tsx` — the "Outstanding" cell in each
+  booking's summary bar was unconditionally red-filled (comment: "the only red one").
+  Background removed; the bold red rupee figure is still the only red thing in the row.
+- `modules/operations/OperationsQueues.tsx` — two sites (card view + table view), both
+  already had a red left border as the discriminator.
+- `modules/inventory/Maintenance.tsx` — table row; already had a status Pill + red
+  priority text, no border added since the badge already carries the signal.
+- `modules/operations/SubRental.tsx` — table row; already had a small "OVERDUE" badge.
+
+`--danger-soft` itself is left defined in `theme.css` (not deleted) — it isn't used as a
+background anywhere anymore, but it's a reasonable token to keep on hand for a genuinely
+restrained alert surface later, which is a different, smaller-scale use than what it was
+doing here.
+
+### Verified
+- `npx tsc --noEmit` — clean.
+- Drove `/today` in-browser, both themes: the three "N days late" rows (Mountain Stories,
+  Trishuli Media, Dolpo Docs — the exact rows named) now measure `background:
+  rgba(0,0,0,0)` with the left border and red note text unchanged. Contrast of the note
+  text against the plain card: **5.98:1 dark, still ≥4.5:1 light** — both pass AA (verified
+  numerically, not eyeballed).
+- Drove `/rentals/new`: the Outstanding panel's background is transparent, sitting on the
+  same surface as its siblings in the summary bar; the rupee figure is still bold
+  `--danger-text` red.
+- Did not click through every queue/tab on Operations or Maintenance to force an overdue
+  row into view — the fix in those two files is the identical one-line change already
+  verified working in Today and New Rental, so treating it as covered rather than
+  re-proving the same pattern a third and fourth time.
+
+## 2026-08-08 — Add Client full page, replacing the "Register New Client" modal
+
+**Phase:** post-shell feature work · **Status:** done
+
+### Context — a naming conflict, resolved before building
+
+The user supplied a design (two screenshots, light + dark) and a two-file spec pack
+("Babin Rentals OS Global.md" + "...Add Customer Page.md") for an "Add New Customer" page.
+Both used "Customer" throughout, and the dark screenshot's sidebar was a 13-item nav
+("Customers" included) that matches the spec's §6 Navigation list almost exactly — the same
+shape `data/nav.ts`'s own header comment already documents and rejects (Generation C's
+15-item nav; "the renders were the defect"). PLAN.md law 17 and CLAUDE.md are explicit: "the
+word 'customer' appears nowhere in the UI — they are clients." Asked the user directly
+rather than silently pick a side; they chose **Client** — keep the existing law, existing
+8-item nav, existing `ClientRecord` model. Every label, route and file below reads "Client".
+"Customer Group" in the spec had no equivalent field, so it isn't a new one — it's the
+existing **Membership Tier**, which already drives credit/discount policy on the Clients →
+Credit tab.
+
+### Did
+- `src/data/clients.ts`: extended `ClientType` with `'Company' | 'Student'` (existing 7
+  granular values untouched — new records from this page carry the coarser value, old seed
+  rows keep theirs). Added optional `ClientRecord` fields the new page needed and nothing
+  else previously provided: `city`, `district`, `postalCode`, `country`,
+  `businessRegistrationNo`, `clientSinceAd` (AD only — BS is rendered via `lib/bs.ts`, never
+  stored, per the AD/BS law), `source`, `referredBy`, `paymentTerms`,
+  `preferredContactMethods`, `notes`. Reused the existing `pan` field for "VAT / PAN No."
+  rather than adding a duplicate. New reference constants: `NEPAL_DISTRICTS`,
+  `CLIENT_SOURCES`, `PAYMENT_TERMS_OPTIONS`, `PREFERRED_CONTACT_METHODS`.
+- `src/components/ui/Icon.tsx`: registered `company`/`person`/`student`/`id_card` (Tabler's
+  `IconBuilding`/`IconUser`/`IconSchool`/`IconId`) — the registry's own comment already
+  documents this as the sanctioned way to add a glyph it lacks.
+- New `src/modules/clients/AddClient.tsx` — full page, not a modal (Global spec §14 lists
+  customer/rental/inventory creation as full-page; the app already does this for Rentals and
+  Inventory, so Clients was the one holdout, and unifying it is a legitimate side-effect of
+  building this screen at all). Three numbered sections (Basic Information, Contact &
+  Address, Additional Information) + a document-upload card, right rail with Client Summary
+  (live preview, empty state before a name is typed), Why We Collect This Information,
+  Client Type Guide, Next Steps — all four straight from the spec, reworded for "client".
+  Built from the app's own established primitives (`Card`/`PageHeader`/`Button`/`Rail` from
+  `components/ui/Page.tsx`, hand-rolled `<label>+<input>` pairs styled with CSS vars) rather
+  than the Tailwind `Input`/`Select` components or the spec's literal hex tokens — Law 27
+  (same buttons, same inputs, same everything) outweighs matching a foreign token set for a
+  page that has to sit next to 30 other screens built the other way.
+  - Inline validation with the spec's own error copy style (`Enter a valid Nepal mobile
+    number, e.g. 98XXXXXXXX.`); Contact Person required only when Client Type = Company.
+  - A real (seed-data-scoped) duplicate check: phone match against `CLIENTS_DATA` on blur,
+    "Possible existing client" banner with View Existing / Continue Anyway, dismissible.
+  - Credit Limit and Payment Terms are **absent**, not disabled, for a money-blind role —
+    same `useCanViewMoney()` gate the old modal used, carried forward rather than dropped.
+  - Document upload is drag/drop + browse, client-side only (type/size validation, remove
+    row) — no backend exists to receive it yet, same honest gap as everywhere else pre-Phase
+    1.
+  - Right rail becomes a plain stacked column below the form at `useViewport() !== 'desktop'`
+    (device.ts's own capability breakpoints) rather than the collapsible side rail — matches
+    the spec's "moves below the form" mobile/tablet rule.
+  - No data layer exists yet, so Save simulates (button → "Saving Client…" → "Client Saved" →
+    toast → navigate to `/clients`) and does not persist — the exact contract
+    `AddEquipment.tsx` already uses; nothing about this page invents a new persistence story.
+- Wired `/clients/new` in `App.tsx` (declared as a static sibling of `/clients`, no `:id`
+  route exists to collide with) and added it to `BUILT`.
+- `Clients.tsx` / `ClientsDirectory.tsx`: "New Client" and the empty-state "Register a
+  client" action now `navigate('/clients/new')` instead of opening a modal.
+- Deleted `AddClientModal.tsx` — grepped first to confirm `Clients.tsx` was its only caller.
+
+### Bug found and fixed during verification
+The numbered section badges ("1"/"2"/"3") were hardcoded `background:
+var(--nav-active-accent)` + `color: #fff`. In dark theme `--nav-active-accent` is the brand
+gold (`#d8a93a`), and white-on-gold measures **2.17:1** — under WCAG AA's 3:1 floor for
+bold/large text, the same class of bug `theme.css` documents already fixing once for
+`--progress`'s amber. Fixed by switching to `--btn-primary-bg` / `--btn-primary-fg`, the pair
+`Button` already resolves correctly per theme (black-on-gold in dark, 9.66:1; white-on-blue
+in light, 5.17:1) — reused an existing correct token pair instead of inventing a new one.
+
+### Verified
+- `npx tsc --noEmit` — clean, no errors.
+- Drove the page in-browser (own dev server on port 62881, since another session already had
+  one running on this folder): typed into every Section 1 field, confirmed the Client
+  Summary panel updates live and shows the empty state before any name is typed; clicked Save
+  empty and got all three required-field errors inline; filled a phone matching seed client
+  `CL-2026-0001` and got the duplicate banner, then confirmed "Continue Anyway" dismisses it;
+  ran the full save flow end to end (button text → toast → navigated to `/clients`); typed a
+  value then clicked Cancel and confirmed the "Discard changes?" modal appears, "Keep
+  Editing" closes it without navigating.
+- Resized to mobile (375 width) and reloaded (a live in-page resize doesn't fire the
+  `matchMedia` listener reliably under this test harness's CDP viewport override, but a fresh
+  mount reads `window.innerWidth` synchronously — confirmed the real failure mode is the test
+  tool, not the hook, since `useViewport`/`useTabularLayout` are already load-bearing
+  elsewhere in the app): rail content stacks below the form in document order, no horizontal
+  overflow.
+- Measured contrast numerically in both themes for every place this page pairs a fill with
+  text on top of `--nav-active-accent` or `--btn-primary-bg` (see bug above) — all pass AA
+  after the fix.
+- Mid-verification, another session editing this same folder added `BottomBar` to `App.tsx`
+  live; confirmed by re-reading the file that `/clients/new`'s route and its `BUILT` entry
+  survived the concurrent edit.
+
+### Known gaps, disclosed rather than silently shipped
+- Not persisted — see "Did" above. When Phase 1's schema lands, this page's Save needs to
+  become a real insert plus an `audit.ts` `logAuditEvent` call; `logAuditEvent` exists today
+  but nothing in the app calls it yet, so wiring it here first would be untested in isolation.
+- Country is a 3-option select (Nepal/India/China/Other) — the spec gives no exhaustive list
+  and this is a Kathmandu rental business, not a global one; revisit if that assumption is
+  wrong.
+- "Client Group" → Membership Tier is a deliberate reinterpretation (see Context above), not
+  a literal field-for-field port of the spec's own group vocabulary (Production
+  House/Advertising Agency/…). Flagging in case that reading is wrong.
+
+## 2026-08-08 — Phone bottom bar, built from permissions (DEVICES.md item 2)
+**Phase:** device/responsive (`DEVICE/DEVICES.md` §7 build order) · **Status:** done
+
+### Did
+- `src/data/nav.ts`: extracted a `permittedNav(role)` function from the Warehouse-only
+  filter that used to live inline in `Sidebar.tsx`, so the Sidebar and the new bottom bar
+  read one source of truth for "what can this role see" and cannot drift apart — the same
+  failure mode Foundation §0 documents for the old multi-sidebar problem. Only Warehouse has
+  an actual exclusion today (Finance/Reports/Admin); a role getting its own curated *order*
+  beyond that is marked `TODO(decision)` in the same comment — nothing in Foundation or
+  `Branch Management.md` specifies one, so inventing it would be exactly the kind of
+  unbacked product decision `CLAUDE.md` rules out.
+- New `src/components/shell/BottomBar.tsx` — renders only via `Shell` in `App.tsx` when
+  `useViewport() === 'phone'`, replacing the Sidebar entirely at that width rather than
+  squeezing an icon rail in alongside it. Shows the first 3 `permittedNav()` items plus
+  `Settings` as a fixed 4th slot (Settings sits outside the permission-filtered NAV array by
+  design, and needed a way to stay reachable once the Sidebar — which normally carries it —
+  is hidden).
+- **Deliberately carries no Scanner slot.** `data/nav.ts`'s own exclusion table already
+  locks this: "Scanner — a FAB at every width (§5.5), never a nav item." The existing
+  `ScannerFab` is untouched in position and behavior; it now just reads `useViewport()` to
+  lift its `bottom` offset from 20px to `BOTTOM_BAR_HEIGHT + 16` (74px) on phone, so it
+  floats clear of the new bar instead of sitting behind it. This is the reading that honors
+  both documents where they'd otherwise conflict: DEVICES.md's "Scanner in the centre slot"
+  is satisfied by leaving room for the FAB the bar already makes space for, not by relocating
+  or duplicating it into a routed nav item, which Foundation §5.5 and `data/nav.ts` both
+  forbid.
+- `App.tsx`'s `Shell`: `{!phone && <Sidebar/>}`, `{phone && <BottomBar/>}`, and `<main>`'s
+  bottom padding grows by `BOTTOM_BAR_HEIGHT` on phone so page content isn't hidden behind
+  the fixed bar.
+
+### Verified
+- `npx tsc --noEmit` filtered to every file touched this entry (`App.tsx`, `Sidebar.tsx`,
+  `BottomBar.tsx`, `ScannerFab.tsx`, `data/nav.ts`): 0 errors. (Whole-repo `tsc` currently
+  has unrelated pre-existing errors in `NumberingSequences.tsx` and the new `AddClient.tsx`
+  — both mid-edit by the concurrent session, not touched here.)
+- Drove the app in a fresh dev server at 390×844 (reload, so the `matchMedia` breakpoint
+  re-evaluates): the Sidebar's `<aside>` is absent, a `nav[aria-label="Main"]` renders fixed
+  to the viewport bottom with exactly `[Today, Operations, Rentals, Settings]`, no horizontal
+  overflow, and the Scanner FAB's inline `style.bottom` reads `74px`. At 1920×1080 (reload):
+  Sidebar is back at its normal 220px, no fixed bottom nav exists anywhere in the DOM (the
+  one `nav[aria-label="Main"]` match at that width is confirmed to be the Sidebar's own
+  internal `<nav>`, nested inside its `<aside>` — not the bottom bar), and the FAB's
+  `style.bottom` is back to `20px`.
+
+### Known issues / not done
+- Remaining `DEVICES.md` build-order items: (3) automatic `FLOOR_UI_SCALE`/`data-floor`
+  application by capability instead of manual per-screen opt-in, (4) long-press wherever
+  hover currently carries information gated on `!hasHover`, (5) the five page states per
+  page type, (6) the wall display.
+- The bottom bar's item selection is mechanical (first 3 permitted NAV items + Settings) —
+  it does not yet give Driver/Technician/Accounts/Owner their own curated set the way
+  DEVICES.md's "a Driver's bar is not a Coordinator's" line ultimately implies. That needs an
+  actual product decision about which items each of the business-8 roles wants on a phone,
+  which isn't mine to invent — flagged as `TODO(decision)` in `data/nav.ts`.
+- `Header.tsx` (the top strip — search bar, branch/FY pills, avatar+name+Log Out) is still
+  entirely non-responsive and will overflow badly below ~600px; out of scope for this entry
+  (it's chrome, not a left/right rail or the nav), but it's the next thing that will visibly
+  break on a real phone.
+
+## 2026-08-08 — Every left/right rail and the main nav are collapsible
+**Phase:** UI polish (ad hoc, user-requested — "make all nav bar right side filter bar left
+side bar and other left and right bar collapsable in every page") · **Status:** done
+
+### Did
+- New `src/lib/collapse.ts`: `useCollapsed(key, defaultValue=false)` — persists a boolean to
+  `localStorage['br-collapsed:'+key]`, same pattern as `textSize.ts`.
+- New `src/components/ui/CollapsibleAside.tsx`: the one place the collapse mechanics live —
+  a `side: 'left'|'right'` panel that self-sizes (`width` prop, default varies by caller) and
+  shrinks to a ~32px chevron-handle strip when collapsed. Keyed by route pathname unless an
+  explicit `id` is passed, so a rail's open/closed state is remembered per screen.
+- `src/components/ui/Page.tsx` now exports `Rail` (right, was already used app-wide as a pure
+  layout wrapper with no collapse of its own — now delegates to `CollapsibleAside`) and a new
+  `SideRail` (left) with the same API. **The one rule that matters**: since these size
+  themselves, every parent grid's fixed-px rail column had to change to the literal `'auto'`
+  — a rail wrapped in `Rail`/`SideRail` sitting in a grid column still pinned to `288px` etc.
+  would not visually shrink.
+- `src/components/shell/Sidebar.tsx` — the main nav — got its own independent collapse
+  (persisted key `sidebar:main`, 220px ↔ 68px), separate from the page-rail mechanism since
+  it's app chrome, not a page panel: icon-only rows with `title` tooltips when collapsed,
+  children list and branch-info block hidden, theme toggle collapses from a 2-button group to
+  one icon button.
+- Rolled the pattern out to every remaining screen carrying a fixed-width side panel: 24
+  files edited (`AuditSettings`, `BackupRestore`, `AiAssistant`, `EventTriggers`, `Finance`,
+  `SmsCenter`, `NewRental`, `CashFlowReport`, `ExpenseReports`, `WorkingCapitalReport`,
+  `Tools`, `AddBundle`, `HandoverWorkspace`, `ReturnWorkspace`, `Inventory`, `Calendar`,
+  `EvidenceWorkspace`, `PackingWorkspace`, `ResetWorkspace`, `AddEquipment`, `UnifiedInbox`,
+  `NumberingSequences`, `Documents`, `Settings`, plus `ClientsDirectory`/`RentalsList`/
+  `OperationsQueues`/`CasesQueue` done directly) — done via a Workflow of 11 parallel agents
+  given the same reference pattern (see `ClientsDirectory.tsx`/`OperationsQueues.tsx` as the
+  hand-built reference implementations). 6 files (`CasesReports`, `ClientReports`,
+  `ProductReports`, `SystemMonitor`, `BookingDetail`, `BroadcastCenter`) needed no edit — a
+  prior partial run had already brought them to the target state.
+- Deliberately left alone: `Calendar.tsx`'s existing `showFilters` left-panel toggle (already
+  functionally collapsible, a different but equally valid mechanism — only its unconditional
+  right rail was converted); `Settings.tsx`'s left side, which turned out to be a tab strip
+  (`role="tablist"`), not a fixed-px rail — nothing there to wrap.
+
+### Verified
+- `npx tsc --noEmit` across the whole repo: **0 errors.**
+- Drove the app (own dev server, auto-assigned port — another session's server was already on
+  5173): clicked the Sidebar's collapse handle on `/today` — width toggles 220px ↔ 68px
+  (confirmed via the element's own inline `style.width`, not layout metrics, since this
+  Browser pane doesn't composite/paint reliably tool-call to tool-call), state survives a hard
+  reload. On `/clients`, collapsed and re-expanded both the left "Filters" rail and the right
+  "Client profile" rail independently. Spot-checked `/finance` and `/documents` post-rollout —
+  both render their expected `Collapse …` handles with no console errors beyond a pre-existing
+  unrelated `validateDOMNesting` warning in `Header.tsx`.
+
+### Known issues / not done
+- This session's working tree is shared with a concurrent session doing unrelated large
+  feature work (Settings branch-table sorting/Quick Actions, a Tools screen, Pulse/Reports) —
+  confirmed via `git log`/`git diff` that their in-flight, uncommitted changes to
+  `Settings.tsx` and `src/data/settings.ts` are layered on top of this rollout's one-line grid
+  fixes with no corruption, but nothing here was committed, since a commit right now would
+  bundle their unrelated incomplete work under this change's name. **Whoever commits next
+  should review the full diff, not just this entry's file list.**
+- Nested rail-in-rail was not attempted anywhere (none of the pages needed it).
+- No automated test covers the collapse toggles; verification above is manual/browser-driven
+  per `CLAUDE.md`'s rule, not a written test.
+
 ## 2026-08-08 — Phone card rows on Operations, Rentals, Clients (DEVICES.md item 1)
 **Phase:** device/responsive (ad hoc, driven by `DEVICE/DEVICES.md`) · **Status:** done
 

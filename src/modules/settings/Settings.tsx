@@ -49,9 +49,10 @@ import {
   QUICK_ACCESS,
   MODULE_GROUPS,
   SYSTEM_QUICK_ACTIONS,
+  BRANCH_QUICK_ACTIONS,
   SEED_ERRORS,
 } from '../../data/settings'
-import type { Branch, BranchStatus, Dest, TabKey, ActivityEntry, QuickAction } from '../../data/settings'
+import type { Branch, BranchStatus, BranchActionKind, Dest, TabKey, ActivityEntry, QuickAction } from '../../data/settings'
 
 /**
  * **Settings — Organization & System Settings + Branch Management.**
@@ -1276,10 +1277,151 @@ function downloadCsv(filename: string, rows: string[][]) {
   URL.revokeObjectURL(url)
 }
 
-function BranchesPane({ money, addOpen, setAddOpen }: { money: boolean; addOpen: boolean; setAddOpen: (v: boolean) => void }) {
-  const [rows, setRows] = useState<Branch[]>(BRANCHES)
+/**
+ * One writer for the branch export, so the header button and the Branch List
+ * button cannot drift apart — and so §8.3 is obeyed once: for a money-blind
+ * session the Revenue column is never pushed into the header, which means the
+ * file has no column to leave blank.
+ */
+function branchCsvRows(rows: Branch[], money: boolean): string[][] {
+  const header = ['Branch', 'Code', 'Manager', 'City', 'Phone', 'Staff', 'Warehouses', 'Equipment']
+  if (money) header.push('Revenue (This Month)')
+  header.push('Utilization', 'Status')
+  const body = rows.map((b) => {
+    const cells = [b.name, b.code, b.manager, b.city, b.phone, String(b.staff), String(b.warehouses), String(b.equipment)]
+    if (money) cells.push(formatMoney(b.revenue))
+    cells.push(`${b.utilization}%`, b.status)
+    return cells
+  })
+  return [header, ...body]
+}
+
+/* ── branch table sorting ──────────────────────────────────────────────── */
+
+/** `Branch Management.md` §Branch Table — *Supports Column Sorting*. */
+type SortKey = 'name' | 'code' | 'manager' | 'city' | 'phone' | 'staff' | 'warehouses' | 'equipment' | 'revenue' | 'utilization' | 'status'
+
+interface SortState {
+  key: SortKey
+  dir: 'asc' | 'desc'
+}
+
+/**
+ * A total map, so a sortable header cannot be added without giving it something
+ * to sort on. Paisa sorts as the integer it is — never as its formatted string,
+ * which would order Rs 8,74,200 above Rs 12,45,300.
+ */
+const SORT_VALUE: Record<SortKey, (b: Branch) => string | number> = {
+  name: (b) => b.name,
+  code: (b) => b.code,
+  manager: (b) => b.manager,
+  city: (b) => b.city,
+  phone: (b) => b.phone,
+  staff: (b) => b.staff,
+  warehouses: (b) => b.warehouses,
+  equipment: (b) => b.equipment,
+  revenue: (b) => b.revenue,
+  utilization: (b) => b.utilization,
+  status: (b) => b.status,
+}
+
+function sortBranches(rows: Branch[], sort: SortState | null): Branch[] {
+  if (!sort) return rows
+  const read = SORT_VALUE[sort.key]
+  const dir = sort.dir === 'asc' ? 1 : -1
+  return [...rows].sort((a, b) => {
+    const av = read(a)
+    const bv = read(b)
+    const n =
+      typeof av === 'number' && typeof bv === 'number'
+        ? av - bv
+        : String(av).localeCompare(String(bv), undefined, { numeric: true })
+    return n * dir
+  })
+}
+
+/**
+ * Three states, not two: ascending → descending → **off**, so the seed order the
+ * render shows is always one more click away rather than lost for the session.
+ */
+function nextSort(current: SortState | null, key: SortKey): SortState | null {
+  if (current === null || current.key !== key) return { key, dir: 'asc' }
+  if (current.dir === 'asc') return { key, dir: 'desc' }
+  return null
+}
+
+function SortHeader({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  align = 'left',
+}: {
+  label: string
+  sortKey: SortKey
+  sort: SortState | null
+  onSort: (key: SortKey) => void
+  align?: 'left' | 'right'
+}) {
+  const on = sort !== null && sort.key === sortKey
+  const dir = on && sort !== null ? sort.dir : null
+
+  return (
+    <th
+      scope="col"
+      aria-sort={dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none'}
+      style={{ ...th, padding: 0, textAlign: align }}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        title={dir === 'asc' ? `Sorted by ${label}, ascending — click for descending` : dir === 'desc' ? `Sorted by ${label}, descending — click to clear` : `Sort by ${label}`}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: align === 'right' ? 'flex-end' : 'flex-start',
+          gap: 4,
+          width: '100%',
+          padding: '9px 10px',
+          border: 'none',
+          background: 'transparent',
+          font: 'inherit',
+          fontSize: 'var(--t-th)',
+          fontWeight: on ? 700 : 600,
+          color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {label}
+        <Icon
+          name={dir === 'desc' ? 'arrow_down' : dir === 'asc' ? 'arrow_up' : 'chevron_down'}
+          size={11}
+          style={{ color: on ? 'var(--nav-active-accent)' : 'var(--muted)', opacity: on ? 1 : 0.5, flexShrink: 0 }}
+        />
+      </button>
+    </th>
+  )
+}
+
+function BranchesPane({
+  money,
+  rows,
+  setRows,
+  addOpen,
+  setAddOpen,
+}: {
+  money: boolean
+  /** Held by the page, not the pane — the rail and the header export read the
+      same list, so a branch added this session shows up in all three. */
+  rows: Branch[]
+  setRows: (next: Branch[]) => void
+  addOpen: boolean
+  setAddOpen: (v: boolean) => void
+}) {
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'All' | BranchStatus>('All')
+  const [sort, setSort] = useState<SortState | null>(null)
   const [perPage, setPerPage] = useState(10)
   const [page, setPage] = useState(1)
   const [focused, setFocused] = useState<string | null>(null)
@@ -1299,11 +1441,18 @@ function BranchesPane({ money, addOpen, setAddOpen }: { money: boolean; addOpen:
     })
   }, [rows, query, status])
 
+  const ordered = useMemo(() => sortBranches(filtered, sort), [filtered, sort])
+
   const t = useMemo(() => totalsOf(filtered), [filtered])
   const slices = useMemo(() => equipmentSlices(), [])
-  const pageCount = Math.max(1, Math.ceil(filtered.length / perPage))
+  const pageCount = Math.max(1, Math.ceil(ordered.length / perPage))
   const current = Math.min(page, pageCount)
-  const shown = filtered.slice((current - 1) * perPage, current * perPage)
+  const shown = ordered.slice((current - 1) * perPage, current * perPage)
+
+  const onSort = (key: SortKey) => {
+    setSort((s) => nextSort(s, key))
+    setPage(1)
+  }
   const focusedBranch = focused ? rows.find((b) => b.id === focused) : undefined
   const scoped = status !== 'All' || query.trim() !== ''
 
@@ -1383,25 +1532,16 @@ function BranchesPane({ money, addOpen, setAddOpen }: { money: boolean; addOpen:
     )
   }
 
-  const exportCsv = () => {
-    const header = ['Branch', 'Code', 'Manager', 'City', 'Phone', 'Staff', 'Warehouses', 'Equipment']
-    if (money) header.push('Revenue (This Month)')
-    header.push('Utilization', 'Status')
-    const body = filtered.map((b) => {
-      const cells = [b.name, b.code, b.manager, b.city, b.phone, String(b.staff), String(b.warehouses), String(b.equipment)]
-      if (money) cells.push(formatMoney(b.revenue))
-      cells.push(`${b.utilization}%`, b.status)
-      return cells
-    })
-    downloadCsv('babin-branches.csv', [header, ...body])
-  }
+  /** Exports what the table is actually showing — this filter, this sort order. */
+  const exportCsv = () => downloadCsv('babin-branches.csv', branchCsvRows(ordered, money))
 
   const addBranch = (b: Branch) => {
-    setRows((prev) => [...prev, b])
+    setRows([...rows, b])
     setAddOpen(false)
     setFocused(null)
     setStatus('All')
     setQuery('')
+    setSort(null)
     setPage(Math.ceil((rows.length + 1) / perPage))
   }
 
@@ -1627,18 +1767,22 @@ function BranchesPane({ money, addOpen, setAddOpen }: { money: boolean; addOpen:
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
             <thead>
               <tr>
-                <th style={th}>Branch</th>
-                <th style={th}>Code</th>
-                <th style={th}>Manager</th>
-                <th style={th}>City</th>
-                <th style={th}>Phone</th>
-                <th style={{ ...th, textAlign: 'right' }}>Staff</th>
-                <th style={{ ...th, textAlign: 'right' }}>Warehouses</th>
-                <th style={{ ...th, textAlign: 'right' }}>Equipment</th>
-                {money && <th style={{ ...th, textAlign: 'right' }}>Revenue (This Month)</th>}
-                <th style={th}>Utilization</th>
-                <th style={th}>Status</th>
-                <th style={{ ...th, textAlign: 'right' }}>Actions</th>
+                <SortHeader label="Branch" sortKey="name" sort={sort} onSort={onSort} />
+                <SortHeader label="Code" sortKey="code" sort={sort} onSort={onSort} />
+                <SortHeader label="Manager" sortKey="manager" sort={sort} onSort={onSort} />
+                <SortHeader label="City" sortKey="city" sort={sort} onSort={onSort} />
+                <SortHeader label="Phone" sortKey="phone" sort={sort} onSort={onSort} />
+                <SortHeader label="Staff" sortKey="staff" sort={sort} onSort={onSort} align="right" />
+                <SortHeader label="Warehouses" sortKey="warehouses" sort={sort} onSort={onSort} align="right" />
+                <SortHeader label="Equipment" sortKey="equipment" sort={sort} onSort={onSort} align="right" />
+                {/* §8.3 — the column is absent for a money-blind session, so its
+                    sort key is unreachable rather than disabled. */}
+                {money && <SortHeader label="Revenue (This Month)" sortKey="revenue" sort={sort} onSort={onSort} align="right" />}
+                <SortHeader label="Utilization" sortKey="utilization" sort={sort} onSort={onSort} />
+                <SortHeader label="Status" sortKey="status" sort={sort} onSort={onSort} />
+                <th scope="col" style={{ ...th, textAlign: 'right' }}>
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -2029,8 +2173,39 @@ function AddBranchModal({
   )
 }
 
-function BranchesRail({ money }: { money: boolean }) {
-  const t = totalsOf(BRANCHES)
+/** The rail's four shortcut tiles. Same shape as the Overview's Quick Access. */
+const quickTileStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 6,
+  minHeight: 70,
+  padding: '10px 6px',
+  borderRadius: 'var(--r-card)',
+  border: '1px solid var(--border)',
+  background: 'var(--card2)',
+  color: 'var(--text)',
+  fontSize: 'var(--t-th)',
+  fontWeight: 600,
+  textAlign: 'center',
+  textDecoration: 'none',
+  fontFamily: 'inherit',
+  cursor: 'pointer',
+}
+
+function BranchesRail({
+  money,
+  branches,
+  onAdd,
+  onExport,
+}: {
+  money: boolean
+  branches: Branch[]
+  onAdd: () => void
+  onExport: () => void
+}) {
+  const t = totalsOf(branches)
   const rows: Array<{ label: string; value: string; tone?: BrandKey }> = []
   if (money) {
     rows.push(
@@ -2044,6 +2219,18 @@ function BranchesRail({ money }: { money: boolean }) {
     { label: 'Warehouses', value: String(t.warehouses) },
     { label: 'Average Utilization', value: `${t.utilization}%` },
   )
+
+  /*
+   * Total by construction: every kind either has a handler here or a `dest` in
+   * the data file, and the branch below covers both — so a tile cannot be added
+   * that renders as a live control and does nothing.
+   */
+  const handlers: Record<BranchActionKind, (() => void) | null> = {
+    'add-branch': onAdd,
+    'transfer-equipment': null,
+    'export-report': onExport,
+    'print-labels': null,
+  }
 
   return (
     <>
@@ -2089,6 +2276,34 @@ function BranchesRail({ money }: { money: boolean }) {
         </div>
       </Card>
 
+      {/* §Quick Actions — "exactly four", between Alerts and Recent Activity. */}
+      <Card title="Quick Actions">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 8 }}>
+          {BRANCH_QUICK_ACTIONS.map((a) => {
+            const run = handlers[a.kind]
+            const glyph = <Icon name={a.icon} size={18} style={{ color: 'var(--nav-active-accent)' }} />
+            const label = <span style={{ lineHeight: 1.25 }}>{a.label}</span>
+
+            if (run) {
+              return (
+                <button key={a.kind} type="button" onClick={run} style={quickTileStyle}>
+                  {glyph}
+                  {label}
+                </button>
+              )
+            }
+            const dest: Dest = a.dest ?? N(`${a.label} has no destination in this build.`)
+            return (
+              <DestControl key={a.kind} dest={dest} style={quickTileStyle}>
+                {glyph}
+                {label}
+                {dest.kind === 'none' && <NotBuilt why={dest.why} />}
+              </DestControl>
+            )
+          })}
+        </div>
+      </Card>
+
       <Card title="Recent Activity">
         <ActivityList entries={BRANCH_ACTIVITY} moreDest={R('/admin/audit')} />
       </Card>
@@ -2104,6 +2319,10 @@ export default function Settings() {
   const tabular = useTabularLayout()
   const [params, setParams] = useSearchParams()
   const [addOpen, setAddOpen] = useState(false)
+  /* Held here, not in the pane: the Branches rail summary, the rail's Export
+     Report tile and the header Export button all read this same list, so a
+     branch added this session cannot appear in one of them and not the others. */
+  const [branches, setBranches] = useState<Branch[]>(BRANCHES)
 
   /* §8.3 — a money-only tab is removed from the strip, not disabled in it. */
   const tabs = useMemo(() => TABS.filter((t) => money || !t.money), [money])
@@ -2135,18 +2354,7 @@ export default function Settings() {
     downloadCsv('babin-settings.csv', rows)
   }
 
-  const exportBranches = () => {
-    const header = ['Branch', 'Code', 'Manager', 'City', 'Phone', 'Staff', 'Warehouses', 'Equipment']
-    if (money) header.push('Revenue (This Month)')
-    header.push('Utilization', 'Status')
-    const body = BRANCHES.map((b) => {
-      const cells = [b.name, b.code, b.manager, b.city, b.phone, String(b.staff), String(b.warehouses), String(b.equipment)]
-      if (money) cells.push(formatMoney(b.revenue))
-      cells.push(`${b.utilization}%`, b.status)
-      return cells
-    })
-    downloadCsv('babin-branches.csv', [header, ...body])
-  }
+  const exportBranches = () => downloadCsv('babin-branches.csv', branchCsvRows(branches, money))
 
   const IMPORT_WHY = 'Importing branches writes to the org tree; no backend is connected in this build.'
 
@@ -2245,17 +2453,19 @@ export default function Settings() {
         <div
           style={{
             display: 'grid',
-            /* Below 768 the 288px rail has nowhere to go, so it stacks under
-               the content instead of squeezing it. Both branches used to read
-               'minmax(0,1fr) 288px', which made the ternary do nothing. */
-            gridTemplateColumns: tabular ? 'minmax(0,1fr) 288px' : '1fr',
+            /* Below 768 the rail has nowhere to go, so it stacks under
+               the content instead of squeezing it. The rail track is `auto`
+               so it shrinks to match Rail's own collapsed/expanded width. */
+            gridTemplateColumns: tabular ? 'minmax(0,1fr) auto' : '1fr',
             gap: 'var(--sp-md)',
             alignItems: 'start',
           }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
             {active === 'overview' && <OverviewPane />}
-            {active === 'branches' && <BranchesPane money={money} addOpen={addOpen} setAddOpen={setAddOpen} />}
+            {active === 'branches' && (
+              <BranchesPane money={money} rows={branches} setRows={setBranches} addOpen={addOpen} setAddOpen={setAddOpen} />
+            )}
             {active === 'users' && <UsersPane />}
             {active !== 'overview' && active !== 'branches' && active !== 'users' && (
               <SectionCards sections={SECTIONS[active]} />
@@ -2266,7 +2476,7 @@ export default function Settings() {
             {active === 'overview' ? (
               <OverviewRail />
             ) : active === 'branches' ? (
-              <BranchesRail money={money} />
+              <BranchesRail money={money} branches={branches} onAdd={() => setAddOpen(true)} onExport={exportBranches} />
             ) : (
               <>
                 <div style={{ ...cardStyle, padding: 12, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>

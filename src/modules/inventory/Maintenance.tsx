@@ -6,6 +6,7 @@ import type { IconName } from '../../components/ui/Icon'
 import { Card, Button, KpiStrip } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { EmptyState } from '../../components/ui/StateViews'
+import { Unavailable } from '../../components/ui/Unavailable'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { formatMoney, rupees, type Paisa } from '../../lib/money'
@@ -234,14 +235,6 @@ const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', v
 /** Whole days between two UTC midnights — no calendar arithmetic, so no engine is bypassed. */
 const DAY_MS = 86_400_000
 const daysFromToday = (d: Date) => Math.round((d.getTime() - TODAY.getTime()) / DAY_MS)
-
-function Unavailable({ children, reason }: { children: ReactNode; reason: string }) {
-  return (
-    <span title={reason} aria-label={reason} style={{ display: 'inline-flex', cursor: 'not-allowed' }}>
-      {children}
-    </span>
-  )
-}
 
 function Pill({ tone, icon, title, children }: { tone: StatusKey; icon: IconName; title?: string; children: ReactNode }) {
   const c = STATUS[tone]
@@ -545,7 +538,7 @@ export function Maintenance() {
                   const bs = m.estCompletion ? toBs(m.estCompletion) : null
                   const days = m.estCompletion ? daysFromToday(m.estCompletion) : null
                   return (
-                    <tr key={m.id} style={{ borderBottom: '1px solid var(--border)', background: overdue ? 'var(--danger-soft)' : 'transparent' }}>
+                    <tr key={m.id} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={td}>
                         <input
                           type="checkbox"

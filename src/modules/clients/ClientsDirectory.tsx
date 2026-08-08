@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, KpiStrip, cardStyle, Rail, SideRail } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { EmptyState } from '../../components/ui/StateViews'
+import { Unavailable } from '../../components/ui/Unavailable'
 import { STATUS } from '../../lib/status'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
@@ -46,15 +46,6 @@ const SAVED_VIEWS: SavedView[] = [
   { label: 'Recently Added', filter: 'all', sort: { key: 'lastRental', dir: 'desc' } },
   { label: 'Blocked Clients', filter: 'blocked', sort: { key: 'name', dir: 'asc' } },
 ]
-
-/** A control with nothing behind it is rendered unavailable, with the reason attached. */
-function Unavailable({ reason, children }: { reason: string; children: ReactNode }) {
-  return (
-    <span title={reason} aria-label={reason} style={{ display: 'inline-flex' }}>
-      {children}
-    </span>
-  )
-}
 
 const th = {
   textAlign: 'left' as const,
@@ -1230,6 +1221,9 @@ export function ClientsDirectory({
                       </Button>
                     </Unavailable>
                   )}
+                  <Button icon="external_link" onClick={() => navigate(`/clients/${selectedClient.id}`)}>
+                    View Full Profile
+                  </Button>
                 </div>
               </div>
             </Card>

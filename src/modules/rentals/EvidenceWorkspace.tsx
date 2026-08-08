@@ -86,8 +86,9 @@ export default function EvidenceWorkspace() {
     { label: 'Unmatched', value: counts.Unmatched, display: String(counts.Unmatched), percent: pct(counts.Unmatched) },
   ]
 
+  // Floor scale (DEVICES.md item 3) is applied automatically by route in App.tsx's Shell, not here.
   return (
-    <div data-floor="true" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>

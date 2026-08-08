@@ -1,4 +1,25 @@
 import type { IconName } from '../components/ui/Icon'
+import type { StatusKey } from '../lib/status'
+import { toBs } from '../lib/bs'
+import { grouped } from '../lib/money'
+
+/**
+ * **Warehouse Management seed** — `06 Inventory/Warehouse.md` v3.0 (Build Locked)
+ * reconciled against `Warehouse.PNG`.
+ *
+ * Every figure this screen shows is either a field on one of the four arrays
+ * below or is **derived from them here**. The file used to also carry a
+ * `WAREHOUSE_KPIS` array of pre-formatted strings ('82%', '2,507', '18'), which
+ * is the failure mode the KPI cards exist to avoid: the strings drifted from the
+ * rows (the set actually stands at 81% capacity, not 82%) and nothing could
+ * notice. The strings are gone; `totalsOf()` computes them, and `SEED_ERRORS`
+ * asserts the rows still reconcile.
+ *
+ * No BS date is stored. `Calendar.md` §4.2 — BS is rendered from the AD instant
+ * through `lib/bs`, never persisted, so the two can never disagree.
+ */
+
+/* ── shapes ────────────────────────────────────────────────────────────── */
 
 export interface StorageLocation {
   id: string
@@ -20,7 +41,9 @@ export interface Warehouse {
   manager: string
   address: string
   phone: string
+  /** Slots. `capacity - availableSpace` is the used count, asserted below. */
   capacity: number
+  /** Whole percent, asserted below to match `used / capacity`. */
   occupancy: number
   equipmentCount: number
   availableSpace: number
@@ -31,8 +54,27 @@ export interface Warehouse {
   image: string
 }
 
-export type TransferStatus = 'Pending' | 'Approved' | 'Packing' | 'In Transit' | 'Received' | 'Completed' | 'Cancelled'
-export type TransferType = 'Branch Transfer' | 'Warehouse Transfer' | 'Zone Transfer' | 'Temporary Holding' | 'Transit'
+/**
+ * Stock-transfer lifecycle. This is a **screen-local vocabulary for a different
+ * entity** than anything in `lib/workflow` — a transfer is not a booking, a job
+ * or an item — so it lives here and deliberately shares no name with
+ * `BookingStatus`, `JobState` or `ItemState`.
+ */
+export type TransferStatus =
+  | 'Pending'
+  | 'Approved'
+  | 'Packing'
+  | 'In Transit'
+  | 'Received'
+  | 'Completed'
+  | 'Cancelled'
+
+export type TransferType =
+  | 'Branch Transfer'
+  | 'Warehouse Transfer'
+  | 'Zone Transfer'
+  | 'Temporary Holding'
+  | 'Transit'
 
 export interface StockTransfer {
   id: string
@@ -56,10 +98,17 @@ export interface StockTransfer {
   dispatchedAt?: string
   receivedAt?: string
   notes?: string
+  /** AD, ISO date. The BS line is rendered from this — never stored. */
   dateAD: string
-  dateBS: string
 }
 
+/**
+ * ⚠️ `role` here is a **job title on the warehouse floor**, not a `SystemRole`.
+ * The business 8 (Owner · Admin · Coordinator · Warehouse · Technician ·
+ * Accounts · Driver · Client) are the only capability vocabulary; nothing in
+ * this file or the screen that reads it may branch on the strings below to
+ * grant or withhold anything. They are printed on a staff card and no more.
+ */
 export interface WarehouseStaff {
   id: string
   name: string
@@ -70,14 +119,63 @@ export interface WarehouseStaff {
   status: 'On Duty' | 'Off Duty' | 'Leave'
 }
 
-export const WAREHOUSE_KPIS = [
-  { label: 'Total Warehouses', value: '4', change: 'Across 2 branches', icon: 'box' as IconName, accent: 'blue' as const },
-  { label: 'Active Warehouses', value: '4', change: '100% operational', icon: 'check' as IconName, accent: 'green' as const },
-  { label: 'Total Assets Stored', value: '2,507', change: '+34 this month', icon: 'box' as IconName, accent: 'teal' as const },
-  { label: 'Capacity Used', value: '82%', change: 'Normal threshold', icon: 'queues' as IconName, accent: 'amber' as const },
-  { label: 'Transfers Today', value: '18', change: '5 in transit', icon: 'truck' as IconName, accent: 'orange' as const },
-  { label: 'Inventory Accuracy', value: '99.4%', change: 'Verified 4 Shrawan', icon: 'error' as IconName, accent: 'purple' as const },
-]
+/* ── tokens ────────────────────────────────────────────────────────────── */
+
+/** §4.2 — five colours plus gold. No hue is invented per status. */
+export const WAREHOUSE_STATUS_TONE: Record<Warehouse['status'], StatusKey> = {
+  Active: 'in',
+  Maintenance: 'progress',
+  Full: 'danger',
+}
+
+export const WAREHOUSE_STATUS_ICON: Record<Warehouse['status'], IconName> = {
+  Active: 'check',
+  Maintenance: 'tool',
+  Full: 'alert_triangle',
+}
+
+/** "Solid = out, soft = in" — a transfer on the road is `out`; a landed one `in`. */
+export const TRANSFER_STATUS_TONE: Record<TransferStatus, StatusKey> = {
+  Pending: 'neutral',
+  Approved: 'primary',
+  Packing: 'progress',
+  'In Transit': 'out',
+  Received: 'in',
+  Completed: 'in',
+  Cancelled: 'danger',
+}
+
+/** §4.2 — colour is never the sole carrier; every status ships an icon too. */
+export const TRANSFER_STATUS_ICON: Record<TransferStatus, IconName> = {
+  Pending: 'timer',
+  Approved: 'check',
+  Packing: 'package',
+  'In Transit': 'truck',
+  Received: 'return_arrow',
+  Completed: 'check',
+  Cancelled: 'close',
+}
+
+/**
+ * The one lifecycle. The screen renders the single next step from this map, so
+ * a transfer cannot be advanced out of order or skipped forward.
+ */
+export const TRANSFER_FLOW: Record<TransferStatus, { next: TransferStatus; label: string } | null> = {
+  Pending: { next: 'Approved', label: 'Approve' },
+  Approved: { next: 'Packing', label: 'Start Packing' },
+  Packing: { next: 'In Transit', label: 'Dispatch' },
+  'In Transit': { next: 'Received', label: 'Mark Received' },
+  Received: { next: 'Completed', label: 'Reconcile & Complete' },
+  Completed: null,
+  Cancelled: null,
+}
+
+export const TRANSFER_TERMINAL: ReadonlySet<TransferStatus> = new Set<TransferStatus>([
+  'Completed',
+  'Cancelled',
+])
+
+/* ── rows ──────────────────────────────────────────────────────────────── */
 
 export const WAREHOUSES: Warehouse[] = [
   {
@@ -154,6 +252,11 @@ export const WAREHOUSES: Warehouse[] = [
   },
 ]
 
+/**
+ * Bin-level records. This is a **sample, not the full layout** — 9 bins are
+ * seeded against 20 declared zones — so the profile panel states its own
+ * coverage rather than implying the rest of the racks are empty.
+ */
 export const STORAGE_LOCATIONS: StorageLocation[] = [
   { id: 'loc-01', warehouseId: 'wh-01', room: 'Camera Vault A', zone: 'Zone A (Cinema Bodies)', rack: 'Rack 01', shelf: 'Shelf 02', bin: 'Bin A-1', capacity: 12, used: 9 },
   { id: 'loc-02', warehouseId: 'wh-01', room: 'Camera Vault A', zone: 'Zone A (Cinema Bodies)', rack: 'Rack 01', shelf: 'Shelf 03', bin: 'Bin A-2', capacity: 10, used: 8 },
@@ -186,7 +289,6 @@ export const TRANSFERS: StockTransfer[] = [
     approvedBy: 'Rajesh Shrestha',
     dispatchedAt: '2026-08-06 09:30',
     dateAD: '2026-08-06',
-    dateBS: '2083-04-22',
     notes: 'Urgent transfer for Annapurna documentary shoot starting 24 Shrawan.',
   },
   {
@@ -206,7 +308,6 @@ export const TRANSFERS: StockTransfer[] = [
     requestedBy: 'Rajesh Shrestha',
     approvedBy: 'Pooja Thapa',
     dateAD: '2026-08-06',
-    dateBS: '2083-04-22',
     notes: 'Rebalancing lighting stock for evening commercial production.',
   },
   {
@@ -225,7 +326,6 @@ export const TRANSFERS: StockTransfer[] = [
     requestedBy: 'Sunil Sharma',
     approvedBy: 'Rajesh Shrestha',
     dateAD: '2026-08-05',
-    dateBS: '2083-04-21',
     notes: 'Scheduled sensor calibration and deep firmware diagnostics.',
   },
   {
@@ -246,7 +346,6 @@ export const TRANSFERS: StockTransfer[] = [
     dispatchedAt: '2026-08-04 11:00',
     receivedAt: '2026-08-04 14:15',
     dateAD: '2026-08-04',
-    dateBS: '2083-04-20',
     notes: 'Completed stock relocation for studio setup.',
   },
   {
@@ -267,7 +366,6 @@ export const TRANSFERS: StockTransfer[] = [
     dispatchedAt: '2026-08-05 08:00',
     receivedAt: '2026-08-06 14:00',
     dateAD: '2026-08-05',
-    dateBS: '2083-04-21',
     notes: 'Drone returning to HQ for scheduled maintenance.',
   },
   {
@@ -286,7 +384,6 @@ export const TRANSFERS: StockTransfer[] = [
     status: 'Pending',
     requestedBy: 'Pooja Thapa',
     dateAD: '2026-08-07',
-    dateBS: '2083-04-23',
     notes: 'Requesting extra GM lenses for a wedding shoot this weekend.',
   },
 ]
@@ -299,3 +396,359 @@ export const WAREHOUSE_STAFF: WarehouseStaff[] = [
   { id: 'stf-05', name: 'Anil Gurung', role: 'Manager', warehouse: 'Pokhara Regional Hub', shift: 'Day (09:00 - 18:00)', phone: '+977-9801234503', status: 'On Duty' },
   { id: 'stf-06', name: 'Bikash Tamang', role: 'Manager', warehouse: 'Bhaktapur Heavy Grip & Rigging', shift: 'Day (09:00 - 18:00)', phone: '+977-9801234504', status: 'On Duty' },
 ]
+
+/**
+ * `Warehouse.md` — Analytics ▸ Inventory Distribution, the seven categories and
+ * counts the spec's render states. They sum to 2,507, which is the same total
+ * `WAREHOUSES` reaches by a different route; `SEED_ERRORS` asserts the two
+ * agree, so a category edit that breaks the tie is visible immediately.
+ */
+export const EQUIPMENT_DISTRIBUTION: Array<{ category: string; count: number; icon: IconName }> = [
+  { category: 'Cameras', count: 412, icon: 'camera' },
+  { category: 'Lenses', count: 687, icon: 'eye' },
+  { category: 'Lighting', count: 612, icon: 'sun' },
+  { category: 'Grip', count: 298, icon: 'tool' },
+  { category: 'Audio', count: 210, icon: 'headset' },
+  { category: 'Drone', count: 128, icon: 'video' },
+  { category: 'Accessories', count: 160, icon: 'box' },
+]
+
+/* ── derivations ───────────────────────────────────────────────────────── */
+
+/** Slots in use. Never a stored field — `capacity - availableSpace`, once. */
+export function usedOf(w: Warehouse): number {
+  return w.capacity - w.availableSpace
+}
+
+export function pct(part: number, whole: number): number {
+  return whole === 0 ? 0 : Math.round((part / whole) * 100)
+}
+
+export interface WarehouseTotals {
+  warehouses: number
+  active: number
+  capacity: number
+  used: number
+  available: number
+  assets: number
+  zones: number
+  staff: number
+  transfers: number
+  occupancyPct: number
+  /** Asset-weighted, one decimal — a plain mean over-weights the small depots. */
+  accuracyPct: number
+}
+
+export function totalsOf(list: Warehouse[]): WarehouseTotals {
+  const capacity = list.reduce((a, w) => a + w.capacity, 0)
+  const used = list.reduce((a, w) => a + usedOf(w), 0)
+  const assets = list.reduce((a, w) => a + w.equipmentCount, 0)
+  const names = new Set(list.map((w) => w.name))
+  const weighted = list.reduce((a, w) => a + w.accuracyPct * w.equipmentCount, 0)
+  return {
+    warehouses: list.length,
+    active: list.filter((w) => w.status === 'Active').length,
+    capacity,
+    used,
+    available: list.reduce((a, w) => a + w.availableSpace, 0),
+    assets,
+    zones: list.reduce((a, w) => a + w.zonesCount, 0),
+    staff: WAREHOUSE_STAFF.filter((s) => names.has(s.warehouse)).length,
+    transfers: list.reduce((a, w) => a + w.activeTransfers, 0),
+    occupancyPct: pct(used, capacity),
+    accuracyPct: assets === 0 ? 0 : Math.round((weighted / assets) * 10) / 10,
+  }
+}
+
+export function staffOf(warehouseName: string): WarehouseStaff[] {
+  return WAREHOUSE_STAFF.filter((s) => s.warehouse === warehouseName)
+}
+
+export function transfersOf(list: StockTransfer[], warehouseName: string): StockTransfer[] {
+  return list.filter((t) => t.sourceWarehouse === warehouseName || t.destinationWarehouse === warehouseName)
+}
+
+export interface ZoneRollup {
+  zone: string
+  room: string
+  bins: number
+  capacity: number
+  used: number
+}
+
+/** Zone → rack → shelf → bin, rolled up one level for the profile panel. */
+export function zonesOf(warehouseId: string): ZoneRollup[] {
+  const byZone = new Map<string, ZoneRollup>()
+  for (const l of STORAGE_LOCATIONS) {
+    if (l.warehouseId !== warehouseId) continue
+    const found = byZone.get(l.zone)
+    if (found) {
+      found.bins += 1
+      found.capacity += l.capacity
+      found.used += l.used
+    } else {
+      byZone.set(l.zone, { zone: l.zone, room: l.room, bins: 1, capacity: l.capacity, used: l.used })
+    }
+  }
+  return [...byZone.values()].sort((a, b) => a.zone.localeCompare(b.zone))
+}
+
+/* ── alerts ────────────────────────────────────────────────────────────── */
+
+/**
+ * Thresholds are named constants and are printed on every alert row, because an
+ * alert whose rule is invisible is a number nobody can check. The render's own
+ * alert list also carries "Low stock items", "Maintenance due" and "Audit due in
+ * 10 days"; those three count records this module does not hold, so they are
+ * absent rather than guessed. TODO(decision): whether Warehouse Management reads
+ * the Maintenance and Stock Check ledgers for its alert rail.
+ */
+export const CAPACITY_ALERT_PCT = 85
+export const LOW_SPACE_SLOTS = 100
+export const ACCURACY_ALERT_PCT = 99
+
+export type AlertKey = 'capacity' | 'space' | 'accuracy' | 'pending' | 'transit'
+
+export interface WarehouseAlert {
+  key: AlertKey
+  label: string
+  count: number
+  tone: StatusKey
+  icon: IconName
+  rule: string
+}
+
+export function alertsOf(list: Warehouse[], transfers: StockTransfer[]): WarehouseAlert[] {
+  return [
+    {
+      key: 'capacity',
+      label: 'Capacity almost full',
+      count: list.filter((w) => w.occupancy >= CAPACITY_ALERT_PCT).length,
+      tone: 'danger',
+      icon: 'alert_triangle',
+      rule: `Warehouses at or above ${CAPACITY_ALERT_PCT}% occupancy.`,
+    },
+    {
+      key: 'space',
+      label: 'Low available space',
+      count: list.filter((w) => w.availableSpace < LOW_SPACE_SLOTS).length,
+      tone: 'progress',
+      icon: 'queues',
+      rule: `Warehouses with fewer than ${LOW_SPACE_SLOTS} free slots.`,
+    },
+    {
+      key: 'accuracy',
+      label: 'Accuracy below target',
+      count: list.filter((w) => w.accuracyPct < ACCURACY_ALERT_PCT).length,
+      tone: 'danger',
+      icon: 'error',
+      rule: `Warehouses whose last verification came in under ${ACCURACY_ALERT_PCT}%.`,
+    },
+    {
+      key: 'pending',
+      label: 'Transfers awaiting approval',
+      count: transfers.filter((t) => t.status === 'Pending').length,
+      tone: 'progress',
+      icon: 'timer',
+      rule: 'Stock transfers still in Pending.',
+    },
+    {
+      key: 'transit',
+      label: 'Transfers on the road',
+      count: transfers.filter((t) => t.status === 'In Transit').length,
+      tone: 'out',
+      icon: 'truck',
+      rule: 'Stock transfers dispatched but not yet received.',
+    },
+  ]
+}
+
+/** Which warehouses an alert row is about — the rail rows filter the table. */
+export function warehousesForAlert(key: AlertKey, list: Warehouse[]): Warehouse[] {
+  switch (key) {
+    case 'capacity':
+      return list.filter((w) => w.occupancy >= CAPACITY_ALERT_PCT)
+    case 'space':
+      return list.filter((w) => w.availableSpace < LOW_SPACE_SLOTS)
+    case 'accuracy':
+      return list.filter((w) => w.accuracyPct < ACCURACY_ALERT_PCT)
+    case 'pending':
+    case 'transit':
+      return []
+  }
+}
+
+/* ── activity ──────────────────────────────────────────────────────────── */
+
+export interface ActivityEntry {
+  id: string
+  user: string
+  action: string
+  warehouse: string
+  ad: Date
+}
+
+const ACTIVITY_VERB: Record<TransferStatus, string> = {
+  Pending: 'Requested',
+  Approved: 'Approved',
+  Packing: 'Started packing',
+  'In Transit': 'Dispatched',
+  Received: 'Received',
+  Completed: 'Completed',
+  Cancelled: 'Cancelled',
+}
+
+/**
+ * §Right Intelligence Rail ▸ Recent Activity — user, action, warehouse, time.
+ * Built from the transfer ledger rather than a second hand-written feed, so an
+ * advanced transfer changes the rail as well as the table.
+ */
+export function recentActivity(transfers: StockTransfer[], limit = 5): ActivityEntry[] {
+  const landed = new Set<TransferStatus>(['Received', 'Completed'])
+  return [...transfers]
+    .sort((a, b) => b.dateAD.localeCompare(a.dateAD))
+    .slice(0, limit)
+    .map((t) => ({
+      id: t.id,
+      user: t.requestedBy,
+      action: `${ACTIVITY_VERB[t.status]} ${t.transferNo} · ${t.assetCount} ${t.assetCount === 1 ? 'asset' : 'assets'}`,
+      warehouse: landed.has(t.status) ? t.destinationWarehouse : t.sourceWarehouse,
+      ad: new Date(`${t.dateAD}T00:00:00Z`),
+    }))
+}
+
+/* ── transfer activity series ──────────────────────────────────────────── */
+
+export interface TransferDay {
+  /** "4 Aug" — the AD day the bar group sits on. */
+  label: string
+  completed: number
+  inProgress: number
+  pending: number
+}
+
+const IN_PROGRESS = new Set<TransferStatus>(['Approved', 'Packing', 'In Transit', 'Received'])
+
+/**
+ * Daily transfer counts. The render draws Completed / In Transit / Pending; the
+ * middle series is widened to **In Progress** here because four of the seven
+ * statuses sit between approval and completion and a chart that showed only
+ * "In Transit" would silently drop Packing, Approved and Received.
+ */
+export function transferActivity(transfers: StockTransfer[]): TransferDay[] {
+  const byDay = new Map<string, TransferDay>()
+  for (const t of [...transfers].sort((a, b) => a.dateAD.localeCompare(b.dateAD))) {
+    if (t.status === 'Cancelled') continue
+    const ad = new Date(`${t.dateAD}T00:00:00Z`)
+    const label = ad.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kathmandu' })
+    const row = byDay.get(t.dateAD) ?? { label, completed: 0, inProgress: 0, pending: 0 }
+    if (t.status === 'Completed') row.completed += 1
+    else if (t.status === 'Pending') row.pending += 1
+    else if (IN_PROGRESS.has(t.status)) row.inProgress += 1
+    byDay.set(t.dateAD, row)
+  }
+  return [...byDay.values()]
+}
+
+/* ── insights ──────────────────────────────────────────────────────────── */
+
+export interface Insight {
+  text: string
+  tone: StatusKey
+  icon: IconName
+}
+
+/**
+ * Observations computed from the rows above. The render titles this panel "AI
+ * Warehouse Insights"; nothing here is a model output, so it is not labelled as
+ * one — every line is a rule you can re-run by hand against the table.
+ */
+export function insightsOf(list: Warehouse[]): Insight[] {
+  const out: Insight[] = []
+  if (list.length === 0) return out
+
+  const byOccupancy = [...list].sort((a, b) => b.occupancy - a.occupancy)
+  const fullest = byOccupancy[0]
+  const emptiest = byOccupancy[byOccupancy.length - 1]
+  if (fullest) {
+    out.push({
+      text: `${fullest.name} is at ${fullest.occupancy}% — the fullest facility, ${grouped(fullest.availableSpace)} slots left.`,
+      tone: fullest.occupancy >= CAPACITY_ALERT_PCT ? 'danger' : 'progress',
+      icon: 'queues',
+    })
+  }
+  if (emptiest && emptiest !== fullest) {
+    out.push({
+      text: `${emptiest.name} has the most spare capacity — ${grouped(emptiest.availableSpace)} free slots at ${emptiest.occupancy}%.`,
+      tone: 'in',
+      icon: 'box',
+    })
+  }
+
+  const tightestBin = [...STORAGE_LOCATIONS].sort((a, b) => b.used / b.capacity - a.used / a.capacity)[0]
+  if (tightestBin) {
+    const home = list.find((w) => w.id === tightestBin.warehouseId)
+    out.push({
+      text: `${tightestBin.zone} · ${tightestBin.rack} is ${pct(tightestBin.used, tightestBin.capacity)}% full${home ? ` in ${home.name}` : ''}.`,
+      tone: 'progress',
+      icon: 'home',
+    })
+  }
+
+  const laggard = [...list].sort((a, b) => a.accuracyPct - b.accuracyPct)[0]
+  if (laggard) {
+    out.push({
+      text: `${laggard.name} verified at ${laggard.accuracyPct}% — the lowest of the ${list.length}.`,
+      tone: laggard.accuracyPct < ACCURACY_ALERT_PCT ? 'danger' : 'neutral',
+      icon: 'error',
+    })
+  }
+
+  return out
+}
+
+/* ── seed assertions ───────────────────────────────────────────────────── */
+
+/**
+ * Reported, never thrown. A module-scope `throw` runs before React mounts and
+ * blanks the whole app with no message; the screen renders this list in a banner
+ * instead. Same pattern as `data/expenseReports`'s `SEED_ERRORS`.
+ */
+export const SEED_ERRORS: string[] = (() => {
+  const errs: string[] = []
+  const names = new Set(WAREHOUSES.map((w) => w.name))
+  const ids = new Set(WAREHOUSES.map((w) => w.id))
+
+  for (const w of WAREHOUSES) {
+    if (usedOf(w) !== w.equipmentCount) {
+      errs.push(`${w.code}: capacity − available (${usedOf(w)}) must equal equipmentCount (${w.equipmentCount}).`)
+    }
+    if (pct(usedOf(w), w.capacity) !== w.occupancy) {
+      errs.push(`${w.code}: occupancy is stored as ${w.occupancy}% but computes to ${pct(usedOf(w), w.capacity)}%.`)
+    }
+  }
+
+  const totals = totalsOf(WAREHOUSES)
+  const distribution = EQUIPMENT_DISTRIBUTION.reduce((a, c) => a + c.count, 0)
+  if (distribution !== totals.assets) {
+    errs.push(`Inventory Distribution sums to ${grouped(distribution)}; the warehouses hold ${grouped(totals.assets)}.`)
+  }
+
+  for (const s of WAREHOUSE_STAFF) {
+    if (!names.has(s.warehouse)) errs.push(`Staff ${s.id} is posted to an unknown warehouse "${s.warehouse}".`)
+  }
+  for (const l of STORAGE_LOCATIONS) {
+    if (!ids.has(l.warehouseId)) errs.push(`Storage location ${l.id} points at an unknown warehouse "${l.warehouseId}".`)
+    if (l.used > l.capacity) errs.push(`Storage location ${l.id} holds ${l.used} in ${l.capacity} slots.`)
+  }
+  for (const t of TRANSFERS) {
+    if (!names.has(t.sourceWarehouse)) errs.push(`${t.transferNo} leaves an unknown warehouse "${t.sourceWarehouse}".`)
+    if (!names.has(t.destinationWarehouse)) errs.push(`${t.transferNo} lands at an unknown warehouse "${t.destinationWarehouse}".`)
+    if (t.items.length === 0) errs.push(`${t.transferNo} carries no items.`)
+    if (toBs(new Date(`${t.dateAD}T00:00:00Z`)) === null) {
+      errs.push(`${t.transferNo} is dated ${t.dateAD}, outside the month lib/bs can convert (Shrawan 2083).`)
+    }
+  }
+
+  return errs
+})()

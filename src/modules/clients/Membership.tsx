@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
 import { EmptyState } from '../../components/ui/StateViews'
+import { Unavailable } from '../../components/ui/Unavailable'
 import { STATUS, BRAND, BRAND_TEXT } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { formatMoney } from '../../lib/money'
@@ -243,20 +243,6 @@ function PageBtn({ label, active, disabled, onClick }: { label: string; active?:
 
 /** Bulk membership actions have no service behind them yet; the buttons say so. */
 const BULK_REASON = 'Bulk membership actions are not built yet — no reminder or level-change service exists'
-
-/**
- * A control the screen cannot honour is rendered visibly unavailable **with the
- * reason attached**, never as a live-looking button that does nothing. The
- * shared `Button` takes no `title`, so the reason rides on a wrapper that is
- * also the accessible description.
- */
-function Unavailable({ reason, children }: { reason: string; children: ReactNode }) {
-  return (
-    <span title={reason} aria-label={reason} style={{ display: 'inline-flex' }}>
-      {children}
-    </span>
-  )
-}
 
 /**
  * Clients → **Membership**, built from renders `Clients - Memberships.PNG` and

@@ -323,7 +323,7 @@ export default function BookingDetail() {
           </span>
         </Fact>
 
-        <div style={{ padding: '14px 16px', background: 'var(--danger-soft)', borderRadius: '0 var(--r-card) var(--r-card) 0' }}>
+        <div style={{ padding: '14px 16px', borderRadius: '0 var(--r-card) var(--r-card) 0' }}>
           <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Outstanding</div>
           <div className="figure" style={{ fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--danger-text)', letterSpacing: '-0.02em' }}>
             {BOOKING.outstanding}

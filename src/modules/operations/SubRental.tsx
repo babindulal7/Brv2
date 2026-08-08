@@ -307,7 +307,7 @@ export function SubRental() {
                   return (
                     <tr
                       key={c.id}
-                      style={{ borderBottom: '1px solid var(--border)', transition: 'background-color 0.1s ease', background: c.isOverdue ? 'rgba(239, 68, 68, 0.05)' : 'transparent' }}
+                      style={{ borderBottom: '1px solid var(--border)', transition: 'background-color 0.1s ease' }}
                     >
                       <td style={{ padding: '12px 14px' }}>
                         <input
