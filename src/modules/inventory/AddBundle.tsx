@@ -16,6 +16,7 @@ import { validateDiscount } from '../../lib/discount'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useAuth } from '../../lib/auth'
 import { canApproveDiscount } from '../../lib/rbac'
+import type { SystemRole } from '../../types/database'
 import {
   INVENTORY_CATEGORIES,
   INVENTORY_MODELS,
@@ -395,6 +396,22 @@ export function AddBundle() {
   const [packingOpen, setPackingOpen] = useState(false)
   const [seq, setSeq] = useState(100)
 
+  /*
+   * ── derived, never typed ─────────────────────────────────────────────
+   * ⛔ These four hooks must stay **above** the `if (!money) return` gate
+   * below. React requires the same hooks in the same order on every render;
+   * a role change (Owner/Admin → Warehouse) while this component stays
+   * mounted flips `money` and previously left these `useMemo` calls skipped
+   * on one render and executed on the next — "Rendered fewer/more hooks
+   * than expected," reproduced live by toggling the session role in place.
+   * Foundation §6: "A blank page is never acceptable" covers a crash here
+   * exactly as it covers one anywhere else.
+   */
+  const pricing = useMemo(() => pricingOf(lines), [lines])
+  const availability = useMemo(() => availabilityOf(lines), [lines])
+  const breakdown = useMemo(() => breakdownOf(lines, crew, vehicle), [lines, crew, vehicle])
+  const drift = useMemo(() => rateDriftOf(lines), [lines])
+
   /* ── §13 · this page sets prices, so the floor does not get it ────────── */
   if (!money) {
     return (
@@ -412,13 +429,6 @@ export function AddBundle() {
       </div>
     )
   }
-
-  /* ── derived, never typed ─────────────────────────────────────────────── */
-
-  const pricing = useMemo(() => pricingOf(lines), [lines])
-  const availability = useMemo(() => availabilityOf(lines), [lines])
-  const breakdown = useMemo(() => breakdownOf(lines, crew, vehicle), [lines, crew, vehicle])
-  const drift = useMemo(() => rateDriftOf(lines), [lines])
 
   const overrideRatePaisa = parseMoney(overrideRate) ?? (0 as Paisa)
   const effectiveRatePaisa = override ? overrideRatePaisa : pricing.computedRatePaisa
@@ -642,8 +652,6 @@ export function AddBundle() {
     display: String(s.value),
     percent: `${Math.round((s.value / segTotal) * 100)}%`,
   }))
-
-  const canApprove = user ? canApproveDiscount(user.role, 25) : false
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
@@ -1244,7 +1252,7 @@ export function AddBundle() {
                             line={l}
                             childrenOpen={childrenOpen.has(l.key)}
                             discountOpen={discountOpen.has(l.key)}
-                            canApprove={canApprove}
+                            role={user?.role ?? null}
                             approverName={user ? `${user.name} (${user.role})` : null}
                             onToggleChildren={() => toggleIn(childrenOpen, setChildrenOpen, l.key)}
                             onToggleDiscount={() => toggleIn(discountOpen, setDiscountOpen, l.key)}
@@ -2069,7 +2077,7 @@ function LineRow({
   line,
   childrenOpen,
   discountOpen,
-  canApprove,
+  role,
   approverName,
   onToggleChildren,
   onToggleDiscount,
@@ -2081,7 +2089,7 @@ function LineRow({
   line: DraftLine
   childrenOpen: boolean
   discountOpen: boolean
-  canApprove: boolean
+  role: SystemRole | null
   approverName: string | null
   onToggleChildren: () => void
   onToggleDiscount: () => void
@@ -2097,6 +2105,14 @@ function LineRow({
   const short = Math.max(0, line.qty - m.available)
   const gate = validateDiscount(t.discountPct, line.discountReason, line.approvedBy)
   const needsApproval = t.discountPct > 10
+  /*
+   * ⛔ This used to be a single `canApprove` computed once in the parent from a
+   * hardcoded ceiling of 25%, so an Admin (who can approve up to 15% per
+   * `lib/rbac.ts`) was told "your role cannot approve" on an 11–15% line —
+   * reproduced live by driving the app as Admin against a 12% discount.
+   * Approval capability depends on *this line's* percentage, not the 25% cap.
+   */
+  const canApprove = role ? canApproveDiscount(role, t.discountPct) : false
   const kids = m.children ?? []
   const cols = 9
 

@@ -128,11 +128,9 @@ export default function Clients() {
             <Button variant="primary" icon="plus" onClick={() => navigate('/clients/new')}>
               New Client
             </Button>
-            <Unavailable reason="Bulk import is not built yet — no CSV mapping or field-validation step exists">
-              <Button icon="upload" disabled>
-                Import
-              </Button>
-            </Unavailable>
+            <Button icon="upload" onClick={() => navigate('/clients/import')}>
+              Import
+            </Button>
             <Button icon="download" onClick={exportCsv}>
               Export
             </Button>

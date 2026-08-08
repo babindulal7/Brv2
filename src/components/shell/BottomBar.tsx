@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import Icon from '../ui/Icon'
-import { SETTINGS_NAV, permittedNav } from '../../data/nav'
+import { SETTINGS_NAV, bottomBarNav } from '../../data/nav'
 import { useAuth } from '../../lib/auth'
 
 export const BOTTOM_BAR_HEIGHT = 58
@@ -9,9 +9,11 @@ export const BOTTOM_BAR_HEIGHT = 58
  * **Phone bottom bar — `DEVICE/DEVICES.md` §7 build order item 2.**
  *
  * "The phone bottom bar is built from permissions... so a Driver's bar is not
- * a Coordinator's." Reads the same `permittedNav()` the Sidebar reads, so the
- * two surfaces can never disagree about what a role can reach — only ever
- * mounted below 768 (`Shell` in `App.tsx` swaps this in for the Sidebar).
+ * a Coordinator's." Reads `bottomBarNav()`, a per-role curated set resolved
+ * against the same `permittedNav()` the Sidebar reads (`data/nav.ts`), so a
+ * role can never see a route on the bar it isn't otherwise allowed to reach.
+ * Only ever mounted below 768 (`Shell` in `App.tsx` swaps this in for the
+ * Sidebar).
  *
  * Deliberately carries no Scanner slot: `data/nav.ts` locks Scanner as "a FAB
  * at every width, never a nav item" (Foundation §5.5), and that FAB already
@@ -19,13 +21,13 @@ export const BOTTOM_BAR_HEIGHT = 58
  * `bottom` offset in `ScannerFab.tsx`), it does not duplicate or relocate it.
  *
  * Settings is always the fourth slot rather than a fifth item competing with
- * the first three: it sits outside the permission-filtered NAV array by
+ * the curated three: it sits outside the permission-filtered NAV array by
  * design (§5.1), and stays reachable now that the Sidebar that normally
  * carries it is hidden at this width.
  */
 export default function BottomBar({ active }: { active: string }) {
   const { user } = useAuth()
-  const items = [...permittedNav(user?.role).slice(0, 3), SETTINGS_NAV]
+  const items = [...bottomBarNav(user?.role), SETTINGS_NAV]
   const base = active.split('?')[0] ?? active
 
   return (

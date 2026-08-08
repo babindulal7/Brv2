@@ -1,15 +1,79 @@
-import React from 'react'
-import { IconLoader2 } from '@tabler/icons-react'
+import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from 'react'
+import Icon from './Icon'
 
-export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+/**
+ * Rewritten from Tailwind utility classNames — `bg-blue-600 hover:bg-blue-700...` —
+ * to the app's real inline-style + CSS-variable system. Tailwind's Vite plugin is
+ * registered but no CSS file imports `tailwindcss`, so every one of those classes
+ * compiled to nothing and this component rendered fully unstyled wherever it was
+ * used. Same prop/API shape as before, so every existing call site is unaffected.
+ */
+
+export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'gold'
   size?: 'sm' | 'md' | 'lg'
   loading?: boolean
-  icon?: React.ReactNode
-  iconRight?: React.ReactNode
+  icon?: ReactNode
+  iconRight?: ReactNode
 }
 
-export const Button: React.FC<ButtonProps> = ({
+const SIZE_STYLES: Record<
+  NonNullable<ButtonProps['size']>,
+  { minHeight: number; padding: string; fontSize: string; gap: number; iconSize: number }
+> = {
+  // Law 15: minimum 44px touch target on every device — never relaxed, even for `sm`.
+  sm: { minHeight: 44, padding: '0 12px', fontSize: 'var(--t-meta)', gap: 6, iconSize: 14 },
+  md: { minHeight: 44, padding: '0 16px', fontSize: 'var(--t-ui)', gap: 8, iconSize: 16 },
+  lg: { minHeight: 48, padding: '0 24px', fontSize: 'var(--t-body)', gap: 10, iconSize: 18 },
+}
+
+function variantStyle(variant: NonNullable<ButtonProps['variant']>): CSSProperties {
+  switch (variant) {
+    case 'primary':
+      return {
+        background: 'var(--btn-primary-bg)',
+        color: 'var(--btn-primary-fg)',
+        border: '1px solid transparent',
+        boxShadow: 'var(--shadow-card)',
+      }
+    case 'secondary':
+      return {
+        background: 'var(--btn-secondary-bg)',
+        color: 'var(--text)',
+        border: '1px solid var(--btn-secondary-border)',
+      }
+    case 'outline':
+      return {
+        background: 'transparent',
+        color: 'var(--text2)',
+        border: '1px solid var(--border)',
+      }
+    case 'ghost':
+      return {
+        background: 'transparent',
+        color: 'var(--text2)',
+        border: '1px solid transparent',
+      }
+    case 'danger':
+      return {
+        background: 'var(--btn-danger-bg, #dc2626)',
+        color: '#fff',
+        border: '1px solid transparent',
+        boxShadow: 'var(--shadow-card)',
+      }
+    case 'gold':
+      // §4.2 "gold outline = external asset only" governs the status token, not
+      // this generic reusable primitive — a solid filled gold background is fine.
+      return {
+        background: '#d8a93a',
+        color: '#000000',
+        border: '1px solid transparent',
+        boxShadow: 'var(--shadow-card)',
+      }
+  }
+}
+
+export function Button({
   children,
   variant = 'primary',
   size = 'md',
@@ -17,47 +81,43 @@ export const Button: React.FC<ButtonProps> = ({
   disabled,
   icon,
   iconRight,
-  className = '',
+  style,
   ...props
-}) => {
-  const baseClasses =
-    'inline-flex items-center justify-center font-medium rounded-lg transition-all duration-150 select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2'
-
-  // Law 15: Minimum 44px touch target on every device
-  const sizeClasses = {
-    sm: 'min-h-[44px] px-3 py-2 text-xs gap-1.5',
-    md: 'min-h-[44px] px-4 py-2.5 text-sm gap-2',
-    lg: 'min-h-[48px] px-6 py-3 text-base gap-2.5',
-  }[size]
-
-  const variantClasses = {
-    primary:
-      'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 focus:ring-blue-500 shadow-sm border border-transparent',
-    secondary:
-      'bg-slate-800 text-slate-100 hover:bg-slate-700 active:bg-slate-600 focus:ring-slate-500 border border-slate-700',
-    outline:
-      'bg-transparent text-slate-300 border border-slate-700 hover:bg-slate-800 hover:text-white focus:ring-slate-500',
-    ghost:
-      'bg-transparent text-slate-300 hover:bg-slate-800/60 hover:text-white focus:ring-slate-500 border border-transparent',
-    danger:
-      'bg-red-600 text-white hover:bg-red-700 active:bg-red-800 focus:ring-red-500 shadow-sm border border-transparent',
-    gold:
-      'bg-amber-500 text-slate-950 font-semibold hover:bg-amber-400 active:bg-amber-600 focus:ring-amber-400 shadow-sm border border-transparent',
-  }[variant]
+}: ButtonProps) {
+  const sizing = SIZE_STYLES[size]
+  const isDisabled = disabled || loading
 
   return (
     <button
-      disabled={disabled || loading}
-      className={`${baseClasses} ${sizeClasses} ${variantClasses} ${className}`}
+      disabled={isDisabled}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontWeight: 600,
+        fontFamily: 'inherit',
+        whiteSpace: 'nowrap',
+        userSelect: 'none',
+        borderRadius: 'var(--r-btn)',
+        transition: 'background-color 150ms, opacity 150ms',
+        cursor: isDisabled ? 'not-allowed' : 'pointer',
+        opacity: isDisabled ? 0.5 : 1,
+        minHeight: sizing.minHeight,
+        padding: sizing.padding,
+        fontSize: sizing.fontSize,
+        gap: sizing.gap,
+        ...variantStyle(variant),
+        ...style,
+      }}
       {...props}
     >
       {loading ? (
-        <IconLoader2 className="w-4 h-4 animate-spin text-current" />
+        <Icon name="refresh" size={sizing.iconSize} style={{ animation: 'spin 0.8s linear infinite' }} />
       ) : (
-        icon && <span className="inline-flex shrink-0">{icon}</span>
+        icon && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
       )}
       {children && <span>{children}</span>}
-      {!loading && iconRight && <span className="inline-flex shrink-0">{iconRight}</span>}
+      {!loading && iconRight && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{iconRight}</span>}
     </button>
   )
 }

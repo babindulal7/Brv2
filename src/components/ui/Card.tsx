@@ -1,4 +1,18 @@
 import React from 'react'
+import type { CSSProperties } from 'react'
+
+/**
+ * Rewritten from Tailwind utility classNames (`bg-slate-900 border...`) to the
+ * app's real inline-style + CSS-variable system. Tailwind's Vite plugin is
+ * registered but no CSS file imports `tailwindcss`, so every one of those
+ * classes compiled to nothing — this `Card` (used in CasesWorkspace.tsx,
+ * CrewBooking.tsx, SubRental.tsx) rendered as an unstyled `<div>`. Same
+ * prop/API shape as before, so every existing call site is unaffected.
+ *
+ * Shape mirrors `Card` in `Page.tsx` (same `cardStyle` token set), with the
+ * addition of this component's own optional `subtitle`, `footer`, and
+ * `padding` props that `Page.tsx`'s `Card` doesn't have.
+ */
 
 export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   title?: string
@@ -8,41 +22,75 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   padding?: 'none' | 'sm' | 'md' | 'lg'
 }
 
-export const Card: React.FC<CardProps> = ({
+const PADDING: Record<NonNullable<CardProps['padding']>, number> = {
+  none: 0,
+  sm: 12,
+  md: 20,
+  lg: 24,
+}
+
+export function Card({
   title,
   subtitle,
   action,
   footer,
   padding = 'md',
   children,
-  className = '',
+  style,
   ...props
-}) => {
-  const paddingClass = {
-    none: 'p-0',
-    sm: 'p-3',
-    md: 'p-5',
-    lg: 'p-6',
-  }[padding]
+}: CardProps) {
+  const rootStyle: CSSProperties = {
+    background: 'var(--card)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--r-card)',
+    boxShadow: 'var(--shadow-card)',
+    color: 'var(--text)',
+    display: 'flex',
+    flexDirection: 'column',
+    transition: 'background-color var(--dur-theme) ease, border-color var(--dur-theme) ease',
+    ...style,
+  }
 
   return (
-    <div
-      className={`bg-slate-900 border border-slate-800/80 rounded-xl shadow-sm text-slate-100 flex flex-col ${className}`}
-      {...props}
-    >
+    <div style={rootStyle} {...props}>
       {(title || subtitle || action) && (
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 'var(--sp-md)',
+            padding: '16px 20px',
+            borderBottom: '1px solid var(--border)',
+          }}
+        >
           <div>
-            {title && <h3 className="font-semibold text-base text-slate-100">{title}</h3>}
-            {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
+            {title && (
+              <h3 style={{ margin: 0, fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--text)' }}>{title}</h3>
+            )}
+            {subtitle && (
+              <p style={{ margin: '2px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{subtitle}</p>
+            )}
           </div>
-          {action && <div className="flex items-center gap-2">{action}</div>}
+          {action && <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{action}</div>}
         </div>
       )}
 
-      <div className={`flex-1 ${paddingClass}`}>{children}</div>
+      <div style={{ flex: 1, minWidth: 0, padding: PADDING[padding] }}>{children}</div>
 
-      {footer && <div className="px-5 py-3.5 bg-slate-950/40 border-t border-slate-800 rounded-b-xl">{footer}</div>}
+      {footer && (
+        <div
+          style={{
+            padding: '14px 20px',
+            background: 'var(--card2)',
+            borderTop: '1px solid var(--border)',
+            borderBottomLeftRadius: 'var(--r-card)',
+            borderBottomRightRadius: 'var(--r-card)',
+          }}
+        >
+          {footer}
+        </div>
+      )}
     </div>
   )
 }
@@ -59,31 +107,42 @@ export interface KpiCardProps {
   onClick?: () => void
 }
 
-export const KpiCard: React.FC<KpiCardProps> = ({ label, value, subtext, trend, icon, onClick }) => {
+export function KpiCard({ label, value, subtext, trend, icon, onClick }: KpiCardProps) {
   return (
     <div
       onClick={onClick}
-      className={`bg-slate-900 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-2 transition-all ${
-        onClick ? 'cursor-pointer hover:border-slate-700 hover:bg-slate-800/60' : ''
-      }`}
+      style={{
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--r-card)',
+        boxShadow: 'var(--shadow-card)',
+        padding: 16,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        cursor: onClick ? 'pointer' : undefined,
+        transition: 'background-color var(--dur-theme) ease, border-color var(--dur-theme) ease',
+      }}
     >
-      <div className="flex items-center justify-between text-slate-400">
-        <span className="text-xs font-medium uppercase tracking-wider">{label}</span>
-        {icon && <span className="text-slate-500">{icon}</span>}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--muted)' }}>
+        <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+          {label}
+        </span>
+        {icon && <span style={{ color: 'var(--muted)' }}>{icon}</span>}
       </div>
 
-      <div className="text-2xl font-bold text-slate-50 tracking-tight">{value}</div>
+      <div style={{ fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>
+        {value}
+      </div>
 
       {(subtext || trend) && (
-        <div className="flex items-center gap-2 text-xs">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)' }}>
           {trend && (
-            <span
-              className={`font-semibold ${trend.isPositive ? 'text-emerald-400' : 'text-amber-400'}`}
-            >
+            <span style={{ fontWeight: 700, color: trend.isPositive ? 'var(--st-in-fg)' : 'var(--st-progress-fg)' }}>
               {trend.value}
             </span>
           )}
-          {subtext && <span className="text-slate-400">{subtext}</span>}
+          {subtext && <span style={{ color: 'var(--muted)' }}>{subtext}</span>}
         </div>
       )}
     </div>

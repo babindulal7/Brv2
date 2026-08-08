@@ -817,11 +817,15 @@ export default function AddEquipment() {
     /*
      * §3 — quantity never appears in the name: `NP-FZ100 Battery (x4)` is wrong.
      *
-     * The multiplier has to be **delimited**. An undelimited `[×x]\d+` matches
-     * the `X3` in `Sony FX3`, the `X4` in `Komodo X4` and the `x1` in any model
-     * number, and would block half the catalogue from being named at all.
+     * The multiplier has to be **delimited AND lower-case**. A delimited-but-
+     * case-insensitive `[×x]\d+` still matches the `X4` in `Komodo X4` — a space
+     * delimits it from the brand exactly the way one delimits `Battery x4` —
+     * so an uppercase model letter and a lower-case multiplier are only
+     * distinguishable by case. §3's own example is lower-case (`x4`), so the
+     * multiplier is matched case-sensitively and `X<digit>` model designators
+     * (`Komodo X4`, `Sony FX3`) are left alone.
      */
-    if (/(^|[\s(])[×x]\s*\d+\b/i.test(name) || /\(\s*\d{1,3}\s*(pcs?|pieces|units|nos)\s*\)/i.test(name)) {
+    if (/(^|[\s(])[×x]\s*\d+\b/.test(name) || /\(\s*\d{1,3}\s*(pcs?|pieces|units|nos)\s*\)/i.test(name)) {
       e.name = 'Quantity never appears in the name — the name is the model, the count is Section 2.'
     }
 

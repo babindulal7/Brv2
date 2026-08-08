@@ -972,7 +972,9 @@ export interface DuplicateGroup {
   clients: ClientRecord[]
 }
 
-function normalizedPhone(phone: string): string {
+/** Shared with `lib/clientImport.ts` — one normalizer, so a phone never matches under
+ *  duplicate detection but misses under import matching, or the reverse. */
+export function normalizedPhone(phone: string): string {
   return phone.replace(/\D/g, '').slice(-10)
 }
 

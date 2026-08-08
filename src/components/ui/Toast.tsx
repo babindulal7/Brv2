@@ -1,5 +1,21 @@
-import React, { createContext, useContext, useState, useCallback } from 'react'
-import { IconCheck, IconX } from '@tabler/icons-react'
+import { createContext, useCallback, useContext, useState } from 'react'
+import type { ReactNode } from 'react'
+import Icon from './Icon'
+
+/**
+ * §12 (Law 12): "Toasts carry successes only." Errors are rendered inline in
+ * their own surface — see `ErrorBanner` in `StateViews.tsx`, never here.
+ *
+ * Rewritten from Tailwind utility classNames — `fixed bottom-5 right-5...` —
+ * to the app's real inline-style + CSS-variable system. Tailwind's Vite
+ * plugin is registered but no CSS file imports `tailwindcss`, so every one of
+ * those classes compiled to nothing: `ToastProvider` is mounted once, globally,
+ * in `App.tsx`, and is the app's only success-feedback channel, so this bug
+ * meant every success toast anywhere in the product rendered as an unstyled,
+ * unpositioned `<div>` sitting in normal document flow — not a floating
+ * bottom-right card, effectively invisible. Same prop/API shape as before, so
+ * every existing `useToast().showSuccessToast(...)` call site is unaffected.
+ */
 
 export interface ToastItem {
   id: string
@@ -13,7 +29,7 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null)
 
-export const useToast = () => {
+export function useToast() {
   const ctx = useContext(ToastContext)
   if (!ctx) {
     throw new Error('useToast must be used within ToastProvider')
@@ -21,48 +37,94 @@ export const useToast = () => {
   return ctx
 }
 
-export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([])
 
-  /**
-   * Law 12: Toasts only carry success events.
-   * Errors are rendered inline in their parent surface.
-   */
   const showSuccessToast = useCallback((title: string, message?: string) => {
-    const id = Math.random().toString(36).substring(2, 9)
+    const id = Math.random().toString(36).slice(2, 9)
     const item: ToastItem = message ? { id, title, message } : { id, title }
     setToasts((prev) => [...prev, item])
-
-    setTimeout(() => {
+    window.setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id))
     }, 4000)
   }, [])
 
-  const removeToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id))
-  }
+  const removeToast = (id: string) => setToasts((prev) => prev.filter((t) => t.id !== id))
 
   return (
     <ToastContext.Provider value={{ showSuccessToast }}>
       {children}
-      <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2.5 max-w-sm pointer-events-none">
+      <div
+        style={{
+          position: 'fixed',
+          bottom: 20,
+          right: 20,
+          zIndex: 70,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+          maxWidth: 360,
+          pointerEvents: 'none',
+        }}
+      >
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className="pointer-events-auto bg-slate-900 border border-emerald-500/60 shadow-xl rounded-xl p-4 flex items-start gap-3 animate-slideUp text-slate-100"
+            role="status"
+            style={{
+              pointerEvents: 'auto',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 10,
+              padding: 14,
+              borderRadius: 'var(--r-card)',
+              background: 'var(--dropdown)',
+              border: '1px solid var(--st-in-fg)',
+              boxShadow: 'var(--shadow-modal)',
+            }}
           >
-            <div className="p-1 rounded-full bg-emerald-500/20 text-emerald-400 shrink-0 mt-0.5">
-              <IconCheck className="w-4 h-4" />
-            </div>
-            <div className="flex-1">
-              <h4 className="text-sm font-semibold text-white">{toast.title}</h4>
-              {toast.message && <p className="text-xs text-slate-400 mt-0.5">{toast.message}</p>}
+            <span
+              aria-hidden
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: 999,
+                background: 'var(--st-in-bg)',
+                color: 'var(--st-in-fg)',
+                display: 'grid',
+                placeItems: 'center',
+                flexShrink: 0,
+                marginTop: 1,
+              }}
+            >
+              <Icon name="check" size={14} />
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h4 style={{ margin: 0, fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+                {toast.title}
+              </h4>
+              {toast.message && (
+                <p style={{ margin: '3px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.4 }}>
+                  {toast.message}
+                </p>
+              )}
             </div>
             <button
+              type="button"
               onClick={() => removeToast(toast.id)}
-              className="text-slate-500 hover:text-slate-300 p-1 cursor-pointer"
+              aria-label="Dismiss"
+              style={{
+                border: 'none',
+                background: 'transparent',
+                color: 'var(--muted)',
+                cursor: 'pointer',
+                padding: 3,
+                flexShrink: 0,
+                display: 'grid',
+                placeItems: 'center',
+              }}
             >
-              <IconX className="w-4 h-4" />
+              <Icon name="close" size={14} />
             </button>
           </div>
         ))}

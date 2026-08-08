@@ -58,10 +58,12 @@ const Clients           = lazy(() => import('./modules/clients/Clients'))
 const AddClient         = lazy(() => import('./modules/clients/AddClient'))
 const ClientDetail      = lazy(() => import('./modules/clients/ClientDetail'))
 const DuplicateCenter   = lazy(() => import('./modules/clients/DuplicateCenter'))
+const ImportCenter      = lazy(() => import('./modules/clients/ImportCenter'))
 const BroadcastCenter   = lazy(() => import('./modules/notifications/BroadcastCenter'))
 const CasesWorkspace    = lazy(() => import('./modules/operations/CasesWorkspace').then(m => ({ default: m.CasesWorkspace })))
 const CrewBooking       = lazy(() => import('./modules/operations/CrewBooking').then(m => ({ default: m.CrewBooking })))
 const SubRental         = lazy(() => import('./modules/operations/SubRental').then(m => ({ default: m.SubRental })))
+const WallDisplay       = lazy(() => import('./modules/wall/WallDisplay'))
 
 /**
  * Route table follows the ID registry in Navigation & Platform Shells v2.0 §7.
@@ -76,6 +78,20 @@ export default function App() {
       <CommandPalette />
       <Routes>
         <Route path="/login" element={<Login />} />
+        {/*
+          DEVICES.md §7 build order item 6 — "no auth, no money." A kiosk URL
+          for a TV near the packing bench, deliberately mounted outside <Shell>
+          so it never redirects to /login and carries no sidebar, header or
+          Scanner FAB — the app's own nav never links here.
+        */}
+        <Route
+          path="/wall"
+          element={
+            <Suspense fallback={null}>
+              <WallDisplay />
+            </Suspense>
+          }
+        />
         <Route path="/" element={<Navigate to={user ? "/today" : "/login"} replace />} />
 
         {/*
@@ -412,6 +428,15 @@ export default function App() {
         />
 
         <Route
+          path="/clients/import"
+          element={
+            <Shell crumbs={[{ label: 'Clients' }, { label: 'Import Clients' }]}>
+              <ImportCenter />
+            </Shell>
+          }
+        />
+
+        <Route
           path="/clients/duplicates"
           element={
             <Shell crumbs={[{ label: 'Clients' }, { label: 'Duplicate & Merge Center' }]}>
@@ -583,6 +608,7 @@ const BUILT = new Set([
   '/clients/new',
   '/clients/CL-2026-0001',
   '/clients/duplicates',
+  '/clients/import',
   '/reports',
   '/admin',
   '/finance/documents',

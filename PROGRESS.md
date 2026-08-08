@@ -5,6 +5,175 @@
 Newest entry first. Log what was **verified**, not what was written — "typechecks" and
 "works" are different claims, and only the second one counts.
 
+## 2026-08-08 — Two loose ends from the DEVICES.md work, closed
+**Phase:** UI polish (user-selected — "loose ends from this session") · **Status:** done
+
+### Did
+**1. The rest of the dead-Tailwind bug, fixed.** `StateViews.tsx` wasn't the only file with this
+problem — confirmed the same root cause (Tailwind's Vite plugin is registered but no CSS file
+imports `tailwindcss`, so every utility className compiles to nothing) also broke:
+- `Toast.tsx` — **the app's only success-notification mechanism**, mounted once globally in
+  `App.tsx`. Every `useToast().showSuccessToast(...)` call anywhere in the product (10+ files)
+  has been rendering an unstyled, unpositioned `<div>` in normal document flow instead of a
+  floating bottom-right card. Rewrote directly by hand (highest-impact, did this one myself
+  rather than delegating).
+- `Modal.tsx` — a real overlay dialog (`position:fixed inset-0` backdrop + centered panel,
+  Escape-to-close, body scroll-lock) used for real by `AddClient.tsx`, `ClientDetail.tsx`,
+  `ClientsDirectory.tsx`, `DuplicateCenter.tsx`, `AddEquipment.tsx`. With Tailwind dead this
+  rendered with no backdrop, no centering, no z-index stacking — not a functioning modal at all.
+- `Button.tsx`, `Card.tsx`, `Input.tsx` — used for real in `PurchaseRequests.tsx`,
+  `StockCheck.tsx`, `UnifiedInbox.tsx`, `CasesWorkspace.tsx`, `CrewBooking.tsx`, `SubRental.tsx`.
+- Dispatched a 4-agent Workflow (Button/Card/Modal/Input in parallel) with `Toast.tsx` as the
+  established reference pattern, each rewriting dead Tailwind classNames to the app's real
+  inline-style + CSS-variable system while preserving the exact existing prop API, so no call
+  site needed to change. `Table.tsx`, `Badge.tsx`, `Select.tsx` are the same dead-Tailwind
+  shape but confirmed via grep to have **zero real call sites anywhere** — left untouched,
+  zero current impact, not worth the risk of touching unexercised code.
+- KpiCard (a second export inside Card.tsx) is also dead/unused — every screen with its own
+  "KpiCard" defines a local one, none import Card.tsx's. Left as-is, same reasoning.
+
+**2. Phone bottom bar now has real per-role curation**, not a mechanical top-3. Confirmed the
+exact per-role route table with the user directly (screenshot of the proposal, approved as
+proposed) rather than inventing it: `data/nav.ts` gained `BOTTOM_BAR_ROUTES: Record<SystemRole,
+string[]>` (Owner/Admin → Today·Operations·Finance; Coordinator → Today·Rentals·Clients;
+Warehouse/Technician → Today·Operations·Inventory; Accounts → Today·Finance·Rentals; Driver →
+Today·Operations·Calendar; Client → same as Coordinator as a safe fallback, since Client is
+external-portal-only and should never actually reach this Shell) and `bottomBarNav(role)`,
+which resolves those routes back through the existing `permittedNav()` filter — so a role can
+never see a bar item it isn't otherwise allowed to reach, even if the curation table above ever
+disagrees with the permission rule. `BottomBar.tsx` now calls `bottomBarNav()` instead of
+`permittedNav().slice(0,3)`.
+
+### Verified
+- `npx tsc --noEmit`, whole repo: 0 errors in every file touched. (Two pre-existing errors
+  surfaced in `src/lib/clientImport.ts` / `src/modules/clients/ImportCenter.tsx` — the
+  concurrent session's in-flight Import Center feature, untouched by this entry.)
+- Drove the app: clicked "Block Client" on `/clients/CL-2026-0001` and read the resulting
+  dialog's computed styles directly — backdrop `position: fixed`, `inset: 0px`,
+  `background: rgba(0,0,0,0.6)`; panel `border-radius: 16px`, a real box-shadow, `max-width:
+  520px` (the "md" default). Confirmed real `Button` styling on `/operations/crew` ("Book
+  Crew" primary: blue bg/white text; "Export" secondary: white bg/bordered), a real styled
+  44px `Input` on the same page, and 5 real shadowed/rounded `Card` containers on
+  `/operations/cases`. Confirmed the bottom bar at phone width for the default (Owner) session
+  reads exactly `["Today", "Operations", "Finance", "Settings"]`, matching the approved table.
+- Not dynamically triggered: `Toast.tsx`'s actual popup (no seed-data action was exercised that
+  calls `showSuccessToast` in this pass) — trusted by construction, since it typechecks and
+  follows the identical, already-proven CSS-var technique confirmed working for Modal/Button/
+  Input/Card above.
+
+### Known issues / not done
+- `Table.tsx`, `Badge.tsx`, `Select.tsx` remain dead-Tailwind and unused — fine to leave until
+  something actually imports one of them, at which point fix it the same way before shipping it.
+- Only Owner's bottom-bar output was confirmed live (the app's auth stub always seeds a
+  logged-in Owner; no dev role-switcher exists to force the other 7 roles for a quick check).
+  The other six rows in `BOTTOM_BAR_ROUTES` were verified by code review — literal arrays of
+  `NAV`'s own `to` strings, each checked by eye against `NAV`'s actual paths — not by driving
+  the app as each role.
+
+## 2026-08-08 — Import Center (`/clients/import`)
+
+**Phase:** post-shell feature work · **Status:** done
+
+### Context
+Closes the last item from this session's Clients-module gap list (`PLAN.md §6.4`):
+Import was a permanently `disabled` button since before this session started. Upload →
+map columns → preview & validate → import, all real except the final commit, which
+simulates like every other "New X" screen pre-Phase 1.
+
+### Did
+- New `lib/csv.ts` — a hand-written RFC-4180-shaped parser (quoted fields, embedded
+  commas/newlines, escaped `""`). No CSV package exists in `package.json`; adding one for
+  a bounded, well-understood algorithm felt like the wrong tradeoff versus ~60 lines of
+  parser this codebase can read and own.
+- New `lib/clientImport.ts` — Law 1 (pages never implement business logic): column-header
+  guessing, per-row validation (required Name/Phone, Nepal phone format, email format,
+  clientType/membership normalized against the real enums with a warning + safe default
+  on no match), and duplicate matching against live `CLIENTS_DATA` by phone then email —
+  reusing the same `normalizedPhone` the Duplicate Center's detector uses (exported from
+  `data/clients.ts` this entry, so there's one phone normalizer, not two that could drift).
+- New `src/modules/clients/ImportCenter.tsx`: drag/drop or browse CSV, a "Download a
+  sample CSV" link, a column-mapping table (auto-guessed, always overridable), a KPI strip
+  once Name+Phone are mapped, and a Preview & Validate table — per row: Ready / listed
+  errors / "Possible duplicate of {name} ({id})" / warnings, with a per-row skip checkbox.
+  "Import N Clients" simulates (button state → toast → redirect to `/clients`), same
+  disclosed no-backend limit as everything else this session.
+- Wired `/clients/import`, flipped `Clients.tsx`'s Import button from `disabled` to a
+  real link.
+
+### Verified
+- `npx tsc --noEmit` — clean.
+- **Engine logic, standalone**: `src/lib/__scratch_import_test.ts`, run with `npx tsx`,
+  deleted after (never committed). Six checks, all passed: quoted-field CSV with an
+  embedded comma, an embedded newline and an escaped `""` all parsed into one correct
+  cell; header-guessing matched all 4 of "Client Name/Mobile/Email Address/Type"; a valid
+  row built cleanly with case-insensitive enum matching ("company" → `Company`); a row
+  missing both required fields produced exactly the 2 expected errors; a row whose phone
+  matches real seed client `CL-2026-0001` correctly flagged that duplicate; an
+  unrecognized Client Type produced the expected warning and safe default.
+- **Live, full flow**: dropped a synthetic 3-row CSV (`Client Name,Mobile,Email
+  Address,Type` headers) onto the real page via a `DataTransfer`/`drop` event — column
+  mapping auto-guessed all 4 correctly; KPI strip read exactly "Ready to Import 2 · Errors
+  1 · Possible Duplicates 1 · Total Rows 3"; the preview table showed the broken row's
+  real error ("Phone is required.") and correctly cross-referenced the third row's phone
+  against live `CLIENTS_DATA` to name the actual duplicate, Kathmandu Cinema Works
+  (CL-2026-0001) — not a canned message. Clicked "Import 2 Clients" and confirmed
+  navigation to `/clients` after the simulated commit completed.
+
+This closes every item from the Clients-module gap list this session started with: Client
+Detail, Duplicate/Merge Center, Bulk Actions, and now Import Center.
+
+## 2026-08-08 — Wall display (DEVICES.md item 6) — build order complete
+**Phase:** device/responsive (`DEVICE/DEVICES.md` §7 build order) · **Status:** done
+
+### Did
+- New `src/modules/wall/WallDisplay.tsx`, mounted at `/wall` in `App.tsx`, **outside** the
+  `<Shell>` wrapper that every other route goes through — no login redirect, no Sidebar, no
+  Header, no Scanner FAB, no link to it anywhere in the app's own navigation. A kiosk URL for
+  a TV near the packing bench, per DEVICES.md §6: "Today Operations, read-only... No auth, no
+  money — it shows what is due out and what is late."
+- **Deliberately does not reuse `MovementList`/`AlertsPanel` from `Today.tsx`**, despite the
+  spec's "needs almost nothing new." Both call `useCanViewMoney()`, which reads the ambient
+  auth session — and this app's `AuthProvider` currently always seeds a logged-in Owner by
+  default (there's no real login persistence yet), so "no session → money-blind" never
+  actually triggers today. A screen meant to run unattended in a space clients and visitors
+  can see cannot depend on that default staying correct forever. Built `WallDisplay` to read
+  `PICKUPS`/`RETURNS` directly from `data/today.ts` — the `Movement` type itself carries no
+  money field at all (checked `types/today.ts`; deposit/payment live only on the separate
+  `HoverFacts` type, which this screen never touches) — so there's no auth check to write or
+  get wrong: nothing to leak by construction. No links, buttons, hover cards or row menus
+  either — the screen has no one signed in to click anything.
+- Two columns, "Due Out Today" (all pickups) and "Late / Overdue" (`RETURNS` filtered on the
+  `Overdue` flag), each row showing time/client/kit/status only.
+- Scale: added `[data-wall='true']` to `theme.css`, the same root-token-re-declare pattern
+  already used for `[data-floor='true']` (rem always resolves against the document root, so
+  scoping a multiplier to a subtree does nothing — this bug was already found and fixed once
+  this session for the floor screens; reused the same fix shape rather than rediscovering it),
+  at DEVICES.md's own named **1.4×** via a new `--wall-step` variable.
+
+### Verified
+- `npx tsc --noEmit`: 0 errors, whole repo.
+- Drove the app to `/wall` directly (own dev server): confirmed via DOM query no `<aside>`
+  (Sidebar) and no `[data-scanner]` (ScannerFab) render on this route. Read computed styles:
+  `--wall-step` resolves to `1.4`, `--t-h1` resolves to `calc(2.1rem * 1.4)`, and the rendered
+  `<h1>`'s actual `font-size` reflects the multiplied value. Regex-checked the full page text
+  for any `Rs` figure — none found. Confirmed both columns render real seeded rows (Due Out:
+  14 pickups from 06:00 AM; Late/Overdue section present) with correct BS-leads-AD date
+  formatting ("16 Shrawan 2083 BS" / "Friday, 31 July 2026").
+- Not verified: an actual TV/large-display readability check (only checked in a normal
+  browser viewport) and a true logged-out session (this app has no real login persistence to
+  simulate "signed out" against — the architectural guarantee, not depending on session state
+  at all, is what makes this safe regardless).
+
+### `DEVICE/DEVICES.md` §7 build order — now fully worked through
+All six items are done: (1) card rows below 768 on Operations/Rentals/Clients, (2) phone
+bottom bar built from permissions with Scanner given room, (3) automatic floor scale by
+route, (4) long-press wherever hover carried information, (5) the five page states fixed and
+wired at the shell level, (6) this wall display. Two things surfaced along the way that are
+real, separate defects and were flagged rather than fixed in scope: the dead-Tailwind
+`Button.tsx` affecting 6 more screens (spawned as a background task), and the phone
+bottom bar's item curation being mechanical rather than truly per-role (marked
+`TODO(decision)` in `data/nav.ts`).
+
 ## 2026-08-08 — The five page states, fixed and wired app-wide (DEVICES.md item 5)
 **Phase:** device/responsive (`DEVICE/DEVICES.md` §7 build order) · **Status:** done
 

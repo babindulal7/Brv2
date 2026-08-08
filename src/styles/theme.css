@@ -382,6 +382,23 @@ html {
   font-size: var(--t-body);
 }
 
+/* DEVICES.md §7 build order item 6 — the wall display, read across a room
+   rather than held in a hand. Same re-declare-at-the-root trick as
+   [data-floor='true'] above (rem always resolves against the document root,
+   not a scoped ancestor), at DEVICES.md's own named 1.4x. */
+[data-wall='true'] {
+  --wall-step: 1.4;
+  --t-h1: calc(2.1rem * var(--wall-step));
+  --t-h2: calc(1.45rem * var(--wall-step));
+  --t-h3: calc(1.2rem * var(--wall-step));
+  --t-kpi: calc(1.6rem * var(--wall-step));
+  --t-body: calc(1rem * var(--wall-step));
+  --t-ui: calc(0.93rem * var(--wall-step));
+  --t-meta: calc(0.85rem * var(--wall-step));
+  --t-th: calc(0.75rem * var(--wall-step));
+  font-size: var(--t-body);
+}
+
 body {
   margin: 0;
   background: var(--app);

@@ -1,18 +1,38 @@
-import React, { useEffect } from 'react'
-import { IconX } from '@tabler/icons-react'
+import { useEffect } from 'react'
+import type { ReactNode } from 'react'
+import Icon from './Icon'
+
+/**
+ * Rewritten from Tailwind utility classNames — `fixed inset-0 z-50 flex...` —
+ * to the app's real inline-style + CSS-variable system. Tailwind's Vite
+ * plugin is registered but no CSS file imports `tailwindcss`, so every one of
+ * those classes compiled to nothing: this modal rendered as an unstyled,
+ * non-overlaying blob sitting in normal document flow, not a real dialog.
+ * Same prop API as before, so every existing call site (AddClient,
+ * ClientDetail, ClientsDirectory, DuplicateCenter, AddEquipment, ...) is
+ * unaffected.
+ */
 
 export interface ModalProps {
   isOpen: boolean
   onClose: () => void
   title?: string
   subtitle?: string
-  children: React.ReactNode
-  footer?: React.ReactNode
+  children: ReactNode
+  footer?: ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
   sheet?: boolean
 }
 
-export const Modal: React.FC<ModalProps> = ({
+const SIZE_MAX_WIDTH: Record<NonNullable<ModalProps['size']>, number> = {
+  sm: 420,
+  md: 520,
+  lg: 720,
+  xl: 960,
+  full: 1100,
+}
+
+export function Modal({
   isOpen,
   onClose,
   title,
@@ -21,7 +41,7 @@ export const Modal: React.FC<ModalProps> = ({
   footer,
   size = 'md',
   sheet = false,
-}) => {
+}: ModalProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -40,91 +60,119 @@ export const Modal: React.FC<ModalProps> = ({
 
   if (!isOpen) return null
 
-  const sizeClasses = {
-    sm: 'max-w-md',
-    md: 'max-w-lg',
-    lg: 'max-w-2xl',
-    xl: 'max-w-4xl',
-    full: 'max-w-6xl',
-  }[size]
-
-  if (sheet) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
-        <div
-          className="fixed inset-0"
-          onClick={onClose}
-          aria-hidden="true"
-        />
-
-        <div
-          className={`relative z-10 w-full ${sizeClasses} bg-slate-900 border-t sm:border border-slate-800 rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-slideUp`}
-          role="dialog"
-          aria-modal="true"
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
-            <div>
-              {title && <h2 className="text-lg font-semibold text-white">{title}</h2>}
-              {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-              aria-label="Close"
-            >
-              <IconX className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto p-5">{children}</div>
-
-          {/* Footer */}
-          {footer && (
-            <div className="px-5 py-4 bg-slate-950/60 border-t border-slate-800 flex items-center justify-end gap-3">
-              {footer}
-            </div>
-          )}
-        </div>
-      </div>
-    )
-  }
+  const maxWidth = SIZE_MAX_WIDTH[size]
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 60,
+        display: 'flex',
+        alignItems: sheet ? 'flex-end' : 'center',
+        justifyContent: 'center',
+        padding: sheet ? 0 : 16,
+        background: 'rgba(0, 0, 0, 0.6)',
+      }}
+    >
       <div
-        className="fixed inset-0"
+        style={{ position: 'fixed', inset: 0 }}
         onClick={onClose}
         aria-hidden="true"
       />
 
       <div
-        className={`relative z-10 w-full ${sizeClasses} bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden`}
         role="dialog"
         aria-modal="true"
+        style={{
+          position: 'relative',
+          zIndex: 1,
+          width: '100%',
+          maxWidth,
+          maxHeight: sheet ? '90vh' : '85vh',
+          display: 'flex',
+          flexDirection: 'column',
+          background: 'var(--card)',
+          border: '1px solid var(--border)',
+          borderRadius: sheet ? '16px 16px 0 0' : 16,
+          boxShadow: 'var(--shadow-modal)',
+          overflow: 'hidden',
+        }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
-          <div>
-            {title && <h2 className="text-lg font-semibold text-white">{title}</h2>}
-            {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: 'var(--sp-md)',
+            padding: '16px 20px',
+            borderBottom: '1px solid var(--border)',
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            {title && (
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: 'var(--t-h3)',
+                  fontWeight: 700,
+                  color: 'var(--text)',
+                }}
+              >
+                {title}
+              </h2>
+            )}
+            {subtitle && (
+              <p
+                style={{
+                  margin: '4px 0 0',
+                  fontSize: 'var(--t-meta)',
+                  color: 'var(--muted)',
+                }}
+              >
+                {subtitle}
+              </p>
+            )}
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
             aria-label="Close"
+            style={{
+              border: 'none',
+              background: 'transparent',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+              padding: 6,
+              borderRadius: 'var(--r-btn)',
+              display: 'grid',
+              placeItems: 'center',
+              flexShrink: 0,
+            }}
           >
-            <IconX className="w-5 h-5" />
+            <Icon name="close" size={20} />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">{children}</div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>{children}</div>
 
         {/* Footer */}
         {footer && (
-          <div className="px-6 py-4 bg-slate-950/60 border-t border-slate-800 flex items-center justify-end gap-3">
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: 12,
+              padding: '16px 20px',
+              borderTop: '1px solid var(--border)',
+              background: 'var(--card2)',
+              flexShrink: 0,
+            }}
+          >
             {footer}
           </div>
         )}

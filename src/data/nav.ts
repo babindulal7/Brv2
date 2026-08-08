@@ -86,10 +86,9 @@ export const SETTINGS_NAV: NavSection = { label: 'Settings', icon: 'settings', t
  * The single filter both the Sidebar and the phone bottom bar read, so the two
  * surfaces cannot drift into showing a different set for the same role — the
  * exact failure mode §0 exists to prevent. Warehouse's exclusion is the only
- * rule that exists today; a role gaining its own curated order beyond simple
- * exclusion is `TODO(decision)` — nothing in Foundation or `Branch
- * Management.md` specifies one, and inventing it here would be exactly the
- * kind of unbacked product decision `CLAUDE.md` rules out.
+ * hard rule (money-adjacent sections stay absent, not disabled); everything
+ * else stays visible in `NAV` order and `bottomBarNav()` below picks a
+ * role-appropriate subset of it for the phone bar.
  */
 export function permittedNav(role: SystemRole | undefined): NavSection[] {
   if (!role) return []
@@ -97,6 +96,39 @@ export function permittedNav(role: SystemRole | undefined): NavSection[] {
     return NAV.filter((s) => !['/finance', '/reports', '/admin'].includes(s.to))
   }
   return NAV
+}
+
+/**
+ * Phone bottom bar item order per role — DEVICES.md §4: "the phone bottom bar
+ * is built from permissions... so a Driver's bar is not a Coordinator's."
+ * Curated with the user directly on 8 Aug 2026 (three routes per role, from
+ * DEVICES.md §3's device-per-role table): floor roles get Operations +
+ * Inventory over Rentals/Clients, money-facing roles get Finance, Driver gets
+ * Calendar for the day's schedule instead of a client-facing surface.
+ * `Settings` is added separately in `BottomBar.tsx` — it sits outside `NAV`
+ * by design (§5.1) and stays reachable for every role.
+ */
+export const BOTTOM_BAR_ROUTES: Record<SystemRole, string[]> = {
+  Owner: ['/today', '/operations', '/finance'],
+  Admin: ['/today', '/operations', '/finance'],
+  Coordinator: ['/today', '/rentals', '/clients'],
+  Warehouse: ['/today', '/operations', '/inventory'],
+  Technician: ['/today', '/operations', '/inventory'],
+  Accounts: ['/today', '/finance', '/rentals'],
+  Driver: ['/today', '/operations', '/calendar'],
+  // Client is external-portal-only (never a staff surface — lib/rbac.ts) and
+  // should never actually reach this Shell; kept only as a safe fallback.
+  Client: ['/today', '/rentals', '/clients'],
+}
+
+/** Resolves a role's curated routes against `permittedNav()`, so a route a role can't see (e.g. Warehouse + Finance) can never appear even if the table above is wrong. */
+export function bottomBarNav(role: SystemRole | undefined): NavSection[] {
+  if (!role) return []
+  const routes = BOTTOM_BAR_ROUTES[role] ?? BOTTOM_BAR_ROUTES.Coordinator
+  const permitted = permittedNav(role)
+  return routes
+    .map((r) => permitted.find((s) => s.to === r))
+    .filter((s): s is NavSection => s !== undefined)
 }
 
 /**
