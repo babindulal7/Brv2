@@ -551,15 +551,17 @@ export default function Pulse() {
   const labels = figures.buckets.map((b) => b.label)
   const pairs = compare ? Math.min(figures.buckets.length, compare.buckets.length) : 0
 
+  /* `drawn` is false whenever an EmptyState stands in for the chart, so the
+     axis caption below cannot describe an axis that is not on screen. */
+  let drawn = true
+  const blank = (title: string, description: string) => {
+    drawn = false
+    return <EmptyState icon={<Icon name="chart" size={26} />} title={title} description={description} />
+  }
+
   const chart = (() => {
     if (figures.buckets.length < 2) {
-      return (
-        <EmptyState
-          icon={<Icon name="chart" size={26} />}
-          title="A single day does not make a trend"
-          description="Widen the period to at least two days to see this chart."
-        />
-      )
+      return blank('A single day does not make a trend', 'Widen the period to at least two days to see this chart.')
     }
 
     if (activeView === 'profit') {
@@ -568,7 +570,7 @@ export default function Pulse() {
         values: [toRupees(b.revenue), toRupees(b.expenses), toRupees(b.profit)],
       }))
       const max = Math.max(...groups.flatMap((g) => g.values))
-      if (max <= 0) return <EmptyState icon={<Icon name="chart" size={26} />} title="Nothing to chart" description="No movement in this period." />
+      if (max <= 0) return blank('Nothing to chart', 'No movement in this period.')
       return (
         <GroupedBars
           groups={groups}
@@ -585,7 +587,7 @@ export default function Pulse() {
         values: [toRupees(b.cashIn), toRupees(b.cashOut)],
       }))
       const max = Math.max(...groups.flatMap((g) => g.values))
-      if (max <= 0) return <EmptyState icon={<Icon name="chart" size={26} />} title="Nothing to chart" description="No cash moved in this period." />
+      if (max <= 0) return blank('Nothing to chart', 'No cash moved in this period.')
       return (
         <GroupedBars
           groups={groups}
@@ -611,7 +613,7 @@ export default function Pulse() {
         values: [current[i] ?? 0, cmp[i] ?? 0],
       }))
       const max = Math.max(...groups.flatMap((g) => g.values))
-      if (max <= 0) return <EmptyState icon={<Icon name="chart" size={26} />} title="Nothing to chart" description="No movement in either period." />
+      if (max <= 0) return blank('Nothing to chart', 'No movement in either period.')
       return (
         <GroupedBars
           groups={groups}
@@ -623,7 +625,7 @@ export default function Pulse() {
     }
 
     const max = Math.max(...current)
-    if (max <= 0) return <EmptyState icon={<Icon name="chart" size={26} />} title="Nothing to chart" description="No movement in this period." />
+    if (max <= 0) return blank('Nothing to chart', 'No movement in this period.')
     return (
       <LineChart
         points={current}
@@ -800,11 +802,13 @@ export default function Pulse() {
           >
             {chart}
 
-            <p style={{ margin: '9px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-              {activeView === 'utilization'
-                ? 'Axis in per cent of the rentable fleet — hover a mark for the exact figure.'
-                : 'Axis in thousands of rupees — hover a mark for the exact figure, which is the one lib/money prints.'}
-            </p>
+            {drawn && (
+              <p style={{ margin: '9px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                {activeView === 'utilization'
+                  ? 'Axis in per cent of the rentable fleet — hover a mark for the exact figure.'
+                  : 'Axis in thousands of rupees — hover a mark for the exact figure, which is the one lib/money prints.'}
+              </p>
+            )}
 
             {/* §9 — the comparison always states its own range. */}
             {compareOn && (

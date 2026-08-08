@@ -154,11 +154,9 @@ export default function ClientDetail() {
                 Edit Client
               </Button>
             </Unavailable>
-            <Unavailable reason="The duplicate/merge workflow is not built yet — this session added only a phone-match warning on the Add Client form">
-              <Button icon="users" disabled>
-                Merge Duplicate
-              </Button>
-            </Unavailable>
+            <Button icon="users" onClick={() => navigate('/clients/duplicates')}>
+              Merge Duplicate
+            </Button>
             {client.isBlocked ? (
               <Button icon="checklist" onClick={handleToggleBlock}>
                 Unblock Client

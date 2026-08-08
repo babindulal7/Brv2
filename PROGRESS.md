@@ -5,6 +5,157 @@
 Newest entry first. Log what was **verified**, not what was written — "typechecks" and
 "works" are different claims, and only the second one counts.
 
+## 2026-08-08 — Long-press for hover-only info, gated on `!hasHover` (DEVICES.md item 4)
+**Phase:** device/responsive (`DEVICE/DEVICES.md` §7 build order) · **Status:** done, one
+verification gap noted below
+
+### Did
+- New `src/components/ui/Unavailable.tsx` — the shared "disabled control, greyed out but
+  says why" pattern. On a hover-capable device it's unchanged: a native `title` tooltip. On
+  `useCapability().hasHover === false` it shows the same reason text in a small popover after
+  a 500ms long-press (`onTouchStart`/`onTouchEnd` timer), auto-dismissed after ~2.6s — because
+  a `title` attribute never fires on touch at all, so a Warehouse tablet user tapping a
+  greyed-out button previously got zero explanation for why.
+- This exact "wrap disabled children, explain why" shape had been copy-pasted into **14**
+  separate files (a §11 drift in its own right, quite apart from the touch problem). Migrated
+  the 11 whose local version matched or nearly matched the shared shape — deleted each local
+  `function Unavailable`, imported the shared one, renamed `why=` to `reason=` at call sites
+  in the two files that used that name, and cleaned up now-unused `ReactNode`/`CSSProperties`
+  imports left behind (`noUnusedLocals` is on, so those are real compile errors, not lint
+  nits): `ClientDetail.tsx`, `Clients.tsx`, `ClientsDirectory.tsx`, `Membership.tsx`,
+  `Bundles.tsx`, `Maintenance.tsx`, `Inventory.tsx`, `Warehouses.tsx`, `RentalsList.tsx`,
+  `Documents.tsx`, `NumberingSequences.tsx` (this last one had a `block` display-mode prop
+  the shared component doesn't carry — replaced its two call sites, not the one originally
+  assumed, with an explicit `style={{ display: 'grid', minWidth: 0 }}` override instead).
+- **Deliberately left alone:** `Calendar.tsx`'s `Unavailable` (renders an action button, not a
+  children-wrapper — a different component sharing a name, not a duplicate); `BusinessHours.tsx`
+  and `CommunicationSettings.tsx` (brand-new files another concurrent session is actively
+  building — a "not built yet" badge with no `children` prop, also a different shape); the
+  remaining ~560 scattered raw `title=` attributes elsewhere in the app that aren't this
+  specific pattern — a much larger, lower-value tail not attempted here.
+
+### Verified
+- `npx tsc --noEmit` filtered to `Unavailable.tsx` and all 11 migrated files: 0 errors.
+- Drove the app at desktop width: every migrated screen's disabled controls still carry the
+  correct `title` attribute with the exact reason text (checked via `document.querySelectorAll
+  ('[title]')` on the Clients directory — 14 matching spans, each `aria-disabled="true"` with
+  its reason as both `title` and `aria-label`) — the hover path is confirmed unchanged.
+- **Not dynamically confirmed: the long-press timer path itself.** Emulated a touch/coarse
+  device (`resize_window` mobile preset — confirmed `hasHover` false and `title` correctly
+  omitted in that mode) and tried to trigger the 500ms long-press via synthetic `TouchEvent`/
+  `Touch` objects and via `.focus()`; the popover never appeared. Isolated this as an
+  environment limitation, not a confirmed defect: native `addEventListener('touchstart', …)`
+  on a throwaway element fires from the same synthetic dispatch, plain `setTimeout` fires
+  correctly in this backgrounded tab, and React's own synthetic `onClick` does fire from a
+  dispatched `MouseEvent` on a real button in this app — but React's synthetic touch/focus
+  handling specifically did not visibly respond to script-dispatched (untrusted) events here,
+  and the `computer` tool's real-input path (which the mobile preset's own mouse-to-touch
+  translation would make reliable) timed out because this session's Browser pane is not
+  visually composited (the same limitation documented earlier this session for screenshots).
+  The component's logic was reviewed by hand and matches a standard, low-risk React long-press
+  pattern (`setTimeout` in an event handler calling `setState`); it should be spot-checked on
+  a real touch device or with React DevTools before being trusted further.
+
+### Known issues / not done
+- Remaining `DEVICES.md` build-order items: (5) the five page states per page type, (6) the
+  wall display.
+- The long-press behavior above needs a real-device check per the verification gap noted.
+- ~560 other raw `title=` attributes across the app were not touched — most are decorative or
+  low-value, but some (truncated-text-shows-full-value patterns, icon-only button context) are
+  genuinely information-bearing and would benefit from the same treatment eventually.
+
+## 2026-08-08 — Bulk Actions on the Clients directory
+
+**Phase:** post-shell feature work · **Status:** done
+
+### Context
+Last confirmed gap from this session's audit reconciliation (`PLAN.md §6.4`):
+`ClientsDirectory.tsx` already had row-selection checkboxes and a "N selected" counter
+wired to nothing. Two real actions now hang off it, both reusing patterns already proven
+elsewhere this session rather than inventing new ones.
+
+### Did
+- `Clients.tsx`: `useState<ClientRecord[]>` regained its setter (removed earlier this
+  session when the old Add Client modal went away) plus a `bulkBlock(ids, reason)`
+  function, passed down as `onBulkBlock`.
+- `ClientsDirectory.tsx`: **Export Selected** — a CSV of just the checked rows, same
+  quoting rule (`csvCell`) as the existing directory-wide export, money columns omitted
+  for a money-blind role exactly as the full export already does. **Block Selected** — a
+  confirm modal listing every selected client by name, a required ≥10-character reason
+  (same threshold as `ClientDetail.tsx`'s single-record Block flow), applies `isBlocked`
+  + the reason to all of them at once, clears the selection on success.
+  No "Bulk Delete" — Law 3 forbids it; Block is the correct terminal-ish action here, same
+  reasoning as everywhere else clients get closed rather than removed.
+
+### Verified
+- `npx tsc --noEmit` — clean.
+- Selected 2 rows, clicked Block Selected: modal listed both names, confirm button stayed
+  disabled below 10 characters and enabled above it. Confirmed: Blocked KPI went 3 → 5,
+  Total Clients stayed 26 (nothing removed), both rows now show the Blocked badge and
+  their row action changed to "Review Block" — the same derived logic every other blocked
+  client already uses, not a special case for the bulk path. Selection cleared
+  automatically after.
+- Selected 2 different (unblocked) rows, clicked Export Selected: intercepted the
+  anchor's `.click()` to confirm it built a real blob URL and requested
+  `selected-clients.csv` by name, rather than asserting from reading the code.
+- No new console errors from either action (checked against the running session's
+  console log, which is cumulative — confirmed the errors present were the same
+  pre-existing ones already seen earlier this session, not new ones this change
+  introduced).
+
+
+## 2026-08-08 — Duplicate & Merge Center (`/clients/duplicates`)
+
+**Phase:** post-shell feature work · **Status:** done
+
+### Context
+Closes the last two dangling "not built yet" reasons this session had itself written:
+`ClientsDirectory.tsx`'s Import button and `ClientDetail.tsx`'s "Merge Duplicate" action
+both pointed at this. Also directly extends the Add Client page's single-field phone-match
+check into a real, standalone detector over the whole directory.
+
+### Did
+- `data/clients.ts`: `findDuplicateGroups(clients)` — matches on exact phone (last 10
+  digits), email, PAN, or normalized name; unions matches by *any* shared field via
+  union-find so a pair matching on two fields surfaces once with both reasons, not twice.
+  Excludes records with `mergedIntoId` set. Added `mergedIntoId?`/`mergedAt?` to
+  `ClientRecord` — Law 3 applied to clients: merging closes a record, it does not delete
+  one.
+- New `src/modules/clients/DuplicateCenter.tsx`: one card per duplicate group, records
+  shown side by side with a radio pick for which one survives, "Merge into selected"
+  (confirm modal, same pattern as `ClientDetail`'s Block flow) or "Not a Duplicate"
+  (session-local dismiss). Merge combines the closed records' rental counts, lifetime
+  spend, deposits, outstanding and active-booking list additively into the survivor —
+  this is local-state-only, same disclosed no-backend limitation as everything else this
+  session, not persisted past a reload.
+- Wired `/clients/duplicates` (static sibling, declared before `/clients/:id`). Entry
+  points: a "Find Duplicates" button on `Clients.tsx`, and `ClientDetail.tsx`'s "Merge
+  Duplicate" button flipped from permanently `disabled` to a real link. Corrected the
+  Import button's now-stale reason text (it used to claim no merge step exists at all).
+
+### Verified
+- `npx tsc --noEmit` — clean.
+- **Detection logic**, standalone: wrote a throwaway script at
+  `src/data/__scratch_duplicate_test.ts`, ran it with `npx tsx`, deleted it after — never
+  committed, and the real seed data was never edited to manufacture a fake case. Five
+  scenarios, all passed: (1) real 26-client seed data → 0 groups, confirming the "clean"
+  result is the detector working, not a stub; (2) a synthetic phone-duplicate → 1 group
+  found; (3) a record sharing phone+email+PAN but not name → 1 group with all three
+  matched reasons listed, none fabricated; (4) a record with `mergedIntoId` already set →
+  correctly excluded, 0 groups; (5) three mutually-duplicate records → one 3-member
+  cluster, not three separate pairs.
+- **Live**: `/clients/duplicates` renders "Checked 26 clients... No duplicates found" —
+  matches the standalone script's result exactly, so the same code path runs live as
+  ran in isolation. `/clients/CL-2026-0001`'s "Merge Duplicate" button is no longer
+  disabled and navigates to `/clients/duplicates`.
+- **Not directly click-tested**: the Merge confirm-modal flow itself, since no real
+  duplicate exists in seed data to trigger it and manufacturing one would mean editing
+  `CLIENTS_DATA` — the thing this entry explicitly avoided doing. It composes two
+  already-verified pieces (the `Modal`-confirm pattern proven in `ClientDetail`'s Block
+  flow, and the now-proven detection function), so this is a reasoned-correct claim, not
+  a "works" claim — flagging the difference rather than blurring it.
+
+
 ## 2026-08-08 — Client Detail page (`/clients/:id`)
 
 **Phase:** post-shell feature work · **Status:** done

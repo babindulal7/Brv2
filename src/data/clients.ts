@@ -99,6 +99,15 @@ export interface ClientRecord {
   paymentTerms?: string
   preferredContactMethods?: string[]
   notes?: string
+  /**
+   * Law 3 applied to clients: a merge is a named terminal action, not a
+   * delete. A merged-away record stays in `CLIENTS_DATA` — every screen that
+   * lists clients should treat a record with this set as closed, the same
+   * way `isBlocked` is already treated as a state to filter or flag, never a
+   * reason to remove the row.
+   */
+  mergedIntoId?: string
+  mergedAt?: string
 }
 
 export const CLIENTS_DATA: ClientRecord[] = [
@@ -952,3 +961,107 @@ export const PAYMENT_TERMS_OPTIONS: readonly string[] = [
 ]
 
 export const PREFERRED_CONTACT_METHODS: readonly string[] = ['Phone', 'Email', 'WhatsApp']
+
+/* ── duplicate detection (Duplicate/Merge Center) ───────────────────────── */
+
+export type DuplicateMatchReason = 'phone' | 'email' | 'pan' | 'name'
+
+export interface DuplicateGroup {
+  key: string
+  reasons: DuplicateMatchReason[]
+  clients: ClientRecord[]
+}
+
+function normalizedPhone(phone: string): string {
+  return phone.replace(/\D/g, '').slice(-10)
+}
+
+function normalizedName(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function matchReasons(a: ClientRecord, b: ClientRecord): DuplicateMatchReason[] {
+  const reasons: DuplicateMatchReason[] = []
+  const phoneA = normalizedPhone(a.phone)
+  const phoneB = normalizedPhone(b.phone)
+  if (phoneA.length >= 7 && phoneA === phoneB) reasons.push('phone')
+  const emailA = a.email.trim().toLowerCase()
+  const emailB = b.email.trim().toLowerCase()
+  if (emailA && emailA === emailB) reasons.push('email')
+  if (a.pan && a.pan === b.pan) reasons.push('pan')
+  const nameA = normalizedName(a.name)
+  const nameB = normalizedName(b.name)
+  if (nameA && nameA === nameB) reasons.push('name')
+  return reasons
+}
+
+/**
+ * Pairs clients that look like the same real-world entity entered twice —
+ * exact match on phone (last 10 digits), email, PAN, or normalized name.
+ * Deliberately no fuzzy/edit-distance matching: that needs a product
+ * decision about the false-positive rate this business will tolerate
+ * (TODO(decision), PLAN.md §4), not a threshold invented here.
+ *
+ * Clients are unioned by *any* shared field into one group, so two records
+ * matching on both phone and email surface once with both reasons listed,
+ * never as two separate cards. Records already merged away (`mergedIntoId`
+ * set) are excluded — a closed record cannot be a duplicate candidate again.
+ */
+export function findDuplicateGroups(clients: ClientRecord[]): DuplicateGroup[] {
+  const live = clients.filter((c) => !c.mergedIntoId)
+  const parent = live.map((_, i) => i)
+  const find = (i: number): number => {
+    const p = parent[i]!
+    if (p === i) return i
+    const root = find(p)
+    parent[i] = root
+    return root
+  }
+  const union = (i: number, j: number) => {
+    const ri = find(i)
+    const rj = find(j)
+    if (ri !== rj) parent[ri] = rj
+  }
+
+  const pairReasons = new Map<string, DuplicateMatchReason[]>()
+  live.forEach((a, i) => {
+    live.forEach((b, j) => {
+      if (j <= i) return
+      const reasons = matchReasons(a, b)
+      if (reasons.length > 0) {
+        union(i, j)
+        pairReasons.set(`${i}:${j}`, reasons)
+      }
+    })
+  })
+
+  const clusters = new Map<number, number[]>()
+  live.forEach((_, i) => {
+    const root = find(i)
+    const list = clusters.get(root)
+    if (list) list.push(i)
+    else clusters.set(root, [i])
+  })
+
+  const groups: DuplicateGroup[] = []
+  clusters.forEach((indices) => {
+    if (indices.length < 2) return
+    const reasonSet = new Set<DuplicateMatchReason>()
+    for (let a = 0; a < indices.length; a++) {
+      for (let b = a + 1; b < indices.length; b++) {
+        const i = indices[a]!
+        const j = indices[b]!
+        const key = i < j ? `${i}:${j}` : `${j}:${i}`
+        pairReasons.get(key)?.forEach((r) => reasonSet.add(r))
+      }
+    }
+    const groupClients = indices.map((i) => live[i]!)
+    groups.push({
+      key: groupClients.map((c) => c.id).sort().join('+'),
+      reasons: Array.from(reasonSet),
+      clients: groupClients,
+    })
+  })
+
+  return groups.sort((a, b) => b.clients.length - a.clients.length)
+}

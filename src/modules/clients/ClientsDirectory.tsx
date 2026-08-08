@@ -3,8 +3,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, KpiStrip, cardStyle, Rail, SideRail } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
+import { Modal } from '../../components/ui/Modal'
 import { EmptyState } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
+import { useToast } from '../../components/ui/Toast'
 import { STATUS } from '../../lib/status'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
@@ -148,15 +150,24 @@ function Tone({ text, tone }: { text: string; tone: keyof typeof STATUS }) {
  *   - its 284 clients over 12 pages are a picture. The counts here are derived
  *     from the list the table is actually showing.
  */
+/** Escapes a value for a CSV cell — mirrors `Clients.tsx`'s directory-wide export. */
+function csvCell(v: string | number): string {
+  const s = String(v)
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
 export function ClientsDirectory({
   clients,
   onRequestAdd,
+  onBulkBlock,
 }: {
   clients: ClientRecord[]
   onRequestAdd: () => void
+  onBulkBlock: (ids: string[], reason: string) => void
 }) {
   const navigate = useNavigate()
   const money = useCanViewMoney()
+  const { showSuccessToast } = useToast()
   const [params] = useSearchParams()
   /* DEVICES.md §7 build order item 1 — below 768 the table can't be read even
      scrolled, so the phone gets the card view unconditionally (Law 13: branch
@@ -178,6 +189,8 @@ export function ClientsDirectory({
   const [perPage, setPerPage] = useState<number>(CLIENT_ROWS_PER_PAGE[1])
   const [page, setPage] = useState(1)
   const [activeSavedView, setActiveSavedView] = useState<string | null>(null)
+  const [showBulkBlock, setShowBulkBlock] = useState(false)
+  const [bulkBlockReason, setBulkBlockReason] = useState('')
 
   const metrics = useMemo(() => clientMetrics(clients), [clients])
   const filterGroups = useMemo(() => clientFilterGroupsFor(money), [money])
@@ -273,6 +286,56 @@ export function ClientsDirectory({
       else pageRows.forEach((c) => next.add(c.id))
       return next
     })
+
+  const selectedClients = useMemo(() => clients.filter((c) => selectedRowIds.has(c.id)), [clients, selectedRowIds])
+
+  /** A real CSV of just the selected rows — same quoting rule as the full-directory export. */
+  const exportSelected = () => {
+    const headers = [
+      'Client ID',
+      'Name',
+      'Company',
+      'Type',
+      'Membership',
+      'Phone',
+      'Email',
+      'PAN',
+      ...(money ? ['Outstanding (Rs)', 'Deposit Held (Rs)'] : []),
+      'Status',
+    ]
+    const lines = selectedClients.map((c) =>
+      [
+        c.id,
+        c.name,
+        c.company ?? '',
+        c.clientType,
+        c.membership,
+        c.phone,
+        c.email,
+        c.pan ?? '',
+        ...(money ? [formatMoney(c.outstandingPaisa), formatMoney(c.depositHeldPaisa)] : []),
+        c.isBlocked ? 'Blocked' : 'Active',
+      ]
+        .map(csvCell)
+        .join(','),
+    )
+    const blob = new Blob([[headers.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'selected-clients.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+    showSuccessToast('Export ready', `${selectedClients.length} client rows written to selected-clients.csv`)
+  }
+
+  const confirmBulkBlock = () => {
+    if (bulkBlockReason.trim().length < 10) return
+    onBulkBlock(selectedClients.map((c) => c.id), bulkBlockReason.trim())
+    setSelectedRowIds(new Set())
+    setShowBulkBlock(false)
+    setBulkBlockReason('')
+  }
 
   /**
    * The row's one primary verb. Receive Payment only exists for a role that may
@@ -593,6 +656,12 @@ export function ClientsDirectory({
                   >
                     Clear selection
                   </button>
+                  <Button icon="download" onClick={exportSelected}>
+                    Export Selected
+                  </Button>
+                  <Button variant="danger" icon="alert_triangle" onClick={() => setShowBulkBlock(true)}>
+                    Block Selected
+                  </Button>
                 </>
               )}
               <label style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
@@ -1231,6 +1300,50 @@ export function ClientsDirectory({
           )}
         </div>
       </div>
+
+      <Modal
+        isOpen={showBulkBlock}
+        onClose={() => setShowBulkBlock(false)}
+        title={`Block ${selectedClients.length} client${selectedClients.length === 1 ? '' : 's'}?`}
+        subtitle="Blocked clients cannot start a new rental until unblocked. State a reason — it appears on each profile."
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, width: '100%' }}>
+            <Button variant="secondary" onClick={() => setShowBulkBlock(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={confirmBulkBlock} disabled={bulkBlockReason.trim().length < 10}>
+              Block {selectedClients.length} Client{selectedClients.length === 1 ? '' : 's'}
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 'var(--t-meta)', color: 'var(--text2)', maxHeight: 140, overflowY: 'auto' }}>
+            {selectedClients.map((c) => (
+              <li key={c.id}>{c.name}</li>
+            ))}
+          </ul>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--t-meta)' }}>
+            <span style={{ fontWeight: 600, color: 'var(--text2)' }}>Reason (minimum 10 characters)</span>
+            <textarea
+              value={bulkBlockReason}
+              onChange={(e) => setBulkBlockReason(e.target.value)}
+              rows={3}
+              placeholder="e.g. Duplicate accounts consolidated, blocking the closed ones"
+              style={{
+                padding: 10,
+                borderRadius: 'var(--r-input)',
+                border: '1px solid var(--border)',
+                background: 'var(--card2)',
+                color: 'var(--text)',
+                fontSize: 'var(--t-meta)',
+                fontFamily: 'inherit',
+                resize: 'vertical',
+              }}
+            />
+          </label>
+        </div>
+      </Modal>
     </div>
   )
 }

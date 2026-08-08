@@ -55,6 +55,7 @@ const Membership        = lazy(() => import('./modules/clients/Membership'))
 const Clients           = lazy(() => import('./modules/clients/Clients'))
 const AddClient         = lazy(() => import('./modules/clients/AddClient'))
 const ClientDetail      = lazy(() => import('./modules/clients/ClientDetail'))
+const DuplicateCenter   = lazy(() => import('./modules/clients/DuplicateCenter'))
 const BroadcastCenter   = lazy(() => import('./modules/notifications/BroadcastCenter'))
 const CasesWorkspace    = lazy(() => import('./modules/operations/CasesWorkspace').then(m => ({ default: m.CasesWorkspace })))
 const CrewBooking       = lazy(() => import('./modules/operations/CrewBooking').then(m => ({ default: m.CrewBooking })))
@@ -408,6 +409,15 @@ export default function App() {
           }
         />
 
+        <Route
+          path="/clients/duplicates"
+          element={
+            <Shell crumbs={[{ label: 'Clients' }, { label: 'Duplicate & Merge Center' }]}>
+              <DuplicateCenter />
+            </Shell>
+          }
+        />
+
         {/* Last of the /clients/* group, same reasoning as /inventory/:code —
             a bare segment here is a client ID, so it's declared after every
             named static sibling. */}
@@ -570,6 +580,7 @@ const BUILT = new Set([
   '/clients',
   '/clients/new',
   '/clients/CL-2026-0001',
+  '/clients/duplicates',
   '/reports',
   '/admin',
   '/finance/documents',

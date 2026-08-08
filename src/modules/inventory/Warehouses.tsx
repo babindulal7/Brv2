@@ -5,6 +5,7 @@ import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
 import { EmptyState } from '../../components/ui/StateViews'
+import { Unavailable } from '../../components/ui/Unavailable'
 import { Donut, Legend, HBars, GroupedBars } from '../../components/ui/Charts'
 import type { Slice } from '../../components/ui/Charts'
 import { STATUS, BRAND, BRAND_ON } from '../../lib/status'
@@ -54,6 +55,13 @@ import type {
  * warehouse profile the spec details sits below the analytics row, because the
  * render's "View Warehouse →" and the row action need somewhere real to land.
  *
+ * The render stands each of those three strips in **one row**, and the grid
+ * bases here are sized to that: with the rail open this column measures 958px
+ * at the render's own 1536 width, so the KPI basis is 132 and the facility and
+ * analytics bases are 228. The earlier 140/264 pair wrapped both card rows 3+1
+ * at the render's own width. The card internals were tightened to survive the
+ * narrower cell — 80px photo, wrapping name/pill row, 54px ring.
+ *
  * **Deviations from the render — each one a locked rule, never copy back:**
  *  · The render's KPI tiles are purple and teal. §4.2 bans both; the tiles wear
  *    blue / amber / green from `BRAND`.
@@ -69,6 +77,20 @@ import type {
  *  · Three of the render's five alert rows ("Low stock items", "Maintenance
  *    due", "Audit due in 10 days") count records this module does not hold. They
  *    are absent rather than guessed — see `alertsOf`.
+ *  · The render's Capacity Utilization legend carries a third "Reserved" slice.
+ *    Reserved slots are not a field on a warehouse record, so the donut is
+ *    Used / Available only — see the Capacity tab's TODO(decision).
+ *  · The render's rail cards each carry a "View All →" and the summary card a
+ *    "This Month" period picker. Neither has a destination or a second period in
+ *    this build, and §Law "no dead controls" outranks the render, so they are
+ *    absent rather than inert.
+ *
+ * **Profile tabs** — Overview carries §Warehouse Profile ▸ General and
+ * ▸ Location, the only two of the spec's eleven profile sections whose fields
+ * are actually seeded (`address` and `phone` had no reader at all before it).
+ * Equipment Summary, QR & Barcode, Warehouse Map, Documents and Audit have no
+ * records behind them and are called out in the Overview note rather than
+ * mocked up.
  *
  * **Money:** there is none on this screen and none is derivable from its rows,
  * so nothing here is gated — the earlier build printed an invented
@@ -125,15 +147,6 @@ const linkStyle = {
 }
 
 /* ── small pieces ──────────────────────────────────────────────────────── */
-
-/** A control the render shows that this build cannot honour — inert, with the reason on it. */
-function Unavailable({ children, reason }: { children: ReactNode; reason: string }) {
-  return (
-    <span title={reason} aria-label={reason} style={{ display: 'inline-flex', cursor: 'not-allowed' }}>
-      {children}
-    </span>
-  )
-}
 
 /** §4.2 — the occupancy hue is the alarm ladder, never decoration. */
 function occupancyTone(value: number): StatusKey {
@@ -202,13 +215,32 @@ function Avatar({ name, size = 24 }: { name: string; size?: number }) {
   )
 }
 
-/** The render's facility photograph. A blocked or missing file degrades to a tile, not a broken icon. */
-function Photo({ src, alt }: { src: string; alt: string }) {
+/**
+ * The render's facility photograph — on the warehouse card and, at 28px, in the
+ * first column of the Warehouse List, which the render also thumbnails. A
+ * blocked or missing file degrades to a tile, not a broken icon.
+ */
+function Photo({
+  src,
+  alt,
+  width = '100%',
+  height = 108,
+  radius = 8,
+  glyph = 26,
+}: {
+  src: string
+  alt: string
+  width?: number | string
+  height?: number
+  radius?: number
+  glyph?: number
+}) {
   const [broken, setBroken] = useState(false)
   const shell = {
-    width: '100%',
-    height: 108,
-    borderRadius: 8,
+    width,
+    height,
+    flexShrink: 0,
+    borderRadius: radius,
     border: '1px solid var(--border)',
     display: 'block' as const,
     objectFit: 'cover' as const,
@@ -220,7 +252,7 @@ function Photo({ src, alt }: { src: string; alt: string }) {
         role="img"
         style={{ ...shell, background: 'var(--card2)', display: 'grid', placeItems: 'center', color: 'var(--muted)' }}
       >
-        <Icon name="home" size={26} />
+        <Icon name="home" size={glyph} />
       </span>
     )
   }
@@ -271,14 +303,57 @@ function Bar({ value, width = 78 }: { value: number; width?: number | string }) 
   )
 }
 
-function Figure({ label, value, note }: { label: string; value: string; note?: string }) {
+/** `icon` mirrors the render, which glyphs the Assets and Capacity labels on the facility card. */
+function Figure({ label, value, note, icon }: { label: string; value: string; note?: string; icon?: IconName }) {
   return (
     <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>
+        {icon && <Icon name={icon} size={11} style={{ flexShrink: 0 }} />}
+        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      </div>
       <div className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', marginTop: 2 }}>
         {value}
       </div>
       {note && <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 1 }}>{note}</div>}
+    </div>
+  )
+}
+
+/** Label/value pair for the profile's General and Location panels. */
+function DetailRow({
+  label,
+  value,
+  icon,
+  mono,
+  wrap,
+}: {
+  label: string
+  value: string
+  icon?: IconName
+  mono?: boolean
+  wrap?: boolean
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: wrap ? 'flex-start' : 'center', gap: 8, minWidth: 0 }}>
+      <dt style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600, width: 78, flexShrink: 0 }}>{label}</dt>
+      <dd
+        {...(mono ? { className: 'identifier' } : {})}
+        style={{
+          margin: 0,
+          display: 'flex',
+          alignItems: wrap ? 'flex-start' : 'center',
+          gap: 6,
+          minWidth: 0,
+          fontSize: 'var(--t-meta)',
+          color: 'var(--text)',
+          ...(wrap ? {} : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }),
+        }}
+      >
+        {icon && <Icon name={icon} size={13} style={{ color: 'var(--muted)', flexShrink: 0, marginTop: wrap ? 2 : 0 }} />}
+        <span style={{ minWidth: 0, ...(wrap ? {} : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }) }}>
+          {value}
+        </span>
+      </dd>
     </div>
   )
 }
@@ -315,15 +390,16 @@ function KpiCard({
         >
           <Icon name={icon} size={16} fill />
         </span>
+        {/* Wraps rather than ellipsising. Six cards across leaves ~83px beside
+            the icon tile, and "Total Assets Stored" clipped to "Total Asse…" —
+            a KPI whose own name is unreadable is not a KPI. */}
         <div
           style={{
             fontSize: 'var(--t-meta)',
             fontWeight: 600,
             color: 'var(--text2)',
             minWidth: 0,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
+            lineHeight: 1.25,
           }}
         >
           {label}
@@ -402,7 +478,7 @@ export default function Warehouses() {
 
   /* profile */
   const [selectedId, setSelectedId] = useState(WAREHOUSES[0]?.id ?? '')
-  const [profileTab, setProfileTab] = useState<'layout' | 'capacity' | 'transfers' | 'staff'>('layout')
+  const [profileTab, setProfileTab] = useState<'overview' | 'layout' | 'capacity' | 'transfers' | 'staff'>('overview')
 
   /* transfers */
   const [transfers, setTransfers] = useState<StockTransfer[]>(TRANSFERS)
@@ -434,7 +510,7 @@ export default function Warehouses() {
 
   const openWarehouse = (id: string) => {
     setSelectedId(id)
-    setProfileTab('layout')
+    setProfileTab('overview')
     window.setTimeout(focusProfile, 0)
   }
 
@@ -482,7 +558,10 @@ export default function Warehouses() {
       const cmp = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))
       return sort.dir === 'asc' ? cmp : -cmp
     })
-  }, [query, branch, status, alertFilter, sort])
+    /* `transfers` belongs here: the asset branch of the search reads the live
+       ledger, so without it a transfer created in the modal stayed unsearchable
+       by its own asset name until some unrelated filter changed. */
+  }, [query, branch, status, alertFilter, sort, transfers])
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage))
   const safePage = Math.min(page, pageCount)
@@ -658,10 +737,13 @@ export default function Warehouses() {
           {/* ── six KPI cards ─────────────────────────────────────────── */}
           <section
             aria-label="Key figures"
-            /* 140px, not 168 — the spec locks "exactly six" KPI cards, and 168
-               dropped the sixth onto a row of its own as soon as the rail was
-               open on anything under a 1536px screen. */
-            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 'var(--sp-md)' }}
+            /* 132px. The render puts all six on one row, and the spec locks
+               "exactly six"; with the rail open this column measures 958px at
+               the render's own 1536 width and 862 at 1440, so the basis has to
+               clear 6·min + 5·12 at 862. 140 did not — it dropped the sixth
+               card onto a row of its own from 1440 down. Widening beyond the
+               min is auto-fit's job: the cards still render ~150px at 1536. */
+            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))', gap: 'var(--sp-md)' }}
           >
             <KpiCard
               label="Total Warehouses"
@@ -744,7 +826,11 @@ export default function Warehouses() {
           {/* ── facility cards ────────────────────────────────────────── */}
           <section
             aria-label="Warehouses"
-            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(264px, 1fr))', gap: 'var(--sp-md)' }}
+            /* 228px, not 264. The render stands all four facilities in one row;
+               264 needed 1,092px and this column is 958 at the render's own
+               width, so it wrapped 3+1. 4·228 + 3·12 = 948 fits, and the cards
+               still stretch to ~230 each. */
+            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(228px, 1fr))', gap: 'var(--sp-md)' }}
           >
             {WAREHOUSES.map((w) => {
               const on = w.id === selectedId
@@ -762,12 +848,17 @@ export default function Warehouses() {
                     borderColor: on ? 'var(--nav-active-accent)' : 'var(--border)',
                   }}
                 >
-                  <div style={{ display: 'grid', gridTemplateColumns: '96px minmax(0,1fr)', gap: 11 }}>
-                    <Photo src={w.image} alt={`${w.name} storage floor`} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '80px minmax(0,1fr)', gap: 10 }}>
+                    <Photo src={w.image} alt={`${w.name} storage floor`} height={100} />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                        <span style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', minWidth: 0 }}>{w.name}</span>
-                        <span style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                      {/* Wraps: four cards across leaves ~130px here, and these
+                          facility names are far longer than the render's. The
+                          pill drops under the name rather than crushing it. */}
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', minWidth: 0, flex: '1 1 auto' }}>
+                          {w.name}
+                        </span>
+                        <span style={{ flexShrink: 0 }}>
                           <Pill label={w.status} tone={WAREHOUSE_STATUS_TONE[w.status]} icon={WAREHOUSE_STATUS_ICON[w.status]} />
                         </span>
                       </div>
@@ -802,13 +893,13 @@ export default function Warehouses() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-                    <Ring value={w.occupancy} />
-                    <Figure label="Assets" value={grouped(w.equipmentCount)} />
-                    <Figure label="Capacity" value={grouped(w.capacity)} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 11, paddingTop: 10, borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+                    <Ring value={w.occupancy} size={54} />
+                    <Figure label="Assets" value={grouped(w.equipmentCount)} icon="box" />
+                    <Figure label="Capacity" value={grouped(w.capacity)} icon="queues" />
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 9, borderTop: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 9, borderTop: '1px solid var(--border)', flexWrap: 'wrap', marginTop: 'auto' }}>
                     <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Available Space</span>
                     <span className="figure" style={{ fontWeight: 700, color: STATUS[occupancyTone(w.occupancy)].fg }}>
                       {grouped(w.availableSpace)}
@@ -1010,22 +1101,8 @@ export default function Warehouses() {
                         >
                           <td style={td}>
                             <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                              <span
-                                aria-hidden
-                                style={{
-                                  width: 28,
-                                  height: 28,
-                                  flexShrink: 0,
-                                  borderRadius: 6,
-                                  background: 'var(--card2)',
-                                  border: '1px solid var(--border)',
-                                  display: 'grid',
-                                  placeItems: 'center',
-                                  color: 'var(--muted)',
-                                }}
-                              >
-                                <Icon name="home" size={14} />
-                              </span>
+                              {/* The render thumbnails the facility photograph here, not a generic glyph. */}
+                              <Photo src={w.image} alt="" width={28} height={28} radius={6} glyph={14} />
                               <span style={{ fontWeight: 600 }}>{w.name}</span>
                             </span>
                           </td>
@@ -1047,8 +1124,9 @@ export default function Warehouses() {
                           <td className="figure" style={{ ...td, textAlign: 'right' }}>
                             {grouped(w.capacity)}
                           </td>
+                          {/* Stacked, as the render draws it — the percent reads first, the bar sits under it. */}
                           <td style={{ ...td, textAlign: 'right' }}>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                            <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                               <span className="figure" style={{ fontWeight: 600 }}>
                                 {w.occupancy}%
                               </span>
@@ -1203,12 +1281,19 @@ export default function Warehouses() {
           {/* ── analytics row ─────────────────────────────────────────── */}
           <section
             aria-label="Warehouse analytics"
-            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(264px, 1fr))', gap: 'var(--sp-md)' }}
+            /* Four across, as the render draws them — same 228px basis as the
+               facility row above, so the two rows share a column rhythm. */
+            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(228px, 1fr))', gap: 'var(--sp-md)' }}
           >
             <Card title="Capacity Utilization">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-                <Donut slices={capacitySlices} centreLabel="Capacity used" centreValue={`${totals.occupancyPct}%`} size={132} />
-                <Legend slices={capacitySlices} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <Donut slices={capacitySlices} centreLabel="Capacity used" centreValue={`${totals.occupancyPct}%`} size={116} />
+                {/* `Legend` is `flex:1 / minWidth:0`, so in a four-across card it
+                    shrank and clipped its own nowrap labels rather than wrapping.
+                    A 132px floor makes the row wrap the legend under the donut. */}
+                <div style={{ display: 'flex', flex: '1 1 132px', minWidth: 132 }}>
+                  <Legend slices={capacitySlices} />
+                </div>
               </div>
               <button
                 type="button"
@@ -1237,13 +1322,19 @@ export default function Warehouses() {
               {activitySeries.length === 0 ? (
                 <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>No transfers are on the ledger.</p>
               ) : (
-                <GroupedBars
-                  groups={activitySeries.map((d) => ({ label: d.label, values: [d.completed, d.inProgress, d.pending] }))}
-                  series={['Completed', 'In Progress', 'Pending']}
-                  yTicks={Array.from({ length: activityMax + 1 }, (_, i) => String(i))}
-                  format={(v) => `${v} ${v === 1 ? 'transfer' : 'transfers'}`}
-                  height={148}
-                />
+                /* `GroupedBars` centres its three-swatch legend on one nowrap
+                   row; four cards across leaves 201px and the row wants 212, so
+                   it scrolls in its own box rather than shaving "Completed" and
+                   "Pending" off both ends. */
+                <div style={{ overflowX: 'auto' }}>
+                  <GroupedBars
+                    groups={activitySeries.map((d) => ({ label: d.label, values: [d.completed, d.inProgress, d.pending] }))}
+                    series={['Completed', 'In Progress', 'Pending']}
+                    yTicks={Array.from({ length: activityMax + 1 }, (_, i) => String(i))}
+                    format={(v) => `${v} ${v === 1 ? 'transfer' : 'transfers'}`}
+                    height={148}
+                  />
+                </div>
               )}
               <button type="button" style={{ ...linkStyle, marginTop: 12 }} onClick={openTransferCentre}>
                 Open Transfer Center <Icon name="arrow_right" size={12} />
@@ -1305,6 +1396,7 @@ export default function Warehouses() {
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderBottom: '1px solid var(--border)', padding: '0 12px', flexWrap: 'wrap' }}>
                   {(
                     [
+                      { id: 'overview', label: 'Overview' },
                       { id: 'layout', label: `Storage Layout (${zoneRows.length})` },
                       { id: 'capacity', label: 'Capacity' },
                       { id: 'transfers', label: `Transfer Center (${profileTransfers.length})` },
@@ -1338,12 +1430,55 @@ export default function Warehouses() {
                   })}
                 </div>
 
+                {/* General + Location — §Warehouse Profile ▸ General and ▸ Location. */}
+                {profileTab === 'overview' && (
+                  <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 14 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '128px minmax(0,1fr)', gap: 12 }}>
+                        <Photo src={selected.image} alt={`${selected.name} storage floor`} height={124} />
+                        <dl style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: 7, minWidth: 0 }}>
+                          <DetailRow label="Warehouse" value={selected.name} />
+                          <DetailRow label="Code" value={selected.code} mono />
+                          <DetailRow label="Branch" value={selected.branch} icon="company" />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <dt style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600, width: 78, flexShrink: 0 }}>Status</dt>
+                            <dd style={{ margin: 0 }}>
+                              <Pill
+                                label={selected.status}
+                                tone={WAREHOUSE_STATUS_TONE[selected.status]}
+                                icon={WAREHOUSE_STATUS_ICON[selected.status]}
+                              />
+                            </dd>
+                          </div>
+                        </dl>
+                      </div>
+
+                      <dl style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: 7, minWidth: 0 }}>
+                        <DetailRow label="Manager" value={selected.manager} icon="person" />
+                        <DetailRow label="Address" value={selected.address} icon="home" wrap />
+                        <DetailRow label="Phone" value={selected.phone} icon="phone" mono />
+                        <DetailRow label="Zones" value={`${grouped(selected.zonesCount)} declared`} icon="queues" />
+                        <DetailRow label="Assets" value={`${grouped(selected.equipmentCount)} stored`} icon="box" />
+                      </dl>
+                    </div>
+
+                    <p style={{ margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--muted)', paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                      <Icon name="info" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                      The spec's Description, GPS, Google Maps link, Floor and Building are not fields on a warehouse record
+                      in this build, so they are absent rather than estimated — and no per-warehouse category split exists,
+                      so §Equipment Summary stays at the whole-set Inventory Distribution card above.
+                      TODO(decision): whether a warehouse carries a geocode and a floor/building line.
+                    </p>
+                  </div>
+                )}
+
                 {/* Storage Layout */}
                 {profileTab === 'layout' && (
                   <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                       Warehouse → Room → Zone → Rack → Shelf → Bin. {zoneRows.length} of {selected.zonesCount} declared zones
-                      have seeded bin records ({binRows.length} bins) — the remainder are not yet mapped.
+                      {zoneRows.length === 1 ? ' has ' : ' have '}seeded bin records ({binRows.length}{' '}
+                      {binRows.length === 1 ? 'bin' : 'bins'}) — the remainder are not yet mapped.
                     </p>
 
                     {zoneRows.length === 0 ? (

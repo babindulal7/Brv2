@@ -50,7 +50,13 @@ export default function Clients() {
   const { showSuccessToast } = useToast()
   const [params, setParams] = useSearchParams()
 
-  const [clients] = useState<ClientRecord[]>(CLIENTS_DATA)
+  const [clients, setClients] = useState<ClientRecord[]>(CLIENTS_DATA)
+
+  /** Bulk Block — the directory table's row-selection checkboxes gain a real action. */
+  const bulkBlock = (ids: string[], reason: string) => {
+    setClients((prev) => prev.map((c) => (ids.includes(c.id) ? { ...c, isBlocked: true, blockReason: reason } : c)))
+    showSuccessToast('Clients blocked', `${ids.length} client${ids.length === 1 ? '' : 's'} blocked: ${reason}`)
+  }
 
   const tabs = useMemo(() => TAB_DEFS.filter((t) => money || !t.money), [money])
 
@@ -122,13 +128,16 @@ export default function Clients() {
             <Button variant="primary" icon="plus" onClick={() => navigate('/clients/new')}>
               New Client
             </Button>
-            <Unavailable reason="Bulk import is not built yet — no CSV mapping or duplicate-merge step exists">
+            <Unavailable reason="Bulk import is not built yet — no CSV mapping or field-validation step exists">
               <Button icon="upload" disabled>
                 Import
               </Button>
             </Unavailable>
             <Button icon="download" onClick={exportCsv}>
               Export
+            </Button>
+            <Button icon="users" onClick={() => navigate('/clients/duplicates')}>
+              Find Duplicates
             </Button>
           </>
         }
@@ -163,7 +172,9 @@ export default function Clients() {
         })}
       </div>
 
-      {activeTab === 'clients' && <ClientsDirectory clients={clients} onRequestAdd={() => navigate('/clients/new')} />}
+      {activeTab === 'clients' && (
+        <ClientsDirectory clients={clients} onRequestAdd={() => navigate('/clients/new')} onBulkBlock={bulkBlock} />
+      )}
       {activeTab === 'membership' && <Membership embedded />}
       {activeTab === 'referral' && <ReferralView money={money} />}
       {activeTab === 'credit' && money && <CreditView />}

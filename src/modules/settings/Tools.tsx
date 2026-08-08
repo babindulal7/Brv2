@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { CSSProperties, ReactNode } from 'react'
 import Icon from '../../components/ui/Icon'
@@ -590,7 +590,11 @@ drop-frame, at 29.97 and 59.94 only:
           {
             label: 'Running time',
             value: isNum(seconds)
-              ? `${pad(seconds / 3600)}:${pad((seconds / 60) % 60)}:${pad(seconds % 60)}.${pad(Math.round((seconds % 1) * 100))}`
+              ? /* Truncated, never rounded: rounding the hundredths of
+                   3599.9964 s gives 100, which renders as a three-digit
+                   hundredths field — 00:59:59.100. Caught by driving the page
+                   at 01:00:00:00 / 29.97 DF. */
+                `${pad(seconds / 3600)}:${pad((seconds / 60) % 60)}:${pad(seconds % 60)}.${pad(Math.floor((seconds % 1) * 100))}`
               : '—',
             note: `Real seconds at ${dp(rate.actual, 3)} fps — not the timecode label.`,
           },
@@ -908,6 +912,15 @@ function ToolTile({
   list: boolean
 }) {
   const blocked = tool.action.kind === 'blocked'
+  const accent = groupAccent(tool.group)
+  /*
+   * `BRAND.neutral` is `--muted` and `BRAND_ON.neutral` is `--on-brand`, i.e.
+   * white on #94a3b8 in dark theme — measured at 2.56:1, under WCAG 1.4.11's
+   * 3:1 for a graphical object. The deep-link group is the quiet one anyway, so
+   * it takes a surface chip rather than a brand fill; no other group is
+   * affected, and no token outside this file changes.
+   */
+  const quiet = blocked || accent === 'neutral'
   const body = (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -919,8 +932,9 @@ function ToolTile({
             display: 'grid',
             placeItems: 'center',
             flexShrink: 0,
-            background: blocked ? 'var(--card2)' : BRAND[groupAccent(tool.group)],
-            color: blocked ? 'var(--muted)' : BRAND_ON[groupAccent(tool.group)],
+            background: quiet ? 'var(--card2)' : BRAND[accent],
+            color: blocked ? 'var(--muted)' : quiet ? 'var(--text2)' : BRAND_ON[accent],
+            ...(quiet && !blocked ? { border: '1px solid var(--border)' } : {}),
           }}
         >
           <Icon name={tool.icon} size={16} fill={!blocked} />
@@ -1027,12 +1041,18 @@ function groupAccent(key: GroupKey): BrandKey {
  * execution audited" describes a log that does not exist, no screen prints a
  * label, and Failed Jobs belongs to System Monitor. So each tile states its
  * source instead of carrying a number somebody made up.
+ *
+ * The accent is `primary`, not `neutral`: `KpiStrip` fills the icon chip with
+ * `BRAND[accent]` and draws the glyph in `BRAND_ON[accent]`, and that pair for
+ * `neutral` is white on `--muted` — measured at 2.56:1 in dark theme, under
+ * WCAG 1.4.11's 3:1. `primary` measures 5.17:1 light / 3.68:1 dark. The token
+ * pair itself is still wrong and `lib/status.ts` is not this file's to fix.
  */
 const KPIS: Kpi[] = [
-  { label: 'Tools Used Today', value: '—', icon: 'tool', accent: 'neutral', note: 'No tool-execution log exists (§11)' },
-  { label: 'Documents Generated', value: '—', icon: 'file', accent: 'neutral', note: 'Counted by Finance ▸ Documents' },
-  { label: 'Labels Printed', value: '—', icon: 'package', accent: 'neutral', note: 'Nothing prints a label yet' },
-  { label: 'Failed Jobs', value: '—', icon: 'alert_triangle', accent: 'neutral', note: 'Owned by System Monitor' },
+  { label: 'Tools Used Today', value: '—', icon: 'tool', accent: 'primary', note: 'No tool-execution log exists (§11)' },
+  { label: 'Documents Generated', value: '—', icon: 'file', accent: 'primary', note: 'Counted by Finance ▸ Documents' },
+  { label: 'Labels Printed', value: '—', icon: 'package', accent: 'primary', note: 'Nothing prints a label yet' },
+  { label: 'Failed Jobs', value: '—', icon: 'alert_triangle', accent: 'primary', note: 'Owned by System Monitor' },
 ]
 
 /** §6 — three quick actions plus More. `Backup Database` is gone, per §0. */
@@ -1077,6 +1097,15 @@ export default function Tools() {
   const [group, setGroup] = useState<'All' | GroupKey>('All')
   const [onlyFavourites, setOnlyFavourites] = useState(false)
   const [view, setView] = useState<'grid' | 'list'>('grid')
+  /* "More" has to do something even when nothing is filtered, or it is a dead
+     control in the default state — clearing filters alone is invisible then. */
+  const categoriesRef = useRef<HTMLDivElement>(null)
+
+  const showEveryTool = () => {
+    setOnlyFavourites(false)
+    setGroup('All')
+    categoriesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   const toggleFavourite = (id: string) => {
     setFavourites((current) => {
@@ -1185,6 +1214,7 @@ export default function Tools() {
             </Card>
           )}
 
+          <div ref={categoriesRef} style={{ minWidth: 0 }}>
           <Card
             title="Tool Categories"
             action={
@@ -1299,6 +1329,7 @@ export default function Tools() {
               </div>
             )}
           </Card>
+          </div>
 
           {/* §6 — Favourites and Recent are panels here, never headline KPIs. */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 'var(--sp-md)' }}>
@@ -1340,10 +1371,7 @@ export default function Tools() {
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  setOnlyFavourites(false)
-                  setGroup('All')
-                }}
+                onClick={showEveryTool}
                 style={{
                   marginTop: 8,
                   border: 'none',
@@ -1442,6 +1470,25 @@ export default function Tools() {
               deep-linked tool opens the owning module with the right filter and carries{' '}
               <em>that module’s</em> permissions — backup, integrations and diagnostics answer to Administration, not to
               this page.
+            </p>
+          </Card>
+
+          {/*
+            The render's rail carries an Alerts card between the donut and the
+            AI panel. It is kept in place rather than dropped, because §10 rules
+            on it directly — "Alerts must agree with their source… Alerts read
+            the owning module" — and the render is the standing example of the
+            failure: it shows "Database backup not done today" beside a Backup
+            module reporting one completed at 02:15. Every one of its four
+            alerts belongs to another module, and Tools holds no alert source of
+            its own, so the card says that instead of restating them.
+          */}
+          <Card title="Alerts">
+            <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.55 }}>
+              Empty on purpose. §10 — <strong style={{ color: 'var(--text)' }}>alerts read the owning module</strong>, and
+              none of the render’s four belongs to Tools: labels are Inventory’s, warranties are Inventory ▸ Maintenance’s,
+              the backup state is Administration’s and pending approvals are Documents’. Restating them here is how the
+              render ends up claiming a backup was missed while the Backup module records one at 02:15 the same morning.
             </p>
           </Card>
 

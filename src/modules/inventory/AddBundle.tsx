@@ -1,285 +1,2411 @@
-import { useState } from 'react'
-import { PageHeader, Button, Rail } from '../../components/ui/Page'
-import { Card } from '../../components/ui/Card'
-import { Input } from '../../components/ui/Input'
-import { Select } from '../../components/ui/Select'
-import { EmptyState } from '../../components/ui/StateViews'
-import { formatMoney, rupees, type Paisa } from '../../lib/money'
-import { IconSearch, IconChevronRight, IconArrowLeft } from '@tabler/icons-react'
+import { useMemo, useRef, useState } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
+import Icon from '../../components/ui/Icon'
+import type { IconName } from '../../components/ui/Icon'
+import { Card, PageHeader, Button, Rail, SummaryRows, cardStyle } from '../../components/ui/Page'
+import { Unavailable } from '../../components/ui/Unavailable'
+import { EmptyState } from '../../components/ui/StateViews'
+import { Donut, Legend } from '../../components/ui/Charts'
+import type { Slice } from '../../components/ui/Charts'
 import { useToast } from '../../components/ui/Toast'
+import { formatMoney, parseMoney, rupees, roundHalfUp } from '../../lib/money'
+import type { Paisa } from '../../lib/money'
+import { toBs, formatBs, formatAd } from '../../lib/bs'
+import { validateDiscount } from '../../lib/discount'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useAuth } from '../../lib/auth'
+import { canApproveDiscount } from '../../lib/rbac'
+import {
+  INVENTORY_CATEGORIES,
+  INVENTORY_MODELS,
+  ROOT_MODELS,
+  USED_CATEGORIES,
+  ALL_BRANDS,
+  BOX_CATEGORIES,
+  CREW_ROLES,
+  VEHICLE_TYPES,
+  TAG_OPTIONS,
+  TEMPLATE_BUNDLES,
+  INITIAL_LINES,
+  INITIAL_CREW,
+  INITIAL_VEHICLE,
+  SEED_ERRORS,
+  modelOf,
+  iconForCategory,
+  totalsOf,
+  pricingOf,
+  availabilityOf,
+  breakdownOf,
+  rateDriftOf,
+  parentsHolding,
+  duplicateFrom,
+} from '../../data/addBundle'
+import type {
+  DraftLine,
+  CrewPick,
+  CrewRole,
+  VehicleType,
+  InventoryCategory,
+  InventoryModel,
+} from '../../data/addBundle'
 
-// Simulating the Inventory models for the left pane
-const INVENTORY_MODELS = [
-  { id: 'M-1', category: 'Camera', name: 'RED Komodo X Brain', stock: 3, available: 1, reserved: 1, rent: 1 },
-  { id: 'M-2', category: 'Lens', name: 'DZOFilm Vespel Prime Set', stock: 2, available: 1, reserved: 0, rent: 1 },
-  { id: 'M-3', category: 'Power', name: 'Core SWX NANO Micro 98', stock: 24, available: 16, reserved: 4, rent: 4 },
-  { id: 'M-4', category: 'Audio', name: 'Shure SM7B', stock: 12, available: 8, reserved: 2, rent: 2 },
-  { id: 'M-5', category: 'Audio', name: 'RodeCaster Pro II', stock: 4, available: 2, reserved: 1, rent: 1 },
-]
+/**
+ * **Inventory ▸ Bundles ▸ New Bundle** — rebuilt 8 Aug against
+ * `06 Inventory/Add Bundle.PNG` and spec v1.1.
+ *
+ * The render's structure is kept: four numbered sections down the main column,
+ * the inventory tree beside the Bundle Items table, and a four-card right rail
+ * — Bundle Summary, Pricing Summary, Availability Summary, Quick Actions.
+ *
+ * What is deliberately **not** copied, each one named by the spec's own §0:
+ *  · §7.2 — the render's Pricing Summary recites `Rs 22,500 / −4,500 / 18,000`
+ *    while its ten lines total `26,100 / 2,320 / 23,780`. *"Not one of the three
+ *    responds to the discounts the user just entered — on the only screen where
+ *    those discounts are set."* Every figure here comes from `pricingOf`.
+ *  · §8.1 — the render flags NISI Athena 35mm blocked while it holds 2 of 3
+ *    units free against a required quantity of 1. Blocked is `available <
+ *    required`, so the honest reading of these lines is **13 / 13 ready**.
+ *  · §8.2 — a donut reading `18/18` above a panel reading `16/18 · 2 blocked`
+ *    cannot occur, because both read one array.
+ *  · §5.3 — the render's FX3 line claims 5 children while Battery and Charger
+ *    are *also* their own lines. An item is a child **or** a line, never both.
+ *  · §3 — `Save Draft` and `Create Bundle` appear in the render's header *and*
+ *    its footer. The footer owns them; the header keeps Import Template and
+ *    Duplicate Existing.
+ *  · §4 — the render's Primary Category offers `DIT` and `Production`, which are
+ *    not Inventory categories.
+ *  · §6.2 — a **Line Total** column, absent from the render, so a battery at
+ *    Rs 300 × 4 visibly contributes Rs 1,200 a day.
+ *  · §10 — Crew, Vehicle and Boxes sections, which the render's rail counts but
+ *    its builder cannot set.
+ *
+ * Locked rules, never copied back from the render: the numbered 20-item sidebar
+ * (the shell owns an 8-section rail), the render's violet accents, and raw hex.
+ */
 
-interface BundleLine {
-  id: string
-  modelId: string
-  modelName: string
-  category: string
-  requiredQty: number
-  originalRate: Paisa
-  discountType: 'percentage' | 'fixed'
-  discountValue: number
-  bundlePrice: Paisa
+/* ── field geometry ────────────────────────────────────────────────────── */
+
+const subtle: CSSProperties = { fontSize: 'var(--t-th)', color: 'var(--muted)' }
+
+const controlBase: CSSProperties = {
+  height: 34,
+  padding: '0 9px',
+  borderRadius: 'var(--r-input)',
+  border: '1px solid var(--input-border)',
+  background: 'var(--input-bg)',
+  color: 'var(--text)',
+  fontSize: 'var(--t-meta)',
+  fontFamily: 'inherit',
+  width: '100%',
+  minWidth: 0,
 }
+
+const selectStyle: CSSProperties = { ...controlBase, cursor: 'pointer' }
+
+const filterSelect: CSSProperties = { ...selectStyle, height: 32, width: 'auto' }
+
+/*
+ * The render fits ten Bundle Items columns into roughly 600px beside the tree
+ * and the rail. That density is the point — a line you have to scroll to price
+ * is a line nobody checks — so the cells run tight rather than the table running
+ * wide. It still scrolls inside its own container below that.
+ */
+const th: CSSProperties = {
+  textAlign: 'left',
+  padding: '7px 6px',
+  fontSize: 'var(--t-th)',
+  fontWeight: 600,
+  color: 'var(--text2)',
+  whiteSpace: 'nowrap',
+  borderBottom: '1px solid var(--border)',
+  verticalAlign: 'bottom',
+}
+
+const td: CSSProperties = {
+  padding: '7px 6px',
+  fontSize: 'var(--t-meta)',
+  color: 'var(--text)',
+  verticalAlign: 'top',
+}
+
+function Caption({ label, required }: { label: string; required?: boolean }) {
+  return (
+    <span style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>
+      {label}
+      {required && (
+        <span style={{ color: 'var(--danger-text)', marginLeft: 3 }} aria-label="required">
+          *
+        </span>
+      )}
+    </span>
+  )
+}
+
+const fieldBox: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }
+
+/** A caption over exactly **one** labelable control. */
+function Field({
+  label,
+  required,
+  hint,
+  children,
+}: {
+  label: string
+  required?: boolean
+  hint?: string
+  children: ReactNode
+}) {
+  return (
+    <label style={fieldBox}>
+      <Caption label={label} {...(required ? { required } : {})} />
+      {children}
+      {hint && <span style={subtle}>{hint}</span>}
+    </label>
+  )
+}
+
+/**
+ * A caption over a *group* — a toggle, a chip row, a file picker. Not a
+ * `<label>`: a label forwards its click to the first labelable descendant, so a
+ * hidden file input inside one opens the dialog twice.
+ */
+function FieldBlock({
+  label,
+  required,
+  hint,
+  children,
+}: {
+  label: string
+  required?: boolean
+  hint?: string
+  children: ReactNode
+}) {
+  return (
+    <div style={fieldBox} role="group" aria-label={label}>
+      <Caption label={label} {...(required ? { required } : {})} />
+      {children}
+      {hint && <span style={subtle}>{hint}</span>}
+    </div>
+  )
+}
+
+/** The render's numbered section chrome — 1 Bundle Details … 4 Notes. */
+function Section({
+  n,
+  title,
+  action,
+  children,
+  bodyStyle,
+}: {
+  n: number
+  title: string
+  action?: ReactNode
+  children: ReactNode
+  bodyStyle?: CSSProperties
+}) {
+  return (
+    <section style={{ ...cardStyle, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 9,
+          padding: '11px 14px',
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        <span
+          className="figure"
+          aria-hidden
+          style={{
+            width: 21,
+            height: 21,
+            flexShrink: 0,
+            borderRadius: 999,
+            display: 'grid',
+            placeItems: 'center',
+            background: 'var(--nav-active-bg)',
+            color: 'var(--nav-active-accent)',
+            fontSize: 'var(--t-th)',
+            fontWeight: 700,
+          }}
+        >
+          {n}
+        </span>
+        <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{title}</h2>
+        {action && <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>{action}</span>}
+      </div>
+      <div style={{ padding: 14, minWidth: 0, ...bodyStyle }}>{children}</div>
+    </section>
+  )
+}
+
+/** Foundation §3.1 — BS above AD, Latin digits, always with a year. */
+function BsAd({ date, prefix }: { date: Date; prefix?: string }) {
+  const bs = toBs(date)
+  return (
+    <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.35 }}>
+      <span className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>
+        {prefix ? `${prefix} ` : ''}
+        {bs ? formatBs(bs) : formatAd(date)}
+      </span>
+      {bs && (
+        <span className="figure" style={subtle}>
+          {formatAd(date)}
+        </span>
+      )}
+    </span>
+  )
+}
+
+/** §10.4 — crew and vehicle ride along; the money is calculated once, elsewhere. */
+function NotInRate({ what }: { what: string }) {
+  const reason = `Not in the bundle rate — ${what} is priced in the booking's own section, at its own rate.`
+  return (
+    <span
+      title={reason}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        height: 19,
+        padding: '0 7px',
+        borderRadius: 'var(--r-badge)',
+        border: '1px solid var(--border)',
+        color: 'var(--muted)',
+        fontSize: 'var(--t-th)',
+        fontWeight: 600,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <Icon name="info" size={10} label={reason} />
+      Not in Rate
+    </span>
+  )
+}
+
+function Banner({
+  tone,
+  icon,
+  title,
+  children,
+  action,
+}: {
+  tone: 'danger' | 'warning' | 'info'
+  icon: IconName
+  title: string
+  children?: ReactNode
+  action?: ReactNode
+}) {
+  const skin =
+    tone === 'danger'
+      ? { border: 'var(--danger)', background: 'var(--st-danger-bg)', color: 'var(--st-danger-fg)' }
+      : tone === 'warning'
+        ? { border: 'var(--warning-text)', background: 'var(--st-progress-bg)', color: 'var(--st-progress-fg)' }
+        : { border: 'var(--border)', background: 'var(--card2)', color: 'var(--text2)' }
+  return (
+    <div
+      role={tone === 'info' ? undefined : 'alert'}
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 10,
+        padding: '10px 12px',
+        borderRadius: 'var(--r-card)',
+        border: `1px solid ${skin.border}`,
+        background: skin.background,
+        color: skin.color,
+        fontSize: 'var(--t-meta)',
+        lineHeight: 1.55,
+      }}
+    >
+      <Icon name={icon} size={15} style={{ flexShrink: 0, marginTop: 2 }} />
+      <span style={{ minWidth: 0, flex: 1 }}>
+        <strong style={{ display: 'block', marginBottom: children ? 2 : 0 }}>{title}</strong>
+        {children}
+      </span>
+      {action && <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>{action}</span>}
+    </div>
+  )
+}
+
+/* ── export ────────────────────────────────────────────────────────────── */
+
+function downloadCsv(name: string, rows: string[][]) {
+  const csv = rows.map((cells) => cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n')
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+/* ── the screen ────────────────────────────────────────────────────────── */
+
+const BUNDLE_ID = 'BND-00024'
+const NOTES_LIMIT = 500
 
 export function AddBundle() {
   const navigate = useNavigate()
+  const money = useCanViewMoney()
+  const { user } = useAuth()
   const { showSuccessToast } = useToast()
+  const fileRef = useRef<HTMLInputElement | null>(null)
 
-  const [bundleName, setBundleName] = useState('')
-  const [primaryCategory, setPrimaryCategory] = useState('')
-  const [searchQuery, setSearchQuery] = useState('')
-  
-  const [lines, setLines] = useState<BundleLine[]>([])
+  /* §4 — Bundle Details */
+  const [name, setName] = useState('Sony FX3 Documentary Kit')
+  const [category, setCategory] = useState<InventoryCategory | ''>('Camera')
+  const [active, setActive] = useState(true)
+  const [description, setDescription] = useState(
+    'Professional documentary shooting package including camera, prime lenses, support and essential accessories.',
+  )
+  const [tags, setTags] = useState<string[]>(['Documentary', 'Travel', 'Corporate'])
+  const [thumbnail, setThumbnail] = useState<string | null>(null)
 
-  const handleAddLine = (modelId: string) => {
-    const model = INVENTORY_MODELS.find(m => m.id === modelId)
-    if (!model) return
+  /* §7.3 — the rate is computed; an override is declared, never hidden. */
+  const [override, setOverride] = useState(false)
+  const [overrideRate, setOverrideRate] = useState('18,000')
+  const [overrideReason, setOverrideReason] = useState('')
 
-    // Prevent duplicates for simplicity, just bump qty if already exists
-    const existing = lines.find(l => l.modelId === modelId)
+  /* §5 / §6 — the tree and the lines */
+  const [lines, setLines] = useState<DraftLine[]>(INITIAL_LINES)
+  const [search, setSearch] = useState('')
+  const [fCategory, setFCategory] = useState<'All' | InventoryCategory>('All')
+  const [fBrand, setFBrand] = useState('All')
+  const [fAvailability, setFAvailability] = useState<'Any' | 'Free now' | 'Nothing free'>('Any')
+  const [fChildren, setFChildren] = useState<'Any' | 'Yes' | 'No'>('Any')
+  const [treeOpen, setTreeOpen] = useState<Set<string>>(new Set(['M-FX3-BODY']))
+  const [childrenOpen, setChildrenOpen] = useState<Set<string>>(new Set())
+  const [discountOpen, setDiscountOpen] = useState<Set<string>>(new Set())
+
+  /* §10 — crew, vehicle, boxes */
+  const [crew, setCrew] = useState<CrewPick[]>(INITIAL_CREW)
+  const [vehicle, setVehicle] = useState<VehicleType | null>(INITIAL_VEHICLE)
+
+  const [notes, setNotes] = useState('')
+
+  /* prompts */
+  const [askParent, setAskParent] = useState<InventoryModel | null>(null)
+  const [askPromote, setAskPromote] = useState<{ model: InventoryModel; parents: DraftLine[] } | null>(null)
+  const [askRemoveChild, setAskRemoveChild] = useState<{ lineKey: string; child: InventoryModel } | null>(null)
+  const [duplicateNote, setDuplicateNote] = useState<string | null>(null)
+  const [blockedOpen, setBlockedOpen] = useState(false)
+  const [packingOpen, setPackingOpen] = useState(false)
+  const [seq, setSeq] = useState(100)
+
+  /* ── §13 · this page sets prices, so the floor does not get it ────────── */
+  if (!money) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+        <PageHeader
+          icon="plus"
+          title="New Bundle"
+          description="Create a reusable equipment kit and set bundle pricing."
+        />
+        <EmptyState
+          icon={<Icon name="settings" size={26} />}
+          title="Creating a bundle is not available for your role"
+          description="A bundle sets prices — every rate, discount and the daily rate itself — so building one is a commercial decision your role does not carry. You can open any saved bundle from Inventory ▸ Bundles to see its contents and print its packing list. Ask an Owner, Admin, Coordinator or Accounts user to create a new one."
+        />
+      </div>
+    )
+  }
+
+  /* ── derived, never typed ─────────────────────────────────────────────── */
+
+  const pricing = useMemo(() => pricingOf(lines), [lines])
+  const availability = useMemo(() => availabilityOf(lines), [lines])
+  const breakdown = useMemo(() => breakdownOf(lines, crew, vehicle), [lines, crew, vehicle])
+  const drift = useMemo(() => rateDriftOf(lines), [lines])
+
+  const overrideRatePaisa = parseMoney(overrideRate) ?? (0 as Paisa)
+  const effectiveRatePaisa = override ? overrideRatePaisa : pricing.computedRatePaisa
+  const impliedExtraPaisa = (pricing.computedRatePaisa - overrideRatePaisa) as Paisa
+  const impliedExtraPct =
+    pricing.sumOfPartsPaisa === 0 ? 0 : roundHalfUp((impliedExtraPaisa / pricing.sumOfPartsPaisa) * 100)
+  const totalSavingPaisa = (pricing.sumOfPartsPaisa - effectiveRatePaisa) as Paisa
+  const totalSavingPct =
+    pricing.sumOfPartsPaisa === 0 ? 0 : roundHalfUp((totalSavingPaisa / pricing.sumOfPartsPaisa) * 100)
+
+  /* Foundation §9 — a line discount above 10% needs a reason and an approver. */
+  const discountProblems = lines
+    .map((l) => {
+      const t = totalsOf(l)
+      const v = validateDiscount(t.discountPct, l.discountReason, l.approvedBy)
+      return v.valid ? null : { line: l, model: modelOf(l.modelId), message: v.error ?? 'Discount is not valid.' }
+    })
+    .filter((x): x is { line: DraftLine; model: InventoryModel | undefined; message: string } => x !== null)
+
+  const blockingReason =
+    SEED_ERRORS.length > 0
+      ? 'The inventory tree does not reconcile — see the banner above.'
+      : name.trim().length === 0
+        ? 'A bundle needs a name.'
+        : category === ''
+          ? 'A bundle needs a primary category.'
+          : breakdown.equipment === 0
+            ? 'A bundle needs at least one equipment line.'
+            : discountProblems.length > 0
+              ? (discountProblems[0]?.message ?? 'A line discount is not valid.')
+              : override && overrideRatePaisa <= 0
+                ? 'An override rate must be above Rs 0.'
+                : override && overrideReason.trim().length < 10
+                  ? 'An override rate is stored with a reason of at least 10 characters.'
+                  : null
+
+  /* ── line editing ─────────────────────────────────────────────────────── */
+
+  const nextKey = () => {
+    const k = `L${seq}`
+    setSeq((s) => s + 1)
+    return k
+  }
+
+  const patch = (key: string, updates: Partial<DraftLine>) =>
+    setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...updates } : l)))
+
+  const removeLine = (key: string) => setLines((prev) => prev.filter((l) => l.key !== key))
+
+  const addModel = (m: InventoryModel, includeRequiredChildren: boolean) => {
+    const key = nextKey()
+    const childIds = includeRequiredChildren
+      ? (m.children ?? []).filter((c) => c.required && !lines.some((l) => l.modelId === c.id)).map((c) => c.id)
+      : []
+    setLines((prev) => [
+      ...prev,
+      {
+        key,
+        modelId: m.id,
+        qty: 1,
+        originalRatePaisa: m.unitRatePaisa,
+        discountKind: 'pct',
+        discountPct: 0,
+        discountFixedPaisa: rupees(0),
+        childIds,
+        discountReason: '',
+        approvedBy: null,
+      },
+    ])
+  }
+
+  /** §5.2 / §5.3 — the two prompts adding a model can raise. */
+  const requestAdd = (m: InventoryModel) => {
+    const existing = lines.find((l) => l.modelId === m.id)
     if (existing) {
-      setLines(lines.map(l => l.modelId === modelId ? { ...l, requiredQty: l.requiredQty + 1 } : l))
+      patch(existing.key, { qty: existing.qty + 1 })
       return
     }
-
-    const defaultRate = rupees(5000) // Dummy rate
-    setLines([...lines, {
-      id: Math.random().toString(),
-      modelId,
-      modelName: model.name,
-      category: model.category,
-      requiredQty: 1,
-      originalRate: defaultRate,
-      discountType: 'percentage',
-      discountValue: 0,
-      bundlePrice: defaultRate
-    }])
+    const parents = parentsHolding(lines, m.id)
+    if (parents.length > 0) {
+      setAskPromote({ model: m, parents })
+      return
+    }
+    if ((m.children ?? []).length > 0) {
+      setAskParent(m)
+      return
+    }
+    addModel(m, false)
   }
 
-  const handleUpdateLine = (id: string, updates: Partial<BundleLine>) => {
-    setLines(lines.map(l => l.id === id ? { ...l, ...updates } : l))
+  /** §5.3 — promoting removes the model from its parent's children. */
+  const promote = (m: InventoryModel, parents: DraftLine[]) => {
+    setLines((prev) =>
+      prev.map((l) =>
+        parents.some((p) => p.key === l.key) ? { ...l, childIds: l.childIds.filter((c) => c !== m.id) } : l,
+      ),
+    )
+    addModel(m, false)
+    setAskPromote(null)
   }
 
-  const handleRemoveLine = (id: string) => {
-    setLines(lines.filter(l => l.id !== id))
+  const toggleChild = (lineKey: string, childId: string, required: boolean, on: boolean) => {
+    if (!on && required) {
+      const child = modelOf(childId)
+      if (child) {
+        setAskRemoveChild({ lineKey, child })
+        return
+      }
+    }
+    setLines((prev) =>
+      prev.map((l) =>
+        l.key === lineKey
+          ? { ...l, childIds: on ? [...new Set([...l.childIds, childId])] : l.childIds.filter((c) => c !== childId) }
+          : l,
+      ),
+    )
   }
 
-  const sumOriginal = lines.reduce((sum, l) => sum + (l.originalRate * l.requiredQty), 0)
-  const sumBundle = lines.reduce((sum, l) => sum + l.bundlePrice, 0)
-  const totalItems = lines.reduce((sum, l) => sum + l.requiredQty, 0)
+  const toggleIn = (set: Set<string>, apply: (s: Set<string>) => void, key: string) => {
+    const next = new Set(set)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    apply(next)
+  }
+
+  const applyDuplicate = (bundleId: string) => {
+    const src = TEMPLATE_BUNDLES.find((b) => b.id === bundleId)
+    if (!src) return
+    const d = duplicateFrom(src)
+    setName(d.name)
+    setCategory(d.category)
+    setTags(d.tags)
+    setLines(d.lines)
+    setCrew(d.crew)
+    setVehicle(d.vehicle)
+    setOverride(false)
+    setDuplicateNote(
+      d.unmatched.length === 0
+        ? `Copied every line of ${src.id} — ${d.lines.length} equipment lines, priced at today's rates.`
+        : `Copied ${d.lines.length} of ${d.lines.length + d.unmatched.length} lines from ${src.id}. ` +
+            `Not in this inventory tree: ${d.unmatched.join(', ')}.`,
+    )
+  }
+
+  const resetDraft = () => {
+    setLines(INITIAL_LINES)
+    setCrew(INITIAL_CREW)
+    setVehicle(INITIAL_VEHICLE)
+    setOverride(false)
+    setOverrideReason('')
+    setDuplicateNote(null)
+  }
+
+  const exportLines = () => {
+    const head = [
+      'Bundle ID',
+      'Model',
+      'SKU',
+      'Category',
+      'Required Qty',
+      'Original Rate',
+      'Discount',
+      'Bundle Rate',
+      'Line Total',
+      'Children',
+      'Units Available',
+      'Units in Stock',
+    ]
+    const body = lines.map((l) => {
+      const m = modelOf(l.modelId)
+      const t = totalsOf(l)
+      return [
+        BUNDLE_ID,
+        m?.name ?? l.modelId,
+        m?.sku ?? '—',
+        m?.category ?? '—',
+        String(l.qty),
+        formatMoney(l.originalRatePaisa),
+        l.discountKind === 'pct' ? `${l.discountPct}%` : formatMoney(l.discountFixedPaisa),
+        formatMoney(t.bundleRate),
+        formatMoney(t.lineTotal),
+        String(l.childIds.length),
+        String(m?.available ?? 0),
+        String(m?.stock ?? 0),
+      ]
+    })
+    downloadCsv(`${BUNDLE_ID}-lines.csv`, [head, ...body])
+  }
+
+  /* ── the tree ─────────────────────────────────────────────────────────── */
+
+  const filtersOn =
+    search.trim() !== '' || fCategory !== 'All' || fBrand !== 'All' || fAvailability !== 'Any' || fChildren !== 'Any'
+
+  /* Roots only while unfiltered — an accessory belongs under its parent, not beside it. */
+  const treeRows = (filtersOn ? INVENTORY_MODELS : ROOT_MODELS).filter((m) => {
+    const q = search.trim().toLowerCase()
+    if (q && !`${m.name} ${m.sku} ${m.brand} ${m.category}`.toLowerCase().includes(q)) return false
+    if (fCategory !== 'All' && m.category !== fCategory) return false
+    if (fBrand !== 'All' && m.brand !== fBrand) return false
+    if (fAvailability === 'Free now' && m.available === 0) return false
+    if (fAvailability === 'Nothing free' && m.available > 0) return false
+    if (fChildren !== 'Any' && ((m.children ?? []).length > 0) !== (fChildren === 'Yes')) return false
+    return true
+  })
+
+  const clearFilters = () => {
+    setSearch('')
+    setFCategory('All')
+    setFBrand('All')
+    setFAvailability('Any')
+    setFChildren('Any')
+  }
+
+  /* ── the rail ─────────────────────────────────────────────────────────── */
+
+  const segTotal = availability.segments.reduce((s, x) => s + x.value, 0) || 1
+  const slices: Slice[] = availability.segments.map((s) => ({
+    label: s.label,
+    value: s.value,
+    display: String(s.value),
+    percent: `${Math.round((s.value / segTotal) * 100)}%`,
+  }))
+
+  const canApprove = user ? canApproveDiscount(user.role, 25) : false
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: -10 }}>
-        <button 
-          onClick={() => navigate(-1)}
-          style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 0 }}
-        >
-          <IconArrowLeft size={20} />
-        </button>
-        <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-          Inventory <IconChevronRight size={12} style={{ margin: '0 4px', verticalAlign: 'middle' }} /> Bundles <IconChevronRight size={12} style={{ margin: '0 4px', verticalAlign: 'middle' }} /> <span style={{ color: 'var(--text)' }}>New Bundle</span>
-        </div>
-      </div>
-      
+      {SEED_ERRORS.length > 0 && (
+        <Banner tone="danger" icon="alert_triangle" title="The inventory tree does not reconcile.">
+          <ul style={{ margin: 0, paddingLeft: 16 }}>
+            {SEED_ERRORS.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+        </Banner>
+      )}
+
+      {/* §2 — breadcrumb only, and the shell already renders it. No Back button. */}
       <PageHeader
-        title="New Bundle"
         icon="plus"
+        title="New Bundle"
+        description="Create a reusable equipment kit and set bundle pricing."
         actions={
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Button variant="secondary">Import Template</Button>
-            <Button variant="secondary">Duplicate Existing</Button>
-          </div>
+          <>
+            <Unavailable reason="Templates are not built — there is no bundle template store in this release.">
+              <Button icon="upload" disabled>
+                Import Template
+              </Button>
+            </Unavailable>
+            <select
+              aria-label="Duplicate an existing bundle"
+              value=""
+              onChange={(e) => e.target.value && applyDuplicate(e.target.value)}
+              style={{
+                ...selectStyle,
+                width: 'auto',
+                border: '1px solid var(--btn-secondary-border)',
+                background: 'var(--btn-secondary-bg)',
+                fontWeight: 600,
+              }}
+            >
+              <option value="">Duplicate Existing…</option>
+              {TEMPLATE_BUNDLES.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.id} · {b.name}
+                </option>
+              ))}
+            </select>
+          </>
         }
       />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-          <Card padding="lg">
-            <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 16 }}>1. Bundle Details</h3>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--muted)', marginBottom: 8 }}>Bundle Name *</label>
-                <Input value={bundleName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBundleName(e.target.value)} placeholder="e.g. RED Komodo X - Indie Package" />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--muted)', marginBottom: 8 }}>Bundle ID</label>
-                <Input value="BND-00024" disabled style={{ background: 'var(--bg)' }} />
-              </div>
-            </div>
+      {duplicateNote && (
+        <Banner
+          tone="info"
+          icon="info"
+          title="Copied from a saved bundle"
+          action={
+            <Button icon="close" onClick={() => setDuplicateNote(null)}>
+              Dismiss
+            </Button>
+          }
+        >
+          {duplicateNote}
+        </Banner>
+      )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--muted)', marginBottom: 8 }}>Primary Category *</label>
-                <Select value={primaryCategory} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setPrimaryCategory(e.target.value)}>
-                  <option value="">Select Category</option>
-                  <option value="Camera">Camera</option>
-                  <option value="Lens">Lens</option>
-                  <option value="Lighting">Lighting</option>
-                  <option value="Audio">Audio</option>
-                  <option value="Other">Other</option>
-                </Select>
-              </div>
-            </div>
-          </Card>
+      {/* §7.4 — rates that moved since this draft was priced. Never refreshed silently. */}
+      {drift.length > 0 && (
+        <Banner
+          tone="warning"
+          icon="alert_triangle"
+          title={`${drift.length} component ${drift.length === 1 ? 'rate has' : 'rates have'} changed since this bundle was priced.`}
+          action={
+            <Button
+              icon="refresh"
+              onClick={() =>
+                setLines((prev) =>
+                  prev.map((l) => {
+                    const m = modelOf(l.modelId)
+                    return m ? { ...l, originalRatePaisa: m.unitRatePaisa } : l
+                  }),
+                )
+              }
+            >
+              Refresh rates
+            </Button>
+          }
+        >
+          {drift
+            .map((d) => `${d.model.name} ${formatMoney(d.from)} → ${formatMoney(d.to)}`)
+            .join(' · ')}
+          . Refreshing recomputes the sum of parts and the saving; existing bookings are never affected.
+        </Banner>
+      )}
 
-          <Card padding="none">
-            <div style={{ padding: 20, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>2. Bundle Builder</h3>
-            </div>
-            
-            <div style={{ display: 'flex', height: 400 }}>
-              {/* Left Pane: Inventory Tree */}
-              <div style={{ width: 300, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ padding: 12, borderBottom: '1px solid var(--border)' }}>
-                  <Input 
-                    placeholder="Search Inventory..." 
-                    value={searchQuery}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-                    icon={<IconSearch size={14} />}
-                  />
-                </div>
-                <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
-                  {INVENTORY_MODELS.filter(m => m.name.toLowerCase().includes(searchQuery.toLowerCase())).map(model => (
-                    <div 
-                      key={model.id}
-                      onClick={() => handleAddLine(model.id)}
-                      style={{ 
-                        padding: 10, 
-                        borderRadius: 6, 
-                        cursor: 'pointer',
-                        marginBottom: 4,
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0,1fr) auto',
+          gap: 'var(--sp-md)',
+          alignItems: 'start',
+        }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
+          {/* ── 1 · Bundle Details ─────────────────────────────────────── */}
+          <Section n={1} title="Bundle Details">
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr) auto', gap: 14 }}>
+              <Field label="Bundle Name" required>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Sony FX3 Documentary Kit"
+                  style={controlBase}
+                />
+              </Field>
+              <Field label="Bundle ID" hint="Auto generated">
+                <input value={BUNDLE_ID} readOnly className="identifier" style={{ ...controlBase, background: 'var(--card2)', color: 'var(--text2)' }} />
+              </Field>
+              <Field label="Primary Category" required hint="From the Inventory category list">
+                <select value={category} onChange={(e) => setCategory(e.target.value as InventoryCategory | '')} style={selectStyle}>
+                  <option value="">Select category…</option>
+                  {INVENTORY_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <FieldBlock label="Status">
+                <button
+                  type="button"
+                  onClick={() => setActive((v) => !v)}
+                  aria-pressed={active}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    height: 34,
+                    padding: '0 10px',
+                    borderRadius: 'var(--r-btn)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--card2)',
+                    color: 'var(--text)',
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: 600,
+                    fontFamily: 'inherit',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <span
+                    aria-hidden
+                    style={{
+                      width: 30,
+                      height: 17,
+                      borderRadius: 999,
+                      background: active ? 'var(--success)' : 'var(--st-neutral-bg)',
+                      position: 'relative',
+                      transition: 'background-color var(--dur) ease',
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: 'absolute',
+                        top: 2,
+                        left: active ? 15 : 2,
+                        width: 13,
+                        height: 13,
+                        borderRadius: 999,
                         background: 'var(--card)',
-                        border: '1px solid var(--border)',
-                        transition: 'border-color 0.15s ease'
+                        transition: 'left var(--dur) ease',
+                      }}
+                    />
+                  </span>
+                  {active ? 'Active' : 'Inactive'}
+                </button>
+              </FieldBlock>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) minmax(0,1fr) auto', gap: 14, marginTop: 14 }}>
+              <Field label="Description">
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
+                  style={{ ...controlBase, height: 'auto', padding: '8px 9px', resize: 'vertical', lineHeight: 1.5 }}
+                />
+              </Field>
+
+              <FieldBlock label="Tags">
+                <span style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
+                  {tags.map((t) => (
+                    <span
+                      key={t}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        height: 24,
+                        padding: '0 4px 0 9px',
+                        borderRadius: 'var(--r-badge)',
+                        background: 'var(--st-primary-bg)',
+                        color: 'var(--st-primary-fg)',
+                        fontSize: 'var(--t-th)',
+                        fontWeight: 600,
                       }}
                     >
-                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{model.name}</div>
-                      <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, display: 'flex', gap: 8 }}>
-                        <span>Stk {model.stock}</span>
-                        <span style={{ color: 'var(--good)' }}>Avl {model.available}</span>
-                        <span>Res {model.reserved}</span>
-                        <span>Rnt {model.rent}</span>
-                      </div>
+                      {t}
+                      <button
+                        type="button"
+                        aria-label={`Remove tag ${t}`}
+                        onClick={() => setTags((prev) => prev.filter((x) => x !== t))}
+                        style={{
+                          display: 'grid',
+                          placeItems: 'center',
+                          width: 17,
+                          height: 17,
+                          border: 'none',
+                          borderRadius: 999,
+                          background: 'transparent',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <Icon name="close" size={10} />
+                      </button>
+                    </span>
+                  ))}
+                  <select
+                    aria-label="Add a tag"
+                    value=""
+                    onChange={(e) => e.target.value && setTags((prev) => [...prev, e.target.value])}
+                    style={{ ...selectStyle, height: 26, width: 'auto' }}
+                  >
+                    <option value="">+ Add tag</option>
+                    {TAG_OPTIONS.filter((t) => !tags.includes(t)).map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </span>
+              </FieldBlock>
+
+              <FieldBlock label="Thumbnail" hint="JPG or PNG, held in this browser only">
+                <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                  <span
+                    aria-hidden
+                    style={{
+                      width: 76,
+                      height: 54,
+                      borderRadius: 8,
+                      border: '1px solid var(--border)',
+                      background: 'var(--card2)',
+                      display: 'grid',
+                      placeItems: 'center',
+                      overflow: 'hidden',
+                      color: 'var(--muted)',
+                    }}
+                  >
+                    {thumbnail ? (
+                      <img src={thumbnail} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <Icon name="photo" size={19} />
+                    )}
+                  </span>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0]
+                      if (!f) return
+                      const reader = new FileReader()
+                      reader.onload = () => setThumbnail(typeof reader.result === 'string' ? reader.result : null)
+                      reader.readAsDataURL(f)
+                    }}
+                  />
+                  <Button icon="upload" onClick={() => fileRef.current?.click()}>
+                    {thumbnail ? 'Change image' : 'Add image'}
+                  </Button>
+                </span>
+              </FieldBlock>
+            </div>
+
+            {/* §7.3 — computed by default; an override is declared and reasoned. */}
+            <div
+              style={{
+                marginTop: 14,
+                paddingTop: 12,
+                borderTop: '1px solid var(--border)',
+                display: 'flex',
+                gap: 14,
+                flexWrap: 'wrap',
+                alignItems: 'flex-start',
+              }}
+            >
+              <FieldBlock
+                label="Default Daily Rate (Equipment Only)"
+                hint="This rate covers equipment only. Crew and vehicle are not included."
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span
+                    className="figure"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      height: 34,
+                      padding: '0 11px',
+                      borderRadius: 'var(--r-input)',
+                      border: '1px solid var(--border)',
+                      background: 'var(--card2)',
+                      color: 'var(--text)',
+                      fontWeight: 700,
+                      fontSize: 'var(--t-ui)',
+                      minWidth: 130,
+                    }}
+                  >
+                    {formatMoney(effectiveRatePaisa)}
+                  </span>
+                  <span style={subtle}>
+                    {override ? 'Override — declared below' : 'Computed from the lines below (§7.3)'}
+                  </span>
+                </span>
+              </FieldBlock>
+
+              <FieldBlock label="Override the computed rate">
+                <button
+                  type="button"
+                  onClick={() => setOverride((v) => !v)}
+                  aria-pressed={override}
+                  style={{
+                    height: 34,
+                    padding: '0 11px',
+                    borderRadius: 'var(--r-btn)',
+                    border: `1px solid ${override ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+                    background: override ? 'var(--nav-active-bg)' : 'var(--card2)',
+                    color: override ? 'var(--nav-active-accent)' : 'var(--text2)',
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: 600,
+                    fontFamily: 'inherit',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {override ? 'Override on' : 'Override off'}
+                </button>
+              </FieldBlock>
+
+              {override && (
+                <>
+                  <Field label="Target daily rate" required>
+                    <input
+                      value={overrideRate}
+                      onChange={(e) => setOverrideRate(e.target.value)}
+                      inputMode="decimal"
+                      className="figure"
+                      style={{ ...controlBase, width: 140 }}
+                    />
+                  </Field>
+                  <Field
+                    label="Reason for the override"
+                    required
+                    hint={`Stored with the bundle and audited. ${overrideReason.trim().length}/10 characters minimum.`}
+                  >
+                    <input
+                      value={overrideReason}
+                      onChange={(e) => setOverrideReason(e.target.value)}
+                      placeholder="e.g. Long-term retainer price agreed with the client"
+                      style={{ ...controlBase, width: 340 }}
+                    />
+                  </Field>
+                </>
+              )}
+            </div>
+          </Section>
+
+          {/* ── 2 · Search Inventory + 3 · Bundle Items ─────────────────── */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(230px, 286px) minmax(0,1fr)', gap: 'var(--sp-md)', alignItems: 'start' }}>
+            <Section
+              n={2}
+              title="Search Inventory"
+              bodyStyle={{ padding: 0 }}
+              action={
+                <button
+                  type="button"
+                  onClick={() => setTreeOpen(treeOpen.size === 0 ? new Set(ROOT_MODELS.filter((m) => m.children).map((m) => m.id)) : new Set())}
+                  style={{ border: 'none', background: 'transparent', color: 'var(--link)', fontSize: 'var(--t-th)', fontFamily: 'inherit', cursor: 'pointer', padding: 0 }}
+                >
+                  {treeOpen.size === 0 ? 'Expand all' : 'Collapse all'}
+                </button>
+              }
+            >
+              <div style={{ padding: 12, borderBottom: '1px solid var(--border)' }}>
+                <span style={{ position: 'relative', display: 'block' }}>
+                  <Icon name="search" size={14} style={{ position: 'absolute', left: 9, top: 10, color: 'var(--muted)' }} />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search equipment by name, SKU, brand…"
+                    style={{ ...controlBase, paddingLeft: 29 }}
+                  />
+                </span>
+                <p style={{ margin: '8px 0 0', ...subtle, lineHeight: 1.5 }}>
+                  Select equipment models and their children to add to the bundle. §5.1 —{' '}
+                  <span className="figure">stock = available + reserved + on rent + maintenance</span>, asserted per row.
+                </p>
+              </div>
+
+              <div style={{ maxHeight: 460, overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--th-bg)' }}>
+                      <th style={{ ...th, position: 'sticky', top: 0, background: 'var(--th-bg)' }} scope="col">
+                        Model
+                      </th>
+                      {(['Stock', 'Avail', 'Res', 'Rent'] as const).map((h) => (
+                        <th key={h} style={{ ...th, textAlign: 'right', position: 'sticky', top: 0, background: 'var(--th-bg)' }} scope="col">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {treeRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} style={{ ...td, textAlign: 'center', color: 'var(--text2)', padding: '22px 12px' }}>
+                          No model matches this search.
+                          <span style={{ display: 'block', marginTop: 8 }}>
+                            <Button icon="refresh" onClick={clearFilters}>
+                              Clear filters
+                            </Button>
+                          </span>
+                        </td>
+                      </tr>
+                    ) : (
+                      treeRows.map((m) => {
+                        const kids = m.children ?? []
+                        const open = treeOpen.has(m.id)
+                        const inBundle = lines.some((l) => l.modelId === m.id)
+                        return (
+                          <TreeRow
+                            key={m.id}
+                            model={m}
+                            open={open}
+                            inBundle={inBundle}
+                            onToggleOpen={() => toggleIn(treeOpen, setTreeOpen, m.id)}
+                            onAdd={() => requestAdd(m)}
+                            childRows={
+                              open
+                                ? kids
+                                    .map((c) => ({ child: modelOf(c.id), required: c.required }))
+                                    .filter((x): x is { child: InventoryModel; required: boolean } => !!x.child)
+                                : []
+                            }
+                            onAddChild={(child) => requestAdd(child)}
+                            childInBundle={(id) => lines.some((l) => l.modelId === id)}
+                          />
+                        )
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Section>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
+              {/* the render's filter row, every control wired */}
+              <div style={{ ...cardStyle, padding: '9px 12px', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, ...subtle }}>
+                  Category
+                  <select value={fCategory} onChange={(e) => setFCategory(e.target.value as 'All' | InventoryCategory)} style={filterSelect}>
+                    <option value="All">All</option>
+                    {USED_CATEGORIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, ...subtle }}>
+                  Brand
+                  <select value={fBrand} onChange={(e) => setFBrand(e.target.value)} style={filterSelect}>
+                    <option value="All">All</option>
+                    {ALL_BRANDS.map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, ...subtle }}>
+                  Availability
+                  <select
+                    value={fAvailability}
+                    onChange={(e) => setFAvailability(e.target.value as 'Any' | 'Free now' | 'Nothing free')}
+                    style={filterSelect}
+                  >
+                    <option value="Any">Any</option>
+                    <option value="Free now">Units free now</option>
+                    <option value="Nothing free">Nothing free</option>
+                  </select>
+                </label>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, ...subtle }}>
+                  Has Children
+                  <select value={fChildren} onChange={(e) => setFChildren(e.target.value as 'Any' | 'Yes' | 'No')} style={filterSelect}>
+                    <option value="Any">Any</option>
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
+                  </select>
+                </label>
+                {filtersOn ? (
+                  <Button icon="close" onClick={clearFilters}>
+                    Clear All
+                  </Button>
+                ) : (
+                  <Unavailable reason="No filter is set, so there is nothing to clear.">
+                    <Button icon="close" disabled>
+                      Clear All
+                    </Button>
+                  </Unavailable>
+                )}
+                <span className="figure" style={{ marginLeft: 'auto', ...subtle }}>
+                  {treeRows.length} shown of {INVENTORY_MODELS.length} models
+                </span>
+              </div>
+
+              <Section
+                n={3}
+                title={`Bundle Items (${lines.length})`}
+                bodyStyle={{ padding: 0 }}
+                action={
+                  lines.length > 0 ? (
+                    <Button icon="close" onClick={() => setLines([])}>
+                      Clear All Items
+                    </Button>
+                  ) : (
+                    <Unavailable reason="There are no lines to clear.">
+                      <Button icon="close" disabled>
+                        Clear All Items
+                      </Button>
+                    </Unavailable>
+                  )
+                }
+              >
+                {lines.length === 0 ? (
+                  <div style={{ padding: '30px 16px', textAlign: 'center' }}>
+                    <Icon name="package" size={26} style={{ color: 'var(--muted)' }} />
+                    <p style={{ margin: '8px 0 4px', fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--text)' }}>
+                      No items in this bundle yet
+                    </p>
+                    <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                      Pick models from the inventory tree on the left. §14 — a bundle needs at least one equipment line.
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+                      <thead>
+                        <tr style={{ background: 'var(--th-bg)' }}>
+                          <th style={th} scope="col">
+                            Equipment Model
+                            <span style={{ display: 'block', ...subtle, fontWeight: 400 }}>Category</span>
+                          </th>
+                          <th style={{ ...th, textAlign: 'right' }} scope="col">
+                            Required
+                            <span style={{ display: 'block', ...subtle, fontWeight: 400 }}>Qty</span>
+                          </th>
+                          <th style={{ ...th, textAlign: 'right' }} scope="col">
+                            Original Rate
+                            <span style={{ display: 'block', ...subtle, fontWeight: 400 }}>per day</span>
+                          </th>
+                          <th style={th} scope="col">
+                            Discount
+                          </th>
+                          <th style={{ ...th, textAlign: 'right' }} scope="col">
+                            Bundle Rate
+                            <span style={{ display: 'block', ...subtle, fontWeight: 400 }}>per day</span>
+                          </th>
+                          {/* §6.2 — new, and the reason the summary could not be checked by eye. */}
+                          <th style={{ ...th, textAlign: 'right' }} scope="col">
+                            Line Total
+                            <span style={{ display: 'block', ...subtle, fontWeight: 400 }}>rate × qty</span>
+                          </th>
+                          <th style={{ ...th, textAlign: 'right' }} scope="col">
+                            Children
+                          </th>
+                          <th style={th} scope="col">
+                            Availability
+                          </th>
+                          <th style={{ ...th, textAlign: 'right' }} scope="col">
+                            Remove
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lines.map((l) => (
+                          <LineRow
+                            key={l.key}
+                            line={l}
+                            childrenOpen={childrenOpen.has(l.key)}
+                            discountOpen={discountOpen.has(l.key)}
+                            canApprove={canApprove}
+                            approverName={user ? `${user.name} (${user.role})` : null}
+                            onToggleChildren={() => toggleIn(childrenOpen, setChildrenOpen, l.key)}
+                            onToggleDiscount={() => toggleIn(discountOpen, setDiscountOpen, l.key)}
+                            onPatch={(u) => patch(l.key, u)}
+                            onRemove={() => removeLine(l.key)}
+                            onToggleChild={(childId, required, on) => toggleChild(l.key, childId, required, on)}
+                            childIsLine={(id) => lines.some((o) => o.modelId === id)}
+                          />
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ background: 'var(--th-bg)', borderTop: '1px solid var(--border)' }}>
+                          <td style={{ ...td, fontWeight: 700 }}>
+                            {lines.length} {lines.length === 1 ? 'line' : 'lines'}
+                          </td>
+                          <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>
+                            {availability.totalItems}
+                          </td>
+                          <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>
+                            {formatMoney(pricing.sumOfPartsPaisa)}
+                          </td>
+                          <td className="figure" style={{ ...td, color: 'var(--danger-text)', fontWeight: 700 }}>
+                            − {formatMoney(pricing.discountsPaisa)}
+                          </td>
+                          <td style={td} />
+                          <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>
+                            {formatMoney(pricing.computedRatePaisa)}
+                          </td>
+                          <td style={td} />
+                          <td className="figure" style={{ ...td, color: 'var(--text2)' }}>
+                            {availability.readyItems} / {availability.totalItems} ready
+                          </td>
+                          <td style={td} />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </Section>
+
+              {discountProblems.length > 0 && (
+                <Banner tone="danger" icon="alert_triangle" title="A line discount is not authorised.">
+                  <ul style={{ margin: 0, paddingLeft: 16 }}>
+                    {discountProblems.map((p) => (
+                      <li key={p.line.key}>
+                        {p.model?.name ?? p.line.modelId} — {p.message}
+                      </li>
+                    ))}
+                  </ul>
+                </Banner>
+              )}
+            </div>
+          </div>
+
+          {/* ── 4 · Crew, Vehicle and Boxes ─────────────────────────────── */}
+          <Section n={4} title="Crew, Vehicle and Boxes">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 16 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <Icon name="crew" size={14} style={{ color: 'var(--text2)' }} />
+                  <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Crew suggestions</span>
+                  <NotInRate what="crew" />
+                </div>
+                <p style={{ margin: '0 0 8px', ...subtle, lineHeight: 1.5 }}>
+                  Roles, not people. Adding this bundle to a booking creates crew lines in that booking's Crew section, at
+                  their own rates.
+                </p>
+                {crew.length === 0 && <p style={{ margin: '0 0 8px', ...subtle }}>No crew role suggested.</p>}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {crew.map((c) => (
+                    <div key={c.role} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', flex: 1, minWidth: 0 }}>{c.role}</span>
+                      <input
+                        type="number"
+                        min={1}
+                        aria-label={`Headcount for ${c.role}`}
+                        value={c.headcount}
+                        onChange={(e) =>
+                          setCrew((prev) =>
+                            prev.map((x) =>
+                              x.role === c.role ? { ...x, headcount: Math.max(1, Number(e.target.value) || 1) } : x,
+                            ),
+                          )
+                        }
+                        className="figure"
+                        style={{ ...controlBase, width: 62, height: 30, textAlign: 'right' }}
+                      />
+                      <button
+                        type="button"
+                        aria-label={`Remove ${c.role}`}
+                        onClick={() => setCrew((prev) => prev.filter((x) => x.role !== c.role))}
+                        style={{ border: 'none', background: 'transparent', color: 'var(--danger-text)', cursor: 'pointer', padding: 4 }}
+                      >
+                        <Icon name="close" size={13} />
+                      </button>
                     </div>
                   ))}
                 </div>
+                <select
+                  aria-label="Add a crew role"
+                  value=""
+                  onChange={(e) => {
+                    const role = e.target.value as CrewRole
+                    if (role) setCrew((prev) => [...prev, { role, headcount: 1 }])
+                  }}
+                  style={{ ...selectStyle, marginTop: 8, height: 30 }}
+                >
+                  <option value="">+ Add a crew role</option>
+                  {CREW_ROLES.filter((r) => !crew.some((c) => c.role === r)).map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              {/* Right Pane: Selected Lines */}
-              <div style={{ flex: 1, padding: 20, overflowY: 'auto' }}>
-                {lines.length === 0 ? (
-                  <EmptyState 
-                    title="No items in bundle"
-                    description="Select models from the inventory tree to add them to this bundle."
-                  />
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {lines.map(line => (
-                      <div key={line.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{line.modelName}</div>
-                            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{line.category}</div>
-                          </div>
-                          <button onClick={() => handleRemoveLine(line.id)} style={{ background: 'none', border: 'none', color: 'var(--bad)', fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
-                            Remove
-                          </button>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <Icon name="truck" size={14} style={{ color: 'var(--text2)' }} />
+                  <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Vehicle suggestion</span>
+                  <NotInRate what="transport" />
+                </div>
+                <p style={{ margin: '0 0 8px', ...subtle, lineHeight: 1.5 }}>
+                  The bundle carries the van so it is not forgotten; the money is calculated once, in the booking's
+                  Transport section.
+                </p>
+                <select
+                  aria-label="Vehicle suggestion"
+                  value={vehicle ?? ''}
+                  onChange={(e) => setVehicle(e.target.value === '' ? null : (e.target.value as VehicleType))}
+                  style={selectStyle}
+                >
+                  <option value="">No vehicle</option>
+                  {VEHICLE_TYPES.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <Icon name="package" size={14} style={{ color: 'var(--text2)' }} />
+                  <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Boxes and bags</span>
+                </div>
+                <p style={{ margin: '0 0 8px', ...subtle, lineHeight: 1.5 }}>
+                  §10.4 — <strong>boxes are different.</strong> A case is equipment and <em>is</em> priced in the bundle
+                  rate, so each one is a Bundle Item line above with its own availability.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {lines
+                    .map((l) => ({ line: l, model: modelOf(l.modelId) }))
+                    .filter((x) => x.model && BOX_CATEGORIES.has(x.model.category))
+                    .map((x) => (
+                      <span key={x.line.key} className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text)' }}>
+                        {x.model?.name} ×{x.line.qty}
+                      </span>
+                    ))}
+                  {breakdown.boxes === 0 && <span style={subtle}>No case or bag on this bundle yet.</span>}
+                </div>
+                <select
+                  aria-label="Add a case or bag"
+                  value=""
+                  onChange={(e) => {
+                    const m = modelOf(e.target.value)
+                    if (m) requestAdd(m)
+                  }}
+                  style={{ ...selectStyle, marginTop: 8, height: 30 }}
+                >
+                  <option value="">+ Add a case or bag</option>
+                  {INVENTORY_MODELS.filter((m) => BOX_CATEGORIES.has(m.category)).map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </Section>
+
+          {/* ── 5 · Notes ──────────────────────────────────────────────── */}
+          <Section n={5} title="Notes (Optional)">
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value.slice(0, NOTES_LIMIT))}
+              rows={3}
+              placeholder="Internal notes about this bundle…"
+              aria-label="Internal notes"
+              style={{ ...controlBase, height: 'auto', padding: '8px 9px', resize: 'vertical', lineHeight: 1.5 }}
+            />
+            <div style={{ display: 'flex', marginTop: 6 }}>
+              <span style={subtle}>§11 — internal only. Never printed, never visible to the client.</span>
+              <span className="figure" style={{ marginLeft: 'auto', ...subtle }}>
+                {notes.length} / {NOTES_LIMIT}
+              </span>
+            </div>
+          </Section>
+
+          {/* §3 — the footer owns Cancel, Save Draft and Create Bundle. */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              flexWrap: 'wrap',
+              paddingTop: 12,
+              borderTop: '1px solid var(--border)',
+            }}
+          >
+            <Button onClick={() => navigate('/inventory')}>Cancel</Button>
+            <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Button
+                icon="file"
+                onClick={() => showSuccessToast('Draft saved', `${BUNDLE_ID} · ${lines.length} lines held locally`)}
+              >
+                Save Draft
+              </Button>
+              {blockingReason ? (
+                <Unavailable reason={blockingReason}>
+                  <Button icon="plus" variant="primary" disabled>
+                    Create Bundle
+                  </Button>
+                </Unavailable>
+              ) : (
+                <Button
+                  icon="plus"
+                  variant="primary"
+                  onClick={() => {
+                    showSuccessToast(
+                      'Bundle created',
+                      `${BUNDLE_ID} · ${breakdown.totalItems} items · ${formatMoney(effectiveRatePaisa)} per day`,
+                    )
+                    navigate('/inventory')
+                  }}
+                >
+                  Create Bundle
+                </Button>
+              )}
+            </span>
+          </div>
+        </div>
+
+        {/* ── right rail ─────────────────────────────────────────────────── */}
+        <Rail width={318} label="Bundle summary">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+            <Card title="Bundle Summary">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                <Donut
+                  slices={slices}
+                  size={108}
+                  centreValue={`${availability.readyItems} / ${availability.totalItems}`}
+                  centreLabel="Ready"
+                />
+                <Legend slices={slices} showPercent={false} />
+              </div>
+              <SummaryRows
+                rows={[
+                  { label: 'Total Items', value: String(breakdown.totalItems) },
+                  { label: 'Equipment', value: String(breakdown.equipment) },
+                  { label: 'Crew (not in rate)', value: String(breakdown.crew) },
+                  { label: 'Vehicle (not in rate)', value: String(breakdown.vehicle) },
+                  { label: 'Boxes / Bags', value: String(breakdown.boxes) },
+                  {
+                    label: 'Total Weight',
+                    value: breakdown.totalWeightKg === null ? '—' : `${breakdown.totalWeightKg.toFixed(2)} KG`,
+                  },
+                ]}
+              />
+              <p style={{ margin: '9px 0 0', ...subtle, lineHeight: 1.5 }}>
+                §9 — <span className="figure">{breakdown.equipment} + {breakdown.crew} + {breakdown.vehicle} + {breakdown.boxes} = {breakdown.totalItems}</span>
+                , asserted on render. The donut counts the {availability.totalItems} stocked items these lines require;
+                crew and vehicle carry no stock record here, so they count in Total Items but not in the ready ratio.
+              </p>
+              {breakdown.totalWeightKg === null && (
+                <p style={{ margin: '6px 0 0', ...subtle, lineHeight: 1.5 }}>
+                  No weight is recorded against these models, so the total shows `—` rather than 0.{' '}
+                  <span className="identifier">TODO(decision)</span> — where do per-model weights come from?
+                </p>
+              )}
+            </Card>
+
+            {/* §7 — derived, never typed. */}
+            <Card title="Pricing Summary" action={<span style={subtle}>(Equipment Only)</span>}>
+              <SummaryRows
+                rows={[
+                  { label: 'Sum of Parts', value: formatMoney(pricing.sumOfPartsPaisa) },
+                  { label: 'Bundle Discounts', value: `− ${formatMoney(pricing.discountsPaisa)}` },
+                  ...(override
+                    ? [
+                        { label: 'Computed from lines', value: formatMoney(pricing.computedRatePaisa) },
+                        { label: 'Override rate', value: formatMoney(overrideRatePaisa) },
+                        {
+                          label: 'Implied extra discount',
+                          value: `${formatMoney(impliedExtraPaisa)} (${impliedExtraPct}%)`,
+                        },
+                      ]
+                    : []),
+                  { label: 'Bundle Daily Rate', value: formatMoney(effectiveRatePaisa) },
+                ]}
+              />
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginTop: 10,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  background: 'var(--st-in-bg)',
+                  color: 'var(--st-in-fg)',
+                  fontSize: 'var(--t-meta)',
+                  fontWeight: 700,
+                }}
+              >
+                <Icon name="check" size={13} />
+                You Save
+                <span className="figure" style={{ marginLeft: 'auto' }}>
+                  {formatMoney(totalSavingPaisa)} ({totalSavingPct}%)
+                </span>
+              </div>
+              <p style={{ margin: '9px 0 0', ...subtle, lineHeight: 1.5 }}>
+                Every figure is the sum of the {lines.length} lines above. Crew and vehicle are not in this rate — they
+                are priced in the booking's Crew and Transport sections (§10.4).
+              </p>
+            </Card>
+
+            {/* §8.2 — one computation, two views. */}
+            <Card title="Availability Summary">
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  fontSize: 'var(--t-meta)',
+                  fontWeight: 700,
+                  color: availability.blockedItems === 0 ? 'var(--success-text)' : 'var(--warning-text)',
+                }}
+              >
+                <Icon name={availability.blockedItems === 0 ? 'check' : 'alert_triangle'} size={14} />
+                <span className="figure">
+                  {availability.readyItems} / {availability.totalItems} Ready
+                </span>
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  marginTop: 5,
+                  fontSize: 'var(--t-meta)',
+                  color: availability.blockedItems === 0 ? 'var(--text2)' : 'var(--danger-text)',
+                  fontWeight: 600,
+                }}
+              >
+                <Icon name={availability.blockedItems === 0 ? 'info' : 'error'} size={13} />
+                <span className="figure">{availability.blockedItems} blocked items</span>
+              </div>
+
+              {availability.blocked.length === 0 ? (
+                <p style={{ margin: '9px 0 0', ...subtle, lineHeight: 1.5 }}>
+                  §8.1 — a line is blocked only when it has fewer available units than it requires. Every line here is
+                  satisfied. Raise a required quantity above its free units to see the shortfall and its return date.
+                </p>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 10 }}>
+                    {(blockedOpen ? availability.blocked : availability.blocked.slice(0, 1)).map((b) => (
+                      <div
+                        key={b.key}
+                        style={{
+                          border: '1px solid var(--border)',
+                          borderRadius: 8,
+                          padding: '8px 9px',
+                          background: 'var(--card2)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)', flex: 1, minWidth: 0 }}>
+                            {b.model.name}
+                          </span>
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              height: 19,
+                              padding: '0 7px',
+                              borderRadius: 'var(--r-badge)',
+                              background: 'var(--st-danger-bg)',
+                              color: 'var(--st-danger-fg)',
+                              fontSize: 'var(--t-th)',
+                              fontWeight: 700,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <Icon name="alert_triangle" size={10} />
+                            Short by {b.short}
+                          </span>
                         </div>
-                        
-                        <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr', gap: 12 }}>
-                          <div>
-                            <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>Req. Qty</label>
-                            <Input 
-                              type="number" 
-                              value={line.requiredQty.toString()} 
-                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleUpdateLine(line.id, { requiredQty: parseInt(e.target.value) || 1 })} 
-                            />
+                        <div style={{ ...subtle, marginTop: 3 }}>Held by: {b.by}</div>
+                        {b.freesAd ? (
+                          <div style={{ marginTop: 3 }}>
+                            <BsAd date={b.freesAd} prefix="Returns" />
                           </div>
-                          <div>
-                            <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>Orig. Rate / Unit</label>
-                            <div className="figure" style={{ fontSize: 13, padding: '8px 12px', background: 'var(--bg)', borderRadius: 6, border: '1px solid var(--border)' }}>
-                              {formatMoney(line.originalRate)}
-                            </div>
-                          </div>
-                          <div>
-                            <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>Bundle Rate / Unit</label>
-                            <Input 
-                              type="number" 
-                              value={((line.bundlePrice as unknown as number) / 100).toString()} 
-                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleUpdateLine(line.id, { bundlePrice: rupees(parseFloat(e.target.value) || 0) })} 
-                            />
-                          </div>
-                        </div>
+                        ) : (
+                          <div style={subtle}>No return date recorded</div>
+                        )}
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        <Rail width={300}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-            <Card padding="md">
-              <h4 style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 16 }}>Bundle Summary</h4>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                <span style={{ fontSize: 13, color: 'var(--muted)' }}>Total Items</span>
-                <span className="figure" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{totalItems}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                <span style={{ fontSize: 13, color: 'var(--muted)' }}>Equipment</span>
-                <span className="figure" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{totalItems}</span>
-              </div>
+                  {availability.blocked.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setBlockedOpen((v) => !v)}
+                      aria-expanded={blockedOpen}
+                      style={{
+                        marginTop: 8,
+                        border: 'none',
+                        background: 'transparent',
+                        color: 'var(--link)',
+                        fontSize: 'var(--t-th)',
+                        fontFamily: 'inherit',
+                        cursor: 'pointer',
+                        padding: 0,
+                      }}
+                    >
+                      {blockedOpen ? 'Show fewer' : `View all blocked items (${availability.blocked.length})`}
+                    </button>
+                  )}
+                  {availability.readyAd && (
+                    <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px solid var(--border)' }}>
+                      <span style={{ ...subtle, display: 'block', marginBottom: 2 }}>Estimated bundle ready</span>
+                      <BsAd date={availability.readyAd} />
+                    </div>
+                  )}
+                </>
+              )}
             </Card>
 
-            <Card padding="md">
-              <h4 style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 16 }}>Pricing Summary</h4>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                <span style={{ fontSize: 13, color: 'var(--muted)' }}>Sum of Parts</span>
-                <span className="figure" style={{ fontSize: 13, color: 'var(--text)' }}>{formatMoney(rupees((sumOriginal as unknown as number) / 100))}</span>
+            <Card title="Quick Actions">
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Tile icon="checklist" label="Packing List" onClick={() => setPackingOpen((v) => !v)} disabled={lines.length === 0} disabledReason="There are no lines to pack." />
+                <Tile icon="download" label="Export Lines" onClick={exportLines} disabled={lines.length === 0} disabledReason="There are no lines to export." />
+                <Tile icon="refresh" label="Reset Draft" onClick={resetDraft} />
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                <span style={{ fontSize: 13, color: 'var(--muted)' }}>Bundle Rate</span>
-                <span className="figure" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{formatMoney(rupees((sumBundle as unknown as number) / 100))}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                <span style={{ fontSize: 13, color: 'var(--good)', fontWeight: 500 }}>Saving</span>
-                <span className="figure" style={{ fontSize: 13, color: 'var(--good)', fontWeight: 600 }}>
-                  {formatMoney(rupees((sumOriginal as unknown as number) - (sumBundle as unknown as number)))}
-                </span>
-              </div>
+
+              {packingOpen && (
+                <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border)' }}>
+                  <p style={{ margin: '0 0 6px', ...subtle, lineHeight: 1.5 }}>
+                    §12 — models only, never serials. A unit is assigned at packing from whatever is free.
+                  </p>
+                  <ul style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {lines.map((l) => {
+                      const m = modelOf(l.modelId)
+                      return (
+                        <li key={l.key} className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>
+                          {m?.name ?? l.modelId} ×{l.qty}
+                          {l.childIds.length > 0 && ` (+${l.childIds.length} inside)`}
+                        </li>
+                      )
+                    })}
+                    {crew.map((c) => (
+                      <li key={c.role} className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                        {c.role} ×{c.headcount} — not in rate
+                      </li>
+                    ))}
+                    {vehicle && (
+                      <li className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                        {vehicle} ×1 — not in rate
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
             </Card>
           </div>
         </Rail>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-        <Button variant="secondary" onClick={() => navigate(-1)}>Cancel</Button>
-        <div style={{ display: 'flex', gap: 12 }}>
-          <Button variant="secondary">Save Draft</Button>
-          <Button 
-            variant="primary" 
-            onClick={() => {
-              showSuccessToast('Bundle Created', 'BND-00024 saved successfully')
-              navigate(-1)
-            }}
-          >
-            Create Bundle
-          </Button>
+      {/* ── §5.2 · include required children? ─────────────────────────────── */}
+      {askParent && (
+        <Prompt
+          title={`${askParent.name} — include required child items?`}
+          body={
+            <ul style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {(askParent.children ?? []).map((c) => {
+                const child = modelOf(c.id)
+                if (!child) return null
+                return (
+                  <li key={c.id} style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                    {child.name}
+                    <span style={{ ...subtle, marginLeft: 6 }}>{c.required ? 'required' : 'optional'}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          }
+          note="Children are priced inside this line's rate, at Rs 0 of their own (§5.3)."
+          actions={[
+            {
+              key: 'all',
+              label: 'Yes, include all required',
+              primary: true,
+              onSelect: () => {
+                addModel(askParent, true)
+                setAskParent(null)
+              },
+            },
+            {
+              key: 'manual',
+              label: 'Choose manually',
+              onSelect: () => {
+                addModel(askParent, false)
+                setAskParent(null)
+              },
+            },
+            { key: 'cancel', label: 'Cancel', onSelect: () => setAskParent(null) },
+          ]}
+        />
+      )}
+
+      {/* ── §5.3 · a child or a line, never both ──────────────────────────── */}
+      {askPromote && (
+        <Prompt
+          title={`${askPromote.model.name} is already included in ${askPromote.parents
+            .map((p) => modelOf(p.modelId)?.name ?? p.modelId)
+            .join(', ')}.`}
+          body={
+            <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.55 }}>
+              Promoting it removes it from that line's children and gives it its own quantity, rate and availability. An
+              item is a child <strong>or</strong> a line, never both — otherwise it is priced twice and counted twice.
+            </p>
+          }
+          actions={[
+            {
+              key: 'promote',
+              label: 'Promote it to its own line',
+              primary: true,
+              onSelect: () => promote(askPromote.model, askPromote.parents),
+            },
+            { key: 'cancel', label: 'Leave it as a child', onSelect: () => setAskPromote(null) },
+          ]}
+        />
+      )}
+
+      {/* ── §5.2 · required children need confirmation to remove ──────────── */}
+      {askRemoveChild && (
+        <Prompt
+          title={`Remove ${askRemoveChild.child.name} from this line?`}
+          body={
+            <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.55 }}>
+              It is marked a <strong>required</strong> child, so the parent normally ships with it. Removing it does not
+              change the line's rate — children are priced inside the parent.
+            </p>
+          }
+          actions={[
+            {
+              key: 'yes',
+              label: 'Remove it anyway',
+              primary: true,
+              onSelect: () => {
+                setLines((prev) =>
+                  prev.map((l) =>
+                    l.key === askRemoveChild.lineKey
+                      ? { ...l, childIds: l.childIds.filter((c) => c !== askRemoveChild.child.id) }
+                      : l,
+                  ),
+                )
+                setAskRemoveChild(null)
+              },
+            },
+            { key: 'no', label: 'Keep it', onSelect: () => setAskRemoveChild(null) },
+          ]}
+        />
+      )}
+    </div>
+  )
+}
+
+/* ── pieces ────────────────────────────────────────────────────────────── */
+
+function Tile({
+  icon,
+  label,
+  onClick,
+  disabled,
+  disabledReason,
+}: {
+  icon: IconName
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  disabledReason?: string
+}) {
+  const style: CSSProperties = {
+    flex: 1,
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 5,
+    padding: '11px 6px',
+    borderRadius: 8,
+    border: '1px solid var(--border)',
+    background: 'var(--card2)',
+    fontSize: 'var(--t-th)',
+    fontFamily: 'inherit',
+    color: 'var(--text)',
+    textAlign: 'center',
+  }
+  if (disabled) {
+    return (
+      <Unavailable reason={disabledReason ?? 'Not available yet.'} style={{ flex: 1 }}>
+        <span style={{ ...style, color: 'var(--disabled)', cursor: 'not-allowed' }}>
+          <Icon name={icon} size={17} />
+          {label}
+        </span>
+      </Unavailable>
+    )
+  }
+  return (
+    <button type="button" onClick={onClick} style={{ ...style, cursor: 'pointer' }}>
+      <Icon name={icon} size={17} style={{ color: 'var(--text2)' }} />
+      {label}
+    </button>
+  )
+}
+
+/** A centred confirm, used by §5.2 and §5.3. Escape and the backdrop both close it. */
+function Prompt({
+  title,
+  body,
+  note,
+  actions,
+}: {
+  title: string
+  body: ReactNode
+  note?: string
+  actions: Array<{ key: string; label: string; primary?: boolean; onSelect: () => void }>
+}) {
+  const cancel = actions[actions.length - 1]
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 60,
+        display: 'grid',
+        placeItems: 'center',
+        padding: 16,
+        background: 'var(--scrim, rgba(0,0,0,0.55))',
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') cancel?.onSelect()
+      }}
+    >
+      <div
+        style={{
+          ...cardStyle,
+          maxWidth: 460,
+          width: '100%',
+          padding: 16,
+          borderRadius: 'var(--r-modal)',
+          boxShadow: 'var(--shadow-modal)',
+        }}
+      >
+        <h3 style={{ margin: '0 0 9px', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', lineHeight: 1.4 }}>
+          {title}
+        </h3>
+        {body}
+        {note && <p style={{ margin: '9px 0 0', ...subtle, lineHeight: 1.5 }}>{note}</p>}
+        <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          {actions.map((a) => (
+            <Button key={a.key} {...(a.primary ? { variant: 'primary' as const } : {})} onClick={a.onSelect}>
+              {a.label}
+            </Button>
+          ))}
         </div>
       </div>
     </div>
+  )
+}
+
+/** §5.1 — one tree row, with its pools and its expandable children. */
+function TreeRow({
+  model,
+  open,
+  inBundle,
+  onToggleOpen,
+  onAdd,
+  childRows,
+  onAddChild,
+  childInBundle,
+}: {
+  model: InventoryModel
+  open: boolean
+  inBundle: boolean
+  onToggleOpen: () => void
+  onAdd: () => void
+  childRows: Array<{ child: InventoryModel; required: boolean }>
+  onAddChild: (m: InventoryModel) => void
+  childInBundle: (id: string) => boolean
+}) {
+  const kids = model.children ?? []
+  const num: CSSProperties = { ...td, textAlign: 'right', padding: '8px 6px' }
+  return (
+    <>
+      <tr style={{ borderBottom: '1px solid var(--border)' }}>
+        <td style={{ ...td, paddingRight: 4 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            {kids.length > 0 ? (
+              <button
+                type="button"
+                onClick={onToggleOpen}
+                aria-expanded={open}
+                aria-label={`${open ? 'Collapse' : 'Expand'} ${model.name}`}
+                style={{ border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', padding: 0, display: 'grid', placeItems: 'center' }}
+              >
+                <Icon name={open ? 'chevron_down' : 'chevron_right'} size={12} />
+              </button>
+            ) : (
+              <span style={{ width: 12 }} aria-hidden />
+            )}
+            <button
+              type="button"
+              onClick={onAdd}
+              title={inBundle ? `Add one more ${model.name}` : `Add ${model.name} to the bundle`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                border: 'none',
+                background: 'transparent',
+                padding: 0,
+                font: 'inherit',
+                textAlign: 'left',
+                cursor: 'pointer',
+                color: 'var(--text)',
+                minWidth: 0,
+              }}
+            >
+              <Icon name={iconForCategory(model.category)} size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: 'block', fontWeight: 600, fontSize: 'var(--t-meta)' }}>{model.name}</span>
+                <span className="identifier" style={{ ...subtle, display: 'block' }}>
+                  {model.sku}
+                  {inBundle && <span style={{ color: 'var(--success-text)', marginLeft: 6 }}>in bundle</span>}
+                </span>
+              </span>
+            </button>
+          </span>
+        </td>
+        <td className="figure" style={num}>
+          {model.stock}
+        </td>
+        <td className="figure" style={{ ...num, color: model.available > 0 ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 600 }}>
+          {model.available}
+        </td>
+        <td className="figure" style={num}>
+          {model.reserved}
+        </td>
+        <td className="figure" style={num}>
+          {model.onRent}
+        </td>
+      </tr>
+      {open &&
+        childRows.map(({ child, required }) => (
+          <tr key={child.id} style={{ borderBottom: '1px solid var(--border)' }}>
+            <td style={{ ...td, paddingLeft: 30 }}>
+              <button
+                type="button"
+                onClick={() => onAddChild(child)}
+                title={`Add ${child.name} as its own line`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  border: 'none',
+                  background: 'transparent',
+                  padding: 0,
+                  font: 'inherit',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  color: 'var(--text2)',
+                  minWidth: 0,
+                }}
+              >
+                <Icon name={iconForCategory(child.category)} size={12} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 'var(--t-th)' }}>{child.name}</span>
+                  <span className="identifier" style={subtle}>
+                    {child.sku} · {required ? 'required' : 'optional'}
+                    {childInBundle(child.id) && <span style={{ color: 'var(--success-text)', marginLeft: 6 }}>own line</span>}
+                  </span>
+                </span>
+              </button>
+            </td>
+            <td className="figure" style={num}>
+              {child.stock}
+            </td>
+            <td className="figure" style={{ ...num, color: child.available > 0 ? 'var(--success-text)' : 'var(--danger-text)' }}>
+              {child.available}
+            </td>
+            <td className="figure" style={num}>
+              {child.reserved}
+            </td>
+            <td className="figure" style={num}>
+              {child.onRent}
+            </td>
+          </tr>
+        ))}
+    </>
+  )
+}
+
+/** §6.1 — one Bundle Items line, with its discount, its children and its availability. */
+function LineRow({
+  line,
+  childrenOpen,
+  discountOpen,
+  canApprove,
+  approverName,
+  onToggleChildren,
+  onToggleDiscount,
+  onPatch,
+  onRemove,
+  onToggleChild,
+  childIsLine,
+}: {
+  line: DraftLine
+  childrenOpen: boolean
+  discountOpen: boolean
+  canApprove: boolean
+  approverName: string | null
+  onToggleChildren: () => void
+  onToggleDiscount: () => void
+  onPatch: (u: Partial<DraftLine>) => void
+  onRemove: () => void
+  onToggleChild: (childId: string, required: boolean, on: boolean) => void
+  childIsLine: (id: string) => boolean
+}) {
+  const m = modelOf(line.modelId)
+  if (!m) return null
+
+  const t = totalsOf(line)
+  const short = Math.max(0, line.qty - m.available)
+  const gate = validateDiscount(t.discountPct, line.discountReason, line.approvedBy)
+  const needsApproval = t.discountPct > 10
+  const kids = m.children ?? []
+  const cols = 9
+
+  return (
+    <>
+      <tr style={{ borderBottom: '1px solid var(--border)' }}>
+        <td style={{ ...td, maxWidth: 190 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <span
+              aria-hidden
+              style={{
+                width: 24,
+                height: 24,
+                flexShrink: 0,
+                borderRadius: 6,
+                display: 'grid',
+                placeItems: 'center',
+                background: 'var(--card2)',
+                border: '1px solid var(--border)',
+                color: 'var(--muted)',
+              }}
+            >
+              <Icon name={iconForCategory(m.category)} size={13} />
+            </span>
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: 'block', fontWeight: 600, lineHeight: 1.3 }}>{m.name}</span>
+              <span style={{ display: 'block', ...subtle }}>{m.category}</span>
+            </span>
+          </span>
+        </td>
+
+        <td style={{ ...td, textAlign: 'right' }}>
+          <input
+            type="number"
+            min={1}
+            aria-label={`Required quantity for ${m.name}`}
+            value={line.qty}
+            onChange={(e) => onPatch({ qty: Math.max(1, Number(e.target.value) || 1) })}
+            className="figure"
+            style={{ ...controlBase, width: 52, height: 30, padding: '0 6px', textAlign: 'right' }}
+          />
+        </td>
+
+        <td className="figure" style={{ ...td, textAlign: 'right' }}>
+          {formatMoney(line.originalRatePaisa)}
+        </td>
+
+        {/* §6.3 — percentage or fixed, never both. Switching clears the other. */}
+        <td style={td}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <select
+              aria-label={`Discount type for ${m.name}`}
+              value={line.discountKind}
+              onChange={(e) =>
+                onPatch(
+                  e.target.value === 'pct'
+                    ? { discountKind: 'pct', discountFixedPaisa: rupees(0) }
+                    : { discountKind: 'fixed', discountPct: 0 },
+                )
+              }
+              style={{ ...selectStyle, height: 30, width: 48, padding: '0 3px' }}
+            >
+              <option value="pct">%</option>
+              <option value="fixed">Rs</option>
+            </select>
+            {line.discountKind === 'pct' ? (
+              <input
+                type="number"
+                min={0}
+                max={100}
+                aria-label={`Discount percent for ${m.name}`}
+                value={line.discountPct}
+                onChange={(e) => onPatch({ discountPct: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })}
+                className="figure"
+                style={{ ...controlBase, width: 58, height: 30, padding: '0 6px', textAlign: 'right' }}
+              />
+            ) : (
+              <input
+                aria-label={`Fixed discount for ${m.name}`}
+                value={String(line.discountFixedPaisa / 100)}
+                onChange={(e) => onPatch({ discountFixedPaisa: parseMoney(e.target.value) ?? (0 as Paisa) })}
+                inputMode="decimal"
+                className="figure"
+                style={{ ...controlBase, width: 58, height: 30, padding: '0 6px', textAlign: 'right' }}
+              />
+            )}
+          </span>
+          {needsApproval && (
+            <button
+              type="button"
+              onClick={onToggleDiscount}
+              aria-expanded={discountOpen}
+              style={{
+                display: 'block',
+                marginTop: 3,
+                border: 'none',
+                background: 'transparent',
+                padding: 0,
+                fontFamily: 'inherit',
+                fontSize: 'var(--t-th)',
+                fontWeight: 700,
+                cursor: 'pointer',
+                color: gate.valid ? 'var(--success-text)' : 'var(--danger-text)',
+              }}
+            >
+              {gate.valid ? 'Approved' : 'Needs approval'} ▾
+            </button>
+          )}
+        </td>
+
+        <td style={{ ...td, textAlign: 'right' }}>
+          <span className="figure" style={{ display: 'block', fontWeight: 700, color: 'var(--success-text)' }}>
+            {formatMoney(t.bundleRate)}
+          </span>
+          {t.discountPct > 0 && (
+            <span className="figure" style={{ display: 'block', ...subtle, textDecoration: 'line-through' }}>
+              {formatMoney(line.originalRatePaisa)}
+            </span>
+          )}
+        </td>
+
+        <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>
+          {formatMoney(t.lineTotal)}
+        </td>
+
+        <td style={{ ...td, textAlign: 'right' }}>
+          {kids.length === 0 ? (
+            <span className="figure" style={subtle}>
+              0
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={onToggleChildren}
+              aria-expanded={childrenOpen}
+              className="figure"
+              style={{
+                border: 'none',
+                background: 'transparent',
+                color: 'var(--link)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: 600,
+                fontFamily: 'inherit',
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              {line.childIds.length} ▾
+            </button>
+          )}
+        </td>
+
+        <td style={td}>
+          {short > 0 ? (
+            <span className="figure" style={{ color: 'var(--danger-text)', fontWeight: 700 }}>
+              Short by {short}
+              <span style={{ display: 'block', ...subtle }}>
+                {m.available} / {m.stock} free
+              </span>
+            </span>
+          ) : (
+            <span className="figure" style={{ color: 'var(--success-text)', fontWeight: 600 }}>
+              {m.available} / {m.stock}
+              <span style={{ display: 'block', ...subtle }}>Available</span>
+            </span>
+          )}
+        </td>
+
+        <td style={{ ...td, textAlign: 'right' }}>
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label={`Remove ${m.name} from the bundle`}
+            title={`Remove ${m.name} from the bundle`}
+            style={{
+              border: '1px solid var(--border)',
+              borderRadius: 7,
+              background: 'transparent',
+              color: 'var(--danger-text)',
+              cursor: 'pointer',
+              width: 28,
+              height: 28,
+              display: 'grid',
+              placeItems: 'center',
+            }}
+          >
+            <Icon name="close" size={13} />
+          </button>
+        </td>
+      </tr>
+
+      {/* §5.3 — the children checklist, with Select all · Clear all. */}
+      {childrenOpen && kids.length > 0 && (
+        <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
+          <td colSpan={cols} style={{ ...td, paddingLeft: 46 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
+              <strong style={{ fontSize: 'var(--t-meta)' }}>Included in this line</strong>
+              <span style={subtle}>Priced inside the line's rate, at Rs 0 of their own (§5.3).</span>
+              <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onPatch({ childIds: kids.filter((c) => !childIsLine(c.id)).map((c) => c.id) })
+                  }
+                  style={{ border: 'none', background: 'transparent', color: 'var(--link)', fontSize: 'var(--t-th)', fontFamily: 'inherit', cursor: 'pointer', padding: 0 }}
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onPatch({ childIds: [] })}
+                  style={{ border: 'none', background: 'transparent', color: 'var(--link)', fontSize: 'var(--t-th)', fontFamily: 'inherit', cursor: 'pointer', padding: 0 }}
+                >
+                  Clear all
+                </button>
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {kids.map((c) => {
+                const child = modelOf(c.id)
+                if (!child) return null
+                const isLine = childIsLine(c.id)
+                return (
+                  <label
+                    key={c.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      fontSize: 'var(--t-meta)',
+                      color: isLine ? 'var(--muted)' : 'var(--text)',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={line.childIds.includes(c.id)}
+                      disabled={isLine}
+                      onChange={(e) => onToggleChild(c.id, c.required, e.target.checked)}
+                      style={{ accentColor: 'var(--nav-active-accent)' }}
+                    />
+                    {child.name}
+                    <span style={subtle}>{c.required ? 'required' : 'optional'}</span>
+                    <span className="figure" style={{ ...subtle, marginLeft: 'auto' }}>
+                      {child.available} / {child.stock} free
+                    </span>
+                    {isLine && (
+                      <span style={{ ...subtle, color: 'var(--warning-text)' }}>
+                        already its own line — a child or a line, never both
+                      </span>
+                    )}
+                  </label>
+                )
+              })}
+            </div>
+          </td>
+        </tr>
+      )}
+
+      {/* Foundation §9 — a discount above 10% carries a reason and a named approver. */}
+      {discountOpen && needsApproval && (
+        <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
+          <td colSpan={cols} style={{ ...td, paddingLeft: 46 }}>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <Field label="Reason for this discount" required hint="At least 10 characters. Stored and audited.">
+                <input
+                  value={line.discountReason}
+                  onChange={(e) => onPatch({ discountReason: e.target.value })}
+                  placeholder="e.g. Repeat client, four-week booking"
+                  style={{ ...controlBase, width: 320 }}
+                />
+              </Field>
+              <FieldBlock label="Approver" required>
+                {canApprove && approverName ? (
+                  <button
+                    type="button"
+                    onClick={() => onPatch({ approvedBy: line.approvedBy ? null : approverName })}
+                    aria-pressed={!!line.approvedBy}
+                    style={{
+                      height: 34,
+                      padding: '0 11px',
+                      borderRadius: 'var(--r-btn)',
+                      border: `1px solid ${line.approvedBy ? 'var(--success)' : 'var(--border)'}`,
+                      background: line.approvedBy ? 'var(--st-in-bg)' : 'var(--card2)',
+                      color: line.approvedBy ? 'var(--st-in-fg)' : 'var(--text2)',
+                      fontSize: 'var(--t-meta)',
+                      fontWeight: 600,
+                      fontFamily: 'inherit',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {line.approvedBy ? `Approved by ${line.approvedBy}` : `Approve as ${approverName}`}
+                  </button>
+                ) : (
+                  <span style={{ ...subtle, color: 'var(--danger-text)', maxWidth: 300, lineHeight: 1.5 }}>
+                    Your role cannot approve a discount above 10%. Ask an Owner or an Admin, or bring this line back to
+                    10% or less.
+                  </span>
+                )}
+              </FieldBlock>
+            </div>
+            {!gate.valid && (
+              <p style={{ margin: '8px 0 0', fontSize: 'var(--t-meta)', color: 'var(--danger-text)', fontWeight: 600 }}>
+                {gate.error}
+              </p>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
   )
 }

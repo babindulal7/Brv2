@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle, SideRail } from '../../components/ui/Page'
 import { EmptyState } from '../../components/ui/StateViews'
+import { Unavailable } from '../../components/ui/Unavailable'
 import { STATUS } from '../../lib/status'
 import { formatMoney, grouped } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
@@ -182,18 +182,6 @@ function CategoryChip({ category }: { category: string }) {
       }}
     >
       {category}
-    </span>
-  )
-}
-
-/**
- * A control the mockup shows but this build cannot honour. Rendered visibly
- * inert with the reason on it, rather than as an `onClick={() => {}}`.
- */
-function Unavailable({ children, reason }: { children: ReactNode; reason: string }) {
-  return (
-    <span title={reason} aria-label={reason} style={{ display: 'inline-flex', cursor: 'not-allowed' }}>
-      {children}
     </span>
   )
 }

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle, SideRail } from '../../components/ui/Page'
 import { EmptyState } from '../../components/ui/StateViews'
+import { Unavailable } from '../../components/ui/Unavailable'
 import Placeholder from '../Placeholder'
 import { STATUS, BRAND } from '../../lib/status'
 import type { StatusKey, BrandKey } from '../../lib/status'
@@ -359,22 +359,6 @@ function ColumnMenu({
           ))}
         </div>
       )}
-    </span>
-  )
-}
-
-/**
- * A control the render draws that nothing yet implements.
- *
- * CLAUDE.md forbids a no-op `onClick` and an `href="#"`: a control that looks
- * live and does nothing is a worse claim than one that says it is not ready.
- * These render **visibly unavailable and state the reason** on hover and focus
- * instead. Each becomes a real control the moment its behaviour is specified.
- */
-function Unavailable({ reason, children }: { reason: string; children: ReactNode }) {
-  return (
-    <span title={reason} style={{ display: 'inline-flex' }}>
-      {children}
     </span>
   )
 }

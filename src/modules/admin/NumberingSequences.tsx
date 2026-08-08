@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, Rail, SideRail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Unavailable } from '../../components/ui/Unavailable'
 import { Donut, Legend, catColor } from '../../components/ui/Charts'
 import { STATUS, BRAND, BRAND_ON, BRAND_TEXT } from '../../lib/status'
 import {
@@ -134,21 +135,6 @@ function PageBtn({ label, active, disabled, onClick }: { label: string; active?:
     >
       {label}
     </button>
-  )
-}
-
-/**
- * A control with no destination yet renders disabled **and says why**.
- *
- * The reason sits on a wrapper rather than on the button: a `disabled` button
- * swallows pointer events in Chrome, so a `title` on the button itself never
- * surfaces. `block` stretches it to a grid cell.
- */
-function Unavailable({ children, why = WHY_READ_ONLY, block }: { children: React.ReactNode; why?: string; block?: boolean }) {
-  return (
-    <span title={why} style={block ? { display: 'grid', minWidth: 0 } : { display: 'inline-flex' }}>
-      {children}
-    </span>
   )
 }
 
@@ -358,27 +344,27 @@ export default function NumberingSequences() {
         description="Configure and manage all auto-generated numbers used across Babin Rentals OS."
         actions={
           <>
-            <Unavailable why="Creating a sequence needs the confirmation and audit path — not available in this build.">
+            <Unavailable reason="Creating a sequence needs the confirmation and audit path — not available in this build.">
               <Button icon="plus" variant="primary" disabled>
                 Add Sequence
               </Button>
             </Unavailable>
-            <Unavailable why="Importing sequence definitions overwrites live counters — not available in this build.">
+            <Unavailable reason="Importing sequence definitions overwrites live counters — not available in this build.">
               <Button icon="download" disabled>
                 Import
               </Button>
             </Unavailable>
-            <Unavailable why="Export (PDF · Excel · JSON · XML) is specified but not built yet.">
+            <Unavailable reason="Export (PDF · Excel · JSON · XML) is specified but not built yet.">
               <Button icon="upload" disabled>
                 Export
               </Button>
             </Unavailable>
-            <Unavailable why="Resetting a counter can re-issue an existing ID — it needs the confirmation and audit path first.">
+            <Unavailable reason="Resetting a counter can re-issue an existing ID — it needs the confirmation and audit path first.">
               <Button icon="refresh" disabled>
                 Reset Counter
               </Button>
             </Unavailable>
-            <Unavailable why="Nothing to refresh — this build reads a static seed, not a live counter service.">
+            <Unavailable reason="Nothing to refresh — this build reads a static seed, not a live counter service.">
               <Button icon="refresh" disabled>
                 Refresh
               </Button>
@@ -583,7 +569,7 @@ export default function NumberingSequences() {
                               >
                                 <Icon name="tool" size={12} />
                               </button>
-                              <Unavailable why="The row menu (archive · duplicate · audit history) is specified but not built yet.">
+                              <Unavailable reason="The row menu (archive · duplicate · audit history) is specified but not built yet.">
                                 <button
                                   type="button"
                                   disabled
@@ -1107,7 +1093,7 @@ export default function NumberingSequences() {
 
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 7 }}>
                   <Button onClick={() => select(selected.code)}>Cancel</Button>
-                  <Unavailable why={WHY_READ_ONLY}>
+                  <Unavailable reason={WHY_READ_ONLY}>
                     <Button variant="primary" disabled>
                       Save Changes
                     </Button>
@@ -1354,8 +1340,8 @@ export default function NumberingSequences() {
                 return (
                   <Unavailable
                     key={q.label}
-                    block
-                    why={live ? 'Jump to the preview generator and roll the next five numbers' : why}
+                    style={{ display: 'grid', minWidth: 0 }}
+                    reason={live ? 'Jump to the preview generator and roll the next five numbers' : why}
                   >
                     {tile}
                   </Unavailable>
@@ -1432,7 +1418,7 @@ export default function NumberingSequences() {
               ))}
             </ul>
             <div style={{ marginTop: 11 }}>
-              <Unavailable block why="AI analysis is specified but no model is wired up in this build.">
+              <Unavailable style={{ display: 'grid', minWidth: 0 }} reason="AI analysis is specified but no model is wired up in this build.">
                 {/* The wrapper is a grid, so the button stretches to the card's
                     full width the way the render draws it. */}
                 <Button icon="sparkles" disabled>

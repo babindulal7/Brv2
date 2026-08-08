@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, Rail, SideRail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Unavailable } from '../../components/ui/Unavailable'
 import { Donut, Legend, catColor } from '../../components/ui/Charts'
 import { EmptyState } from '../../components/ui/StateViews'
 import { STATUS } from '../../lib/status'
@@ -160,23 +160,6 @@ function DocTile({ icon, index }: { icon: IconName; index: number }) {
       }}
     >
       <Icon name={icon} size={15} fill />
-    </span>
-  )
-}
-
-/**
- * A control whose destination does not exist yet. It stays visible and states
- * the reason on hover and focus — never an `href="#"` and never a no-op click.
- */
-function Unavailable({ children, why, style }: { children: ReactNode; why: string; style?: CSSProperties }) {
-  return (
-    <span
-      aria-disabled
-      tabIndex={0}
-      title={why}
-      style={{ color: 'var(--muted)', cursor: 'not-allowed', ...style }}
-    >
-      {children}
     </span>
   )
 }
@@ -518,12 +501,12 @@ export default function Documents() {
         description="Every rental and finance document in one place. Create, manage, send and track — a document exists once."
         actions={
           <>
-            <Unavailable why={NOT_BUILT}>
+            <Unavailable reason={NOT_BUILT}>
               <Button icon="upload" disabled>
                 Upload Document
               </Button>
             </Unavailable>
-            <Unavailable why={NOT_BUILT}>
+            <Unavailable reason={NOT_BUILT}>
               <Button icon="upload" disabled>
                 Import
               </Button>
@@ -531,7 +514,7 @@ export default function Documents() {
             <Button icon="download" onClick={exportCsv}>
               Export
             </Button>
-            <Unavailable why={NOT_BUILT}>
+            <Unavailable reason={NOT_BUILT}>
               <Button icon="plus" variant="primary" disabled>
                 Create Document
               </Button>
@@ -850,7 +833,7 @@ export default function Documents() {
                 {selected.size} selected
               </span>
               {['Download', 'Email', 'Archive'].map((b) => (
-                <Unavailable key={b} why={NOT_BUILT}>
+                <Unavailable key={b} reason={NOT_BUILT}>
                   <Button disabled>{b}</Button>
                 </Unavailable>
               ))}
@@ -1003,7 +986,7 @@ export default function Documents() {
                           ) : d.relatedTo === '—' ? (
                             <span style={{ color: 'var(--muted)' }}>—</span>
                           ) : (
-                            <Unavailable why={`The ${target.label} screen is not built yet`}>
+                            <Unavailable reason={`The ${target.label} screen is not built yet`}>
                               <span className="identifier" style={{ fontSize: 'var(--t-meta)', fontWeight: 700 }}>
                                 {d.relatedTo}
                               </span>
@@ -1182,7 +1165,7 @@ export default function Documents() {
             title="Missing Documents"
             action={
               <Unavailable
-                why="A missing document has no row to open — the gate that requires it lives on the booking"
+                reason="A missing document has no row to open — the gate that requires it lives on the booking"
                 style={{ fontSize: 'var(--t-meta)', fontWeight: 600 }}
               >
                 View All
