@@ -1,45 +1,81 @@
-import React from 'react'
-import {
-  IconFolderOff,
-  IconAlertTriangle,
-  IconLock,
-  IconWifiOff,
-  IconRefresh,
-} from '@tabler/icons-react'
-import { Button } from './Button'
+import type { ReactNode } from 'react'
+import Icon from './Icon'
+import { Button, cardStyle } from './Page'
 
 /**
- * 1. Empty State
- * Displays when a filter or collection returns 0 results.
+ * **The five page states — `System States & Patterns v2.0` §2, still Build
+ * Locked even where the rest of that document's predecessor was overridden
+ * by the renders (`Page Standard.md`'s own superseded-notice: "the five
+ * page-state requirement... is content law, not layout law, and the renders
+ * do not contradict them").** `DEVICE/DEVICES.md` §7 build order item 5 asks
+ * every page type to carry all five; this file is the shared toolkit.
+ *
+ * These four were previously written in Tailwind utility classNames
+ * (`bg-slate-900`, `text-slate-400`, …) — dead code, since Tailwind's Vite
+ * plugin is registered but no CSS file ever imports `tailwindcss`, so every
+ * class here compiled to nothing. `EmptyState` alone has 32 call sites across
+ * the app that have been rendering **completely unstyled** as a result — this
+ * rewrite uses the same inline-style-plus-CSS-variable system every other
+ * component in the app uses, with the exact same prop shapes so no call site
+ * changes. A fifth state, Offline, already has a real, working implementation
+ * in `App.tsx` (`useNetwork()`-driven) — this file no longer duplicates it.
  */
+
+/** §2.2 Empty — "illustration · title · one-sentence explanation · one primary action." */
 export interface EmptyStateProps {
   title?: string
   description?: string
   actionLabel?: string
   onAction?: () => void
-  icon?: React.ReactNode
+  icon?: ReactNode
   className?: string
 }
 
-export const EmptyState: React.FC<EmptyStateProps> = ({
+export function EmptyState({
   title = 'No items found',
   description = 'There are no records matching your current filter criteria.',
   actionLabel,
   onAction,
   icon,
-  className = '',
-}) => {
+  className,
+}: EmptyStateProps) {
   return (
     <div
-      className={`flex flex-col items-center justify-center p-8 text-center rounded-xl border border-dashed border-slate-800 bg-slate-900/40 my-4 ${className}`}
+      className={className}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        textAlign: 'center',
+        padding: '32px 20px',
+        borderRadius: 'var(--r-card)',
+        border: '1px dashed var(--border)',
+        background: 'var(--card2)',
+      }}
     >
-      <div className="w-12 h-12 rounded-full bg-slate-800/80 flex items-center justify-center text-slate-400 mb-3.5">
-        {icon || <IconFolderOff className="w-6 h-6 stroke-[1.5]" />}
+      <div
+        aria-hidden
+        style={{
+          width: 48,
+          height: 48,
+          borderRadius: 999,
+          background: 'var(--card)',
+          border: '1px solid var(--border)',
+          color: 'var(--muted)',
+          display: 'grid',
+          placeItems: 'center',
+          marginBottom: 14,
+        }}
+      >
+        {icon ?? <Icon name="folder" size={22} />}
       </div>
-      <h3 className="text-sm font-semibold text-slate-200 mb-1">{title}</h3>
-      <p className="text-xs text-slate-400 max-w-sm mb-4 leading-relaxed">{description}</p>
+      <h3 style={{ margin: '0 0 4px', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{title}</h3>
+      <p style={{ margin: '0 0 16px', maxWidth: 340, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>
+        {description}
+      </p>
       {actionLabel && onAction && (
-        <Button variant="secondary" size="sm" onClick={onAction}>
+        <Button variant="secondary" onClick={onAction}>
           {actionLabel}
         </Button>
       )}
@@ -47,25 +83,18 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   )
 }
 
-/**
- * 2. Loading Skeleton
- * Structured skeleton blocks for panels, tables, and KPI cards.
- */
-export const LoadingSkeleton: React.FC<{ rows?: number; type?: 'card' | 'table' | 'kpi' }> = ({
-  rows = 4,
-  type = 'table',
-}) => {
+/** §2.1 Loading — "skeleton with text… never a bare spinner, never a blank container." */
+export function LoadingSkeleton({ rows = 4, type = 'table' }: { rows?: number; type?: 'card' | 'table' | 'kpi' }) {
+  const pulse = { background: 'var(--card2)', borderRadius: 6, animation: 'pulse 1.5s ease-in-out infinite' } as const
+
   if (type === 'kpi') {
     return (
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 my-2">
-        {[1, 2, 3, 4].map((i) => (
-          <div
-            key={i}
-            className="p-4 rounded-xl border border-slate-800 bg-slate-900/60 animate-pulse flex flex-col gap-2.5"
-          >
-            <div className="w-20 h-3 bg-slate-800 rounded" />
-            <div className="w-32 h-6 bg-slate-700 rounded" />
-            <div className="w-16 h-2.5 bg-slate-800 rounded" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+        {Array.from({ length: 4 }, (_, i) => (
+          <div key={i} style={{ ...cardStyle, padding: '13px 14px', display: 'flex', flexDirection: 'column', gap: 9 }}>
+            <div style={{ ...pulse, width: 80, height: 12 }} />
+            <div style={{ ...pulse, width: 120, height: 22 }} />
+            <div style={{ ...pulse, width: 64, height: 10 }} />
           </div>
         ))}
       </div>
@@ -74,32 +103,39 @@ export const LoadingSkeleton: React.FC<{ rows?: number; type?: 'card' | 'table' 
 
   if (type === 'card') {
     return (
-      <div className="p-5 rounded-xl border border-slate-800 bg-slate-900/60 animate-pulse flex flex-col gap-4 my-3">
-        <div className="w-1/3 h-5 bg-slate-800 rounded" />
-        <div className="w-full h-24 bg-slate-800/60 rounded" />
-        <div className="flex gap-2">
-          <div className="w-24 h-8 bg-slate-800 rounded" />
-          <div className="w-24 h-8 bg-slate-800 rounded" />
+      <div style={{ ...cardStyle, padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ ...pulse, width: '33%', height: 18 }} />
+        <div style={{ ...pulse, width: '100%', height: 90 }} />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ ...pulse, width: 90, height: 30 }} />
+          <div style={{ ...pulse, width: 90, height: 30 }} />
         </div>
       </div>
     )
   }
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden my-3">
-      <div className="p-4 border-b border-slate-800 flex justify-between items-center animate-pulse">
-        <div className="w-28 h-4 bg-slate-800 rounded" />
-        <div className="w-16 h-4 bg-slate-800 rounded" />
+    <div style={{ ...cardStyle, overflow: 'hidden' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          padding: '12px 14px',
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        <div style={{ ...pulse, width: 110, height: 14 }} />
+        <div style={{ ...pulse, width: 64, height: 14 }} />
       </div>
-      <div className="p-4 flex flex-col gap-3">
-        {Array.from({ length: rows }).map((_, idx) => (
-          <div key={idx} className="flex items-center gap-4 animate-pulse">
-            <div className="w-8 h-8 bg-slate-800 rounded-md shrink-0" />
-            <div className="flex-1 flex flex-col gap-1.5">
-              <div className="w-1/2 h-3.5 bg-slate-700 rounded" />
-              <div className="w-1/4 h-2.5 bg-slate-800 rounded" />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 14 }}>
+        {Array.from({ length: rows }, (_, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ ...pulse, width: 32, height: 32, borderRadius: 8, flexShrink: 0 }} />
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ ...pulse, width: '50%', height: 13 }} />
+              <div style={{ ...pulse, width: '25%', height: 10 }} />
             </div>
-            <div className="w-16 h-5 bg-slate-800 rounded" />
+            <div style={{ ...pulse, width: 60, height: 18 }} />
           </div>
         ))}
       </div>
@@ -108,98 +144,115 @@ export const LoadingSkeleton: React.FC<{ rows?: number; type?: 'card' | 'table' 
 }
 
 /**
- * 3. Error Banner (Law 12: Errors are inline and persistent; toasts carry successes only).
+ * §2.4 Error — "every error: what happened · why · how to fix. Errors are
+ * inline and persistent (toasts carry successes only)."
  */
-export interface ErrorBannerProps {
+export function ErrorBanner({
+  title = 'Something needs attention',
+  message,
+  onRetry,
+  className,
+}: {
   title?: string
   message: string
   onRetry?: () => void
   className?: string
-}
-
-export const ErrorBanner: React.FC<ErrorBannerProps> = ({
-  title = 'Operation Error',
-  message,
-  onRetry,
-  className = '',
-}) => {
+}) {
   return (
     <div
       role="alert"
-      className={`flex items-start gap-3.5 p-4 rounded-xl border border-rose-800/80 bg-rose-950/40 text-rose-200 my-3 ${className}`}
+      className={className}
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 11,
+        padding: '13px 14px',
+        borderRadius: 'var(--r-card)',
+        background: 'var(--st-danger-bg)',
+        border: '1px solid var(--st-danger-bg)',
+        color: 'var(--st-danger-fg)',
+      }}
     >
-      <IconAlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-      <div className="flex-1 min-w-0">
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-rose-300 mb-0.5">
-          {title}
-        </h4>
-        <p className="text-xs text-rose-200/90 leading-relaxed">{message}</p>
+      <Icon name="alert_triangle" size={16} fill style={{ flexShrink: 0, marginTop: 1 }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700 }}>{title}</div>
+        <p style={{ margin: '2px 0 0', fontSize: 'var(--t-meta)', lineHeight: 1.5 }}>{message}</p>
       </div>
       {onRetry && (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-rose-900/60 hover:bg-rose-800/80 text-rose-200 text-xs font-medium transition-colors cursor-pointer shrink-0"
-        >
-          <IconRefresh className="w-3.5 h-3.5" />
+        <Button variant="secondary" icon="refresh" onClick={onRetry}>
           Retry
-        </button>
+        </Button>
       )}
     </div>
   )
 }
 
-/**
- * 4. Restricted State (Law 6 & RBAC capability gate).
- */
-export interface RestrictedStateProps {
+/** Permission — §2.5: "state it plainly and name who to ask. Never expose what the role cannot have." */
+export function RestrictedState({
+  reason = 'You do not have permission to view or modify this surface.',
+  requiredRole,
+  className,
+}: {
   reason?: string
   requiredRole?: string
   className?: string
-}
-
-export const RestrictedState: React.FC<RestrictedStateProps> = ({
-  reason = 'You do not have administrative capability to view or modify this surface.',
-  requiredRole,
-  className = '',
-}) => {
+}) {
   return (
     <div
-      className={`flex flex-col items-center justify-center p-8 text-center rounded-xl border border-slate-800 bg-slate-950/60 my-4 ${className}`}
+      className={className}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        textAlign: 'center',
+        padding: '32px 20px',
+        borderRadius: 'var(--r-card)',
+        border: '1px solid var(--border)',
+        background: 'var(--card)',
+      }}
     >
-      <div className="w-12 h-12 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-amber-400 mb-3">
-        <IconLock className="w-5 h-5" />
+      <div
+        aria-hidden
+        style={{
+          width: 48,
+          height: 48,
+          borderRadius: 999,
+          background: 'var(--st-progress-bg)',
+          color: 'var(--st-progress-fg)',
+          display: 'grid',
+          placeItems: 'center',
+          marginBottom: 14,
+        }}
+      >
+        <Icon name="lock" size={20} />
       </div>
-      <h3 className="text-sm font-semibold text-slate-200 mb-1">Access Restricted</h3>
-      <p className="text-xs text-slate-400 max-w-sm mb-2 leading-relaxed">{reason}</p>
+      <h3 style={{ margin: '0 0 4px', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+        Access restricted
+      </h3>
+      <p style={{ margin: 0, maxWidth: 340, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>
+        {reason}
+      </p>
       {requiredRole && (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-800 text-slate-300">
-          Required role: {requiredRole}
+        <span
+          className="figure"
+          style={{
+            marginTop: 10,
+            display: 'inline-flex',
+            alignItems: 'center',
+            height: 22,
+            padding: '0 9px',
+            borderRadius: 999,
+            background: 'var(--card2)',
+            border: '1px solid var(--border)',
+            color: 'var(--text2)',
+            fontSize: 'var(--t-th)',
+            fontWeight: 600,
+          }}
+        >
+          Requires {requiredRole}
         </span>
       )}
-    </div>
-  )
-}
-
-/**
- * 5. Offline Banner (Law 8 & Phase 9).
- */
-export const OfflineBanner: React.FC<{ pendingCount?: number; lastSynced?: string }> = ({
-  pendingCount = 0,
-  lastSynced,
-}) => {
-  return (
-    <div className="flex items-center justify-between gap-3 px-3.5 py-2 rounded-lg bg-amber-950/70 border border-amber-800/60 text-amber-200 text-xs mb-3">
-      <div className="flex items-center gap-2">
-        <IconWifiOff className="w-4 h-4 text-amber-400 shrink-0" />
-        <span>
-          <strong>Offline Mode</strong> — working with local cached data.
-        </span>
-      </div>
-      <div className="flex items-center gap-3 text-[11px] text-amber-300/80">
-        {pendingCount > 0 && <span>{pendingCount} pending writes queued</span>}
-        {lastSynced && <span>Last sync: {lastSynced}</span>}
-      </div>
     </div>
   )
 }
