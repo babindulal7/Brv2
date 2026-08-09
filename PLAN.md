@@ -263,18 +263,35 @@ Foundation §3.3: under Nepali, month names render in Devanagari (`साउन`
 nor Inter as installed ships Devanagari** — those glyphs would render as tofu. A
 Devanagari-capable face is needed.
 
-## 4.3 ✅ RESOLVED — roles: **six**
+## 4.3 ✅ SUPERSEDED 8 Aug 2026 — roles: **eight**, not six
 
-**Foundation §08 wins on role vocabulary**, per the 4 Aug audit. The six are:
+**Re-ruled 8 Aug 2026** (`supabase/migrations/0013_business_8_roles.sql`,
+`0014_business_8_policies.sql`), closing Foundation §14.2's own flagged open item. The
+eight are:
 
 ```
-Owner · Manager · Warehouse · Billing · Accounts · Viewer
+Owner · Admin · Coordinator · Warehouse · Technician · Accounts · Driver · Client
 ```
 
-The Permissions Matrix screen's twelve are **screen labels, not engine roles** — Foundation
-is explicit that modules may never redefine permissions, so where the matrix names a
-thirteenth actor it is naming a job title, not a capability set. RLS is written against the
-six. Unblocks Phase 1 RLS and Phase 7.
+Three renames plus two additions from the 4 Aug six: `Manager→Admin` (22 Jul lock: Admin
+*is* the Ops Manager), `Billing→Coordinator` (the coordinator takes the advance),
+`Viewer→Client` (external, portal-only — see 0013's note on why the no-session fallback
+landing on `Client` is *safer*, not weaker, since every Client policy is scoped by a
+`client_id` link an unidentified session can't satisfy). `Technician` and `Driver` are new:
+two real floor jobs the six had no way to represent.
+
+0013 renamed enum values in place (`alter type … rename value`) specifically so the 22
+existing RLS policy expressions in `0011_rls_policies.sql` needed zero edits — they
+reference the enum member, not its text label. Case is preserved (`'Admin'`, not
+`'admin'`) for the same reason: 63 source files already carry these literals.
+
+Below (§6.2) is the reconciliation entry that first caught this file disagreeing with
+`lib/rbac.ts`'s own comment — left in place as the record of *how* it was caught, not as a
+still-open question. This ruling is what closes it.
+
+The old six-role ruling and its Permissions Matrix reasoning are superseded, not
+reinterpreted — the matrix's extra labels question is moot now that the engine itself
+carries eight.
 
 ## 4.4 ✅ MOSTLY RESOLVED — schema decisions
 
@@ -335,6 +352,104 @@ Deposit Pending blocks Confirm or only Handover? · Warehouse handover with paym
 outstanding? · mandatory evidence minimums · the green Verified tick (raised five times) ·
 Crew Assist's home · Executive Dashboard deleted (confirm) · auto-lock timeout ·
 screenshot blocking on financial screens · Client Portal as an app?
+
+## 4.6 Operations Popup Shell v1.0 — received 9 Aug, not started
+
+**Locked except §13.** Supersedes the current `Operations ▾` dropdown in `BookingDetail.tsx`
+(full-screen routes per step) with one popup shell — 5 steps (Packing/Pickup/Return/
+Cleaning/Reset) sharing one item record, always-viewable steps with status-gated writes,
+per-scan server writes (no local-only state), offline queue with first-write-wins conflict
+resolution, and a required `direction` (out/in) field on evidence and signatures.
+
+**Scoped before starting** (agent-audited 9 Aug, not from memory): the schema is ~90% there
+already — `operation_sessions`, `handover_lines`/`return_lines` (the dispatched/returned set
+the spec calls for), and an append-only correction mechanism via
+`session_line_movements.reverses_movement_id` (`revoke update, delete` already on the table)
+all exist in `0003_operations.sql`. The real gap is that **none of the 5 existing workspace
+screens (~4,100 lines) are wired to this schema at all** — `PackingWorkspace.tsx`,
+`HandoverWorkspace.tsx`, `ReturnWorkspace.tsx`, `ResetWorkspace.tsx` all still read static
+`data/*.ts` seed files, same as every other screen pre-Phase-2. Building this is therefore
+not "replace 5 screens with 1," it's "build the real data-layer wiring for the first time,
+in whichever shape gets picked" — plus a genuinely new offline-drain-and-conflict-resolve
+loop (`lib/offlineQueue.ts` exists but nothing drains it; `scan_sync_conflicts` exists in
+schema but nothing populates or resolves it).
+
+**§13's open items, as they stand today:**
+
+- ✅ **Resolved, not open.** §13 says the role set "8 business roles vs Foundation's 6...
+  unresolved, and still blocking the schema." It is not open — see §4.3 above,
+  `supabase/migrations/0013_business_8_roles.sql` / `0014`. The business 8 is the ruling in
+  force; the schema is not blocked on this.
+- ⚠ **Still genuinely open — do not infer:** `operations.session.abandoned_after_hours` — a
+  value, or leave open indefinitely and rely on Today's "Handover in progress" surfacing.
+- ✅ **Resolved, not open — found while building the shell.** `lib/workflow.ts` (Foundation
+  v2.0 §1.5, already locked) states outright: *"Four operations, not five. Reset absorbs
+  Cleaning — the separate Cleaning workspace in the renders is deleted and its per-item
+  category checklists move inside Reset."* `JobName` is typed as `'Pack' | 'Handover' |
+  'Return' | 'Reset'` — four, not five, and the type makes a fifth unrepresentable (§11:
+  "modules import; modules never redefine"). The shell's step rail is **4 steps**
+  (Packing/Handover/Return/Reset), not the spec's literal 5 — Cleaning's content lives
+  inside the Reset step's checklist. Also note: the engine's job is named `Handover`, not
+  `Pickup` — the shell uses `Handover` to stay one vocabulary with `JOBS`/
+  `HandoverWorkspace.tsx`, labelled "Handover · Pickup" where the spec's term helps orient
+  a reader unfamiliar with the engine name.
+- ⚠ **New, not in the spec's own §13 but found while scoping:** `evidence`/`signatures`
+  currently derive direction from `operation_sessions.operation` rather than storing it
+  (`0003_operations.sql:212`, comment: "never stored"). That was a deliberate prior choice.
+  Adding an explicit stored `direction` column per this spec's §7 reverses it — worth a
+  one-line ruling before the migration, not just adding the column.
+
+**In progress, 9 Aug** — building the shell UI on mock data (user's call: same contract as
+every other screen this session, real Supabase wiring waits for Phase 2). No migrations
+written against this spec — the existing schema already covers it (see above).
+
+## 4.7 Found auditing the schema against the 8 Aug Decisions doc — not yet ruled
+
+An agent-driven audit checked all 15 migrations against `Decisions — 8 Aug 2026.md` directly
+(not a summary of it) rather than trusting the still-pending "reconcile against the 11
+rulings" task description, which turned out to be stale — the real document rules 26 things,
+not 11. One finding (`auth_user_role()` casting a literal enum label `0013` had renamed away)
+would have broken the entire RLS layer on first apply; fixed directly, since it was a Postgres
+correctness bug, not a decision. `0015_canonical_six_stages.sql` closed the retired-12-stages
+gap the same way. What's left is genuinely open:
+
+- ⚠ **Q2, late fee — the formula is built, nothing feeds it.** `lib/money.ts`'s `lateFee()`
+  implements the ruled tiering exactly (≤30min→0 · <2h→half day · ≥2h→full day, then full
+  days) and is tested against its own boundary cases, but has no caller: `bookings.actual_
+  return_at` is a schema column nothing in `src/` ever writes (`ReturnWorkspace.tsx` has no
+  persistence layer at all yet), and no function aggregates `booking_lines.rate × qty` into
+  a discrete day-rate. Two rulings this needs before it can be wired: **(a)** does "one day's
+  rate" scope to equipment only, or also crew (`booking_crew_lines.day_rate`) and/or
+  transport (a flat, non-daily charge)? **(b)** on a multi-session Return, does `actual_
+  return_at` stamp at the first partial session's close, or only once the whole booking's
+  Return job completes? `supabase/migrations/0016_late_fee.sql` (schema for storing a raised
+  finding, mirroring `damage_findings` → `charges`) is written and unapplied.
+- ⚠ **Q3, deposit auto-apply — not started, and not just a formula.** "Unpaid balance
+  auto-applies the deposit, remainder refunded; the accountant confirms before issue." The
+  schema currently does the opposite: `validate_booking_gates()` blocks Handover/Closed
+  outright on any outstanding balance or pending deposit rather than netting one against the
+  other. This needs a real workflow state (something is "pending accountant confirmation"
+  before it's "applied"), not a pure function — scope it before building.
+- ⚠ **Q5, sub-rental margin — ruled twice already (§4.4 above, and the 8 Aug doc's Q5), never
+  wired.** `booking_lines.supplier_cost` / `markup_amount` are dead columns carrying a stale
+  `TODO(decision)` comment that predates both rulings. No formula — correct or incorrect —
+  reads either column anywhere. `src/modules/operations/SubRental.tsx` already computes the
+  right thing (gross margin on revenue) but only against hardcoded mock data, not
+  `booking_lines`.
+- ⚠ **`auth_is_staff()` is defined, never called.** "Client never staff" currently holds only
+  because 22 hand-written policies in `0011_rls_policies.sql` happen to omit the Client role
+  from their allow-lists — not because anything gates on the function that promises to be
+  "the gate for that." Retrofitting 22 existing policies needs its own careful pass, not a
+  same-night addition next to an unrelated fix.
+- ⚠ **`booking_client_state_map`'s premise no longer holds.** Built for "thirteen internal
+  stages projecting onto eight client-visible states"; `0015` leaves it with six possible
+  keys against an unchanged eight-value `client_visible_state` enum. Does `client_visible_
+  state` shrink to match, or does one canonical stage need to resolve to more than one
+  client-visible value? Structurally re-pointed, not redesigned.
+- ⚠ **C26/C29's client-facing wording, two words off.** The ruling: `Quote → Confirmed →
+  Ready → With you → Returned → Completed`. `workflow.ts`'s `BOOKING_STATUS[...].client`
+  labels currently read "Ready **for pickup**" and "**Complete**" instead. `client_timeline_
+  step` (the DB-side enum) matches the ruling exactly; only the app-side labels drift.
 
 ---
 
@@ -401,6 +516,9 @@ Driver · Client. That is eight, live in code, dated **today**, and it does not 
 file's §4.3 ruling of six (Owner · Manager · Warehouse · Billing · Accounts · Viewer). One of
 these two rulings is the one actually in force; §4.3 needs a re-ruling entry pointing at
 whichever is current, not two documents disagreeing about how many roles the RBAC engine has.
+→ **Resolved same day**: `supabase/migrations/0013_business_8_roles.sql` and `0014` are the
+real, applied migrations implementing the eight — that is the ruling in force. §4.3 above is
+now rewritten to match; this bullet stays as the record of how the drift was first caught.
 
 ## 6.3 Already covered — no new decision needed
 

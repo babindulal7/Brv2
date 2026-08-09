@@ -154,6 +154,104 @@ export function discountGate(percent: number, reason: string, approver: string |
   return { ok: true as const }
 }
 
+/* ── late fee · Decisions — 8 Aug 2026 §3 Q2 ───────────────────────────── */
+
+/**
+ * §3 Q2, verbatim: *"Late fee: ≤30 min grace → 0 · under 2h → half day · 2h
+ * or more → full day, then full days."*
+ *
+ * Three tiers, stated by formula so a future reader can check this without
+ * re-deriving the ruling from prose:
+ *
+ * ```
+ * overageMinutes = max(0, (actualReturnAt − scheduledReturnAt) in minutes)
+ *
+ * overageMinutes <= 30   → band 'None'      feePaisa = 0
+ * 30 < overageMinutes < 120 → band 'Half Day'  feePaisa = round½(dayRatePaisa / 2)
+ * overageMinutes >= 120  → band 'Full Day'   feePaisa = round½(dayRatePaisa × fullDaysCharged)
+ * ```
+ *
+ * `fullDaysCharged` inside the Full Day band: crossing the 2h line always
+ * charges exactly one day — a return 2h01m late and a return 23h59m late owe
+ * the same one day, because "2h or more → full day" is a threshold, not a
+ * proration. Beyond that, "then full days" is read here as the same
+ * round-up-on-any-excess rule the first two tiers already use: every
+ * complete-or-partial additional 24h block adds one more day —
+ *
+ * ```
+ * fullDaysCharged = max(1, ceil(overageMinutes / 1440))
+ * ```
+ *
+ * ⚠ TODO(decision) — that second-and-later-days formula is the *natural
+ * extension* of tiers 1-2's round-up logic, not a sentence the 8 Aug ruling
+ * states explicitly. The ruling's text stops at "then full days" without
+ * saying whether the second day starts charging at minute 1 past the first
+ * 24h (this reading) or only after a further complete 24h has elapsed.
+ * Flagged rather than silently assumed — confirm and record in PLAN.md §4.
+ *
+ * `overageMinutes` is left as an exact (possibly fractional) elapsed
+ * duration, not pre-rounded to a whole minute — §2.4's Half Up rounding
+ * governs *money*, at each displayed step; nothing in the ruling says
+ * duration itself is rounded before the band comparison, and inventing a
+ * rounding rule the ruling doesn't state would be its own defect.
+ *
+ * Plain AD-timestamp subtraction (`Date#getTime()`), deliberately not
+ * touching `lib/bs.ts` — BS/AD calendar conversion has nothing to do with
+ * elapsed-duration arithmetic between two already-AD instants.
+ *
+ * ⚠ TODO(decision) / known gap — this function cannot be driven end-to-end
+ * from real data yet:
+ *   - `scheduledReturnAt` / `actualReturnAt` are meant to be
+ *     `bookings.return_at` / `bookings.actual_return_at`
+ *     (`supabase/migrations/0002_bookings.sql` lines 32-33), but no TS
+ *     domain type in `src/` exposes either as a live `Date` today — only
+ *     pre-formatted display strings exist in the seed layer — and
+ *     `actual_return_at` is a column nothing in the repo ever writes:
+ *     `ReturnWorkspace.tsx` has no persistence layer at all yet, and which
+ *     session-close event should stamp it (first partial close, or only the
+ *     close that finally completes the booking's Return job) is unruled.
+ *   - `dayRatePaisa` is not derived here, on the same convention `price()`
+ *     already uses for `equipment` — the caller pre-aggregates, this
+ *     function never sums rows. No function anywhere in `src/` aggregates a
+ *     booking's live `booking_lines.rate × qty` into one "one day" figure
+ *     yet, and whether that scope is equipment-only or also includes crew
+ *     (`booking_crew_lines.day_rate`) and/or transport (a flat,
+ *     non-daily charge) is unruled.
+ * Neither gap is papered over with an invented source — the caller simply
+ * cannot supply real values for either field yet.
+ */
+export interface LateFeeInput {
+  /** `bookings.return_at` — the scheduled/expected return moment. */
+  scheduledReturnAt: Date
+  /** `bookings.actual_return_at` — set once, at whichever session completes the booking's Return job. Nothing writes this column today; see the TODO(decision) above. */
+  actualReturnAt: Date
+  /** One day's rental rate for whatever scope is eventually ruled on (see the TODO(decision) above) — pre-aggregated by the caller, never raw rows, same convention as `PriceInput.equipment`. */
+  dayRatePaisa: Paisa
+}
+
+export interface LateFeeResult {
+  /** Elapsed minutes past the scheduled return. Never negative — an early or on-time return reads as 0, not a negative number. */
+  overageMinutes: number
+  band: 'None' | 'Half Day' | 'Full Day'
+  /** 0 outside the Full Day band; >=1 inside it. */
+  fullDaysCharged: number
+  feePaisa: Paisa
+}
+
+export function lateFee(i: LateFeeInput): LateFeeResult {
+  const overageMs = i.actualReturnAt.getTime() - i.scheduledReturnAt.getTime()
+  const overageMinutes = Math.max(0, overageMs / 60000)
+
+  if (overageMinutes <= 30) {
+    return { overageMinutes, band: 'None', fullDaysCharged: 0, feePaisa: rupees(0) }
+  }
+  if (overageMinutes < 120) {
+    return { overageMinutes, band: 'Half Day', fullDaysCharged: 0, feePaisa: toWholeRupee(i.dayRatePaisa / 2) }
+  }
+  const fullDaysCharged = Math.max(1, Math.ceil(overageMinutes / 1440))
+  return { overageMinutes, band: 'Full Day', fullDaysCharged, feePaisa: toWholeRupee(i.dayRatePaisa * fullDaysCharged) }
+}
+
 /* ── §2.8 · the reference case, asserted ───────────────────────────────── */
 
 /**
