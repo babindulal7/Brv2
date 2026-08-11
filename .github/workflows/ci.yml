@@ -1,0 +1,74 @@
+name: CI
+
+# Every push and every pull request. The four steps below are the same four a
+# session is expected to run locally before ending — PLAN.md's Phase 0 gate is
+# `npm run build` passing, and `npm run test` is the engine suite that guards
+# the financial, gating, workflow and calendar laws in PLAN.md §0.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# A second push to the same branch cancels the first — CI is a gate, not an
+# archive, and only the tip of a branch needs to be green.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: typecheck · test · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # Pinned to the version the project is developed against. A skew here
+          # would show up first in src/lib/bs.ts, which formats dates through
+          # Intl in the Asia/Kathmandu zone and so depends on the runtime's ICU
+          # data being complete.
+          node-version: '24'
+          cache: npm
+
+      # `ci`, not `install`: the lockfile is the contract, and a CI run that
+      # silently resolves a newer transitive dependency is not reproducing what
+      # the author tested.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm run test
+
+      # `npm run build` is `tsc --noEmit && vite build`, so this re-runs the
+      # typecheck. Kept separate anyway: a type error should fail in seconds
+      # under its own name rather than inside a two-minute bundle step.
+      #
+      # No VITE_SUPABASE_* values are injected. Vite inlines them at build time,
+      # so a placeholder would bake a dead URL into a bundle that looks
+      # deployable and is not. This job proves the tree compiles and bundles; a
+      # deploy job is where real values belong.
+      - name: Build
+        run: npm run build
+
+      - name: Coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 7
+          if-no-files-found: ignore

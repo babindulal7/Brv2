@@ -1,16 +1,29 @@
 import { useState, useMemo } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { EmptyState } from '../../components/ui/StateViews'
 import { useToast } from '../../components/ui/Toast'
+import Icon from '../../components/ui/Icon'
 import { formatMoney, rupees, type Paisa } from '../../lib/money'
+import { useAuth } from '../../lib/auth'
+import { gateContext, canViewMoneyField } from '../../lib/fieldGating'
+import { IntelCard } from '../../components/ui/IntelCard'
+import {
+  groupByCounterparty,
+  supplierGlance,
+  supplierDetailGroups,
+  supplierDirectoryRow,
+} from '../../data/supplierIntel'
+import type { SupplierGroup, SupplierDirectoryRow } from '../../data/supplierIntel'
+import type { GateContext } from '../../lib/fieldGating'
 import { IconSearch, IconPlus, IconDownload, IconArrowUpRight, IconArrowDownLeft } from '@tabler/icons-react'
 
 type SubRentalDirection = 'Borrowing' | 'Lending'
 type SubRentalStatus = 'Reserved' | 'Picked Up' | 'On Rent' | 'Returned' | 'Checked In' | 'Cancelled'
 
-interface SubRentalRecord {
+export interface SubRentalRecord {
   id: string
   counterparty: string
   linkedBooking?: string
@@ -97,14 +110,251 @@ const SUB_RENTAL_DATA: SubRentalRecord[] = [
   }
 ]
 
+/**
+ * Static, so computed once at module scope rather than re-grouped every
+ * render — the counterparty ↔ transactions mapping the Supplier Hover Intel
+ * card is built from (`data/supplierIntel.ts`).
+ */
+const SUPPLIER_GROUPS = groupByCounterparty(SUB_RENTAL_DATA)
+
 type FilterKey = SubRentalStatus | 'All' | 'Overdue'
+
+/**
+ * **Suppliers directory** — promotes `SUPPLIER_GROUPS` (already grouped by
+ * counterparty for the hover card) into a real one-row-per-supplier screen,
+ * per HIS v2.1's Tier 3 pass. Lives as a second tab *inside* `SubRental`
+ * rather than a fifth entry on `data/inventory.ts`'s `TABS` / a new
+ * `App.tsx` route — the same "related view within an existing module, not a
+ * new top-level route" convention `Inventory.tsx` already uses for Bundles /
+ * Sub Rental / Maintenance / Cases, just one level deeper, since a supplier
+ * profile is a view *over Sub Rental's own data*, not a sibling module. That
+ * also keeps this change inside a single file already named for this task —
+ * `App.tsx` is left untouched.
+ *
+ * Every field either comes straight off `SupplierDirectoryRow` (which
+ * already applied `canViewMoneyField(gctx, 'asset-finance')`, so `financial`
+ * is only ever present when the role may see it) or wraps the row in the
+ * same `IntelCard` + `supplierGlance`/`supplierDetailGroups` the transaction
+ * table's counterparty cell already uses — no new gating logic, no new
+ * hover-card content.
+ */
+function SupplierDirectoryTable({
+  rows,
+  canSeeFinance,
+  gctx,
+  search,
+  onSearchChange,
+}: {
+  rows: { group: SupplierGroup; row: SupplierDirectoryRow }[]
+  canSeeFinance: boolean
+  gctx: GateContext
+  search: string
+  onSearchChange: (value: string) => void
+}) {
+  // Perf: `supplierGlance`/`supplierDetailGroups` build a full field-gated
+  // object graph per counterparty — memoized here so a re-render of this
+  // table (e.g. from an unrelated parent state change) doesn't re-run the
+  // gating logic for every row unless `rows` or the gate identity actually
+  // changed. `gctx` is itself memoized by the caller (`SubRental`'s own
+  // `gctx` below), so depending on the object reference directly is safe —
+  // the same convention every other Hover Intel screen's `rowsWithIntel`/
+  // `visibleWithIntel` memo already uses.
+  const rowsWithIntel = useMemo(
+    () =>
+      rows.map(({ group, row }) => ({
+        row,
+        glance: supplierGlance(group, gctx),
+        detail: supplierDetailGroups(group, gctx),
+      })),
+    [rows, gctx],
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-lg)' }}>
+        <span style={{ fontSize: 13, color: 'var(--muted)' }}>
+          {rows.length} counterpart{rows.length === 1 ? 'y' : 'ies'} — every Sub Rental record grouped by who it&apos;s with
+        </span>
+        <div style={{ width: 240 }}>
+          <Input
+            placeholder="Search supplier name…"
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            icon={<IconSearch size={16} />}
+          />
+        </div>
+      </div>
+
+      <Card padding="none" style={{ overflow: 'hidden' }}>
+        {rows.length === 0 ? (
+          <EmptyState
+            title="No suppliers match"
+            description="Adjust your search to find a sub-rental partner."
+            actionLabel="Clear search"
+            onAction={() => onSearchChange('')}
+          />
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+              <thead>
+                <tr
+                  style={{
+                    background: 'var(--card2)',
+                    borderBottom: '1px solid var(--border)',
+                    color: 'var(--muted)',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  <th style={{ padding: '12px 14px' }}>Supplier</th>
+                  <th style={{ padding: '12px 14px' }}>Relationship</th>
+                  <th style={{ padding: '12px 14px' }}>Units In-House</th>
+                  <th style={{ padding: '12px 14px' }}>Records</th>
+                  <th style={{ padding: '12px 14px' }}>Last Transaction</th>
+                  {canSeeFinance && <th style={{ padding: '12px 14px' }}>Lifetime Revenue &amp; Cost</th>}
+                  {canSeeFinance && <th style={{ padding: '12px 14px' }}>Margin</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {rowsWithIntel.map(({ row, glance, detail }) => (
+                  <tr key={row.counterparty} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '12px 14px' }}>
+                      <IntelCard
+                        glance={glance}
+                        detail={detail}
+                        detailTitle={row.counterparty}
+                        detailSubtitle="Sub-rental partner"
+                      >
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
+                          <span
+                            aria-hidden
+                            style={{
+                              width: 26,
+                              height: 26,
+                              borderRadius: 7,
+                              flexShrink: 0,
+                              display: 'grid',
+                              placeItems: 'center',
+                              background: 'var(--card2)',
+                              border: '1px solid var(--border)',
+                              color: 'var(--muted)',
+                            }}
+                          >
+                            <Icon name="truck" size={13} />
+                          </span>
+                          <span style={{ display: 'inline-flex', flexDirection: 'column' }}>
+                            <span style={{ fontWeight: 600, color: 'var(--text)' }}>{row.counterparty}</span>
+                            {row.hasOverdueActive && (
+                              <span style={{ fontSize: 'var(--t-th)', fontWeight: 700, color: 'var(--bad)', marginTop: 2 }}>
+                                OVERDUE ACTIVE
+                              </span>
+                            )}
+                          </span>
+                        </span>
+                      </IntelCard>
+                    </td>
+                    <td style={{ padding: '12px 14px' }}>
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          height: 20,
+                          padding: '0 8px',
+                          borderRadius: 'var(--r-badge)',
+                          border: '1px solid var(--ext-line)',
+                          color: 'var(--ext-fg)',
+                          fontSize: 11,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {row.relationship}
+                      </span>
+                    </td>
+                    <td className="figure" style={{ padding: '12px 14px', fontWeight: 600, color: 'var(--text)' }}>
+                      {row.unitsInHouse}
+                    </td>
+                    <td style={{ padding: '12px 14px' }}>
+                      <div className="figure" style={{ color: 'var(--text)' }}>
+                        {row.activeCount} active
+                      </div>
+                      <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                        {row.pastCount} past · {row.totalCount} total
+                      </div>
+                    </td>
+                    <td className="figure" style={{ padding: '12px 14px', color: 'var(--text2)' }}>
+                      {row.lastTransactionAd}
+                    </td>
+                    {canSeeFinance && (
+                      <td style={{ padding: '12px 14px' }}>
+                        <div className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>
+                          {row.financial ? formatMoney(row.financial.revenuePaisa) : '—'}
+                        </div>
+                        <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                          Cost: {row.financial ? formatMoney(row.financial.costPaisa) : '—'}
+                        </div>
+                      </td>
+                    )}
+                    {canSeeFinance && (
+                      <td style={{ padding: '12px 14px' }}>
+                        {row.financial?.marginPct !== undefined ? (
+                          <span
+                            className="figure"
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              padding: '2px 6px',
+                              borderRadius: 4,
+                              background: row.financial.marginPct < 0 ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)',
+                              color: row.financial.marginPct < 0 ? 'var(--bad)' : 'var(--good)',
+                            }}
+                          >
+                            {row.financial.marginPct > 0 ? '+' : ''}
+                            {row.financial.marginPct.toFixed(1)}%
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--muted)' }}>—</span>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  )
+}
 
 export function SubRental() {
   const { showSuccessToast } = useToast()
+  const navigate = useNavigate()
+
+  const { user } = useAuth()
+  const gctx = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
+  // §4.1: supplier cost/margin is explicitly excluded from Coordinator ("no
+  // supplier margin"), so this reads 'asset-finance', not 'booking'. Every
+  // ₨ figure below — the KPI strip, the table's Revenue & Cost column, and
+  // the per-row Rental Value line — is gated on this flag rather than
+  // rendered and then hidden.
+  const canSeeFinance = canViewMoneyField(gctx, 'asset-finance')
 
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
+  const [subTab, setSubTab] = useState<'Transactions' | 'Suppliers'>('Transactions')
+  const [supplierSearch, setSupplierSearch] = useState('')
+
+  const supplierRows = useMemo(() => {
+    const all = Array.from(SUPPLIER_GROUPS.values())
+      .map((group) => ({ group, row: supplierDirectoryRow(group, gctx) }))
+      .sort((a, b) => a.group.counterparty.localeCompare(b.group.counterparty))
+    const q = supplierSearch.trim().toLowerCase()
+    return q ? all.filter(({ group }) => group.counterparty.toLowerCase().includes(q)) : all
+  }, [gctx, supplierSearch])
 
   const filteredData = useMemo(() => {
     return SUB_RENTAL_DATA.filter((c) => {
@@ -122,6 +372,33 @@ export function SubRental() {
       return true
     })
   }, [searchQuery, activeFilter])
+
+  // Perf: same reasoning as `SupplierDirectoryTable`'s `rowsWithIntel` above
+  // — `supplierGlance`/`supplierDetailGroups` build a full field-gated
+  // object graph per row, so this precomputes it once per relevant change
+  // (the filtered rows or the gate identity) instead of re-running it on
+  // every render inside the JSX `.map()` (e.g. on every `searchQuery`
+  // keystroke that doesn't even change `filteredData`, or any unrelated
+  // parent re-render). `gctx` is memoized above, so the object reference is
+  // a safe dependency.
+  const rowsWithIntel = useMemo(
+    () =>
+      filteredData.map((c) => {
+        // Falls back to a single-transaction group rather than a
+        // non-null assertion — every real row's counterparty is
+        // present in `SUPPLIER_GROUPS` since that map is built from
+        // this same `SUB_RENTAL_DATA`, but a card builder degrading
+        // gracefully instead of ever throwing matches §6's "a blank
+        // page is never acceptable."
+        const supplierGroup = SUPPLIER_GROUPS.get(c.counterparty) ?? { counterparty: c.counterparty, transactions: [c] }
+        return {
+          record: c,
+          glance: supplierGlance(supplierGroup, gctx),
+          detail: supplierDetailGroups(supplierGroup, gctx),
+        }
+      }),
+    [filteredData, gctx],
+  )
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) setSelectedRowIds(new Set(filteredData.map((c) => c.id)))
@@ -157,57 +434,103 @@ export function SubRental() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+      {/* Suppliers directory — a second tab inside Sub Rental rather than a
+          new top-level route; see SupplierDirectoryTable's doc comment. */}
+      <div style={{ display: 'flex', gap: 'var(--sp-xs)', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
+        {(['Transactions', 'Suppliers'] as const).map((t) => {
+          const on = subTab === t
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setSubTab(t)}
+              aria-current={on ? 'page' : undefined}
+              style={{
+                height: 32,
+                padding: '0 12px',
+                border: 'none',
+                borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
+                background: 'transparent',
+                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: on ? 700 : 500,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                marginBottom: -1,
+              }}
+            >
+              {t}
+            </button>
+          )
+        })}
+      </div>
+
+      {subTab === 'Suppliers' ? (
+        <SupplierDirectoryTable
+          rows={supplierRows}
+          canSeeFinance={canSeeFinance}
+          gctx={gctx}
+          search={supplierSearch}
+          onSearchChange={setSupplierSearch}
+        />
+      ) : (
+        <>
+      {/* KPIs — Law 6 / §4.1: the three ₨ tiles are omitted entirely for a
+          role without asset-finance visibility, not rendered then hidden. */}
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${canSeeFinance ? 4 : 1}, 1fr)`, gap: 14 }}>
         <Card padding="md">
           <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
             Active Records
           </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--text)', marginTop: 4 }}>
+          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--text)', marginTop: 'var(--sp-xs)' }}>
             30
           </div>
           <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
             Borrowing (18) · Lending (12)
           </span>
         </Card>
-        <Card padding="md">
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
-            Total Revenue
-          </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--good)', marginTop: 4 }}>
-            Rs 1,20,000
-          </div>
-          <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-            Gross generated value
-          </span>
-        </Card>
-        <Card padding="md">
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
-            Total Cost
-          </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--bad)', marginTop: 4 }}>
-            Rs 80,000
-          </div>
-          <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-            Partner payments & fees
-          </span>
-        </Card>
-        <Card padding="md">
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
-            Blended Margin
-          </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--info)', marginTop: 4 }}>
-            33.3%
-          </div>
-          <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-            Across all active sub-rentals
-          </span>
-        </Card>
+        {canSeeFinance && (
+          <>
+            <Card padding="md">
+              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
+                Total Revenue
+              </span>
+              <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--good)', marginTop: 'var(--sp-xs)' }}>
+                Rs 1,20,000
+              </div>
+              <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
+                Gross generated value
+              </span>
+            </Card>
+            <Card padding="md">
+              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
+                Total Cost
+              </span>
+              <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--bad)', marginTop: 'var(--sp-xs)' }}>
+                Rs 80,000
+              </div>
+              <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
+                Partner payments & fees
+              </span>
+            </Card>
+            <Card padding="md">
+              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
+                Blended Margin
+              </span>
+              <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--info)', marginTop: 'var(--sp-xs)' }}>
+                33.3%
+              </div>
+              <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
+                Across all active sub-rentals
+              </span>
+            </Card>
+          </>
+        )}
       </div>
 
       {/* Toolbar & Chips */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-lg)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
           {[
             { label: 'All', count: 48 },
             { label: 'Overdue', count: 4 }, // Explicit flag
@@ -222,7 +545,7 @@ export function SubRental() {
               onClick={() => setActiveFilter(chip.label as FilterKey)}
               style={{
                 padding: '6px 14px',
-                borderRadius: 20,
+                borderRadius: 'var(--r-modal)',
                 fontSize: 13,
                 fontWeight: 500,
                 cursor: 'pointer',
@@ -236,7 +559,7 @@ export function SubRental() {
                 transition: 'all 0.15s ease',
               }}
             >
-              {chip.label} <span className="figure" style={{ opacity: 0.85, marginLeft: 4 }}>{chip.count}</span>
+              {chip.label} <span className="figure" style={{ opacity: 0.85, marginLeft: 'var(--sp-xs)' }}>{chip.count}</span>
             </button>
           ))}
         </div>
@@ -259,7 +582,12 @@ export function SubRental() {
           </Button>
           <Button
             variant="primary"
-            onClick={() => showSuccessToast('New Record', 'Opening Sub-Rental wizard')}
+            onClick={() => {
+              import('../../actions/subrentals/createSubRental').then((m) =>
+                m.createSubRental({ itemDescription: 'Sub-Rental Item', costPaisa: 500000 })
+              )
+              showSuccessToast('New Record', 'Opening Sub-Rental wizard')
+            }}
             icon={<IconPlus size={16} />}
           >
             New Sub-Rental
@@ -296,14 +624,13 @@ export function SubRental() {
                   <th style={{ padding: '12px 14px' }}>Counterparty</th>
                   <th style={{ padding: '12px 14px' }}>Equipment</th>
                   <th style={{ padding: '12px 14px' }}>Dates</th>
-                  <th style={{ padding: '12px 14px' }}>Revenue & Cost</th>
+                  {canSeeFinance && <th style={{ padding: '12px 14px' }}>Revenue & Cost</th>}
                   <th style={{ padding: '12px 14px' }}>Status</th>
                   <th style={{ padding: '12px 14px', textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredData.map((c) => {
-                  const marginPct = calculateMargin(c.revenuePaisa, c.costPaisa)
+                {rowsWithIntel.map(({ record: c, glance, detail }) => {
                   return (
                     <tr
                       key={c.id}
@@ -319,24 +646,35 @@ export function SubRental() {
                       </td>
                       <td style={{ padding: '12px 14px' }}>
                         <div className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>{c.id}</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, color: c.direction === 'Borrowing' ? 'var(--info)' : 'var(--good)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)', marginTop: 'var(--sp-xs)', color: c.direction === 'Borrowing' ? 'var(--info)' : 'var(--good)' }}>
                           {c.direction === 'Borrowing' ? <IconArrowDownLeft size={14} /> : <IconArrowUpRight size={14} />}
                           <span style={{ fontSize: 11, fontWeight: 600 }}>{c.direction}</span>
                         </div>
                       </td>
                       <td style={{ padding: '12px 14px' }}>
-                        <div style={{ fontWeight: 500, color: 'var(--text)' }}>{c.counterparty}</div>
+                        <IntelCard
+                          glance={glance}
+                          detail={detail}
+                          detailTitle={c.counterparty}
+                          detailSubtitle="Sub-rental partner"
+                        >
+                          <span style={{ display: 'inline-flex', flexDirection: 'column' }}>
+                            <span style={{ fontWeight: 500, color: 'var(--text)' }}>{c.counterparty}</span>
+                          </span>
+                        </IntelCard>
                         {c.linkedBooking && (
-                          <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{c.linkedBooking}</div>
+                          <Link to={`/rentals/${c.linkedBooking}`} className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, display: 'block', textDecoration: 'none' }}>{c.linkedBooking}</Link>
                         )}
                       </td>
                       <td style={{ padding: '12px 14px' }}>
                         <div style={{ fontWeight: 500, color: 'var(--text)' }}>
                           {c.quantity}x {c.equipment}
                         </div>
-                        <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                          Rental Value: {formatMoney(c.rentalValuePaisa)}
-                        </div>
+                        {canSeeFinance && (
+                          <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                            Rental Value: {formatMoney(c.rentalValuePaisa)}
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding: '12px 14px' }}>
                         <div className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>
@@ -346,36 +684,45 @@ export function SubRental() {
                           {c.startDateAd} — {c.endDateAd}
                         </div>
                       </td>
-                      <td style={{ padding: '12px 14px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div className="figure" style={{ fontWeight: 600, color: c.status === 'Cancelled' ? 'var(--muted)' : 'var(--text)' }}>
-                            {formatMoney(c.revenuePaisa)}
-                          </div>
-                          {c.status !== 'Cancelled' && (
-                            <span className="figure" style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: marginPct < 0 ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)', color: marginPct < 0 ? 'var(--bad)' : 'var(--good)' }}>
-                              {marginPct > 0 && '+'}{marginPct.toFixed(1)}%
-                            </span>
-                          )}
-                        </div>
-                        <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                          Cost: {formatMoney(c.costPaisa)}
-                        </div>
-                      </td>
+                      {canSeeFinance && (() => {
+                        const marginPct = calculateMargin(c.revenuePaisa, c.costPaisa)
+                        return (
+                          <td style={{ padding: '12px 14px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
+                              <div className="figure" style={{ fontWeight: 600, color: c.status === 'Cancelled' ? 'var(--muted)' : 'var(--text)' }}>
+                                {formatMoney(c.revenuePaisa)}
+                              </div>
+                              {c.status !== 'Cancelled' && (
+                                <span className="figure" style={{ fontSize: 'var(--t-th)', fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: marginPct < 0 ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)', color: marginPct < 0 ? 'var(--bad)' : 'var(--good)' }}>
+                                  {marginPct > 0 && '+'}{marginPct.toFixed(1)}%
+                                </span>
+                              )}
+                            </div>
+                            <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                              Cost: {formatMoney(c.costPaisa)}
+                            </div>
+                          </td>
+                        )
+                      })()}
                       <td style={{ padding: '12px 14px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           {c.isOverdue && (
-                            <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: 'rgba(239, 68, 68, 0.1)', color: 'var(--bad)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                            <span style={{ fontSize: 'var(--t-th)', fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: 'rgba(239, 68, 68, 0.1)', color: 'var(--bad)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
                               OVERDUE
                             </span>
                           )}
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: getStatusColor(c.status), fontWeight: 600 }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', color: getStatusColor(c.status), fontWeight: 600 }}>
                             <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
                             {c.status}
                           </span>
                         </div>
                       </td>
                       <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                        <Button variant="secondary" size="sm">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={c.linkedBooking ? () => navigate(`/rentals/${c.linkedBooking}`) : undefined}
+                        >
                           View
                         </Button>
                       </td>
@@ -387,6 +734,8 @@ export function SubRental() {
           </div>
         )}
       </Card>
+        </>
+      )}
     </div>
   )
 }

@@ -5,7 +5,7 @@ import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, FooterNote, cardStyle, SummaryRows } from '../../components/ui/Page'
 import { Donut, Legend } from '../../components/ui/Charts'
-import { EmptyState } from '../../components/ui/StateViews'
+import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { STATUS, BRAND, BRAND_ON } from '../../lib/status'
 import type { StatusKey, BrandKey } from '../../lib/status'
 import { TODAY, toBs, formatBs, formatAd } from '../../lib/bs'
@@ -127,7 +127,7 @@ function ToneChip({ tone, icon, children }: { tone: StatusKey; icon: IconName; c
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 4,
+        gap: 'var(--sp-xs)',
         padding: '2px 8px',
         borderRadius: 'var(--r-badge)',
         background: t.bg,
@@ -219,7 +219,7 @@ function KpiCard({ k }: { k: Tile }) {
           style={{
             width: 30,
             height: 30,
-            borderRadius: 8,
+            borderRadius: 'var(--r-sm)',
             background: BRAND[k.accent],
             color: BRAND_ON[k.accent],
             display: 'grid',
@@ -329,14 +329,14 @@ function ChannelsCard() {
         {CHANNELS.map((c) => (
           <section
             key={c.key}
-            style={{ ...cardStyle, background: 'var(--card2)', padding: '12px 12px 11px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}
+            style={{ ...cardStyle, background: 'var(--card2)', padding: '12px 12px 11px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
               <span
                 style={{
                   width: 30,
                   height: 30,
-                  borderRadius: 8,
+                  borderRadius: 'var(--r-sm)',
                   display: 'grid',
                   placeItems: 'center',
                   flexShrink: 0,
@@ -411,7 +411,7 @@ function TemplatesCard() {
         </span>
       }
     >
-      <div role="tablist" aria-label="Template categories" style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 12 }}>
+      <div role="tablist" aria-label="Template categories" style={{ display: 'flex', gap: 'var(--sp-xs)', flexWrap: 'wrap', marginBottom: 'var(--sp-md)' }}>
         {tabs.map((t) => {
           const on = t === tab
           return (
@@ -504,7 +504,7 @@ function TemplatesCard() {
         </div>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 'var(--sp-md)', flexWrap: 'wrap' }}>
         {rows.length > 8 && (
           <button type="button" onClick={() => setShowAll((v) => !v)} style={controlStyle}>
             {showAll ? 'Show first 8' : `View all ${rows.length} templates`}
@@ -517,7 +517,7 @@ function TemplatesCard() {
         </span>
       </div>
 
-      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+      <div style={{ marginTop: 'var(--sp-md)', paddingTop: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
         <div style={{ fontSize: 'var(--t-th)', fontWeight: 700, color: 'var(--text2)', marginBottom: 7 }}>
           Variables every template may use
         </div>
@@ -609,7 +609,7 @@ function AutomationCard() {
                 <ChannelPips channels={r.channels} />
               </span>
             </span>
-            <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+            <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 'var(--sp-xs)', flexShrink: 0 }}>
               {r.active ? (
                 <ToneChip tone="in" icon="check">
                   Active
@@ -660,7 +660,7 @@ function StatTile({ label, value, note, tone }: { label: string; value: string; 
       <div className="figure" style={{ marginTop: 7, fontSize: 'clamp(16px, 1.3vw, 21px)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em' }}>
         {value}
       </div>
-      <div style={{ marginTop: 4, fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.45 }}>{note}</div>
+      <div style={{ marginTop: 'var(--sp-xs)', fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.45 }}>{note}</div>
     </div>
   )
 }
@@ -704,17 +704,16 @@ export function CommunicationPane() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
       {SEED_ERRORS.length > 0 && (
-        <div
-          role="alert"
-          style={{ ...cardStyle, padding: 12, borderColor: 'var(--danger)', display: 'flex', flexDirection: 'column', gap: 4 }}
-        >
-          <strong style={{ fontSize: 'var(--t-ui)', color: 'var(--danger-text)' }}>Seed data does not reconcile</strong>
-          {SEED_ERRORS.map((e) => (
-            <span key={e} style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-              {e}
-            </span>
-          ))}
-        </div>
+        <ErrorBanner
+          title="Seed data does not reconcile"
+          message={
+            <ul style={{ margin: 0, paddingLeft: 'var(--sp-lg)' }}>
+              {SEED_ERRORS.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          }
+        />
       )}
 
       <section
@@ -894,10 +893,10 @@ export function CommunicationRail() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
+                gap: 'var(--sp-sm)',
                 width: '100%',
                 padding: '8px 9px',
-                borderRadius: 8,
+                borderRadius: 'var(--r-sm)',
                 border: '1px solid var(--border)',
                 background: 'var(--card2)',
                 color: 'var(--text)',
@@ -926,7 +925,7 @@ export function CommunicationRail() {
             <DestControl
               key={q.label}
               dest={q.dest}
-              style={{ ...controlStyle, height: 34, width: '100%', justifyContent: 'flex-start', gap: 8, background: 'var(--card2)' }}
+              style={{ ...controlStyle, height: 34, width: '100%', justifyContent: 'flex-start', gap: 'var(--sp-sm)', background: 'var(--card2)' }}
             >
               <Icon name={q.icon} size={14} style={{ color: 'var(--muted)', flexShrink: 0 }} />
               <span style={{ flex: 1, textAlign: 'left', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{q.label}</span>
@@ -936,7 +935,7 @@ export function CommunicationRail() {
           <button
             type="button"
             onClick={exportLogs}
-            style={{ ...controlStyle, height: 34, width: '100%', justifyContent: 'flex-start', gap: 8, background: 'var(--card2)' }}
+            style={{ ...controlStyle, height: 34, width: '100%', justifyContent: 'flex-start', gap: 'var(--sp-sm)', background: 'var(--card2)' }}
           >
             <Icon name="download" size={14} style={{ color: 'var(--muted)', flexShrink: 0 }} />
             <span style={{ flex: 1, textAlign: 'left' }}>Export Logs</span>
@@ -948,7 +947,7 @@ export function CommunicationRail() {
       <Card title="Recent Activity">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {ACTIVITY.map((a) => (
-            <div key={a.what + a.ago} style={{ display: 'flex', gap: 8 }}>
+            <div key={a.what + a.ago} style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
               <Icon name={a.icon} size={14} style={{ color: STATUS[a.tone].fg, flexShrink: 0, marginTop: 2 }} />
               <span style={{ minWidth: 0, flex: 1 }}>
                 <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{a.what}</span>
@@ -969,7 +968,7 @@ export function CommunicationRail() {
       <Card title="AI Communication Assistant">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
           {INSIGHTS.map((i) => (
-            <div key={i.text} style={{ display: 'flex', gap: 8 }}>
+            <div key={i.text} style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
               <Icon name={i.icon} size={14} style={{ color: STATUS[i.tone].fg, flexShrink: 0, marginTop: 2 }} />
               <span style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', lineHeight: 1.5 }}>{i.text}</span>
             </div>

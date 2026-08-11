@@ -16,13 +16,13 @@ export const KPIS: Kpi[] = [
 ]
 
 export const SEGMENTS: Array<{ name: string; note: string; count: string; tone: 'primary' | 'success' | 'progress' | 'danger' | 'primary' | 'neutral' }> = [
-  { name: 'All Customers', note: 'Everyone in customer database', count: '12,845', tone: 'primary' },
-  { name: 'VIP Customers', note: 'High value and loyal customers', count: '1,256', tone: 'success' },
-  { name: 'Active Customers', note: 'Rented in last 90 days', count: '7,842', tone: 'primary' },
-  { name: 'Inactive Customers', note: 'No rental in last 180 days', count: '3,215', tone: 'neutral' },
+  { name: 'All Clients', note: 'Everyone in client database', count: '12,845', tone: 'primary' },
+  { name: 'VIP Clients', note: 'High value and loyal clients', count: '1,256', tone: 'success' },
+  { name: 'Active Clients', note: 'Rented in last 90 days', count: '7,842', tone: 'primary' },
+  { name: 'Inactive Clients', note: 'No rental in last 180 days', count: '3,215', tone: 'neutral' },
   { name: 'Overdue Rentals', note: 'Rentals past due date', count: '624', tone: 'danger' },
   { name: 'Gold Members', note: 'Active Gold membership', count: '1,025', tone: 'progress' },
-  { name: 'New Customers', note: 'Joined in last 30 days', count: '2,145', tone: 'primary' },
+  { name: 'New Clients', note: 'Joined in last 30 days', count: '2,145', tone: 'primary' },
   { name: 'Custom Segment', note: 'High spend + Camera category', count: '856', tone: 'neutral' },
 ]
 

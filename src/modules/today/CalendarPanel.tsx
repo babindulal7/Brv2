@@ -163,11 +163,11 @@ export default function CalendarPanel({
         crushed both instead.
       */}
       <div
-        style={{ display: 'flex', flexWrap: 'wrap', gap: 16, padding: '12px 15px 14px', flex: 1, minHeight: 0 }}
+        style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-lg)', padding: '12px 15px 14px', flex: 1, minHeight: 0 }}
       >
         {/* ── the day's movements ─────────────────────────────────────── */}
         <div style={{ flex: '1 1 280px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)', marginBottom: 'var(--sp-sm)' }}>
             <button
               type="button"
               aria-label="Previous day in the full Calendar"
@@ -215,18 +215,21 @@ export default function CalendarPanel({
               <Link
                 key={m.id}
                 to={`/rentals/${m.bookingNo}`}
+                className="lift"
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '9px 66px 62px minmax(0,1fr)',
                   gap: 9,
                   alignItems: 'center',
-                  padding: '5px 0',
+                  padding: '6px 8px',
+                  borderRadius: 'var(--r-xs)',
                   textDecoration: 'none',
+                  transition: 'background-color 0.15s ease',
                 }}
               >
                 <span
                   aria-hidden
-                  style={{ width: 9, height: 9, borderRadius: 999, background: BRAND[dotTone(m)] }}
+                  style={{ width: 9, height: 9, borderRadius: 'var(--r-badge)', background: BRAND[dotTone(m)] }}
                 />
                 <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
                   {timeOf(m)}
@@ -250,7 +253,7 @@ export default function CalendarPanel({
 
         {/* ── the mini month ──────────────────────────────────────────── */}
         <div style={{ flex: '0 1 262px', minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 'var(--sp-sm)' }}>
             <span style={{ lineHeight: 1.25 }}>
               <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>{CAL_MONTH.bs}</span>
               <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{CAL_MONTH.ad}</span>
@@ -284,7 +287,7 @@ export default function CalendarPanel({
             {CAL_WEEKDAYS.map((d) => (
               <span
                 key={d}
-                style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.04em', paddingBottom: 4 }}
+                style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.04em', paddingBottom: 'var(--sp-xs)' }}
               >
                 {d}
               </span>
@@ -312,7 +315,7 @@ export default function CalendarPanel({
                     position: 'relative',
                     height: 30,
                     border: 'none',
-                    borderRadius: 8,
+                    borderRadius: 'var(--r-sm)',
                     background: isToday ? 'var(--btn-primary-bg)' : 'transparent',
                     color: isToday ? 'var(--btn-primary-fg)' : 'var(--text)',
                     cursor: 'pointer',
@@ -359,7 +362,7 @@ export default function CalendarPanel({
                         transform: 'translateX(-50%)',
                         width: 4,
                         height: 4,
-                        borderRadius: 999,
+                        borderRadius: 'var(--r-badge)',
                         background: isToday ? 'var(--btn-primary-fg)' : 'var(--primary)',
                       }}
                     />

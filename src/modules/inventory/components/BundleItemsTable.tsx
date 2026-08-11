@@ -14,7 +14,7 @@ export const BundleItemsTable = memo(({ hydratedBundleItems, clearAllItems, upda
     <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--bg)', flex: 1, overflow: 'hidden' }}>
       <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--text)' }}>
-          <span style={{ width: 22, height: 22, borderRadius: '50%', background: 'var(--nav-active-accent)', color: 'white', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, marginRight: 8, verticalAlign: 'middle' }}>3</span>
+          <span style={{ width: 22, height: 22, borderRadius: '50%', background: 'var(--nav-active-accent)', color: 'white', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, marginRight: 'var(--sp-sm)', verticalAlign: 'middle' }}>3</span>
           Bundle Items <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({hydratedBundleItems.length})</span>
         </span>
         <button 
@@ -44,7 +44,7 @@ export const BundleItemsTable = memo(({ hydratedBundleItems, clearAllItems, upda
             {hydratedBundleItems.map((item) => (
               <tr key={item.id} style={{ borderBottom: '1px solid var(--border)' }}>
                 <td style={{ padding: '8px 12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                     <div>
                       <div style={{ color: 'var(--text)', fontWeight: 500 }}>{item.inv.name}</div>
                       <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{item.inv.cat}</div>
@@ -87,7 +87,7 @@ export const BundleItemsTable = memo(({ hydratedBundleItems, clearAllItems, upda
                   <div style={{ color: 'var(--muted)', fontSize: 'var(--t-th)', textDecoration: 'line-through' }}>Rs {formatMoney(rupees(item.orig))}</div>
                 </td>
                 <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                  <span style={{ display: 'inline-block', padding: '2px 8px', background: 'var(--hover)', border: '1px solid var(--border)', borderRadius: 12, color: 'var(--text2)', fontSize: 'var(--t-th)' }}>
+                  <span style={{ display: 'inline-block', padding: '2px 8px', background: 'var(--hover)', border: '1px solid var(--border)', borderRadius: 'var(--r-btn)', color: 'var(--text2)', fontSize: 'var(--t-th)' }}>
                     0
                   </span>
                 </td>
@@ -102,7 +102,7 @@ export const BundleItemsTable = memo(({ hydratedBundleItems, clearAllItems, upda
                 <td style={{ padding: '8px 12px', textAlign: 'center' }}>
                   <button 
                     onClick={() => toggleItem(item.id)} 
-                    style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', display: 'inline-flex', padding: 4 }}
+                    style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', display: 'inline-flex', padding: 'var(--sp-xs)' }}
                     aria-label={`Remove ${item.inv.name} from bundle`}
                   >
                     <Icon name="close" size={16} />

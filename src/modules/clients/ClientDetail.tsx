@@ -1,19 +1,23 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle, SummaryRows } from '../../components/ui/Page'
+import { Card, PageHeader, Button, KpiStrip, FooterNote, SummaryRows } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { Modal } from '../../components/ui/Modal'
-import { EmptyState } from '../../components/ui/StateViews'
+import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useToast } from '../../components/ui/Toast'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useAuth } from '../../lib/auth'
+import { gateContext, canViewPII, canViewOnStopReason, moneyScope } from '../../lib/fieldGating'
 import { STATUS } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
 import { CLIENTS_DATA, TIER_TONE, type ClientRecord } from '../../data/clients'
 import { ROWS as RENTAL_ROWS } from '../../data/rentals'
 import { DOCUMENTS } from '../../data/documents'
+import { INVOICES } from '../finance/Finance'
+import { INVOICE_TOKEN } from '../../data/invoiceIntel'
 
 /**
  * Client Detail — the confirmed gap named by three sources this session (the
@@ -75,6 +79,10 @@ export default function ClientDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const money = useCanViewMoney()
+  const { user } = useAuth()
+  const role = user?.role ?? 'Client'
+  const gctx = useMemo(() => gateContext(role), [role])
+  const pii = canViewPII(gctx)
   const { showSuccessToast } = useToast()
 
   const found = useMemo(() => CLIENTS_DATA.find((c) => c.id === id) ?? null, [id])
@@ -104,6 +112,7 @@ export default function ClientDetail() {
     .map((bookingNo) => RENTAL_ROWS.find((r) => r.bookingNo === bookingNo))
     .filter((r): r is NonNullable<typeof r> => Boolean(r))
   const documents = DOCUMENTS.filter((d) => client.activeBookings.includes(d.relatedTo))
+  const invoices = INVOICES.filter((inv) => client.activeBookings.includes(inv.booking))
 
   const creditHeadroom = (client.creditLimitPaisa - client.creditUsedPaisa) as typeof client.creditLimitPaisa
   const creditPct = client.creditLimitPaisa > 0 ? Math.min(100, Math.round((client.creditUsedPaisa / client.creditLimitPaisa) * 100)) : 0
@@ -125,6 +134,9 @@ export default function ClientDetail() {
          means the key is ABSENT, not present-and-undefined. */
       const { blockReason: _cleared, ...unblocked } = client
       setClient({ ...unblocked, isBlocked: false })
+      import('../../actions/clients/blockClient').then((m) =>
+        m.blockClient({ clientId: client.id, blocked: false })
+      )
       showSuccessToast('Client unblocked', `${client.name} can book again`)
       return
     }
@@ -133,7 +145,11 @@ export default function ClientDetail() {
 
   const confirmBlock = () => {
     if (blockReasonDraft.trim().length < 10) return
-    setClient({ ...client, isBlocked: true, blockReason: blockReasonDraft.trim() })
+    const reason = blockReasonDraft.trim()
+    setClient({ ...client, isBlocked: true, blockReason: reason })
+    import('../../actions/clients/blockClient').then((m) =>
+      m.blockClient({ clientId: client.id, blocked: true, reason })
+    )
     showSuccessToast('Client blocked', `${client.name} is now blocked from new rentals`)
     setShowBlockModal(false)
     setBlockReasonDraft('')
@@ -181,18 +197,18 @@ export default function ClientDetail() {
         }
       />
 
+      {/* HIS v2.1 §4.4 — the block itself is visible to everyone who tries to
+          book; only the reason and who set it are staff information. */}
       {client.isBlocked && (
-        <div role="alert" style={{ ...cardStyle, padding: 14, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-          <Icon name="alert_triangle" size={17} style={{ color: 'var(--danger-text)', flexShrink: 0, marginTop: 1 }} />
-          <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text)' }}>
-            <strong>Account blocked.</strong> <span style={{ color: 'var(--text2)' }}>{client.blockReason}</span>
-          </div>
-        </div>
+        <ErrorBanner
+          title="Account blocked."
+          message={canViewOnStopReason(gctx) ? client.blockReason : 'Contact a manager for details.'}
+        />
       )}
 
       <KpiStrip items={kpis} columns={kpis.length} />
 
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)' }}>
         {tabs.map((t) => {
           const on = activeTab === t.key
           return (
@@ -223,47 +239,84 @@ export default function ClientDetail() {
 
       {activeTab === 'overview' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--sp-md)' }}>
-          <Card title="Contact">
+          <Card title="Identity">
             <SummaryRows
               rows={[
-                { label: 'Phone', value: client.phone },
-                { label: 'Email', value: client.email || '—' },
-                { label: 'Address', value: client.address },
+                { label: 'Client type', value: client.clientType },
+                { label: 'Tags', value: client.tags?.length ? client.tags.join(', ') : '—' },
                 { label: 'PAN', value: client.pan ?? 'Not on file' },
                 { label: 'KYC', value: client.kycStatus },
               ]}
             />
           </Card>
 
-          <Card title="Authorized Contact Person">
-            <SummaryRows
-              rows={[
-                { label: 'Name', value: client.contactPerson.name },
-                { label: 'Designation', value: client.contactPerson.designation },
-                { label: 'Phone', value: client.contactPerson.phone },
-              ]}
-            />
-            <p style={{ margin: '10px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-              One contact per client today — a multi-contact model would be a schema change, not a display change.
-            </p>
-          </Card>
+          {/* HIS v2.1 §4.2 — phone/email/address were unconditional here
+              before this; a Warehouse or Technician session must not
+              construct this card at all, not just have it styled away. */}
+          {pii && (
+            <Card title="Contact">
+              <SummaryRows
+                rows={[
+                  { label: 'Phone', value: client.phone },
+                  { label: 'Email', value: client.email || '—' },
+                  ...(client.addresses ?? [{ kind: 'Billing' as const, label: 'On file', address: client.address }]).map((a) => ({
+                    label: `${a.kind} address`,
+                    value: a.address,
+                  })),
+                ]}
+              />
+            </Card>
+          )}
+
+          {pii && (
+            <Card title="Authorized Contact Person">
+              <SummaryRows
+                rows={[
+                  { label: 'Name', value: client.contactPerson.name },
+                  { label: 'Designation', value: client.contactPerson.designation },
+                  { label: 'Phone', value: client.contactPerson.phone },
+                ]}
+              />
+              <p style={{ margin: '10px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                One contact per client today — a multi-contact model would be a schema change, not a display change.
+              </p>
+            </Card>
+          )}
 
           <Card title="Membership & Credit">
             <SummaryRows
               rows={[
                 { label: 'Membership Tier', value: client.membership, ...(TIER_TONE[client.membership] === 'danger' ? { tone: 'danger' as const } : {}) },
                 { label: 'Last Rental', value: client.lastRentalBs === '—' ? 'No rental yet' : `${client.lastRentalBs} BS · ${client.lastRentalAd}` },
+                // Open ⭐ #2 (HIS v2.1) — no benefit matrix is ruled yet.
+                { label: 'Benefits', value: 'Not yet defined (Open ⭐ #2)' },
+                ...(moneyScope(gctx) === 'full'
+                  ? [
+                      { label: 'Standing discount', value: client.standingDiscountPercent !== undefined ? `${client.standingDiscountPercent}%` : '—' },
+                      { label: 'Discount source', value: client.discountSource ?? '—' },
+                      // Open ⭐ #1 (HIS v2.1) — no per-category deposit-% table is ruled yet.
+                      { label: 'Deposit override', value: 'Not set (Open ⭐ #1)' },
+                    ]
+                  : []),
               ]}
             />
+            {(client.isBlocked || client.onStop) && canViewOnStopReason(gctx) && (
+              <SummaryRows
+                rows={[
+                  { label: 'On-Stop set by', value: client.onStop?.setBy ?? '—' },
+                  { label: 'On-Stop set on', value: client.onStop?.setAd ?? '—' },
+                ]}
+              />
+            )}
             {money && (
               <div style={{ marginTop: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 'var(--t-meta)', marginBottom: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', marginBottom: 6 }}>
                   <span style={{ color: 'var(--text2)' }}>Credit used</span>
                   <span className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>
                     {formatMoney(client.creditUsedPaisa)} / {formatMoney(client.creditLimitPaisa)}
                   </span>
                 </div>
-                <span aria-hidden style={{ display: 'block', width: '100%', height: 6, borderRadius: 999, background: 'var(--border)', overflow: 'hidden' }}>
+                <span aria-hidden style={{ display: 'block', width: '100%', height: 6, borderRadius: 'var(--r-badge)', background: 'var(--border)', overflow: 'hidden' }}>
                   <span
                     style={{
                       display: 'block',
@@ -279,6 +332,21 @@ export default function ClientDetail() {
               </div>
             )}
           </Card>
+
+          {/* Reliability [NEW] — counts visible to all staff; no ₨-recovered
+              figure is modelled yet, so nothing here needs money-gating. */}
+          {client.reliability && (
+            <Card title="Reliability">
+              <SummaryRows
+                rows={[
+                  { label: 'Late returns', value: `${client.reliability.lateReturns} / ${client.reliability.totalReturns}` },
+                  { label: 'Damage cases', value: String(client.reliability.damageCases) },
+                  { label: 'Missing cases', value: String(client.reliability.missingCases) },
+                  { label: 'Avg days late', value: client.reliability.avgDaysLateOverall.toFixed(1) },
+                ]}
+              />
+            </Card>
+          )}
         </div>
       )}
 
@@ -355,11 +423,50 @@ export default function ClientDetail() {
               ]}
             />
           </Card>
-          <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-            <Icon name="info" size={13} style={{ verticalAlign: -2, marginRight: 5 }} />
-            A per-invoice transaction list needs Finance's invoice data cross-referenced by booking
-            number the same way Rentals and Documents are below — not wired here yet.
-          </p>
+          {/* Cross-referenced by booking number only — see the file header note. */}
+          <Card title={`Invoices (${invoices.length})`} bodyStyle={{ padding: invoices.length ? 0 : undefined }}>
+            {invoices.length === 0 ? (
+              <EmptyState
+                title="No invoices to show"
+                description="No invoice in Finance's records is linked to one of this client's active bookings."
+              />
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
+                  <thead>
+                    <tr style={{ background: 'var(--th-bg)' }}>
+                      <th style={th}>Invoice</th>
+                      <th style={th}>Booking</th>
+                      <th style={{ ...th, textAlign: 'right' }}>Amount</th>
+                      <th style={th}>Status</th>
+                      <th style={th}>Due</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoices.map((inv) => (
+                      <tr key={inv.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={td}>
+                          <span className="identifier" style={{ fontWeight: 600 }}>{inv.id}</span>
+                        </td>
+                        <td style={td}>
+                          <Link to={`/rentals/${inv.booking}`} className="identifier" style={{ color: 'var(--link)', textDecoration: 'none' }}>
+                            {inv.booking}
+                          </Link>
+                        </td>
+                        <td style={{ ...td, textAlign: 'right' }}>
+                          <span className="figure" style={{ fontWeight: 600 }}>{inv.amount}</span>
+                        </td>
+                        <td style={td}>
+                          <Tone text={inv.status} tone={INVOICE_TOKEN[inv.status]} />
+                        </td>
+                        <td style={{ ...td, color: 'var(--text2)' }}>{inv.due}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
         </div>
       )}
 
@@ -423,20 +530,20 @@ export default function ClientDetail() {
       {activeTab === 'activity' && (
         <Card title="Client facts">
           <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <li style={{ display: 'flex', gap: 8, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            <li style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               <Icon name="checklist" size={14} style={{ color: 'var(--success-text)', flexShrink: 0, marginTop: 2 }} />
               KYC {client.kycStatus} · {client.kycDocsCount} document{client.kycDocsCount === 1 ? '' : 's'} on file
             </li>
-            <li style={{ display: 'flex', gap: 8, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            <li style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               <Icon name={client.currentRentalsCount > 0 ? 'truck' : 'dot'} size={14} style={{ color: 'var(--muted)', flexShrink: 0, marginTop: 2 }} />
               {client.currentRentalsCount > 0 ? `${client.currentRentalsCount} rental(s) currently active` : 'No active rentals'}
             </li>
-            <li style={{ display: 'flex', gap: 8, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            <li style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               <Icon name="calendar" size={14} style={{ color: 'var(--muted)', flexShrink: 0, marginTop: 2 }} />
               {client.lastRentalBs === '—' ? 'No rental history yet' : `Last rental ${client.lastRentalBs} BS (${client.lastRentalAd})`}
             </li>
             {client.isBlocked && (
-              <li style={{ display: 'flex', gap: 8, fontSize: 'var(--t-meta)', color: 'var(--danger-text)' }}>
+              <li style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--danger-text)' }}>
                 <Icon name="alert_triangle" size={14} style={{ flexShrink: 0, marginTop: 2 }} />
                 Blocked — {client.blockReason}
               </li>

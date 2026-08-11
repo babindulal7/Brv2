@@ -1,6 +1,11 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import Icon from './Icon'
+
+// Matches --dur in theme.css (the app's generic transition-duration token).
+// Kept as a JS constant so the close-unmount timer stays in sync with the
+// CSS fade below; update both together if that token ever changes.
+const TRANSITION_MS = 150
 
 /**
  * Rewritten from Tailwind utility classNames — `fixed inset-0 z-50 flex...` —
@@ -42,6 +47,19 @@ export function Modal({
   size = 'md',
   sheet = false,
 }: ModalProps) {
+  // Keeps the modal mounted for a beat after isOpen flips to false so the
+  // CSS fade/scale-out below can actually play instead of vanishing instantly.
+  const [shouldRender, setShouldRender] = useState(isOpen)
+
+  useEffect(() => {
+    if (isOpen) {
+      setShouldRender(true)
+      return
+    }
+    const timeout = window.setTimeout(() => setShouldRender(false), TRANSITION_MS)
+    return () => window.clearTimeout(timeout)
+  }, [isOpen])
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -58,7 +76,7 @@ export function Modal({
     }
   }, [isOpen, onClose])
 
-  if (!isOpen) return null
+  if (!shouldRender) return null
 
   const maxWidth = SIZE_MAX_WIDTH[size]
 
@@ -71,8 +89,10 @@ export function Modal({
         display: 'flex',
         alignItems: sheet ? 'flex-end' : 'center',
         justifyContent: 'center',
-        padding: sheet ? 0 : 16,
+        padding: sheet ? 0 : 'var(--sp-lg)',
         background: 'rgba(0, 0, 0, 0.6)',
+        opacity: isOpen ? 1 : 0,
+        transition: 'opacity var(--dur) ease',
       }}
     >
       <div
@@ -97,6 +117,9 @@ export function Modal({
           borderRadius: sheet ? '16px 16px 0 0' : 16,
           boxShadow: 'var(--shadow-modal)',
           overflow: 'hidden',
+          opacity: isOpen ? 1 : 0,
+          transform: isOpen ? 'scale(1)' : 'scale(0.97)',
+          transition: 'opacity var(--dur) ease, transform var(--dur) ease',
         }}
       >
         {/* Header */}
@@ -166,7 +189,7 @@ export function Modal({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-end',
-              gap: 12,
+              gap: 'var(--sp-md)',
               padding: '16px 20px',
               borderTop: '1px solid var(--border)',
               background: 'var(--card2)',

@@ -5,6 +5,8 @@ import { rupees, formatMoney, roundHalfUp, grouped } from '../lib/money'
 import type { Paisa } from '../lib/money'
 import { BRANCH, CURRENT_USER, FOOTER_NOTE } from './nav'
 
+export const FEE_PER_CREW_DAY_PAISA: Paisa = rupees(500)
+
 /**
  * **Settings** seed — `03 Core Modules/Settings/Organization.md` and
  * `Branch Management.md` (both v3.0, Build Locked), read against
@@ -118,7 +120,7 @@ export const ORG = {
 export const ORG_FIELDS: OrgField[] = [
   { label: 'Registered address', value: 'Boudha, Kathmandu, Nepal', icon: 'home' },
   { label: 'VAT / PAN', value: BRANCH.vat.replace(/^VAT:\s*/, ''), icon: 'file' },
-  { label: 'Phone', value: '+977 985-1234567', icon: 'phone' },
+  { label: 'Phone', value: '+977 985-2941876', icon: 'phone' },
   { label: 'Email', value: 'info@babinrentals.com', icon: 'mail' },
   { label: 'Website', value: 'www.babinrentals.com', icon: 'external_link' },
   { label: 'Company type', value: 'Private Limited Company', icon: 'briefcase' },
@@ -169,7 +171,7 @@ export const BRANCHES: Branch[] = [
     city: 'Kathmandu',
     address: 'Boudha, Kathmandu, Nepal',
     manager: 'Ramesh Dulal',
-    phone: '+977 985-1234567',
+    phone: '+977 985-2941876',
     warehouses: 2,
     staff: 15,
     equipment: 1258,
@@ -185,7 +187,7 @@ export const BRANCHES: Branch[] = [
     city: 'Lalitpur',
     address: 'Gwarko, Lalitpur',
     manager: 'Sunil Gurung',
-    phone: '+977 984-5678901',
+    phone: '+977 984-6813729',
     warehouses: 1,
     staff: 8,
     equipment: 687,
@@ -201,7 +203,7 @@ export const BRANCHES: Branch[] = [
     city: 'Pokhara',
     address: 'New Road, Pokhara',
     manager: 'Prabin Lama',
-    phone: '+977 981-2345678',
+    phone: '+977 981-3947852',
     warehouses: 1,
     staff: 5,
     equipment: 562,

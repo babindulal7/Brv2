@@ -4,7 +4,7 @@ import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { PageHeader, Card, Rail, FooterNote, Button, cardStyle } from '../../components/ui/Page'
 import { LineChart, GroupedBars } from '../../components/ui/Charts'
-import { EmptyState } from '../../components/ui/StateViews'
+import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { BRAND, BRAND_ON, STATUS } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
 import { formatMoney, grouped, toRupees } from '../../lib/money'
@@ -12,6 +12,7 @@ import type { Paisa } from '../../lib/money'
 import { TODAY, toBs, formatBs, formatAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useViewport } from '../../lib/device'
 import {
   PERIODS,
   DEFAULT_PERIOD,
@@ -223,7 +224,7 @@ function KpiCard({ c }: { c: CardModel }) {
           style={{
             width: 30,
             height: 30,
-            borderRadius: 8,
+            borderRadius: 'var(--r-sm)',
             background: BRAND[c.accent],
             color: BRAND_ON[c.accent],
             display: 'grid',
@@ -300,7 +301,7 @@ function KpiCard({ c }: { c: CardModel }) {
           paddingTop: 9,
           display: 'inline-flex',
           alignItems: 'center',
-          gap: 4,
+          gap: 'var(--sp-xs)',
           fontSize: 'var(--t-meta)',
           fontWeight: 600,
           color: 'var(--link)',
@@ -320,6 +321,7 @@ export default function Pulse() {
   const money = useCanViewMoney()
   const { user } = useAuth()
   const periodRef = useRef<HTMLSelectElement>(null)
+  const viewport = useViewport()
 
   const [periodKey, setPeriodKey] = useState<string>(DEFAULT_PERIOD)
   const [compareOn, setCompareOn] = useState(true)
@@ -346,7 +348,7 @@ export default function Pulse() {
   const barLabel = figures ? rangeLabel(figures.from, figures.to) : null
 
   const periodBar = (
-    <div style={{ ...cardStyle, padding: 11, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+    <div style={{ ...cardStyle, padding: 11, display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', flexWrap: 'wrap' }}>
       <span
         style={{
           display: 'inline-flex',
@@ -439,17 +441,16 @@ export default function Pulse() {
 
   const boundErrors = [...LEDGER_ASSERTION_ERRORS, ...FLEET_RECONCILIATION_ERRORS]
   const assertions = boundErrors.length > 0 && (
-    <div
-      role="alert"
-      style={{ ...cardStyle, padding: 12, borderColor: 'var(--danger)', display: 'flex', flexDirection: 'column', gap: 4 }}
-    >
-      <strong style={{ fontSize: 'var(--t-ui)', color: 'var(--danger-text)' }}>The seed ledger broke a bound</strong>
-      {boundErrors.map((e) => (
-        <span key={e} style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-          {e}
-        </span>
-      ))}
-    </div>
+    <ErrorBanner
+      title="The seed ledger broke a bound"
+      message={
+        <ul style={{ margin: 0, paddingLeft: 16 }}>
+          {boundErrors.map((e) => (
+            <li key={e}>{e}</li>
+          ))}
+        </ul>
+      }
+    />
   )
 
   /*
@@ -467,7 +468,7 @@ export default function Pulse() {
         ...cardStyle,
         padding: '10px 12px',
         display: 'flex',
-        gap: 8,
+        gap: 'var(--sp-sm)',
         alignItems: 'flex-start',
         fontSize: 'var(--t-meta)',
         color: 'var(--text2)',
@@ -695,6 +696,24 @@ export default function Pulse() {
   const unbuiltTabs = tabs.filter((t) => t.to === null && !t.gated).map((t) => t.label)
   const gatedTabs = tabs.filter((t) => t.gated).map((t) => t.label)
 
+  // §5.3's cards are dense — icon, label, value, delta and a link — so below
+  // desktop they get the same treatment as BookingDetail's facts strip: two
+  // across on the 768–1179px tablet band, one across on phone, rather than
+  // squeezing all of `cards.length` into a viewport that has no room for it
+  // (Law 13/14).
+  const cardsCols =
+    viewport === 'desktop'
+      ? `repeat(${cards.length}, minmax(0,1fr))`
+      : viewport === 'tablet'
+        ? `repeat(${Math.min(cards.length, 2)}, minmax(0,1fr))`
+        : '1fr'
+
+  // The content/rail split only has room on desktop; below that the rail
+  // (already collapsed to a handle by CollapsibleAside — see Rail's docstring
+  // in components/ui/Page.tsx) stacks under the content column instead of
+  // sharing a row with it.
+  const bodyCols = viewport === 'desktop' ? 'minmax(0,1fr) 300px' : '1fr'
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       {header}
@@ -710,7 +729,7 @@ export default function Pulse() {
           <summary style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', cursor: 'pointer' }}>
             {disabledPresets.length} presets are unavailable — why?
           </summary>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 6 }}>
+          <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'flex-start', marginTop: 6 }}>
             <Icon name="info" size={13} style={{ color: 'var(--muted)', marginTop: 2, flexShrink: 0 }} />
             <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', display: 'flex', flexDirection: 'column', gap: 3 }}>
               {unavailable.map((w) => (
@@ -725,7 +744,7 @@ export default function Pulse() {
           for a money-blind role rather than masked (§8.3). */}
       <section
         aria-label="Business pulse"
-        style={{ display: 'grid', gridTemplateColumns: `repeat(${cards.length}, minmax(0,1fr))`, gap: 'var(--sp-md)' }}
+        style={{ display: 'grid', gridTemplateColumns: cardsCols, gap: 'var(--sp-md)' }}
       >
         {cards.map((c) => (
           <KpiCard key={c.label} c={c} />
@@ -792,7 +811,7 @@ export default function Pulse() {
         </p>
       </nav>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: bodyCols, gap: 'var(--sp-md)', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <Card
             title={def.title}
@@ -937,9 +956,9 @@ export default function Pulse() {
                         </div>
                       </td>
                       <td style={td}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div aria-hidden style={{ flex: 1, height: 6, borderRadius: 999, background: 'var(--card2)', overflow: 'hidden' }}>
-                            <div style={{ width: `${Math.min(r.utilization, 100)}%`, height: '100%', background: BRAND.success, borderRadius: 999 }} />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
+                          <div aria-hidden style={{ flex: 1, height: 6, borderRadius: 'var(--r-badge)', background: 'var(--card2)', overflow: 'hidden' }}>
+                            <div style={{ width: `${Math.min(r.utilization, 100)}%`, height: '100%', background: BRAND.success, borderRadius: 'var(--r-badge)' }} />
                           </div>
                           <span className="figure" style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
                             {r.utilization}%
@@ -1065,7 +1084,7 @@ export default function Pulse() {
           <Card title="Reconciliation">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {RECONCILIATION.filter((r) => money || r.card !== 'Revenue').map((r) => (
-                <div key={r.figure} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <div key={r.figure} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'flex-start' }}>
                   <Icon
                     name={r.ok ? 'check' : 'error'}
                     size={14}
@@ -1093,7 +1112,7 @@ export default function Pulse() {
             <Card title="Scheduled reports">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {SCHEDULES.map((s) => (
-                  <div key={s.name} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <div key={s.name} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'flex-start' }}>
                     <Icon name="refresh" size={13} style={{ marginTop: 2, flexShrink: 0, color: 'var(--muted)' }} />
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{s.name}</div>
@@ -1131,7 +1150,7 @@ export default function Pulse() {
           )}
 
           <Card title="Other reports">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-sm)' }}>
               {(money
                 ? [
                     { to: '/reports/cash-flow', label: 'Cash flow', icon: 'chart' as IconName },

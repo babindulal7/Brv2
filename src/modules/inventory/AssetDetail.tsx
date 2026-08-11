@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { EmptyState } from '../../components/ui/StateViews'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-import { rupees, formatMoney } from '../../lib/money'
+import { useAuth } from '../../lib/auth'
+import { gateContext, canViewUtilization } from '../../lib/fieldGating'
+import { formatMoney } from '../../lib/money'
 import { formatAd } from '../../lib/bs'
 import { PARENTS } from '../../data/inventory'
 
@@ -22,13 +25,40 @@ export default function AssetDetail() {
    * check in the app uses; this page should not have had its own.
    */
   const money = useCanViewMoney()
+  const { user } = useAuth()
+  const gctx = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
+  // HIS v2.1 §2 — "Utilization... visible to Manager+; hidden from floor",
+  // the same rule fieldGating.ts's canViewUtilization already applies. This
+  // tile rendered unconditionally before, including a fabricated "78%" for
+  // every unseeded asset — both the visibility gap and the invented number
+  // are fixed together since they're the same line.
+  const utilization = canViewUtilization(gctx)
 
   const [activeTab, setActiveTab] = useState<AssetTab>('Units')
   const [expandedUnits, setExpandedUnits] = useState<Set<string>>(new Set(['SN-FX3-001', 'SN-FX3-002']))
   const [selectedUnitForQr, setSelectedUnitForQr] = useState<string | null>(null)
 
-  // Find asset or fallback to Sony FX3
-  const asset = (PARENTS.find(p => p.code === assetId || p.children?.some(c => c.serial === assetId)) ?? PARENTS[0]) as typeof PARENTS[0]
+  const asset = PARENTS.find(p => p.code === assetId || p.children?.some(c => c.serial === assetId))
+
+  // §6 — "A blank page is never acceptable... a screen showing the wrong
+  // record is a defect the same way." This used to fall back to PARENTS[0]
+  // (Sony FX3) for ANY unmatched assetId and render it as if it were the
+  // requested asset — every link built from a code/serial this seed data
+  // doesn't happen to contain (a booking's own equipment list, a document's
+  // relatedTo, a case's linked equipment) landed here silently wrong instead
+  // of visibly not-found.
+  if (!asset) {
+    return (
+      <div style={{ maxWidth: 640, margin: '60px auto', padding: '0 20px' }}>
+        <EmptyState
+          title="Equipment not found"
+          description={`No asset matches "${assetId}" in the current inventory. It may have been retired, or the reference may be out of date.`}
+          actionLabel="Browse Inventory"
+          onAction={() => navigate('/inventory')}
+        />
+      </div>
+    )
+  }
 
   const toggleUnit = (serial: string) => {
     setExpandedUnits(prev => {
@@ -52,26 +82,11 @@ export default function AssetDetail() {
     'Activity',
   ]
 
-  // Seed maintenance history
-  const maintenanceHistory = [
-    { date: '2026-07-15', unit: 'SN-FX3-002', type: 'Routine Inspection', details: 'Sensor cleaning & firmware update to v5.0', cost: 4500, downtime: '1 day', tech: 'Dipendra KC' },
-    { date: '2026-05-20', unit: 'SN-FX3-001', type: 'Repair', details: 'Replaced XLR handle bracket screws', cost: 3200, downtime: '2 days', tech: 'Studio Tech Center' },
-    { date: '2026-02-10', unit: 'SN-FX3-004', type: 'Calibration', details: 'Full diagnostic & button tension reset', cost: 6000, downtime: '2 days', tech: 'Dipendra KC' },
-  ]
-
-  // Seed Activity DNA
-  const activityLog = [
-    { time: 'Today 09:15', event: 'Stock Check Verified', by: 'Ramesh Karki', note: 'Scan matched at Rack 01 · Shelf 02 · Bin A-1' },
-    { time: '2026-08-04 17:30', event: 'Return Inspection QC Passed', by: 'Pooja Thapa', note: 'Condition marked Good, zero damage logged' },
-    { time: '2026-08-01 10:00', event: 'Dispatched on Booking', by: 'Sunil Sharma', note: 'Assigned to BR-2026-0189 (Gorkha Productions)' },
-    { time: '2026-07-28 14:20', event: 'Reset & Cleaned', by: 'Ramesh Karki', note: 'Profile reset to factory defaults, batteries fully charged' },
-  ]
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 1400, margin: '0 auto', paddingBottom: 60 }}>
       {/* Breadcrumbs & Navigation */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-md)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
           <Link to="/inventory" style={{ color: 'var(--text2)', textDecoration: 'none' }}>Inventory</Link>
           <span>›</span>
           <span style={{ color: 'var(--text2)' }}>{asset?.category}</span>
@@ -115,7 +130,7 @@ export default function AssetDetail() {
           border: isSubRented ? '2px solid var(--orange-text)' : '1px solid var(--border)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-lg)' }}>
           <div
             style={{
               width: 72,
@@ -157,7 +172,7 @@ export default function AssetDetail() {
               )}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', marginTop: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               <span>Brand: <strong style={{ color: 'var(--text)' }}>{asset?.brand ?? 'Sony'}</strong></span>
               <span>·</span>
               <span>Category: <strong style={{ color: 'var(--text)' }}>{asset?.category}</strong></span>
@@ -168,12 +183,12 @@ export default function AssetDetail() {
         </div>
 
         {/* Derived Availability Ratio */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, background: 'var(--card2)', padding: '10px 18px', borderRadius: 8, border: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-lg)', background: 'var(--card2)', padding: '10px 18px', borderRadius: 'var(--r-sm)', border: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 600 }}>
               Live Availability
             </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
               <span className="figure" style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--success-text)' }}>
                 {availableCount}
               </span>
@@ -187,7 +202,7 @@ export default function AssetDetail() {
             style={{
               width: 10,
               height: 10,
-              borderRadius: 999,
+              borderRadius: 'var(--r-badge)',
               background: availableCount > 0 ? 'var(--success-text)' : 'var(--danger-text)',
             }}
           />
@@ -195,10 +210,10 @@ export default function AssetDetail() {
       </div>
 
       {/* Answer Strip: 4 Figures (No donuts) */}
-      <div style={{ display: 'grid', gridTemplateColumns: money ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${2 + (utilization ? 1 : 0) + (money ? 1 : 0)}, 1fr)`, gap: 14 }}>
         <div style={{ ...cardStyle, padding: '14px 16px' }}>
           <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>AVAILABLE NOW</div>
-          <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success-text)', marginTop: 4 }}>
+          <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success-text)', marginTop: 'var(--sp-xs)' }}>
             {availableCount} of {totalUnits}
           </div>
           <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', marginTop: 2 }}>In Kathmandu HQ</div>
@@ -206,33 +221,51 @@ export default function AssetDetail() {
 
         <div style={{ ...cardStyle, padding: '14px 16px' }}>
           <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>NEXT FREE</div>
-          <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--nav-active-accent)', marginTop: 4 }}>
+          <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--nav-active-accent)', marginTop: 'var(--sp-xs)' }}>
             Tomorrow 14:00
           </div>
           <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', marginTop: 2 }}>SN-FX3-004 returning</div>
         </div>
 
-        <div style={{ ...cardStyle, padding: '14px 16px' }}>
-          <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>UTILISATION (90D)</div>
-          <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text)', marginTop: 4 }}>
-            {asset?.utilizationPct ?? 78}%
+        {utilization && (
+          <div style={{ ...cardStyle, padding: '14px 16px' }}>
+            <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>UTILISATION (90D)</div>
+            {asset?.utilizationPct !== undefined ? (
+              <>
+                <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text)', marginTop: 'var(--sp-xs)' }}>
+                  {asset.utilizationPct}%
+                </div>
+                <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', marginTop: 2 }}>70 shoot days</div>
+              </>
+            ) : (
+              <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 'var(--sp-xs)' }}>
+                Not available — needs the utilization engine (TODO(decision), PLAN.md §4)
+              </div>
+            )}
           </div>
-          <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', marginTop: 2 }}>70 shoot days</div>
-        </div>
+        )}
 
         {money && (
           <div style={{ ...cardStyle, padding: '14px 16px' }}>
             <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>RECOVERY %</div>
-            <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success-text)', marginTop: 4 }}>
-              {asset?.recoveryPct ?? 142}%
-            </div>
-            <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', marginTop: 2 }}>Paid for itself 14 Nov 2025</div>
+            {asset?.recoveryPct !== undefined ? (
+              <>
+                <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success-text)', marginTop: 'var(--sp-xs)' }}>
+                  {asset.recoveryPct}%
+                </div>
+                <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', marginTop: 2 }}>Paid for itself 14 Nov 2025</div>
+              </>
+            ) : (
+              <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 'var(--sp-xs)' }}>
+                Not available (TODO(decision), PLAN.md §4)
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* Tabs Navigation */}
-      <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-sm)', borderBottom: '1px solid var(--border)', paddingBottom: 'var(--sp-sm)' }}>
         {tabs.map(t => {
           const active = activeTab === t
           return (
@@ -260,7 +293,7 @@ export default function AssetDetail() {
       {/* Tab 1: Units */}
       {activeTab === 'Units' && (
         <Card title="Fleet Units & Serial Records">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--muted)' }}>
@@ -279,8 +312,8 @@ export default function AssetDetail() {
                 {asset?.children?.map(u => {
                   const expanded = expandedUnits.has(u.serial)
                   return (
-                    <>
-                      <tr key={u.serial} style={{ borderBottom: expanded ? 'none' : '1px solid var(--border)' }}>
+                    <Fragment key={u.serial}>
+                      <tr style={{ borderBottom: expanded ? 'none' : '1px solid var(--border)' }}>
                         <td style={{ padding: '10px 8px' }}>
                           <button
                             type="button"
@@ -368,7 +401,7 @@ export default function AssetDetail() {
                                     alignItems: 'center',
                                     gap: 6,
                                     padding: '4px 10px',
-                                    borderRadius: 6,
+                                    borderRadius: 'var(--r-xs)',
                                     background: 'var(--card)',
                                     border: '1px solid var(--border)',
                                     fontSize: 'var(--t-meta)',
@@ -382,7 +415,7 @@ export default function AssetDetail() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   )
                 })}
               </tbody>
@@ -399,19 +432,19 @@ export default function AssetDetail() {
               Horizontal visual timeline per unit. Maintenance blocks render in the same lane to lock availability.
             </p>
             {asset?.children?.map(u => (
-              <div key={u.serial} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+              <div key={u.serial} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                 <span className="identifier" style={{ width: 120, fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
                   {u.serial}
                 </span>
-                <div style={{ flex: 1, height: 32, borderRadius: 6, background: 'var(--card2)', position: 'relative', display: 'flex', alignItems: 'center', padding: '0 8px' }}>
+                <div style={{ flex: 1, height: 32, borderRadius: 'var(--r-xs)', background: 'var(--card2)', position: 'relative', display: 'flex', alignItems: 'center', padding: '0 8px' }}>
                   {u.status === 'On Rent' && (
                     <div style={{ height: 24, width: '40%', borderRadius: 4, background: 'var(--orange-bg, rgba(234,88,12,0.2))', border: '1px solid var(--orange-text)', display: 'flex', alignItems: 'center', padding: '0 8px', fontSize: 'var(--t-th)', color: 'var(--orange-text)', fontWeight: 600 }}>
-                      On Rent · BR-2026-0189 (Vision Prod)
+                      On Rent · BK-2026-0189 (Vision Prod)
                     </div>
                   )}
                   {u.status === 'Reserved' && (
                     <div style={{ height: 24, width: '35%', marginLeft: '30%', borderRadius: 4, background: 'var(--st-progress-bg)', border: '1px solid var(--nav-active-accent)', display: 'flex', alignItems: 'center', padding: '0 8px', fontSize: 'var(--t-th)', color: 'var(--nav-active-accent)', fontWeight: 600 }}>
-                      Reserved · BR-2026-0195 (10-14 Aug)
+                      Reserved · BK-2026-0195 (10-14 Aug)
                     </div>
                   )}
                   {u.status === 'In Stock' && (
@@ -429,88 +462,126 @@ export default function AssetDetail() {
       {/* Tab 3: Maintenance */}
       {activeTab === 'Maintenance' && (
         <Card title="Service & Maintenance Record">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--muted)' }}>
-                  <th style={{ padding: '8px' }}>Date</th>
-                  <th style={{ padding: '8px' }}>Unit</th>
-                  <th style={{ padding: '8px' }}>Type</th>
-                  <th style={{ padding: '8px' }}>Service Details</th>
-                  <th style={{ padding: '8px' }}>Downtime</th>
-                  <th style={{ padding: '8px' }}>Cost</th>
-                  <th style={{ padding: '8px' }}>Technician</th>
-                </tr>
-              </thead>
-              <tbody>
-                {maintenanceHistory.map((m, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '10px 8px', color: 'var(--text2)' }}>{m.date}</td>
-                    <td style={{ padding: '10px 8px' }}><span className="identifier">{m.unit}</span></td>
-                    <td style={{ padding: '10px 8px', fontWeight: 600 }}>{m.type}</td>
-                    <td style={{ padding: '10px 8px' }}>{m.details}</td>
-                    <td style={{ padding: '10px 8px' }}>{m.downtime}</td>
-                    <td style={{ padding: '10px 8px' }} className="figure">{formatMoney(rupees(m.cost))}</td>
-                    <td style={{ padding: '10px 8px', color: 'var(--text2)' }}>{m.tech}</td>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
+            {(asset?.lastServiceAd || asset?.nextServiceDueAd || asset?.maintenanceTicketsOpen !== undefined || asset?.damageCasesOpen !== undefined) && (
+              <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', paddingBottom: 14, borderBottom: '1px solid var(--border)' }}>
+                {asset?.lastServiceAd && (
+                  <div>
+                    <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>LAST SERVICE</div>
+                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600, marginTop: 2 }}>{asset.lastServiceAd}</div>
+                  </div>
+                )}
+                {asset?.nextServiceDueAd && (
+                  <div>
+                    <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>NEXT DUE</div>
+                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600, marginTop: 2 }}>{asset.nextServiceDueAd}</div>
+                  </div>
+                )}
+                {asset?.maintenanceTicketsOpen !== undefined && (
+                  <div>
+                    <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>TICKETS OPEN</div>
+                    <div className="figure" style={{ fontSize: 'var(--t-meta)', color: asset.maintenanceTicketsOpen > 0 ? 'var(--danger-text)' : 'var(--text)', fontWeight: 600, marginTop: 2 }}>{asset.maintenanceTicketsOpen}</div>
+                  </div>
+                )}
+                {asset?.damageCasesOpen !== undefined && (
+                  <div>
+                    <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>DAMAGE CASES OPEN</div>
+                    <div className="figure" style={{ fontSize: 'var(--t-meta)', color: asset.damageCasesOpen > 0 ? 'var(--danger-text)' : 'var(--text)', fontWeight: 600, marginTop: 2 }}>{asset.damageCasesOpen}</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {asset?.serviceHistory?.length ? (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--muted)' }}>
+                    <th style={{ padding: '8px' }}>Date</th>
+                    <th style={{ padding: '8px' }}>Unit</th>
+                    <th style={{ padding: '8px' }}>Type</th>
+                    <th style={{ padding: '8px' }}>Service Details</th>
+                    <th style={{ padding: '8px' }}>Downtime</th>
+                    <th style={{ padding: '8px' }}>Cost</th>
+                    <th style={{ padding: '8px' }}>Technician</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {asset.serviceHistory.map((m, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '10px 8px', color: 'var(--text2)' }}>{m.dateAd}</td>
+                      <td style={{ padding: '10px 8px' }}><span className="identifier">{m.unit}</span></td>
+                      <td style={{ padding: '10px 8px', fontWeight: 600 }}>{m.type}</td>
+                      <td style={{ padding: '10px 8px' }}>{m.details}</td>
+                      <td style={{ padding: '10px 8px' }}>{m.downtime}</td>
+                      <td style={{ padding: '10px 8px' }} className="figure">{formatMoney(m.costPaisa)}</td>
+                      <td style={{ padding: '10px 8px', color: 'var(--text2)' }}>{m.tech}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                No per-event service history recorded for this asset — needs a service-ticket engine (TODO(decision), PLAN.md §4.9).
+              </div>
+            )}
           </div>
         </Card>
       )}
 
       {/* Tab 4: Money (Omitted for Floor Roles) */}
       {activeTab === 'Money' && money && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
-            <div style={{ ...cardStyle, padding: 16 }}>
+            <div style={{ ...cardStyle, padding: 'var(--sp-lg)' }}>
               <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>PURCHASE PRICE</div>
-              <div className="figure" style={{ fontSize: '1.4rem', fontWeight: 700, marginTop: 4 }}>NPR 465,000</div>
-              <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>Per unit avg</div>
+              {asset?.purchasePricePaisa !== undefined ? (
+                <>
+                  <div className="figure" style={{ fontSize: '1.4rem', fontWeight: 700, marginTop: 'var(--sp-xs)' }}>{formatMoney(asset.purchasePricePaisa)}</div>
+                  <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>As recorded at intake</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 'var(--sp-xs)' }}>Not on record for this asset</div>
+              )}
             </div>
-            <div style={{ ...cardStyle, padding: 16 }}>
+            <div style={{ ...cardStyle, padding: 'var(--sp-lg)' }}>
               <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>LIFETIME EARNINGS</div>
-              <div className="figure" style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--success-text)', marginTop: 4 }}>NPR 3,301,500</div>
-              <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>Across 5 units</div>
+              {asset?.lifetimeEarningsPaisa !== undefined ? (
+                <>
+                  <div className="figure" style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--success-text)', marginTop: 'var(--sp-xs)' }}>{formatMoney(asset.lifetimeEarningsPaisa)}</div>
+                  <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>Across {totalUnits} unit{totalUnits === 1 ? '' : 's'}</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 'var(--sp-xs)' }}>
+                  Not available — needs the revenue engine (TODO(decision), PLAN.md §4.9)
+                </div>
+              )}
             </div>
-            <div style={{ ...cardStyle, padding: 16 }}>
+            <div style={{ ...cardStyle, padding: 'var(--sp-lg)' }}>
               <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>RECOVERY %</div>
-              <div className="figure" style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--success-text)', marginTop: 4 }}>142%</div>
-              <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>Net ROI: +42%</div>
+              {asset?.recoveryPct !== undefined ? (
+                <>
+                  <div className="figure" style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--success-text)', marginTop: 'var(--sp-xs)' }}>{asset.recoveryPct}%</div>
+                  <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>Net ROI: {asset.recoveryPct - 100 >= 0 ? '+' : ''}{asset.recoveryPct - 100}%</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 'var(--sp-xs)' }}>Not available (TODO(decision), PLAN.md §4)</div>
+              )}
             </div>
-            <div style={{ ...cardStyle, padding: 16 }}>
+            <div style={{ ...cardStyle, padding: 'var(--sp-lg)' }}>
               <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>REPAIRS TO DATE</div>
-              <div className="figure" style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--danger-text)', marginTop: 4 }}>NPR 13,700</div>
-              <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>0.6% of fleet value</div>
+              {asset?.repairsToDatePaisa !== undefined ? (
+                <div className="figure" style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--danger-text)', marginTop: 'var(--sp-xs)' }}>{formatMoney(asset.repairsToDatePaisa)}</div>
+              ) : (
+                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 'var(--sp-xs)' }}>
+                  Not available — needs a maintenance-cost engine (TODO(decision), PLAN.md §4.9)
+                </div>
+              )}
             </div>
           </div>
 
           <Card title="Monthly Fleet Revenue Progression">
-            <div style={{ padding: '20px 10px', display: 'flex', alignItems: 'flex-end', gap: 14, height: 180 }}>
-              {[
-                { month: 'Magh', amt: 180000 },
-                { month: 'Falgun', amt: 245000 },
-                { month: 'Chaitra', amt: 320000 },
-                { month: 'Baisakh', amt: 290000 },
-                { month: 'Jestha', amt: 380000 },
-                { month: 'Ashadh', amt: 410000 },
-                { month: 'Shrawan', amt: 350000 },
-              ].map(bar => (
-                <div key={bar.month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                  <div className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{Math.round(bar.amt / 1000)}k</div>
-                  <div
-                    style={{
-                      width: '100%',
-                      height: `${(bar.amt / 450000) * 120}px`,
-                      borderRadius: 4,
-                      background: 'var(--nav-active-accent)',
-                      opacity: 0.85,
-                    }}
-                  />
-                  <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', fontWeight: 600 }}>{bar.month}</div>
-                </div>
-              ))}
+            <div style={{ padding: '12px 4px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+              Not available — needs the revenue engine (TODO(decision), PLAN.md §4.9)
             </div>
           </Card>
         </div>
@@ -527,7 +598,7 @@ export default function AssetDetail() {
               { name: 'Sony FX3 User Operating Manual (PDF)', size: '4.8 MB', date: '15 Jun 2025' },
               { name: 'Intake Inspection & QC Photos', size: '12.4 MB', date: '16 Jun 2025' },
             ].map((doc, i) => (
-              <div key={i} style={{ padding: 12, borderRadius: 8, background: 'var(--card2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div key={i} style={{ padding: 'var(--sp-md)', borderRadius: 'var(--r-sm)', background: 'var(--card2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
                 <Icon name="file" size={24} style={{ color: 'var(--nav-active-accent)' }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -544,36 +615,42 @@ export default function AssetDetail() {
       {/* Tab 6: Activity DNA */}
       {activeTab === 'Activity' && (
         <Card title="Immutable Asset DNA (Activity Log)">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {activityLog.map((log, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, paddingBottom: 12, borderBottom: '1px solid var(--border)' }}>
-                <span
-                  style={{
-                    width: 24,
-                    height: 24,
-                    borderRadius: 999,
-                    background: 'var(--card2)',
-                    border: '1px solid var(--border)',
-                    display: 'grid',
-                    placeItems: 'center',
-                    color: 'var(--nav-active-accent)',
-                    flexShrink: 0,
-                    marginTop: 2,
-                  }}
-                >
-                  <Icon name="error" size={12} />
-                </span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontWeight: 700, fontSize: 'var(--t-meta)', color: 'var(--text)' }}>{log.event}</span>
-                    <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{log.time}</span>
+          {asset?.activityLog?.length ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+              {asset.activityLog.map((log, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-md)', paddingBottom: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>
+                  <span
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: 'var(--r-badge)',
+                      background: 'var(--card2)',
+                      border: '1px solid var(--border)',
+                      display: 'grid',
+                      placeItems: 'center',
+                      color: 'var(--nav-active-accent)',
+                      flexShrink: 0,
+                      marginTop: 2,
+                    }}
+                  >
+                    <Icon name="error" size={12} />
+                  </span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontWeight: 700, fontSize: 'var(--t-meta)', color: 'var(--text)' }}>{log.event}</span>
+                      <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{log.whenAd}</span>
+                    </div>
+                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 2 }}>{log.note}</div>
+                    <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 2 }}>Recorded by {log.by}</div>
                   </div>
-                  <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 2 }}>{log.note}</div>
-                  <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 2 }}>Recorded by {log.by}</div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+              No activity recorded for this asset — needs an audit-log engine (TODO(decision), PLAN.md §4.9).
+            </div>
+          )}
         </Card>
       )}
 
@@ -589,7 +666,7 @@ export default function AssetDetail() {
             zIndex: 1000,
           }}
         >
-          <div style={{ ...cardStyle, width: 400, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ ...cardStyle, width: 400, padding: 'var(--sp-xl)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700 }}>Print Asset QR Label</h2>
               <button
@@ -601,9 +678,9 @@ export default function AssetDetail() {
               </button>
             </div>
 
-            <div style={{ padding: 20, borderRadius: 8, background: '#fff', color: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+            <div style={{ padding: 20, borderRadius: 'var(--r-sm)', background: '#fff', color: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
               <div style={{ fontWeight: 800, fontSize: '1.1rem', letterSpacing: 0.5 }}>BABIN RENTALS</div>
-              <div style={{ width: 120, height: 120, border: '2px solid #000', display: 'grid', placeItems: 'center', padding: 8 }}>
+              <div style={{ width: 120, height: 120, border: '2px solid #000', display: 'grid', placeItems: 'center', padding: 'var(--sp-sm)' }}>
                 <Icon name="queues" size={80} style={{ color: '#000' }} />
               </div>
               <div className="identifier" style={{ fontSize: '1rem', fontWeight: 800, color: '#000' }}>

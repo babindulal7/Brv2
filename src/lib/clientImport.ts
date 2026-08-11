@@ -8,6 +8,7 @@
  * step exactly the way every other "New X" screen in this app already does.
  */
 import { MEMBERSHIP_TIERS, normalizedPhone, type ClientRecord, type ClientType, type MembershipTier } from '../data/clients'
+import { PHONE_REJECTION, canonicalPhone, isValidLocalPhone } from './phone'
 
 export type ImportTargetField =
   | 'skip'
@@ -45,15 +46,9 @@ export const IMPORT_TARGET_FIELDS: ImportFieldDef[] = [
 ]
 
 const KNOWN_CLIENT_TYPES: ClientType[] = [
-  'Company',
+  'Organisation',
   'Individual',
-  'Student',
-  'Production Company',
-  'Educational Institution',
-  'Freelancer',
-  'Government',
-  'NGO',
-  'Broadcaster',
+  'Unassigned',
 ]
 
 /**
@@ -133,8 +128,14 @@ export function buildImportRow(raw: Record<ImportTargetField, string>, rowIndex:
   const phone = cell(raw, 'phone')
   if (!phone) {
     errors.push('Phone is required.')
-  } else if (!/^9\d{9}$/.test(phone.replace(/\D/g, ''))) {
-    warnings.push('Phone does not look like a standard Nepal mobile number (98XXXXXXXX).')
+  } else if (!isValidLocalPhone(phone)) {
+    /* An **error**, not a warning. `clients_phone_format` (migration 0005) will
+       reject this row at insert time no matter what this engine says, and
+       `ImportCenter` imports every row that carries only warnings — so a
+       warning here meant reporting "imported" for a row the database was always
+       going to refuse. Rows with errors are skipped and listed, which is the
+       honest outcome and the one the page already renders. */
+    errors.push(PHONE_REJECTION)
   }
 
   const email = cell(raw, 'email')
@@ -142,12 +143,12 @@ export function buildImportRow(raw: Record<ImportTargetField, string>, rowIndex:
     warnings.push('Email format looks invalid.')
   }
 
-  let clientType: ClientType = 'Company'
+  let clientType: ClientType = 'Organisation'
   const rawType = cell(raw, 'clientType')
   if (rawType) {
     const match = KNOWN_CLIENT_TYPES.find((t) => t.toLowerCase() === rawType.toLowerCase())
     if (match) clientType = match
-    else warnings.push(`Client Type "${rawType}" not recognized — defaulted to Company.`)
+    else warnings.push(`Client Type "${rawType}" not recognized — defaulted to Organisation.`)
   }
 
   let membership: MembershipTier = 'Creator'
@@ -169,7 +170,11 @@ export function buildImportRow(raw: Record<ImportTargetField, string>, rowIndex:
     errors.length === 0
       ? {
           name,
-          phone,
+          /* Stored with the country code the CHECK requires. Previously the raw
+             cell, which meant even a perfectly good `9801234567` produced a
+             value no insert could accept. Only reached once `isValidLocalPhone`
+             has passed — `record` is null while `errors` is non-empty. */
+          phone: canonicalPhone(phone),
           email,
           clientType,
           membership,

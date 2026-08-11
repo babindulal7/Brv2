@@ -189,6 +189,26 @@ export interface TimelineEntry {
   text: string
 }
 
+/* ── Hover Intel System v2.1 Tier 1 — Damage/Missing card additions ───────
+ * Both fields below are genuinely absent on most of the 17 seed cases below
+ * and are never back-filled with an invented value — `data/caseIntel.ts`
+ * states a reason ("Not yet approved", "Not linked to a Stock-Check
+ * session") wherever a case doesn't carry one, the same convention
+ * `clients.ts`/`inventory.ts` already use for their own unseeded fields.
+ */
+
+/**
+ * Damage cases' approval path: the Rs 25,000 assessed-value threshold itself
+ * is derived from `assessedPaisa` (see `requiresOwnerApproval` in
+ * `data/caseIntel.ts`) — this only records that sign-off actually happened.
+ * `approvedBy` always reuses the case's own `owner`/the `OWNERS` roster,
+ * never a new name.
+ */
+export interface CaseApproval {
+  approvedBy: string
+  approvedAd: Date
+}
+
 /* ── the allocation buckets — §7.3's equation, one field per term ────────── */
 
 export interface Case {
@@ -220,6 +240,16 @@ export interface Case {
   linked: LinkedRecords
   evidence: CaseEvidence
   timelineExtra?: TimelineEntry[]
+  /** Damage only — undefined until a Manager/Owner has actually signed off. See `CaseApproval`. */
+  approval?: CaseApproval
+  /**
+   * Missing only — the Stock-Check session (`data/stockCheck.ts`'s real
+   * `sessionNo`) that surfaced or should verify this shortage. No
+   * per-session route exists yet — `/inventory/stock-check` is a single
+   * fixed-session page (`StockCheck.tsx`) — so this renders as text plus a
+   * link to that one route, never a deep link to this specific session.
+   */
+  stockCheckSessionNo?: string
 }
 
 /* ── §7 · Financial Impact — derived, never stored as a total ────────────── */
@@ -561,6 +591,11 @@ export const CASES: Case[] = [
       pickup: [{ id: 'ev-0034-p1', file: 'IMG_6011.JPG', at: '18 Jul 2026, 08:30 AM' }],
       return: [{ id: 'ev-0034-r1', file: 'IMG_6098.JPG', at: '22 Jul 2026, 03:10 PM' }],
     },
+    // Assessed (12,500) sits under the Rs 25,000 threshold, so this needed only
+    // Manager sign-off — `owner`/`ownerRole` above already record Rajan as the
+    // Manager on this case, and `settledAd` is the real day it closed, so
+    // `approval` reuses both rather than inventing a new name or date.
+    approval: { approvedBy: 'Rajan', approvedAd: d(24) },
   },
   {
     id: 'CASE-2026-0033',
@@ -689,6 +724,13 @@ export const CASES: Case[] = [
     flags: ['Under Investigation'],
     linked: { linkedRecordKind: 'Booking', linkedRecordId: 'BK-2026-0695', clientName: 'River Bend Media' },
     evidence: {},
+    // Opened 25 Jul, five days after `data/stockCheck.ts`'s real SC-2083-003
+    // full-warehouse audit closed (20 Jul) — the audit last verified this kit
+    // present, so it's the honest "last checked" session, not a fabricated
+    // one. SC-2083-004 (the other real session) is deliberately not used
+    // anywhere here: its own seed dates it as starting 6 Aug, after this
+    // module's `TODAY` (31 Jul) — see the report for that cross-module gap.
+    stockCheckSessionNo: 'SC-2083-003',
   },
   {
     id: 'CASE-2026-0028',

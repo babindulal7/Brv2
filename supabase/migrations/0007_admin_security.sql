@@ -28,9 +28,9 @@ create table branches (
   is_headquarters  boolean      not null default false,
   is_active        boolean      not null default true,
   created_at       timestamptz  not null default now(),
-  created_by       uuid         references users (id),
+  created_by       uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at       timestamptz  not null default now(),
-  updated_by       uuid         references users (id),
+  updated_by       uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint branches_client_uuid_key unique (client_uuid),
   constraint branches_code_key unique (branch_code),
@@ -56,9 +56,9 @@ create table warehouses (
   is_primary      boolean           not null default false,
   is_active       boolean           not null default true,
   created_at      timestamptz       not null default now(),
-  created_by      uuid              references users (id),
+  created_by      uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at      timestamptz       not null default now(),
-  updated_by      uuid              references users (id),
+  updated_by      uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint warehouses_client_uuid_key unique (client_uuid),
   constraint warehouses_code_key unique (warehouse_code),
@@ -84,9 +84,9 @@ create table storage_zones (
   parent_id     uuid           references storage_zones (id),
   is_active     boolean        not null default true,
   created_at    timestamptz    not null default now(),
-  created_by    uuid           references users (id),
+  created_by    uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at    timestamptz    not null default now(),
-  updated_by    uuid           references users (id),
+  updated_by    uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint storage_zones_client_uuid_key unique (client_uuid),
   constraint storage_zones_no_self_parent check (parent_id is null or parent_id <> id)

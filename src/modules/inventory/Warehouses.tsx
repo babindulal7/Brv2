@@ -3,15 +3,21 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
+import { Input, Select } from '../../components/ui'
 import { Card, PageHeader, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
-import { EmptyState } from '../../components/ui/StateViews'
+import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { Donut, Legend, HBars, GroupedBars } from '../../components/ui/Charts'
+import WarehouseMap from '../../components/ui/WarehouseMap'
 import type { Slice } from '../../components/ui/Charts'
 import { STATUS, BRAND, BRAND_ON } from '../../lib/status'
 import type { BrandKey, StatusKey } from '../../lib/status'
 import { grouped } from '../../lib/money'
 import { TODAY, toBs, formatBs, formatAd } from '../../lib/bs'
+import { useAuth } from '../../lib/auth'
+import { gateContext } from '../../lib/fieldGating'
+import { IntelCard } from '../../components/ui/IntelCard'
+import { rackGlance, rackDetailGroups } from '../../data/rackIntel'
 import {
   WAREHOUSES,
   STORAGE_LOCATIONS,
@@ -134,7 +140,7 @@ const selectStyle = { ...inputStyle, cursor: 'pointer' }
 const linkStyle = {
   display: 'inline-flex',
   alignItems: 'center',
-  gap: 4,
+  gap: 'var(--sp-xs)',
   fontSize: 'var(--t-meta)',
   fontWeight: 600,
   color: 'var(--link)',
@@ -200,7 +206,7 @@ function Avatar({ name, size = 24 }: { name: string; size?: number }) {
         width: size,
         height: size,
         flexShrink: 0,
-        borderRadius: 999,
+        borderRadius: 'var(--r-badge)',
         display: 'grid',
         placeItems: 'center',
         background: 'var(--card2)',
@@ -296,7 +302,7 @@ function Bar({ value, width = 78 }: { value: number; width?: number | string }) 
   return (
     <span
       aria-hidden
-      style={{ display: 'inline-block', width, height: 6, borderRadius: 999, background: 'var(--chart-grid)', overflow: 'hidden' }}
+      style={{ display: 'inline-block', width, height: 6, borderRadius: 'var(--r-badge)', background: 'var(--chart-grid)', overflow: 'hidden' }}
     >
       <span style={{ display: 'block', width: `${Math.min(100, value)}%`, height: '100%', background: occupancyFill(value) }} />
     </span>
@@ -307,7 +313,7 @@ function Bar({ value, width = 78 }: { value: number; width?: number | string }) 
 function Figure({ label, value, note, icon }: { label: string; value: string; note?: string; icon?: IconName }) {
   return (
     <div style={{ minWidth: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)', fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>
         {icon && <Icon name={icon} size={11} style={{ flexShrink: 0 }} />}
         <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
       </div>
@@ -334,7 +340,7 @@ function DetailRow({
   wrap?: boolean
 }) {
   return (
-    <div style={{ display: 'flex', alignItems: wrap ? 'flex-start' : 'center', gap: 8, minWidth: 0 }}>
+    <div style={{ display: 'flex', alignItems: wrap ? 'flex-start' : 'center', gap: 'var(--sp-sm)', minWidth: 0 }}>
       <dt style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600, width: 78, flexShrink: 0 }}>{label}</dt>
       <dd
         {...(mono ? { className: 'identifier' } : {})}
@@ -380,7 +386,7 @@ function KpiCard({
           style={{
             width: 30,
             height: 30,
-            borderRadius: 8,
+            borderRadius: 'var(--r-sm)',
             background: BRAND[accent],
             color: BRAND_ON[accent],
             display: 'grid',
@@ -466,6 +472,13 @@ const ROWS_PER_PAGE_OPTIONS = [10, 25, 50]
 /* ── screen ────────────────────────────────────────────────────────────── */
 
 export default function Warehouses() {
+  const { user } = useAuth()
+  /* Stable identity so the `rackGlance`/`rackDetailGroups` memo below (and
+     anything else keyed on `gctx`) only recomputes when the viewing role
+     actually changes — `gateContext` returns a fresh object literal on every
+     call, so leaving this uncached would defeat that memo on every render. */
+  const gctx = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
+
   /* list controls */
   const [query, setQuery] = useState('')
   const [branch, setBranch] = useState('All')
@@ -478,7 +491,7 @@ export default function Warehouses() {
 
   /* profile */
   const [selectedId, setSelectedId] = useState(WAREHOUSES[0]?.id ?? '')
-  const [profileTab, setProfileTab] = useState<'overview' | 'layout' | 'capacity' | 'transfers' | 'staff'>('overview')
+  const [profileTab, setProfileTab] = useState<'overview' | 'layout' | 'map' | 'capacity' | 'transfers' | 'staff'>('overview')
 
   /* transfers */
   const [transfers, setTransfers] = useState<StockTransfer[]>(TRANSFERS)
@@ -583,7 +596,7 @@ export default function Warehouses() {
 
   /* ── transfer workflow ───────────────────────────────────────────────── */
 
-  const advance = (id: string, next: TransferStatus) =>
+  const advance = (id: string, next: TransferStatus) => {
     setTransfers((prev) =>
       prev.map((t): StockTransfer => {
         if (t.id !== id) return t
@@ -595,6 +608,10 @@ export default function Warehouses() {
         }
       }),
     )
+    import('../../actions/inventory/createStockTransfer').then((m) =>
+      m.createStockTransfer({ transferId: id, status: next })
+    )
+  }
 
   const nextTransferNo = () => {
     const highest = transfers.reduce((max, t) => {
@@ -673,9 +690,32 @@ export default function Warehouses() {
   const activityMax = activitySeries.reduce((m, d) => Math.max(m, d.completed, d.inProgress, d.pending), 0)
 
   const zoneRows = selected ? zonesOf(selected.id) : []
-  const binRows = selected ? STORAGE_LOCATIONS.filter((l) => l.warehouseId === selected.id) : []
+  const binRows = useMemo(
+    () => (selected ? STORAGE_LOCATIONS.filter((l) => l.warehouseId === selected.id) : []),
+    [selected],
+  )
   const profileStaff = selected ? staffOf(selected.name) : []
   const profileTransfers = selected ? transfersOf(transfers, selected.name) : []
+
+  /*
+   * §HIS v2.1 perf — `rackGlance`/`rackDetailGroups` each build a full
+   * field-gated object graph (role/PII/money filtering) per bin row. Calling
+   * them inline inside the Storage Layout table's `.map()` reran that work
+   * on every re-render of this whole screen (a filter change, a transfer
+   * status update, a chip toggle) even for bins whose rack/gate context
+   * hadn't changed. Memoized here per `binRows` + `gctx`, so the builders
+   * only rerun when the selected warehouse's bins or the viewing role
+   * actually change.
+   */
+  const binRowsWithIntel = useMemo(
+    () =>
+      binRows.map((l) => ({
+        loc: l,
+        glance: rackGlance(l, gctx),
+        detail: rackDetailGroups(l, gctx),
+      })),
+    [binRows, gctx],
+  )
 
   /* ── render ──────────────────────────────────────────────────────────── */
 
@@ -715,14 +755,16 @@ export default function Warehouses() {
       {/* A seed that stops reconciling is shown, not thrown — a module-scope throw
           runs before React mounts and blanks the app with no message. */}
       {SEED_ERRORS.length > 0 && (
-        <div role="alert" style={{ ...cardStyle, padding: 12, borderColor: 'var(--danger)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <strong style={{ fontSize: 'var(--t-ui)', color: 'var(--danger-text)' }}>Warehouse seed does not reconcile</strong>
-          {SEED_ERRORS.map((e) => (
-            <span key={e} style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-              {e}
-            </span>
-          ))}
-        </div>
+        <ErrorBanner
+          title="Warehouse seed does not reconcile"
+          message={
+            <ul style={{ margin: 0, paddingLeft: 'var(--sp-lg)' }}>
+              {SEED_ERRORS.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          }
+        />
       )}
 
       {/*
@@ -899,7 +941,7 @@ export default function Warehouses() {
                     <Figure label="Capacity" value={grouped(w.capacity)} icon="queues" />
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 9, borderTop: '1px solid var(--border)', flexWrap: 'wrap', marginTop: 'auto' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', paddingTop: 9, borderTop: '1px solid var(--border)', flexWrap: 'wrap', marginTop: 'auto' }}>
                     <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Available Space</span>
                     <span className="figure" style={{ fontWeight: 700, color: STATUS[occupancyTone(w.occupancy)].fg }}>
                       {grouped(w.availableSpace)}
@@ -920,7 +962,7 @@ export default function Warehouses() {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 8,
+                  gap: 'var(--sp-sm)',
                   padding: '11px 13px',
                   borderBottom: '1px solid var(--border)',
                   flexWrap: 'wrap',
@@ -928,22 +970,20 @@ export default function Warehouses() {
               >
                 <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>Warehouse List</h2>
 
-                <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-                    <Icon name="search" size={14} style={{ position: 'absolute', left: 9, color: 'var(--muted)' }} />
-                    <input
-                      value={query}
-                      onChange={(e) => {
-                        setQuery(e.target.value)
-                        setPage(1)
-                      }}
-                      placeholder="Search warehouse, code, zone, shelf, asset, staff…"
-                      aria-label="Search warehouses"
-                      style={{ ...inputStyle, width: 258, paddingLeft: 28 }}
-                    />
-                  </span>
+                <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+                  <Input
+                    icon={<Icon name="search" size={14} />}
+                    value={query}
+                    onChange={(e) => {
+                      setQuery(e.target.value)
+                      setPage(1)
+                    }}
+                    placeholder="Search warehouse, code, zone, shelf, asset, staff…"
+                    aria-label="Search warehouses"
+                    style={{ ...inputStyle, width: 258 }}
+                  />
 
-                  <select
+                  <Select
                     value={branch}
                     onChange={(e) => {
                       setBranch(e.target.value)
@@ -958,9 +998,9 @@ export default function Warehouses() {
                         {b}
                       </option>
                     ))}
-                  </select>
+                  </Select>
 
-                  <select
+                  <Select
                     value={status}
                     onChange={(e) => {
                       setStatus(e.target.value)
@@ -975,7 +1015,7 @@ export default function Warehouses() {
                         {s}
                       </option>
                     ))}
-                  </select>
+                  </Select>
 
                   <span style={{ display: 'inline-flex', border: '1px solid var(--input-border)', borderRadius: 'var(--r-input)', overflow: 'hidden' }}>
                     {(['table', 'cards'] as const).map((v) => (
@@ -1009,7 +1049,7 @@ export default function Warehouses() {
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 8,
+                    gap: 'var(--sp-sm)',
                     padding: '8px 13px',
                     borderBottom: '1px solid var(--border)',
                     background: 'var(--card2)',
@@ -1037,16 +1077,16 @@ export default function Warehouses() {
               ) : view === 'cards' ? (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(232px, 1fr))', gap: 'var(--sp-md)', padding: 'var(--sp-md)' }}>
                   {visible.map((w) => (
-                    <article key={w.id} style={{ ...cardStyle, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <article key={w.id} style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
                       <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>{w.name}</span>
                       <span className="identifier" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
                         {w.code} · {w.branch}
                       </span>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                         <span className="figure">{w.occupancy}%</span>
                         <Bar value={w.occupancy} width={72} />
                       </span>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                         <Pill label={w.status} tone={WAREHOUSE_STATUS_TONE[w.status]} icon={WAREHOUSE_STATUS_ICON[w.status]} />
                         <button type="button" style={{ ...linkStyle, marginLeft: 'auto' }} onClick={() => openWarehouse(w.id)}>
                           Open <Icon name="arrow_right" size={12} />
@@ -1071,7 +1111,7 @@ export default function Warehouses() {
                                 style={{
                                   display: 'inline-flex',
                                   alignItems: 'center',
-                                  gap: 4,
+                                  gap: 'var(--sp-xs)',
                                   border: 'none',
                                   background: 'transparent',
                                   padding: 0,
@@ -1126,7 +1166,7 @@ export default function Warehouses() {
                           </td>
                           {/* Stacked, as the render draws it — the percent reads first, the bar sits under it. */}
                           <td style={{ ...td, textAlign: 'right' }}>
-                            <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                            <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: 'var(--sp-xs)' }}>
                               <span className="figure" style={{ fontWeight: 600 }}>
                                 {w.occupancy}%
                               </span>
@@ -1152,7 +1192,7 @@ export default function Warehouses() {
                                 style={{
                                   width: 28,
                                   height: 28,
-                                  borderRadius: 6,
+                                  borderRadius: 'var(--r-xs)',
                                   border: '1px solid var(--border)',
                                   background: 'transparent',
                                   color: 'var(--text2)',
@@ -1181,7 +1221,7 @@ export default function Warehouses() {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 12,
+                  gap: 'var(--sp-md)',
                   padding: '10px 14px',
                   flexWrap: 'wrap',
                   fontSize: 'var(--t-meta)',
@@ -1194,7 +1234,7 @@ export default function Warehouses() {
                 </span>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   Rows per page
-                  <select
+                  <Select
                     value={rowsPerPage}
                     onChange={(e) => {
                       setRowsPerPage(Number(e.target.value))
@@ -1208,7 +1248,7 @@ export default function Warehouses() {
                         {n}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
 
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 3, alignItems: 'center' }}>
@@ -1286,7 +1326,7 @@ export default function Warehouses() {
             style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(228px, 1fr))', gap: 'var(--sp-md)' }}
           >
             <Card title="Capacity Utilization">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', flexWrap: 'wrap' }}>
                 <Donut slices={capacitySlices} centreLabel="Capacity used" centreValue={`${totals.occupancyPct}%`} size={116} />
                 {/* `Legend` is `flex:1 / minWidth:0`, so in a four-across card it
                     shrank and clipped its own nowrap labels rather than wrapping.
@@ -1297,7 +1337,7 @@ export default function Warehouses() {
               </div>
               <button
                 type="button"
-                style={{ ...linkStyle, marginTop: 12 }}
+                style={{ ...linkStyle, marginTop: 'var(--sp-md)' }}
                 onClick={() => {
                   setSort({ key: 'occupancy', dir: 'desc' })
                   setPage(1)
@@ -1313,7 +1353,7 @@ export default function Warehouses() {
                 Total assets: <span className="figure" style={{ fontWeight: 700, color: 'var(--text)' }}>{grouped(totals.assets)}</span>
               </div>
               <HBars rows={distributionRows} axisTicks={['0', grouped(Math.round(distributionMax / 2)), grouped(distributionMax)]} />
-              <Link to="/inventory" style={{ ...linkStyle, marginTop: 12 }}>
+              <Link to="/inventory" style={{ ...linkStyle, marginTop: 'var(--sp-md)' }}>
                 View in Inventory <Icon name="arrow_right" size={12} />
               </Link>
             </Card>
@@ -1336,7 +1376,7 @@ export default function Warehouses() {
                   />
                 </div>
               )}
-              <button type="button" style={{ ...linkStyle, marginTop: 12 }} onClick={openTransferCentre}>
+              <button type="button" style={{ ...linkStyle, marginTop: 'var(--sp-md)' }} onClick={openTransferCentre}>
                 Open Transfer Center <Icon name="arrow_right" size={12} />
               </button>
             </Card>
@@ -1348,13 +1388,13 @@ export default function Warehouses() {
               <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginBottom: 10 }}>
                 Asset-weighted across {totals.warehouses} warehouses
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
                 {WAREHOUSES.map((w) => (
                   <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 'var(--t-meta)' }}>
                     <span style={{ flex: 1, minWidth: 0, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {w.name}
                     </span>
-                    <span aria-hidden style={{ width: 84, height: 6, borderRadius: 999, background: 'var(--chart-grid)', overflow: 'hidden', flexShrink: 0 }}>
+                    <span aria-hidden style={{ width: 84, height: 6, borderRadius: 'var(--r-badge)', background: 'var(--chart-grid)', overflow: 'hidden', flexShrink: 0 }}>
                       <span
                         style={{
                           display: 'block',
@@ -1386,18 +1426,19 @@ export default function Warehouses() {
               <Card
                 title={`${selected.name} — ${selected.code}`}
                 action={
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                     <Icon name="company" size={13} style={{ color: 'var(--muted)' }} />
                     {selected.branch} · {selected.address}
                   </span>
                 }
                 bodyStyle={{ padding: 0 }}
               >
-                <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderBottom: '1px solid var(--border)', padding: '0 12px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 'var(--sp-xs)', alignItems: 'center', borderBottom: '1px solid var(--border)', padding: '0 12px', flexWrap: 'wrap' }}>
                   {(
                     [
                       { id: 'overview', label: 'Overview' },
                       { id: 'layout', label: `Storage Layout (${zoneRows.length})` },
+                      { id: 'map', label: 'Warehouse Map' },
                       { id: 'capacity', label: 'Capacity' },
                       { id: 'transfers', label: `Transfer Center (${profileTransfers.length})` },
                       { id: 'staff', label: `Staff (${profileStaff.length})` },
@@ -1434,13 +1475,13 @@ export default function Warehouses() {
                 {profileTab === 'overview' && (
                   <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 14 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '128px minmax(0,1fr)', gap: 12 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '128px minmax(0,1fr)', gap: 'var(--sp-md)' }}>
                         <Photo src={selected.image} alt={`${selected.name} storage floor`} height={124} />
                         <dl style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: 7, minWidth: 0 }}>
                           <DetailRow label="Warehouse" value={selected.name} />
                           <DetailRow label="Code" value={selected.code} mono />
                           <DetailRow label="Branch" value={selected.branch} icon="company" />
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                             <dt style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600, width: 78, flexShrink: 0 }}>Status</dt>
                             <dd style={{ margin: 0 }}>
                               <Pill
@@ -1462,7 +1503,7 @@ export default function Warehouses() {
                       </dl>
                     </div>
 
-                    <p style={{ margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--muted)', paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                    <p style={{ margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--muted)', paddingTop: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
                       <Icon name="info" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
                       The spec's Description, GPS, Google Maps link, Floor and Building are not fields on a warehouse record
                       in this build, so they are absent rather than estimated — and no per-warehouse category split exists,
@@ -1474,7 +1515,7 @@ export default function Warehouses() {
 
                 {/* Storage Layout */}
                 {profileTab === 'layout' && (
-                  <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
                     <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                       Warehouse → Room → Zone → Rack → Shelf → Bin. {zoneRows.length} of {selected.zonesCount} declared zones
                       {zoneRows.length === 1 ? ' has ' : ' have '}seeded bin records ({binRows.length}{' '}
@@ -1488,16 +1529,16 @@ export default function Warehouses() {
                       />
                     ) : (
                       <>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 12 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 'var(--sp-md)' }}>
                           {zoneRows.map((z) => {
                             const fill = pct(z.used, z.capacity)
                             return (
-                              <div key={z.zone} style={{ ...cardStyle, padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              <div key={z.zone} style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 6 }}>
                                 <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>{z.zone}</span>
                                 <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
                                   {z.room} · {z.bins} {z.bins === 1 ? 'bin' : 'bins'}
                                 </span>
-                                <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)' }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
                                   <span className="figure" style={{ fontWeight: 700, color: STATUS[occupancyTone(fill)].fg }}>
                                     {fill}%
                                   </span>
@@ -1524,19 +1565,28 @@ export default function Warehouses() {
                               </tr>
                             </thead>
                             <tbody>
-                              {binRows.map((l) => {
+                              {binRowsWithIntel.map(({ loc: l, glance, detail }) => {
                                 const fill = pct(l.used, l.capacity)
                                 return (
                                   <tr key={l.id} style={{ borderBottom: '1px solid var(--border)' }}>
                                     <td style={{ ...td, fontWeight: 600 }}>{l.zone}</td>
                                     <td style={{ ...td, color: 'var(--text2)' }}>{l.room}</td>
-                                    <td style={{ ...td, color: 'var(--text2)' }}>{l.rack}</td>
+                                    <td style={{ ...td, color: 'var(--text2)' }}>
+                                      <IntelCard
+                                        glance={glance}
+                                        detail={detail}
+                                        detailTitle={l.rack}
+                                        detailSubtitle={`${l.zone} · ${l.room}`}
+                                      >
+                                        <span style={{ cursor: 'default' }}>{l.rack}</span>
+                                      </IntelCard>
+                                    </td>
                                     <td style={{ ...td, color: 'var(--text2)' }}>{l.shelf}</td>
                                     <td style={{ ...td, color: 'var(--text2)' }}>
                                       <span className="identifier">{l.bin}</span>
                                     </td>
                                     <td style={{ ...td, textAlign: 'right' }}>
-                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                                         <span className="figure" style={{ color: 'var(--muted)' }}>
                                           {grouped(l.used)}/{grouped(l.capacity)}
                                         </span>
@@ -1554,10 +1604,35 @@ export default function Warehouses() {
                   </div>
                 )}
 
+                {/* Warehouse Map */}
+                {profileTab === 'map' && (
+                  <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <WarehouseMap warehouseId={selected.id} />
+                    
+                    {/* AI Warehouse Insights Prompt — not built, so it reads as
+                        disabled-with-a-reason rather than an input that silently
+                        does nothing when typed into and submitted (Law 6). */}
+                    <Unavailable reason="AI Warehouse Assistant is not built — there is no query engine behind this prompt yet.">
+                      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-md)', display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
+                        <span style={{ display: 'grid', placeItems: 'center', width: 32, height: 32, borderRadius: 'var(--r-sm)', background: 'var(--btn-primary-bg)', color: 'var(--btn-primary-fg)' }}>
+                          <Icon name="message" size={16} />
+                        </span>
+                        <input
+                          type="text"
+                          disabled
+                          placeholder="Ask AI Assistant (e.g. Which warehouse is full? Show empty storage...)"
+                          style={{ height: 32, padding: '0 9px', borderRadius: 'var(--r-input)', border: 'none', background: 'transparent', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', flex: 1, minWidth: 0, outline: 'none' }}
+                        />
+                        <Button variant="primary" disabled>Ask</Button>
+                      </div>
+                    </Unavailable>
+                  </div>
+                )}
+
                 {/* Capacity */}
                 {profileTab === 'capacity' && (
-                  <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+                  <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 'var(--sp-md)' }}>
                       <Figure label="Total Capacity" value={`${grouped(selected.capacity)} slots`} />
                       <Figure label="Used" value={grouped(usedOf(selected))} note={`${selected.occupancy}% of capacity`} />
                       <Figure label="Free" value={grouped(selected.availableSpace)} />
@@ -1566,7 +1641,7 @@ export default function Warehouses() {
                       <Figure label="Last Verified Accuracy" value={`${selected.accuracyPct}%`} />
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, paddingTop: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
                       <Ring value={selected.occupancy} size={72} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <Bar value={selected.occupancy} width="100%" />
@@ -1588,7 +1663,7 @@ export default function Warehouses() {
                 {/* Transfer Center */}
                 {profileTab === 'transfers' && (
                   <div style={{ padding: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
                       <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                         {profileTransfers.length} transfers touch {selected.name}
                       </span>
@@ -1673,13 +1748,13 @@ export default function Warehouses() {
 
                 {/* Staff */}
                 {profileTab === 'staff' && (
-                  <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
                     {profileStaff.length === 0 ? (
                       <EmptyState title="No staff are posted here" description="No warehouse personnel record names this facility." />
                     ) : (
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(238px, 1fr))', gap: 12 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(238px, 1fr))', gap: 'var(--sp-md)' }}>
                         {profileStaff.map((s) => (
-                          <div key={s.id} style={{ ...cardStyle, padding: 12, display: 'flex', alignItems: 'center', gap: 11 }}>
+                          <div key={s.id} style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', alignItems: 'center', gap: 11 }}>
                             <Avatar name={s.name} size={38} />
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>{s.name}</div>
@@ -1742,7 +1817,7 @@ export default function Warehouses() {
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 8,
+                      gap: 'var(--sp-sm)',
                       width: '100%',
                       padding: '7px 6px',
                       borderRadius: 7,
@@ -1763,7 +1838,7 @@ export default function Warehouses() {
                         minWidth: 20,
                         height: 20,
                         padding: '0 6px',
-                        borderRadius: 999,
+                        borderRadius: 'var(--r-badge)',
                         display: 'grid',
                         placeItems: 'center',
                         background: STATUS[a.tone].bg,
@@ -1806,7 +1881,7 @@ export default function Warehouses() {
                       gap: 6,
                       width: '100%',
                       minHeight: 66,
-                      padding: 8,
+                      padding: 'var(--sp-sm)',
                       borderRadius: 9,
                       border: '1px solid var(--border)',
                       background: 'var(--card2)',
@@ -1862,7 +1937,7 @@ export default function Warehouses() {
           <Card title="Warehouse Insights">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
               {insights.map((i) => (
-                <div key={i.text} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                <div key={i.text} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                   <Icon name={i.icon} size={14} style={{ color: STATUS[i.tone].fg, flexShrink: 0, marginTop: 2 }} />
                   <span>{i.text}</span>
                 </div>
@@ -1882,7 +1957,7 @@ export default function Warehouses() {
         <div
           role="presentation"
           onClick={() => setModalOpen(false)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 1000, padding: 16 }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 1000, padding: 'var(--sp-lg)' }}
         >
           <div
             role="dialog"
@@ -1901,10 +1976,10 @@ export default function Warehouses() {
               padding: 18,
               display: 'flex',
               flexDirection: 'column',
-              gap: 12,
+              gap: 'var(--sp-md)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
               <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>Create Stock Transfer</h2>
               <button
                 type="button"
@@ -1916,74 +1991,69 @@ export default function Warehouses() {
               </button>
             </div>
 
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
               Transfer Type
-              <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as TransferType }))} style={selectStyle}>
+              <Select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as TransferType }))} style={selectStyle}>
                 {(['Branch Transfer', 'Warehouse Transfer', 'Zone Transfer', 'Temporary Holding', 'Transit'] as TransferType[]).map((t) => (
                   <option key={t} value={t}>
                     {t}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
                 Source Facility
-                <select value={form.source} onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))} style={selectStyle}>
+                <Select value={form.source} onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))} style={selectStyle}>
                   {WAREHOUSES.map((w) => (
                     <option key={w.id} value={w.name}>
                       {w.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
                 Destination Facility
-                <select value={form.destination} onChange={(e) => setForm((f) => ({ ...f, destination: e.target.value }))} style={selectStyle}>
+                <Select value={form.destination} onChange={(e) => setForm((f) => ({ ...f, destination: e.target.value }))} style={selectStyle}>
                   {WAREHOUSES.map((w) => (
                     <option key={w.id} value={w.name}>
                       {w.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
                 Asset
-                <input value={form.item} onChange={(e) => setForm((f) => ({ ...f, item: e.target.value }))} placeholder="Sony FX3 Cinema Camera" style={inputStyle} />
+                <Input value={form.item} onChange={(e) => setForm((f) => ({ ...f, item: e.target.value }))} placeholder="Sony FX3 Cinema Camera" style={inputStyle} />
               </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
                 Serial
-                <input value={form.serial} onChange={(e) => setForm((f) => ({ ...f, serial: e.target.value }))} placeholder="SN-FX3-009" style={inputStyle} />
+                <Input value={form.serial} onChange={(e) => setForm((f) => ({ ...f, serial: e.target.value }))} placeholder="SN-FX3-009" style={inputStyle} />
               </label>
             </div>
 
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
               Reason / Notes
               <textarea
                 rows={2}
                 value={form.notes}
                 onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                style={{ ...inputStyle, height: 'auto', padding: 8, resize: 'vertical' }}
+                style={{ ...inputStyle, height: 'auto', padding: 'var(--sp-sm)', resize: 'vertical' }}
               />
             </label>
 
             {/* Law 12 — errors are inline and persistent; toasts carry successes only. */}
-            {formError && (
-              <p role="alert" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--danger-text)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Icon name="error" size={13} />
-                {formError}
-              </p>
-            )}
+            {formError && <ErrorBanner title="Can't create this transfer" message={formError} />}
 
             <p style={{ margin: 0, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
               Created transfers open at <strong>Pending</strong> and advance one step at a time through the Transfer Center.
             </p>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--sp-sm)' }}>
               <Button onClick={() => setModalOpen(false)}>Cancel</Button>
               <Button variant="primary" icon="check" onClick={createTransfer} disabled={formError !== null}>
                 Create Transfer

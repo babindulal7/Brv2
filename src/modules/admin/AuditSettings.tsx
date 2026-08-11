@@ -48,7 +48,7 @@ function Toggle({ on, label }: { on: boolean; label: string }) {
       style={{
         width: 30,
         height: 17,
-        borderRadius: 999,
+        borderRadius: 'var(--r-badge)',
         border: 'none',
         padding: 2,
         background: state ? 'var(--success)' : 'var(--disabled)',
@@ -58,7 +58,7 @@ function Toggle({ on, label }: { on: boolean; label: string }) {
         justifyContent: state ? 'flex-end' : 'flex-start',
       }}
     >
-      <span aria-hidden style={{ width: 13, height: 13, borderRadius: 999, background: '#fff', display: 'block' }} />
+      <span aria-hidden style={{ width: 13, height: 13, borderRadius: 'var(--r-badge)', background: '#fff', display: 'block' }} />
     </button>
   )
 }
@@ -144,7 +144,7 @@ function MiniLine({ d, tone }: { d: { yTicks: string[]; labels: string[]; points
           ))}
         </svg>
       </div>
-      <div aria-hidden style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: 26, marginTop: 4, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+      <div aria-hidden style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: 26, marginTop: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
         {d.labels.map((l) => (
           <span key={l} className="figure">
             {l}
@@ -232,7 +232,7 @@ export default function AuditSettings() {
                 </p>
               </div>
 
-              <div style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 'var(--sp-md)' }}>
                 <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>Log These Events</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px 10px' }}>
                   {LOG_EVENTS.map((e, i) => (
@@ -254,7 +254,7 @@ export default function AuditSettings() {
                   display: 'flex',
                   alignItems: 'center',
                   gap: 7,
-                  marginTop: 12,
+                  marginTop: 'var(--sp-md)',
                   paddingTop: 10,
                   borderTop: '1px solid var(--border)',
                 }}
@@ -273,7 +273,7 @@ export default function AuditSettings() {
                 </span>
               }
             >
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 'var(--sp-sm)' }}>
                 {CATEGORIES.map((c, i) => (
                   <div
                     key={c.name}
@@ -402,7 +402,7 @@ export default function AuditSettings() {
             >
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                 {COMPLIANCE.map((c) => (
-                  <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)' }}>
+                  <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
                     <Icon name="checklist" size={13} style={{ color: 'var(--success-text)', flexShrink: 0 }} />
                     <span style={{ flex: 1, minWidth: 0, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {c.name}
@@ -426,7 +426,7 @@ export default function AuditSettings() {
               <div style={{ marginTop: 11 }}>
                 <Button>Manage Legal Holds</Button>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 'var(--sp-sm)', marginTop: 'var(--sp-md)', paddingTop: 10, borderTop: '1px solid var(--border)' }}>
                 {[
                   { l: 'Oldest Hold', v: LEGAL_HOLD.oldest },
                   { l: 'Locked Records', v: LEGAL_HOLD.locked },
@@ -444,7 +444,7 @@ export default function AuditSettings() {
           </div>
 
           <Card title="Audit Analytics (This Month)">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0,1fr))', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
               <div style={{ minWidth: 0 }}>
                 <div style={sub}>Events by Module</div>
                 <div className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{TOTAL_EVENTS}</div>
@@ -504,8 +504,8 @@ export default function AuditSettings() {
         <Rail>
           <Card title="Audit Summary">
             <SummaryRows rows={SUMMARY} />
-            <div aria-hidden style={{ height: 6, borderRadius: 999, background: 'var(--card2)', marginTop: 10, overflow: 'hidden' }}>
-              <div style={{ width: '98%', height: '100%', background: BRAND.success, borderRadius: 999 }} />
+            <div aria-hidden style={{ height: 6, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 10, overflow: 'hidden' }}>
+              <div style={{ width: '98%', height: '100%', background: BRAND.success, borderRadius: 'var(--r-badge)' }} />
             </div>
           </Card>
 
@@ -529,7 +529,7 @@ export default function AuditSettings() {
           </Card>
 
           <Card title="Quick Actions">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-sm)' }}>
               {QUICK_ACTIONS.map((q) => (
                 <button
                   key={q.label}
@@ -568,8 +568,8 @@ export default function AuditSettings() {
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
               {ACTIVITY.map((a) => (
-                <div key={a.what} style={{ display: 'flex', gap: 8 }}>
-                  <Icon name="dot" size={9} style={{ color: BRAND[a.tone], flexShrink: 0, marginTop: 4 }} />
+                <div key={a.what} style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
+                  <Icon name="dot" size={9} style={{ color: BRAND[a.tone], flexShrink: 0, marginTop: 'var(--sp-xs)' }} />
                   <span style={{ minWidth: 0, flex: 1 }}>
                     <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{a.what}</span>
                     <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{a.at}</span>

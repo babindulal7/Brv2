@@ -3,13 +3,21 @@ import type { CSSProperties, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
+import { Input, Select } from '../../components/ui'
 import { Card, PageHeader, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
 import { Modal } from '../../components/ui/Modal'
+import { ErrorBanner } from '../../components/ui/StateViews'
 import { useToast } from '../../components/ui/Toast'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { formatMoney, parseMoney } from '../../lib/money'
 import { toBs, formatBs, formatAd, TODAY } from '../../lib/bs'
 import { useViewport } from '../../lib/device'
+/* The phone rule is `lib/phone`'s, not this screen's — see that module's header
+   for the CHECK it mirrors and why three screens may not each own a copy.
+   Deliberately NOT gated on the `country` field below: the constraint is
+   unconditional, this field is fixed at +977, and gating it meant an address
+   outside Nepal reopened the identical hole. */
+import { PHONE_LOCAL_RE, PHONE_REJECTION, canonicalPhone, phoneLocalDigits } from '../../lib/phone'
 import {
   CLIENTS_DATA,
   CLIENT_SOURCES,
@@ -20,6 +28,9 @@ import {
   type ClientType,
   type ClientRecord,
   type MembershipTier,
+  type OrganisationType,
+  type Profession,
+  type Segment,
 } from '../../data/clients'
 
 /**
@@ -40,16 +51,23 @@ import {
  */
 
 const TYPE_OPTIONS: Array<{ value: ClientType; label: string; icon: IconName; blurb: string; example: string }> = [
-  { value: 'Company', label: 'Company', icon: 'company', blurb: 'Production houses, companies, organizations.', example: 'e.g. Himalayan Films Pvt. Ltd.' },
+  { value: 'Organisation', label: 'Organisation', icon: 'company', blurb: 'Production houses, companies, organizations.', example: 'e.g. Himalayan Films Pvt. Ltd.' },
   { value: 'Individual', label: 'Individual', icon: 'person', blurb: 'Freelancers, directors, DOPs, photographers.', example: 'e.g. Suman Karki' },
-  { value: 'Student', label: 'Student', icon: 'student', blurb: 'Students with a valid college / institute ID.', example: 'e.g. Aarav Shrestha' },
 ]
 
-const WHY_ITEMS = [
-  'Accurate records help us serve you better.',
-  'Government ID may be required for verification.',
-  'Credit limit and payment terms are optional.',
-  'You can update this information anytime.',
+const ORG_TYPES: OrganisationType[] = [
+  'Production House', 'Rental House', 'College / Institution', 
+  'Corporate / Agency', 'Government / NGO', 'Broadcaster', 'Other'
+]
+
+const PROFESSIONS: Profession[] = [
+  'Cinematographer', 'Director', 'Assistant Camera', 'Gaffer', 
+  'Editor', 'Photographer', 'Producer', 'Sound', 'Other'
+]
+
+const SEGMENTS: Segment[] = [
+  'Wedding / Event', 'Corporate', 'Documentary', 'Music Video', 
+  'Commercial', 'Feature', 'YouTube / Creator', 'Education', 'Other'
 ]
 
 const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png']
@@ -88,6 +106,7 @@ function Field({
   label,
   required,
   error,
+  help,
   children,
 }: {
   label: string
@@ -96,6 +115,8 @@ function Field({
      callers read `errors[field]`, which is `string | undefined` on a miss, and
      without it every call site would need a `?? null`. */
   error?: string | null | undefined
+  /** Standing rule for the field, shown until an error takes its place. */
+  help?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -104,11 +125,13 @@ function Field({
         {label} {required && <span style={{ color: 'var(--danger-text)' }}>*</span>}
       </label>
       {children}
-      {error && (
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'var(--t-th)', color: 'var(--danger-text)' }}>
+      {error ? (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)', fontSize: 'var(--t-th)', color: 'var(--danger-text)' }}>
           <Icon name="error" size={12} />
           {error}
         </span>
+      ) : (
+        help && <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{help}</span>
       )}
     </div>
   )
@@ -136,12 +159,12 @@ function SectionCard({ n, title, children }: { n: number; title: string; childre
         </span>
         <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{title}</h2>
       </div>
-      <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>{children}</div>
+      <div style={{ padding: 'var(--sp-lg)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>{children}</div>
     </section>
   )
 }
 
-const fieldRow: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 16 }
+const fieldRow: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 'var(--sp-lg)' }
 
 /** The client code the record would get. Derived from the seed count, same
  *  reasoning `clientMetrics` uses elsewhere — a number this screen can defend. */
@@ -154,7 +177,11 @@ export default function AddClient() {
   const viewport = useViewport()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const [clientType, setClientType] = useState<ClientType>('Company')
+  const [clientType, setClientType] = useState<ClientType>('Organisation')
+  const [orgType, setOrgType] = useState<OrganisationType>('Production House')
+  const [professions, setProfessions] = useState<Profession[]>([])
+  const [segments, setSegments] = useState<Segment[]>([])
+  
   const [name, setName] = useState('')
   const [contactName, setContactName] = useState('')
   const [designation, setDesignation] = useState('')
@@ -168,6 +195,8 @@ export default function AddClient() {
   const [country, setCountry] = useState('Nepal')
   const [businessRegNo, setBusinessRegNo] = useState('')
   const [pan, setPan] = useState('')
+  const [website, setWebsite] = useState('')
+  const [govIdType, setGovIdType] = useState('Citizenship')
 
   const [clientSince, setClientSince] = useState(TODAY.toISOString().slice(0, 10))
   const [source, setSource] = useState('')
@@ -189,6 +218,17 @@ export default function AddClient() {
   const [saved, setSaved] = useState(false)
 
   const clearError = (key: string) => setErrors((prev) => (prev[key] ? { ...prev, [key]: null } : prev))
+
+  const phoneLocal = phoneLocalDigits(phone)
+  const phoneIsValid = PHONE_LOCAL_RE.test(phoneLocal)
+  /** The exact string that will be saved — echoed under the field, never guessed at. */
+  const phoneWillSave = phoneIsValid ? canonicalPhone(phone) : ''
+
+  const toggleProfession = (p: Profession) =>
+    setProfessions((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]))
+  
+  const toggleSegment = (s: Segment) =>
+    setSegments((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]))
 
   const togglePreferred = (m: string) =>
     setPreferredMethods((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]))
@@ -222,7 +262,13 @@ export default function AddClient() {
   const summaryRows = useMemo(() => {
     const rows: Array<{ label: string; value: string }> = []
     if (contactName.trim()) rows.push({ label: 'Contact', value: contactName.trim() })
-    if (phone.trim()) rows.push({ label: 'Phone', value: `+977 ${phone.trim()}` })
+    if (phone.trim()) {
+      // The summary echoes what will be stored, so it cannot show a different
+      // number than the one the CHECK will see. Computed from `phone` rather
+      // than read off the component so this memo's deps stay honest.
+      const local = phoneLocalDigits(phone)
+      rows.push({ label: 'Phone', value: PHONE_LOCAL_RE.test(local) ? canonicalPhone(phone) : `+977 ${local}` })
+    }
     if (email.trim()) rows.push({ label: 'Email', value: email.trim() })
     if (city.trim()) rows.push({ label: 'City', value: city.trim() })
     rows.push({ label: 'Group', value: membership })
@@ -237,14 +283,14 @@ export default function AddClient() {
 
   function validate(): boolean {
     const e: Record<string, string | null> = {}
-    if (!name.trim()) e.name = 'Client / Company Name is required.'
-    if (clientType === 'Company' && !contactName.trim()) {
-      e.contactName = 'Contact Person is required for a company account.'
+    if (!name.trim()) e.name = clientType === 'Organisation' ? 'Organisation Name is required.' : 'Full Name is required.'
+    if (clientType === 'Organisation' && !contactName.trim()) {
+      e.contactName = 'Contact Person is required for an organisation.'
     }
     if (!phone.trim()) {
       e.phone = 'Phone Number is required.'
-    } else if (country === 'Nepal' && !/^9\d{9}$/.test(phone.replace(/\D/g, ''))) {
-      e.phone = 'Enter a valid Nepal mobile number, e.g. 98XXXXXXXX.'
+    } else if (!PHONE_LOCAL_RE.test(phoneLocal)) {
+      e.phone = PHONE_REJECTION
     }
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       e.email = 'Enter a valid email address.'
@@ -259,6 +305,11 @@ export default function AddClient() {
   function handleSave() {
     if (!validate()) return
     setSaving(true)
+    import('../../actions/clients/createClient').then((m) =>
+      // Saved with the country code the CHECK requires, and only ever the digits
+      // the operator actually typed — `validate()` has already run.
+      m.createClient({ name: name.trim(), phone: canonicalPhone(phone), email: email.trim(), isDraft: false })
+    )
     window.setTimeout(() => {
       setSaving(false)
       setSaved(true)
@@ -305,7 +356,7 @@ export default function AddClient() {
             <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Fill in the details to see summary</span>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <span
                 style={{
@@ -333,57 +384,47 @@ export default function AddClient() {
         )}
       </Card>
 
-      <Card title="Why We Collect This Information">
-        <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {WHY_ITEMS.map((text) => (
-            <li key={text} style={{ display: 'flex', gap: 8, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-              <Icon name="check" size={14} style={{ color: 'var(--success-text)', flexShrink: 0, marginTop: 2 }} />
-              {text}
-            </li>
-          ))}
-        </ul>
-      </Card>
-
-      <Card title="Client Type Guide">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {TYPE_OPTIONS.map((opt) => {
-            const on = clientType === opt.value
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setClientType(opt.value)}
-                aria-pressed={on}
-                style={{
-                  display: 'flex',
-                  gap: 10,
-                  textAlign: 'left',
-                  border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                  borderRadius: 8,
-                  padding: 10,
-                  background: on ? 'var(--nav-active-bg)' : 'var(--card2)',
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                }}
-              >
-                <Icon name={opt.icon} size={18} style={{ color: 'var(--nav-active-accent)', flexShrink: 0, marginTop: 2 }} />
-                <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', fontWeight: 700, color: 'var(--text)', fontSize: 'var(--t-meta)' }}>{opt.label}</span>
-                  <span style={{ display: 'block', color: 'var(--text2)', fontSize: 'var(--t-th)' }}>{opt.blurb}</span>
-                </span>
-              </button>
-            )
-          })}
+      <Card title="Ready to Book?">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', alignItems: 'flex-start' }}>
+            <Icon name={name.trim() && phone.trim() ? 'check' : 'close'} size={14} style={{ color: name.trim() && phone.trim() ? 'var(--success-text)' : 'var(--danger-text)', flexShrink: 0, marginTop: 2 }} />
+            <span>Name and phone</span>
+          </div>
+          {clientType === 'Organisation' && (
+            <div style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', alignItems: 'flex-start' }}>
+              <Icon name={contactName.trim() ? 'check' : 'close'} size={14} style={{ color: contactName.trim() ? 'var(--success-text)' : 'var(--danger-text)', flexShrink: 0, marginTop: 2 }} />
+              <span>Contact person</span>
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', alignItems: 'flex-start' }}>
+            <Icon name={pan.trim() ? 'check' : 'alert_triangle'} size={14} style={{ color: pan.trim() ? 'var(--success-text)' : 'var(--warning-text)', flexShrink: 0, marginTop: 2 }} />
+            <span>VAT / PAN {!pan.trim() && 'missing — required before a booking can be confirmed'}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', alignItems: 'flex-start' }}>
+            <Icon name={address.trim() ? 'check' : 'alert_triangle'} size={14} style={{ color: address.trim() ? 'var(--success-text)' : 'var(--warning-text)', flexShrink: 0, marginTop: 2 }} />
+            <span>Address {!address.trim() && 'missing — required on the invoice'}</span>
+          </div>
         </div>
       </Card>
 
-      <Card title="Next Steps">
-        <ol style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-          <li>Add client details</li>
-          <li>Upload documents (if any)</li>
-          <li>Save client profile</li>
-          <li>Create booking or quote</li>
-        </ol>
+      <Card title="Help">
+        <details>
+          <summary style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)', cursor: 'pointer', userSelect: 'none' }}>Client Type Guide</summary>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', marginTop: 12 }}>
+            {TYPE_OPTIONS.map((opt) => {
+              const on = clientType === opt.value
+              return (
+                <div key={opt.value} style={{ display: 'flex', gap: 10, padding: 10, borderRadius: 'var(--r-sm)', border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`, background: on ? 'var(--nav-active-bg)' : 'var(--card2)' }}>
+                  <Icon name={opt.icon} size={18} style={{ color: 'var(--nav-active-accent)', flexShrink: 0, marginTop: 2 }} />
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', fontWeight: 700, color: 'var(--text)', fontSize: 'var(--t-meta)' }}>{opt.label}</span>
+                    <span style={{ display: 'block', color: 'var(--text2)', fontSize: 'var(--t-th)' }}>{opt.blurb}</span>
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </details>
       </Card>
     </>
   )
@@ -406,23 +447,24 @@ export default function AddClient() {
       />
 
       {duplicateMatch && (
-        <div role="alert" style={{ ...cardStyle, padding: 14, display: 'flex', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <Icon name="alert_triangle" size={18} style={{ color: 'var(--progress-text)', flexShrink: 0, marginTop: 2 }} />
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <div style={{ fontWeight: 700, color: 'var(--text)', fontSize: 'var(--t-meta)' }}>Possible existing client</div>
-            <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 2 }}>
-              {duplicateMatch.name} · <span className="figure">{duplicateMatch.phone}</span> · {duplicateMatch.clientType}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-            <Button variant="secondary" onClick={() => navigate(`/clients?q=${encodeURIComponent(duplicateMatch.phone)}`)}>
-              View Existing
-            </Button>
-            <Button variant="ghost" onClick={() => setDismissedDuplicate(true)}>
-              Continue Anyway
-            </Button>
-          </div>
-        </div>
+        <ErrorBanner
+          title="Possible existing client"
+          message={
+            <>
+              <div>
+                {duplicateMatch.name} · <span className="figure">{duplicateMatch.phone}</span> · {duplicateMatch.clientType}
+              </div>
+              <div style={{ display: 'flex', gap: 'var(--sp-sm)', marginTop: 8 }}>
+                <Button variant="secondary" onClick={() => duplicateMatch && navigate(`/clients/${duplicateMatch.id}`)}>
+                  View Existing
+                </Button>
+                <Button variant="ghost" onClick={() => setDismissedDuplicate(true)}>
+                  Continue Anyway
+                </Button>
+              </div>
+            </>
+          }
+        />
       )}
 
       <div
@@ -437,7 +479,7 @@ export default function AddClient() {
           <SectionCard n={1} title="Basic Information">
             <div style={fieldRow}>
               <Field label="Client Type" required>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
                   {TYPE_OPTIONS.map((opt) => {
                     const on = clientType === opt.value
                     return (
@@ -472,8 +514,8 @@ export default function AddClient() {
                   })}
                 </div>
               </Field>
-              <Field label="Client / Company Name" required error={errors.name}>
-                <input
+              <Field label={clientType === 'Organisation' ? 'Organisation Name' : 'Full Name'} required error={errors.name}>
+                <Input
                   value={name}
                   onChange={(e) => {
                     setName(e.target.value)
@@ -485,31 +527,52 @@ export default function AddClient() {
               </Field>
             </div>
 
-            <div style={fieldRow}>
-              <Field label="Contact Person" required={clientType === 'Company'} error={errors.contactName}>
-                <input
-                  value={contactName}
-                  onChange={(e) => {
-                    setContactName(e.target.value)
-                    clearError('contactName')
-                  }}
-                  placeholder="Full name of main contact"
-                  style={inputStyle(!!errors.contactName)}
-                />
-              </Field>
-              <Field label="Designation / Role">
-                <input
-                  value={designation}
-                  onChange={(e) => setDesignation(e.target.value)}
-                  placeholder="e.g. Producer, Director, Manager"
-                  style={inputStyle()}
-                />
-              </Field>
-            </div>
+            {clientType === 'Organisation' && (
+              <div style={fieldRow}>
+                <Field label="Contact Person" required error={errors.contactName}>
+                  <Input
+                    value={contactName}
+                    onChange={(e) => {
+                      setContactName(e.target.value)
+                      clearError('contactName')
+                    }}
+                    placeholder="Full name of main contact"
+                    style={inputStyle(!!errors.contactName)}
+                  />
+                </Field>
+                <Field label="Designation / Role">
+                  <Input
+                    value={designation}
+                    onChange={(e) => setDesignation(e.target.value)}
+                    placeholder="e.g. Producer, Director, Manager"
+                    style={inputStyle()}
+                  />
+                </Field>
+              </div>
+            )}
 
             <div style={fieldRow}>
-              <Field label="Phone Number" required error={errors.phone}>
-                <div style={{ display: 'flex', gap: 8 }}>
+              <Field
+                label="Phone Number"
+                required
+                error={errors.phone}
+                help={
+                  <>
+                    Nepali mobile — 10 digits starting <span className="figure">97</span> or{' '}
+                    <span className="figure">98</span>.{' '}
+                    {phoneWillSave ? (
+                      <>
+                        Saved as <span className="figure">{phoneWillSave}</span>
+                      </>
+                    ) : (
+                      <>
+                        For example <span className="figure">9801234567</span>
+                      </>
+                    )}
+                  </>
+                }
+              >
+                <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
                   <span
                     style={{
                       ...inputStyle(),
@@ -523,19 +586,22 @@ export default function AddClient() {
                   >
                     🇳🇵 +977
                   </span>
-                  <input
+                  <Input
                     value={phone}
+                    inputMode="numeric"
+                    autoComplete="tel-national"
                     onChange={(e) => {
                       setPhone(e.target.value)
                       clearError('phone')
                     }}
-                    placeholder="98XXXXXXXX"
+                    placeholder="9801234567"
+                    className="figure"
                     style={{ ...inputStyle(!!errors.phone), flex: 1 }}
                   />
                 </div>
               </Field>
               <Field label="Email" error={errors.email}>
-                <input
+                <Input
                   type="email"
                   value={email}
                   onChange={(e) => {
@@ -552,7 +618,7 @@ export default function AddClient() {
           <SectionCard n={2} title="Contact & Address">
             <div style={fieldRow}>
               <Field label="Address" required error={errors.address}>
-                <input
+                <Input
                   value={address}
                   onChange={(e) => {
                     setAddress(e.target.value)
@@ -563,7 +629,7 @@ export default function AddClient() {
                 />
               </Field>
               <Field label="City" required error={errors.city}>
-                <input
+                <Input
                   value={city}
                   onChange={(e) => {
                     setCity(e.target.value)
@@ -574,23 +640,23 @@ export default function AddClient() {
                 />
               </Field>
               <Field label="District">
-                <select value={district} onChange={(e) => setDistrict(e.target.value)} style={inputStyle()}>
+                <Select value={district} onChange={(e) => setDistrict(e.target.value)} style={inputStyle()}>
                   <option value="">Select district</option>
                   {NEPAL_DISTRICTS.map((d) => (
                     <option key={d} value={d}>
                       {d}
                     </option>
                   ))}
-                </select>
+                </Select>
               </Field>
             </div>
 
             <div style={fieldRow}>
               <Field label="Postal Code">
-                <input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} placeholder="e.g. 44600" style={inputStyle()} />
+                <Input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} placeholder="e.g. 44600" style={inputStyle()} />
               </Field>
               <Field label="Country" required error={errors.country}>
-                <select
+                <Select
                   value={country}
                   onChange={(e) => {
                     setCountry(e.target.value)
@@ -602,50 +668,137 @@ export default function AddClient() {
                   <option value="India">India</option>
                   <option value="China">China</option>
                   <option value="Other">Other</option>
-                </select>
+                </Select>
               </Field>
-              <Field label="Business Reg. No.">
-                <input value={businessRegNo} onChange={(e) => setBusinessRegNo(e.target.value)} placeholder="e.g. 123456/789" style={inputStyle()} />
-              </Field>
+            </div>
+
+            <div style={{ ...fieldRow, marginTop: 16 }}>
+              {clientType === 'Organisation' && (
+                <>
+                  <Field label="Business Reg. No.">
+                    <Input value={businessRegNo} onChange={(e) => setBusinessRegNo(e.target.value)} placeholder="e.g. 123456/789" style={inputStyle()} />
+                  </Field>
+                  <Field label="Website">
+                    <Input value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="e.g. www.company.com" style={inputStyle()} />
+                  </Field>
+                </>
+              )}
+              {clientType === 'Individual' && (
+                <Field label="Government ID">
+                  <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
+                    <Select value={govIdType} onChange={(e) => setGovIdType(e.target.value)} style={{ ...inputStyle(), width: 120, flexShrink: 0 }}>
+                      <option value="Citizenship">Citizenship</option>
+                      <option value="Passport">Passport</option>
+                    </Select>
+                    <Input value={businessRegNo} onChange={(e) => setBusinessRegNo(e.target.value)} placeholder="ID Number" style={{ ...inputStyle(), flex: 1 }} />
+                  </div>
+                </Field>
+              )}
               <Field label="VAT / PAN No.">
-                <input value={pan} onChange={(e) => setPan(e.target.value)} placeholder="e.g. 600123456" style={inputStyle()} />
+                <Input value={pan} onChange={(e) => setPan(e.target.value)} placeholder="e.g. 600123456" style={inputStyle()} />
               </Field>
             </div>
           </SectionCard>
 
           <SectionCard n={3} title="Additional Information">
+            {clientType === 'Organisation' && (
+              <div style={{ ...fieldRow, marginBottom: 16 }}>
+                <Field label="Organisation Type" required>
+                  <Select value={orgType} onChange={(e) => setOrgType(e.target.value as OrganisationType)} style={inputStyle()}>
+                    {ORG_TYPES.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+            )}
+
+            {clientType === 'Individual' && (
+              <div style={{ marginBottom: 16 }}>
+                <Field label="Profession (Optional)">
+                  <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap', marginTop: 4 }}>
+                    {PROFESSIONS.map((p) => {
+                      const on = professions.includes(p)
+                      return (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => toggleProfession(p)}
+                          aria-pressed={on}
+                          style={{
+                            padding: '6px 12px', borderRadius: 'var(--r-badge)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', cursor: 'pointer',
+                            background: on ? 'var(--nav-active-bg)' : 'var(--card2)',
+                            border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+                            color: on ? 'var(--nav-active-accent)' : 'var(--text)'
+                          }}
+                        >
+                          {p}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </Field>
+              </div>
+            )}
+
+            <div style={{ marginBottom: 16 }}>
+              <Field label="Segment (Optional)">
+                <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap', marginTop: 4 }}>
+                  {SEGMENTS.map((s) => {
+                    const on = segments.includes(s)
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => toggleSegment(s)}
+                        aria-pressed={on}
+                        style={{
+                          padding: '6px 12px', borderRadius: 'var(--r-badge)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', cursor: 'pointer',
+                          background: on ? 'var(--nav-active-bg)' : 'var(--card2)',
+                          border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+                          color: on ? 'var(--nav-active-accent)' : 'var(--text)'
+                        }}
+                      >
+                        {s}
+                      </button>
+                    )
+                  })}
+                </div>
+              </Field>
+            </div>
+
             <div style={fieldRow}>
               <Field label="Client Since">
-                <input type="date" value={clientSince} onChange={(e) => setClientSince(e.target.value)} style={inputStyle()} />
+                <Input type="date" value={clientSince} onChange={(e) => setClientSince(e.target.value)} style={inputStyle()} />
               </Field>
               <Field label="Source">
-                <select value={source} onChange={(e) => setSource(e.target.value)} style={inputStyle()}>
+                <Select value={source} onChange={(e) => setSource(e.target.value)} style={inputStyle()}>
                   <option value="">Select source</option>
                   {CLIENT_SOURCES.map((s) => (
                     <option key={s} value={s}>
                       {s}
                     </option>
                   ))}
-                </select>
+                </Select>
               </Field>
               <Field label="Referred By (Optional)">
-                <input value={referredBy} onChange={(e) => setReferredBy(e.target.value)} placeholder="Name or company" style={inputStyle()} />
+                <Input value={referredBy} onChange={(e) => setReferredBy(e.target.value)} placeholder="Name or company" style={inputStyle()} />
               </Field>
             </div>
 
             <div style={fieldRow}>
               <Field label="Membership Tier">
-                <select value={membership} onChange={(e) => setMembership(e.target.value as MembershipTier)} style={inputStyle()}>
+                <Select value={membership} onChange={(e) => setMembership(e.target.value as MembershipTier)} style={inputStyle()}>
                   {MEMBERSHIP_TIERS.map((t) => (
                     <option key={t} value={t}>
                       {t}
                     </option>
                   ))}
-                </select>
+                </Select>
               </Field>
               {money && (
                 <Field label="Credit Limit (NPR)">
-                  <input
+                  <Input
                     value={creditLimit}
                     onChange={(e) => setCreditLimit(e.target.value)}
                     placeholder="e.g. 100,000"
@@ -655,23 +808,23 @@ export default function AddClient() {
               )}
               {money && (
                 <Field label="Payment Terms">
-                  <select value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} style={inputStyle()}>
+                  <Select value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} style={inputStyle()}>
                     <option value="">Select terms</option>
                     {PAYMENT_TERMS_OPTIONS.map((t) => (
                       <option key={t} value={t}>
                         {t}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </Field>
               )}
             </div>
 
             <div style={fieldRow}>
               <Field label="Preferred Contact Method">
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', paddingTop: 4 }}>
                   {PREFERRED_CONTACT_METHODS.map((m) => (
-                    <label key={m} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)', color: 'var(--text)', cursor: 'pointer' }}>
+                    <label key={m} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text)', cursor: 'pointer' }}>
                       <input
                         type="checkbox"
                         checked={preferredMethods.includes(m)}
@@ -698,7 +851,7 @@ export default function AddClient() {
             </div>
           </SectionCard>
 
-          <section style={{ ...cardStyle, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <section style={{ ...cardStyle, padding: 'var(--sp-lg)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
               <div>
                 <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>Upload Documents (Optional)</h2>
@@ -751,7 +904,7 @@ export default function AddClient() {
             />
 
             {docError && (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'var(--t-th)', color: 'var(--danger-text)' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)', fontSize: 'var(--t-th)', color: 'var(--danger-text)' }}>
                 <Icon name="error" size={12} />
                 {docError}
               </span>
@@ -762,7 +915,7 @@ export default function AddClient() {
                 {documents.map((d) => (
                   <div
                     key={d.id}
-                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--card2)', border: '1px solid var(--border)' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 'var(--r-sm)', background: 'var(--card2)', border: '1px solid var(--border)' }}
                   >
                     <Icon name="file" size={16} style={{ color: 'var(--text2)', flexShrink: 0 }} />
                     <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 'var(--t-meta)', color: 'var(--text)' }}>
@@ -773,7 +926,7 @@ export default function AddClient() {
                       type="button"
                       onClick={() => setDocuments((prev) => prev.filter((x) => x.id !== d.id))}
                       aria-label={`Remove ${d.file.name}`}
-                      style={{ border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', width: 24, height: 24, borderRadius: 6, display: 'grid', placeItems: 'center' }}
+                      style={{ border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', width: 24, height: 24, borderRadius: 'var(--r-xs)', display: 'grid', placeItems: 'center' }}
                     >
                       <Icon name="close" size={14} />
                     </button>

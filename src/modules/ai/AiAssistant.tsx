@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
 import { BRAND, BRAND_TEXT } from '../../lib/status'
@@ -24,7 +25,7 @@ const CAPABILITIES: Array<{ title: string; note: string; icon: 'search' | 'chart
 
 const SUGGESTIONS: Array<{ text: string; record: string; action: string; weight: 'High' | 'Medium' | 'Low' }> = [
   { text: '4 returns are overdue and none has been chased today', record: 'Operations Queues', action: 'Open Returns', weight: 'High' },
-  { text: 'Invoice INV-2026-0492 is past due with no reminder sent', record: 'INV-2026-0492', action: 'Open Invoice', weight: 'High' },
+  { text: 'Invoice INV-2026-0492 is due 2 Aug with no reminder scheduled yet', record: 'INV-2026-0492', action: 'Open Invoice', weight: 'High' },
   { text: 'NISI Athena Set is double-booked on 14 Shrawan', record: 'BK-2026-0713', action: 'Open Calendar', weight: 'High' },
   { text: 'Aputure 600D has been in maintenance 9 days — above its average', record: 'AP6-0204', action: 'Open Item', weight: 'Medium' },
   { text: 'Two clients are at 100% of their monthly booking limit', record: 'Memberships', action: 'Open Memberships', weight: 'Medium' },
@@ -40,7 +41,25 @@ const PROMPTS = [
   'Draft a payment reminder for ABC Films',
 ]
 
+function suggestionRoute(s: { action: string; record: string }): string | null {
+  switch (s.action) {
+    case 'Open Item':
+      return `/inventory/${s.record}`
+    case 'Open Calendar':
+      return '/calendar'
+    case 'Open Memberships':
+      return '/clients/memberships'
+    case 'Open Invoice':
+      return '/finance'
+    case 'Open Returns':
+      return '/operations'
+    default:
+      return null
+  }
+}
+
 export default function AiAssistant() {
+  const navigate = useNavigate()
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageHeader
@@ -93,7 +112,15 @@ export default function AiAssistant() {
                   >
                     {s.weight}
                   </span>
-                  <Button icon="arrow_right">{s.action}</Button>
+                  <Button
+                    icon="arrow_right"
+                    onClick={() => {
+                      const route = suggestionRoute(s)
+                      if (route) navigate(route)
+                    }}
+                  >
+                    {s.action}
+                  </Button>
                 </div>
               ))}
             </div>
@@ -108,7 +135,7 @@ export default function AiAssistant() {
                   style={{
                     height: 30,
                     padding: '0 11px',
-                    borderRadius: 8,
+                    borderRadius: 'var(--r-sm)',
                     border: '1px solid var(--border)',
                     background: 'var(--card2)',
                     color: 'var(--text2)',
@@ -125,7 +152,7 @@ export default function AiAssistant() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
+                gap: 'var(--sp-sm)',
                 height: 40,
                 padding: '0 11px',
                 borderRadius: 'var(--r-input)',
@@ -168,7 +195,7 @@ export default function AiAssistant() {
             </div>
           </Card>
 
-          <div style={{ ...cardStyle, padding: 12, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
+          <div style={{ ...cardStyle, padding: 'var(--sp-md)', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
             The assistant proposes; it never writes. Bookings, pricing and stock change only when an operator opens
             the record and decides.
           </div>

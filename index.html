@@ -27,6 +27,27 @@
         document.documentElement.style.setProperty('--ui-scale', String(s))
       })()
     </script>
+    <!--
+      Same reasoning as the --ui-scale script above, for lib/theme.tsx's
+      'br-theme-mode'. Without this, a 'system' user whose OS prefers light
+      gets a real ~200ms dark-to-light flash on every cold load: this file's
+      hardcoded data-theme="dark" paints first, then ThemeProvider's mount
+      effect flips it, and the surface transition (theme.css --dur-theme)
+      animates out of dark while the untransitioned text color has already
+      snapped to light.
+    -->
+    <script>
+      (function () {
+        var mode = localStorage.getItem('br-theme-mode')
+        var resolved =
+          mode === 'dark' || mode === 'light'
+            ? mode
+            : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light'
+        document.documentElement.setAttribute('data-theme', resolved)
+      })()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

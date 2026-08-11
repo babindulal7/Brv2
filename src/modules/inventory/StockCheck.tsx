@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
+import { EmptyState } from '../../components/ui/StateViews'
+import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
 import {
   SAMPLE_STOCK_CHECKS,
   type StockCheckSession,
@@ -12,6 +14,7 @@ export default function StockCheck() {
   const navigate = useNavigate()
   const [session, setSession] = useState<StockCheckSession>(SAMPLE_STOCK_CHECKS[0]!)
   const [scanInput, setScanInput] = useState('')
+  const [showScannerModal, setShowScannerModal] = useState(false)
   const [unexpectedUnits, setUnexpectedUnits] = useState<
     Array<{ serial: string; name: string; location: string; scannedAt: string }>
   >([])
@@ -86,6 +89,9 @@ export default function StockCheck() {
 
   const handleFinishAudit = () => {
     setSession((prev) => ({ ...prev, status: 'Completed' }))
+    import('../../actions/inventory/reconcileStockCheck').then((m) =>
+      m.reconcileStockCheck({ scannedCount: verifiedCount, totalCount })
+    )
   }
 
   const filteredUnits = session.units.filter((u) => {
@@ -117,7 +123,7 @@ export default function StockCheck() {
               <span
                 style={{
                   padding: '6px 14px',
-                  borderRadius: 6,
+                  borderRadius: 'var(--r-xs)',
                   background: 'var(--st-in-bg)',
                   color: 'var(--success-text)',
                   fontWeight: 700,
@@ -133,9 +139,9 @@ export default function StockCheck() {
 
       {/* Progress & Live Audit KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-lg)' }}>
           <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>AUDIT PROGRESS</div>
-          <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--nav-active-accent)', marginTop: 4 }}>
+          <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--nav-active-accent)', marginTop: 'var(--sp-xs)' }}>
             {progressPct}%
           </div>
           <div style={{ width: '100%', height: 6, borderRadius: 3, background: 'var(--hover)', marginTop: 6, overflow: 'hidden' }}>
@@ -143,25 +149,25 @@ export default function StockCheck() {
           </div>
         </div>
 
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-lg)' }}>
           <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>VERIFIED (MATCHED)</div>
-          <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success-text)', marginTop: 4 }}>
+          <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success-text)', marginTop: 'var(--sp-xs)' }}>
             {verifiedCount} of {totalCount}
           </div>
           <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', marginTop: 2 }}>Scanned in correct location</div>
         </div>
 
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-lg)' }}>
           <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>UNVERIFIED (PENDING)</div>
-          <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: unverifiedCount > 0 ? 'var(--orange-text)' : 'var(--text2)', marginTop: 4 }}>
+          <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: unverifiedCount > 0 ? 'var(--orange-text)' : 'var(--text2)', marginTop: 'var(--sp-xs)' }}>
             {unverifiedCount}
           </div>
           <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', marginTop: 2 }}>Self-heals upon scan</div>
         </div>
 
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-lg)' }}>
           <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>MISPLACED / UNEXPECTED</div>
-          <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: unexpectedCount > 0 ? 'var(--danger-text)' : 'var(--muted)', marginTop: 4 }}>
+          <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: unexpectedCount > 0 ? 'var(--danger-text)' : 'var(--muted)', marginTop: 'var(--sp-xs)' }}>
             {unexpectedCount}
           </div>
           <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', marginTop: 2 }}>Found from other zones</div>
@@ -171,14 +177,14 @@ export default function StockCheck() {
       {/* Main Grid: Barcode Scanner Terminal (Left) | Manifest Table (Right) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 360px) 1fr', gap: 20, alignItems: 'start' }}>
         {/* Scanner Terminal Rail */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
           <Card title="Barcode / QR Scan Input">
-            <form onSubmit={handleScanSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <form onSubmit={handleScanSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
               <div>
                 <label style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, marginBottom: 6 }}>
                   Scan Serial or Asset Tag
                 </label>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
                   <input
                     type="text"
                     autoFocus
@@ -190,7 +196,7 @@ export default function StockCheck() {
                       flex: 1,
                       height: 38,
                       padding: '0 12px',
-                      borderRadius: 6,
+                      borderRadius: 'var(--r-xs)',
                       border: '2px solid var(--nav-active-accent)',
                       background: 'var(--hover)',
                       color: 'var(--text)',
@@ -200,11 +206,14 @@ export default function StockCheck() {
                   <Button variant="primary" icon={<Icon name="checklist" size={13} />} onClick={handleScanSubmit}>
                     Scan
                   </Button>
+                  <Button type="button" icon={<Icon name="camera" size={13} />} onClick={() => setShowScannerModal(true)}>
+                    Camera Scanner
+                  </Button>
                 </div>
               </div>
 
               {/* Quick Barcode Simulation Buttons */}
-              <div style={{ marginTop: 4 }}>
+              <div style={{ marginTop: 'var(--sp-xs)' }}>
                 <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginBottom: 6 }}>Quick Test Scanners:</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {session.units
@@ -252,13 +261,13 @@ export default function StockCheck() {
               {lastScannedFeedback && (
                 <div
                   style={{
-                    padding: 12,
-                    borderRadius: 8,
+                    padding: 'var(--sp-md)',
+                    borderRadius: 'var(--r-sm)',
                     background: lastScannedFeedback.match ? 'var(--st-in-bg)' : 'var(--st-out-bg, rgba(234,88,12,0.1))',
                     border: `1px solid ${lastScannedFeedback.match ? 'var(--success-text)' : 'var(--orange-text)'}`,
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 4,
+                    gap: 'var(--sp-xs)',
                     marginTop: 6,
                   }}
                 >
@@ -284,7 +293,7 @@ export default function StockCheck() {
           </Card>
 
           <Card title="Session Scope">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               <div>Facility: <strong style={{ color: 'var(--text)' }}>{session.warehouse}</strong></div>
               <div>Scope: <strong style={{ color: 'var(--text)' }}>{session.scopeDetail}</strong></div>
               <div>Auditor: <strong style={{ color: 'var(--text)' }}>{session.startedBy}</strong></div>
@@ -294,7 +303,7 @@ export default function StockCheck() {
         </div>
 
         {/* Manifest Table */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
           <Card
             title={`Location Manifest (${filteredUnits.length} Expected Items)`}
             action={
@@ -344,7 +353,11 @@ export default function StockCheck() {
                     {unexpectedUnits.length === 0 ? (
                       <tr>
                         <td colSpan={4} style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)' }}>
-                          No misplaced or unexpected items scanned yet.
+                          <EmptyState
+                            icon={<Icon name="alert_triangle" size={22} />}
+                            title="No misplaced or unexpected items scanned yet"
+                            description="Items scanned that don't match this location's manifest will be logged here."
+                          />
                         </td>
                       </tr>
                     ) : (
@@ -393,10 +406,15 @@ export default function StockCheck() {
                     {filteredUnits.map((u) => (
                       <tr key={u.serial} style={{ borderBottom: '1px solid var(--border)' }}>
                         <td style={{ padding: '10px 8px' }}>
-                          <div style={{ fontWeight: 600, color: 'var(--text)' }}>{u.name}</div>
-                          <div className="identifier" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                            {u.assetCode}
-                          </div>
+                          <Link
+                            to={`/inventory/${encodeURIComponent(u.assetCode || u.serial)}`}
+                            style={{ color: 'inherit', textDecoration: 'none' }}
+                          >
+                            <div style={{ fontWeight: 600, color: 'var(--text)' }}>{u.name}</div>
+                            <div className="identifier" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                              {u.assetCode}
+                            </div>
+                          </Link>
                         </td>
                         <td style={{ padding: '10px 8px' }}>
                           <span className="identifier" style={{ color: 'var(--text2)' }}>
@@ -410,7 +428,7 @@ export default function StockCheck() {
                               style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: 4,
+                                gap: 'var(--sp-xs)',
                                 padding: '2px 8px',
                                 borderRadius: 4,
                                 background: 'var(--st-in-bg)',
@@ -460,6 +478,20 @@ export default function StockCheck() {
           </Card>
         </div>
       </div>
+      <BarcodeScannerModal
+        isOpen={showScannerModal}
+        onClose={() => setShowScannerModal(false)}
+        mode="reset"
+        items={session.units.map((u) => ({
+          id: u.serial,
+          name: u.name,
+          serial: u.serial,
+          assetTag: u.serial,
+        }))}
+        onItemScanned={(item) => {
+          setScanInput(item.serial ?? item.id)
+        }}
+      />
     </div>
   )
 }

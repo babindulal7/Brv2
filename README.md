@@ -36,6 +36,105 @@ is the single most likely way this product's authorization model gets defeated.
 
 ---
 
+## Deployment
+
+### Environment variables
+
+Everything the app reads is prefixed `VITE_`, which means Vite **inlines it into the
+bundle at build time**. Two consequences, both easy to get wrong:
+
+1. **All of it is public.** It ships in the JavaScript every visitor downloads and is
+   readable with View Source. Use the **anon key only** — never a service key, never a
+   Supabase JWT secret, never anything you would not print on the login page. RLS is the
+   authorization layer; a service key in the client removes it.
+2. **It is not runtime configuration.** Setting these on a running container or a
+   `docker run -e` does nothing. They must be present *when the bundle is built*.
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `VITE_SUPABASE_URL` | yes | Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | yes | Anon key. **Never a service key** |
+| `VITE_SENTRY_DSN` | no | Error tracking. Blank ⇒ `lib/monitoring.ts` no-ops entirely |
+| `VITE_APP_VERSION` | no | Tags reported errors with the build they came from |
+
+Full notes in [`.env.example`](.env.example).
+
+### Build
+
+```bash
+npm ci
+npm run build     # tsc --noEmit && vite build  →  dist/
+```
+
+A type error fails the build rather than shipping. Output is `dist/`, containing two
+documents: `index.html` (the ops app) and `marketing.html` (the public site) — they are
+separate Rollup entry points on purpose, so a first-time visitor does not download the
+whole ops bundle.
+
+### The SPA rewrite — the one thing that must not be skipped
+
+This app is a **client-side router**. `/` is the only HTML document the router mounts in.
+`/today`, `/rentals/BR-2026-0001`, `/operations/packing` and every other route exist in
+JavaScript only; there is no such file on disk.
+
+So the host must serve `index.html` for any path that does not match a real file.
+**Without that rewrite every deep link, every browser refresh on a non-root page, every
+bookmarked booking and every PWA shortcut returns 404 in production** — while working
+perfectly in `npm run dev`, because the Vite dev server does the rewrite for you. It is
+the classic "works locally, 404s live" failure and it is configuration, not code.
+
+Try the real file first, `index.html` second. That ordering is load-bearing:
+`marketing.html` is a genuine document, not a route, and must not be swallowed by the
+fallback.
+
+Both configs in this repo already do it:
+
+- **[`vercel.json`](vercel.json)** — `rewrites` are evaluated *after* the filesystem
+  check, so the catch-all `/(.*) → /index.html` still lets `/assets/*` and
+  `/marketing.html` serve themselves. Also sets immutable caching on hashed assets and
+  `no-store` on `sw.js`, without which a device pins itself to an old build.
+- **[`Dockerfile`](Dockerfile) + [`nginx.conf`](nginx.conf)** — multi-stage: Node builds,
+  nginx serves; the runtime image has no Node and no source. The rewrite is
+  `try_files $uri $uri/ /index.html`.
+
+```bash
+docker build \
+  --build-arg VITE_SUPABASE_URL=https://<project>.supabase.co \
+  --build-arg VITE_SUPABASE_ANON_KEY=<anon key> \
+  -t babin-rentals-os .
+
+docker run --rm -p 8080:80 babin-rentals-os   # health probe at /healthz
+```
+
+On Netlify the equivalent is a `netlify.toml` with:
+
+```toml
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+```
+
+No hosting provider has been chosen and no hosting credentials exist in this repo.
+**TODO(decision):** pick the host, then delete the config for the one not used so the two
+cannot drift apart on the rewrite or the cache headers.
+
+### Error tracking
+
+`src/lib/monitoring.ts` exposes `captureError(err, context)` and is wired into
+`components/shell/ErrorBoundary`, so a production render crash is reported instead of
+dying in a console nobody is watching. It posts a Sentry envelope directly over `fetch` /
+`sendBeacon` — **no SDK dependency** — and no-ops completely when `VITE_SENTRY_DSN` is
+unset, which is the committed state of this repo.
+
+It sends the error name, message, stack, release tag and `location.pathname` — path only,
+never the query string, which is where filter and search state lives. Anything you pass
+in `context` is serialised verbatim, so pass **ids and counts, never client PII and never
+rupee figures**: money is role-gated in this product and an error report is not a hole in
+that.
+
+---
+
 ## ⚠ Token drift — needs a decision before the UI port
 
 `src/index.css` was ported **verbatim** from the capsule build rather than "corrected",

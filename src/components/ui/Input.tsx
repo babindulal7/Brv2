@@ -41,7 +41,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           }}
         >
           {label}
-          {props.required && <span style={{ color: 'var(--danger-text)', marginLeft: 4 }}>*</span>}
+          {props.required && <span style={{ color: 'var(--danger-text)', marginLeft: 'var(--sp-xs)' }}>*</span>}
         </label>
       )}
 
@@ -94,8 +94,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: 4,
-              borderRadius: 6,
+              padding: 'var(--sp-xs)',
+              borderRadius: 'var(--r-xs)',
               border: 'none',
               background: 'transparent',
               color: 'var(--muted)',

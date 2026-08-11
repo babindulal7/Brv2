@@ -16,6 +16,7 @@ import Login from './modules/auth/Login'
 import ScreenLock from './modules/auth/ScreenLock'
 import { useAuth } from './lib/auth'
 import { useViewport } from './lib/device'
+import { canViewMoney } from './lib/rbac'
 
 /* ── lazy-loaded route pages (code-splitting) ─────────────────────────── */
 const Today             = lazy(() => import('./modules/today/Today'))
@@ -30,9 +31,15 @@ const EvidenceWorkspace = lazy(() => import('./modules/rentals/EvidenceWorkspace
 const Pulse             = lazy(() => import('./modules/reports/Pulse'))
 const ExpenseReports    = lazy(() => import('./modules/reports/ExpenseReports'))
 const ClientReports     = lazy(() => import('./modules/reports/ClientReports'))
-const ProductReports    = lazy(() => import('./modules/reports/ProductReports'))
+const InventoryReports  = lazy(() => import('./modules/reports/InventoryReports'))
+const EquipmentPerformance = lazy(() => import('./modules/reports/EquipmentPerformance'))
+const PromotionsReports = lazy(() => import('./modules/reports/PromotionsReports'))
+const StaffReports      = lazy(() => import('./modules/reports/StaffReports'))
+const ForecastingReports = lazy(() => import('./modules/reports/ForecastingReports'))
 const BackupRestore     = lazy(() => import('./modules/admin/BackupRestore'))
 const AuditSettings     = lazy(() => import('./modules/admin/AuditSettings'))
+const ActivityLog       = lazy(() => import('./modules/admin/ActivityLog'))
+const AuditLog          = lazy(() => import('./modules/admin/AuditLog'))
 const NumberingSequences = lazy(() => import('./modules/admin/NumberingSequences'))
 const CashFlowReport    = lazy(() => import('./modules/reports/CashFlowReport'))
 const WorkingCapital    = lazy(() => import('./modules/reports/WorkingCapitalReport'))
@@ -53,15 +60,17 @@ const AiAssistant       = lazy(() => import('./modules/ai/AiAssistant'))
 const Settings          = lazy(() => import('./modules/settings/Settings'))
 const EventTriggers     = lazy(() => import('./modules/automation/EventTriggers'))
 const SmsCenter         = lazy(() => import('./modules/notifications/SmsCenter'))
+const UnifiedInbox      = lazy(() => import('./modules/notifications/UnifiedInbox'))
 const Membership        = lazy(() => import('./modules/clients/Membership'))
 const Clients           = lazy(() => import('./modules/clients/Clients'))
 const AddClient         = lazy(() => import('./modules/clients/AddClient'))
 const ClientDetail      = lazy(() => import('./modules/clients/ClientDetail'))
 const DuplicateCenter   = lazy(() => import('./modules/clients/DuplicateCenter'))
 const ImportCenter      = lazy(() => import('./modules/clients/ImportCenter'))
+const GenerateReferralCode = lazy(() => import('./modules/clients/GenerateReferralCode'))
 const BroadcastCenter   = lazy(() => import('./modules/notifications/BroadcastCenter'))
 const CasesWorkspace    = lazy(() => import('./modules/operations/CasesWorkspace').then(m => ({ default: m.CasesWorkspace })))
-const CrewBooking       = lazy(() => import('./modules/operations/CrewBooking').then(m => ({ default: m.CrewBooking })))
+const CrewBooking       = lazy(() => import('./modules/crew/CrewBooking').then(m => ({ default: m.CrewBooking })))
 const SubRental         = lazy(() => import('./modules/operations/SubRental').then(m => ({ default: m.SubRental })))
 const WallDisplay       = lazy(() => import('./modules/wall/WallDisplay'))
 
@@ -221,6 +230,16 @@ export default function App() {
           }
         />
 
+        {/* Crew Booking spec v3.2 §1 — top-level module, sidebar item 4 of 8. */}
+        <Route
+          path="/crew"
+          element={
+            <Shell crumbs={[{ label: 'Crew Assist' }]} search="Search crew, skills, production…">
+              <CrewBooking />
+            </Shell>
+          }
+        />
+
         <Route
           path="/inventory"
           element={
@@ -270,9 +289,15 @@ export default function App() {
           }
         />
 
-        {/* Last of the /inventory/* group — a bare segment is an asset code. */}
+        {/* Last of the /inventory/* group — a bare segment is an asset code.
+            Param name must match AssetDetail's useParams<{ assetId }>() —
+            it read `:code` here while asking for `assetId`, so the route
+            never actually received a value and every visit silently fell
+            back to PARENTS[0] regardless of which asset was requested.
+            Found while wiring Hover Intel System v2.1's "Open Asset Detail"
+            trigger, the first real caller of this route. */}
         <Route
-          path="/inventory/:code"
+          path="/inventory/:assetId"
           element={
             <Shell crumbs={[{ label: 'Inventory' }, { label: 'Asset' }]} search="Search equipment, serial, SKU, category…">
               <AssetDetail />
@@ -325,14 +350,20 @@ export default function App() {
           }
         />
 
+        {/* Dynamic sibling of /operations/cases, same convention as /clients/:id
+            and /inventory/:assetId — declared right after its static parent. */}
         <Route
-          path="/operations/crew"
+          path="/operations/cases/:id"
           element={
-            <Shell crumbs={[{ label: 'Operations' }, { label: 'Crew Booking' }]} search="Search crew, role, production…">
-              <CrewBooking />
+            <Shell crumbs={[{ label: 'Operations' }, { label: 'Cases' }]} search="Search case ID, title, client…">
+              <CasesWorkspace />
             </Shell>
           }
         />
+
+        {/* Moved to a top-level route 9 Aug 2026 (Crew Booking spec v3.2 §1) —
+            Crew Assist is its own sidebar module, not an Operations queue. */}
+        <Route path="/operations/crew" element={<Navigate to="/crew" replace />} />
 
         <Route
           path="/operations/sub-rental"
@@ -392,10 +423,46 @@ export default function App() {
         />
 
         <Route
+          path="/reports/promotions"
+          element={
+            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Promotions' }]}>
+              <PromotionsReports />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/reports/staff"
+          element={
+            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Staff Performance' }]}>
+              <StaffReports />
+            </Shell>
+          }
+        />
+
+        <Route
           path="/reports/inventory"
           element={
-            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Asset Utilization' }]}>
-              <ProductReports />
+            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Inventory Reports' }]}>
+              <InventoryReports />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/reports/equipment-performance"
+          element={
+            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Equipment Performance' }]}>
+              <EquipmentPerformance />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/reports/forecasting"
+          element={
+            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Forecasting & AI' }]}>
+              <ForecastingReports />
             </Shell>
           }
         />
@@ -445,6 +512,15 @@ export default function App() {
           }
         />
 
+        <Route
+          path="/clients/referral/new"
+          element={
+            <Shell crumbs={[{ label: 'Clients' }, { label: 'Referral' }, { label: 'Generate Referral Code' }]}>
+              <GenerateReferralCode />
+            </Shell>
+          }
+        />
+
         {/* Last of the /clients/* group, same reasoning as /inventory/:code —
             a bare segment here is a client ID, so it's declared after every
             named static sibling. */}
@@ -462,6 +538,15 @@ export default function App() {
           element={
             <Shell crumbs={[{ label: 'Notifications' }, { label: 'Broadcast Center' }]}>
               <BroadcastCenter />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/notifications/inbox"
+          element={
+            <Shell crumbs={[{ label: 'Notifications' }, { label: 'Unified Inbox' }]}>
+              <UnifiedInbox />
             </Shell>
           }
         />
@@ -525,6 +610,33 @@ export default function App() {
           element={
             <Shell crumbs={[{ label: 'Administration' }, { label: 'Immutable Audit Trail' }]}>
               <AuditSettings />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/admin/audit-settings"
+          element={
+            <Shell crumbs={[{ label: 'Admin' }, { label: 'Audit Settings' }]}>
+              <AuditSettings />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/admin/activity-log"
+          element={
+            <Shell crumbs={[{ label: 'Admin' }, { label: 'Activity Log' }]}>
+              <ActivityLog />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/admin/audit-log"
+          element={
+            <Shell crumbs={[{ label: 'Admin' }, { label: 'Audit Log' }]}>
+              <AuditLog />
             </Shell>
           }
         />
@@ -596,6 +708,7 @@ const BUILT = new Set([
   '/reports/clients',
   '/reports/inventory',
   '/admin/numbering',
+  '/crew',
   '/inventory',
   '/calendar',
   '/documents',
@@ -609,6 +722,7 @@ const BUILT = new Set([
   '/clients/CL-2026-0001',
   '/clients/duplicates',
   '/clients/import',
+  '/clients/referral/new',
   '/reports',
   '/admin',
   '/finance/documents',
@@ -686,7 +800,7 @@ function Shell({
   children: ReactNode
 }) {
   const { pathname, search: query } = useLocation()
-  const { user, isLocked, setLocked } = useAuth()
+  const { user, loading: authLoading, isLocked, setLocked } = useAuth()
   /* DEVICES.md §7 build order item 2 — below 768 the bottom bar replaces the
      Sidebar as primary navigation rather than sitting alongside a squeezed
      rail. Law 13: branch on capability (viewport), not platform. */
@@ -694,13 +808,27 @@ function Shell({
   const phone = viewport === 'phone'
   const isFloor = FLOOR_ROUTE_SUFFIXES.some((s) => pathname.endsWith(s))
 
+  // Restoring a persisted Supabase session is async. Redirecting during that
+  // window would flash /login on every refresh and throw away the route the
+  // user actually asked for, so hold until the first session lookup resolves.
+  if (authLoading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--app)', color: 'var(--text2)', fontSize: 'var(--t-meta)' }}>
+        Restoring session…
+      </div>
+    )
+  }
+
   // Redirect to login if not authenticated
   if (!user) {
     return <Navigate to="/login" replace />
   }
 
   // RBAC Permission Check (Mock basic logic based on role)
-  const isForbidden = user.role === 'Warehouse' && pathname.startsWith('/finance')
+  // Was `role === 'Warehouse'` only — Technician/Driver/Client are equally
+  // money-blind per lib/rbac.ts's MONEY_BLIND set but could still navigate
+  // straight to /finance. Reuse the one gate everywhere else in the app uses.
+  const isForbidden = !canViewMoney(user.role) && pathname.startsWith('/finance')
 
   return (
     <div

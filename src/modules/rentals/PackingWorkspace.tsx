@@ -2,11 +2,13 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle, Rail, SideRail } from '../../components/ui/Page'
+import { EmptyState } from '../../components/ui/StateViews'
 import { STATUS } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
 import type { JobState } from '../../lib/workflow'
+import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
-import { BOOKING, SUMMARY } from '../../data/booking'
+import { BOOKING } from '../../data/booking'
 import { UNITS, PACKAGE, GROUPS, CASES, TOTAL_ITEMS, EVIDENCE, NOTES, FILTERS } from '../../data/packing'
 import type { LineState, Condition } from '../../data/packing'
 
@@ -58,7 +60,8 @@ interface LineStateRec {
   reason?: string
 }
 
-export default function PackingWorkspace() {
+// embedded: popup shell hides this page's own header; standalone route (App.tsx) always renders with no props.
+export default function PackingWorkspace({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate()
   const { bookingNo } = useParams()
   const id = bookingNo ?? BOOKING.no
@@ -66,6 +69,7 @@ export default function PackingWorkspace() {
   const [lines, setLines] = useState<Record<string, LineStateRec>>(() =>
     Object.fromEntries(UNITS.map((u) => [u.id, { state: 'Pending' as LineState }])),
   )
+  const [showScanner, setShowScanner] = useState(false)
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('All')
   const [query, setQuery] = useState('')
   const [highlight, setHighlight] = useState<string | null>(null)
@@ -78,6 +82,13 @@ export default function PackingWorkspace() {
   const [casePhotos, setCasePhotos] = useState<Record<string, number>>(() =>
     Object.fromEntries(CASES.map((c) => [c, 0])),
   )
+
+  const scannableUnits = UNITS.map((u) => ({
+    id: u.id,
+    name: u.name,
+    serial: u.serial,
+    isAccessory: !u.serial || u.serial === 'N/A' || u.name.toLowerCase().includes('cable') || u.name.toLowerCase().includes('cap'),
+  }))
 
   const packed = Object.values(lines).filter((l) => l.state === 'Packed').length
   const missing = Object.entries(lines).filter(([, l]) => l.state === 'Missing')
@@ -156,65 +167,66 @@ export default function PackingWorkspace() {
 
   const bs = toBs(new Date('2026-07-16'))
   const retBs = toBs(new Date('2026-07-19'))
-  const outstanding = SUMMARY.find((s) => s.label === 'Rental Outstanding')?.value ?? '—'
 
   // Floor scale (DEVICES.md item 3) is applied automatically by route in App.tsx's Shell, not here.
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      {/* §3 — header. No Back, no ✕, and Complete Packing is NOT here. */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-            <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
-              Packing Workspace
-            </h1>
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                height: 22,
-                padding: '0 9px',
-                borderRadius: 'var(--r-badge)',
-                background: STATUS[statusToken(status)].bg,
-                color: STATUS[statusToken(status)].fg,
-                fontSize: 'var(--t-meta)',
-                fontWeight: 700,
-              }}
-            >
-              {status}
-            </span>
+      {!embedded && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
+          {/* §3 — header. No Back, no ✕, and Complete Packing is NOT here. */}
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
+                Packing Workspace
+              </h1>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  height: 22,
+                  padding: '0 9px',
+                  borderRadius: 'var(--r-badge)',
+                  background: STATUS[statusToken(status)].bg,
+                  color: STATUS[statusToken(status)].fg,
+                  fontSize: 'var(--t-meta)',
+                  fontWeight: 700,
+                }}
+              >
+                {status}
+              </span>
+            </div>
+            <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+              <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
+                {id}
+              </Link>
+              {' · '}
+              {PACKAGE.name} · {BOOKING.client}
+            </p>
           </div>
-          <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-            <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
-              {id}
-            </Link>
-            {' · '}
-            {PACKAGE.name} · {BOOKING.client}
-          </p>
-        </div>
 
-        {/* §3 centre — progress with a message. */}
-        <div style={{ minWidth: 260, flex: 1 }}>
-          <div style={{ display: 'flex', gap: 10, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-            <span>Packing Progress</span>
-            <span className="figure" style={{ marginLeft: 'auto', fontWeight: 700, color: 'var(--text)' }}>
-              {packed} / {TOTAL_ITEMS} ({pct}%)
-            </span>
+          {/* §3 centre — progress with a message. */}
+          <div style={{ minWidth: 260, flex: 1 }}>
+            <div style={{ display: 'flex', gap: 10, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+              <span>Packing Progress</span>
+              <span className="figure" style={{ marginLeft: 'auto', fontWeight: 700, color: 'var(--text)' }}>
+                {packed} / {TOTAL_ITEMS} ({pct}%)
+              </span>
+            </div>
+            <div aria-hidden style={{ height: 8, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 6, overflow: 'hidden' }}>
+              <div style={{ width: '100%', height: '100%', background: 'var(--success)', borderRadius: 'var(--r-badge)', transform: `scaleX(${pct / 100})`, transformOrigin: 'left', transition: 'transform var(--dur) ease' }} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, fontSize: 'var(--t-meta)', color: pending ? 'var(--progress-text)' : 'var(--success-text)', fontWeight: 600 }}>
+              <Icon name={pending ? 'alert_triangle' : 'checklist'} size={12} />
+              {pending ? `${pending} item${pending > 1 ? 's' : ''} pending` : 'All items packed'}
+            </div>
           </div>
-          <div aria-hidden style={{ height: 8, borderRadius: 999, background: 'var(--card2)', marginTop: 6, overflow: 'hidden' }}>
-            <div style={{ width: `${pct}%`, height: '100%', background: 'var(--success)', borderRadius: 999, transition: 'width var(--dur) ease' }} />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, fontSize: 'var(--t-meta)', color: pending ? 'var(--progress-text)' : 'var(--success-text)', fontWeight: 600 }}>
-            <Icon name={pending ? 'alert_triangle' : 'checklist'} size={12} />
-            {pending ? `${pending} item${pending > 1 ? 's' : ''} pending` : 'All items packed'}
-          </div>
-        </div>
 
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Button icon="file">Print Packing List</Button>
-          <Button>Save Draft</Button>
+          <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
+            <Button icon="file">Print Packing List</Button>
+            <Button onClick={() => import('../../actions/rentals/index').then(m => m.saveDraft({ id: id! }, { userId: 'USR-001', role: 'Manager' }))}>Save Draft</Button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* §4 — read-only booking summary, one compact row. BS above AD. */}
       <div style={{ ...cardStyle, display: 'flex', gap: 0, flexWrap: 'wrap', overflow: 'hidden' }}>
@@ -225,7 +237,10 @@ export default function PackingWorkspace() {
           { l: 'Days', v: '3', s: 'Rental days' },
           { l: 'Status', v: status, big: true },
             { l: 'Pack job', v: jobState },
-          { l: 'Outstanding', v: outstanding, big: true, tone: 'var(--danger-text)' },
+          // Law 6 / P0-4 (BUG_SWEEP_REGISTER_v1.0): Packing is a floor surface —
+          // HIS v2.1 §4.3 strips ALL Rs even for money-capable roles. Handover and
+          // Return already show a non-monetary payment-state word here; mirrored.
+          { l: 'Payment', v: 'Due', tone: 'var(--danger-text)' },
           { l: 'Items', v: String(TOTAL_ITEMS) },
           { l: 'Crew', v: '3' },
           { l: 'Delivery', v: 'Pickup' },
@@ -246,7 +261,7 @@ export default function PackingWorkspace() {
         {/* ── §5 left — bundle tree, counts derived ─────────────────────── */}
         <SideRail width={260} label="Bundle / Item Tree">
         <Card title="1 · Bundle / Item Tree">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 9, borderBottom: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', paddingBottom: 9, borderBottom: '1px solid var(--border)' }}>
             <Icon name="box" size={17} style={{ color: 'var(--st-progress-fg)' }} />
             <span style={{ minWidth: 0 }}>
               <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>{PACKAGE.name}</span>
@@ -267,7 +282,7 @@ export default function PackingWorkspace() {
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 8,
+                    gap: 'var(--sp-sm)',
                     width: '100%',
                     padding: '7px 6px',
                     borderRadius: 7,
@@ -303,7 +318,7 @@ export default function PackingWorkspace() {
               { l: 'Missing', v: missing.length, tone: 'var(--danger-text)' },
               { l: 'Not Required', v: notRequired, tone: 'var(--muted)' },
             ].map((r) => (
-              <div key={r.l} style={{ display: 'flex', gap: 8, padding: '3px 0', fontSize: 'var(--t-meta)' }}>
+              <div key={r.l} style={{ display: 'flex', gap: 'var(--sp-sm)', padding: '3px 0', fontSize: 'var(--t-meta)' }}>
                 <span style={{ flex: 1, color: 'var(--text2)' }}>{r.l}</span>
                 <span className="figure" style={{ fontWeight: 700, color: r.tone }}>{r.v}</span>
               </div>
@@ -323,8 +338,8 @@ export default function PackingWorkspace() {
           action={
             <>
               <Button icon="search" onClick={packAll}>Bulk Scan</Button>
-              <Button icon="queues">Scan Barcode</Button>
-              <Button icon="queues">Scan QR</Button>
+              <Button icon="queues" onClick={() => setShowScanner(true)}>Scan Barcode</Button>
+              <Button icon="queues" onClick={() => setShowScanner(true)}>Scan QR</Button>
             </>
           }
         >
@@ -406,7 +421,11 @@ export default function PackingWorkspace() {
                           </span>
                         )}
                       </td>
-                      <td className="identifier" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{u.serial}</td>
+                      <td className="identifier" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                        <Link to={`/inventory/${u.serial}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                          {u.serial}
+                        </Link>
+                      </td>
                       <td className="figure" style={td}>1</td>
                       <td style={td}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', height: 20, padding: '0 8px', borderRadius: 'var(--r-badge)', background: tone.bg, color: tone.fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
@@ -426,7 +445,7 @@ export default function PackingWorkspace() {
                       <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{rec.packedAt ?? '—'}</td>
                       {/* §6 — Evidence column, missing from the render. */}
                       <td style={td}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--t-meta)', color: u.evidence ? 'var(--link)' : 'var(--muted)' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: u.evidence ? 'var(--link)' : 'var(--muted)' }}>
                           <Icon name="eye" size={12} />
                           {u.evidence}
                         </span>
@@ -437,7 +456,7 @@ export default function PackingWorkspace() {
                         Packed, Missing or Replaced, so Complete never enables.
                       */}
                       <td style={{ ...td, width: 120 }}>
-                        <span style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                        <span style={{ display: 'flex', gap: 'var(--sp-xs)', justifyContent: 'flex-end' }}>
                           {rec.state === 'Pending' && (
                             <RowAction label="Missing" onClick={() => set(u.id, { state: 'Missing' })} />
                           )}
@@ -458,15 +477,12 @@ export default function PackingWorkspace() {
                 })}
                 {visible.length === 0 && (
                   <tr>
-                    <td colSpan={10} style={{ padding: 24, textAlign: 'center', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                      No items match these filters.{' '}
-                      <button
-                        type="button"
-                        onClick={() => { setFilter('All'); setQuery('') }}
-                        style={{ border: 'none', background: 'transparent', color: 'var(--link)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'var(--t-meta)' }}
-                      >
-                        Clear all filters
-                      </button>
+                    <td colSpan={10} style={{ padding: 'var(--sp-xl)', textAlign: 'center', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                      <EmptyState
+                        title="No items match these filters"
+                        actionLabel="Clear all filters"
+                        onAction={() => { setFilter('All'); setQuery('') }}
+                      />
                     </td>
                   </tr>
                 )}
@@ -485,7 +501,7 @@ export default function PackingWorkspace() {
         {/* ── §9 right — summary, missing, evidence, notes, quick actions ── */}
         <Rail width={290} label="Packing summary">
           <Card title="3 · Packing Summary">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
               <Ring pct={pct} />
               <div>
                 <div className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
@@ -506,7 +522,7 @@ export default function PackingWorkspace() {
                 ['Missing', missing.length, 'var(--danger-text)'],
                 ['Not Required', notRequired, 'var(--muted)'],
               ] as const).map(([l, v, c]) => (
-                <div key={l} style={{ display: 'flex', gap: 8, padding: '3px 0', fontSize: 'var(--t-meta)' }}>
+                <div key={l} style={{ display: 'flex', gap: 'var(--sp-sm)', padding: '3px 0', fontSize: 'var(--t-meta)' }}>
                   <Icon name="dot" size={9} style={{ color: c, marginTop: 4 }} />
                   <span style={{ flex: 1, color: 'var(--text2)' }}>{l}</span>
                   <span className="figure" style={{ fontWeight: 700 }}>{v}</span>
@@ -624,7 +640,7 @@ export default function PackingWorkspace() {
             <div style={{ ...cardStyle, padding: 11 }}>
               <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Scan log</div>
               {/* §8.3 — results are announced to screen readers. */}
-              <div role="status" aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div role="status" aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
                 {scanLog.map((l, i) => (
                   <span key={i} style={{ fontSize: 'var(--t-meta)', color: l.startsWith('✕') ? 'var(--danger-text)' : 'var(--text2)' }}>
                     {l}
@@ -637,7 +653,7 @@ export default function PackingWorkspace() {
       </div>
 
       {/* §11 — footer. Two buttons. No Previous, no Next, no second Complete. */}
-      <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', flexWrap: 'wrap' }}>
+      <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '12px 14px', flexWrap: 'wrap' }}>
         <button
           type="button"
           onClick={() => navigate(`/rentals/${id}`)}
@@ -652,7 +668,12 @@ export default function PackingWorkspace() {
           <button
             type="button"
             disabled={!canComplete}
-            onClick={() => canComplete && navigate(`/rentals/${id}`)}
+            onClick={() => {
+              if (canComplete) {
+                import('../../actions/rentals/index').then(m => m.packRental({ id: id! }, { userId: 'USR-001', role: 'Manager' }));
+                navigate(`/rentals/${id}`);
+              }
+            }}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -678,6 +699,17 @@ export default function PackingWorkspace() {
           {gateReason}
         </p>
       )}
+
+      <BarcodeScannerModal
+        isOpen={showScanner}
+        onClose={() => setShowScanner(false)}
+        mode="pack"
+        bookingId={id}
+        items={scannableUnits}
+        onItemScanned={(item) => {
+          pack(item.id)
+        }}
+      />
     </div>
   )
 }
@@ -690,7 +722,7 @@ function RowAction({ label, onClick }: { label: string; onClick: () => void }) {
       style={{
         height: 22,
         padding: '0 7px',
-        borderRadius: 6,
+        borderRadius: 'var(--r-xs)',
         border: '1px solid var(--border)',
         background: 'var(--card2)',
         color: 'var(--text2)',

@@ -34,6 +34,7 @@ export default function ScannerFab() {
   const [context, setContext] = useState<(typeof CONTEXTS)[number]['key']>('pack')
   const [continuous, setContinuous] = useState(true)
   const [feedback, setFeedback] = useState<Feedback>(null)
+  const [cameraError, setCameraError] = useState<string | null>(null)
   
   const panel = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -68,6 +69,7 @@ export default function ScannerFab() {
     if (!open) {
       (codeReader.current as any)?.reset()
       codeReader.current = null
+      setCameraError(null)
       return
     }
 
@@ -76,13 +78,20 @@ export default function ScannerFab() {
     }
 
     let isMounted = true
+    setCameraError(null)
+
     if (videoRef.current) {
       // Decode from default video device
       codeReader.current.decodeFromVideoDevice(undefined, videoRef.current, (result) => {
         if (result && isMounted) {
           handleScan(result.getText())
         }
-      }).catch(e => console.warn('Scanner init failed', e))
+      }).catch(e => {
+        if (isMounted) {
+          console.warn('Scanner init failed', e)
+          setCameraError('Camera unavailable or permission denied. Use manual code entry below.')
+        }
+      })
     }
 
     return () => {
@@ -188,7 +197,7 @@ export default function ScannerFab() {
             <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>Scanner</div>
             <button 
               onClick={() => setOpen(false)}
-              style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 4 }}
+              style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 'var(--sp-xs)' }}
               title="Close (Esc)"
             >
               <Icon name="close" size={16} />
@@ -198,7 +207,7 @@ export default function ScannerFab() {
             {CONTEXTS.find(c => c.key === context)?.hint || 'Select context'}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginBottom: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginBottom: 'var(--sp-md)' }}>
             {CONTEXTS.map((c) => {
               const on = context === c.key
               return (
@@ -230,16 +239,22 @@ export default function ScannerFab() {
           <div style={{ 
             position: 'relative', 
             height: 160, 
-            background: '#000', 
-            borderRadius: 8, 
+            background: '#000',
+            borderRadius: 'var(--r-sm)',
             overflow: 'hidden',
             marginBottom: 10,
             border: feedback ? `2px solid ${bannerBg}` : '1px solid transparent'
           }}>
             <video ref={videoRef} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             
-            {/* Viewfinder crosshairs overlay */}
-            <div style={{ position: 'absolute', inset: '15%', border: '1.5px dashed rgba(255,255,255,0.4)', borderRadius: 12, pointerEvents: 'none' }} />
+            {cameraError ? (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'var(--sp-md)', textAlign: 'center', color: 'var(--st-danger-fg)', fontSize: 'var(--t-meta)', background: 'rgba(0,0,0,0.85)' }}>
+                <Icon name="alert_triangle" size={22} style={{ marginBottom: 6 }} />
+                <span>{cameraError}</span>
+              </div>
+            ) : (
+              <div style={{ position: 'absolute', inset: '15%', border: '1.5px dashed rgba(255,255,255,0.4)', borderRadius: 'var(--r-input)', pointerEvents: 'none' }} />
+            )}
           </div>
 
           {/* Manual Entry */}
@@ -255,7 +270,7 @@ export default function ScannerFab() {
                 width: '100%',
                 height: 36,
                 padding: '0 12px',
-                borderRadius: 8,
+                borderRadius: 'var(--r-sm)',
                 border: '1px solid var(--border)',
                 background: 'var(--app-bg)',
                 color: 'var(--text)',
@@ -265,7 +280,7 @@ export default function ScannerFab() {
             />
           </div>
 
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 11, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginTop: 11, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
             <input type="checkbox" checked={continuous} onChange={() => setContinuous((v) => !v)} />
             Continuous mode — keep scanning
           </label>
@@ -276,7 +291,7 @@ export default function ScannerFab() {
               style={{
                 marginTop: 10,
                 padding: '8px 10px',
-                borderRadius: 8,
+                borderRadius: 'var(--r-sm)',
                 background: bannerBg,
                 color: bannerFg,
                 fontSize: 'var(--t-meta)',
@@ -301,7 +316,7 @@ export default function ScannerFab() {
         style={{
           width: 52,
           height: 52,
-          borderRadius: 999,
+          borderRadius: 'var(--r-badge)',
           border: 'none',
           background: 'var(--btn-primary-bg)',
           color: 'var(--btn-primary-fg)',

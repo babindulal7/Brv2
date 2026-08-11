@@ -1,31 +1,38 @@
 import { useState, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
+import { EmptyState } from '../../components/ui/StateViews'
 import {
   PURCHASE_REQUESTS,
   PURCHASE_REQUEST_KPIS,
   type PRStatus,
   type PRPriority,
 } from '../../data/purchaseRequests'
-import { rupees } from '../../lib/money'
+import { formatMoney } from '../../lib/money'
 
 export default function PurchaseRequests() {
   const [activeTab, setActiveTab] = useState<'All' | 'Draft' | 'Submitted' | 'Approved' | 'Ordered' | 'Received'>('All')
   const [selectedPrId, setSelectedPrId] = useState<string | null>(null)
+  const [requestsList, setRequestsList] = useState(PURCHASE_REQUESTS)
 
   const activePR = useMemo(() => {
-    return PURCHASE_REQUESTS.find((pr) => pr.id === selectedPrId) ?? null
-  }, [selectedPrId])
+    return requestsList.find((pr) => pr.id === selectedPrId) ?? null
+  }, [selectedPrId, requestsList])
 
   const filteredPRs = useMemo(() => {
-    if (activeTab === 'All') return PURCHASE_REQUESTS
-    return PURCHASE_REQUESTS.filter((pr) => pr.status === activeTab)
-  }, [activeTab])
+    if (activeTab === 'All') return requestsList
+    return requestsList.filter((pr) => pr.status === activeTab)
+  }, [activeTab, requestsList])
 
   const handleStatusChange = (id: string, newStatus: PRStatus) => {
-    // In real app, this would dispatch to store/backend
-    console.log(`Advancing PR ${id} to ${newStatus}`)
+    setRequestsList((prev) =>
+      prev.map((pr) => (pr.id === id ? { ...pr, status: newStatus } : pr))
+    )
+    import('../../actions/inventory/approvePurchaseRequest').then((m) =>
+      m.approvePurchaseRequest({ prId: id, status: newStatus as 'Approved' | 'Rejected' | 'Ordered' })
+    )
   }
 
   const PRIORITY_COLORS: Record<PRPriority, { bg: string; text: string }> = {
@@ -51,7 +58,7 @@ export default function PurchaseRequests() {
         title="Purchase Requests"
         description="Data-driven equipment acquisition workflows based on turnaways and sub-rental evidence."
         actions={
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
             <Button variant="secondary" icon={<Icon name="file" size={14} />}>
               Filter
             </Button>
@@ -64,13 +71,13 @@ export default function PurchaseRequests() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
         {PURCHASE_REQUEST_KPIS.map((kpi, idx) => (
-          <div key={idx} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div key={idx} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-lg)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
               <span
                 style={{
                   width: 28,
                   height: 28,
-                  borderRadius: 6,
+                  borderRadius: 'var(--r-xs)',
                   display: 'grid',
                   placeItems: 'center',
                   background: 'var(--hover)',
@@ -81,7 +88,7 @@ export default function PurchaseRequests() {
               </span>
               <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>{kpi.label}</span>
             </div>
-            <div className="figure" style={{ fontSize: '1.45rem', fontWeight: 700, color: 'var(--text)', marginTop: 8 }}>
+            <div className="figure" style={{ fontSize: '1.45rem', fontWeight: 700, color: 'var(--text)', marginTop: 'var(--sp-sm)' }}>
               {kpi.value}
             </div>
             <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 2 }}>{kpi.change}</div>
@@ -90,14 +97,14 @@ export default function PurchaseRequests() {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 6, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+      <div style={{ display: 'flex', gap: 6, borderBottom: '1px solid var(--border)', paddingBottom: 'var(--sp-sm)' }}>
         {(['All', 'Draft', 'Submitted', 'Approved', 'Ordered', 'Received'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setActiveTab(t)}
             style={{
               padding: '6px 14px',
-              borderRadius: 6,
+              borderRadius: 'var(--r-xs)',
               background: activeTab === t ? 'var(--hover)' : 'transparent',
               color: activeTab === t ? 'var(--text)' : 'var(--text2)',
               border: `1px solid ${activeTab === t ? 'var(--nav-active-accent)' : 'transparent'}`,
@@ -111,9 +118,17 @@ export default function PurchaseRequests() {
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: activePR ? '1fr 420px' : '1fr', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: activePR ? '1fr 420px' : '1fr', gap: 'var(--sp-lg)', alignItems: 'start' }}>
         {/* Table View */}
         <Card title={`${activeTab} Purchase Requests (${filteredPRs.length})`}>
+          {filteredPRs.length === 0 ? (
+            <EmptyState
+              icon={<Icon name="receipt" size={22} />}
+              title={activeTab === 'All' ? 'No purchase requests yet' : `No ${activeTab.toLowerCase()} requests`}
+              description={activeTab === 'All' ? 'Nothing has been requested yet.' : `Nothing is currently in the ${activeTab} stage.`}
+              {...(activeTab !== 'All' ? { actionLabel: 'Show all', onAction: () => setActiveTab('All') } : {})}
+            />
+          ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)' }}>
               <thead>
@@ -169,7 +184,7 @@ export default function PurchaseRequests() {
                       </td>
                       <td style={{ padding: '10px 8px' }}>
                         <span className="figure" style={{ fontWeight: 600 }}>
-                          {rupees(pr.totalEstimatedCost)}
+                          {formatMoney(pr.totalEstimatedCost)}
                         </span>
                       </td>
                       <td style={{ padding: '10px 8px' }}>
@@ -196,11 +211,12 @@ export default function PurchaseRequests() {
               </tbody>
             </table>
           </div>
+          )}
         </Card>
 
         {/* PR Detail Flyout / Side Panel */}
         {activePR && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
             <Card
               title={`PR Overview — ${activePR.prNo}`}
               action={
@@ -218,14 +234,14 @@ export default function PurchaseRequests() {
                   <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Category: {activePR.category}</div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)' }}>
                   <div>
                     <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Est Unit Cost</div>
-                    <div className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>{rupees(activePR.estimatedUnitCost)}</div>
+                    <div className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>{formatMoney(activePR.estimatedUnitCost)}</div>
                   </div>
                   <div>
                     <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Total Cost</div>
-                    <div className="figure" style={{ fontWeight: 700, color: 'var(--nav-active-accent)' }}>{rupees(activePR.totalEstimatedCost)}</div>
+                    <div className="figure" style={{ fontWeight: 700, color: 'var(--nav-active-accent)' }}>{formatMoney(activePR.totalEstimatedCost)}</div>
                   </div>
                   <div>
                     <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Preferred Supplier</div>
@@ -240,8 +256,8 @@ export default function PurchaseRequests() {
                 </div>
 
                 {activePR.notes && (
-                  <div style={{ padding: 10, background: 'var(--hover)', borderRadius: 6, fontSize: 'var(--t-meta)', color: 'var(--text)' }}>
-                    <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginBottom: 4 }}>Justification Notes:</div>
+                  <div style={{ padding: 10, background: 'var(--hover)', borderRadius: 'var(--r-xs)', fontSize: 'var(--t-meta)', color: 'var(--text)' }}>
+                    <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginBottom: 'var(--sp-xs)' }}>Justification Notes:</div>
                     {activePR.notes}
                   </div>
                 )}
@@ -249,13 +265,13 @@ export default function PurchaseRequests() {
             </Card>
 
             <Card title="Acquisition Evidence (Data Room)">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-sm)' }}>
                     <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Refused Bookings (Losses)</div>
                     <div className="figure" style={{ color: 'var(--danger-text)', fontWeight: 700 }}>{activePR.refusedCount} Events</div>
                   </div>
-                  <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-th)' }}>
                       <thead style={{ background: 'var(--hover)' }}>
                         <tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
@@ -267,7 +283,11 @@ export default function PurchaseRequests() {
                       <tbody>
                         {activePR.refusedBookings.map((rb) => (
                           <tr key={rb.bookingId} style={{ borderTop: '1px solid var(--border)' }}>
-                            <td style={{ padding: '6px 8px' }} className="identifier">{rb.bookingRef}</td>
+                            <td style={{ padding: '6px 8px' }} className="identifier">
+                              <Link to={`/rentals/${rb.bookingRef}`} style={{ color: 'var(--link)', textDecoration: 'none' }}>
+                                {rb.bookingRef}
+                              </Link>
+                            </td>
                             <td style={{ padding: '6px 8px', color: 'var(--text2)' }}>{rb.client}</td>
                             <td style={{ padding: '6px 8px', color: 'var(--danger-text)', fontWeight: 600 }}>-{rb.quantityShort}</td>
                           </tr>
@@ -278,11 +298,11 @@ export default function PurchaseRequests() {
                 </div>
 
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-sm)' }}>
                     <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Sub-Rental Expenses</div>
-                    <div className="figure" style={{ color: 'var(--orange-text)', fontWeight: 700 }}>{rupees(activePR.totalSubRentPaid)}</div>
+                    <div className="figure" style={{ color: 'var(--orange-text)', fontWeight: 700 }}>{formatMoney(activePR.totalSubRentPaid)}</div>
                   </div>
-                  <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-th)' }}>
                       <thead style={{ background: 'var(--hover)' }}>
                         <tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
@@ -296,7 +316,7 @@ export default function PurchaseRequests() {
                           <tr key={sr.subRentalId} style={{ borderTop: '1px solid var(--border)' }}>
                             <td style={{ padding: '6px 8px' }} className="identifier">{sr.subRentalRef}</td>
                             <td style={{ padding: '6px 8px', color: 'var(--text2)' }}>{sr.supplier}</td>
-                            <td style={{ padding: '6px 8px', textAlign: 'right' }} className="figure">{rupees(sr.costPaid)}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right' }} className="figure">{formatMoney(sr.costPaid)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -308,7 +328,7 @@ export default function PurchaseRequests() {
 
             {/* Approvals Block */}
             {activePR.status === 'Submitted' && (
-              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-sm)', marginTop: 'var(--sp-xs)' }}>
                 <Button variant="secondary" onClick={() => handleStatusChange(activePR.id, 'Rejected')} style={{ flex: 1, color: 'var(--danger-text)' }}>
                   Reject PR
                 </Button>
@@ -318,7 +338,7 @@ export default function PurchaseRequests() {
               </div>
             )}
             {activePR.status === 'Approved' && (
-              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-sm)', marginTop: 'var(--sp-xs)' }}>
                 <Button variant="primary" icon={<Icon name="truck" size={14} />} onClick={() => handleStatusChange(activePR.id, 'Ordered')} style={{ flex: 1 }}>
                   Mark as Ordered
                 </Button>

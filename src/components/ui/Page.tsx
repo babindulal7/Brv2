@@ -5,6 +5,7 @@ import { BRAND, BRAND_ON, BRAND_TEXT } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
 import { FOOTER_NOTE } from '../../data/nav'
 import { CollapsibleAside } from './CollapsibleAside'
+import { useViewport } from '../../lib/device'
 
 /**
  * Page furniture shared by every Generation C screen.
@@ -44,7 +45,7 @@ export function Card({
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
+            gap: 'var(--sp-sm)',
             padding: '12px 14px',
             borderBottom: '1px solid var(--border)',
           }}
@@ -80,7 +81,7 @@ export function PageHeader({
               style={{
                 width: 30,
                 height: 30,
-                borderRadius: 8,
+                borderRadius: 'var(--r-sm)',
                 display: 'grid',
                 placeItems: 'center',
                 background: 'var(--nav-active-bg)',
@@ -99,7 +100,7 @@ export function PageHeader({
           <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{description}</p>
         )}
       </div>
-      {actions && <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>{actions}</div>}
+      {actions && <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>{actions}</div>}
     </div>
   )
 }
@@ -125,7 +126,7 @@ export function Button({
     variant === 'primary'
       ? { background: 'var(--btn-primary-bg)', color: 'var(--btn-primary-fg)', border: '1px solid transparent' }
       : variant === 'danger'
-        ? { background: 'var(--btn-danger-bg, #dc2626)', color: '#fff', border: '1px solid transparent' }
+        ? { background: 'var(--btn-danger-bg)', color: 'var(--btn-danger-fg)', border: '1px solid transparent' }
         : variant === 'ghost'
           ? { background: 'transparent', color: 'var(--text2)', border: '1px solid transparent' }
           : { background: 'var(--btn-secondary-bg)', color: 'var(--text)', border: '1px solid var(--btn-secondary-border)' }
@@ -135,7 +136,7 @@ export function Button({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={className}
+      className={['press', className].filter(Boolean).join(' ')}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -190,7 +191,15 @@ function Spark({ points, color }: { points: number[]; color: string }) {
 }
 
 export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number }) {
-  const cols = columns ?? items.length
+  // Law 13/14 — a caller's `columns` (or the `items.length` fallback) is
+  // chosen for desktop width and, uncapped, squeezes every card's icon,
+  // label and value into an unreadable sliver at tablet/phone widths. This
+  // is the one place every KpiStrip caller renders through, so clamping
+  // here fixes the squeeze everywhere at once instead of asking each of the
+  // ~25 call sites to pass its own responsive column count.
+  const viewport = useViewport()
+  const requested = columns ?? items.length
+  const cols = viewport === 'phone' ? Math.min(requested, 2) : viewport === 'tablet' ? Math.min(requested, 3) : requested
   return (
     <section
       aria-label="Key figures"
@@ -203,7 +212,7 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
               style={{
                 width: 30,
                 height: 30,
-                borderRadius: 8,
+                borderRadius: 'var(--r-sm)',
                 background: BRAND[k.accent],
                 color: BRAND_ON[k.accent],
                 display: 'grid',
@@ -238,7 +247,7 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
             className="kpi-value"
             style={{
               marginTop: 9,
-              fontSize: k.value.length > 8 ? 'clamp(16px, 1.05vw, 20px)' : 'clamp(16px, 1.5vw, 22px)',
+              fontSize: k.value.length > 8 ? 'clamp(16px, 1.05vw, var(--t-kpi, 22px))' : 'clamp(16px, 1.5vw, var(--t-kpi, 22px))',
               fontWeight: 700,
               color: 'var(--text)',
               lineHeight: 1.15,
@@ -254,7 +263,7 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
           </div>
 
           {(k.delta || k.note) && (
-            <div style={{ marginTop: 7, fontSize: 'var(--t-meta)', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ marginTop: 7, fontSize: 'var(--t-meta)', display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
               {k.delta && (
                 <span
                   style={{
@@ -274,7 +283,7 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
           )}
 
           {k.spark && (
-            <div style={{ marginTop: 8 }}>
+            <div style={{ marginTop: 'var(--sp-sm)' }}>
               <Spark points={k.spark} color={BRAND[k.accent]} />
             </div>
           )}
@@ -336,7 +345,7 @@ export function SideRail({
 /** Label/value rows — the shape every "… Summary" card in the renders uses. */
 export function SummaryRows({ rows }: { rows: Array<{ label: string; value: string; tone?: BrandKey }> }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
       {rows.map((r) => (
         <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 'var(--t-meta)' }}>
           <span style={{ color: 'var(--text2)', minWidth: 0, flex: 1 }}>{r.label}</span>
@@ -365,16 +374,16 @@ export function FooterNote({ extra }: { extra?: string[] }) {
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 12,
+        gap: 'var(--sp-md)',
         flexWrap: 'wrap',
         padding: '11px 2px 0',
         borderTop: '1px solid var(--border)',
-        marginTop: 4,
+        marginTop: 'var(--sp-xs)',
       }}
     >
       <Icon name="info" size={14} style={{ color: 'var(--muted)', flexShrink: 0 }} />
       {parts.map((p, i) => (
-        <span key={p} style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span key={p} style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
           {i > 0 && <span aria-hidden style={{ color: 'var(--muted)' }}>|</span>}
           {p}
         </span>

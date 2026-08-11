@@ -194,6 +194,14 @@ export interface ChildRow {
   childAccessories?: Array<{ id: string; name: string; quantity: number; required: boolean }>
   /** Last scan that saw this unit, AD. BS is rendered, never stored. */
   lastSeen?: Date
+
+  /* ---- Hover Intel System v2.1 (9 Aug 2026) additions --------------- */
+  /** §2 Identity: "internal ref + manufacturer serial" [RM] — distinct from `serial` above, which is the manufacturer's. e.g. `CAM-003` beside `SN 41213`. */
+  internalRef?: string
+  /** §2 State: "clean/tested/battery chips · Unverified (Stock Check)". */
+  flags?: Array<'Clean' | 'Tested' | 'Battery OK' | 'Unverified'>
+  /** §2 History: "every BR#, client, dates, days out". Not seeded for most units — same reasoning as `usageHours` above, this is a real business record nobody has supplied for the mock layer yet. */
+  history?: Array<{ bookingNo: string; client: string; ad: string; days: number }>
 }
 
 /** §3.1 — a parent states a *breakdown*, never one badge. */
@@ -215,6 +223,14 @@ export interface ParentRow {
   condition: Condition
   /** §8.2 — the sum of the children's. Paisa, so §3.3 can be checked. */
   replacement: Paisa
+  /**
+   * The rental rate New Booking's equipment picker reads — this catalogue
+   * previously carried no price at all (replacement value is a different
+   * figure: what the item costs to replace, not what it rents for). Every
+   * row below is seeded; optional only so a future SKU without a set rate
+   * yet doesn't need a fabricated number to type-check.
+   */
+  dailyRatePaisa?: Paisa
   /** §3.4 — non-serialised SKUs are a parent with no children. */
   children?: ChildRow[]
 
@@ -243,6 +259,43 @@ export interface ParentRow {
   utilizationPct?: number
   /** Share of purchase price recovered in rental income to date. */
   recoveryPct?: number
+
+  /* ---- Hover Intel System v2.1 (9 Aug 2026) additions ----------------
+   * Unlike `utilizationPct`/`recoveryPct` above, these are not derived
+   * figures awaiting a computation-source ruling — they are facts (a
+   * purchase price paid, a warranty card, a supplier name) that simply
+   * were not part of the original Asset Detail seed. Safe to seed
+   * directly; still optional and left unseeded on most rows. */
+  supplier?: string
+  purchasePricePaisa?: Paisa
+  warranty?: { status: 'Active' | 'Expired' | 'None'; expiryAd?: string }
+  lastServiceAd?: string
+  nextServiceDueAd?: string
+  maintenanceTicketsOpen?: number
+  damageCasesOpen?: number
+  /** §2 Structure: "parent bundle(s) it belongs to" / "substitutes of same type". */
+  bundles?: string[]
+  substitutes?: string[]
+
+  /* ---- Money tab + history — flagged during Hover Intel v2.1 review, fixed
+   * 9 Aug 2026 ---------------------------------------------------------
+   * `AssetDetail.tsx`'s Money/Maintenance/Activity tabs rendered the same
+   * hardcoded figures for every asset. Like `utilizationPct`/`recoveryPct`
+   * above, these four need a computation source nothing in this build
+   * provides yet, not just a missing seed value — declared and left
+   * unseeded rather than invented. TODO(decision) — PLAN.md §4.9. */
+  /** Total rental income this asset has generated. Needs a revenue engine
+   * summing `booking_lines`/payments per asset; nothing aggregates that today. */
+  lifetimeEarningsPaisa?: Paisa
+  /** Cumulative cost of every repair recorded against this asset.
+   * `maintenanceTicketsOpen` above counts open tickets — it was never costed. */
+  repairsToDatePaisa?: Paisa
+  /** Per-event service record. Distinct from `lastServiceAd`/`nextServiceDueAd`
+   * above, which are summary facts with no backing event log. */
+  serviceHistory?: Array<{ dateAd: string; unit: string; type: string; details: string; costPaisa: Paisa; downtime: string; tech: string }>
+  /** Immutable per-asset audit trail (stock checks, QC passes, dispatches,
+   * resets). No audit-log engine exists yet to populate this. */
+  activityLog?: Array<{ whenAd: string; event: string; by: string; note: string }>
 }
 
 export const PARENTS: ParentRow[] = [
@@ -259,10 +312,29 @@ export const PARENTS: ParentRow[] = [
     location: 'Mixed',
     condition: 'Mixed',
     replacement: rupees(1260000),
+    dailyRatePaisa: rupees(6000),
+    purchasePricePaisa: rupees(1350000),
+    warranty: { status: 'Active', expiryAd: '14 Feb 2027' },
+    lastServiceAd: '02 Jun 2026',
+    nextServiceDueAd: '02 Dec 2026',
+    bundles: ['FX6 Documentary Kit'],
+    substitutes: ['Sony FX3', 'Canon C300 Mark III'],
     children: [
-      { serial: 'FX6-0123', status: 'In Stock', booking: '—', location: 'Shelf A1', condition: 'Excellent', replacement: rupees(420000) },
-      { serial: 'FX6-0124', status: 'Reserved', booking: 'BK-2026-0716', location: 'Shelf A1', condition: 'Excellent', replacement: rupees(420000) },
-      { serial: 'FX6-0125', status: 'On Rent', booking: 'BK-2026-0710', location: 'With Client › Vision Production', condition: 'Good', replacement: rupees(420000) },
+      { serial: 'FX6-0123', internalRef: 'CAM-014', status: 'In Stock', booking: '—', location: 'Shelf A1', condition: 'Excellent', replacement: rupees(420000), flags: ['Clean', 'Tested', 'Battery OK'] },
+      { serial: 'FX6-0124', internalRef: 'CAM-015', status: 'Reserved', booking: 'BK-2026-0716', location: 'Shelf A1', condition: 'Excellent', replacement: rupees(420000), flags: ['Clean', 'Tested'] },
+      {
+        serial: 'FX6-0125',
+        internalRef: 'CAM-016',
+        status: 'On Rent',
+        booking: 'BK-2026-0710',
+        location: 'With Client › Vision Production',
+        condition: 'Good',
+        replacement: rupees(420000),
+        history: [
+          { bookingNo: 'BK-2026-0710', client: 'Vision Production', ad: '17 Jul 2026', days: 5 },
+          { bookingNo: 'BK-2026-0698', client: 'Kathmandu Cinema Works', ad: '02 Jul 2026', days: 3 },
+        ],
+      },
     ],
   },
   {
@@ -273,13 +345,24 @@ export const PARENTS: ParentRow[] = [
       { count: 1, status: 'Packed' },
       { count: 1, status: 'Inspection' },
     ],
-    bookings: '1 Active',
+    // '0 Active' — the child unit below no longer claims BK-2026-0715 (that
+    // booking's real equipment, per data/booking.ts and 4 other workflow
+    // files, is the Sony FX3 / FX3 Documentary Package, not this camera).
+    bookings: '0 Active',
     location: 'Mixed',
     condition: 'Excellent',
     replacement: rupees(1640000),
+    dailyRatePaisa: rupees(12000),
+    purchasePricePaisa: rupees(1750000),
+    warranty: { status: 'Expired', expiryAd: '30 Apr 2026' },
+    lastServiceAd: '11 May 2026',
+    nextServiceDueAd: '11 Nov 2026',
+    maintenanceTicketsOpen: 0,
+    damageCasesOpen: 1,
+    substitutes: ['Sony FX6 Cinema Camera'],
     children: [
-      { serial: 'KMX-0041', status: 'Packed', booking: 'BK-2026-0715', location: 'Prep Bay 2', condition: 'Excellent', replacement: rupees(820000) },
-      { serial: 'KMX-0042', status: 'Inspection', booking: '—', location: 'Return QC', condition: 'Excellent', replacement: rupees(820000) },
+      { serial: 'KMX-0041', internalRef: 'CAM-021', status: 'Packed', booking: '—', location: 'Prep Bay 2', condition: 'Excellent', replacement: rupees(820000), flags: ['Clean', 'Tested', 'Battery OK'] },
+      { serial: 'KMX-0042', internalRef: 'CAM-022', status: 'Inspection', booking: '—', location: 'Return QC', condition: 'Excellent', replacement: rupees(820000), flags: ['Unverified'] },
     ],
   },
   {
@@ -295,10 +378,14 @@ export const PARENTS: ParentRow[] = [
     // §5.5 — children read Good · Good · Fair, so the parent is Mixed.
     condition: 'Mixed',
     replacement: rupees(960000),
+    dailyRatePaisa: rupees(4500),
+    isSubRented: true,
+    supplier: 'Kathmandu Lens Collective',
+    bundles: ['Athena Cine Package'],
     children: [
-      { serial: 'ATH-0011', status: 'On Rent', booking: 'BK-2026-0710', location: 'With Client › Vision Production', condition: 'Good', replacement: rupees(320000) },
-      { serial: 'ATH-0012', status: 'On Rent', booking: 'BK-2026-0713', location: 'With Client › Mirage Weddings', condition: 'Good', replacement: rupees(320000) },
-      { serial: 'ATH-0013', status: 'Cleaning', booking: '—', location: 'Cleaning Bay', condition: 'Fair', replacement: rupees(320000) },
+      { serial: 'ATH-0011', internalRef: 'LNS-007', status: 'On Rent', booking: 'BK-2026-0710', location: 'With Client › Vision Production', condition: 'Good', replacement: rupees(320000) },
+      { serial: 'ATH-0012', internalRef: 'LNS-008', status: 'On Rent', booking: 'BK-2026-0713', location: 'With Client › Mirage Weddings', condition: 'Good', replacement: rupees(320000) },
+      { serial: 'ATH-0013', internalRef: 'LNS-009', status: 'Cleaning', booking: '—', location: 'Cleaning Bay', condition: 'Fair', replacement: rupees(320000) },
     ],
   },
   {
@@ -314,6 +401,7 @@ export const PARENTS: ParentRow[] = [
     location: 'Mixed',
     condition: 'Mixed',
     replacement: rupees(680000),
+    dailyRatePaisa: rupees(1700),
     children: [
       { serial: 'AP6-0201', status: 'In Stock', booking: '—', location: 'Shelf C3', condition: 'Excellent', replacement: rupees(170000) },
       { serial: 'AP6-0202', status: 'In Stock', booking: '—', location: 'Shelf C3', condition: 'Good', replacement: rupees(170000) },
@@ -333,6 +421,7 @@ export const PARENTS: ParentRow[] = [
     location: 'Mixed',
     condition: 'Mixed',
     replacement: rupees(1100000),
+    dailyRatePaisa: rupees(4500),
     children: [
       { serial: 'DR4D-0004', status: 'In Stock', booking: '—', location: 'Shelf B2', condition: 'Excellent', replacement: rupees(550000) },
       { serial: 'DR4D-0005', status: 'Missing', booking: '—', location: 'Unaccounted', condition: 'Damaged', replacement: rupees(550000) },
@@ -351,6 +440,7 @@ export const PARENTS: ParentRow[] = [
     location: 'Bin D4',
     condition: 'Good',
     replacement: rupees(60000),
+    dailyRatePaisa: rupees(50),
   },
   {
     name: 'Sennheiser MKH 416',
@@ -365,6 +455,7 @@ export const PARENTS: ParentRow[] = [
     // §5.5 — children read Excellent · Excellent · Good, so the parent is Mixed.
     condition: 'Mixed',
     replacement: rupees(390000),
+    dailyRatePaisa: rupees(1800),
     children: [
       { serial: 'MKH-0301', status: 'In Stock', booking: '—', location: 'Shelf D1', condition: 'Excellent', replacement: rupees(130000) },
       { serial: 'MKH-0302', status: 'In Stock', booking: '—', location: 'Shelf D1', condition: 'Excellent', replacement: rupees(130000) },
@@ -383,6 +474,7 @@ export const PARENTS: ParentRow[] = [
     location: 'Drawer D1',
     condition: 'Good',
     replacement: rupees(240000),
+    dailyRatePaisa: rupees(300),
   },
 ]
 

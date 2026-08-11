@@ -74,9 +74,9 @@ function Meter({ pct }: { pct: number }) {
     <div
       role="img"
       aria-label={`${pct}% used`}
-      style={{ height: 6, borderRadius: 999, background: 'var(--card2)', overflow: 'hidden', marginTop: 7 }}
+      style={{ height: 6, borderRadius: 'var(--r-badge)', background: 'var(--card2)', overflow: 'hidden', marginTop: 7 }}
     >
-      <div style={{ width: `${pct}%`, height: '100%', background: BRAND[tone], borderRadius: 999 }} />
+      <div style={{ width: `${pct}%`, height: '100%', background: BRAND[tone], borderRadius: 'var(--r-badge)' }} />
     </div>
   )
 }
@@ -88,7 +88,7 @@ function Spark({ points, tone }: { points: number[]; tone: 'primary' | 'success'
   const min = Math.min(...points)
   const span = max - min || 1
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden style={{ width: '100%', height: h, display: 'block', marginTop: 8 }}>
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden style={{ width: '100%', height: h, display: 'block', marginTop: 'var(--sp-sm)' }}>
       <polyline
         points={points.map((p, i) => `${(i / (points.length - 1)) * w},${h - ((p - min) / span) * (h - 4) - 2}`).join(' ')}
         fill="none"
@@ -143,7 +143,7 @@ export default function BackupRestore() {
                 </span>
               }
             >
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-sm)' }}>
                 {OVERVIEW.map((o, i) => (
                   <div
                     key={o.label}
@@ -278,7 +278,7 @@ export default function BackupRestore() {
                         style={{
                           minWidth: 24,
                           height: 24,
-                          borderRadius: 6,
+                          borderRadius: 'var(--r-xs)',
                           border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
                           background: on ? 'var(--btn-primary-bg)' : 'transparent',
                           color: on ? 'var(--btn-primary-fg)' : 'var(--text2)',
@@ -304,7 +304,7 @@ export default function BackupRestore() {
                 </span>
               }
             >
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)' }}>
                 <fieldset style={{ border: 'none', margin: 0, padding: 0, minWidth: 0 }}>
                   <legend style={legend}>Restore What?</legend>
                   {RESTORE_SCOPES.map((s) => (
@@ -362,7 +362,7 @@ export default function BackupRestore() {
                     <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{RESTORE_POINT.size}</div>
                   </div>
 
-                  <div style={{ ...legend, marginTop: 12 }}>Restore Options</div>
+                  <div style={{ ...legend, marginTop: 'var(--sp-md)' }}>Restore Options</div>
                   {RESTORE_OPTIONS.map((o, i) => (
                     <label
                       key={o.label}
@@ -386,7 +386,7 @@ export default function BackupRestore() {
                 /* Rendered as disabled, not as a dimmed primary — a washed-out
                    purple fill still reads as the thing you are meant to press. */
                 style={{
-                  marginTop: 12,
+                  marginTop: 'var(--sp-md)',
                   width: '100%',
                   height: 36,
                   borderRadius: 'var(--r-btn)',
@@ -428,7 +428,7 @@ export default function BackupRestore() {
                       </span>
                       {d.primary && <Pill text="Primary" status="primary" />}
                     </div>
-                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 4 }}>{d.used}</div>
+                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 'var(--sp-xs)' }}>{d.used}</div>
                     <Meter pct={d.pct} />
                     <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 3, textAlign: 'right' }}>{d.pct}%</div>
                   </div>
@@ -476,7 +476,7 @@ export default function BackupRestore() {
 
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>Cloud Usage</div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+                <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', marginTop: 'var(--sp-xs)' }}>
                   <Donut slices={CLOUD_USAGE} size={62} />
                   <Legend slices={CLOUD_USAGE} showPercent={false} />
                 </div>
@@ -511,7 +511,7 @@ export default function BackupRestore() {
           </Card>
 
           <Card title="Quick Actions">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-sm)' }}>
               {QUICK_ACTIONS.map((q) => (
                 <button
                   key={q.label}
@@ -550,8 +550,8 @@ export default function BackupRestore() {
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
               {ACTIVITY.map((a) => (
-                <div key={a.what} style={{ display: 'flex', gap: 8 }}>
-                  <Icon name="dot" size={9} style={{ color: BRAND[a.tone], flexShrink: 0, marginTop: 4 }} />
+                <div key={a.what} style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
+                  <Icon name="dot" size={9} style={{ color: BRAND[a.tone], flexShrink: 0, marginTop: 'var(--sp-xs)' }} />
                   <span style={{ minWidth: 0 }}>
                     <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{a.what}</span>
                     <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{a.at}</span>
@@ -563,7 +563,7 @@ export default function BackupRestore() {
           </Card>
 
           <Card
-            title="AI Backup Advisor"
+            title="AI Backup Advisor — Preview"
             action={
               <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
                 View insights →

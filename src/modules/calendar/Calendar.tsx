@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
+import { Input, Select } from '../../components/ui'
 import { Card, PageHeader, Button, FooterNote, cardStyle, Rail } from '../../components/ui/Page'
 import { BRAND, BRAND_ON } from '../../lib/status'
 import { TODAY, toBs, formatBs, formatAd, eachDay, isWeekend, BS_MONTHS } from '../../lib/bs'
@@ -199,7 +200,7 @@ const chipBase = {
   gap: 5,
   height: 26,
   padding: '0 9px',
-  borderRadius: 999,
+  borderRadius: 'var(--r-badge)',
   fontSize: 'var(--t-th)',
   fontWeight: 600,
   cursor: 'pointer',
@@ -228,7 +229,7 @@ function IconTile({ name, tone }: { name: IconName; tone?: string }) {
         width: 32,
         height: 32,
         flexShrink: 0,
-        borderRadius: 8,
+        borderRadius: 'var(--r-sm)',
         display: 'grid',
         placeItems: 'center',
         background: 'var(--card2)',
@@ -252,7 +253,7 @@ function Unavailable({ label, reason, icon }: { label: string; reason: string; i
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
+        gap: 'var(--sp-sm)',
         width: '100%',
         padding: '9px 10px',
         borderRadius: 'var(--r-btn)',
@@ -354,7 +355,7 @@ function BarView({
             right: 5,
             width: 6,
             height: 6,
-            borderRadius: 999,
+            borderRadius: 'var(--r-badge)',
             background: BRAND[bar.dot === 'danger' ? 'danger' : bar.dot === 'progress' ? 'progress' : bar.dot === 'primary' ? 'primary' : 'success'],
           }}
         />
@@ -415,7 +416,7 @@ function Timeline({
               textAlign: 'left',
             }}
           >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
               {labelHeading}
               <Icon name={sort === 'desc' ? 'chevron_up' : sort === 'asc' ? 'chevron_down' : 'more_vert'} size={12} />
             </span>
@@ -452,7 +453,7 @@ function Timeline({
                       left: '50%',
                       transform: 'translateX(-50%)',
                       padding: '1px 7px',
-                      borderRadius: 999,
+                      borderRadius: 'var(--r-badge)',
                       background: 'var(--nav-active-accent)',
                       color: 'var(--app)',
                       fontSize: 'var(--t-th)',
@@ -485,7 +486,7 @@ function Timeline({
         {/* rows */}
         {rows.map((row) => (
           <div key={row.id} style={{ display: 'grid', gridTemplateColumns: grid, borderTop: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', minWidth: 0, borderRight: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '8px 10px', minWidth: 0, borderRight: '1px solid var(--border)' }}>
               <IconTile name={row.icon} />
               <span style={{ minWidth: 0, lineHeight: 1.25 }}>
                 <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -573,7 +574,7 @@ function MonthGrid({
     rows.flatMap((r) => r.bars.filter((b) => d.getTime() >= b.from.getTime() && d.getTime() <= b.to.getTime()))
 
   return (
-    <div style={{ padding: 12 }}>
+    <div style={{ padding: 'var(--sp-md)' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0,1fr))', gap: 6, marginBottom: 6 }}>
         {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((w, i) => (
           <div key={w} style={{ textAlign: 'center', fontSize: 'var(--t-th)', fontWeight: 600, color: i === 6 ? 'var(--danger-text)' : 'var(--muted)' }}>
@@ -583,7 +584,7 @@ function MonthGrid({
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0,1fr))', gap: 6 }}>
         {Array.from({ length: lead }, (_, i) => (
-          <div key={`lead-${i}`} aria-hidden style={{ minHeight: 92, borderRadius: 8, background: 'var(--card2)', opacity: 0.4 }} />
+          <div key={`lead-${i}`} aria-hidden style={{ minHeight: 92, borderRadius: 'var(--r-sm)', background: 'var(--card2)', opacity: 0.4 }} />
         ))}
         {days.map((d) => {
           const bs = toBs(d)
@@ -602,7 +603,7 @@ function MonthGrid({
                 flexDirection: 'column',
                 gap: 3,
                 padding: 6,
-                borderRadius: 8,
+                borderRadius: 'var(--r-sm)',
                 textAlign: 'left',
                 fontFamily: 'inherit',
                 cursor: 'pointer',
@@ -720,7 +721,7 @@ function MiniMonth({ anchor, onPickDay, busy }: { anchor: Date; onPickDay: (d: D
               style={{
                 position: 'relative',
                 height: 26,
-                borderRadius: 999,
+                borderRadius: 'var(--r-badge)',
                 border: 'none',
                 background: today ? 'var(--nav-active-accent)' : 'transparent',
                 color: today ? 'var(--app)' : hol ? 'var(--danger-text)' : isWeekend(d) ? 'var(--danger-text)' : 'var(--text)',
@@ -732,7 +733,7 @@ function MiniMonth({ anchor, onPickDay, busy }: { anchor: Date; onPickDay: (d: D
             >
               {bs ? bs.day : ''}
               {busy.has(d.getTime()) && !today && (
-                <span aria-hidden style={{ position: 'absolute', bottom: 2, left: '50%', transform: 'translateX(-50%)', width: 4, height: 4, borderRadius: 999, background: 'var(--primary)' }} />
+                <span aria-hidden style={{ position: 'absolute', bottom: 2, left: '50%', transform: 'translateX(-50%)', width: 4, height: 4, borderRadius: 'var(--r-badge)', background: 'var(--primary)' }} />
               )}
             </button>
           )
@@ -756,7 +757,7 @@ function FestivalCard() {
           Manage
         </span>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
         {HOLIDAYS.map((h) => {
           const a = toBs(h.from)
           const b = toBs(h.to)
@@ -765,7 +766,7 @@ function FestivalCard() {
           /* §4.2 — every date shows both calendars, BS above AD. */
           const ad = h.from.getTime() === h.to.getTime() ? formatAd(h.from) : `${adShort(h.from)} – ${formatAd(h.to)}`
           return (
-            <div key={h.name} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, fontSize: 'var(--t-meta)' }}>
+            <div key={h.name} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
               <span style={{ minWidth: 0, lineHeight: 1.3 }}>
                 <span className="figure" style={{ display: 'block', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                   {label} {month}
@@ -788,7 +789,7 @@ function FestivalCard() {
 
 function CountList({ rows, money, dots }: { rows: typeof TODAY_SUMMARY; money: boolean; dots: boolean }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
       {/* §8.3 — the money row is absent from the markup, not hidden by CSS. */}
       {rows.filter((r) => money || !r.money).map((r) => (
         <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 'var(--t-meta)' }}>
@@ -810,7 +811,7 @@ function CountList({ rows, money, dots }: { rows: typeof TODAY_SUMMARY; money: b
 function DateBlock({ label, at, time, icon }: { label: string; at: Date; time: string; icon: IconName }) {
   const bs = toBs(at)
   return (
-    <div style={{ display: 'flex', gap: 8 }}>
+    <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
       <Icon name={icon} size={15} style={{ color: 'var(--muted)', flexShrink: 0, marginTop: 2 }} />
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>{label}</div>
@@ -823,11 +824,12 @@ function DateBlock({ label, at, time, icon }: { label: string; at: Date; time: s
 }
 
 function SelectedEventPanel({ bar, row, onClose }: { bar: Bar; row: ResourceRow; onClose: () => void }) {
+  const navigate = useNavigate()
   const detail = EVENT_DETAIL[bar.label]
   const skin = BAR_STYLE[bar.kind]
   return (
     <Card bodyStyle={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-sm)' }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 'var(--t-th)', fontWeight: 700, color: 'var(--text2)', letterSpacing: '0.04em' }}>SELECTED EVENT</div>
           <div className="booking-id" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', marginTop: 3 }}>
@@ -835,7 +837,7 @@ function SelectedEventPanel({ bar, row, onClose }: { bar: Bar; row: ResourceRow;
           </div>
         </div>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', fontWeight: 700, color: skin.fg === 'var(--st-out-fg)' ? 'var(--success-text)' : skin.fg }}>
-          <span aria-hidden style={{ width: 7, height: 7, borderRadius: 999, background: skin.line }} />
+          <span aria-hidden style={{ width: 7, height: 7, borderRadius: 'var(--r-badge)', background: skin.line }} />
           {bar.kind}
         </span>
         <button type="button" onClick={onClose} title="Close (Esc)" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', display: 'flex', padding: 2 }}>
@@ -848,7 +850,7 @@ function SelectedEventPanel({ bar, row, onClose }: { bar: Bar; row: ResourceRow;
         <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{detail?.project ?? `${bar.kind} · ${row.name}`}</div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
         {(detail?.equipment ?? [{ name: row.name, code: row.code ?? '', icon: row.icon }]).map((e) => (
           <div key={e.name} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
             <IconTile name={e.icon} />
@@ -859,7 +861,7 @@ function SelectedEventPanel({ bar, row, onClose }: { bar: Bar; row: ResourceRow;
         ))}
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 11, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 11, borderTop: '1px solid var(--border)', paddingTop: 'var(--sp-md)' }}>
         {detail ? (
           <>
             <DateBlock label="Pickup" at={detail.pickup.at} time={detail.pickup.time} icon="calendar_event" />
@@ -879,15 +881,15 @@ function SelectedEventPanel({ bar, row, onClose }: { bar: Bar; row: ResourceRow;
       </div>
 
       {detail && (
-        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
           <div>
-            <div style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)', marginBottom: 4 }}>Crew</div>
+            <div style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)', marginBottom: 'var(--sp-xs)' }}>Crew</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
               {detail.crew.slice(0, 3).map((c) => (
                 <span
                   key={c}
                   title={c}
-                  style={{ width: 26, height: 26, borderRadius: 999, display: 'grid', placeItems: 'center', background: 'var(--st-primary-bg)', color: 'var(--st-primary-fg)', fontSize: 'var(--t-th)', fontWeight: 700 }}
+                  style={{ width: 26, height: 26, borderRadius: 'var(--r-badge)', display: 'grid', placeItems: 'center', background: 'var(--st-primary-bg)', color: 'var(--st-primary-fg)', fontSize: 'var(--t-th)', fontWeight: 700 }}
                 >
                   {c.slice(0, 1)}
                 </span>
@@ -906,6 +908,12 @@ function SelectedEventPanel({ bar, row, onClose }: { bar: Bar; row: ResourceRow;
             <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{detail.notes}</div>
           </div>
         </div>
+      )}
+
+      {bar.label.startsWith('BK-') && (
+        <Button icon="file" onClick={() => navigate(`/rentals/${bar.label}`)}>
+          Open Booking
+        </Button>
       )}
     </Card>
   )
@@ -1096,7 +1104,7 @@ export default function Calendar() {
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 8,
+        gap: 'var(--sp-sm)',
         height: 34,
         padding: '0 11px',
         borderRadius: 'var(--r-btn)',
@@ -1119,7 +1127,7 @@ export default function Calendar() {
   const navButtons = (
     <>
       <Button onClick={goToday}>Today</Button>
-      <span style={{ display: 'inline-flex', gap: 4 }}>
+      <span style={{ display: 'inline-flex', gap: 'var(--sp-xs)' }}>
         <button type="button" onClick={() => shift(-1)} title="Previous range" style={iconBtn}>
           <Icon name="chevron_left" size={15} />
         </button>
@@ -1164,7 +1172,7 @@ export default function Calendar() {
   const rowTypeControl = (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
       <span style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>Row Type</span>
-      <select
+      <Select
         value={rowType}
         onChange={(e) => {
           setSavedView(null)
@@ -1178,17 +1186,17 @@ export default function Calendar() {
         {ROW_TYPES.map((t) => (
           <option key={t} value={t}>{t}</option>
         ))}
-      </select>
+      </Select>
     </span>
   )
 
   const clientControl = (
-    <select value={client} onChange={(e) => { setSavedView(null); setClient(e.target.value) }} style={selectStyle} aria-label="Client">
+    <Select value={client} onChange={(e) => { setSavedView(null); setClient(e.target.value) }} style={selectStyle} aria-label="Client">
       <option value="All">All Clients</option>
       {CLIENTS.map((c) => (
         <option key={c} value={c}>{c}</option>
       ))}
-    </select>
+    </Select>
   )
 
   const zoomControl = (
@@ -1228,7 +1236,7 @@ export default function Calendar() {
               color: on ? s.fg : 'var(--text2)',
             }}
           >
-            <span aria-hidden style={{ width: 8, height: 8, borderRadius: 999, background: s.dash ? 'transparent' : s.line, border: `1.5px ${s.dash ? 'dashed' : 'solid'} ${s.line}` }} />
+            <span aria-hidden style={{ width: 8, height: 8, borderRadius: 'var(--r-badge)', background: s.dash ? 'transparent' : s.line, border: `1.5px ${s.dash ? 'dashed' : 'solid'} ${s.line}` }} />
             {k}
           </button>
         )
@@ -1263,15 +1271,13 @@ export default function Calendar() {
 
       <label style={{ display: 'block' }}>
         <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--text2)', marginBottom: 5 }}>Search</span>
-        <span style={{ position: 'relative', display: 'block' }}>
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Booking, equipment, client, crew…"
-            style={{ ...selectStyle, width: '100%', height: 32, paddingLeft: 28, cursor: 'text' }}
-          />
-          <Icon name="search" size={13} style={{ position: 'absolute', left: 9, top: 10, color: 'var(--muted)' }} />
-        </span>
+        <Input
+          icon={<Icon name="search" size={13} />}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Booking, equipment, client, crew…"
+          style={{ ...selectStyle, width: '100%', cursor: 'text' }}
+        />
       </label>
 
       <div>
@@ -1286,7 +1292,7 @@ export default function Calendar() {
 
       <label style={{ display: 'block' }}>
         <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--text2)', marginBottom: 5 }}>Resource Type</span>
-        <select
+        <Select
           value={rowType}
           onChange={(e) => { setSavedView(null); setRowType(e.target.value as 'All' | RowType); setResource('All') }}
           style={{ ...selectStyle, width: '100%' }}
@@ -1296,21 +1302,21 @@ export default function Calendar() {
           {ROW_TYPES.map((t) => (
             <option key={t} value={t}>{t}</option>
           ))}
-        </select>
+        </Select>
       </label>
 
       <label style={{ display: 'block' }}>
         <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--text2)', marginBottom: 5 }}>Resource</span>
-        <select value={resource} onChange={(e) => { setSavedView(null); setResource(e.target.value) }} style={{ ...selectStyle, width: '100%' }} aria-label="Resource">
+        <Select value={resource} onChange={(e) => { setSavedView(null); setResource(e.target.value) }} style={{ ...selectStyle, width: '100%' }} aria-label="Resource">
           <option value="All">All</option>
           {ROWS.filter((r) => rowType === 'All' || r.type === rowType).map((r) => (
             <option key={r.id} value={r.id}>{r.name}</option>
           ))}
-        </select>
+        </Select>
       </label>
 
       <div>
-        <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 8 }}>Saved Views</div>
+        <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 'var(--sp-sm)' }}>Saved Views</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {SAVED_VIEWS.map((v) => {
             const on = savedView === v.name
@@ -1325,7 +1331,7 @@ export default function Calendar() {
                   alignItems: 'center',
                   gap: 7,
                   padding: '7px 9px',
-                  borderRadius: 8,
+                  borderRadius: 'var(--r-sm)',
                   border: on ? '1px solid var(--nav-active-accent)' : '1px solid transparent',
                   background: on ? 'var(--nav-active-bg)' : 'transparent',
                   color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
@@ -1385,7 +1391,7 @@ export default function Calendar() {
   const shortcutsCard = (
     <Card bodyStyle={{ padding: 14 }}>
       <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 10 }}>Shortcuts</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-sm)' }}>
         {SHORTCUTS.map((s) => (
           <span key={s.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-th)', color: 'var(--text2)' }}>
             <kbd
@@ -1432,7 +1438,7 @@ export default function Calendar() {
       </Card>
       <Card bodyStyle={{ padding: 14 }}>
         <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 10 }}>Quick Actions</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-sm)' }}>
           {QUICK_ACTIONS.map((a) =>
             a.unavailable ? (
               <Unavailable key={a.label} label={a.label} reason={a.unavailable} icon={a.icon} />
@@ -1478,23 +1484,23 @@ export default function Calendar() {
         aria-label="Calendar — full view"
         style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'var(--app)', overflow: 'auto', padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
           <h1 style={{ margin: 0, fontSize: 'var(--t-h2)', fontWeight: 700 }}>Calendar</h1>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginLeft: 10 }}>{navButtons}</span>
-          <span style={{ position: 'relative', marginLeft: 'auto' }}>
-            <input
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-sm)', marginLeft: 10 }}>{navButtons}</span>
+          <span style={{ marginLeft: 'auto' }}>
+            <Input
+              icon={<Icon name="search" size={14} />}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search booking, equipment, client, crew…"
-              style={{ ...selectStyle, height: 34, width: 300, paddingLeft: 30, cursor: 'text' }}
+              style={{ ...selectStyle, height: 34, width: 300, cursor: 'text' }}
             />
-            <Icon name="search" size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--muted)' }} />
           </span>
           <Button icon="settings" onClick={() => setShowFilters((v) => !v)}>{showFilters ? 'Hide Filters' : 'Filters'}</Button>
           <Button icon="close" onClick={() => setFull(false)}>Exit Full View</Button>
         </div>
 
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 'var(--sp-md)', alignItems: 'center', flexWrap: 'wrap' }}>
           {viewTabs}
           <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             {rowTypeControl}
@@ -1555,17 +1561,17 @@ export default function Calendar() {
             <CountList rows={TODAY_SUMMARY} money={money} dots />
           </Card>
           <Card bodyStyle={{ padding: 14 }}>
-            <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 8 }}>Conflicts</div>
+            <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 'var(--sp-sm)' }}>Conflicts</div>
             <div className="kpi-value" style={{ fontSize: 'var(--t-kpi)', color: 'var(--danger-text)' }}>4</div>
             <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', margin: '4px 0 10px' }}>Requires attention</div>
             <Button icon="alert_triangle" onClick={showConflicts}>View Conflicts</Button>
           </Card>
           <Card bodyStyle={{ padding: 14 }}>
-            <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 8 }}>
+            <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 'var(--sp-sm)' }}>
               Utilization <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 'var(--t-th)' }}>(This Month)</span>
             </div>
             <div className="kpi-value" style={{ fontSize: 'var(--t-kpi)', color: 'var(--text)' }}>84%</div>
-            <div style={{ height: 6, borderRadius: 999, background: 'var(--card2)', border: '1px solid var(--border)', marginTop: 10, overflow: 'hidden' }}>
+            <div style={{ height: 6, borderRadius: 'var(--r-badge)', background: 'var(--card2)', border: '1px solid var(--border)', marginTop: 10, overflow: 'hidden' }}>
               <span aria-hidden style={{ display: 'block', width: '84%', height: '100%', background: 'var(--progress)' }} />
             </div>
             <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 6 }}>Matches Today &amp; Inventory</div>
@@ -1580,8 +1586,8 @@ export default function Calendar() {
 
         {showShortcuts && (
           <div style={{ ...cardStyle, padding: 14 }}>
-            <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 8 }}>Keyboard shortcuts</div>
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 'var(--sp-sm)' }}>Keyboard shortcuts</div>
+            <div style={{ display: 'flex', gap: 'var(--sp-lg)', flexWrap: 'wrap', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               {SHORTCUTS.map((s) => (
                 <span key={s.key}>
                   <strong style={{ color: 'var(--text)' }}>{s.key}</strong> — {s.label}
@@ -1625,7 +1631,7 @@ export default function Calendar() {
                   five fills, dark amber on `--progress`, which is #fbbf24 in
                   dark theme where white measured ~1.7:1. `KpiStrip` in
                   `components/ui/Page.tsx` paints its tile the same way. */}
-              <span style={{ width: 30, height: 30, borderRadius: 8, background: BRAND[k.accent], color: BRAND_ON[k.accent], display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+              <span style={{ width: 30, height: 30, borderRadius: 'var(--r-sm)', background: BRAND[k.accent], color: BRAND_ON[k.accent], display: 'grid', placeItems: 'center', flexShrink: 0 }}>
                 <Icon name={k.icon} size={16} fill />
               </span>
               <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -1645,7 +1651,7 @@ export default function Calendar() {
               <span style={{ color: 'var(--muted)' }}>{k.note}</span>
             </div>
             {k.hint && (
-              <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+              <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
                 <Icon name="info" size={12} />
                 {k.hint}
               </div>
@@ -1654,7 +1660,7 @@ export default function Calendar() {
               <button
                 type="button"
                 onClick={() => k.link && navigate(k.link.to)}
-                style={{ marginTop: 'auto', paddingTop: 8, background: 'none', border: 'none', color: 'var(--link)', fontSize: 'var(--t-th)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4, alignSelf: 'flex-start' }}
+                style={{ marginTop: 'auto', paddingTop: 'var(--sp-sm)', background: 'none', border: 'none', color: 'var(--link)', fontSize: 'var(--t-th)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', alignSelf: 'flex-start' }}
               >
                 {k.link.label}
                 <Icon name="arrow_right" size={12} />
@@ -1664,7 +1670,7 @@ export default function Calendar() {
               <button
                 type="button"
                 onClick={showConflicts}
-                style={{ marginTop: 'auto', paddingTop: 8, background: 'none', border: 'none', color: 'var(--link)', fontSize: 'var(--t-th)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4, alignSelf: 'flex-start' }}
+                style={{ marginTop: 'auto', paddingTop: 'var(--sp-sm)', background: 'none', border: 'none', color: 'var(--link)', fontSize: 'var(--t-th)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', alignSelf: 'flex-start' }}
               >
                 View Conflicts
                 <Icon name="arrow_right" size={12} />
@@ -1674,7 +1680,7 @@ export default function Calendar() {
         ))}
       </section>
 
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-md)', alignItems: 'center', flexWrap: 'wrap' }}>
         {viewTabs}
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           {rowTypeControl}
@@ -1682,7 +1688,7 @@ export default function Calendar() {
         </span>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>{kindChips}</div>
+      <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', flexWrap: 'wrap' }}>{kindChips}</div>
 
       <div
         style={{
@@ -1705,8 +1711,8 @@ export default function Calendar() {
 
       {showShortcuts && (
         <div style={{ ...cardStyle, padding: 14 }}>
-          <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 8 }}>Keyboard shortcuts</div>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+          <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 'var(--sp-sm)' }}>Keyboard shortcuts</div>
+          <div style={{ display: 'flex', gap: 'var(--sp-lg)', flexWrap: 'wrap', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
             {SHORTCUTS.map((s) => (
               <span key={s.key}>
                 <strong style={{ color: 'var(--text)' }}>{s.key}</strong> — {s.label}

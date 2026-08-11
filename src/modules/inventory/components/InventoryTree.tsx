@@ -14,14 +14,14 @@ export const InventoryTree = memo(({ inventory, searchQuery, bundleItems, toggle
     <div style={{ borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--text)' }}>Inventory Tree</span>
-        <div style={{ display: 'flex', gap: 12, fontSize: 'var(--t-th)', color: 'var(--nav-active-accent)' }}>
+        <div style={{ display: 'flex', gap: 'var(--sp-md)', fontSize: 'var(--t-th)', color: 'var(--nav-active-accent)' }}>
           <button onClick={selectAllTree} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }} aria-label="Select all inventory items">Select All</button>
           <button style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }} aria-label="Collapse all inventory categories">Collapse All</button>
         </div>
       </div>
       <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', fontSize: 'var(--t-th)', color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
         <span style={{ flex: 1 }}>Select equipment models and their children</span>
-        <div style={{ display: 'flex', gap: 16, width: 140, justifyContent: 'flex-end', fontWeight: 600 }}>
+        <div style={{ display: 'flex', gap: 'var(--sp-lg)', width: 140, justifyContent: 'flex-end', fontWeight: 600 }}>
           <span>Stock</span>
           <span style={{ color: 'var(--text)' }}>Avail</span>
           <span>Res</span>
@@ -46,17 +46,22 @@ export const InventoryTree = memo(({ inventory, searchQuery, bundleItems, toggle
                 aria-selected={!!parentSelected}
                 tabIndex={0}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleItem(parent.id) }}
-                style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 12, background: 'var(--bg)', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', background: 'var(--bg)', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
               >
                 <div style={{ width: 16, height: 16, border: '1px solid var(--border)', borderRadius: 3, background: parentSelected ? 'var(--nav-active-accent)' : 'transparent', position: 'relative' }}>
                   {parentSelected && <span style={{ color: 'white', position: 'absolute', top: 1, left: 1, display: 'flex' }}><Icon name="check" size={12} /></span>}
                 </div>
                 {parent.isParent ? <span style={{ color: 'var(--muted)', display: 'flex' }} aria-hidden="true"><Icon name="chevron_down" size={14} /></span> : <div style={{ width: 14 }} />}
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 500 }}>{parent.name}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    title={parent.name}
+                  >
+                    {parent.name}
+                  </div>
                   <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontFamily: 'monospace' }}>{parent.code}</div>
                 </div>
-                <div style={{ display: 'flex', gap: 16, width: 140, justifyContent: 'flex-end', fontSize: 'var(--t-meta)', fontWeight: 600 }}>
+                <div style={{ display: 'flex', gap: 'var(--sp-lg)', width: 140, flexShrink: 0, justifyContent: 'flex-end', fontSize: 'var(--t-meta)', fontWeight: 600 }}>
                   <span style={{ width: 24, textAlign: 'center', color: 'var(--text)' }}>{parent.stock}</span>
                   <span style={{ width: 24, textAlign: 'center', color: parent.avail > 0 ? 'var(--success-text)' : 'var(--danger-text)' }}>{parent.avail}</span>
                   <span style={{ width: 24, textAlign: 'center', color: 'var(--text)' }}>{parent.reserved}</span>
@@ -78,16 +83,21 @@ export const InventoryTree = memo(({ inventory, searchQuery, bundleItems, toggle
                     aria-selected={!!childSelected}
                     tabIndex={0}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleItem(child.id) }}
-                    style={{ padding: '8px 16px 8px 48px', display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                    style={{ padding: '8px 16px 8px 48px', display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
                   >
                     <div style={{ width: 16, height: 16, border: '1px solid var(--border)', borderRadius: 3, background: childSelected ? 'var(--nav-active-accent)' : 'transparent', position: 'relative' }}>
                       {childSelected && <span style={{ color: 'white', position: 'absolute', top: 1, left: 1, display: 'flex' }}><Icon name="check" size={12} /></span>}
                     </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{child.name}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        title={child.name}
+                      >
+                        {child.name}
+                      </div>
                       <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontFamily: 'monospace' }}>{child.code}</div>
                     </div>
-                    <div style={{ display: 'flex', gap: 16, width: 140, justifyContent: 'flex-end', fontSize: 'var(--t-meta)', fontWeight: 600 }}>
+                    <div style={{ display: 'flex', gap: 'var(--sp-lg)', width: 140, flexShrink: 0, justifyContent: 'flex-end', fontSize: 'var(--t-meta)', fontWeight: 600 }}>
                       <span style={{ width: 24, textAlign: 'center', color: 'var(--text2)' }}>{child.stock}</span>
                       <span style={{ width: 24, textAlign: 'center', color: child.avail > 0 ? 'var(--success-text)' : 'var(--danger-text)' }}>{child.avail}</span>
                       <span style={{ width: 24, textAlign: 'center', color: 'var(--text2)' }}>{child.reserved}</span>

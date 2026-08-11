@@ -44,7 +44,7 @@ export const STOCK_CHECK_KPIS = [
   { label: 'Units Unverified', value: '7', change: 'Awaiting scan / lookup', icon: 'alert_triangle' as IconName, accent: 'amber' as const },
   { label: 'Open Checks', value: '1', change: 'Zone A Cinema Bodies in progress', icon: 'queues' as IconName, accent: 'blue' as const },
   { label: 'Last Full Check', value: '4 Shrawan 2083', change: '20 Jul 2026 AD · 100% verified', icon: 'calendar' as IconName, accent: 'green' as const },
-  { label: 'Confirmed Missing (FY)', value: '1', change: 'CASE-2026-0038 · Lens cap/hood', icon: 'error' as IconName, accent: 'purple' as const },
+  { label: 'Confirmed Missing (FY)', value: '1', change: 'CASE-2026-0038 · Lens cap/hood', icon: 'error' as IconName, accent: 'danger' as const },
 ]
 
 export const SAMPLE_STOCK_CHECKS: StockCheckSession[] = [

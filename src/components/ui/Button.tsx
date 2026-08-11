@@ -19,11 +19,11 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const SIZE_STYLES: Record<
   NonNullable<ButtonProps['size']>,
-  { minHeight: number; padding: string; fontSize: string; gap: number; iconSize: number }
+  { minHeight: number; padding: string; fontSize: string; gap: number | string; iconSize: number }
 > = {
   // Law 15: minimum 44px touch target on every device — never relaxed, even for `sm`.
   sm: { minHeight: 44, padding: '0 12px', fontSize: 'var(--t-meta)', gap: 6, iconSize: 14 },
-  md: { minHeight: 44, padding: '0 16px', fontSize: 'var(--t-ui)', gap: 8, iconSize: 16 },
+  md: { minHeight: 44, padding: '0 16px', fontSize: 'var(--t-ui)', gap: 'var(--sp-sm)', iconSize: 16 },
   lg: { minHeight: 48, padding: '0 24px', fontSize: 'var(--t-body)', gap: 10, iconSize: 18 },
 }
 
@@ -56,8 +56,8 @@ function variantStyle(variant: NonNullable<ButtonProps['variant']>): CSSProperti
       }
     case 'danger':
       return {
-        background: 'var(--btn-danger-bg, #dc2626)',
-        color: '#fff',
+        background: 'var(--btn-danger-bg)',
+        color: 'var(--btn-danger-fg)',
         border: '1px solid transparent',
         boxShadow: 'var(--shadow-card)',
       }
@@ -82,6 +82,7 @@ export function Button({
   icon,
   iconRight,
   style,
+  className,
   ...props
 }: ButtonProps) {
   const sizing = SIZE_STYLES[size]
@@ -90,6 +91,7 @@ export function Button({
   return (
     <button
       disabled={isDisabled}
+      className={['press', className].filter(Boolean).join(' ')}
       style={{
         display: 'inline-flex',
         alignItems: 'center',

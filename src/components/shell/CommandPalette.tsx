@@ -77,7 +77,7 @@ export const CommandPalette: React.FC = () => {
       category: 'Navigation',
       icon: <IconCalendar className="w-4 h-4" />,
       shortcut: 'G B',
-      onSelect: () => navigate('/bookings'),
+      onSelect: () => navigate('/rentals'),
     },
     {
       id: 'nav-operations',
@@ -140,7 +140,7 @@ export const CommandPalette: React.FC = () => {
       category: 'Actions',
       icon: <IconPlus className="w-4 h-4 text-emerald-400" />,
       shortcut: '⌘ N',
-      onSelect: () => navigate('/bookings?action=new'),
+      onSelect: () => navigate('/rentals/new'),
     },
     {
       id: 'act-scan',
@@ -233,13 +233,17 @@ export const CommandPalette: React.FC = () => {
                   }}
                   onMouseEnter={() => setSelectedIndex(idx)}
                   className={`flex items-center justify-between px-3.5 py-3 rounded-xl cursor-pointer transition-colors ${
-                    isSelected ? 'bg-blue-600/20 text-white border border-blue-500/40' : 'text-slate-300 hover:bg-slate-800/60 border border-transparent'
+                    isSelected
+                      ? 'bg-blue-600/20 text-white border border-blue-500/40'
+                      : 'text-slate-200 hover:bg-slate-800/60 border border-transparent'
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div
                       className={`p-2 rounded-lg ${
-                        isSelected ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400'
+                        isSelected
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-slate-800 text-slate-300'
                       }`}
                     >
                       {item.icon}

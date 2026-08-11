@@ -82,7 +82,7 @@ function GroupCard({
         style={{
           display: 'grid',
           gridTemplateColumns: `repeat(${group.clients.length}, minmax(230px, 1fr))`,
-          gap: 12,
+          gap: 'var(--sp-md)',
           overflowX: 'auto',
         }}
       >
@@ -95,12 +95,12 @@ function GroupCard({
                 display: 'block',
                 border: `2px solid ${selected ? 'var(--nav-active-accent)' : 'var(--border)'}`,
                 borderRadius: 'var(--r-card)',
-                padding: 12,
+                padding: 'var(--sp-md)',
                 cursor: 'pointer',
                 background: selected ? 'var(--nav-active-bg)' : 'var(--card2)',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginBottom: 10 }}>
                 <input
                   type="radio"
                   name={`survivor-${group.key}`}
@@ -172,6 +172,11 @@ export default function DuplicateCenter() {
         return wasClosed ? { ...c, mergedIntoId: survivor.id, mergedAt: new Date().toISOString() } : c
       }),
     )
+    closed.forEach((c) => {
+      import('../../actions/clients/mergeClients').then((m) =>
+        m.mergeClients({ survivorId: survivor.id, duplicateId: c.id })
+      )
+    })
     showSuccessToast('Clients merged', `${closed.length} record(s) merged into ${survivor.name}`)
     setPendingMerge(null)
   }
@@ -228,7 +233,7 @@ export default function DuplicateCenter() {
       >
         {pendingMerge && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--t-meta)' }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
               <Icon name="checklist" size={15} style={{ color: 'var(--success-text)' }} />
               <span>
                 <strong>{pendingMerge.group.clients.find((c) => c.id === pendingMerge.survivorId)?.name}</strong> survives
@@ -237,7 +242,7 @@ export default function DuplicateCenter() {
             {pendingMerge.group.clients
               .filter((c) => c.id !== pendingMerge.survivorId)
               .map((c) => (
-                <div key={c.id} style={{ display: 'flex', gap: 8, alignItems: 'center', color: 'var(--text2)' }}>
+                <div key={c.id} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', color: 'var(--text2)' }}>
                   <Icon name="alert_triangle" size={15} style={{ color: 'var(--muted)' }} />
                   <span>{c.name} will be marked merged</span>
                 </div>

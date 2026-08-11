@@ -55,7 +55,7 @@ export const ReconciliationAssertion: React.FC<ReconciliationAssertionProps> = (
     <div
       className={`rounded-xl border p-4 flex flex-col gap-2.5 ${
         isReconciled
-          ? 'bg-emerald-950/20 border-emerald-800/50 text-slate-200'
+          ? 'bg-emerald-950/20 border-emerald-800/50 text-emerald-50'
           : 'bg-amber-950/40 border-amber-800 text-amber-100'
       } ${className}`}
     >

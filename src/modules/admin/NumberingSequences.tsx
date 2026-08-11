@@ -1,8 +1,11 @@
 import { useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import Icon from '../../components/ui/Icon'
+import { Input } from '../../components/ui/Input'
+import { Select } from '../../components/ui/Select'
 import { Card, PageHeader, Button, KpiStrip, Rail, SideRail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
 import { Unavailable } from '../../components/ui/Unavailable'
+import { EmptyState } from '../../components/ui/StateViews'
 import { Donut, Legend, catColor } from '../../components/ui/Charts'
 import { STATUS, BRAND, BRAND_ON, BRAND_TEXT } from '../../lib/status'
 import {
@@ -122,7 +125,7 @@ function PageBtn({ label, active, disabled, onClick }: { label: string; active?:
       style={{
         minWidth: 24,
         height: 24,
-        borderRadius: 6,
+        borderRadius: 'var(--r-xs)',
         border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
         background: active ? 'var(--btn-primary-bg)' : 'transparent',
         color: active ? 'var(--btn-primary-fg)' : 'var(--text2)',
@@ -146,7 +149,7 @@ function StatedGap({ title, body }: { title: string; body: string }) {
         display: 'flex',
         gap: 9,
         alignItems: 'flex-start',
-        padding: 12,
+        padding: 'var(--sp-md)',
         borderRadius: 'var(--r-btn)',
         border: '1px dashed var(--border2)',
         background: 'var(--card2)',
@@ -328,7 +331,7 @@ export default function NumberingSequences() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       {SEED_ERRORS.length > 0 && (
-        <div role="alert" style={{ ...cardStyle, padding: 12, borderColor: 'var(--danger)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div role="alert" style={{ ...cardStyle, padding: 'var(--sp-md)', borderColor: 'var(--danger)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
           <strong style={{ fontSize: 'var(--t-ui)', color: 'var(--danger-text)' }}>Sequence seed does not reconcile</strong>
           {SEED_ERRORS.map((e) => (
             <span key={e} style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
@@ -379,7 +382,7 @@ export default function NumberingSequences() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr)', gap: 'var(--sp-md)' }}>
             <SideRail width={210} label="Categories">
-              <Card title="Sequence Categories" bodyStyle={{ padding: 8 }}>
+              <Card title="Sequence Categories" bodyStyle={{ padding: 'var(--sp-sm)' }}>
                 {CATEGORIES.map((c, i) => {
                   const on = moduleFilter === (c.module ?? ALL_MODULES)
                   return (
@@ -395,7 +398,7 @@ export default function NumberingSequences() {
                         width: '100%',
                         height: 34,
                         padding: '0 9px',
-                        borderRadius: 8,
+                        borderRadius: 'var(--r-sm)',
                         border: 'none',
                         background: on ? 'var(--nav-active-bg)' : 'transparent',
                         color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
@@ -424,7 +427,7 @@ export default function NumberingSequences() {
               title="All Sequences"
               action={
                 <>
-                  <select
+                  <Select
                     aria-label="Filter by module"
                     value={moduleFilter}
                     onChange={(e) => setModule(e.target.value as SequenceModule | typeof ALL_MODULES)}
@@ -436,8 +439,8 @@ export default function NumberingSequences() {
                         {m}
                       </option>
                     ))}
-                  </select>
-                  <select
+                  </Select>
+                  <Select
                     aria-label="Filter by status"
                     value={statusFilter}
                     onChange={(e) => {
@@ -452,10 +455,10 @@ export default function NumberingSequences() {
                         {s}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                   <span style={{ position: 'relative', display: 'flex', alignItems: 'center', minWidth: 170 }}>
                     <Icon name="search" size={13} style={{ position: 'absolute', left: 9, color: 'var(--muted)' }} />
-                    <input
+                    <Input
                       type="search"
                       value={query}
                       onChange={(e) => {
@@ -533,7 +536,7 @@ export default function NumberingSequences() {
                               style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: 4,
+                                gap: 'var(--sp-xs)',
                                 height: 19,
                                 padding: '0 7px',
                                 borderRadius: 5,
@@ -548,7 +551,7 @@ export default function NumberingSequences() {
                             </span>
                           </td>
                           <td style={td}>
-                            <span style={{ display: 'flex', gap: 4 }}>
+                            <span style={{ display: 'flex', gap: 'var(--sp-xs)' }}>
                               <button
                                 type="button"
                                 onClick={() => select(s.code)}
@@ -559,7 +562,7 @@ export default function NumberingSequences() {
                                   placeItems: 'center',
                                   width: 24,
                                   height: 24,
-                                  borderRadius: 6,
+                                  borderRadius: 'var(--r-xs)',
                                   border: '1px solid var(--border)',
                                   background: 'transparent',
                                   color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
@@ -579,7 +582,7 @@ export default function NumberingSequences() {
                                     placeItems: 'center',
                                     width: 24,
                                     height: 24,
-                                    borderRadius: 6,
+                                    borderRadius: 'var(--r-xs)',
                                     border: '1px solid var(--border)',
                                     background: 'transparent',
                                     color: 'var(--muted)',
@@ -599,7 +602,18 @@ export default function NumberingSequences() {
                     {visible.length === 0 && (
                       <tr>
                         <td colSpan={9} style={{ ...td, padding: 22, textAlign: 'center', color: 'var(--text2)', whiteSpace: 'normal' }}>
-                          No sequence matches this filter. Clear the search or pick another category.
+                          <EmptyState
+                            icon={<Icon name="search" size={22} />}
+                            title="No sequence matches this filter"
+                            description="Clear the search or pick another category."
+                            actionLabel="Clear filters"
+                            onAction={() => {
+                              setModule(ALL_MODULES)
+                              setStatusFilter(ALL_STATUS)
+                              setQuery('')
+                              setPage(1)
+                            }}
+                          />
                         </td>
                       </tr>
                     )}
@@ -626,7 +640,7 @@ export default function NumberingSequences() {
                 </span>
                 <label style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                   Rows per page
-                  <select
+                  <Select
                     value={perPage}
                     onChange={(e) => {
                       setPerPage(Number(e.target.value))
@@ -640,7 +654,7 @@ export default function NumberingSequences() {
                         {n}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 <span style={{ display: 'flex', gap: 3 }}>
                   <PageBtn label="‹" disabled={current === 1} onClick={() => setPage(current - 1)} />
@@ -665,18 +679,18 @@ export default function NumberingSequences() {
               <div ref={previewRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 9 }}>
                 <label style={{ minWidth: 0 }}>
                   <span style={fieldLabel}>Select Sequence</span>
-                  <select value={selectedCode} onChange={(e) => select(e.target.value)} style={fieldStyle}>
+                  <Select value={selectedCode} onChange={(e) => select(e.target.value)} style={fieldStyle}>
                     {SEQUENCES.map((s) => (
                       <option key={s.code} value={s.code}>
                         {s.code} – {s.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
 
                 <label style={{ minWidth: 0 }} title={branchApplies ? undefined : `${draft.scope} sequence — it keeps no per-branch counter and its format has no BR token.`}>
                   <span style={fieldLabel}>Branch</span>
-                  <select
+                  <Select
                     value={branchCode}
                     disabled={!branchApplies}
                     onChange={(e) => setBranchCode(e.target.value)}
@@ -688,12 +702,12 @@ export default function NumberingSequences() {
                         {b.confirmed ? '' : ' — code unconfirmed'}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
 
                 <label style={{ minWidth: 0 }} title={warehouseApplies ? undefined : 'Applies only to Per Warehouse sequences. No seeded sequence uses that scope.'}>
                   <span style={fieldLabel}>Warehouse (Optional)</span>
-                  <select
+                  <Select
                     value={warehouseCode}
                     disabled={!warehouseApplies}
                     onChange={(e) => setWarehouseCode(e.target.value)}
@@ -704,12 +718,12 @@ export default function NumberingSequences() {
                         {w.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
               </div>
 
               {segments.length === 0 ? (
-                <div style={{ marginTop: 12 }}>
+                <div style={{ marginTop: 'var(--sp-md)' }}>
                   <StatedGap
                     title={`${selected.code} – ${selected.name} has no format`}
                     body="This sequence is named in the spec's default system list, but no format, counter, reset rule or scope is supplied for it anywhere. There is nothing to preview until one is decided."
@@ -719,10 +733,10 @@ export default function NumberingSequences() {
                 <>
                   {/* Each segment is labelled and coloured so the format reads as
                       a structure, not just as a string. */}
-                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginTop: 'var(--sp-md)', flexWrap: 'wrap' }}>
                     {segments.map((p, i) => (
                       <span key={`${p.kind}-${i}`} style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
-                        {i > 0 && <span style={{ color: 'var(--muted)', paddingBottom: 8 }}>{sep || '·'}</span>}
+                        {i > 0 && <span style={{ color: 'var(--muted)', paddingBottom: 'var(--sp-sm)' }}>{sep || '·'}</span>}
                         <span style={{ minWidth: 0 }}>
                           <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.06em', marginBottom: 3 }}>
                             {p.label}
@@ -735,7 +749,7 @@ export default function NumberingSequences() {
                               justifyContent: 'center',
                               height: 32,
                               padding: '0 11px',
-                              borderRadius: 8,
+                              borderRadius: 'var(--r-sm)',
                               border: `1px solid ${BRAND[p.tone]}`,
                               background: 'var(--card2)',
                               color: 'var(--text)',
@@ -750,7 +764,7 @@ export default function NumberingSequences() {
                     ))}
                     {suffix && (
                       <span style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
-                        <span style={{ color: 'var(--muted)', paddingBottom: 8 }}>{sep || '·'}</span>
+                        <span style={{ color: 'var(--muted)', paddingBottom: 'var(--sp-sm)' }}>{sep || '·'}</span>
                         <span>
                           <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.06em', marginBottom: 3 }}>
                             SUFFIX
@@ -762,7 +776,7 @@ export default function NumberingSequences() {
                               alignItems: 'center',
                               height: 32,
                               padding: '0 11px',
-                              borderRadius: 8,
+                              borderRadius: 'var(--r-sm)',
                               border: `1px solid ${BRAND.success}`,
                               background: 'var(--card2)',
                               color: 'var(--text)',
@@ -777,7 +791,7 @@ export default function NumberingSequences() {
                     )}
                   </div>
 
-                  <div style={{ marginTop: 12 }}>
+                  <div style={{ marginTop: 'var(--sp-md)' }}>
                     <span style={fieldLabel}>Live Preview</span>
                     <div
                       className="figure"
@@ -799,7 +813,7 @@ export default function NumberingSequences() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginTop: 11, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 'var(--sp-md)', marginTop: 11, flexWrap: 'wrap' }}>
                     {[
                       { l: 'Next Number', v: livePreview },
                       { l: 'Current Counter', v: currentCounter ?? '—' },
@@ -886,17 +900,17 @@ export default function NumberingSequences() {
                     <span style={fieldLabel}>
                       Sequence Name<span style={{ color: 'var(--danger-text)' }}> *</span>
                     </span>
-                    <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} style={fieldStyle} />
+                    <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} style={fieldStyle} />
                   </label>
                   <label style={{ gridColumn: 'span 2', minWidth: 0 }}>
                     <span style={fieldLabel}>
                       Code<span style={{ color: 'var(--danger-text)' }}> *</span>
                     </span>
-                    <input value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value.toUpperCase() })} style={fieldStyle} />
+                    <Input value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value.toUpperCase() })} style={fieldStyle} />
                   </label>
                   <label style={{ gridColumn: 'span 2', minWidth: 0 }}>
                     <span style={fieldLabel}>Description</span>
-                    <input
+                    <Input
                       value={draft.description}
                       onChange={(e) => setDraft({ ...draft, description: e.target.value })}
                       placeholder="Optional"
@@ -906,7 +920,7 @@ export default function NumberingSequences() {
 
                   <label style={{ gridColumn: 'span 3', minWidth: 0 }}>
                     <span style={fieldLabel}>Prefix</span>
-                    <input
+                    <Input
                       value={draft.format.split('-')[0] ?? ''}
                       onChange={(e) => setDraft({ ...draft, format: withPrefix(draft.format, e.target.value) })}
                       disabled={!draft.format}
@@ -915,14 +929,14 @@ export default function NumberingSequences() {
                   </label>
                   <label style={{ gridColumn: 'span 3', minWidth: 0 }}>
                     <span style={fieldLabel}>Suffix (Optional)</span>
-                    <input value={draft.suffix} onChange={(e) => setDraft({ ...draft, suffix: e.target.value })} style={fieldStyle} />
+                    <Input value={draft.suffix} onChange={(e) => setDraft({ ...draft, suffix: e.target.value })} style={fieldStyle} />
                   </label>
 
                   <label style={{ gridColumn: 'span 2', minWidth: 0 }}>
                     <span style={fieldLabel}>
                       Starting Number<span style={{ color: 'var(--danger-text)' }}> *</span>
                     </span>
-                    <input
+                    <Input
                       inputMode="numeric"
                       value={draft.startingNumber}
                       onChange={(e) => setDraft({ ...draft, startingNumber: e.target.value.replace(/\D/g, '') })}
@@ -933,7 +947,7 @@ export default function NumberingSequences() {
                     <span style={fieldLabel}>
                       Padding Length<span style={{ color: 'var(--danger-text)' }}> *</span>
                     </span>
-                    <input
+                    <Input
                       inputMode="numeric"
                       value={padding === 0 ? '' : String(padding)}
                       disabled={!draft.format}
@@ -946,13 +960,13 @@ export default function NumberingSequences() {
                   </label>
                   <label style={{ gridColumn: 'span 2', minWidth: 0 }}>
                     <span style={fieldLabel}>Separator</span>
-                    <select value={draft.separator} onChange={(e) => setDraft({ ...draft, separator: e.target.value })} style={fieldStyle}>
+                    <Select value={draft.separator} onChange={(e) => setDraft({ ...draft, separator: e.target.value })} style={fieldStyle}>
                       {['-', '/', '.', '_', 'none'].map((s) => (
                         <option key={s} value={s}>
                           {s === 'none' ? '(none)' : s}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </label>
                 </div>
               )}
@@ -961,7 +975,7 @@ export default function NumberingSequences() {
                 <div style={{ marginTop: 11 }}>
                   <label>
                     <span style={fieldLabel}>Format</span>
-                    <input
+                    <Input
                       value={draft.format}
                       onChange={(e) => setDraft({ ...draft, format: e.target.value.toUpperCase() })}
                       placeholder="No format supplied for this sequence"
@@ -972,7 +986,7 @@ export default function NumberingSequences() {
                   <p style={{ margin: '8px 0 6px', ...panelNote }}>Tokens, joined by the separator. Spec § Number Format:</p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                     {FORMAT_TOKENS.map((t) => (
-                      <div key={t.kind} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 'var(--t-meta)' }}>
+                      <div key={t.kind} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'baseline', fontSize: 'var(--t-meta)' }}>
                         <span
                           className="figure"
                           style={{
@@ -1000,7 +1014,7 @@ export default function NumberingSequences() {
                 <div style={{ marginTop: 11 }}>
                   <label style={{ maxWidth: 280, display: 'block' }}>
                     <span style={fieldLabel}>Reset Rule</span>
-                    <select
+                    <Select
                       value={draft.resetRule}
                       onChange={(e) => setDraft({ ...draft, resetRule: e.target.value as ResetRule })}
                       style={fieldStyle}
@@ -1010,7 +1024,7 @@ export default function NumberingSequences() {
                           {r}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </label>
                   <p style={{ margin: '9px 0 0', ...panelNote }}>
                     The counter returns to the Starting Number when the rule fires. Nepali Fiscal Year resets on 1 Shrawan;
@@ -1025,7 +1039,7 @@ export default function NumberingSequences() {
               {tab === 'Scope' && (
                 <div style={{ marginTop: 11, display: 'flex', flexDirection: 'column', gap: 7 }}>
                   {SCOPES.map((s) => (
-                    <label key={s} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 'var(--t-meta)', cursor: 'pointer' }}>
+                    <label key={s} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'flex-start', fontSize: 'var(--t-meta)', cursor: 'pointer' }}>
                       <input
                         type="radio"
                         name="scope"
@@ -1070,7 +1084,7 @@ export default function NumberingSequences() {
                       style={{
                         width: 32,
                         height: 18,
-                        borderRadius: 999,
+                        borderRadius: 'var(--r-badge)',
                         border: '1px solid var(--border)',
                         background: draft.active ? BRAND.success : 'var(--card2)',
                         padding: 2,
@@ -1084,7 +1098,7 @@ export default function NumberingSequences() {
                           3:1 on the green fill in dark theme. */}
                       <span
                         aria-hidden
-                        style={{ width: 12, height: 12, borderRadius: 999, background: draft.active ? BRAND_ON.success : 'var(--muted)' }}
+                        style={{ width: 12, height: 12, borderRadius: 'var(--r-badge)', background: draft.active ? BRAND_ON.success : 'var(--muted)' }}
                       />
                     </button>
                     <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{draft.active ? 'Active' : 'Archived'}</span>
@@ -1107,7 +1121,7 @@ export default function NumberingSequences() {
           </div>
 
           <Card title="Sequence Analytics">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
               <div style={{ minWidth: 0 }}>
                 <div style={sub}>
                   Records Generated <span style={{ fontWeight: 500, color: 'var(--muted)' }}>({ANALYTICS.generated.note})</span>
@@ -1218,7 +1232,7 @@ export default function NumberingSequences() {
                 <div style={sub}>
                   Branch-wise Generation <span style={{ fontWeight: 500, color: 'var(--muted)' }}>({ANALYTICS.generated.note})</span>
                 </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+                <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', marginTop: 'var(--sp-sm)' }}>
                   <Donut slices={ANALYTICS.branchMix} size={62} />
                   <Legend slices={ANALYTICS.branchMix} />
                 </div>
@@ -1231,7 +1245,7 @@ export default function NumberingSequences() {
           <Card
             title="Sequence Summary"
             action={
-              <select
+              <Select
                 aria-label="Summary period"
                 value={period}
                 onChange={(e) => setPeriod(e.target.value)}
@@ -1242,12 +1256,12 @@ export default function NumberingSequences() {
                     {p}
                   </option>
                 ))}
-              </select>
+              </Select>
             }
           >
             <SummaryRows rows={SUMMARY} />
-            <div aria-hidden style={{ height: 6, borderRadius: 999, background: 'var(--card2)', marginTop: 10, overflow: 'hidden' }}>
-              <div style={{ width: '100%', height: '100%', background: BRAND.success, borderRadius: 999 }} />
+            <div aria-hidden style={{ height: 6, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 10, overflow: 'hidden' }}>
+              <div style={{ width: '100%', height: '100%', background: BRAND.success, borderRadius: 'var(--r-badge)' }} />
             </div>
             <div style={{ textAlign: 'right', marginTop: 9 }}>
               <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
@@ -1266,13 +1280,13 @@ export default function NumberingSequences() {
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
               {ALERTS.map((a) => (
-                <div key={a.text} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 'var(--t-meta)' }}>
+                <div key={a.text} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', fontSize: 'var(--t-meta)' }}>
                   <span
                     aria-hidden
                     style={{
                       width: 20,
                       height: 20,
-                      borderRadius: 999,
+                      borderRadius: 'var(--r-badge)',
                       display: 'grid',
                       placeItems: 'center',
                       border: `1px solid ${BRAND[a.tone]}`,
@@ -1394,15 +1408,15 @@ export default function NumberingSequences() {
               </span>
             }
           >
-            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
               {INSIGHTS.map((t) => (
-                <li key={t} style={{ display: 'flex', gap: 8, fontSize: 'var(--t-meta)', alignItems: 'flex-start' }}>
+                <li key={t} style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', alignItems: 'flex-start' }}>
                   <span
                     aria-hidden
                     style={{
                       width: 15,
                       height: 15,
-                      borderRadius: 999,
+                      borderRadius: 'var(--r-badge)',
                       display: 'grid',
                       placeItems: 'center',
                       border: '1px solid var(--success)',

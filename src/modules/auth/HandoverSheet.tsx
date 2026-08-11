@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Modal, Button, Select } from '../../components/ui'
 import Icon from '../../components/ui/Icon'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../../lib/auth'
 
 interface Job {
   id: string
@@ -24,16 +25,17 @@ export default function HandoverSheet({
   const [note, setNote] = useState('')
   const [recipient, setRecipient] = useState('unassigned')
   const navigate = useNavigate()
+  const { logout } = useAuth()
 
   // Mock data as specified in 12 Security/Authentication.md §5
   const openJobs: Job[] = [
-    { id: 'BR-1043', task: 'Packing', status: '18/24 done', urgent: true },
-    { id: 'BR-1051', task: 'Reset', status: 'staged, not cleared' },
-    { id: 'BR-1060', task: 'Handover', status: 'waiting on client' },
+    { id: 'BK-2026-1043', task: 'Packing', status: '18/24 done', urgent: true },
+    { id: 'BK-2026-1051', task: 'Reset', status: 'staged, not cleared' },
+    { id: 'BK-2026-1060', task: 'Handover', status: 'waiting on client' },
   ]
 
   const handleLogout = () => {
-    // Perform actual logout logic here, then redirect
+    logout()
     navigate('/login')
   }
 
@@ -53,8 +55,8 @@ export default function HandoverSheet({
         </>
       }
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 24, paddingTop: 8 }}>
-        <div style={{ display: 'flex', gap: 16, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xl)', paddingTop: 'var(--sp-sm)' }}>
+        <div style={{ display: 'flex', gap: 'var(--sp-lg)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Icon name="box" size={16} /> 14 packed
           </span>
@@ -70,14 +72,14 @@ export default function HandoverSheet({
           <h4 style={{ margin: '0 0 12px', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
             Open jobs you are leaving:
           </h4>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
             {openJobs.map((job) => (
               <div
                 key={job.id}
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '80px 100px 1fr',
-                  gap: 12,
+                  gap: 'var(--sp-md)',
                   padding: '10px 12px',
                   background: 'var(--card2)',
                   border: '1px solid var(--border)',

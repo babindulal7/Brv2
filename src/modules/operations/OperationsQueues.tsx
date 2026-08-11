@@ -1,11 +1,16 @@
+import { useState } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { EmptyState } from '../../components/ui/StateViews'
 import { STATUS, BRAND } from '../../lib/status'
 import { statusToken, JOBS as JOBS_META } from '../../lib/workflow'
 import { QUEUES, JOBS, CREW_LOAD, NO_MONEY_NOTE } from '../../data/operations'
+import { findClientIdByBooking } from '../../data/clients'
 import { useTabularLayout } from '../../lib/device'
 import CasesQueue from './CasesQueue'
+import { BarcodeScannerModal, type ScannableItem } from '../../components/ui/BarcodeScannerModal'
+import { useToast } from '../../components/ui/Toast'
 
 const th = {
   textAlign: 'left' as const,
@@ -48,6 +53,14 @@ const QUEUE_PARAM: Record<string, string> = {
 export default function OperationsQueues() {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
+  const { showSuccessToast } = useToast()
+  const [showScanner, setShowScanner] = useState(false)
+  /* Phase 2's write layer isn't live yet (PLAN.md) — there is no per-job item
+     inventory to scan against or queue count to decrement. This counter is an
+     honest session-local echo of "a scan completed," not a real queue mutation:
+     it is the smallest change that turns the CTA from a silent no-op into a
+     demo interaction that visibly reflects what just happened. */
+  const [scannedCount, setScannedCount] = useState(0)
   /* DEVICES.md §7 build order item 1 — the job table and the fixed 288px Crew
      Load rail both break below 768. Law 13: branch on capability. */
   const tabular = useTabularLayout()
@@ -59,6 +72,23 @@ export default function OperationsQueues() {
   }
   const jobs = active ? JOBS.filter((j) => j.job === active) : JOBS
 
+  const resolveJobRoute = (booking: string, job: string) => {
+    const jLower = job.toLowerCase()
+    if (jLower === 'cases') return '/operations/cases'
+    if (jLower === 'pack' || jLower === 'packing') return `/rentals/${booking}/packing`
+    if (jLower === 'handover') return `/rentals/${booking}/handover`
+    if (jLower === 'evidence' || jLower === 'return') return `/rentals/${booking}/evidence`
+    return `/rentals/${booking}/${jLower}`
+  }
+
+  const demoItems = [
+    { id: 'CAM-001', name: 'RED Komodo 6K', serial: 'SN-884192' },
+    { id: 'LEN-012', name: 'Canon CN-E 24mm', serial: 'SN-774019' },
+    { id: 'LGT-004', name: 'Aputure 600d Pro', serial: 'SN-991204' },
+    { id: 'ACC-001', name: 'Lens Cap & Front Cover', isAccessory: true },
+    { id: 'ACC-002', name: 'D-Tap to XLR Power Cable', isAccessory: true },
+  ]
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageHeader
@@ -67,8 +97,8 @@ export default function OperationsQueues() {
         description="Warehouse work, grouped by the stage it drains."
         actions={
           <>
-            <Button icon="search" variant="primary">
-              Scan Item
+            <Button icon="search" variant="primary" onClick={() => setShowScanner(true)}>
+              {scannedCount > 0 ? `Scan Item (${scannedCount} scanned)` : 'Scan Item'}
             </Button>
             <Button icon="refresh">Refresh</Button>
           </>
@@ -101,9 +131,9 @@ export default function OperationsQueues() {
                 borderColor: on ? 'var(--nav-active-accent)' : 'var(--border)',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                 <span
-                  style={{ width: 28, height: 28, borderRadius: 8, display: 'grid', placeItems: 'center', background: tok.bg, color: tok.fg, flexShrink: 0 }}
+                  style={{ width: 28, height: 28, borderRadius: 'var(--r-sm)', display: 'grid', placeItems: 'center', background: tok.bg, color: tok.fg, flexShrink: 0 }}
                 >
                   <Icon name={q.icon} size={15} fill />
                 </span>
@@ -113,13 +143,13 @@ export default function OperationsQueues() {
                   {q.title}
                 </span>
               </div>
-              <div className="figure" style={{ fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--text)', marginTop: 8, letterSpacing: '-0.02em' }}>
+              <div className="figure" style={{ fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--text)', marginTop: 'var(--sp-sm)', letterSpacing: '-0.02em' }}>
                 {q.count}
               </div>
               <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>{q.action}</div>
               {/* Only renders above zero — a "0 overdue" line is noise. */}
               {q.overdue > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 6, fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--danger-text)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)', marginTop: 6, fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--danger-text)' }}>
                   <Icon name="alert_triangle" size={11} fill />
                   {q.overdue} overdue
                 </div>
@@ -159,7 +189,7 @@ export default function OperationsQueues() {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: tabular ? 'minmax(0,1fr) 288px' : '1fr',
+          gridTemplateColumns: tabular ? 'minmax(0,1fr) auto' : '1fr',
           gap: 'var(--sp-md)',
           alignItems: 'start',
         }}
@@ -169,8 +199,17 @@ export default function OperationsQueues() {
           action={active ? <Button onClick={() => setActive(null)}>Clear filter</Button> : undefined}
           bodyStyle={{ padding: tabular ? 0 : 10 }}
         >
+          {jobs.length === 0 ? (
+            <EmptyState
+              icon={<Icon name="queues" size={22} />}
+              title={active ? `Nothing in ${active} right now` : 'No jobs today'}
+              description={active ? 'This queue is clear — check back once the next booking reaches this stage.' : 'Nothing is due for any stage right now.'}
+              {...(active ? { actionLabel: 'Clear filter', onAction: () => setActive(null) } : {})}
+            />
+          ) : (
+          <>
           {!tabular && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
               {jobs.map((j) => {
                 const tok = STATUS[statusToken(j.status)]
                 return (
@@ -178,14 +217,14 @@ export default function OperationsQueues() {
                     key={j.id}
                     style={{
                       ...cardStyle,
-                      padding: 12,
+                      padding: 'var(--sp-md)',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: 6,
                       borderLeft: j.overdue ? '2px solid var(--danger)' : '1px solid var(--border)',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-sm)' }}>
                       <span className="identifier" style={{ fontWeight: 700, color: 'var(--text)' }}>
                         {j.id}
                       </span>
@@ -216,9 +255,21 @@ export default function OperationsQueues() {
                         {j.booking}
                       </Link>
                       <span style={{ color: 'var(--muted)' }}>·</span>
-                      <span style={{ color: 'var(--text2)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {j.client}
-                      </span>
+                      {(() => {
+                        const clientId = findClientIdByBooking(j.booking)
+                        const nameEl = (
+                          <span style={{ color: 'var(--text2)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {j.client}
+                          </span>
+                        )
+                        return clientId ? (
+                          <Link to={`/clients/${clientId}`} style={{ color: 'inherit', textDecoration: 'none', minWidth: 0 }}>
+                            {nameEl}
+                          </Link>
+                        ) : (
+                          nameEl
+                        )
+                      })()}
                     </div>
 
                     <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
@@ -226,7 +277,7 @@ export default function OperationsQueues() {
                       <span style={{ color: 'var(--muted)', marginLeft: 6 }}>{j.items}</span>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 'var(--t-meta)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
                       <span style={{ color: 'var(--text2)' }}>{j.assignee}</span>
                       <span className="figure" style={{ color: j.overdue ? 'var(--danger-text)' : 'var(--text2)', fontWeight: j.overdue ? 700 : 400 }}>
                         {j.due}
@@ -235,13 +286,7 @@ export default function OperationsQueues() {
 
                     <button
                       type="button"
-                      onClick={() => {
-                        if ((j.job as string) === 'Cases') {
-                          navigate('/operations/cases')
-                        } else {
-                          navigate(`/rentals/${j.booking}/${j.job.toLowerCase()}`)
-                        }
-                      }}
+                          onClick={() => navigate(resolveJobRoute(j.booking, j.job as string))}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -312,7 +357,18 @@ export default function OperationsQueues() {
                           {j.booking}
                         </Link>
                       </td>
-                      <td style={td}>{j.client}</td>
+                      <td style={td}>
+                        {(() => {
+                          const clientId = findClientIdByBooking(j.booking)
+                          return clientId ? (
+                            <Link to={`/clients/${clientId}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                              {j.client}
+                            </Link>
+                          ) : (
+                            j.client
+                          )
+                        })()}
+                      </td>
                       <td style={{ ...td, color: 'var(--text2)' }}>
                         {j.kit}
                         <span style={{ color: 'var(--muted)', marginLeft: 6, fontSize: 'var(--t-meta)' }}>{j.items}</span>
@@ -323,13 +379,7 @@ export default function OperationsQueues() {
                       </td>
                       <td style={td}>
                         <Button
-                          onClick={() => {
-                            if ((j.job as string) === 'Cases') {
-                              navigate('/operations/cases')
-                            } else {
-                              navigate(`/rentals/${j.booking}/${j.job.toLowerCase()}`)
-                            }
-                          }}
+                          onClick={() => navigate(resolveJobRoute(j.booking, j.job as string))}
                         >
                           Open Job
                         </Button>
@@ -340,6 +390,8 @@ export default function OperationsQueues() {
               </tbody>
             </table>
           </div>
+          )}
+          </>
           )}
         </Card>
 
@@ -360,8 +412,8 @@ export default function OperationsQueues() {
                       </span>
                     </div>
                     <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{c.role}</div>
-                    <div aria-hidden style={{ height: 5, borderRadius: 999, background: 'var(--card2)', marginTop: 5, overflow: 'hidden' }}>
-                      <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: BRAND[tone], borderRadius: 999 }} />
+                    <div aria-hidden style={{ height: 5, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 5, overflow: 'hidden' }}>
+                      <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: BRAND[tone], borderRadius: 'var(--r-badge)' }} />
                     </div>
                   </div>
                 )
@@ -369,7 +421,7 @@ export default function OperationsQueues() {
             </div>
           </Card>
 
-          <div style={{ ...cardStyle, padding: 12, display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
+          <div style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
             <Icon name="info" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
             {NO_MONEY_NOTE}
           </div>
@@ -378,6 +430,17 @@ export default function OperationsQueues() {
       )}
 
       <FooterNote extra={['Queues are stages — no page defines its own status names']} />
+
+      <BarcodeScannerModal
+        isOpen={showScanner}
+        onClose={() => setShowScanner(false)}
+        mode="pack"
+        items={demoItems}
+        onItemScanned={(item: ScannableItem) => {
+          setScannedCount((prev) => prev + 1)
+          showSuccessToast('Item scanned', `${item.name} (${item.serial ?? item.id}) logged to this session.`)
+        }}
+      />
     </div>
   )
 }

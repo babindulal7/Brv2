@@ -3,10 +3,20 @@
  *
  * "One booking query serves every surface. Hard acceptance gate:
  * Two different screens rendering the same booking cannot disagree."
+ *
+ * ⚠⚠⚠ DO NOT USE THIS MODULE YET — WRONG TABLES ⚠⚠⚠
+ * `fetchCanonicalBooking` currently selects BASE tables (`booking_lines`,
+ * `security_deposits`, `invoices`, `payments` — not the `*_v` masking views
+ * from 0019_column_level_money_masking.sql). Serving base tables would leak
+ * money columns to roles the 0019 views exist to mask. This module is imported
+ * by NOTHING (verified 10 Aug 2026) and MUST be repointed at the 0019 views
+ * before first use. The repointing is deliberately not done here: nested-embed
+ * behaviour (`bookings` → view joins) needs live-Supabase verification first.
  */
 
 import { supabase } from './supabase'
 import { calculatePrice, rupees, toRupees, type PriceBreakdown, type Paisa } from './money'
+import { BOOKING_STATUS, type StatusMeta } from './workflow'
 import type { BookingStage, DeliveryMethod, ItemQuantityState, LineKind } from '../types/database'
 
 export interface CanonicalBookingLine {
@@ -69,6 +79,17 @@ export interface CanonicalBooking {
     outstandingPayment: Paisa
     depositPending: Paisa
   }
+}
+
+/**
+ * 1-based ordinal over the canonical six — derived from workflow.ts §1.2's
+ * `order` (the single source of stage order) rather than re-declared here.
+ * Falls back to 1 (Quote) if the DB ever hands back a pre-0015 stage string
+ * the cast at the call site let through.
+ */
+function stageNumberOf(stage: BookingStage): number {
+  const meta: StatusMeta | undefined = BOOKING_STATUS[stage]
+  return meta ? meta.order + 1 : 1
 }
 
 /**
@@ -141,6 +162,31 @@ export async function fetchCanonicalBooking(bookingIdOrNo: string): Promise<Cano
     subRental: rupees(subRentalPaisa),
     services: rupees(servicesPaisa),
     crew: rupees(crewPaisa),
+    /*
+     * ⚠ `'Customer Pickup'` below is a **Postgres enum member, not UI copy.**
+     *
+     * `bookings.delivery_method` is the `delivery_method` enum:
+     * 'Customer Pickup' | 'Babin Delivery' | 'Courier' | 'Third Party'
+     * (`supabase/migrations/0001_enums.sql:34`, sibling `delivery_type` at :280,
+     * mirrored at `src/types/database.ts:23`). 'Client Pickup' is NOT a member
+     * and never has been, so a comparison against it can never be true.
+     *
+     * Law 17 ("the word customer appears nowhere in the UI") governs what the
+     * operator READS — `NewRental.tsx` correctly labels this option
+     * **Client Pickup** — but it does not govern what Postgres STORES. On
+     * 11 Aug 2026 that screen rename leaked in here as an extra
+     * `|| booking.delivery_method === 'Client Pickup'` disjunct. It was harmless
+     * only because the real half still matched; its danger was as a booby trap.
+     * The next reader "finishing the rename" deletes the 'Customer Pickup' half
+     * as apparently stale, `transport` then stops being zeroed for client-pickup
+     * bookings, and every one of them silently gains a transport charge in its
+     * Rental Total — a money defect with no error anywhere to find it.
+     *
+     * So: do not rename this literal to match the label. Renaming it requires a
+     * migration that ALTERs the enum (plus the `types/database.ts`,
+     * `data/handover.ts` and `booqable/map/orders.ts` mirrors, and the stored
+     * rows) — the coordinated rename `AUDIT_FINDINGS.md` P3 already logs.
+     */
     transport: booking.delivery_method === 'Customer Pickup' ? rupees(0) : rupees(transportPaisa),
     discountPercent,
     vatPercent,
@@ -160,11 +206,15 @@ export async function fetchCanonicalBooking(bookingIdOrNo: string): Promise<Cano
 
   const clientData = booking.clients as Record<string, unknown>
 
+  // Fallback 'Quote' per 0015: it is both bookings.stage's DB default and
+  // where the retired 'Draft' maps (Draft → Quote + Flag 'Draft').
+  const currentStage = (booking.stage as BookingStage) || 'Quote'
+
   return {
     id: String(booking.id),
     bookingNo: String(booking.booking_no),
-    stage: booking.stage as BookingStage,
-    stageNumber: Number(booking.stage_number) || 1,
+    stage: currentStage,
+    stageNumber: stageNumberOf(currentStage),
     pickupDatetime: String(booking.pickup_datetime),
     returnDatetime: String(booking.return_datetime),
     days: Number(booking.days) || 1,
@@ -200,7 +250,9 @@ export async function fetchCanonicalBooking(bookingIdOrNo: string): Promise<Cano
       equipmentPacked: true,
       documentsReady: true,
       signaturesComplete: true,
-      itemsHandedOver: booking.stage === 'On Rent' || booking.stage === 'Completed' || booking.stage === 'Closed',
+      // Pre-0015 this read On Rent | Completed | Closed; 0015 maps
+      // Completed → Returned, so this is "On Rent or later" in the six.
+      itemsHandedOver: currentStage === 'On Rent' || currentStage === 'Returned' || currentStage === 'Closed',
       outstandingPayment: totals.outstanding,
       depositPending: rupees(depositPending),
     },

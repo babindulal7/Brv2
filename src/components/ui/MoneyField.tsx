@@ -1,53 +1,7 @@
 import React from 'react'
-import { IconLock } from '@tabler/icons-react'
 import type { Role } from '../../lib/rbac'
 import { canViewMoney } from '../../lib/rbac'
-import { formatPaisa, toRupees, rupees, type Paisa } from '../../lib/money'
-
-export interface MoneyCellProps {
-  amount: Paisa | number | null | undefined
-  role: Role
-  highlightNegative?: boolean
-  showSign?: boolean
-  className?: string
-}
-
-export const MoneyCell: React.FC<MoneyCellProps> = ({
-  amount,
-  role,
-  highlightNegative = false,
-  showSign = false,
-  className = '',
-}) => {
-  // Law 6: Warehouse sees no money
-  if (!canViewMoney(role)) {
-    return (
-      <span className="inline-flex items-center gap-1 text-slate-500 text-xs font-mono select-none" title="Hidden by Role-Based Access Control">
-        <IconLock className="w-3 h-3 opacity-60" />
-        <span>—</span>
-      </span>
-    )
-  }
-
-  if (amount === null || amount === undefined) {
-    return <span className="text-slate-500 font-mono text-sm">—</span>
-  }
-
-  const paisaValue = amount as Paisa
-  const isNegative = paisaValue < 0
-  const formatted = formatPaisa(paisaValue)
-
-  return (
-    <span
-      className={`font-mono font-medium text-sm tabular-nums ${
-        highlightNegative && isNegative ? 'text-red-400' : 'text-slate-100'
-      } ${className}`}
-    >
-      {showSign && !isNegative && paisaValue > 0 ? '+' : ''}
-      {formatted}
-    </span>
-  )
-}
+import { toRupees, rupees, type Paisa } from '../../lib/money'
 
 export interface MoneyFieldProps {
   label?: string

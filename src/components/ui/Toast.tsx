@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import Icon from './Icon'
 
@@ -37,6 +37,82 @@ export function useToast() {
   return ctx
 }
 
+// Fades + slides each toast in on mount. A per-item component (rather than
+// inline logic in the .map below) is what lets this use its own mount-flag
+// state, since hooks can't be called from inside a map callback.
+function ToastCard({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: string) => void }) {
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setMounted(true))
+    return () => cancelAnimationFrame(frame)
+  }, [])
+
+  return (
+    <div
+      role="status"
+      style={{
+        pointerEvents: 'auto',
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 10,
+        padding: 14,
+        borderRadius: 'var(--r-card)',
+        background: 'var(--dropdown)',
+        border: '1px solid var(--st-in-fg)',
+        boxShadow: 'var(--shadow-modal)',
+        opacity: mounted ? 1 : 0,
+        transform: mounted ? 'translateY(0)' : 'translateY(6px)',
+        transition: 'opacity var(--dur) ease, transform var(--dur) ease',
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: 'var(--r-badge)',
+          background: 'var(--st-in-bg)',
+          color: 'var(--st-in-fg)',
+          display: 'grid',
+          placeItems: 'center',
+          flexShrink: 0,
+          marginTop: 1,
+        }}
+      >
+        <Icon name="check" size={14} />
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <h4 style={{ margin: 0, fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+          {toast.title}
+        </h4>
+        {toast.message && (
+          <p style={{ margin: '3px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.4 }}>
+            {toast.message}
+          </p>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={() => onDismiss(toast.id)}
+        aria-label="Dismiss"
+        style={{
+          border: 'none',
+          background: 'transparent',
+          color: 'var(--muted)',
+          cursor: 'pointer',
+          padding: 3,
+          flexShrink: 0,
+          display: 'grid',
+          placeItems: 'center',
+        }}
+      >
+        <Icon name="close" size={14} />
+      </button>
+    </div>
+  )
+}
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([])
 
@@ -68,65 +144,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         }}
       >
         {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            role="status"
-            style={{
-              pointerEvents: 'auto',
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: 10,
-              padding: 14,
-              borderRadius: 'var(--r-card)',
-              background: 'var(--dropdown)',
-              border: '1px solid var(--st-in-fg)',
-              boxShadow: 'var(--shadow-modal)',
-            }}
-          >
-            <span
-              aria-hidden
-              style={{
-                width: 24,
-                height: 24,
-                borderRadius: 999,
-                background: 'var(--st-in-bg)',
-                color: 'var(--st-in-fg)',
-                display: 'grid',
-                placeItems: 'center',
-                flexShrink: 0,
-                marginTop: 1,
-              }}
-            >
-              <Icon name="check" size={14} />
-            </span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <h4 style={{ margin: 0, fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-                {toast.title}
-              </h4>
-              {toast.message && (
-                <p style={{ margin: '3px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.4 }}>
-                  {toast.message}
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => removeToast(toast.id)}
-              aria-label="Dismiss"
-              style={{
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--muted)',
-                cursor: 'pointer',
-                padding: 3,
-                flexShrink: 0,
-                display: 'grid',
-                placeItems: 'center',
-              }}
-            >
-              <Icon name="close" size={14} />
-            </button>
-          </div>
+          <ToastCard key={toast.id} toast={toast} onDismiss={removeToast} />
         ))}
       </div>
     </ToastContext.Provider>

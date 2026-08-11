@@ -4,13 +4,18 @@ import Icon from '../../components/ui/Icon'
 import { Card, Button, KpiStrip, cardStyle, Rail, SideRail } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { Modal } from '../../components/ui/Modal'
-import { EmptyState } from '../../components/ui/StateViews'
+import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useToast } from '../../components/ui/Toast'
 import { STATUS } from '../../lib/status'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useTabularLayout } from '../../lib/device'
+import { useAuth } from '../../lib/auth'
+import { gateContext, canViewPII } from '../../lib/fieldGating'
+import { shouldFlipUp } from '../../lib/menuFlip'
+import { IntelCard } from '../../components/ui/IntelCard'
+import { clientGlance, clientDetailGroups } from '../../data/clientIntel'
 import {
   TIER_TONE,
   clientMetrics,
@@ -21,9 +26,10 @@ import {
 
 /* ── filters ───────────────────────────────────────────────────────────── */
 
-type FilterKey = 'all' | 'onRent' | 'paymentDue' | 'blocked' | 'vip'
+type FilterKey = 'all' | 'onRent' | 'paymentDue' | 'blocked' | 'vip' | 'typeOrg' | 'typeInd' | 'typeUnassigned'
 type ViewKey = 'Table' | 'Cards'
 type SortKey = 'name' | 'type' | 'membership' | 'rentals' | 'outstanding' | 'deposit' | 'lastRental'
+type Density = 'comfortable' | 'compact'
 
 interface SavedView {
   label: string
@@ -59,12 +65,13 @@ const th = {
   borderBottom: '1px solid var(--border)',
 }
 
-const td = {
-  padding: '11px 12px',
+/** Mirrors Inventory.tsx's `tdFor` — same helper name, same compact/comfortable split. */
+const tdFor = (d: Density) => ({
+  padding: d === 'compact' ? '5px 12px' : '11px 12px',
   fontSize: 'var(--t-meta)',
   color: 'var(--text)',
   verticalAlign: 'top' as const,
-}
+})
 
 function SortHeader({
   label,
@@ -92,7 +99,7 @@ function SortHeader({
         style={{
           display: 'inline-flex',
           alignItems: 'center',
-          gap: 4,
+          gap: 'var(--sp-xs)',
           border: 'none',
           background: 'transparent',
           padding: 0,
@@ -167,6 +174,15 @@ export function ClientsDirectory({
 }) {
   const navigate = useNavigate()
   const money = useCanViewMoney()
+  const { user } = useAuth()
+  // `gateContext` builds a fresh object every call — memoized on the one
+  // primitive it actually derives from so `pageRowsWithIntel` below (and any
+  // other memo keyed on `gctx`) doesn't invalidate on every unrelated render.
+  const gctx = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
+  // HIS v2.1 §4.2 — phone/email were rendering unconditionally for every role
+  // before this; gated here the same way `money` already gates Outstanding/
+  // Deposit, so a Warehouse or Technician session never receives the column.
+  const pii = canViewPII(gctx)
   const { showSuccessToast } = useToast()
   const [params] = useSearchParams()
   /* DEVICES.md §7 build order item 1 — below 768 the table can't be read even
@@ -184,13 +200,17 @@ export function ClientsDirectory({
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
   const [view, setView] = useState<ViewKey>('Table')
+  const [density, setDensity] = useState<Density>('comfortable')
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'name', dir: 'asc' })
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [openMenuId, setOpenMenuId] = useState<{ id: string; up: boolean } | null>(null)
+  /** Tallest the row menu gets — profile, new rental, active booking, payments. */
+  const CLIENT_MENU_H = 150
   const [perPage, setPerPage] = useState<number>(CLIENT_ROWS_PER_PAGE[1])
   const [page, setPage] = useState(1)
   const [activeSavedView, setActiveSavedView] = useState<string | null>(null)
   const [showBulkBlock, setShowBulkBlock] = useState(false)
   const [bulkBlockReason, setBulkBlockReason] = useState('')
+  const td = tdFor(density)
 
   const metrics = useMemo(() => clientMetrics(clients), [clients])
   const filterGroups = useMemo(() => clientFilterGroupsFor(money), [money])
@@ -214,6 +234,9 @@ export function ClientsDirectory({
       if (activeFilter === 'paymentDue') return client.outstandingPaisa > 0
       if (activeFilter === 'blocked') return Boolean(client.isBlocked)
       if (activeFilter === 'vip') return Boolean(client.isVip)
+      if (activeFilter === 'typeOrg') return client.clientType === 'Organisation'
+      if (activeFilter === 'typeInd') return client.clientType === 'Individual'
+      if (activeFilter === 'typeUnassigned') return client.clientType === 'Unassigned'
       return true
     })
 
@@ -248,7 +271,32 @@ export function ClientsDirectory({
 
   const pageCount = Math.max(1, Math.ceil(filteredClients.length / perPage))
   const current = Math.min(page, pageCount)
-  const pageRows = filteredClients.slice((current - 1) * perPage, current * perPage)
+  // Memoized for the same reason as `gctx` above: `.slice()` on every render
+  // would hand `pageRowsWithIntel` a new array identity even when nothing on
+  // the visible page actually changed, forcing it to recompute every time.
+  const pageRows = useMemo(
+    () => filteredClients.slice((current - 1) * perPage, current * perPage),
+    [filteredClients, current, perPage],
+  )
+
+  /**
+   * HIS v2.1 card-builder call sites — `clientGlance`/`clientDetailGroups`
+   * build a full field-gated object graph per row (role/PII/money filtering
+   * included). Both the card view and table view render the same page of
+   * clients, so one memo covers both `.map()`s instead of calling the
+   * builders inline in either — that ran them on every re-render of this
+   * component (a search keystroke, opening the row menu, toggling a
+   * checkbox…), not just when a row's underlying data changed.
+   */
+  const pageRowsWithIntel = useMemo(
+    () =>
+      pageRows.map((client) => ({
+        client,
+        glance: clientGlance(client, gctx),
+        detail: clientDetailGroups(client, gctx),
+      })),
+    [pageRows, gctx],
+  )
 
   const selectedClient = useMemo(
     () => clients.find((c) => c.id === selectedClientId) ?? null,
@@ -331,10 +379,12 @@ export function ClientsDirectory({
 
   const confirmBulkBlock = () => {
     if (bulkBlockReason.trim().length < 10) return
+    const blockedCount = selectedClients.length
     onBulkBlock(selectedClients.map((c) => c.id), bulkBlockReason.trim())
     setSelectedRowIds(new Set())
     setShowBulkBlock(false)
     setBulkBlockReason('')
+    showSuccessToast('Clients blocked', `${blockedCount} client${blockedCount === 1 ? '' : 's'} blocked`)
   }
 
   /**
@@ -397,6 +447,9 @@ export function ClientsDirectory({
 
   const chips: Array<{ label: string; key: FilterKey; count: number }> = [
     { label: 'All', key: 'all', count: metrics.total },
+    { label: 'Organisation', key: 'typeOrg', count: metrics.typeOrg },
+    { label: 'Individual', key: 'typeInd', count: metrics.typeInd },
+    { label: 'Unassigned', key: 'typeUnassigned', count: metrics.typeUnassigned },
     { label: 'On Rent', key: 'onRent', count: metrics.onRent },
     ...(money ? [{ label: 'Payment Due', key: 'paymentDue' as FilterKey, count: metrics.paymentDue }] : []),
     { label: 'Blocked', key: 'blocked', count: metrics.blocked },
@@ -408,7 +461,7 @@ export function ClientsDirectory({
       <KpiStrip items={kpis} columns={kpis.length} />
 
       {/* ── quick filters + view switch ───────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
         {chips.map((c) => {
           const on = activeFilter === c.key
           return (
@@ -423,7 +476,7 @@ export function ClientsDirectory({
                 gap: 7,
                 height: 32,
                 padding: '0 11px',
-                borderRadius: 8,
+                borderRadius: 'var(--r-sm)',
                 border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
                 background: on ? 'var(--nav-active-bg)' : 'var(--card)',
                 color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
@@ -456,7 +509,7 @@ export function ClientsDirectory({
           )
         })}
 
-        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, position: 'relative' }}>
             <Icon name="search" size={15} style={{ color: 'var(--muted)', position: 'absolute', left: 9 }} />
             <input
@@ -533,36 +586,36 @@ export function ClientsDirectory({
                 Clear all
               </button>
             }
-            bodyStyle={{ padding: 8 }}
+            bodyStyle={{ padding: 'var(--sp-sm)' }}
           >
-            {filterGroups.map((g) => (
-              <Unavailable
-                key={g.label}
-                reason={`The ${g.label} filter panel is not built yet — use the chips, search or a saved view`}
+            {/* Nine dead filter rows (one per `filterGroups` entry) duplicated the
+                header's disabled "More Filters" button for a wall of chrome that
+                did nothing nine times over. Collapsed to the one row that pattern
+                needs — same `Unavailable` reason-on-long-press/hover it always had. */}
+            <Unavailable
+              reason={`Advanced filters (${filterGroups.map((g) => g.label).join(', ')}) are not built yet — use the chips, search or a saved view`}
+            >
+              <span
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 9,
+                  width: '100%',
+                  height: 34,
+                  padding: '0 8px',
+                  borderRadius: 'var(--r-sm)',
+                  color: 'var(--muted)',
+                  fontSize: 'var(--t-meta)',
+                  cursor: 'not-allowed',
+                }}
               >
-                <span
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 9,
-                    width: '100%',
-                    height: 34,
-                    padding: '0 8px',
-                    borderRadius: 8,
-                    color: 'var(--muted)',
-                    fontSize: 'var(--t-meta)',
-                    cursor: 'not-allowed',
-                  }}
-                >
-                  <Icon name={g.icon} size={15} style={{ color: 'var(--disabled)', flexShrink: 0 }} />
-                  <span style={{ flex: 1, textAlign: 'left' }}>{g.label}</span>
-                  <Icon name="chevron_down" size={13} style={{ color: 'var(--disabled)' }} />
-                </span>
-              </Unavailable>
-            ))}
+                <Icon name="tool" size={15} style={{ color: 'var(--disabled)', flexShrink: 0 }} />
+                <span style={{ flex: 1, textAlign: 'left' }}>Advanced filters — coming soon</span>
+              </span>
+            </Unavailable>
           </Card>
 
-          <Card title="Saved Views" bodyStyle={{ padding: 8 }}>
+          <Card title="Saved Views" bodyStyle={{ padding: 'var(--sp-sm)' }}>
             {SAVED_VIEWS.filter((v) => money || !v.money).map((v) => {
               const on = activeSavedView === v.label
               return (
@@ -583,7 +636,7 @@ export function ClientsDirectory({
                     width: '100%',
                     height: 32,
                     padding: '0 8px',
-                    borderRadius: 8,
+                    borderRadius: 'var(--r-sm)',
                     border: 'none',
                     background: on ? 'var(--nav-active-bg)' : 'transparent',
                     color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
@@ -664,7 +717,28 @@ export function ClientsDirectory({
                   </Button>
                 </>
               )}
-              <label style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+              <button
+                type="button"
+                onClick={() => setDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}
+                aria-pressed={density === 'compact'}
+                title={density === 'compact' ? 'Compact rows — click for comfortable' : 'Comfortable rows — click for compact'}
+                style={{
+                  marginLeft: 'auto',
+                  width: 32,
+                  height: 32,
+                  borderRadius: 'var(--r-input)',
+                  border: '1px solid var(--input-border)',
+                  background: density === 'compact' ? 'var(--nav-active-bg)' : 'var(--input-bg)',
+                  color: density === 'compact' ? 'var(--nav-active-accent)' : 'var(--text2)',
+                  cursor: 'pointer',
+                  display: 'grid',
+                  placeItems: 'center',
+                }}
+              >
+                <Icon name={density === 'compact' ? 'chevron_up' : 'chevron_down'} size={15} />
+              </button>
+
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                 Show
                 <select
                   value={perPage}
@@ -695,7 +769,7 @@ export function ClientsDirectory({
             </div>
 
             {filteredClients.length === 0 ? (
-              <div style={{ padding: 16 }}>
+              <div style={{ padding: 'var(--sp-lg)' }}>
                 <EmptyState
                   title={emptyBecauseNoClients ? 'No clients yet' : 'No clients found'}
                   description={
@@ -714,41 +788,48 @@ export function ClientsDirectory({
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(auto-fill, minmax(258px, 1fr))',
-                  gap: 12,
+                  gap: 'var(--sp-md)',
                   padding: 14,
                 }}
               >
-                {pageRows.map((client) => {
+                {pageRowsWithIntel.map(({ client, glance, detail }) => {
                   const action = primaryAction(client)
                   return (
-                    <article key={client.id} style={{ ...cardStyle, padding: 12, display: 'flex', flexDirection: 'column', gap: 9 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                        <span
-                          aria-hidden
-                          style={{
-                            width: 34,
-                            height: 34,
-                            borderRadius: 9,
-                            display: 'grid',
-                            placeItems: 'center',
-                            background: STATUS[TIER_TONE[client.membership]].bg,
-                            color: STATUS[TIER_TONE[client.membership]].fg,
-                            fontSize: 'var(--t-meta)',
-                            fontWeight: 700,
-                            flexShrink: 0,
-                          }}
-                        >
-                          {client.name.slice(0, 2).toUpperCase()}
-                        </span>
-                        <span style={{ minWidth: 0 }}>
-                          <span style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {client.name}
+                    <article key={client.id} style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 9 }}>
+                      <IntelCard
+                        glance={glance}
+                        detail={detail}
+                        detailTitle={client.name}
+                        detailSubtitle={`${client.id} · ${client.clientType}`}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                          <span
+                            aria-hidden
+                            style={{
+                              width: 34,
+                              height: 34,
+                              borderRadius: 9,
+                              display: 'grid',
+                              placeItems: 'center',
+                              background: STATUS[TIER_TONE[client.membership]].bg,
+                              color: STATUS[TIER_TONE[client.membership]].fg,
+                              fontSize: 'var(--t-meta)',
+                              fontWeight: 700,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {client.name.slice(0, 2).toUpperCase()}
                           </span>
-                          <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                            {client.clientType}
+                          <span style={{ minWidth: 0 }}>
+                            <span style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {client.name}
+                            </span>
+                            <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                              {client.clientType}
+                            </span>
                           </span>
-                        </span>
-                      </div>
+                        </div>
+                      </IntelCard>
 
                       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                         <Tone text={client.membership} tone={TIER_TONE[client.membership]} />
@@ -756,12 +837,14 @@ export function ClientsDirectory({
                         {client.isBlocked && <Tone text="Blocked" tone="danger" />}
                       </div>
 
-                      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                        <div className="figure">{client.phone}</div>
-                        <div style={{ color: 'var(--muted)' }}>{client.email}</div>
-                      </div>
+                      {pii && (
+                        <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                          <div className="figure">{client.phone}</div>
+                          <div style={{ color: 'var(--muted)' }}>{client.email}</div>
+                        </div>
+                      )}
 
-                      <div style={{ display: 'flex', gap: 12, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                      <div style={{ display: 'flex', gap: 'var(--sp-md)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                         <span>
                           <span className="figure" style={{ color: 'var(--text)', fontWeight: 600 }}>
                             {client.currentRentalsCount}
@@ -799,7 +882,7 @@ export function ClientsDirectory({
                         />
                       </th>
                       <SortHeader label="Client" sortKey="name" sort={sort} onSort={applySortKey} />
-                      <SortHeader label="Contact" sort={sort} onSort={applySortKey} />
+                      {pii && <SortHeader label="Contact" sort={sort} onSort={applySortKey} />}
                       <SortHeader label="Type" sortKey="type" sort={sort} onSort={applySortKey} />
                       <SortHeader label="Membership" sortKey="membership" sort={sort} onSort={applySortKey} />
                       <SortHeader label="Current Rentals" sortKey="rentals" sort={sort} onSort={applySortKey} />
@@ -810,13 +893,27 @@ export function ClientsDirectory({
                     </tr>
                   </thead>
                   <tbody>
-                    {pageRows.map((client) => {
+                    {pageRowsWithIntel.map(({ client, glance, detail }) => {
                       const isSelected = selectedClientId === client.id
                       const action = primaryAction(client)
                       return (
                         <tr
                           key={client.id}
+                          tabIndex={0}
                           onClick={() => setSelectedClientId(isSelected ? null : client.id)}
+                          onKeyDown={(e) => {
+                            // Only the row itself opening/closing the profile
+                            // rail, never a keypress bubbling up from the
+                            // checkbox, the IntelCard trigger, the row's
+                            // action button or its "more" menu — all of
+                            // those are their own focus stops with their own
+                            // Enter/Space behaviour already.
+                            if (e.target !== e.currentTarget) return
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              setSelectedClientId(isSelected ? null : client.id)
+                            }
+                          }}
                           style={{
                             borderBottom: '1px solid var(--border)',
                             background: isSelected ? 'var(--tr-hover)' : 'transparent',
@@ -840,55 +937,64 @@ export function ClientsDirectory({
                           </td>
 
                           <td style={td}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                              <span
-                                aria-hidden
-                                style={{
-                                  width: 32,
-                                  height: 32,
-                                  borderRadius: 8,
-                                  display: 'grid',
-                                  placeItems: 'center',
-                                  background: STATUS[TIER_TONE[client.membership]].bg,
-                                  color: STATUS[TIER_TONE[client.membership]].fg,
-                                  fontSize: 'var(--t-th)',
-                                  fontWeight: 700,
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {client.name.slice(0, 2).toUpperCase()}
-                              </span>
-                              <span style={{ minWidth: 0 }}>
-                                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <span style={{ fontWeight: 600, color: 'var(--text)' }}>{client.name}</span>
-                                  {client.isVip && <Tone text="VIP" tone="progress" />}
-                                  {client.isVerified && (
-                                    <span
-                                      title="KYC and PAN verified"
-                                      style={{ color: 'var(--success-text)', display: 'inline-flex' }}
-                                    >
-                                      <Icon name="checklist" size={13} />
+                            <IntelCard
+                              glance={glance}
+                              detail={detail}
+                              detailTitle={client.name}
+                              detailSubtitle={`${client.id} · ${client.clientType}`}
+                            >
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                                <span
+                                  aria-hidden
+                                  style={{
+                                    width: 32,
+                                    height: 32,
+                                    borderRadius: 'var(--r-sm)',
+                                    display: 'grid',
+                                    placeItems: 'center',
+                                    background: STATUS[TIER_TONE[client.membership]].bg,
+                                    color: STATUS[TIER_TONE[client.membership]].fg,
+                                    fontSize: 'var(--t-th)',
+                                    fontWeight: 700,
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {client.name.slice(0, 2).toUpperCase()}
+                                </span>
+                                <span style={{ minWidth: 0 }}>
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontWeight: 600, color: 'var(--text)' }}>{client.name}</span>
+                                    {client.isVip && <Tone text="VIP" tone="progress" />}
+                                    {client.isVerified && (
+                                      <span
+                                        title="KYC and PAN verified"
+                                        style={{ color: 'var(--success-text)', display: 'inline-flex' }}
+                                      >
+                                        <Icon name="checklist" size={13} />
+                                      </span>
+                                    )}
+                                    {client.isBlocked && <Tone text="Blocked" tone="danger" />}
+                                  </span>
+                                  {client.company && (
+                                    <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 1 }}>
+                                      {client.company}
                                     </span>
                                   )}
-                                  {client.isBlocked && <Tone text="Blocked" tone="danger" />}
                                 </span>
-                                {client.company && (
-                                  <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 1 }}>
-                                    {client.company}
-                                  </span>
-                                )}
                               </span>
-                            </span>
+                            </IntelCard>
                           </td>
 
-                          <td style={td}>
-                            <span className="figure" style={{ display: 'block', color: 'var(--text)' }}>
-                              {client.phone}
-                            </span>
-                            <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                              {client.email}
-                            </span>
-                          </td>
+                          {pii && (
+                            <td style={td}>
+                              <span className="figure" style={{ display: 'block', color: 'var(--text)' }}>
+                                {client.phone}
+                              </span>
+                              <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                                {client.email}
+                              </span>
+                            </td>
+                          )}
 
                           <td style={{ ...td, color: 'var(--text2)' }}>{client.clientType}</td>
 
@@ -955,7 +1061,7 @@ export function ClientsDirectory({
                           </td>
 
                           <td style={{ ...td, textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, position: 'relative' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', position: 'relative' }}>
                               <Button variant={action.variant} onClick={action.run}>
                                 {action.label}
                               </Button>
@@ -963,16 +1069,22 @@ export function ClientsDirectory({
                                 type="button"
                                 aria-label={`More actions for ${client.name}`}
                                 aria-haspopup="menu"
-                                aria-expanded={openMenuId === client.id}
-                                onClick={() => setOpenMenuId(openMenuId === client.id ? null : client.id)}
+                                aria-expanded={openMenuId?.id === client.id}
+                                onClick={(e) =>
+                                  setOpenMenuId(
+                                    openMenuId?.id === client.id
+                                      ? null
+                                      : { id: client.id, up: shouldFlipUp(e.currentTarget.getBoundingClientRect(), CLIENT_MENU_H) },
+                                  )
+                                }
                                 style={{
                                   border: 'none',
-                                  background: openMenuId === client.id ? 'var(--hover-card)' : 'transparent',
+                                  background: openMenuId?.id === client.id ? 'var(--hover-card)' : 'transparent',
                                   color: 'var(--muted)',
                                   cursor: 'pointer',
                                   width: 26,
                                   height: 26,
-                                  borderRadius: 6,
+                                  borderRadius: 'var(--r-xs)',
                                   display: 'grid',
                                   placeItems: 'center',
                                 }}
@@ -980,13 +1092,13 @@ export function ClientsDirectory({
                                 <Icon name="more_vert" size={15} />
                               </button>
 
-                              {openMenuId === client.id && (
+                              {openMenuId?.id === client.id && (
                                 <span
                                   role="menu"
                                   style={{
                                     position: 'absolute',
                                     right: 0,
-                                    top: 30,
+                                    ...(openMenuId.up ? { bottom: 30 } : { top: 30 }),
                                     zIndex: 30,
                                     minWidth: 208,
                                     padding: 6,
@@ -1043,7 +1155,7 @@ export function ClientsDirectory({
                                         gap: 9,
                                         height: 32,
                                         padding: '0 9px',
-                                        borderRadius: 8,
+                                        borderRadius: 'var(--r-sm)',
                                         border: 'none',
                                         background: 'transparent',
                                         color: 'var(--text)',
@@ -1073,7 +1185,7 @@ export function ClientsDirectory({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 12,
+                gap: 'var(--sp-md)',
                 padding: '10px 14px',
                 flexWrap: 'wrap',
                 fontSize: 'var(--t-meta)',
@@ -1104,7 +1216,7 @@ export function ClientsDirectory({
                   borderBottom: '1px solid var(--border)',
                   display: 'flex',
                   alignItems: 'flex-start',
-                  gap: 8,
+                  gap: 'var(--sp-sm)',
                 }}
               >
                 <div style={{ minWidth: 0, flex: 1 }}>
@@ -1129,7 +1241,7 @@ export function ClientsDirectory({
                     cursor: 'pointer',
                     width: 26,
                     height: 26,
-                    borderRadius: 6,
+                    borderRadius: 'var(--r-xs)',
                     display: 'grid',
                     placeItems: 'center',
                   }}
@@ -1140,26 +1252,10 @@ export function ClientsDirectory({
 
               <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {selectedClient.isBlocked && (
-                  <div
-                    role="alert"
-                    style={{
-                      display: 'flex',
-                      gap: 8,
-                      padding: '10px 12px',
-                      borderRadius: 8,
-                      background: 'var(--st-danger-bg)',
-                      color: 'var(--danger-text)',
-                      fontSize: 'var(--t-meta)',
-                    }}
-                  >
-                    <Icon name="alert_triangle" size={15} style={{ flexShrink: 0, marginTop: 1 }} />
-                    <span>
-                      <strong>Account blocked.</strong> {selectedClient.blockReason}
-                    </span>
-                  </div>
+                  <ErrorBanner title="Account blocked." message={selectedClient.blockReason} />
                 )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: 'var(--t-meta)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)', fontSize: 'var(--t-meta)' }}>
                   <span>
                     <span style={{ color: 'var(--muted)', display: 'block' }}>Phone</span>
                     <span className="figure" style={{ color: 'var(--text)', fontWeight: 600 }}>{selectedClient.phone}</span>
@@ -1210,8 +1306,8 @@ export function ClientsDirectory({
                     block is absent for Warehouse rather than blanked out. */}
                 {money && (
                   <>
-                    <div style={{ padding: '11px 12px', background: 'var(--card2)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 'var(--t-meta)', marginBottom: 6 }}>
+                    <div style={{ padding: '11px 12px', background: 'var(--card2)', borderRadius: 'var(--r-sm)', border: '1px solid var(--border)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', marginBottom: 6 }}>
                         <span style={{ color: 'var(--text2)' }}>Credit used</span>
                         <span className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>
                           {formatMoney(selectedClient.creditUsedPaisa)} / {formatMoney(selectedClient.creditLimitPaisa)}
@@ -1219,7 +1315,7 @@ export function ClientsDirectory({
                       </div>
                       <span
                         aria-hidden
-                        style={{ display: 'block', width: '100%', height: 6, borderRadius: 999, background: 'var(--border)', overflow: 'hidden' }}
+                        style={{ display: 'block', width: '100%', height: 6, borderRadius: 'var(--r-badge)', background: 'var(--border)', overflow: 'hidden' }}
                       >
                         <span
                           style={{
@@ -1240,13 +1336,13 @@ export function ClientsDirectory({
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <span style={{ padding: 10, background: 'var(--card2)', borderRadius: 8, textAlign: 'center' }}>
+                      <span style={{ padding: 10, background: 'var(--card2)', borderRadius: 'var(--r-sm)', textAlign: 'center' }}>
                         <span className="figure" style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
                           {selectedClient.totalRentalsCount}
                         </span>
                         <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Total rentals</span>
                       </span>
-                      <span style={{ padding: 10, background: 'var(--card2)', borderRadius: 8, textAlign: 'center' }}>
+                      <span style={{ padding: 10, background: 'var(--card2)', borderRadius: 'var(--r-sm)', textAlign: 'center' }}>
                         <span className="figure" style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
                           {formatMoney(selectedClient.totalSpentPaisa)}
                         </span>
@@ -1258,7 +1354,7 @@ export function ClientsDirectory({
 
                 {!money && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
-                    <span style={{ padding: 10, background: 'var(--card2)', borderRadius: 8, textAlign: 'center' }}>
+                    <span style={{ padding: 10, background: 'var(--card2)', borderRadius: 'var(--r-sm)', textAlign: 'center' }}>
                       <span className="figure" style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
                         {selectedClient.totalRentalsCount}
                       </span>
@@ -1267,7 +1363,7 @@ export function ClientsDirectory({
                   </div>
                 )}
 
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
                   {selectedClient.isBlocked ? (
                     <Unavailable reason={`Blocked: ${selectedClient.blockReason ?? 'account under review'} — clear the block before starting a rental`}>
                       <Button variant="primary" disabled>
@@ -1317,7 +1413,7 @@ export function ClientsDirectory({
           </div>
         }
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 'var(--t-meta)', color: 'var(--text2)', maxHeight: 140, overflowY: 'auto' }}>
             {selectedClients.map((c) => (
               <li key={c.id}>{c.name}</li>

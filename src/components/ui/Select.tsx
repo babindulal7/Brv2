@@ -1,5 +1,14 @@
 import React, { forwardRef } from 'react'
-import { IconAlertCircle, IconChevronDown } from '@tabler/icons-react'
+import Icon from './Icon'
+
+/**
+ * Rewritten from Tailwind utility classNames to the app's real inline-style +
+ * CSS-variable system — see `Toast.tsx` for the full explanation of why every
+ * Tailwind class in this file used to compile to nothing. Same prop API as
+ * before (`Input.tsx` is the reference pattern this follows); this component
+ * has zero live JSX call sites today, so the signature is kept stable purely
+ * for whichever screen adopts it next.
+ */
 
 export interface SelectOption {
   value: string
@@ -16,21 +25,39 @@ export interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElemen
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
-  ({ label, error, helperText, options, icon, children, className = '', id, ...props }, ref) => {
+  ({ label, error, helperText, options, icon, children, className, style, id, ...props }, ref) => {
     const selectId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined)
 
     return (
-      <div className="w-full flex flex-col gap-1.5">
+      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
         {label && (
-          <label htmlFor={selectId} className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+          <label
+            htmlFor={selectId}
+            style={{
+              fontSize: 'var(--t-th)',
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              color: 'var(--muted)',
+            }}
+          >
             {label}
-            {props.required && <span className="text-red-400 ml-1">*</span>}
+            {props.required && <span style={{ color: 'var(--danger-text)', marginLeft: 'var(--sp-xs)' }}>*</span>}
           </label>
         )}
 
-        <div className="relative flex items-center">
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
           {icon && (
-            <div className="absolute left-3.5 flex items-center pointer-events-none text-slate-500">
+            <div
+              style={{
+                position: 'absolute',
+                left: 12,
+                display: 'flex',
+                alignItems: 'center',
+                pointerEvents: 'none',
+                color: 'var(--muted)',
+              }}
+            >
               {icon}
             </div>
           )}
@@ -38,11 +65,24 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           <select
             id={selectId}
             ref={ref}
-            className={`w-full min-h-[44px] appearance-none px-3.5 py-2 pr-10 text-sm rounded-lg bg-slate-900 border text-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
-              icon ? 'pl-10' : ''
-            } ${
-              error ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-slate-800 hover:border-slate-700'
-            } ${className}`}
+            className={className}
+            style={{
+              width: '100%',
+              minHeight: 44,
+              appearance: 'none',
+              padding: '8px 14px',
+              paddingLeft: icon ? 38 : 14,
+              paddingRight: 38,
+              fontSize: 'var(--t-body)',
+              borderRadius: 'var(--r-input)',
+              background: 'var(--input-bg)',
+              border: `1px solid ${error ? 'var(--danger)' : 'var(--input-border)'}`,
+              color: 'var(--text)',
+              transition: 'border-color 0.15s ease',
+              cursor: props.disabled ? 'not-allowed' : 'pointer',
+              opacity: props.disabled ? 0.5 : 1,
+              ...style,
+            }}
             {...props}
           >
             {options
@@ -54,18 +94,35 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
               : children}
           </select>
 
-          <div className="absolute right-3.5 flex items-center pointer-events-none text-slate-500">
-            <IconChevronDown className="w-4 h-4" />
+          <div
+            style={{
+              position: 'absolute',
+              right: 12,
+              display: 'flex',
+              alignItems: 'center',
+              pointerEvents: 'none',
+              color: 'var(--muted)',
+            }}
+          >
+            <Icon name="chevron_down" size={16} />
           </div>
         </div>
 
         {error ? (
-          <div className="flex items-center gap-1.5 text-xs text-red-400 mt-0.5">
-            <IconAlertCircle className="w-3.5 h-3.5 shrink-0" />
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 'var(--t-meta)',
+              color: 'var(--danger-text)',
+            }}
+          >
+            <Icon name="error" size={14} />
             <span>{error}</span>
           </div>
         ) : helperText ? (
-          <span className="text-xs text-slate-500 mt-0.5">{helperText}</span>
+          <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{helperText}</span>
         ) : null}
       </div>
     )

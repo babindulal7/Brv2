@@ -154,6 +154,54 @@ export function discountGate(percent: number, reason: string, approver: string |
   return { ok: true as const }
 }
 
+/* ── §2 · crew coordination fee — Crew Booking spec v3.2 §2 ──────────────
+ *
+ * `billed = payouts + coordination fee (+ recharged expenses)`. The fee is
+ * Babin's revenue, never paid to crew (§2.1: "the fee is never paid to the
+ * crew member"). Expenses are recharged at cost as their own line — Model A,
+ * the spec's own recommendation over absorbing them into the fee, which on
+ * the spec's worked example (§2.3) would need a fee six times the proposed
+ * default to break even.
+ *
+ * `feePerCrewDayPaisa` and `marginPaisa` can genuinely be absent — the caller
+ * passes `undefined` when Settings hasn't configured a fee yet, the same
+ * "Not configured, never zero" rule `lateFee`'s TDS-adjacent callers follow
+ * elsewhere in this codebase.
+ */
+
+export interface CrewBillingInput {
+  /** Sum of booked person-dates — see `data/crew.ts`'s `crewDaysBooked()`. */
+  crewDays: number
+  /** Σ (day rate × days) — paid to crew, never includes the coordination fee. */
+  payoutsPaisa: Paisa
+  /** Settings ▸ Finance value. `undefined` renders "Not configured", never a guessed zero. */
+  feePerCrewDayPaisa?: Paisa
+  /** Meals/travel/hotel/fuel/misc for the period. */
+  expensesPaisa: Paisa
+  /** Model A (true, recommended) recharges expenses at cost; Model B (false) would absorb them into cost with no separate billed line. */
+  rechargeExpenses: boolean
+}
+
+export interface CrewBillingBreakdown {
+  coordinationFeePaisa: Paisa | null
+  billedPaisa: Paisa | null
+  costPaisa: Paisa
+  marginPaisa: Paisa | null
+}
+
+export function crewBilling(i: CrewBillingInput): CrewBillingBreakdown {
+  const costPaisa = (i.payoutsPaisa + i.expensesPaisa) as Paisa
+  if (i.feePerCrewDayPaisa === undefined) {
+    return { coordinationFeePaisa: null, billedPaisa: null, costPaisa, marginPaisa: null }
+  }
+  const coordinationFeePaisa = (i.crewDays * i.feePerCrewDayPaisa) as Paisa
+  const billedPaisa = (i.payoutsPaisa + coordinationFeePaisa + (i.rechargeExpenses ? i.expensesPaisa : 0)) as Paisa
+  const marginPaisa = i.rechargeExpenses
+    ? coordinationFeePaisa
+    : ((coordinationFeePaisa - i.expensesPaisa) as Paisa)
+  return { coordinationFeePaisa, billedPaisa, costPaisa, marginPaisa }
+}
+
 /* ── late fee · Decisions — 8 Aug 2026 §3 Q2 ───────────────────────────── */
 
 /**

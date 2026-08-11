@@ -5,7 +5,7 @@ import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, Button, KpiStrip } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
-import { EmptyState } from '../../components/ui/StateViews'
+import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
@@ -21,6 +21,10 @@ import {
 } from '../../data/maintenance'
 import type { MaintenanceRegistryFlag, MaintenanceCondition } from '../../data/maintenance'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useAuth } from '../../lib/auth'
+import { gateContext } from '../../lib/fieldGating'
+import { IntelCard } from '../../components/ui/IntelCard'
+import { maintenanceGlance, maintenanceDetailGroups } from '../../data/maintenanceIntel'
 
 /**
  * **Maintenance** — the Inventory workspace's fourth tab (Foundation §5.1).
@@ -64,7 +68,25 @@ const MAINTENANCE_STATUSES: MaintenanceStatus[] = [
   'Cancelled',
 ]
 
-interface MaintenanceRecord {
+/**
+ * Hover Intel System v2.1 — three fields added for the Maintenance card
+ * (`data/maintenanceIntel.ts`). All three are optional and seeded on real
+ * rows only, never invented:
+ *
+ *  - `linkedCaseId` stays `undefined` on every row below. No case in
+ *    `data/cases.ts` shares equipment or a serial with any of the three
+ *    seeded jobs here, and the one case that already models this exact
+ *    link — CASE-2026-0039, which carries `linked.maintenanceJobId:
+ *    'MT-2026-0043'` — points at an ID scheme this file doesn't use
+ *    (`MT-YYYY-NNNN` vs this file's `MNT-NNNN`) and at equipment (a NISI
+ *    35mm lens) that isn't one of the three jobs seeded below. Drawing a
+ *    link would mean inventing a row on one side or the other, so the field
+ *    is left honestly absent instead. See the report for this gap.
+ *  - `parts` / `downtimeDays` are seeded on two of the three rows below,
+ *    from figures consistent with each row's own `costEstPaisa` /
+ *    `costActualPaisa` — never a new invented job.
+ */
+export interface MaintenanceRecord {
   id: string
   equipmentName: string
   serialNumber: string
@@ -82,6 +104,12 @@ interface MaintenanceRecord {
   costEstPaisa: Paisa
   costActualPaisa?: Paisa
   bookingImpact?: string
+  /** CASE-YYYY-NNNN, `data/cases.ts`. Undefined here — see the doc comment above. */
+  linkedCaseId?: string
+  /** Itemised parts for this job. A missing `costPaisa` means the part's cost is bundled into a vendor's lump-sum quote, not that it is free. */
+  parts?: Array<{ name: string; costPaisa?: Paisa }>
+  /** Whole days this job has held its equipment out of service so far. */
+  downtimeDays?: number
 }
 
 const ad = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d))
@@ -100,6 +128,10 @@ const MAINTENANCE_DATA: MaintenanceRecord[] = [
     estCompletion: ad(2026, 7, 25),
     costEstPaisa: rupees(0),
     bookingImpact: 'BK-2026-0715',
+    // Critical, In Progress, already past its 25 Jul ETA against `TODAY`
+    // (31 Jul) — a plausible in-flight downtime count for a job holding a
+    // booking. No case matches this equipment; see the interface doc comment.
+    downtimeDays: 9,
   },
   {
     id: 'MNT-1043',
@@ -113,6 +145,10 @@ const MAINTENANCE_DATA: MaintenanceRecord[] = [
     vendor: 'ARRI Service Center',
     estCompletion: ad(2026, 8, 3),
     costEstPaisa: rupees(15000),
+    // At Vendor — the service centre bills a single lump sum, so the part
+    // itself is real but its cost isn't broken out separately from
+    // `costEstPaisa` above.
+    parts: [{ name: 'Full sensor recalibration (vendor service bundle)' }],
   },
   {
     id: 'MNT-1045',
@@ -127,6 +163,13 @@ const MAINTENANCE_DATA: MaintenanceRecord[] = [
     estCompletion: ad(2026, 8, 8),
     costEstPaisa: rupees(3000),
     costActualPaisa: rupees(3500),
+    // Waiting Parts — the two line items below reconcile exactly with
+    // `costActualPaisa` (2500 + 1000 = 3500), not a guessed figure.
+    parts: [
+      { name: 'Battery cell pack (98Wh)', costPaisa: rupees(2500) },
+      { name: 'Output connector board assembly', costPaisa: rupees(1000) },
+    ],
+    downtimeDays: 3,
   },
 ]
 
@@ -309,37 +352,23 @@ function exportCsv(rows: MaintenanceRecord[], money: boolean) {
 /**
  * Foundation §6 — "A blank page is never acceptable. 'Something went wrong' is
  * never acceptable." A reconciliation failure is stated, in place, naming the
- * figures that disagree. Tokens only: `components/ui/StateViews` is written in
- * Tailwind classes that this app never loads (see the file header).
+ * figures that disagree. `components/ui/StateViews`'s dead-Tailwind bug (this
+ * comment used to route around it by hand-rolling this banner) was fixed this
+ * session — routes through the shared `ErrorBanner` now.
  */
 function SeedDefectBanner({ message }: { message: string }) {
-  return (
-    <div
-      role="alert"
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 10,
-        padding: '10px 12px',
-        borderRadius: 'var(--r-card)',
-        border: '1px solid var(--danger)',
-        background: 'var(--st-danger-bg)',
-        color: 'var(--st-danger-fg)',
-        fontSize: 'var(--t-meta)',
-        lineHeight: 1.55,
-      }}
-    >
-      <Icon name="alert_triangle" size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-      <span>
-        <strong style={{ display: 'block', marginBottom: 2 }}>These counts do not reconcile.</strong>
-        {message}
-      </span>
-    </div>
-  )
+  return <ErrorBanner title="These counts do not reconcile." message={message} />
 }
 
 export function Maintenance() {
   const money = useCanViewMoney()
+  const { user } = useAuth()
+  // gateContext() returns a fresh object literal on every call (see
+  // lib/fieldGating.ts), so calling it inline on every render would defeat
+  // the useMemo below — its dependency array would never see a stable
+  // reference to compare against. Memoized on the one primitive it actually
+  // derives from.
+  const gctx = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
 
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
@@ -388,6 +417,25 @@ export function Maintenance() {
     })
   }, [searchQuery, activeFilter])
 
+  /*
+   * §HIS v2.1 perf — `maintenanceGlance`/`maintenanceDetailGroups` each build
+   * a full field-gated object graph (role/PII/money filtering) per row.
+   * Computing them inline inside the table's `.map()` reran that work on
+   * every re-render of the whole page (a search keystroke, a chip toggle,
+   * etc.) even for rows whose record/gate context hadn't changed. Memoized
+   * here per `filteredRecords` + `gctx`, so the builders only rerun when the
+   * filtered set or the viewing role/surface actually changes.
+   */
+  const filteredWithIntel = useMemo(
+    () =>
+      filteredRecords.map((m) => ({
+        record: m,
+        glance: maintenanceGlance(m, gctx),
+        detail: maintenanceDetailGroups(m, gctx),
+      })),
+    [filteredRecords, gctx],
+  )
+
   const handleSelectAll = (checked: boolean) => {
     if (checked) setSelectedRowIds(new Set(filteredRecords.map((m) => m.id)))
     else setSelectedRowIds(new Set())
@@ -412,7 +460,7 @@ export function Maintenance() {
     gap: 6,
     height: 30,
     padding: '0 10px',
-    borderRadius: 8,
+    borderRadius: 'var(--r-sm)',
     border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
     background: on ? 'var(--nav-active-bg)' : 'var(--card)',
     color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
@@ -428,7 +476,7 @@ export function Maintenance() {
       {CHIP_ERROR && <SeedDefectBanner message={CHIP_ERROR} />}
       <KpiStrip items={kpis} columns={money ? 5 : 4} />
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
         {STATUS_CHIPS.map((c) => (
           <button key={c.label} type="button" onClick={() => setActiveFilter(c.label)} aria-pressed={activeFilter === c.label} style={chipStyle(activeFilter === c.label)}>
             {c.label}
@@ -456,7 +504,7 @@ export function Maintenance() {
                 gap: 5,
                 height: 26,
                 padding: '0 9px',
-                borderRadius: 6,
+                borderRadius: 'var(--r-xs)',
                 border: `1px solid ${on ? tone.fg : 'var(--border)'}`,
                 background: on ? tone.bg : 'transparent',
                 color: on ? tone.fg : 'var(--muted)',
@@ -474,7 +522,7 @@ export function Maintenance() {
           )
         })}
 
-        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 10px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)' }}>
             <Icon name="search" size={14} style={{ color: 'var(--muted)' }} />
             <input
@@ -533,7 +581,7 @@ export function Maintenance() {
                 </tr>
               </thead>
               <tbody>
-                {filteredRecords.map((m) => {
+                {filteredWithIntel.map(({ record: m, glance, detail }) => {
                   const overdue = m.flags.includes('Overdue')
                   const bs = m.estCompletion ? toBs(m.estCompletion) : null
                   const days = m.estCompletion ? daysFromToday(m.estCompletion) : null
@@ -549,9 +597,18 @@ export function Maintenance() {
                         />
                       </td>
                       <td style={td}>
-                        <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{m.id}</span>
-                        <span style={{ display: 'block', fontWeight: 600 }}>{m.equipmentName}</span>
-                        <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 2 }}>{m.serialNumber}</span>
+                        <IntelCard
+                          glance={glance}
+                          detail={detail}
+                          detailTitle={m.equipmentName}
+                          detailSubtitle={`${m.id} · ${m.serialNumber}`}
+                        >
+                          <span style={{ display: 'block' }}>
+                            <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{m.id}</span>
+                            <span style={{ display: 'block', fontWeight: 600 }}>{m.equipmentName}</span>
+                            <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 2 }}>{m.serialNumber}</span>
+                          </span>
+                        </IntelCard>
                       </td>
                       <td style={td}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -562,7 +619,7 @@ export function Maintenance() {
                           style={{
                             display: 'block',
                             fontSize: 'var(--t-th)',
-                            marginTop: 4,
+                            marginTop: 'var(--sp-xs)',
                             fontWeight: 600,
                             color:
                               m.priority === 'Critical'
@@ -580,7 +637,7 @@ export function Maintenance() {
                           {m.status}
                         </Pill>
                         {(m.flags.length > 0 || m.conditions.length > 0) && (
-                          <span style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
+                          <span style={{ display: 'flex', gap: 'var(--sp-xs)', marginTop: 6, flexWrap: 'wrap' }}>
                             {/* §1.9 registry flags. */}
                             {m.flags.map((f) => (
                               <Pill key={f} tone={registryFlagTone(f)} icon={MAINTENANCE_REGISTRY_FLAG_ICON[f]} title={REGISTRY_FLAG_TITLE}>
@@ -666,7 +723,7 @@ export function Maintenance() {
           </div>
         )}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderTop: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--text2)', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '10px 14px', borderTop: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--text2)', flexWrap: 'wrap' }}>
           <span>
             Showing {filteredRecords.length} of {MAINTENANCE_DATA.length} seeded jobs{filtersOn ? ' (filtered)' : ''}
           </span>

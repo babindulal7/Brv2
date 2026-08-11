@@ -1,0 +1,38 @@
+# Keeps the build context small and, more importantly, keeps secrets and stale
+# output out of the image.
+
+# `.env.local` holds real credentials AND would override the --build-arg values
+# passed to `docker build`, because Vite loads .env.local last. Copying it in
+# would silently build against whatever the last developer had configured.
+.env
+.env.local
+.env.*.local
+
+node_modules
+dist
+dist-ssr
+coverage
+
+.git
+.gitignore
+.github
+
+# Agent/editor state — never part of a build.
+.claude
+.agents
+.impeccable
+.vscode
+.idea
+
+# Local Supabase stack scratch.
+supabase/.temp
+supabase/.branches
+
+*.log
+npm-debug.log*
+.DS_Store
+
+# Docs and audits: they change constantly and would bust the build cache
+# without changing a single byte of the bundle.
+*.md
+!README.md

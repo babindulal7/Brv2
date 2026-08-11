@@ -569,7 +569,7 @@ export default function EventTriggers() {
           </Card>
 
           <Card
-            title="AI Trigger Assistant"
+            title="AI Trigger Assistant — Preview"
             action={
               <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
                 View all →

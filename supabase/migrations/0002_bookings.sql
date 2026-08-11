@@ -22,10 +22,10 @@ create table bookings (
   id                     uuid           not null default gen_random_uuid() primary key,
   client_uuid            uuid           not null,
   booking_no             text           not null,
-  branch_id              uuid           not null references branches (id),
-  client_id              uuid           not null references clients (id),
-  contact_id             uuid           references client_contacts (id),
-  authorized_contact_id  uuid           references client_contacts (id),
+  branch_id              uuid           not null,  -- FK -> branches added in 0042 (cross-file forward ref)
+  client_id              uuid           not null,  -- FK -> clients added in 0042 (cross-file forward ref)
+  contact_id             uuid,  -- FK -> client_contacts added in 0042 (cross-file forward ref)
+  authorized_contact_id  uuid,  -- FK -> client_contacts added in 0042 (cross-file forward ref)
   project                text,
   stage                  booking_stage  not null default 'Quote',
   pickup_at              timestamptz    not null,
@@ -37,16 +37,16 @@ create table bookings (
   quote_expires_at       timestamptz,   -- TODO(decision): whether a quote LAPSES, and whether automatically, is unspecified. Nothing acts on this date today except the calendar and the 'Quote expiring' alert.
   deposit_required       numeric(14,2)  not null default 0, -- TODO(decision): how the required deposit is calculated is unspecified.
   cancelled_at           timestamptz,
-  cancelled_by           uuid           references users (id),
+  cancelled_by           uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   cancellation_reason    text,
   closed_at              timestamptz,
-  locked_by              uuid           references users (id),
+  locked_by              uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   locked_at              timestamptz,   -- TODO(decision): abandoned-lock expiry period is unspecified.
   version                integer        not null default 1,
   created_at             timestamptz    not null default now(),
-  created_by             uuid           not null references users (id),
+  created_by             uuid           not null,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at             timestamptz    not null default now(),
-  updated_by             uuid           not null references users (id),
+  updated_by             uuid           not null,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint bookings_client_uuid_key unique (client_uuid),
   constraint bookings_booking_no_key unique (booking_no),
@@ -128,8 +128,8 @@ create table booking_lines (
   booking_id        uuid              not null references bookings (id),
   line_type         booking_line_type not null,
   parent_line_id    uuid              references booking_lines (id),
-  product_id        uuid              references products (id),
-  bundle_id         uuid              references bundles (id),
+  product_id        uuid,  -- FK -> products added in 0042 (cross-file forward ref)
+  bundle_id         uuid,  -- FK -> bundles added in 0042 (cross-file forward ref)
   description       text,
   qty               integer           not null default 1,
   days              integer           not null default 1,
@@ -137,7 +137,7 @@ create table booking_lines (
   discount_amount   numeric(14,2)     not null default 0,
   is_included       boolean           not null default false,
   service_basis     service_basis,
-  supplier_id       uuid              references suppliers (id),
+  supplier_id       uuid,  -- FK -> suppliers added in 0042 (cross-file forward ref)
   supplier_cost     numeric(14,2),
   markup_amount     numeric(14,2),    -- TODO(decision): whether markup is a fixed system percentage or set per line is an open question. Stored per line because that shape survives either answer.
   line_note         text,
@@ -145,7 +145,7 @@ create table booking_lines (
   voided_at         timestamptz,
   voided_reason     text,
   created_at        timestamptz       not null default now(),
-  created_by        uuid              not null references users (id),
+  created_by        uuid              not null,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint booking_lines_client_uuid_key unique (client_uuid),
 
@@ -230,16 +230,16 @@ create table booking_line_units (
   id                    uuid                not null default gen_random_uuid() primary key,
   client_uuid           uuid                not null,
   booking_line_id       uuid                not null references booking_lines (id),
-  asset_id              uuid                references assets (id),
+  asset_id              uuid, -- FK to product_units added in 0004_inventory.sql once that table exists (forward cross-file reference; "assets" was never a real table)
   qty                   integer             not null default 1,
   unit_state            item_quantity_state not null default 'Ready',
   is_required           boolean             not null default true,
   packed                boolean             not null default false,
   packed_at             timestamptz,
-  packed_by             uuid                references users (id),
-  packing_session_id    uuid                references operation_sessions (id),
-  handover_session_id   uuid                references operation_sessions (id),
-  return_session_id     uuid                references operation_sessions (id),
+  packed_by             uuid,  -- FK -> users added in 0042 (cross-file forward ref)
+  packing_session_id    uuid,  -- FK -> operation_sessions added in 0042 (cross-file forward ref)
+  handover_session_id   uuid,  -- FK -> operation_sessions added in 0042 (cross-file forward ref)
+  return_session_id     uuid,  -- FK -> operation_sessions added in 0042 (cross-file forward ref)
   returned_at           timestamptz,
   condition             text,
   missing_reason        text,
@@ -247,7 +247,7 @@ create table booking_line_units (
   reset_done_at         timestamptz,
   cleaning_done_at      timestamptz,
   created_at            timestamptz         not null default now(),
-  created_by            uuid                not null references users (id),
+  created_by            uuid                not null,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint booking_line_units_client_uuid_key unique (client_uuid),
 
@@ -315,7 +315,7 @@ create table booking_crew_lines (
   id             uuid          not null default gen_random_uuid() primary key,
   client_uuid    uuid          not null,
   booking_id     uuid          not null references bookings (id),
-  crew_member_id uuid          references users (id),
+  crew_member_id uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   name           text          not null,
   crew_role      crew_role     not null,
   phone          text,
@@ -326,7 +326,7 @@ create table booking_crew_lines (
   meals          numeric(14,2) not null default 0,
   voided_at      timestamptz,
   created_at     timestamptz   not null default now(),
-  created_by     uuid          not null references users (id),
+  created_by     uuid          not null,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint booking_crew_lines_client_uuid_key unique (client_uuid),
 
@@ -376,15 +376,15 @@ create table booking_transport (
   booking_id                  uuid          not null references bookings (id),
   vehicle                     text,
   number_plate                text,
-  driver_id                   uuid          references users (id),
+  driver_id                   uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   driver_contact              text,
   delivery_charge             numeric(14,2) not null default 0,
   fuel_charge                 numeric(14,2) not null default 0,
-  zero_charge_override_by     uuid          references users (id),
+  zero_charge_override_by     uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   zero_charge_override_reason text,
   special_instructions        text,
   created_at                  timestamptz   not null default now(),
-  created_by                  uuid          not null references users (id),
+  created_by                  uuid          not null,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint booking_transport_client_uuid_key unique (client_uuid),
   -- Strictly one transport record per booking.
@@ -428,15 +428,15 @@ create table booking_stage_transitions (
   id           uuid          not null default gen_random_uuid() primary key,
   client_uuid  uuid          not null,
   booking_id   uuid          not null references bookings (id),
-  branch_id    uuid          not null references branches (id),
+  branch_id    uuid          not null,  -- FK -> branches added in 0042 (cross-file forward ref)
   from_stage   booking_stage,
   to_stage     booking_stage not null,
   is_reversal  boolean       not null default false,
-  approved_by  uuid          references users (id),
+  approved_by  uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   reason       text,
-  audit_event_id uuid          references audit_events (id),
+  audit_event_id uuid,  -- FK -> audit_events added in 0042 (cross-file forward ref)
   occurred_at  timestamptz   not null default now(),
-  actor_id     uuid          not null references users (id),
+  actor_id     uuid          not null,  -- FK -> users added in 0042 (cross-file forward ref)
   actor_role   text          not null,
   source       text,
   created_at   timestamptz   not null default now(),
@@ -519,12 +519,12 @@ create table booking_flags (
   flag                   booking_flag not null,
   flag_type              flag_type    not null,
   observed_at            timestamptz  not null,
-  observed_in_session_id uuid         references operation_sessions (id),
+  observed_in_session_id uuid,  -- FK -> operation_sessions added in 0042 (cross-file forward ref)
   cleared_at             timestamptz,
-  cleared_by             uuid         references users (id),
+  cleared_by             uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   cleared_reason         text,
   created_at             timestamptz  not null default now(),
-  created_by             uuid         not null references users (id),
+  created_by             uuid         not null,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint booking_flags_client_uuid_key unique (client_uuid),
 
@@ -576,15 +576,15 @@ create table booking_discounts (
   id              uuid            not null default gen_random_uuid() primary key,
   client_uuid     uuid            not null,
   booking_id      uuid            not null references bookings (id),
-  branch_id       uuid            not null references branches (id),
+  branch_id       uuid            not null,  -- FK -> branches added in 0042 (cross-file forward ref)
   discount_source discount_source not null,
   percent         numeric(5,2)    not null,
   reason          text,
-  approver_id     uuid            references users (id),
-  applied_by      uuid            not null references users (id),
+  approver_id     uuid,  -- FK -> users added in 0042 (cross-file forward ref)
+  applied_by      uuid            not null,  -- FK -> users added in 0042 (cross-file forward ref)
   applied_at      timestamptz     not null default now(),
-  coupon_id       uuid            references coupons (id),
-  audit_event_id    uuid            not null references audit_events (id),
+  coupon_id       uuid,  -- FK -> coupons added in 0042 (cross-file forward ref)
+  audit_event_id    uuid            not null,  -- FK -> audit_events added in 0042 (cross-file forward ref)
   created_at      timestamptz     not null default now(),
 
   constraint booking_discounts_client_uuid_key unique (client_uuid),
@@ -617,11 +617,64 @@ comment on column booking_discounts.coupon_id is
 comment on column booking_discounts.audit_event_id is
   'Written only on success — a blocked attempt is not an approval and must not read as one in the log.';
 
--- TRIGGER REQUIRED: SUM(percent) per booking <= 25; tiers auto-disable once the cap is reached.
--- TRIGGER REQUIRED: the stacked total crossing 10% re-imposes the reason-plus-approver requirement
---   on the whole booking, even when every individual row is under 10%.
--- TRIGGER REQUIRED: stacking matrix — Membership + Coupon + Women-DoP 5% may coexist; Student,
---   College and Named-client rates may not stack with anything.
+-- Implements the three TRIGGER REQUIRED items above. Kept here with the table rather than in
+-- 0010_triggers_functions.sql (where every other trigger in this schema lives) because another
+-- session was concurrently editing 0010 while this fix was written — see the identical note on
+-- reject_invoice_edit_after_issue() in 0006_finance.sql. TODO(decision): move it to 0010 once
+-- that file is stable.
+--
+-- The stacking-matrix rule only names six of the seven discount_source values explicitly
+-- ("Membership + Coupon + Women-DoP 5% may coexist; Student, College and Named-client rates may
+-- not stack with anything") — it never says whether 'Manual' may join the coexisting group or
+-- is exclusive like the other three. Rather than guess, this trigger enforces only what is
+-- stated: a row from the named-exclusive set may never share a booking with any other row,
+-- named-exclusive or not. It does not restrict 'Manual' beyond that. TODO(decision): where
+-- 'Manual' belongs in the matrix needs a ruling, not an assumption — add it to PLAN.md §4.
+create or replace function enforce_booking_discount_stacking()
+returns trigger
+language plpgsql
+as $$
+declare
+  v_existing_sum numeric(5,2);
+  v_total numeric(5,2);
+  v_exclusive_sources discount_source[] := array['Student', 'College', 'Named-client rates']::discount_source[];
+begin
+  select coalesce(sum(percent), 0) into v_existing_sum
+  from booking_discounts
+  where booking_id = NEW.booking_id;
+
+  v_total := v_existing_sum + NEW.percent;
+
+  if v_total > 25 then
+    raise exception 'Law 10: this booking''s discounts would total % percent across % row(s), over the 25 percent hard cap that applies to the stacked total, not just one row.',
+      v_total, (select count(*) + 1 from booking_discounts where booking_id = NEW.booking_id);
+  end if;
+
+  if v_total > 10 and not (char_length(btrim(NEW.reason)) >= 10 and NEW.approver_id is not null) then
+    raise exception 'Law 10: this booking''s stacked discount total (% percent) crosses 10 percent even though this row alone is % percent — the reason (>=10 chars) and named-approver requirement applies to the row that crosses the cumulative threshold, not only to a row over 10 percent on its own.',
+      v_total, NEW.percent;
+  end if;
+
+  if NEW.discount_source = any(v_exclusive_sources) then
+    if v_existing_sum > 0 then
+      raise exception 'Law 10: % does not stack with any other discount on the same booking, but this booking already has another discount row applied.', NEW.discount_source;
+    end if;
+  elsif exists (
+    select 1 from booking_discounts
+    where booking_id = NEW.booking_id and discount_source = any(v_exclusive_sources)
+  ) then
+    raise exception 'Law 10: this booking already has a % discount, which does not stack with any other discount.',
+      (select discount_source from booking_discounts where booking_id = NEW.booking_id and discount_source = any(v_exclusive_sources) limit 1);
+  end if;
+
+  return NEW;
+end;
+$$;
+
+create trigger trg_booking_discounts_stacking
+  before insert on booking_discounts
+  for each row execute function enforce_booking_discount_stacking();
+
 -- NOTHING IS DELETED: a withdrawn discount is a new row, and audit already holds the original.
 revoke delete on booking_discounts from public;
 -- TRIGGER REQUIRED: raise on DELETE for every role including Owner.
@@ -642,13 +695,13 @@ create table booking_documents (
   id                      uuid                  not null default gen_random_uuid() primary key,
   client_uuid             uuid                  not null,
   booking_id              uuid                  not null references bookings (id),
-  document_id             uuid                  not null references documents (id),
+  document_id             uuid                  not null, -- FK to document_registry added in 0009_crew_vehicles.sql once that table exists (forward cross-file reference; "documents" was never a real table)
   doc_type                booking_document_type not null,
   origin                  document_origin       not null,
-  produced_in_session_id  uuid                  references operation_sessions (id),
+  produced_in_session_id  uuid,  -- FK -> operation_sessions added in 0042 (cross-file forward ref)
   linked_at               timestamptz           not null default now(),
   created_at              timestamptz           not null default now(),
-  created_by              uuid                  not null references users (id),
+  created_by              uuid                  not null,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint booking_documents_client_uuid_key unique (client_uuid),
   constraint booking_documents_link_key unique (booking_id, doc_type, document_id)
@@ -696,7 +749,7 @@ create table booking_notes (
   body            text        not null,
   archived_at     timestamptz,
   created_at      timestamptz not null default now(),
-  created_by      uuid        not null references users (id),
+  created_by      uuid        not null,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint booking_notes_client_uuid_key unique (client_uuid),
   constraint booking_notes_body_present check (char_length(btrim(body)) > 0)

@@ -1,15 +1,19 @@
 import { useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, FooterNote } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { ClientsDirectory } from './ClientsDirectory'
+import { useClients } from '../../lib/queries/useClients'
+import { ErrorBanner } from '../../components/ui/StateViews'
 import Membership from './Membership'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useToast } from '../../components/ui/Toast'
 import { formatMoney, rupees, type Paisa } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-import { CLIENTS_DATA, TIER_TONE, type ClientRecord, type MembershipTier } from '../../data/clients'
+// CLIENTS_DATA is still read by the Referral and Credit panels below, which
+// have not been converted to a query yet — the directory tab no longer uses it.
+import { CLIENTS_DATA, TIER_TONE, type MembershipTier } from '../../data/clients'
 import { STATUS } from '../../lib/status'
 
 /**
@@ -50,11 +54,40 @@ export default function Clients() {
   const { showSuccessToast } = useToast()
   const [params, setParams] = useSearchParams()
 
-  const [clients, setClients] = useState<ClientRecord[]>(CLIENTS_DATA)
+  /**
+   * Clients now come from the database (`client_directory_v`, migrations
+   * 0052/0053) rather than the `CLIENTS_DATA` array this screen used to hold in
+   * `useState`. That array is still imported below for the credit/referral
+   * panels, which have not been converted yet — the conversion is per-panel, not
+   * all-or-nothing, so each one moves only when its own query exists.
+   */
+  const { clients: dbClients, loading: clientsLoading, error: clientsError } = useClients()
+  const [blockOverrides, setBlockOverrides] = useState<Record<string, string>>({})
+
+  /**
+   * Block state is held locally until a real `blockClient` mutation exists.
+   * Applied over the database rows rather than replacing them, so a block never
+   * discards a freshly-fetched record.
+   */
+  const clients = useMemo(
+    () =>
+      dbClients.map((c) => {
+        const reason = blockOverrides[c.id]
+        return reason ? { ...c, isBlocked: true, blockReason: reason } : c
+      }),
+    [dbClients, blockOverrides],
+  )
 
   /** Bulk Block — the directory table's row-selection checkboxes gain a real action. */
   const bulkBlock = (ids: string[], reason: string) => {
-    setClients((prev) => prev.map((c) => (ids.includes(c.id) ? { ...c, isBlocked: true, blockReason: reason } : c)))
+    // TODO(persistence): this does not reach the database yet. `clients.status`
+    // is the real column and a block belongs in an audited mutation, not in
+    // component state — deliberately not faked as saved.
+    setBlockOverrides((prev) => {
+      const next = { ...prev }
+      for (const id of ids) next[id] = reason
+      return next
+    })
     showSuccessToast('Clients blocked', `${ids.length} client${ids.length === 1 ? '' : 's'} blocked: ${reason}`)
   }
 
@@ -141,7 +174,7 @@ export default function Clients() {
         }
       />
 
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)' }}>
         {tabs.map((t) => {
           const on = activeTab === t.key
           return (
@@ -171,7 +204,28 @@ export default function Clients() {
       </div>
 
       {activeTab === 'clients' && (
-        <ClientsDirectory clients={clients} onRequestAdd={() => navigate('/clients/new')} onBulkBlock={bulkBlock} />
+        <>
+          {/* An empty list and a failed query must never look alike — "no
+              clients" and "we could not reach the database" are different
+              facts, and only one of them is about the business. */}
+          {clientsError && (
+            <ErrorBanner
+              title="Could not load clients"
+              message={clientsError}
+              onRetry={() => window.location.reload()}
+            />
+          )}
+          {clientsLoading && !clientsError && (
+            <Card>
+              <div style={{ padding: 'var(--sp-xl)', textAlign: 'center', color: 'var(--text2)', fontSize: 'var(--t-meta)' }}>
+                Loading clients…
+              </div>
+            </Card>
+          )}
+          {!clientsLoading && !clientsError && (
+            <ClientsDirectory clients={clients} onRequestAdd={() => navigate('/clients/new')} onBulkBlock={bulkBlock} />
+          )}
+        </>
       )}
       {activeTab === 'membership' && <Membership embedded />}
       {activeTab === 'referral' && <ReferralView money={money} />}
@@ -184,7 +238,7 @@ export default function Clients() {
 
 /* ── referral ──────────────────────────────────────────────────────────── */
 
-interface Referral {
+export interface Referral {
   referrer: string
   code: string
   referredClient: string
@@ -193,7 +247,7 @@ interface Referral {
   credited: boolean
 }
 
-const REFERRALS: Referral[] = [
+export const REFERRALS: Referral[] = [
   {
     referrer: 'Kathmandu Cinema Works',
     code: 'KCW-PRO-26',
@@ -228,6 +282,22 @@ const REFERRALS: Referral[] = [
   },
 ]
 
+/** Looks up a client id by exact name match against CLIENTS_DATA — undefined if no such client exists. */
+function findClientIdByName(name: string): string | undefined {
+  return CLIENTS_DATA.find((c) => c.name === name)?.id
+}
+
+/** Renders a client name as a link to its profile when the name resolves to a real client, plain text otherwise. */
+function ClientNameCell({ name }: { name: string }) {
+  const id = findClientIdByName(name)
+  if (!id) return <>{name}</>
+  return (
+    <Link to={`/clients/${id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+      {name}
+    </Link>
+  )
+}
+
 const th = {
   textAlign: 'left' as const,
   padding: '9px 12px',
@@ -240,6 +310,7 @@ const th = {
 const td = { padding: '11px 12px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
 
 function ReferralView({ money }: { money: boolean }) {
+  const navigate = useNavigate()
   const totalReward = REFERRALS.reduce((sum, r) => (sum + r.rewardPaisa) as Paisa, rupees(0))
   const credited = REFERRALS.filter((r) => r.credited)
 
@@ -267,11 +338,9 @@ function ReferralView({ money }: { money: boolean }) {
       <Card
         title="Referral conversions and affiliate rewards"
         action={
-          <Unavailable reason="Code generation is not built yet — referral codes are seed data, not issued by this screen">
-            <Button icon="plus" disabled>
-              Generate Referral Code
-            </Button>
-          </Unavailable>
+          <Button icon="plus" onClick={() => navigate('/clients/referral/new')}>
+            Generate Referral Code
+          </Button>
         }
         bodyStyle={{ padding: 0 }}
       >
@@ -290,7 +359,9 @@ function ReferralView({ money }: { money: boolean }) {
             <tbody>
               {REFERRALS.map((r) => (
                 <tr key={r.code} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td style={{ ...td, fontWeight: 600 }}>{r.referrer}</td>
+                  <td style={{ ...td, fontWeight: 600 }}>
+                    <ClientNameCell name={r.referrer} />
+                  </td>
                   <td style={td}>
                     <span
                       className="figure"
@@ -304,7 +375,9 @@ function ReferralView({ money }: { money: boolean }) {
                       {r.code}
                     </span>
                   </td>
-                  <td style={td}>{r.referredClient}</td>
+                  <td style={td}>
+                    <ClientNameCell name={r.referredClient} />
+                  </td>
                   <td className="figure" style={{ ...td, color: 'var(--text2)' }}>
                     {r.dateBs} BS
                   </td>
@@ -403,7 +476,7 @@ function CreditView() {
             <div
               key={p.tier}
               style={{
-                padding: 12,
+                padding: 'var(--sp-md)',
                 borderRadius: 'var(--r-card)',
                 background: 'var(--card2)',
                 border: '1px solid var(--border)',
@@ -477,7 +550,11 @@ function CreditView() {
                   const tight = c.creditUsedPaisa > c.creditLimitPaisa * 0.8
                   return (
                     <tr key={c.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ ...td, fontWeight: 600 }}>{c.name}</td>
+                      <td style={{ ...td, fontWeight: 600 }}>
+                        <Link to={`/clients/${c.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                          {c.name}
+                        </Link>
+                      </td>
                       <td style={td}>
                         <span
                           style={{

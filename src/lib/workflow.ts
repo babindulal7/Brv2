@@ -67,6 +67,11 @@ export function clientLabel(s: BookingStatus, overdue = false): string {
  * §1.2 — "Forward-only. Stages may not be skipped." A reversal is not a
  * transition; it is a Manager-approved, audited exception, so it is deliberately
  * not expressible here.
+ *
+ * This answers ordering **only**. The question a screen actually asks — "may
+ * this booking move now?" — also needs §1.9's flags and §1.7's close gates, so
+ * it is `planTransition()` at the bottom of this file that callers use;
+ * `canAdvance` is the ordering clause inside it.
  */
 export function canAdvance(from: BookingStatus, to: BookingStatus): boolean {
   return BOOKING_STATUS[to].order === BOOKING_STATUS[from].order + 1
@@ -108,6 +113,15 @@ export function assertOneJobInProgress(states: Partial<Record<JobName, JobState>
   if (running.length > 1) {
     throw new Error(`§1.5 violated: ${running.length} jobs In Progress at once — ${running.join(', ')}`)
   }
+}
+
+/**
+ * §1.5 read backwards: which job's completion sets this status. `Quote` and
+ * `Booked` are reached by decisions, not jobs, and `Closed` by §1.7's gates —
+ * all three answer `null`. Derived from `JOBS`, never a second table.
+ */
+export function jobThatSets(to: BookingStatus): JobName | null {
+  return JOB_ORDER.find((j) => JOBS[j].sets === to) ?? null
 }
 
 /* ── §1.6 · item state ─────────────────────────────────────────────────── */
@@ -171,26 +185,55 @@ export interface FlagMeta {
   effect: string
   /** §4.2 — gold is outline-only and belongs to external gear alone. */
   token: StatusKey
+  /**
+   * The statuses this flag refuses to let a booking advance **into**.
+   *
+   * Not a new rule: it is `effect` above it, made machine-readable so
+   * `planTransition()` can read the registry instead of a screen re-typing
+   * the prose. Empty for every flag whose `effect` names no transition —
+   * including `Blocked` ("client cannot create **new** bookings" constrains
+   * creation, not this booking's lifecycle) and `Not Reset` ("blocks
+   * nothing", and §1.7 is explicit that Reset is not a close gate).
+   */
+  blocks: readonly BookingStatus[]
 }
 
+/**
+ * "Blocks Handover" (§1.9, on Deposit Pending and Payment Due) resolved to the
+ * status it actually stops — the one Handover sets — so the two cannot drift
+ * apart if §1.5's table ever moves.
+ */
+const BLOCKS_HANDOVER: readonly BookingStatus[] = JOBS.Handover.sets === null ? [] : [JOBS.Handover.sets]
+
+/** "Blocks Close" (§1.9, on Overdue, Missing and Damaged). */
+const BLOCKS_CLOSE: readonly BookingStatus[] = ['Closed']
+
 export const FLAGS: Record<Flag, FlagMeta> = {
-  Draft: { type: 'State', effect: 'Quote not yet sent', token: 'neutral' },
-  'Partial Pickup': { type: 'State', effect: 'Items remain at status Packed', token: 'progress' },
-  'Returned Early': { type: 'Information', effect: 'Reporting only', token: 'neutral' },
-  'Due Soon': { type: 'Attention', effect: 'Yellow badge, ≤24h to return', token: 'progress' },
-  Overdue: { type: 'Critical', effect: 'Red badge, blocks Close, triggers late-fee calculation', token: 'danger' },
-  Missing: { type: 'Critical', effect: 'Blocks Close, opens a Case', token: 'danger' },
-  Damaged: { type: 'Critical', effect: 'Blocks Close until charge approved or waived', token: 'danger' },
-  'Not Reset': { type: 'Attention', effect: 'Warns at next pickup, blocks nothing', token: 'progress' },
-  Unverified: { type: 'Attention', effect: 'Stock-check flag, self-heals on any later scan', token: 'progress' },
-  'Deposit Pending': { type: 'Attention', effect: 'Blocks Handover, not Confirm', token: 'progress' },
-  'Payment Due': { type: 'Attention', effect: 'Blocks Handover, not Confirm', token: 'progress' },
-  'Security Held': { type: 'State', effect: 'Cheque/ID held in custody; blocks silently closing', token: 'neutral' },
-  'Sub-Rented': { type: 'State', effect: 'Gold outline; excluded from ROI', token: 'ext' },
-  VIP: { type: 'Information', effect: 'Display only', token: 'neutral' },
-  Blocked: { type: 'Critical', effect: 'Client cannot create new bookings', token: 'danger' },
-  Sessions: { type: 'Information', effect: 'Count of handover/return sessions', token: 'neutral' },
-  Cancelled: { type: 'Critical', effect: 'Excluded from every operational count and revenue figure', token: 'danger' },
+  Draft: { type: 'State', effect: 'Quote not yet sent', token: 'neutral', blocks: [] },
+  'Partial Pickup': { type: 'State', effect: 'Items remain at status Packed', token: 'progress', blocks: [] },
+  'Returned Early': { type: 'Information', effect: 'Reporting only', token: 'neutral', blocks: [] },
+  'Due Soon': { type: 'Attention', effect: 'Yellow badge, ≤24h to return', token: 'progress', blocks: [] },
+  Overdue: { type: 'Critical', effect: 'Red badge, blocks Close, triggers late-fee calculation', token: 'danger', blocks: BLOCKS_CLOSE },
+  Missing: { type: 'Critical', effect: 'Blocks Close, opens a Case', token: 'danger', blocks: BLOCKS_CLOSE },
+  Damaged: { type: 'Critical', effect: 'Blocks Close until charge approved or waived', token: 'danger', blocks: BLOCKS_CLOSE },
+  'Not Reset': { type: 'Attention', effect: 'Warns at next pickup, blocks nothing', token: 'progress', blocks: [] },
+  Unverified: { type: 'Attention', effect: 'Stock-check flag, self-heals on any later scan', token: 'progress', blocks: [] },
+  'Deposit Pending': { type: 'Attention', effect: 'Blocks Handover, not Confirm', token: 'progress', blocks: BLOCKS_HANDOVER },
+  'Payment Due': { type: 'Attention', effect: 'Blocks Handover, not Confirm', token: 'progress', blocks: BLOCKS_HANDOVER },
+  // "Blocks silently closing" is not "blocks Close" — §1.7's four gates are the
+  // close gates, and this one asks for custody to be *acknowledged*, not for the
+  // transition to be refused. Left empty rather than hardened into a gate the
+  // spec does not state. See PLAN.md §4.16.
+  'Security Held': { type: 'State', effect: 'Cheque/ID held in custody; blocks silently closing', token: 'neutral', blocks: [] },
+  'Sub-Rented': { type: 'State', effect: 'Gold outline; excluded from ROI', token: 'ext', blocks: [] },
+  VIP: { type: 'Information', effect: 'Display only', token: 'neutral', blocks: [] },
+  Blocked: { type: 'Critical', effect: 'Client cannot create new bookings', token: 'danger', blocks: [] },
+  Sessions: { type: 'Information', effect: 'Count of handover/return sessions', token: 'neutral', blocks: [] },
+  // §1.3 keeps Cancelled orthogonal to the six — 0015's header calls it "an
+  // orthogonal terminal action on bookings, not a step in the forward-only
+  // stage lifecycle" — and no spec text says a cancelled booking may not still
+  // be walked to Closed for settlement. Not decided here. See PLAN.md §4.16.
+  Cancelled: { type: 'Critical', effect: 'Excluded from every operational count and revenue figure', token: 'danger', blocks: [] },
 }
 
 /* ── §1.7 · close gates ────────────────────────────────────────────────── */
@@ -222,6 +265,98 @@ export function closeGates(i: CloseGateInput): Array<{ label: string; passing: b
       blocking: i.damageChargesPendingApproval === 0 ? null : `${i.damageChargesPendingApproval} pending`,
     },
   ]
+}
+
+/* ── §1.2 + §1.7 + §1.9 · the transition decision ──────────────────────── */
+
+/**
+ * One refused clause. §5.6 wants a failing gate to carry the blocking *value*,
+ * not just the word "blocked", so every blocker names one where it has one.
+ */
+export interface TransitionBlocker {
+  /** Which of the three layers refused. */
+  rule: 'forward-only' | 'flag' | 'close-gate'
+  /** What the rule says, in the words the registry already holds. */
+  label: string
+  /** The value standing in the way, or `null` when the rule has none. */
+  blocking: string | null
+}
+
+export interface TransitionRequest {
+  from: BookingStatus
+  to: BookingStatus
+  /** §1.9 — the flags standing on the booking at the moment of the attempt. */
+  flags?: readonly Flag[]
+  /**
+   * §1.7's four gates. **Required when `to` is `'Closed'`** — omitting it there
+   * is itself a blocker, because "not evaluated" is not "passing".
+   */
+  gates?: CloseGateInput
+}
+
+export interface TransitionPlan {
+  from: BookingStatus
+  to: BookingStatus
+  allowed: boolean
+  /** Every reason, not the first — a screen shows the whole list inline (law 12). */
+  blockers: TransitionBlocker[]
+  /** §1.5 — the job whose completion sets `to`, when one does. */
+  job: JobName | null
+}
+
+/**
+ * The whole §1 question in one call: **may this booking move from `from` to
+ * `to` right now?**
+ *
+ * Three layers, all read from the tables above rather than restated:
+ *   1. `canAdvance` — §1.2's forward-only, no-skipping ordering.
+ *   2. `FLAGS[f].blocks` — §1.9's registry.
+ *   3. `closeGates` — §1.7's four, when and only when `to` is `'Closed'`.
+ *
+ * Pure. It decides; it does not write. `src/lib/bookingTransition.ts` is what
+ * applies an allowed plan (law 1 — the engine owns the rule, the data layer
+ * owns the row).
+ *
+ * A **reversal** is deliberately not expressible: §1.2 makes it a
+ * Manager-approved audited exception, and `booking_stage_transitions.is_reversal`
+ * (`0002_bookings.sql:447-452`) carries its own approver/reason/audit CHECK.
+ */
+export function planTransition(req: TransitionRequest): TransitionPlan {
+  const { from, to } = req
+  const flags = req.flags ?? []
+  const blockers: TransitionBlocker[] = []
+
+  if (!canAdvance(from, to)) {
+    const next = STATUS_ORDER[BOOKING_STATUS[from].order + 1]
+    blockers.push({
+      rule: 'forward-only',
+      label: `§1.2 is forward-only and stages may not be skipped: ${from} → ${to}`,
+      blocking: next === undefined ? 'Closed is final — nothing follows it' : `the next stage is ${next}`,
+    })
+  }
+
+  for (const flag of flags) {
+    const meta = FLAGS[flag]
+    if (meta.blocks.includes(to)) {
+      blockers.push({ rule: 'flag', label: meta.effect, blocking: flag })
+    }
+  }
+
+  if (to === 'Closed') {
+    if (req.gates === undefined) {
+      blockers.push({
+        rule: 'close-gate',
+        label: '§1.7 — all four close gates must pass',
+        blocking: 'not evaluated: no CloseGateInput was supplied',
+      })
+    } else {
+      for (const gate of closeGates(req.gates)) {
+        if (!gate.passing) blockers.push({ rule: 'close-gate', label: gate.label, blocking: gate.blocking })
+      }
+    }
+  }
+
+  return { from, to, allowed: blockers.length === 0, blockers, job: jobThatSets(to) }
 }
 
 /* ── §1.4 · migration from the retired 12 stages ───────────────────────── */

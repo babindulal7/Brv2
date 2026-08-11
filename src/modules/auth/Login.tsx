@@ -1,34 +1,64 @@
 import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { Card, Button, Input } from '../../components/ui'
-import Icon from '../../components/ui/Icon'
+import { Unavailable } from '../../components/ui/Unavailable'
+import { ErrorBanner } from '../../components/ui/StateViews'
+import { useAuth } from '../../lib/auth'
 
+/**
+ * **Staff sign-in.**
+ *
+ * Rewritten 11 Aug 2026. The previous build was a numeric PIN pad whose submit
+ * handler was `navigate('/today')` under a `// Mock login success` comment —
+ * any six digits, or none, signed anyone in as Owner. That is the whole reason
+ * `Shell`'s `if (!user)` guard never fired.
+ *
+ * This form authenticates against Supabase Auth for real. The role that governs
+ * every capability check is then read from `users.primary_role` by
+ * `AuthProvider` — the same row migration 0041's request hook feeds to every RLS
+ * policy, so the UI and the database agree by construction.
+ *
+ * **TODO(decision): PIN and OTP sign-in are not built.** Both appear in the
+ * render this screen was ported from, and PIN specifically is the warehouse
+ * tablet flow. Neither is implementable without rulings this project has not
+ * made: where a PIN is stored and how it maps to a Supabase identity (Supabase
+ * has no native PIN factor), which SMS gateway carries the OTP, and whether a
+ * shared floor tablet signs in as the device or as the person. Inventing any of
+ * that would bake an unmade security decision into a login screen, so both are
+ * surfaced as unavailable-with-reason rather than faked. See PLAN.md §4.
+ */
 export default function Login() {
-  const [phone, setPhone] = useState('')
-  const [pin, setPin] = useState('')
-  const [mode, setMode] = useState<'pin' | 'otp'>('pin')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const { signIn } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
 
-  const handleNumpad = (num: string) => {
-    if (mode === 'pin') {
-      if (pin.length < 6) setPin((p) => p + num)
-    } else {
-      if (phone.length < 10) setPhone((p) => p + num)
-    }
-  }
-
-  const handleDelete = () => {
-    if (mode === 'pin') {
-      setPin((p) => p.slice(0, -1))
-    } else {
-      setPhone((p) => p.slice(0, -1))
-    }
-  }
-
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Mock login success
-    navigate('/today')
+    if (busy) return
+    setError(null)
+
+    if (!email.trim() || !password) {
+      setError('Enter your work email and password.')
+      return
+    }
+
+    setBusy(true)
+    const { error: signInError } = await signIn(email.trim(), password)
+    setBusy(false)
+
+    if (signInError) {
+      // §12 — errors are inline and persistent. Never a toast.
+      setError(signInError)
+      return
+    }
+
+    // Return the user to wherever the guard intercepted them, not always /today.
+    const from = (location.state as { from?: string } | null)?.from
+    navigate(from && from !== '/login' ? from : '/today', { replace: true })
   }
 
   return (
@@ -49,145 +79,115 @@ export default function Login() {
           padding: '40px 32px',
           display: 'flex',
           flexDirection: 'column',
-          gap: 32,
-          textAlign: 'center',
+          gap: 28,
         }}
       >
-        <div>
+        <div style={{ textAlign: 'center' }}>
           <h1 style={{ fontSize: 'clamp(20px, 2vw, 24px)', fontWeight: 600, letterSpacing: '-0.02em', margin: '0 0 8px', color: 'var(--text)' }}>
             Welcome to Babin Rentals
           </h1>
           <p style={{ margin: 0, color: 'var(--text2)', fontSize: 'var(--t-meta)' }}>
-            {mode === 'pin' ? 'Enter your 6-digit PIN to access the floor.' : 'Enter your registered phone number.'}
+            Sign in with your work email to continue.
           </p>
         </div>
 
-        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          {mode === 'otp' && (
-            <div style={{ textAlign: 'left' }}>
-              <label style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', marginBottom: 6 }}>
-                Phone Number
-              </label>
-              <Input
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="98XXXXXXXX"
-                autoFocus
-                maxLength={10}
-                style={{ fontSize: 18, letterSpacing: '0.05em' }}
-              />
+        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
+          <div style={{ textAlign: 'left' }}>
+            <label
+              htmlFor="login-email"
+              style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', marginBottom: 6 }}
+            >
+              Work Email
+            </label>
+            <Input
+              id="login-email"
+              type="email"
+              autoComplete="username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@babinrentals.com"
+              autoFocus
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? 'login-error' : undefined}
+            />
+          </div>
+
+          <div style={{ textAlign: 'left' }}>
+            <label
+              htmlFor="login-password"
+              style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', marginBottom: 6 }}
+            >
+              Password
+            </label>
+            <Input
+              id="login-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? 'login-error' : undefined}
+            />
+          </div>
+
+          {/* §12 — inline, persistent, never a toast; icon + text, never colour
+              alone. Reuses the shared banner rather than a local copy. */}
+          {error && (
+            <div id="login-error">
+              <ErrorBanner title="Could not sign in" message={error} />
             </div>
           )}
 
-          {mode === 'pin' && (
-            <div style={{ textAlign: 'left' }}>
-              <label style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', marginBottom: 6 }}>
-                6-Digit PIN
-              </label>
-              <div style={{ display: 'flex', gap: 12, justifyContent: 'center', margin: '16px 0' }}>
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      width: 44,
-                      height: 52,
-                      borderRadius: 'var(--r-btn)',
-                      border: `1.5px solid ${pin.length === i ? 'var(--input-focus)' : pin.length > i ? 'var(--text)' : 'var(--border)'}`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: 24,
-                      fontWeight: 600,
-                      color: 'var(--text)',
-                      background: pin.length === i ? 'var(--hover-row)' : 'var(--input-bg)',
-                    }}
-                  >
-                    {pin[i] ? '•' : ''}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <Button type="submit" variant="primary" disabled={busy} style={{ height: 44, fontSize: 16 }}>
+            {busy ? 'Signing in…' : 'Sign In'}
+          </Button>
+        </form>
 
-          {/* Touch Numpad for Warehouse Tablet Flow */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, margin: '8px 0' }}>
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => handleNumpad(n.toString())}
-                style={{
-                  height: 56,
-                  borderRadius: 'var(--r-btn)',
-                  border: '1px solid var(--border)',
-                  background: 'var(--card2)',
-                  fontSize: 20,
-                  fontWeight: 600,
-                  color: 'var(--text)',
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                }}
-              >
-                {n}
-              </button>
-            ))}
-            <div />
+        {/* The two flows the render shows but this build cannot honestly provide. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', borderTop: '1px solid var(--border)', paddingTop: 'var(--sp-lg)' }}>
+          <Unavailable reason="PIN sign-in is not built: where a PIN is stored and how it maps to a staff identity has not been decided (PLAN.md §4).">
             <button
               type="button"
-              onClick={() => handleNumpad('0')}
+              disabled
               style={{
-                height: 56,
+                width: '100%',
+                minHeight: 44,
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
-                background: 'var(--card2)',
-                fontSize: 20,
+                background: 'transparent',
+                color: 'var(--muted)',
+                fontSize: 'var(--t-meta)',
                 fontWeight: 600,
-                color: 'var(--text)',
-                cursor: 'pointer',
                 fontFamily: 'inherit',
+                cursor: 'not-allowed',
               }}
             >
-              0
+              Sign in with PIN
             </button>
+          </Unavailable>
+
+          <Unavailable reason="OTP sign-in is not built: no SMS gateway is wired and the shared-device identity rule is undecided (PLAN.md §4).">
             <button
               type="button"
-              onClick={handleDelete}
+              disabled
               style={{
-                height: 56,
+                width: '100%',
+                minHeight: 44,
                 borderRadius: 'var(--r-btn)',
                 border: 'none',
                 background: 'transparent',
-                color: 'var(--text2)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                color: 'var(--muted)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: 500,
+                fontFamily: 'inherit',
+                cursor: 'not-allowed',
               }}
             >
-              <Icon name="return_arrow" size={24} />
+              Forgot password? Send OTP
             </button>
-          </div>
-
-          <Button type="submit" variant="primary" style={{ height: 44, fontSize: 16 }}>
-            {mode === 'pin' ? 'Unlock' : 'Send OTP'}
-          </Button>
-
-          <button
-            type="button"
-            onClick={() => setMode(mode === 'pin' ? 'otp' : 'pin')}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--link)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 500,
-              cursor: 'pointer',
-              marginTop: -8,
-            }}
-          >
-            {mode === 'pin' ? 'Forgot PIN? Send OTP' : 'Back to PIN login'}
-          </button>
-        </form>
+          </Unavailable>
+        </div>
       </Card>
     </div>
   )

@@ -146,18 +146,28 @@ create policy booking_lines_all on booking_lines
 
 -- =============================================================================
 -- 4. Inventory (Units, Assets, Maintenance, Packing)
+--
+-- NOTE (fixed 9 Aug 2026, see 0020): these three policies were originally
+-- written against a table named `inventory_units`, which was never created
+-- anywhere in this schema -- `product_units` (0004_inventory.sql) is the
+-- real table and was evidently renamed at some point in drafting without
+-- updating these statements or the audit trigger in 0010. As written, these
+-- three CREATE POLICY statements and 0010's `trg_audit_inventory_units`
+-- would all fail with "relation does not exist" the moment this file was
+-- applied, aborting the whole migration. Retargeted to `product_units` here;
+-- 0020 tightens `_select` from `using (true)` to a real role check.
 -- =============================================================================
-create policy inventory_units_select on inventory_units
+create policy product_units_select on product_units
   for select
   using (true);
 
-create policy inventory_units_insert on inventory_units
+create policy product_units_insert on product_units
   for insert
   with check (
     auth_user_role() in ('Owner', 'Manager', 'Warehouse')
   );
 
-create policy inventory_units_update on inventory_units
+create policy product_units_update on product_units
   for update
   using (
     auth_user_role() in ('Owner', 'Manager', 'Warehouse')

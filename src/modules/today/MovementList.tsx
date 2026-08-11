@@ -6,7 +6,12 @@ import type { StatusKey } from '../../lib/status'
 import type { Movement } from '../../types/today'
 import { ROWS_PER_COLUMN, ROW_MENU, HOVER, HOVER_FALLBACK, timeOf, statusKeyOf, has } from '../../data/today'
 import { cardStyle } from '../../components/ui/Page'
+import { EmptyState } from '../../components/ui/StateViews'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { shouldFlipUp } from '../../lib/menuFlip'
+import { useToast } from '../../components/ui/Toast'
+import { useAuth } from '../../lib/auth'
+import type { SystemRole } from '../../types/database'
 
 interface MovementListProps {
   title: string
@@ -42,18 +47,60 @@ function Pill({ text, status }: { text: string; status: StatusKey }) {
 }
 
 /**
+ * Complete Pickup and Complete Return — the two most-used buttons on the floor,
+ * reachable from both the hover card and the row menu, which is why the dispatch
+ * lives here once instead of four times.
+ *
+ * Two things it refuses to invent:
+ *
+ * 1. **The identity.** The previous `user?.id ?? 'USR-001'` / `user?.role ??
+ *    'Manager'` pair stamped a made-up operator on a movement record whenever no
+ *    one was signed in. There is no fallback now — no session, no dispatch.
+ * 2. **The equipment.** `equipmentIds` was `['EQP-101']`, one real-looking unit
+ *    asserted on every booking. A `Movement` row carries no equipment ids
+ *    (`types/today.ts`), so there is nothing true to send; the empty array is
+ *    passed and the action's own `validate` rejects it. That refusal is correct
+ *    — the unit selection has to come from a screen that actually knows it.
+ *
+ * Both actions are still stubs, so `createAction` rejects them before `execute`
+ * either way. The success toast now fires only on a resolved promise, which for
+ * these two means: not until they persist something.
+ */
+function runMovementAction(
+  kind: 'pickup' | 'return',
+  bookingNo: string,
+  user: { id: string; role: SystemRole } | null,
+  onDone: () => void,
+) {
+  if (!user) {
+    console.error(
+      `[${kind}] not dispatched: no signed-in session. The dispatcher no longer substitutes a default identity.`,
+    )
+    return
+  }
+
+  const ctx = { userId: user.id, role: user.role }
+  const input = { rentalId: bookingNo, equipmentIds: [] as string[] }
+
+  const load =
+    kind === 'pickup'
+      ? import('../../actions/rentals/completePickup').then((mod) => mod.completePickup)
+      : import('../../actions/rentals/returnRental').then((mod) => mod.completeReturn)
+
+  load
+    .then((action) => action(input, ctx))
+    .then(onDone)
+    .catch((err) => console.error(`complete ${kind} failed:`, err))
+}
+
+/**
  * §12 — the 520px hover card. "Hover-only intel does not ship", so the same
  * card opens on long-press and on keyboard focus.
  */
 function HoverCard({ m }: { m: Movement }) {
+  const { showSuccessToast } = useToast()
+  const { user } = useAuth()
   const f = HOVER[m.bookingNo] ?? HOVER_FALLBACK
-  /*
-   * §8.3 — Deposit and Payment are money, so for a money-blind session the two
-   * rows are **not rendered**: the grid closes from eight facts to six. The
-   * "Receive Payment" quick action goes with them, because `canRecordPayment`
-   * would refuse it anyway and a button that cannot act is worse than no
-   * button.
-   */
   const money = useCanViewMoney()
   const facts: Array<[string, string]> = [
     ['Project', f.project],
@@ -64,10 +111,22 @@ function HoverCard({ m }: { m: Movement }) {
     ['Staff', f.staff],
     ['Notes', f.notes],
   ]
-  const actions: Array<[string, string]> = [
-    ['Open Booking', `/rentals/${m.bookingNo}`],
-    ...(money ? ([['Receive Payment', '/finance']] as Array<[string, string]>) : []),
-    ['Print Checklist', `/rentals/${m.bookingNo}/packing`],
+  const actions: Array<{ label: string, to?: string, onClick?: () => void }> = [
+    { label: 'Open Booking', to: `/rentals/${m.bookingNo}` },
+    ...(money ? ([{ label: 'Receive Payment', to: '/finance' }]) : []),
+    ...(m.kind === 'Pickup' ? [{
+      label: 'Complete Pickup',
+      onClick: () => runMovementAction('pickup', m.bookingNo, user, () =>
+        showSuccessToast('Pickup Completed', `Booking ${m.bookingNo} handed over.`),
+      )
+    }] : []),
+    ...(m.kind === 'Return' ? [{
+      label: 'Complete Return',
+      onClick: () => runMovementAction('return', m.bookingNo, user, () =>
+        showSuccessToast('Return Completed', `Booking ${m.bookingNo} received & returned.`),
+      )
+    }] : []),
+    { label: 'Print Checklist', to: `/rentals/${m.bookingNo}/packing` },
   ]
   return (
     <div
@@ -75,19 +134,20 @@ function HoverCard({ m }: { m: Movement }) {
       data-overlay
       style={{
         position: 'absolute',
-        top: 'calc(100% - 6px)',
+        top: 'calc(100% - 4px)',
         left: 10,
-        zIndex: 40,
+        zIndex: 45,
         width: 'min(520px, calc(100vw - 340px))',
-        padding: 14,
+        padding: 16,
         borderRadius: 'var(--r-card)',
-        background: 'var(--hover-card)',
+        background: 'var(--card)',
         border: '1px solid var(--border)',
         boxShadow: 'var(--shadow-modal)',
         textAlign: 'left',
+        animation: 'fadeIn 0.15s ease-out',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginBottom: 10 }}>
         <span style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{m.client}</span>
         {has(m, 'VIP') && <VipBadge />}
         <span className="identifier" style={{ fontSize: 'var(--t-meta)', color: 'var(--link)', fontWeight: 600 }}>{m.bookingNo}</span>
@@ -95,7 +155,7 @@ function HoverCard({ m }: { m: Movement }) {
           <Pill text={m.status} status={statusKeyOf(m)} />
         </span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px 16px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px' }}>
         {facts.map(([l, v]) => (
           <div key={l} style={{ minWidth: 0 }}>
             <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
@@ -105,30 +165,36 @@ function HoverCard({ m }: { m: Movement }) {
           </div>
         ))}
       </div>
-      {/* §12's "quick actions" — real destinations, not decoration. */}
-      <div style={{ display: 'flex', gap: 6, marginTop: 11, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-        {actions.map(([label, to]) => (
-          <Link
-            key={label}
-            to={to}
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              height: 26,
-              padding: '0 9px',
-              borderRadius: 'var(--r-btn)',
-              border: '1px solid var(--border)',
-              background: 'var(--card)',
-              color: 'var(--text2)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              textDecoration: 'none',
-            }}
-          >
-            {label}
-          </Link>
-        ))}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+        {actions.map(({ label, to, onClick }) => {
+          const style = {
+            height: 28,
+            padding: '0 11px',
+            borderRadius: 'var(--r-btn)',
+            border: '1px solid var(--border)',
+            background: 'var(--card2)',
+            color: 'var(--text2)',
+            fontSize: 'var(--t-meta)',
+            fontWeight: 600,
+            display: 'inline-flex',
+            alignItems: 'center',
+            textDecoration: 'none',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }
+          if (to) {
+            return (
+              <Link key={label} to={to} onClick={(e) => e.stopPropagation()} style={style} className="lift">
+                {label}
+              </Link>
+            )
+          }
+          return (
+            <button key={label} type="button" onClick={(e) => { e.stopPropagation(); onClick?.(); }} style={style} className="lift">
+              {label}
+            </button>
+          )
+        })}
       </div>
     </div>
   )
@@ -157,6 +223,9 @@ function VipBadge() {
   )
 }
 
+/** Tallest the menu gets — all 14 `ROW_MENU` entries, one per row, plus padding. */
+const ROW_MENU_H = 460
+
 /**
  * §13 — the row menu. Open is first; it is also the row's primary action.
  *
@@ -167,13 +236,13 @@ function VipBadge() {
  * not carry a client contact yet; inventing one would put a fake number behind
  * a `tel:` link.
  */
-function RowMenu({ onClose, m }: { onClose: () => void; m: Movement }) {
+function RowMenu({ onClose, m, up }: { onClose: () => void; m: Movement; up: boolean }) {
   const navigate = useNavigate()
   const money = useCanViewMoney()
+  const { user } = useAuth()
+  const { showSuccessToast } = useToast()
   const booking = `/rentals/${m.bookingNo}`
-  // §8.3 — "Invoice" opens a document that is a rupee figure. For a money-blind
-  // session the entry is absent from the menu, not greyed: a disabled item still
-  // says an invoice exists.
+
   const entries = ROW_MENU.filter((e) => money || e !== 'Invoice')
 
   const actions: Partial<Record<(typeof ROW_MENU)[number], () => void>> = {
@@ -182,7 +251,18 @@ function RowMenu({ onClose, m }: { onClose: () => void; m: Movement }) {
     'Packing List': () => navigate(`${booking}/packing`),
     'Print Checklist': () => navigate(`${booking}/packing`),
     Invoice: () => navigate('/documents'),
-    'Copy Booking Number': () => void navigator.clipboard?.writeText(m.bookingNo),
+    'Copy Booking Number': () => {
+      void navigator.clipboard?.writeText(m.bookingNo)
+      showSuccessToast('Copied', `Booking number ${m.bookingNo} copied to clipboard.`)
+    },
+    'Complete Pickup': () =>
+      runMovementAction('pickup', m.bookingNo, user, () =>
+        showSuccessToast('Pickup Completed', `Booking ${m.bookingNo} handed over.`),
+      ),
+    'Complete Return': () =>
+      runMovementAction('return', m.bookingNo, user, () =>
+        showSuccessToast('Return Completed', `Booking ${m.bookingNo} received & returned.`),
+      )
   }
   const why: Partial<Record<(typeof ROW_MENU)[number], string>> = {
     QR: 'QR rendering lands with the Evidence matcher',
@@ -199,7 +279,7 @@ function RowMenu({ onClose, m }: { onClose: () => void; m: Movement }) {
       data-overlay
       style={{
         position: 'absolute',
-        top: 26,
+        ...(up ? { bottom: 26 } : { top: 26 }),
         right: 0,
         zIndex: 45,
         minWidth: 190,
@@ -231,7 +311,7 @@ function RowMenu({ onClose, m }: { onClose: () => void; m: Movement }) {
               width: '100%',
               padding: '5px 8px',
               border: 'none',
-              borderRadius: 6,
+              borderRadius: 'var(--r-xs)',
               background: 'transparent',
               color: !act ? 'var(--muted)' : entry === 'Cancel' ? 'var(--danger-text)' : 'var(--text2)',
               fontSize: 'var(--t-meta)',
@@ -263,7 +343,7 @@ function RowMenu({ onClose, m }: { onClose: () => void; m: Movement }) {
 export default function MovementList({ title, badge, badgeStatus, rows, moreNoun, viewAll, emptyNote }: MovementListProps) {
   const navigate = useNavigate()
   const [hover, setHover] = useState<string | null>(null)
-  const [menu, setMenu] = useState<string | null>(null)
+  const [menu, setMenu] = useState<{ id: string; up: boolean } | null>(null)
   const press = useRef<number | null>(null)
   const suppress = useRef(false)
 
@@ -335,9 +415,9 @@ export default function MovementList({ title, badge, badgeStatus, rows, moreNoun
 
       <div style={{ flex: 1 }}>
         {shown.length === 0 && (
-          <p style={{ margin: 0, padding: '26px 16px', fontSize: 'var(--t-meta)', color: 'var(--muted)', textAlign: 'center', lineHeight: 1.6 }}>
-            {emptyNote}
-          </p>
+          <div style={{ padding: '20px 16px' }}>
+            <EmptyState title="No movements to show" description={emptyNote} />
+          </div>
         )}
         {shown.map((r, i) => (
           <div
@@ -392,7 +472,7 @@ export default function MovementList({ title, badge, badgeStatus, rows, moreNoun
               style={{
                 width: 34,
                 height: 34,
-                borderRadius: 999,
+                borderRadius: 'var(--r-badge)',
                 background: STATUS[r.avatarTone].bg,
                 color: STATUS[r.avatarTone].fg,
                 border: STATUS[r.avatarTone].border ? `1px solid ${STATUS[r.avatarTone].border}` : undefined,
@@ -466,7 +546,7 @@ export default function MovementList({ title, badge, badgeStatus, rows, moreNoun
                     alignItems: 'center',
                     height: 21,
                     padding: '0 7px',
-                    borderRadius: 6,
+                    borderRadius: 'var(--r-xs)',
                     background: STATUS[r.kitStatus].bg,
                     color: STATUS[r.kitStatus].fg,
                     fontSize: 'var(--t-meta)',
@@ -480,7 +560,7 @@ export default function MovementList({ title, badge, badgeStatus, rows, moreNoun
               </div>
 
               <div
-                style={{ marginTop: 4, fontSize: 'var(--t-meta)', color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                style={{ marginTop: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
               >
                 {r.staff}
                 {r.due ? ` · ${r.due}` : ''}
@@ -488,16 +568,20 @@ export default function MovementList({ title, badge, badgeStatus, rows, moreNoun
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0, position: 'relative' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
                 <Pill text={r.status} status={statusKeyOf(r)} />
                 <button
                   type="button"
                   aria-label={`More actions for ${r.client}`}
                   aria-haspopup="menu"
-                  aria-expanded={menu === r.id}
+                  aria-expanded={menu?.id === r.id}
                   onClick={(e) => {
                     e.stopPropagation()
-                    setMenu((x) => (x === r.id ? null : r.id))
+                    // Captured now, not read inside the updater below — a native event's
+                    // `currentTarget` is nulled once dispatch finishes, and the updater
+                    // runs after that.
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    setMenu((x) => (x?.id === r.id ? null : { id: r.id, up: shouldFlipUp(rect, ROW_MENU_H) }))
                   }}
                   style={{
                     border: 'none',
@@ -506,7 +590,7 @@ export default function MovementList({ title, badge, badgeStatus, rows, moreNoun
                     cursor: 'pointer',
                     width: 22,
                     height: 22,
-                    borderRadius: 6,
+                    borderRadius: 'var(--r-xs)',
                     display: 'grid',
                     placeItems: 'center',
                   }}
@@ -525,12 +609,13 @@ export default function MovementList({ title, badge, badgeStatus, rows, moreNoun
                 </div>
               )}
 
-              {/* Reverted Open Booking button removal to match Dashboard.PNG layout */}
-
-              {menu === r.id && <RowMenu m={r} onClose={() => setMenu(null)} />}
+              {menu?.id === r.id && <RowMenu m={r} onClose={() => setMenu(null)} up={menu.up} />}
             </div>
 
-            {hover === r.id && menu !== r.id && <HoverCard m={r} />}
+            {/* `menu` is `{ id, up } | null`, so the old `menu !== r.id` compared an
+                object to a string and was always true — the 520px hover card rendered
+                straight through the open row menu. Compare the id, not the object. */}
+            {hover === r.id && menu?.id !== r.id && <HoverCard m={r} />}
           </div>
         ))}
       </div>

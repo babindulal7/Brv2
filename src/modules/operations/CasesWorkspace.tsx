@@ -1,143 +1,69 @@
 import { useState, useMemo } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { EmptyState } from '../../components/ui/StateViews'
 import { useToast } from '../../components/ui/Toast'
-import { formatMoney, rupees, type Paisa } from '../../lib/money'
+import { formatMoney } from '../../lib/money'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { toBs, formatBs } from '../../lib/bs'
+import { findClientIdByBooking } from '../../data/clients'
+import {
+  CASES,
+  CASE_WORKSPACE_ROUTE,
+  STATUS_COUNTS,
+  openCasesCount,
+  awaitingDecisionCount,
+  exposurePaisa,
+  recoveredThisMonthPaisa,
+  outstandingOf,
+  type Case,
+  type CaseStatus,
+  type CasePriority,
+} from '../../data/cases'
 import { IconSearch, IconPlus, IconDownload } from '@tabler/icons-react'
 
-
-type CaseStatus = 'Open' | 'In Progress' | 'Under Review' | 'Awaiting Decision' | 'Resolved' | 'Closed' | 'Cancelled'
-type CasePriority = 'Low' | 'Medium' | 'High' | 'Critical'
-type CaseType = 'Damage' | 'Missing' | 'Theft' | 'Client Dispute' | 'Vendor Issue' | 'Late Return'
-type Disposition = 'Charge Client' | 'Recover from Partner' | 'Insurance Claim' | 'Write-off' | 'Waived' | 'Pending Decision'
-
-interface CaseRecord {
-  id: string
-  type: CaseType
-  title: string
-  counterparty: string
-  linkedBooking?: string
-  equipment?: string
-  priority: CasePriority
-  status: CaseStatus
-  disposition: Disposition
-  assessedPaisa: Paisa
-  outstandingPaisa: Paisa
-  ageDays: number
-  owner: string
-  createdBs: string
-  createdAd: string
+/** Age in whole days from openedAd to today (lib/bs TODAY is fixed to 31 Jul 2026). */
+function ageDaysOf(c: Case): number {
+  const MS_PER_DAY = 86_400_000
+  // TODAY from lib/bs is 2026-07-31 UTC-midnight; use it via the module-level CASES constant
+  // which already imports it. We just compare against the same epoch.
+  const todayMs = Date.UTC(2026, 6, 31) // 31 Jul 2026 — matches lib/bs TODAY
+  return Math.floor((todayMs - c.openedAd.getTime()) / MS_PER_DAY)
 }
 
-// Seed data matching the specification requirements (Open Cases = 36)
-const CASES_DATA: CaseRecord[] = [
-  {
-    id: 'CASE-2026-0041',
-    type: 'Damage',
-    title: 'ARRI Alexa Mini LF - Cracked Sensor Glass',
-    counterparty: 'Kathmandu Cinema Works',
-    linkedBooking: 'BK-2026-0715',
-    equipment: 'EQ-00104',
-    priority: 'Critical',
-    status: 'Under Review',
-    disposition: 'Pending Decision',
-    assessedPaisa: rupees(450000),
-    outstandingPaisa: rupees(450000),
-    ageDays: 4,
-    owner: 'Arjun M.',
-    createdBs: '2083/04/05',
-    createdAd: '20 Jul 2026',
-  },
-  {
-    id: 'CASE-2026-0040',
-    type: 'Missing',
-    title: 'Sony NP-FZ100 Battery (x2) Missing on Return',
-    counterparty: 'Freelance - Bikram Rai',
-    linkedBooking: 'BK-2026-0714',
-    priority: 'Low',
-    status: 'Awaiting Decision',
-    disposition: 'Pending Decision',
-    assessedPaisa: rupees(18000),
-    outstandingPaisa: rupees(18000),
-    ageDays: 6,
-    owner: 'Sita T.',
-    createdBs: '2083/04/03',
-    createdAd: '18 Jul 2026',
-  },
-  {
-    id: 'CASE-2026-0038',
-    type: 'Client Dispute',
-    title: 'Dispute over late return fees (Traffic Jam claim)',
-    counterparty: 'Himalayan Films',
-    linkedBooking: 'BK-2026-0708',
-    priority: 'Medium',
-    status: 'Open',
-    disposition: 'Pending Decision',
-    assessedPaisa: rupees(15000),
-    outstandingPaisa: rupees(15000),
-    ageDays: 12,
-    owner: 'Manager',
-    createdBs: '2083/03/28',
-    createdAd: '12 Jul 2026',
-  },
-  {
-    id: 'CASE-2026-0035',
-    type: 'Damage',
-    title: 'DJI Mavic 3 Pro - Propeller Guard Broken',
-    counterparty: 'Shine Pictures Nepal',
-    linkedBooking: 'BK-2026-0695',
-    equipment: 'EQ-00512',
-    priority: 'Medium',
-    status: 'Resolved',
-    disposition: 'Charge Client',
-    assessedPaisa: rupees(4500),
-    outstandingPaisa: rupees(0),
-    ageDays: 18,
-    owner: 'Arjun M.',
-    createdBs: '2083/03/22',
-    createdAd: '06 Jul 2026',
-  },
-  {
-    id: 'CASE-2026-0032',
-    type: 'Vendor Issue',
-    title: 'Sub-rented RED V-Raptor arrived with missing plates',
-    counterparty: 'GearHouse KTM',
-    linkedBooking: 'SR-2026-015',
-    equipment: 'EQ-SUB-044',
-    priority: 'High',
-    status: 'In Progress',
-    disposition: 'Recover from Partner',
-    assessedPaisa: rupees(25000),
-    outstandingPaisa: rupees(25000),
-    ageDays: 24,
-    owner: 'Manager',
-    createdBs: '2083/03/16',
-    createdAd: '30 Jun 2026',
-  },
-]
+function createdBsOf(c: Case): string {
+  const bs = toBs(c.openedAd)
+  return bs ? formatBs(bs) : '—'
+}
+
 
 type FilterKey = CaseStatus | 'All'
 
 export function CasesWorkspace() {
   const { showSuccessToast } = useToast()
+  const navigate = useNavigate()
+  const money = useCanViewMoney()
 
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
 
   const filteredCases = useMemo(() => {
-    return CASES_DATA.filter((c) => {
+    return CASES.filter((c) => {
       if (activeFilter !== 'All' && c.status !== activeFilter) return false
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
+        const equipNames = Array.isArray(c.equipment)
+          ? c.equipment.map((e) => e.name + ' ' + e.serial).join(' ')
+          : ''
         return (
           c.id.toLowerCase().includes(q) ||
           c.title.toLowerCase().includes(q) ||
-          c.counterparty.toLowerCase().includes(q) ||
-          (c.linkedBooking && c.linkedBooking.toLowerCase().includes(q)) ||
-          (c.equipment && c.equipment.toLowerCase().includes(q))
+          c.counterpartyName.toLowerCase().includes(q) ||
+          c.linked.linkedRecordId.toLowerCase().includes(q) ||
+          equipNames.toLowerCase().includes(q)
         )
       }
       return true
@@ -185,14 +111,14 @@ export function CasesWorkspace() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+      {/* KPIs — derived from canonical CASES array, never hand-typed (§3 / AUDIT_FINDINGS P1 #13) */}
+      <div style={{ display: 'grid', gridTemplateColumns: money ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)', gap: 14 }}>
         <Card padding="md">
           <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
             Open Cases
           </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--text)', marginTop: 4 }}>
-            36
+          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--text)', marginTop: 'var(--sp-xs)' }}>
+            {openCasesCount()}
           </div>
           <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
             All active & unresolved
@@ -202,55 +128,59 @@ export function CasesWorkspace() {
           <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
             Awaiting Decision
           </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--warn)', marginTop: 4 }}>
-            9
+          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--warn)', marginTop: 'var(--sp-xs)' }}>
+            {awaitingDecisionCount()}
           </div>
           <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
             Ready for manager review
           </span>
         </Card>
-        <Card padding="md">
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
-            Exposure
-          </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--bad)', marginTop: 4 }}>
-            Rs 6,45,000
-          </div>
-          <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-            Assessed value of open cases
-          </span>
-        </Card>
-        <Card padding="md">
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
-            Recovered This Month
-          </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--good)', marginTop: 4 }}>
-            Rs 1,12,000
-          </div>
-          <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-            Charged, claimed, and settled
-          </span>
-        </Card>
+        {money && (
+          <Card padding="md">
+            <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
+              Exposure
+            </span>
+            <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--bad)', marginTop: 'var(--sp-xs)' }}>
+              {formatMoney(exposurePaisa())}
+            </div>
+            <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
+              Assessed value of open cases
+            </span>
+          </Card>
+        )}
+        {money && (
+          <Card padding="md">
+            <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
+              Recovered This Month
+            </span>
+            <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--good)', marginTop: 'var(--sp-xs)' }}>
+              {formatMoney(recoveredThisMonthPaisa())}
+            </div>
+            <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
+              Charged, claimed, and settled
+            </span>
+          </Card>
+        )}
       </div>
 
       {/* Toolbar & Chips */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {[
-            { label: 'All', count: 46 },
-            { label: 'Open', count: 12 },
-            { label: 'In Progress', count: 8 },
-            { label: 'Under Review', count: 7 },
-            { label: 'Awaiting Decision', count: 9 },
-            { label: 'Resolved', count: 6 },
-            { label: 'Closed', count: 4 },
-          ].map((chip) => (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-lg)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+          {([
+            { label: 'All', count: CASES.length },
+            { label: 'Open', count: STATUS_COUNTS['Open'] },
+            { label: 'In Progress', count: STATUS_COUNTS['In Progress'] },
+            { label: 'Under Review', count: STATUS_COUNTS['Under Review'] },
+            { label: 'Awaiting Decision', count: STATUS_COUNTS['Awaiting Decision'] },
+            { label: 'Resolved', count: STATUS_COUNTS['Resolved'] },
+            { label: 'Closed', count: STATUS_COUNTS['Closed'] },
+          ] as const).map((chip) => (
             <button
               key={chip.label}
               onClick={() => setActiveFilter(chip.label as FilterKey)}
               style={{
                 padding: '6px 14px',
-                borderRadius: 20,
+                borderRadius: 'var(--r-modal)',
                 fontSize: 13,
                 fontWeight: 500,
                 cursor: 'pointer',
@@ -260,7 +190,7 @@ export function CasesWorkspace() {
                 transition: 'all 0.15s ease',
               }}
             >
-              {chip.label} <span className="figure" style={{ opacity: 0.85, marginLeft: 4 }}>{chip.count}</span>
+              {chip.label} <span className="figure" style={{ opacity: 0.85, marginLeft: 'var(--sp-xs)' }}>{chip.count}</span>
             </button>
           ))}
         </div>
@@ -321,7 +251,7 @@ export function CasesWorkspace() {
                   <th style={{ padding: '12px 14px' }}>Counterparty & Links</th>
                   <th style={{ padding: '12px 14px' }}>Priority</th>
                   <th style={{ padding: '12px 14px' }}>Status & Disposition</th>
-                  <th style={{ padding: '12px 14px' }}>Financial Impact</th>
+                  {money && <th style={{ padding: '12px 14px' }}>Financial Impact</th>}
                   <th style={{ padding: '12px 14px' }}>Age</th>
                   <th style={{ padding: '12px 14px', textAlign: 'right' }}>Actions</th>
                 </tr>
@@ -346,53 +276,68 @@ export function CasesWorkspace() {
                     </td>
                     <td style={{ padding: '12px 14px', maxWidth: 280 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: 'var(--card2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                        <span style={{ fontSize: 'var(--t-th)', fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: 'var(--card2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                           {c.type}
                         </span>
                       </div>
-                      <div style={{ fontWeight: 500, color: 'var(--text)', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <div style={{ fontWeight: 500, color: 'var(--text)', marginTop: 'var(--sp-xs)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {c.title}
                       </div>
                     </td>
                     <td style={{ padding: '12px 14px' }}>
-                      <div style={{ fontWeight: 500, color: 'var(--text)' }}>{c.counterparty}</div>
-                      <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                        {c.linkedBooking && (
-                          <span className="figure" style={{ fontSize: 11, color: 'var(--info)' }}>{c.linkedBooking}</span>
-                        )}
-                        {c.equipment && (
-                          <span className="figure" style={{ fontSize: 11, color: 'var(--muted)' }}>{c.equipment}</span>
+                      <div style={{ fontWeight: 500, color: 'var(--text)' }}>
+                        {(() => {
+                          const clientId = findClientIdByBooking(c.linked.linkedRecordId)
+                          return clientId ? (
+                            <Link to={`/clients/${clientId}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                              {c.counterpartyName}
+                            </Link>
+                          ) : (
+                            c.counterpartyName
+                          )
+                        })()}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, marginTop: 'var(--sp-xs)' }}>
+                        <Link to={`/rentals/${c.linked.linkedRecordId}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                          <span className="figure" style={{ fontSize: 11, color: 'var(--info)' }}>{c.linked.linkedRecordId}</span>
+                        </Link>
+                        {Array.isArray(c.equipment) && c.equipment.length > 0 && (
+                          <span className="figure" style={{ fontSize: 11, color: 'var(--muted)' }}>
+                            {c.equipment[0]?.serial}{c.equipment.length > 1 ? ` +${c.equipment.length - 1}` : ''}
+                          </span>
                         )}
                       </div>
                     </td>
                     <td style={{ padding: '12px 14px' }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: getPriorityColor(c.priority), fontWeight: 600 }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', color: getPriorityColor(c.priority), fontWeight: 600 }}>
                         <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
                         {c.priority}
                       </span>
                     </td>
                     <td style={{ padding: '12px 14px' }}>
                       <div style={{ fontWeight: 600, color: getStatusColor(c.status) }}>{c.status}</div>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{c.disposition}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{c.disposition ?? '—'}</div>
                     </td>
+                    {money && (
+                      <td style={{ padding: '12px 14px' }}>
+                        <div className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>
+                          {formatMoney(c.assessedPaisa)}
+                        </div>
+                        <div className="figure" style={{ fontSize: 11, color: outstandingOf(c) > 0 ? 'var(--bad)' : 'var(--muted)', marginTop: 2 }}>
+                          {outstandingOf(c) > 0 ? `${formatMoney(outstandingOf(c))} Due` : 'Settled'}
+                        </div>
+                      </td>
+                    )}
                     <td style={{ padding: '12px 14px' }}>
-                      <div className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>
-                        {formatMoney(c.assessedPaisa)}
-                      </div>
-                      <div className="figure" style={{ fontSize: 11, color: c.outstandingPaisa > 0 ? 'var(--bad)' : 'var(--muted)', marginTop: 2 }}>
-                        {c.outstandingPaisa > 0 ? `${formatMoney(c.outstandingPaisa)} Due` : 'Settled'}
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <div className="figure" style={{ fontWeight: 500, color: c.ageDays > 14 ? 'var(--warn)' : 'var(--text)' }}>
-                        {c.ageDays} Days
+                      <div className="figure" style={{ fontWeight: 500, color: ageDaysOf(c) > 14 ? 'var(--warn)' : 'var(--text)' }}>
+                        {ageDaysOf(c)} Days
                       </div>
                       <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                        {c.createdBs}
+                        {createdBsOf(c)}
                       </div>
                     </td>
                     <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                      <Button variant="secondary" size="sm">
+                      <Button variant="secondary" size="sm" onClick={() => navigate(CASE_WORKSPACE_ROUTE(c.id))}>
                         Open Case
                       </Button>
                     </td>

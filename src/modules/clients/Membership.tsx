@@ -64,9 +64,9 @@ function UsageBar({ u }: { u: Usage }) {
       </span>
       <span
         aria-hidden
-        style={{ display: 'block', height: 4, borderRadius: 999, background: 'var(--card2)', marginTop: 4, overflow: 'hidden' }}
+        style={{ display: 'block', height: 4, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 4, overflow: 'hidden' }}
       >
-        <span style={{ display: 'block', width: `${u.pct}%`, height: '100%', background: BRAND[tone], borderRadius: 999 }} />
+        <span style={{ display: 'block', width: `${u.pct}%`, height: '100%', background: BRAND[tone], borderRadius: 'var(--r-badge)' }} />
       </span>
       {(u.capped || u.suspended) && (
         <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: BRAND_TEXT[tone], marginTop: 2 }}>
@@ -134,7 +134,7 @@ function PlanCard({ p, money, onViewMembers, memberCount }: {
 
       <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 9, display: 'flex', flexDirection: 'column', gap: 5 }}>
         {limits.map((l) => (
-          <span key={l.label} style={{ display: 'flex', gap: 8, fontSize: 'var(--t-meta)', alignItems: 'baseline' }}>
+          <span key={l.label} style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', alignItems: 'baseline' }}>
             <span style={{ color: 'var(--text2)', flex: 1, minWidth: 0 }}>{l.label}</span>
             <span className="figure" style={{ fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' }}>
               {l.value}
@@ -182,7 +182,7 @@ function PlanCard({ p, money, onViewMembers, memberCount }: {
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: 4,
+            gap: 'var(--sp-xs)',
             marginTop: 7,
             padding: 0,
             border: 'none',
@@ -344,7 +344,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
             }
           />
 
-          <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)' }}>
             {/*
               §8.3 — Credit is a money surface end to end, so for a money-blind
               role the tab is **absent** here exactly as it is absent from the
@@ -495,7 +495,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
                 gap: 7,
                 height: 32,
                 padding: '0 11px',
-                borderRadius: 8,
+                borderRadius: 'var(--r-sm)',
                 border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
                 background: on ? 'var(--nav-active-bg)' : 'var(--card)',
                 color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
@@ -527,7 +527,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
             </button>
           )
         })}
-        <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--sp-sm)' }}>
           <Button
             icon="calendar"
             variant={renewingSoon ? 'primary' : 'secondary'}
@@ -556,7 +556,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
+            gap: 'var(--sp-sm)',
             padding: '8px 12px',
             borderRadius: 'var(--r-btn)',
             background: 'var(--nav-active-bg)',
@@ -595,7 +595,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
+            gap: 'var(--sp-sm)',
             padding: '9px 12px',
             borderBottom: '1px solid var(--border)',
             background: 'var(--card2)',
@@ -712,7 +712,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
                     </td>
 
                     <td style={td}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                         <span
                           aria-hidden
                           style={{
@@ -846,7 +846,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
                           cursor: 'pointer',
                           width: 26,
                           height: 26,
-                          borderRadius: 6,
+                          borderRadius: 'var(--r-xs)',
                           display: 'grid',
                           placeItems: 'center',
                         }}

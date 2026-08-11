@@ -10,6 +10,25 @@
    Dark  = cinematic · premium · OLED friendly · long working hours
    ========================================================================== */
 
+/*
+  ---- z-index scale: identical in both themes ----
+  A named, documented stacking scale. Existing components mostly still set
+  zIndex: with raw literals (values observed in an audit ranged across
+  1, 2, 3, 5, 10, 20, 21, 30, 35, 40, 45, 50, 60, 70, 200, 1000, 9000, 9999,
+  10000) — those literals are NOT migrated onto this scale as part of this
+  change; this only establishes the scale for future/adopted use. Chosen so
+  none of the five values collide with any literal already in live use, and
+  ordered so each named tier paints above the one before it.
+*/
+:root {
+  --z-dropdown: 1100;    /* menus, popovers, comboboxes */
+  --z-sticky-nav: 1200;  /* sticky headers / sub-navigation bars */
+  --z-overlay: 1300;     /* backdrops, full-screen scrims behind a modal/drawer */
+  --z-modal: 1400;       /* modal dialogs and drawers, above their own overlay */
+  --z-system: 10500;     /* system-critical: screen lock, system restore, toasts —
+                             above everything, including legacy 9999/10000 literals */
+}
+
 :root,
 :root[data-theme='light'] {
   /* brand */
@@ -75,6 +94,8 @@
   --btn-primary-fg: #ffffff;
   --btn-secondary-bg: #ffffff;
   --btn-secondary-border: #d1d5db;
+  --btn-danger-bg: #dc2626;
+  --btn-danger-fg: #ffffff;
 
   /* sidebar active — LIGHT: blue */
   --nav-active-accent: #2563eb;
@@ -205,9 +226,11 @@
      and its concern — gold colliding with the external-gear marker — applies
      to the light theme where --ext gold outlines actually appear. */
   --btn-primary-bg: #d8a93a;
-  --btn-primary-fg: #000000;
+  --btn-primary-fg: #0a0a0a;
   --btn-secondary-bg: #1f2937;
   --btn-secondary-border: #374151;
+  --btn-danger-bg: #ef4444;
+  --btn-danger-fg: #ffffff;
 
   /* sidebar active — DARK: gold */
   --nav-active-accent: #d8a93a;
@@ -269,15 +292,32 @@
 :root {
   /* radius */
   --r-btn: 12px;
-  --r-card: 14px; /* §4.4 — allowed radii are 6 / 8 / 14 / 999 */
+  --r-card: 14px; /* §4.4 — radius scale: --r-btn/--r-input 12px, --r-card 14px, --r-modal 20px, --r-badge 999px */
   --r-input: 12px;
   --r-modal: 20px;
   --r-badge: 999px;
+  /* Compact-element radii — chips, tags, icon wrappers: smaller than a full
+     button/card/input, so they don't share those tokens. Added after an audit
+     found --r-sm's 8px and --r-xs's 6px as the two most common hardcoded
+     radius literals with no token (130 and 76 occurrences respectively). */
+  --r-sm: 8px;
+  --r-xs: 6px;
 
   /* Inline links follow the theme's blue in both modes — gold is reserved for
      the dark primary and would read as a warning inline. This is the *text*
      blue: brand --blue measures 4.23:1 on the dark card. */
   --link: var(--blue-text);
+
+  /* Aliases for a handful of call sites (SubRental.tsx, CasesWorkspace.tsx,
+     CasesReports.tsx) that reference --good/--bad/--info directly instead of
+     the canonical *-text tokens above. Previously undefined — `color:
+     var(--bad)` with no such custom property resolves to the inherited
+     colour, silently dropping the red/green/blue signal these screens
+     depend on. Aliased rather than migrating every call site, since the
+     tokens already carry the right per-theme values. */
+  --good: var(--success-text);
+  --bad: var(--danger-text);
+  --info: var(--primary-text);
 
   /* spacing */
   --sp-xs: 4px;
@@ -551,6 +591,13 @@ td,
   border-color: var(--lift-accent, var(--border));
 }
 
+.press {
+  transition: transform 100ms ease;
+}
+.press:active {
+  transform: scale(0.97);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   .lift {
@@ -558,6 +605,9 @@ td,
     animation: none !important;
   }
   .lift:hover {
+    transform: none;
+  }
+  .press:active {
     transform: none;
   }
 }

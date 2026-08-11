@@ -119,7 +119,12 @@ create trigger trg_audit_payments after insert on payments
 create trigger trg_audit_security_deposits after insert or update on security_deposits
   for each row execute function log_audit_event();
 
-create trigger trg_audit_inventory_units after insert or update on inventory_units
+-- Retargeted 9 Aug 2026 (see 0020): written against a table named
+-- `inventory_units`, which does not exist anywhere in this schema --
+-- `product_units` (0004_inventory.sql) is the real table. As written this
+-- statement would fail with "relation does not exist" the moment this file
+-- was applied, aborting the whole migration.
+create trigger trg_audit_product_units after insert or update on product_units
   for each row execute function log_audit_event();
 
 
@@ -281,8 +286,24 @@ create trigger trg_sync_payments after insert on payments
 -- =============================================================================
 -- 6. Booking Handover & Closure Gate Enforcement Trigger
 -- Validates:
---   * Handover (Stage 6) requires zero blocking issues (unless manager override).
---   * Closed (Stage 10) requires settled invoice and settled deposit.
+--   * Handover (transition to 'On Rent') requires zero blocking issues.
+--   * Closed (transition to 'Closed') requires settled invoice and deposit.
+--
+-- Retargeted 9 Aug 2026 (see 0020): originally written against
+-- `NEW.stage_number` / `OLD.stage_number` -- a numbered-stage column from
+-- the retired 13-stage model that was never a real column on `bookings` in
+-- this schema (`stage_number` matches nothing in any of the 19 migration
+-- files; grep confirms these two lines were its only occurrences anywhere).
+-- As written, this trigger would raise "record 'new' has no field
+-- 'stage_number'" on every single UPDATE to `bookings`, live or not.
+-- `bookings.stage` (enum `booking_stage`, canonical six stages, declared in
+-- lifecycle order per 0015) is the real column; Postgres enum comparison
+-- (`<`) follows that declared order, so `OLD.stage < 'On Rent'` reproduces
+-- the old ordinal `OLD.stage_number < 6` check exactly. Old "Stage 6"
+-- (Handover -- equipment leaves the warehouse) maps to the new 'On Rent'
+-- stage; old "Stage 10" (Closed) maps directly to the new 'Closed' stage,
+-- same name. The gate LOGIC itself (deposit/invoice settlement checks) is
+-- unchanged -- only the broken column reference is fixed.
 -- =============================================================================
 create or replace function validate_booking_gates()
 returns trigger
@@ -292,8 +313,8 @@ declare
   v_deposit_pending numeric(14,2) := 0;
   v_rental_outstanding numeric(14,2) := 0;
 begin
-  -- 1. Check Handover Gate (Transition to Stage 6)
-  if NEW.stage_number = 6 and (OLD.stage_number is null or OLD.stage_number < 6) then
+  -- 1. Check Handover Gate (Transition to 'On Rent')
+  if NEW.stage = 'On Rent' and (OLD.stage is null or OLD.stage < 'On Rent') then
     -- Check deposit pending
     select coalesce(pending_amount, 0) into v_deposit_pending
     from security_deposits
@@ -313,8 +334,8 @@ begin
     end if;
   end if;
 
-  -- 2. Check Closed Gate (Transition to Stage 10)
-  if NEW.stage_number = 10 and (OLD.stage_number is null or OLD.stage_number < 10) then
+  -- 2. Check Closed Gate (Transition to 'Closed')
+  if NEW.stage = 'Closed' and (OLD.stage is null or OLD.stage < 'Closed') then
     select coalesce(sum(outstanding_amount), 0) into v_rental_outstanding
     from invoices
     where booking_id = NEW.id and status not in ('Void');

@@ -175,6 +175,17 @@ export interface RentalRow {
   due?: Paisa
   /** §2.7 — a liability, never part of the total. Shown as its own line. */
   deposit?: Paisa
+  /**
+   * Hover Intel System v2.1 — Quote card only (`quoteGlance`/
+   * `quoteDetailGroups` in `data/bookingIntel.ts`). Present only on
+   * `status: 'Quote'` rows. A pre-formatted "D MMM YYYY" label — the same
+   * convention `data/booking.ts`'s `PaymentHistoryRow.date` already uses —
+   * not a `Date`, since nothing downstream does day-math on a quote's
+   * sent/validity date today.
+   */
+  sentAd?: string
+  /** When the quoted price stops being honoured. Same label convention as `sentAd`. */
+  validUntilAd?: string
 }
 
 export const ROWS: RentalRow[] = [
@@ -188,7 +199,7 @@ export const ROWS: RentalRow[] = [
     project: 'Commercial Shoot',
     location: 'Kathmandu',
     crew: 'Crew 8',
-    kit: 'RED Komodo X Package',
+    kit: 'FX3 Documentary Package',
     items: 18,
     pickup: { ad: ad(2026, 7, 31), time: '09:00 AM', who: 'Ramesh' },
     ret: { ad: ad(2026, 8, 2), time: '06:00 AM', who: 'Hari' },
@@ -198,8 +209,10 @@ export const ROWS: RentalRow[] = [
     statusNote: 'Preparing',
     progress: 1,
     progressTone: 'primary',
-    amount: rupees(86_400),
-    due: rupees(0),
+    // Matches data/booking.ts's engine-computed MONEY.rentalTotal/outstanding
+    // for this same booking number (§P0 fix — was a stale, disagreeing figure).
+    amount: rupees(139_506),
+    due: rupees(124_506),
     deposit: rupees(50_000),
   },
   {
@@ -269,8 +282,10 @@ export const ROWS: RentalRow[] = [
     statusKey: statusToken('On Rent'),
     progress: 3,
     progressTone: 'primary',
-    amount: rupees(61_000),
-    due: rupees(0),
+    // Matches Finance.tsx's INV-2026-0491 for this booking (amount 312,000,
+    // paidPaisa 180,000 -> 132,000 outstanding), not this row's stale figures.
+    amount: rupees(312_000),
+    due: rupees(132_000),
     deposit: rupees(40_000),
   },
   {
@@ -369,6 +384,13 @@ export const ROWS: RentalRow[] = [
     statusKey: statusToken('Quote'),
     progress: 0,
     progressTone: 'neutral',
+    // Both plausible against this row's own timeline (booked 1 Jul, pickup 5
+    // Jul, return 6 Jul) — sent the day after the booking record was opened,
+    // valid through the day before pickup. No `amount` exists on this row (a
+    // cancelled booking has nothing to bill), so the Quote card states that
+    // gap honestly rather than inventing a quoted figure here.
+    sentAd: '2 Jul 2026',
+    validUntilAd: '4 Jul 2026',
   },
 ]
 

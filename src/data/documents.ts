@@ -103,16 +103,18 @@ export const DOC_STATUS: Record<DocStatus, StatusKey> = {
 export type RelatedKind = 'booking' | 'payment' | 'case' | 'job' | 'equipment' | 'template'
 
 /**
- * What each kind would open, and whether that screen exists yet. Only Booking
- * does, so only Booking is a link — the rest state the reason instead of
- * pretending.
+ * What each kind would open, and whether that screen exists yet. Booking and
+ * Equipment record do (`/rentals/:bookingId` and `/inventory/:assetId` —
+ * the latter resolves either an asset code or a unit serial, the two id
+ * shapes `relatedTo` carries for `equipment` rows), so those two are links —
+ * the rest state the reason instead of pretending.
  */
 export const RELATED_TARGET: Record<RelatedKind, { label: string; route: string | null }> = {
   booking: { label: 'Booking', route: '/rentals' },
   payment: { label: 'Payment', route: null },
   case: { label: 'Case', route: null },
   job: { label: 'Maintenance job', route: null },
-  equipment: { label: 'Equipment record', route: null },
+  equipment: { label: 'Equipment record', route: '/inventory' },
   template: { label: 'Template', route: null },
 }
 
@@ -165,6 +167,26 @@ export interface DocRow {
   /** Days a signature has been outstanding, for the rail panel. */
   ageing?: string
   ageingSevere?: boolean
+  /**
+   * Hover Intel System v2.1 — the Document card's Signature group. No
+   * per-document signer *identity* exists anywhere in this data model (no
+   * contact-person record is linked from a document row to a person's name),
+   * so this is never a guessed individual — seeded rows state the real
+   * counterparty of record (`party`) instead, and every unseeded row renders
+   * "Not on file" rather than inventing a name. Undefined on every row except
+   * the 1-2 seeded in `DOCUMENTS` below.
+   */
+  signer?: string
+  /**
+   * Hover Intel System v2.1 — the Document card's Versions group: this row's
+   * *own* revision history (draft → signed), distinct from a *template's*
+   * pinned version (§7 — `RA · v4`, `INV · v2` below carry `templateId ·
+   * version` because a template is not an issued document). Seeded on the
+   * one row the glance spec's own example ("Agreement · ... · signed 26 Jul")
+   * illustrates; the final entry matches that row's own `createdAd`, so
+   * nothing here contradicts a real field. Undefined everywhere else.
+   */
+  versions?: Array<{ version: string; ad: string }>
 }
 
 /**
@@ -173,12 +195,22 @@ export interface DocRow {
  */
 export const DOCUMENTS: DocRow[] = [
   { id: 'DMG-2026-0041', name: 'Damage Report', type: 'Damage Report', category: 'Cases', relatedTo: 'CASE-2026-0041', relatedKind: 'case', party: 'Himalayan Films', branch: 'Boudha', status: 'Draft', recordState: 'Case: Open', recordTone: 'progress', createdAd: new Date(Date.UTC(2026, 6, 31)), createdTime: '10:15 AM' },
-  { id: 'RTN-2026-0715', name: 'Return Report', type: 'Return Report', category: 'Operations', relatedTo: 'BK-2026-0715', relatedKind: 'booking', party: 'Himalayan Films', branch: 'Boudha', status: 'Pending Signature', recordState: 'Booking: On Rent', recordTone: 'out', createdAd: new Date(Date.UTC(2026, 6, 31)), createdTime: '10:10 AM', ageing: 'Today' },
+  // relatedTo/party corrected from BK-2026-0715 to BK-2026-0709 — a Return
+  // Report cannot exist for a booking still at status Booked (pre-Pack, per
+  // data/booking.ts). BK-2026-0709 (data/rentals.ts) is the one actually
+  // On Rent with a "Return Today" tag, which this record's own date/status
+  // already matches; it was just attached to the wrong booking number.
+  { id: 'RTN-2026-0709', name: 'Return Report', type: 'Return Report', category: 'Operations', relatedTo: 'BK-2026-0709', relatedKind: 'booking', party: 'Mountain Stories', branch: 'Boudha', status: 'Pending Signature', recordState: 'Booking: On Rent', recordTone: 'out', createdAd: new Date(Date.UTC(2026, 6, 31)), createdTime: '10:10 AM', ageing: 'Today' },
   { id: 'RA-2026-0716', name: 'Rental Agreement', type: 'Rental Agreement', category: 'Rental', relatedTo: 'BK-2026-0716', relatedKind: 'booking', party: 'Creative Studio', branch: 'Boudha', status: 'Pending Signature', recordState: 'Booking: Booked', recordTone: 'primary', createdAd: new Date(Date.UTC(2026, 6, 29)), createdTime: '09:05 AM', ageing: '2d' },
   { id: 'CN-2026-0012', name: 'Credit Note', type: 'Credit Note', category: 'Finance', relatedTo: 'BK-2026-0710', relatedKind: 'booking', party: 'Vision Production', branch: 'Thamel', status: 'Issued', recordState: 'Invoice: Adjusted', recordTone: 'neutral', createdAd: new Date(Date.UTC(2026, 6, 28)), createdTime: '12:15 PM', finance: true },
   { id: 'INV-2026-0161', name: 'Tax Invoice', type: 'Tax Invoice', category: 'Finance', relatedTo: 'BK-2026-0716', relatedKind: 'booking', party: 'Creative Studio', branch: 'Boudha', status: 'Issued', recordState: 'Invoice: Unpaid', recordTone: 'progress', createdAd: new Date(Date.UTC(2026, 6, 28)), createdTime: '10:40 AM', finance: true },
-  { id: 'INV-2026-0156', name: 'Tax Invoice', type: 'Tax Invoice', category: 'Finance', relatedTo: 'BK-2026-0715', relatedKind: 'booking', party: 'Himalayan Films', branch: 'Boudha', status: 'Issued', recordState: 'Invoice: Paid', recordTone: 'in', createdAd: new Date(Date.UTC(2026, 6, 27)), createdTime: '11:40 AM', finance: true },
-  { id: 'RA-2026-0715', name: 'Rental Agreement', type: 'Rental Agreement', category: 'Rental', relatedTo: 'BK-2026-0715', relatedKind: 'booking', party: 'Himalayan Films', branch: 'Boudha', status: 'Signed', recordState: 'Booking: On Rent', recordTone: 'out', createdAd: new Date(Date.UTC(2026, 6, 27)), createdTime: '11:35 AM' },
+  // id/recordState/recordTone realigned to Finance.tsx's INV-2026-0492 for
+  // this booking — was a second, differently-numbered invoice claiming
+  // "Paid" while the real one (and the booking's own Outstanding) says
+  // Rs 1,24,506 is still owed. Two invoice numbers for one booking with
+  // opposite payment states was the P0 finding; this makes them one record.
+  { id: 'INV-2026-0492', name: 'Tax Invoice', type: 'Tax Invoice', category: 'Finance', relatedTo: 'BK-2026-0715', relatedKind: 'booking', party: 'Himalayan Films', branch: 'Boudha', status: 'Issued', recordState: 'Invoice: Unpaid', recordTone: 'progress', createdAd: new Date(Date.UTC(2026, 6, 27)), createdTime: '11:40 AM', finance: true },
+  { id: 'RA-2026-0715', name: 'Rental Agreement', type: 'Rental Agreement', category: 'Rental', relatedTo: 'BK-2026-0715', relatedKind: 'booking', party: 'Himalayan Films', branch: 'Boudha', status: 'Signed', recordState: 'Booking: On Rent', recordTone: 'out', createdAd: new Date(Date.UTC(2026, 6, 27)), createdTime: '11:35 AM', signer: 'Himalayan Films', versions: [{ version: 'v1 (Draft)', ad: '25 Jul 2026' }, { version: 'v2 (Signed)', ad: '27 Jul 2026' }] },
   { id: 'DLV-2026-0715', name: 'Delivery Note', type: 'Delivery Note', category: 'Operations', relatedTo: 'BK-2026-0715', relatedKind: 'booking', party: 'Himalayan Films', branch: 'Boudha', status: 'Issued', recordState: 'Sent · 26 Jul, 06:40 PM', recordTone: 'neutral', createdAd: new Date(Date.UTC(2026, 6, 26)), createdTime: '06:25 PM' },
   { id: 'PKL-2026-0715', name: 'Packing List', type: 'Packing List', category: 'Operations', relatedTo: 'BK-2026-0715', relatedKind: 'booking', party: 'Himalayan Films', branch: 'Boudha', status: 'Issued', recordState: 'Sent · 26 Jul, 06:30 PM', recordTone: 'neutral', createdAd: new Date(Date.UTC(2026, 6, 26)), createdTime: '06:20 PM' },
   { id: 'RCT-2026-0321', name: 'Receipt', type: 'Receipt', category: 'Finance', relatedTo: 'PAY-2026-0745', relatedKind: 'payment', party: 'Himalayan Films', branch: 'Boudha', status: 'Issued', recordState: 'Payment: Cleared', recordTone: 'in', createdAd: new Date(Date.UTC(2026, 6, 26)), createdTime: '11:30 AM', finance: true },
@@ -187,7 +219,7 @@ export const DOCUMENTS: DocRow[] = [
   { id: 'INS-2026-0710', name: 'Inspection Report', type: 'Inspection Report', category: 'Operations', relatedTo: 'BK-2026-0710', relatedKind: 'booking', party: 'Vision Production', branch: 'Thamel', status: 'Signed', recordState: 'Booking: Closed', recordTone: 'neutral', createdAd: new Date(Date.UTC(2026, 6, 25)), createdTime: '03:40 PM' },
   { id: 'SVC-2026-0012', name: 'Service Report', type: 'Service Report', category: 'Maintenance', relatedTo: 'MT-2026-0012', relatedKind: 'job', party: 'Tech Solutions Nepal', branch: 'Boudha', status: 'Pending Approval', recordState: 'Job: In Progress', recordTone: 'progress', createdAd: new Date(Date.UTC(2026, 6, 24)), createdTime: '04:15 PM' },
   { id: 'JOB-2026-0012', name: 'Job Card', type: 'Job Card', category: 'Maintenance', relatedTo: 'MT-2026-0012', relatedKind: 'job', party: 'In-House', branch: 'Boudha', status: 'Issued', recordState: 'Job: In Progress', recordTone: 'progress', createdAd: new Date(Date.UTC(2026, 6, 24)), createdTime: '09:30 AM' },
-  { id: 'RA-2026-0710', name: 'Rental Agreement', type: 'Rental Agreement', category: 'Rental', relatedTo: 'BK-2026-0710', relatedKind: 'booking', party: 'Vision Production', branch: 'Thamel', status: 'Signed', recordState: 'Booking: Closed', recordTone: 'neutral', createdAd: new Date(Date.UTC(2026, 6, 24)), createdTime: '08:55 AM' },
+  { id: 'RA-2026-0710', name: 'Rental Agreement', type: 'Rental Agreement', category: 'Rental', relatedTo: 'BK-2026-0710', relatedKind: 'booking', party: 'Vision Production', branch: 'Thamel', status: 'Signed', recordState: 'Booking: Closed', recordTone: 'neutral', createdAd: new Date(Date.UTC(2026, 6, 24)), createdTime: '08:55 AM', signer: 'Vision Production' },
   { id: 'ICL-2026-0004', name: 'Insurance Claim', type: 'Insurance Claim', category: 'Cases', relatedTo: 'CASE-2026-0041', relatedKind: 'case', party: 'Sagarmatha Insurance', branch: 'Boudha', status: 'Pending Approval', recordState: 'Case: Open', recordTone: 'progress', createdAd: new Date(Date.UTC(2026, 6, 22)), createdTime: '02:40 PM' },
   { id: 'INC-2026-0034', name: 'Incident Report', type: 'Incident Report', category: 'Cases', relatedTo: 'CASE-2026-0041', relatedKind: 'case', party: 'Himalayan Films', branch: 'Boudha', status: 'Issued', recordState: 'Case: Open', recordTone: 'progress', createdAd: new Date(Date.UTC(2026, 6, 22)), createdTime: '02:05 PM' },
   { id: 'RA-2026-0711', name: 'Rental Agreement', type: 'Rental Agreement', category: 'Rental', relatedTo: 'BK-2026-0711', relatedKind: 'booking', party: 'Inside Out Films', branch: 'Patan', status: 'Draft', recordState: 'Booking: Quote', recordTone: 'neutral', createdAd: new Date(Date.UTC(2026, 6, 21)), createdTime: '05:20 PM' },

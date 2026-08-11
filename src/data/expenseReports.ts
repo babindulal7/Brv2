@@ -198,7 +198,7 @@ export const EXPENSES: ExpenseRow[] = [
     category: 'Office',
     subCategory: 'Office Rent',
     vendor: 'Sunrise Complex Pvt. Ltd.',
-    vendorPan: '301234567',
+    vendorPan: '347291856',
     description: 'Monthly office rent (July 2026)',
     amount: rupees(85000),
     vat: null,

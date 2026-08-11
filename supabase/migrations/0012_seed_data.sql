@@ -101,14 +101,25 @@ on conflict (code) do nothing;
 
 -- =============================================================================
 -- 8. Equipment Categories Seed
+--
+-- Fixed 10 Aug 2026 (first real apply attempt): the original insert targeted
+-- `equipment_categories` — a table that has never existed in this schema
+-- (`inventory_categories`, 0004, is the real one — the same phantom-name bug
+-- class as assets/documents/categories/items, PLAN.md §4.10/§4.11/§6.27, this
+-- time on an INSERT target the FK sweep couldn't see). The real table has
+-- `code` (unique text) not `slug`, and `name` is the `product_category` ENUM
+-- (0001), so the five free-text names are remapped to the enum's own locked
+-- labels — "Grip & Support" splits into the enum's two distinct labels rather
+-- than losing one, with the description divided to match.
 -- =============================================================================
-insert into equipment_categories (id, client_uuid, name, slug, description, sort_order, is_active)
+insert into inventory_categories (id, client_uuid, code, name, description, sort_order, is_active)
 values
-  ('00000000-0000-0000-0000-000000000501', '20000000-0000-0000-0000-000000000501', 'Cameras', 'cameras', 'Cinema & Mirrorless Cameras', 1, true),
-  ('00000000-0000-0000-0000-000000000502', '20000000-0000-0000-0000-000000000502', 'Lenses', 'lenses', 'Cinema Primes, Zooms, Anamorphic', 2, true),
-  ('00000000-0000-0000-0000-000000000503', '20000000-0000-0000-0000-000000000503', 'Lighting', 'lighting', 'Continuous LED, COB, Softboxes', 3, true),
-  ('00000000-0000-0000-0000-000000000504', '20000000-0000-0000-0000-000000000504', 'Audio & Sound', 'audio-sound', 'Wireless Mics, Boom, Field Recorders', 4, true),
-  ('00000000-0000-0000-0000-000000000505', '20000000-0000-0000-0000-000000000505', 'Grip & Support', 'grip-support', 'Tripods, Gimbals, C-Stands, Jibs', 5, true)
-on conflict (slug) do nothing;
+  ('00000000-0000-0000-0000-000000000501', '20000000-0000-0000-0000-000000000501', 'camera', 'Camera', 'Cinema & Mirrorless Cameras', 1, true),
+  ('00000000-0000-0000-0000-000000000502', '20000000-0000-0000-0000-000000000502', 'lens', 'Lens', 'Cinema Primes, Zooms, Anamorphic', 2, true),
+  ('00000000-0000-0000-0000-000000000503', '20000000-0000-0000-0000-000000000503', 'lighting', 'Lighting', 'Continuous LED, COB, Softboxes', 3, true),
+  ('00000000-0000-0000-0000-000000000504', '20000000-0000-0000-0000-000000000504', 'audio', 'Audio', 'Wireless Mics, Boom, Field Recorders', 4, true),
+  ('00000000-0000-0000-0000-000000000505', '20000000-0000-0000-0000-000000000505', 'grip', 'Grip', 'C-Stands, Jibs, Heavy Grip', 5, true),
+  ('00000000-0000-0000-0000-000000000506', '20000000-0000-0000-0000-000000000506', 'support', 'Support', 'Tripods, Gimbals, Sliders', 6, true)
+on conflict (code) do nothing;
 
 commit;

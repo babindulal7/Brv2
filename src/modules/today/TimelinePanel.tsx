@@ -18,9 +18,7 @@ import { cardStyle } from '../../components/ui/Page'
  * §9's other rule still holds and is still obeyed: **purple is never used
  * here.** §4.2 bans the hue outright — it is not reserved for the Utilization
  * KPI or for anything else, and that KPI wears the commercial blue.
- */
-
-/**
+ *
  * §9 — "status-coloured dots". The dot reads the *same* source as the badge
  * beside it (the Foundation stage category), so the two cannot disagree; an
  * overdue row is the one override, because being late is a fact about the row
@@ -53,7 +51,7 @@ export default function TimelinePanel({
     <section style={{ ...cardStyle, minWidth: 0, height: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', padding: '13px 15px', borderBottom: '1px solid var(--border)' }}>
         <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{title}</h2>
-        <span className="figure" style={{ marginLeft: 8, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+        <span className="figure" style={{ marginLeft: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
           {ROWS.length} of {rows.length === MOVE_TOTAL ? MOVE_TOTAL : rows.length}
         </span>
         <Link
@@ -87,14 +85,17 @@ export default function TimelinePanel({
             <Link
               key={t.id}
               to={`/rentals/${t.bookingNo}`}
+              className="lift"
               style={{
                 display: 'grid',
                 gridTemplateColumns: '13px 72px 68px minmax(0,1fr) auto',
                 gap: 10,
                 alignItems: 'center',
-                padding: '5px 0',
+                padding: '6px 8px',
+                borderRadius: 'var(--r-xs)',
                 position: 'relative',
                 textDecoration: 'none',
+                transition: 'background-color 0.15s ease',
               }}
             >
               {/* The current moment is a ring, not a bigger dot — reads at a glance. */}
@@ -103,7 +104,7 @@ export default function TimelinePanel({
                 style={{
                   width: current ? 12 : 9,
                   height: current ? 12 : 9,
-                  borderRadius: 999,
+                  borderRadius: 'var(--r-badge)',
                   background: current ? 'var(--card)' : dot,
                   border: current ? `3px solid ${dot}` : 'none',
                   justifySelf: 'center',

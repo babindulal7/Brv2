@@ -12,10 +12,24 @@
 begin;
 
 -- =============================================================================
--- 1. crew_members
+-- 1. crew_profiles_v2
 -- In-house and freelance production crew profiles.
+--
+-- TODO(decision): 0003_operations.sql already creates a table literally named
+-- `crew_members` (richer HR-style profile: engagement_type, pan_status,
+-- withholding_rate, deactivated_at terminal state) with its own downstream
+-- family (crew_bookings, crew_shoot_days, crew_equipment_assignments,
+-- crew_documents, crew_leaves). This file originally redefined `crew_members`
+-- under the same name with an incompatible column set (crew_code, mobile,
+-- primary_role, is_active) — a straight `create table crew_members` collision
+-- that made every migration from here on fail to apply ("relation crew_members
+-- already exists"). Renamed to `crew_profiles_v2` (and this table's own
+-- crew_skills/crew_assignments below repointed to match) purely to unblock
+-- deployment — no product decision made about which crew model is canonical,
+-- or whether the two families should merge. See PLAN.md §4 for the open
+-- decision this defers. Flagged rather than guessed at, per CLAUDE.md.
 -- =============================================================================
-create table crew_members (
+create table crew_profiles_v2 (
   id                 uuid           not null default gen_random_uuid() primary key,
   client_uuid        uuid           not null,
   crew_code          text           not null,
@@ -32,13 +46,13 @@ create table crew_members (
   updated_at         timestamptz    not null default now(),
   updated_by         uuid           references users (id),
 
-  constraint crew_members_client_uuid_key unique (client_uuid),
-  constraint crew_members_code_key unique (crew_code),
-  constraint crew_members_rates_valid check (daily_rate >= 0 and hourly_rate >= 0)
+  constraint crew_profiles_v2_client_uuid_key unique (client_uuid),
+  constraint crew_profiles_v2_code_key unique (crew_code),
+  constraint crew_profiles_v2_rates_valid check (daily_rate >= 0 and hourly_rate >= 0)
 );
 
-create index idx_crew_members_code on crew_members (crew_code);
-create index idx_crew_members_active on crew_members (is_active);
+create index idx_crew_profiles_v2_code on crew_profiles_v2 (crew_code);
+create index idx_crew_profiles_v2_active on crew_profiles_v2 (is_active);
 
 
 -- =============================================================================
@@ -48,7 +62,7 @@ create index idx_crew_members_active on crew_members (is_active);
 create table crew_skills (
   id                         uuid         not null default gen_random_uuid() primary key,
   client_uuid                uuid         not null,
-  crew_id                    uuid         not null references crew_members (id),
+  crew_id                    uuid         not null references crew_profiles_v2 (id),
   skill_name                 text         not null,
   proficiency_level          text         not null default 'Expert',
   certification_name         text,
@@ -69,7 +83,7 @@ create table crew_assignments (
   id            uuid           not null default gen_random_uuid() primary key,
   client_uuid   uuid           not null,
   booking_id    uuid           not null references bookings (id),
-  crew_id       uuid           not null references crew_members (id),
+  crew_id       uuid           not null references crew_profiles_v2 (id),
   role_on_shoot text           not null,
   call_time     timestamptz    not null,
   wrap_time     timestamptz,
@@ -211,6 +225,22 @@ create index idx_doc_registry_status on document_registry (lifecycle_status);
 
 
 -- =============================================================================
+-- Deferred cross-file foreign keys.
+-- These two columns were declared earlier (0002_bookings.sql, 0005_clients.sql) as
+-- `references documents (id)` — "documents" was never a real table name; the
+-- actual central document store is document_registry, created above. Added now
+-- that it exists.
+-- =============================================================================
+alter table booking_documents
+  add constraint booking_documents_document_id_fk
+  foreign key (document_id) references document_registry (id);
+
+alter table client_tax_profiles
+  add constraint client_tax_profiles_exemption_document_id_fk
+  foreign key (exemption_document_id) references document_registry (id);
+
+
+-- =============================================================================
 -- 8. document_deliveries
 -- Delivery audit trail for sent, viewed, and downloaded documents.
 -- =============================================================================
@@ -234,7 +264,7 @@ create index idx_doc_deliveries_document on document_deliveries (document_id);
 -- Revocations & RLS
 -- =============================================================================
 revoke delete on
-  crew_members,
+  crew_profiles_v2,
   crew_skills,
   crew_assignments,
   vehicles,
@@ -251,7 +281,7 @@ revoke update on
   document_deliveries
 from public, anon, authenticated;
 
-alter table crew_members enable row level security;
+alter table crew_profiles_v2 enable row level security;
 alter table crew_skills enable row level security;
 alter table crew_assignments enable row level security;
 alter table vehicles enable row level security;

@@ -32,9 +32,9 @@ create table inventory_categories (
   sort_order   integer              not null default 0,
   is_active    boolean              not null default true,
   created_at   timestamptz          not null default now(),
-  created_by   uuid                 references users (id),
+  created_by   uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at   timestamptz          not null default now(),
-  updated_by   uuid                 references users (id),
+  updated_by   uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint inventory_categories_client_uuid_key unique (client_uuid),
   constraint inventory_categories_code_key unique (code),
@@ -63,9 +63,9 @@ create table suppliers (
   notes               text,
   is_active           boolean      not null default true,
   created_at          timestamptz  not null default now(),
-  created_by          uuid         references users (id),
+  created_by          uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at          timestamptz  not null default now(),
-  updated_by          uuid         references users (id),
+  updated_by          uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint suppliers_client_uuid_key unique (client_uuid),
   constraint suppliers_code_key unique (supplier_code),
@@ -131,9 +131,9 @@ create table products (
   
   is_active               boolean                not null default true,
   created_at              timestamptz            not null default now(),
-  created_by              uuid                   references users (id),
+  created_by              uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at              timestamptz            not null default now(),
-  updated_by              uuid                   references users (id),
+  updated_by              uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint products_client_uuid_key unique (client_uuid),
   constraint products_asset_code_key unique (asset_code),
@@ -163,15 +163,15 @@ create table containers (
   category          text,
   capacity_slots    integer          not null default 1,
   max_weight_kg     numeric(8,3),
-  branch_id         uuid             not null references branches (id),
-  warehouse_id      uuid             not null references warehouses (id),
-  storage_zone_id   uuid             references storage_zones (id),
+  branch_id         uuid             not null,  -- FK -> branches added in 0042 (cross-file forward ref)
+  warehouse_id      uuid             not null,  -- FK -> warehouses added in 0042 (cross-file forward ref)
+  storage_zone_id   uuid,  -- FK -> storage_zones added in 0042 (cross-file forward ref)
   status            text             not null default 'Available',
   is_active         boolean          not null default true,
   created_at        timestamptz      not null default now(),
-  created_by        uuid             references users (id),
+  created_by        uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at        timestamptz      not null default now(),
-  updated_by        uuid             references users (id),
+  updated_by        uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint containers_client_uuid_key unique (client_uuid),
   constraint containers_code_key unique (code),
@@ -199,9 +199,9 @@ create table product_units (
   condition             unit_condition   not null default 'Good',
   
   -- Physical location
-  branch_id             uuid             not null references branches (id),
-  warehouse_id          uuid             not null references warehouses (id),
-  storage_zone_id       uuid             references storage_zones (id),
+  branch_id             uuid             not null,  -- FK -> branches added in 0042 (cross-file forward ref)
+  warehouse_id          uuid             not null,  -- FK -> warehouses added in 0042 (cross-file forward ref)
+  storage_zone_id       uuid,  -- FK -> storage_zones added in 0042 (cross-file forward ref)
   rack                  text,
   shelf                 text,
   bin                   text,
@@ -221,13 +221,13 @@ create table product_units (
   
   -- Retirement (terminal lifecycle)
   retired_at            timestamptz,
-  retired_by            uuid             references users (id),
+  retired_by            uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   retirement_reason     text,
   
   created_at            timestamptz      not null default now(),
-  created_by            uuid             references users (id),
+  created_by            uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at            timestamptz      not null default now(),
-  updated_by            uuid             references users (id),
+  updated_by            uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint product_units_client_uuid_key unique (client_uuid),
   constraint product_units_asset_tag_key unique (asset_tag),
@@ -246,6 +246,52 @@ create index idx_product_units_container on product_units (container_id);
 
 
 -- =============================================================================
+-- Deferred cross-file foreign keys.
+-- These seven columns were declared earlier (0002_bookings.sql, 0003_operations.sql)
+-- as `references assets (id)` — "assets" was never a real table name; the actual
+-- serialized-unit table is product_units, created here. Added now that it exists,
+-- the same way 0003_operations.sql's own foot-of-file section resolves same-file
+-- forward references — this just spans files instead of spanning tables.
+-- =============================================================================
+alter table booking_line_units
+  add constraint booking_line_units_asset_id_fk
+  foreign key (asset_id) references product_units (id);
+
+alter table session_line_movements
+  add constraint session_line_movements_unit_id_fk
+  foreign key (unit_id) references product_units (id);
+
+alter table damage_findings
+  add constraint damage_findings_unit_id_fk
+  foreign key (unit_id) references product_units (id);
+
+alter table scan_events
+  add constraint scan_events_resolved_unit_id_fk
+  foreign key (resolved_unit_id) references product_units (id);
+
+alter table cleaning_queue_entries
+  add constraint cleaning_queue_entries_unit_id_fk
+  foreign key (unit_id) references product_units (id);
+
+alter table crew_equipment_assignments
+  add constraint crew_equipment_assignments_asset_id_fk
+  foreign key (asset_id) references product_units (id);
+
+alter table inventory_reservations
+  add constraint inventory_reservations_asset_id_fk
+  foreign key (asset_id) references product_units (id);
+
+-- Same phantom-name pattern as `assets`/`documents` above, found 9 Aug 2026 while writing RLS
+-- policy for the cleaning/reset workflow tables (PLAN.md §6.18): `category_checklist_tasks`
+-- (0003_operations.sql) declared `category_id references categories (id)` — "categories" was
+-- never a real table name; the actual product-category table is `inventory_categories`,
+-- created above in this same file.
+alter table category_checklist_tasks
+  add constraint category_checklist_tasks_category_id_fk
+  foreign key (category_id) references inventory_categories (id);
+
+
+-- =============================================================================
 -- 6. accessories
 -- Child checklist items attached to products/units (un-serialized, never scanned).
 -- =============================================================================
@@ -259,15 +305,49 @@ create table accessories (
   replacement_cost  numeric(14,2) not null default 0,
   sort_order        integer      not null default 0,
   created_at        timestamptz  not null default now(),
-  created_by        uuid         references users (id),
+  created_by        uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at        timestamptz  not null default now(),
-  updated_by        uuid         references users (id),
+  updated_by        uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint accessories_client_uuid_key unique (client_uuid),
   constraint accessories_quantity_positive check (quantity >= 1)
 );
 
 create index idx_accessories_product on accessories (product_id);
+
+-- =============================================================================
+-- §4.11 resolution, 10 Aug 2026 — the "items" phantom-table deployment
+-- blocker (same class as the assets/documents/categories fixes above).
+-- return_accessory_checks.accessory_id, evidence_files.matched_item_id and
+-- evidence_references.item_id (0003_operations.sql) all declared
+-- `references items (id)` — no such table has ever existed in this schema.
+--
+-- Not a single rename like assets->product_units: this schema has two
+-- candidate targets (products, the catalogue; product_units, individual
+-- serialized physical units) plus, for one of the three, a third real
+-- table these columns' own comments point at directly:
+--   - return_accessory_checks.accessory_id: its own comment reads "Child
+--     accessory in the item master" -- accessories.replacement_cost
+--     ("The accessory's own replacement cost, not the item's") matches
+--     return_accessory_checks.replacement_cost's comment exactly. Targets
+--     accessories, not product_units/products.
+--   - evidence_files.matched_item_id / evidence_references.item_id: both
+--     sit directly beside a redundant matched_serial/serial text column,
+--     the same pairing product_units.serial_no already establishes for one
+--     physical scanned unit -- evidence is matched to a specific serial,
+--     never to a catalogue line. Both target product_units.
+-- =============================================================================
+alter table return_accessory_checks
+  add constraint return_accessory_checks_accessory_id_fk
+  foreign key (accessory_id) references accessories (id);
+
+alter table evidence_files
+  add constraint evidence_files_matched_item_id_fk
+  foreign key (matched_item_id) references product_units (id);
+
+alter table evidence_references
+  add constraint evidence_references_item_id_fk
+  foreign key (item_id) references product_units (id);
 
 
 -- =============================================================================
@@ -282,7 +362,7 @@ create table product_compatibilities (
   relationship_kind      compatibility_kind  not null default 'Compatible with',
   notes                  text,
   created_at             timestamptz         not null default now(),
-  created_by             uuid                references users (id),
+  created_by             uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint product_compatibilities_client_uuid_key unique (client_uuid),
   constraint product_compatibilities_no_self check (product_id <> compatible_product_id)
@@ -308,9 +388,9 @@ create table bundles (
   weekly_rate  numeric(14,2) not null default 0,
   is_active    boolean      not null default true,
   created_at   timestamptz  not null default now(),
-  created_by   uuid         references users (id),
+  created_by   uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at   timestamptz  not null default now(),
-  updated_by   uuid         references users (id),
+  updated_by   uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint bundles_client_uuid_key unique (client_uuid),
   constraint bundles_code_key unique (bundle_code),
@@ -334,7 +414,7 @@ create table bundle_items (
   is_mandatory boolean      not null default true,
   sort_order   integer      not null default 0,
   created_at   timestamptz  not null default now(),
-  created_by   uuid         references users (id),
+  created_by   uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint bundle_items_client_uuid_key unique (client_uuid),
   constraint bundle_items_qty_positive check (quantity >= 1),
@@ -357,18 +437,18 @@ create table stock_transfers (
   transfer_type             transfer_kind    not null default 'Branch Transfers',
   status                    transfer_status  not null default 'Pending',
   
-  source_branch_id          uuid             not null references branches (id),
-  source_warehouse_id       uuid             not null references warehouses (id),
-  source_zone_id            uuid             references storage_zones (id),
+  source_branch_id          uuid             not null,  -- FK -> branches added in 0042 (cross-file forward ref)
+  source_warehouse_id       uuid             not null,  -- FK -> warehouses added in 0042 (cross-file forward ref)
+  source_zone_id            uuid,  -- FK -> storage_zones added in 0042 (cross-file forward ref)
   
-  destination_branch_id     uuid             not null references branches (id),
-  destination_warehouse_id  uuid             not null references warehouses (id),
-  destination_zone_id       uuid             references storage_zones (id),
+  destination_branch_id     uuid             not null,  -- FK -> branches added in 0042 (cross-file forward ref)
+  destination_warehouse_id  uuid             not null,  -- FK -> warehouses added in 0042 (cross-file forward ref)
+  destination_zone_id       uuid,  -- FK -> storage_zones added in 0042 (cross-file forward ref)
   
-  requested_by              uuid             not null references users (id),
-  approved_by               uuid             references users (id),
-  dispatched_by             uuid             references users (id),
-  received_by               uuid             references users (id),
+  requested_by              uuid             not null,  -- FK -> users added in 0042 (cross-file forward ref)
+  approved_by               uuid,  -- FK -> users added in 0042 (cross-file forward ref)
+  dispatched_by             uuid,  -- FK -> users added in 0042 (cross-file forward ref)
+  received_by               uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   
   requested_at              timestamptz      not null default now(),
   approved_at               timestamptz,
@@ -377,14 +457,14 @@ create table stock_transfers (
   completed_at              timestamptz,
   
   cancelled_at              timestamptz,
-  cancelled_by              uuid             references users (id),
+  cancelled_by              uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   cancellation_reason       text,
   
   notes                     text,
   created_at                timestamptz      not null default now(),
-  created_by                uuid             references users (id),
+  created_by                uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at                timestamptz      not null default now(),
-  updated_by                uuid             references users (id),
+  updated_by                uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint stock_transfers_client_uuid_key unique (client_uuid),
   constraint stock_transfers_no_key unique (transfer_no),
@@ -446,12 +526,12 @@ create table maintenance_records (
   scheduled_date   date         not null,
   started_at       timestamptz,
   completed_at     timestamptz,
-  performed_by     uuid         references users (id),
-  approved_by      uuid         references users (id),
+  performed_by     uuid,  -- FK -> users added in 0042 (cross-file forward ref)
+  approved_by      uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   created_at       timestamptz  not null default now(),
-  created_by       uuid         references users (id),
+  created_by       uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at       timestamptz  not null default now(),
-  updated_by       uuid         references users (id),
+  updated_by       uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint maintenance_records_client_uuid_key unique (client_uuid),
   constraint maintenance_records_no_key unique (record_no),
@@ -480,7 +560,7 @@ create table depreciation_logs (
   accumulated_depreciation  numeric(14,2) not null,
   book_value                numeric(14,2) not null,
   calculated_at             timestamptz  not null default now(),
-  calculated_by             uuid         references users (id),
+  calculated_by             uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint depreciation_logs_client_uuid_key unique (client_uuid),
   constraint depreciation_logs_residual_calc check (residual_value >= 0 and residual_value <= initial_cost)
@@ -507,13 +587,13 @@ create table purchase_requests (
   reason_type           purchase_request_reason not null default 'Manual',
   urgency               text                    not null default 'Normal',
   status                purchase_request_status not null default 'Draft',
-  requested_by          uuid                    not null references users (id),
-  approved_by           uuid                    references users (id),
+  requested_by          uuid                    not null,  -- FK -> users added in 0042 (cross-file forward ref)
+  approved_by           uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   rejection_reason      text,
   created_at            timestamptz             not null default now(),
-  created_by            uuid                    references users (id),
+  created_by            uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at            timestamptz             not null default now(),
-  updated_by            uuid                    references users (id),
+  updated_by            uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint purchase_requests_client_uuid_key unique (client_uuid),
   constraint purchase_requests_no_key unique (pr_no),
@@ -532,22 +612,22 @@ create table stock_audits (
   id                    uuid               not null default gen_random_uuid() primary key,
   client_uuid           uuid               not null,
   audit_no              text               not null,
-  branch_id             uuid               not null references branches (id),
-  warehouse_id          uuid               not null references warehouses (id),
+  branch_id             uuid               not null,  -- FK -> branches added in 0042 (cross-file forward ref)
+  warehouse_id          uuid               not null,  -- FK -> warehouses added in 0042 (cross-file forward ref)
   scope                 stock_check_scope  not null default 'Full warehouse',
   status                text               not null default 'Draft',
   scheduled_date        date               not null,
   started_at            timestamptz,
   completed_at          timestamptz,
-  audited_by            uuid               references users (id),
+  audited_by            uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   total_expected        integer            not null default 0,
   total_scanned         integer            not null default 0,
   total_discrepancies   integer            not null default 0,
   notes                 text,
   created_at            timestamptz        not null default now(),
-  created_by            uuid               references users (id),
+  created_by            uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at            timestamptz        not null default now(),
-  updated_by            uuid               references users (id),
+  updated_by            uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint stock_audits_client_uuid_key unique (client_uuid),
   constraint stock_audits_no_key unique (audit_no)
@@ -571,7 +651,7 @@ create table stock_audit_items (
   exclusion_reason   stock_check_exclusion,
   discrepancy_notes  text,
   scanned_at         timestamptz,
-  scanned_by         uuid                  references users (id),
+  scanned_by         uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint stock_audit_items_client_uuid_key unique (client_uuid)
 );
@@ -596,7 +676,7 @@ create table product_documents (
   file_url       text                  not null,
   description    text,
   created_at     timestamptz           not null default now(),
-  created_by     uuid                  references users (id),
+  created_by     uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint product_documents_client_uuid_key unique (client_uuid),
   constraint product_documents_file_size_limit check (file_size > 0 and file_size <= 52428800) -- 50MB cap

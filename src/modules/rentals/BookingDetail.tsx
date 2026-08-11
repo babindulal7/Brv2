@@ -1,16 +1,30 @@
-import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { useViewport } from '../../lib/device'
+import type { Viewport } from '../../lib/device'
 import { STATUS, BRAND_TEXT } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
+import OperationsShell from '../operations/OperationsShell'
+import { Unavailable } from '../../components/ui/Unavailable'
+import { useAuth } from '../../lib/auth'
+import { gateContext, canViewMoneyField } from '../../lib/fieldGating'
+import { IntelCard } from '../../components/ui/IntelCard'
+import { useToast } from '../../components/ui/Toast'
+import { formatMoney } from '../../lib/money'
+import { paymentGlance, paymentDetailGroups } from '../../data/bookingIntel'
+import { ExtendRentalModal } from './modals/ExtendRentalModal'
+import { AssignCrewModal } from './modals/AssignCrewModal'
+import { CreateSubRentalModal } from './modals/CreateSubRentalModal'
+import { RecordPaymentModal } from '../finance/modals/RecordPaymentModal'
+import type { ActionContext } from '../../actions/core'
 import {
   BOOKING,
   SUMMARY,
   ITEMS,
   ITEM_TALLY,
   EQUIPMENT_SUBTOTAL,
-  OPERATIONS,
   CREW,
   CREW_SUBTOTAL,
   TRANSPORT,
@@ -28,6 +42,23 @@ import {
   ALERTS,
   TIMELINE,
 } from '../../data/booking'
+
+/**
+ * The signed-in session as an `ActionContext`, or nothing at all.
+ *
+ * Both dispatch sites on this screen passed
+ * `{ userId: user?.name ?? 'unknown', role: user?.role ?? 'unknown' }` — the
+ * user's *display name* where an id belongs, and `'unknown'`, which is not a
+ * member of `SystemRole`. Now that `ActionContext.role` is typed that no longer
+ * compiles, and the fabricated fallback has nowhere to hide.
+ *
+ * Returning `undefined` with no session is deliberate: the dispatcher refuses
+ * the call by name (`"..." was called without a session context`) rather than
+ * this screen acting as somebody who is not signed in.
+ */
+function actionCtx(user: { id: string; role: ActionContext['role'] } | null | undefined): ActionContext | undefined {
+  return user ? { userId: user.id, role: user.role } : undefined
+}
 
 /** Bundle / Required / count marker beside an item name. */
 function ItemBadge({ text, kind }: { text: string; kind: 'bundle' | 'required' | 'count' }) {
@@ -63,78 +94,28 @@ function ItemBadge({ text, kind }: { text: string; kind: 'bundle' | 'required' |
  * stay visible and greyed with the reason on hover and focus** rather than
  * being hidden. §4.3: they open full-screen routes, never modals.
  */
-function OperationsMenu({ primary, bookingNo }: { primary: boolean; bookingNo: string }) {
-  const [open, setOpen] = useState(false)
-  const stage = BOOKING.status
-  return (
-    <span style={{ position: 'relative' }}>
-      <Button icon="chevron_down" variant={primary ? 'primary' : 'secondary'} onClick={() => setOpen((o) => !o)}>
-        Operations
-      </Button>
-      {open && (
-        <div
-          role="menu"
-          style={{
-            position: 'absolute',
-            right: 0,
-            top: 40,
-            minWidth: 232,
-            padding: 6,
-            borderRadius: 'var(--r-btn)',
-            background: 'var(--dropdown)',
-            border: '1px solid var(--border)',
-            boxShadow: 'var(--shadow-modal)',
-            zIndex: 30,
-          }}
-        >
-          {OPERATIONS.map((o) => {
-            const enabled = o.enabledAt.includes(stage)
-            const why = `Available at ${o.enabledAt.join(' or ')} — this booking is ${stage}`
-            const row = (
-              <>
-                <Icon name={o.icon} size={15} style={{ color: enabled ? 'var(--text2)' : 'var(--disabled)' }} />
-                <span style={{ flex: 1 }}>{o.label}</span>
-                {!enabled && <Icon name="close" size={12} style={{ color: 'var(--disabled)' }} />}
-              </>
-            )
-            const style = {
-              display: 'flex',
-              alignItems: 'center',
-              gap: 9,
-              width: '100%',
-              height: 34,
-              padding: '0 9px',
-              borderRadius: 8,
-              border: 'none',
-              background: 'transparent',
-              color: enabled ? 'var(--text)' : 'var(--muted)',
-              fontSize: 'var(--t-meta)',
-              fontFamily: 'inherit',
-              textAlign: 'left' as const,
-              textDecoration: 'none',
-              cursor: enabled ? 'pointer' : 'not-allowed',
-            }
-            return enabled ? (
-              <Link
-                key={o.label}
-                to={`/rentals/${bookingNo}/${o.path}`}
-                role="menuitem"
-                style={style}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-              >
-                {row}
-              </Link>
-            ) : (
-              <span key={o.label} role="menuitem" aria-disabled title={why} tabIndex={0} style={style}>
-                {row}
-              </span>
-            )
-          })}
-        </div>
-      )}
-    </span>
+/**
+ * Operations launcher — opens the operations popup shell (wire-up brief,
+ * 9 Aug), which mounts the four existing workspace pages
+ * (Packing/Handover/Return/Reset) unchanged; step selection happens inside
+ * the shell, so this button carries no submenu.
+ *
+ * Disabled only on `Quote` status. The disabled reason is wrapped in
+ * `Unavailable` (the shared reason-on-hover-or-focus-or-long-press pattern
+ * already adopted elsewhere) rather than a bare `title` attribute, which is
+ * inert for keyboard and touch users — a native `disabled` button is pulled
+ * out of the tab order and `title` never fires on touch.
+ */
+function OperationsLauncher({ primary, onOpen }: { primary: boolean; onOpen: () => void }) {
+  const disabled = BOOKING.status === 'Quote'
+  const button = (
+    <Button icon="external_link" variant={primary ? 'primary' : 'secondary'} onClick={onOpen} disabled={disabled}>
+      Operations
+    </Button>
   )
+
+  if (!disabled) return button
+  return <Unavailable reason="Operations open once this booking is Booked">{button}</Unavailable>
 }
 
 /** Numbered block header — the render splits the page into five of these. */
@@ -197,10 +178,70 @@ export default function BookingDetail() {
    * rather than silently serving the wrong booking's money.
    */
   const { bookingNo } = useParams()
+  const navigate = useNavigate()
   const id = bookingNo ?? BOOKING.no
   const isSeeded = id === BOOKING.no
+  const [shellOpen, setShellOpen] = useState(false)
+  const [showExtendModal, setShowExtendModal] = useState(false)
+  const [showCrewModal, setShowCrewModal] = useState(false)
+  const [showSubRentalModal, setShowSubRentalModal] = useState(false)
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const { showSuccessToast } = useToast()
+  const viewport = useViewport()
+
+  /*
+   * Law 6 / HIS v2.1 §4.1 — this screen had no money gating anywhere
+   * (RentalsList.tsx, the list page one level up, already gates correctly).
+   * `canBookingMoney` covers booking/invoice/payment money — Coordinator
+   * included, per §4.1's "Coordinator = booking-level money + client
+   * balance/deposit only". `canCrewMoney` covers crew day-rate/payout, which
+   * §4.1 explicitly excludes Coordinator from ("no crew pay") — the stricter
+   * of the two, so it is checked separately rather than folded into the
+   * first.
+   */
+  const { user } = useAuth()
+  // Stable identity across renders, not just a stable value — `gateContext`
+  // returns a fresh object literal on every call, so without memoizing it
+  // here the `paymentRows` memo below would see a new `gctx` reference on
+  // every render (Extend/Assign Crew/Sub-Rental modal toggles, the
+  // domain-event listeners, an unrelated keystroke elsewhere) and rebuild
+  // every payment row's Glance/Detail card anyway, defeating that memo.
+  const gctx = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
+  const canBookingMoney = canViewMoneyField(gctx, 'booking')
+  const canCrewMoney = canViewMoneyField(gctx, 'asset-finance')
+
+  // Hover Intel System — Payment History (Rental) rows, Block 4. `paymentGlance`/
+  // `paymentDetailGroups` (Booking + Payment card, HIS v2.1 §4.1) each build a
+  // full role/PII/money-gated object graph; calling them straight inside the
+  // `.map()` below reran both builders, per row, on every re-render of this
+  // page regardless of whether that row's data or `gctx` had changed.
+  // Computed once per `id`/`gctx` change instead — every value the builders
+  // read (`payment`, `id`, `gctx`) is in the dependency array.
+  const paymentRows = useMemo(
+    () =>
+      PAYMENT_HISTORY.filter((p) => p.type !== 'Deposit').map((p) => ({
+        payment: p,
+        glance: paymentGlance(p, id, gctx),
+        detail: paymentDetailGroups(p, id, gctx),
+      })),
+    [id, gctx],
+  )
+
+  // Facts strip — the 5-up desktop layout only has room on desktop; below
+  // that every value (client name, "Rs 1,19,069" outstanding) ellipsizes
+  // into unreadable fragments, so it collapses to fewer columns per Law 14.
+  // The money column itself is one of the five — omitted from the template
+  // (not just left visually empty) when this role can't see booking money.
+  const factsCols =
+    viewport === 'desktop'
+      ? canBookingMoney
+        ? 'repeat(4, minmax(0,1fr)) minmax(0,1.1fr)'
+        : 'repeat(4, minmax(0,1fr))'
+      : viewport === 'tablet'
+        ? 'repeat(2, minmax(0,1fr))'
+        : '1fr'
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', position: 'relative' }}>
       {!isSeeded && (
         <p
           role="status"
@@ -247,8 +288,34 @@ export default function BookingDetail() {
             <Button>Save Draft</Button>
             {BOOKING.status === 'Quote' && <Button icon="arrow_right" variant="primary">Send Quote</Button>}
             {/* §1.4 — the retired `Draft` is now status Quote carrying a Draft flag. */}
-            {BOOKING.flags.includes('Draft') && <Button icon="plus" variant="primary">Confirm Booking</Button>}
-            <OperationsMenu primary={!['Quote', 'Closed'].includes(BOOKING.status)} bookingNo={id} />
+            {BOOKING.flags.includes('Draft') && (
+              <Button 
+                icon="plus" 
+                variant="primary" 
+                onClick={() => {
+                  import('../../actions/rentals/confirmRental').then(({ confirmRental }) => {
+                    confirmRental({ id }, actionCtx(user))
+                      .then(() => showSuccessToast('Booking Confirmed', `${id} is now Booked`))
+                      .catch((err) => console.error('confirmRental failed:', err))
+                  })
+                }}
+              >
+                Confirm Booking
+              </Button>
+            )}
+            <OperationsLauncher
+              primary={!['Quote', 'Closed'].includes(BOOKING.status)}
+              onOpen={() => setShellOpen(true)}
+            />
+            <Button icon="calendar" onClick={() => setShowExtendModal(true)}>
+              Extend
+            </Button>
+            <Button icon="users" onClick={() => setShowCrewModal(true)}>
+              Assign Crew
+            </Button>
+            <Button icon="box" onClick={() => setShowSubRentalModal(true)}>
+              Sub-Rental
+            </Button>
           </>
         }
       />
@@ -258,11 +325,11 @@ export default function BookingDetail() {
         style={{
           ...cardStyle,
           display: 'grid',
-          gridTemplateColumns: 'repeat(4, minmax(0,1fr)) minmax(0,1.1fr)',
+          gridTemplateColumns: factsCols,
           alignItems: 'stretch',
         }}
       >
-        <Fact icon="users" label="Client">
+        <Fact icon="users" label="Client" viewport={viewport}>
           <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>{BOOKING.client}</span>
           {BOOKING.vip && (
             <span
@@ -288,18 +355,18 @@ export default function BookingDetail() {
           { label: 'Pickup', d: BOOKING.pickup },
           { label: 'Return', d: BOOKING.ret },
         ].map((m) => (
-          <Fact key={m.label} icon="calendar" label={m.label}>
+          <Fact key={m.label} icon="calendar" label={m.label} viewport={viewport}>
+            {/* F2 — BS leads, AD follows. Foundation's locked order; the render had them reversed. */}
             <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-              {m.d.ad}
+              {m.d.bs}
             </span>
             <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-              {m.d.time}
+              {m.d.ad} · {m.d.time}
             </span>
-            <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{m.d.bs}</span>
           </Fact>
         ))}
 
-        <Fact icon="timer" label="Rental Days">
+        <Fact icon="timer" label="Rental Days" viewport={viewport}>
           <span className="figure" style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--text)' }}>
             {BOOKING.days}
           </span>
@@ -323,21 +390,40 @@ export default function BookingDetail() {
           </span>
         </Fact>
 
-        <div style={{ padding: '14px 16px', borderRadius: '0 var(--r-card) var(--r-card) 0' }}>
-          <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Outstanding</div>
-          <div className="figure" style={{ fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--danger-text)', letterSpacing: '-0.02em' }}>
-            {BOOKING.outstanding}
+        {canBookingMoney && (
+          <div
+            style={{
+              padding: '14px 16px',
+              gridColumn: viewport === 'desktop' ? undefined : '1 / -1',
+              borderRadius: viewport === 'desktop' ? '0 var(--r-card) var(--r-card) 0' : '0 0 var(--r-card) var(--r-card)',
+            }}
+          >
+            <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Outstanding</div>
+            <div className="figure" style={{ fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--danger-text)', letterSpacing: '-0.02em' }}>
+              {BOOKING.outstanding}
+            </div>
+            <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 6 }}>
+              Deposit Pending{' '}
+              <span className="figure" style={{ color: 'var(--progress-text)', fontWeight: 600 }}>
+                {BOOKING.depositPending}
+              </span>
+            </div>
           </div>
-          <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 6 }}>
-            Deposit Pending{' '}
-            <span className="figure" style={{ color: 'var(--progress-text)', fontWeight: 600 }}>
-              {BOOKING.depositPending}
-            </span>
-          </div>
-        </div>
+        )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      {/* Below desktop the Rail has no room beside content — same viewport
+          variable the facts strip above already computes, collapsed to a
+          single column so the Rail moves below content instead of squeezing
+          it to a sliver. */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: viewport === 'desktop' ? 'minmax(0,1fr) auto' : '1fr',
+          gap: 'var(--sp-md)',
+          alignItems: 'start',
+        }}
+      >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <Block no="1" title="Client & Schedule" action={<Icon name="chevron_down" size={16} style={{ color: 'var(--muted)' }} />}>
             <SummaryRows
@@ -367,7 +453,7 @@ export default function BookingDetail() {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)' }}>
-                    {['Item / Accessory', 'Serial / ID', 'Qty', 'Status', 'Availability', 'Location', 'Rate / Day', 'Total', ''].map(
+                    {['Item / Accessory', 'Serial / ID', 'Qty', 'Status', 'Availability', 'Location', 'Days', 'Rate / Day', 'Total', ''].map(
                       (h, i) => (
                         <th key={h || i} style={{ ...th, textAlign: i === 2 || i >= 6 ? 'right' : 'left' }}>
                           {h}
@@ -397,7 +483,13 @@ export default function BookingDetail() {
                         )}
                       </td>
                       <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                        {it.depth === 0 ? '' : (it.serial ?? '')}
+                        {it.depth === 2 && it.serial && it.serial !== '—' ? (
+                          <Link to={`/inventory/${it.serial}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                            {it.serial}
+                          </Link>
+                        ) : (
+                          it.depth === 0 ? '' : (it.serial ?? '')
+                        )}
                       </td>
                       <td className="figure" style={{ ...td, textAlign: 'right' }}>{it.qty}</td>
                       <td style={td}>
@@ -406,7 +498,7 @@ export default function BookingDetail() {
                             style={{
                               display: 'inline-flex',
                               alignItems: 'center',
-                              gap: 4,
+                              gap: 'var(--sp-xs)',
                               fontSize: 'var(--t-meta)',
                               fontWeight: 600,
                               color: it.packed === 'Packed' ? 'var(--success-text)' : 'var(--progress-text)',
@@ -447,6 +539,8 @@ export default function BookingDetail() {
                         )}
                       </td>
                       <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{it.location ?? ''}</td>
+                      {/* F3 / Law 9 — days explicit on every priced line, never left to be inferred from the header's Rental Days. */}
+                      <td className="figure" style={{ ...td, textAlign: 'right', color: 'var(--text2)' }}>{it.days ?? ''}</td>
                       <td className="figure" style={{ ...td, textAlign: 'right' }}>
                         {it.wasRate && (
                           <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', textDecoration: 'line-through' }}>
@@ -470,7 +564,7 @@ export default function BookingDetail() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 16,
+                gap: 'var(--sp-lg)',
                 flexWrap: 'wrap',
                 marginTop: 10,
                 paddingTop: 10,
@@ -486,7 +580,7 @@ export default function BookingDetail() {
                   <span style={{ color: 'var(--text2)' }}>{t.label}</span>
                 </span>
               ))}
-              <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
                 <span style={{ color: 'var(--text2)' }}>Equipment Subtotal</span>
                 <span className="figure" style={{ fontWeight: 700, color: 'var(--text)' }}>
                   {EQUIPMENT_SUBTOTAL}
@@ -495,12 +589,18 @@ export default function BookingDetail() {
             </div>
           </Block>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.05fr) minmax(0,1fr)', gap: 'var(--sp-md)' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: viewport === 'desktop' ? 'minmax(0,1.05fr) minmax(0,1fr)' : '1fr',
+              gap: 'var(--sp-md)',
+            }}
+          >
             <Block no="3" title="Crew & Transport" action={<Button icon="plus">Add Member</Button>}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)' }}>
-                    {['Name', 'Role', 'Day Rate', 'Days', 'Amount (Rs)'].map((h, i) => (
+                    {(canCrewMoney ? ['Name', 'Role', 'Day Rate', 'Days', 'Amount (Rs)'] : ['Name', 'Role']).map((h, i) => (
                       <th key={h} style={{ ...th, textAlign: i >= 2 ? 'right' : 'left' }}>
                         {h}
                       </th>
@@ -512,26 +612,33 @@ export default function BookingDetail() {
                     <tr key={c.name} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={td}>{c.name}</td>
                       <td style={{ ...td, color: 'var(--text2)' }}>{c.role}</td>
-                      <td className="figure" style={{ ...td, textAlign: 'right' }}>{c.rate}</td>
-                      <td className="figure" style={{ ...td, textAlign: 'right' }}>{c.days}</td>
-                      <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 600 }}>{c.amount}</td>
+                      {/* §4.1 — crew day-rate/payout is 'asset-finance', not 'booking': Coordinator sees the booking's rental total but never this figure. */}
+                      {canCrewMoney && (
+                        <>
+                          <td className="figure" style={{ ...td, textAlign: 'right' }}>{c.rate}</td>
+                          <td className="figure" style={{ ...td, textAlign: 'right' }}>{c.days}</td>
+                          <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 600 }}>{c.amount}</td>
+                        </>
+                      )}
                     </tr>
                   ))}
-                  <tr>
-                    <td colSpan={4} style={{ ...td, fontWeight: 600, color: 'var(--text2)' }}>
-                      Crew Subtotal
-                    </td>
-                    <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>
-                      {CREW_SUBTOTAL}
-                    </td>
-                  </tr>
+                  {canCrewMoney && (
+                    <tr>
+                      <td colSpan={4} style={{ ...td, fontWeight: 600, color: 'var(--text2)' }}>
+                        Crew Subtotal
+                      </td>
+                      <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>
+                        {CREW_SUBTOTAL}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </Block>
 
             <Card title="Transport & Delivery" action={<Button variant="ghost">Edit</Button>}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-                {TRANSPORT.map((t) => (
+                {TRANSPORT.filter((t) => t.label !== 'Transport Charge' || canBookingMoney).map((t) => (
                   <div key={t.label} style={{ display: 'flex', gap: 10, fontSize: 'var(--t-meta)', alignItems: 'flex-start' }}>
                     <span style={{ color: 'var(--text2)', flex: 1, minWidth: 0 }}>{t.label}</span>
                     {t.pill ? (
@@ -559,19 +666,31 @@ export default function BookingDetail() {
             </Card>
           </div>
 
+          {/* Law 6 — Charges, Totals, Deposit ledger and Payment History are
+              all booking money, so the block that carries them is omitted
+              outright for a role that can't see it, not masked field by
+              field. Mirrors how RentalsList.tsx already omits its whole
+              Payment column rather than dashing out each cell. */}
+          {canBookingMoney && (
           <Block no="4" title="Pricing & Payments">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: viewport === 'desktop' ? 'repeat(3, minmax(0,1fr))' : '1fr',
+                gap: 'var(--sp-md)',
+              }}
+            >
               <div>
                 <h3 style={sub}>Rental Charges</h3>
                 {CHARGES.map((c) => (
-                  <div key={c.label} style={{ display: 'flex', gap: 8, padding: '6px 0', fontSize: 'var(--t-meta)' }}>
+                  <div key={c.label} style={{ display: 'flex', gap: 'var(--sp-sm)', padding: '6px 0', fontSize: 'var(--t-meta)' }}>
                     <span style={{ color: 'var(--text2)', flex: 1, minWidth: 0 }}>{c.label}</span>
                     <span className="figure" style={{ fontWeight: 600 }}>{c.amount}</span>
                   </div>
                 ))}
                 <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6 }}>
                   {TOTALS.map((t) => (
-                    <div key={t.label} style={{ display: 'flex', gap: 8, padding: '4px 0', fontSize: 'var(--t-meta)' }}>
+                    <div key={t.label} style={{ display: 'flex', gap: 'var(--sp-sm)', padding: '4px 0', fontSize: 'var(--t-meta)' }}>
                       <span style={{ color: 'var(--text2)', flex: 1 }}>{t.label}</span>
                       <span className="figure" style={{ fontWeight: 600, color: t.tone ? BRAND_TEXT[t.tone] : 'var(--text)' }}>
                         {t.value}
@@ -581,7 +700,7 @@ export default function BookingDetail() {
                   <div
                     style={{
                       display: 'flex',
-                      gap: 8,
+                      gap: 'var(--sp-sm)',
                       marginTop: 6,
                       paddingTop: 8,
                       borderTop: '1px solid var(--border)',
@@ -615,9 +734,22 @@ export default function BookingDetail() {
                     </tr>
                   </thead>
                   <tbody>
-                    {PAYMENT_HISTORY.map((p) => (
+                    {/* F1 — this panel is Payment History (Rental): payments only. The
+                        two deposit movements belong in the Deposit panel to its left,
+                        which already carries Required/Received/Pending as its own
+                        custody register — a deposit is a liability, never a payment row. */}
+                    {paymentRows.map(({ payment: p, glance, detail }) => (
                       <tr key={p.type} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)' }}>{p.date}</td>
+                        <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)' }}>
+                          <IntelCard
+                            glance={glance}
+                            detail={detail}
+                            detailTitle={`${p.type} payment`}
+                            detailSubtitle={`${id} · ${p.date}`}
+                          >
+                            {p.date}
+                          </IntelCard>
+                        </td>
                         <td style={{ ...td, fontSize: 'var(--t-meta)' }}>{p.type}</td>
                         <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)' }}>{p.amount}</td>
                         <td style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{p.method}</td>
@@ -643,17 +775,35 @@ export default function BookingDetail() {
                   </tbody>
                 </table>
                 <div style={{ marginTop: 10 }}>
-                  <Button icon="dollar" variant="primary">
+                  {/*
+                    This dispatched `recordPayment({ bookingId: id, amountPaisa: 500000 })` —
+                    a hardcoded Rs 5,000 nobody typed, on a money screen — and then showed a
+                    success toast for it. It opens the shared `RecordPaymentModal` instead,
+                    which is where the amount, method and reference are actually collected,
+                    so no figure on this screen can originate in an onClick handler again.
+                  */}
+                  <Button
+                    icon="dollar"
+                    variant="primary"
+                    onClick={() => setShowPaymentModal(true)}
+                  >
                     Record Payment
                   </Button>
                 </div>
               </div>
             </div>
           </Block>
+          )}
 
           <Block no="5" title="Documents & Review">
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.4fr) minmax(0,0.8fr) minmax(0,1fr)', gap: 'var(--sp-md)' }}>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: viewport === 'desktop' ? 'minmax(0,1.4fr) minmax(0,0.8fr) minmax(0,1fr)' : '1fr',
+                gap: 'var(--sp-md)',
+              }}
+            >
+              <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
                 {DOCUMENTS.map((d) => (
                   <div
                     key={d.name}
@@ -700,7 +850,7 @@ export default function BookingDetail() {
               <div>
                 <h3 style={sub}>Review Summary</h3>
                 {REVIEW.map((r) => (
-                  <div key={r.label} style={{ display: 'flex', gap: 8, padding: '5px 0', fontSize: 'var(--t-meta)', alignItems: 'center' }}>
+                  <div key={r.label} style={{ display: 'flex', gap: 'var(--sp-sm)', padding: '5px 0', fontSize: 'var(--t-meta)', alignItems: 'center' }}>
                     <Icon
                       name={r.ok ? 'dot' : 'alert_triangle'}
                       size={12}
@@ -726,17 +876,31 @@ export default function BookingDetail() {
         </div>
 
         <Rail>
-          <Card title="Booking Summary">
-            <SummaryRows rows={SUMMARY} />
-            <div style={{ marginTop: 12 }}>
-              <Button icon="dollar" variant="primary">
-                Receive Payment
-              </Button>
-            </div>
-          </Card>
+          {/* Same booking-money figures as the Facts strip and Block 4 —
+              gated the same way, omitted rather than masked. */}
+          {canBookingMoney && (
+            <Card title="Booking Summary">
+              <SummaryRows rows={SUMMARY} />
+              <div style={{ marginTop: 12 }}>
+                {/*
+                  One booking screen carried two payment buttons calling two different
+                  `recordPayment` implementations — this one reached the placeholder
+                  `actions/payments/recordPayment` (input `{ id }`, no amount anywhere),
+                  which is now deleted. Both buttons open the same modal: one door per job.
+                */}
+                <Button
+                  icon="dollar"
+                  variant="primary"
+                  onClick={() => setShowPaymentModal(true)}
+                >
+                  Receive Payment
+                </Button>
+              </div>
+            </Card>
+          )}
 
           <Card title="Quick Actions">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 'var(--sp-sm)' }}>
               {(['Print', 'Share', 'More'] as const).map((a, i) => (
                 <button
                   key={a}
@@ -786,7 +950,7 @@ export default function BookingDetail() {
                     </span>
                   </div>
                   <div style={{ marginTop: 7 }}>
-                    <Button>{a.action}</Button>
+                    <Button {...(a.action === 'Check Inventory' ? { onClick: () => navigate('/inventory') } : {})}>{a.action}</Button>
                   </div>
                 </div>
               ))}
@@ -794,12 +958,12 @@ export default function BookingDetail() {
           </Card>
 
           <Card title="Activity Timeline">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
               {TIMELINE.map((t) => (
                 <div key={t.what} style={{ display: 'flex', gap: 9 }}>
                   <span
                     aria-hidden
-                    style={{ width: 7, height: 7, borderRadius: 999, background: 'var(--link)', flexShrink: 0, marginTop: 4 }}
+                    style={{ width: 7, height: 7, borderRadius: 'var(--r-badge)', background: 'var(--link)', flexShrink: 0, marginTop: 4 }}
                   />
                   <span style={{ minWidth: 0 }}>
                     <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
@@ -818,13 +982,83 @@ export default function BookingDetail() {
       </div>
 
       <FooterNote extra={['Deposits are liabilities and never offset Rental Outstanding']} />
+
+      <OperationsShell bookingNo={id} bookingStatus={BOOKING.status} isOpen={shellOpen} onClose={() => setShellOpen(false)} />
+
+      {/*
+        The shared payment modal, reached by both money buttons above — the only
+        place on this screen where an amount is entered. Mounted only while open,
+        the pattern Finance.tsx documents: the modal captures `initialInvoiceId`
+        into `useState` on first mount, so a permanently mounted one would keep
+        posting against the booking it first saw when the route param changes
+        without a remount (P0-1, BUG_SWEEP_REGISTER_v1.0).
+
+        TODO(decision): this booking has no invoice (`data/booking.ts` lists
+        "Invoice — Not generated"), so the row handed to an invoice-shaped modal
+        is the booking itself. Whether a payment may be recorded against a
+        booking before an invoice exists — and what it posts against if so — is
+        unruled, and guessing it here would be inventing the rule.
+
+        The success toast lives in `onSuccess`, which the modal only calls after
+        the action resolves. `recordPayment` is still a stub, so today it
+        rejects and the modal shows the reason inline; nothing on this screen
+        claims a payment that was not written.
+      */}
+      {showPaymentModal && (
+        <RecordPaymentModal
+          isOpen={showPaymentModal}
+          onClose={() => setShowPaymentModal(false)}
+          invoices={[{ id, client: BOOKING.client, amount: RENTAL_TOTAL, status: BOOKING.status, booking: id }]}
+          initialInvoiceId={id}
+          onSuccess={(p) => showSuccessToast('Payment Recorded', `${formatMoney(p.amountPaisa)} against ${id}`)}
+        />
+      )}
+
+      <ExtendRentalModal
+        isOpen={showExtendModal}
+        onClose={() => setShowExtendModal(false)}
+        bookingId={id}
+        client={BOOKING.client}
+        onSuccess={(ext) => {
+          showSuccessToast('Rental Extended', `${ext.days} day${ext.days === 1 ? '' : 's'} added — new return ${ext.newReturnDate}`)
+        }}
+      />
+
+      <AssignCrewModal
+        isOpen={showCrewModal}
+        onClose={() => setShowCrewModal(false)}
+        bookingId={id}
+        onSuccess={(crew) => {
+          showSuccessToast('Crew Assigned', `${crew.name} — ${crew.role}`)
+        }}
+      />
+
+      <CreateSubRentalModal
+        isOpen={showSubRentalModal}
+        onClose={() => setShowSubRentalModal(false)}
+        bookingId={id}
+        onSuccess={(sub) => {
+          showSuccessToast('Sub-Rental Created', `${sub.itemName} — ${sub.vendor}`)
+        }}
+      />
     </div>
   )
 }
 
-function Fact({ icon, label, children }: { icon: 'users' | 'calendar' | 'timer'; label: string; children: React.ReactNode }) {
+function Fact({
+  icon,
+  label,
+  children,
+  viewport,
+}: {
+  icon: 'users' | 'calendar' | 'timer'
+  label: string
+  children: React.ReactNode
+  viewport: Viewport
+}) {
+  const divider = viewport === 'desktop' ? { borderRight: '1px solid var(--border)' } : { borderBottom: '1px solid var(--border)' }
   return (
-    <div style={{ padding: '14px 16px', borderRight: '1px solid var(--border)' }}>
+    <div style={{ padding: '14px 16px', minWidth: 0, ...divider }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)', marginBottom: 6 }}>
         <Icon name={icon} size={14} style={{ color: 'var(--muted)' }} />
         {label}

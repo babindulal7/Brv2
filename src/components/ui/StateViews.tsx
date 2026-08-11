@@ -59,7 +59,7 @@ export function EmptyState({
         style={{
           width: 48,
           height: 48,
-          borderRadius: 999,
+          borderRadius: 'var(--r-badge)',
           background: 'var(--card)',
           border: '1px solid var(--border)',
           color: 'var(--muted)',
@@ -94,7 +94,7 @@ export function LoadingSkeleton({
   /** The "Loading rentals…" text §2.1 requires — omit only where the skeleton sits right under a heading that already says what's loading. */
   label?: string
 }) {
-  const pulse = { background: 'var(--card2)', borderRadius: 6, animation: 'pulse 1.5s ease-in-out infinite' } as const
+  const pulse = { background: 'var(--card2)', borderRadius: 'var(--r-xs)', animation: 'pulse 1.5s ease-in-out infinite' } as const
   const labelEl = label && (
     <p style={{ margin: '0 0 10px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{label}</p>
   )
@@ -123,7 +123,7 @@ export function LoadingSkeleton({
         <div style={{ ...cardStyle, padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ ...pulse, width: '33%', height: 18 }} />
           <div style={{ ...pulse, width: '100%', height: 90 }} />
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
             <div style={{ ...pulse, width: 90, height: 30 }} />
             <div style={{ ...pulse, width: 90, height: 30 }} />
           </div>
@@ -147,10 +147,10 @@ export function LoadingSkeleton({
         <div style={{ ...pulse, width: 110, height: 14 }} />
         <div style={{ ...pulse, width: 64, height: 14 }} />
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 14 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', padding: 14 }}>
         {Array.from({ length: rows }, (_, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ ...pulse, width: 32, height: 32, borderRadius: 8, flexShrink: 0 }} />
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
+            <div style={{ ...pulse, width: 32, height: 32, borderRadius: 'var(--r-sm)', flexShrink: 0 }} />
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ ...pulse, width: '50%', height: 13 }} />
               <div style={{ ...pulse, width: '25%', height: 10 }} />
@@ -175,7 +175,8 @@ export function ErrorBanner({
   className,
 }: {
   title?: string
-  message: string
+  /** A string for the common case; a richer node (e.g. a bulleted list of several reconciliation failures) is fine too. */
+  message: ReactNode
   onRetry?: () => void
   className?: string
 }) {
@@ -197,7 +198,7 @@ export function ErrorBanner({
       <Icon name="alert_triangle" size={16} fill style={{ flexShrink: 0, marginTop: 1 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700 }}>{title}</div>
-        <p style={{ margin: '2px 0 0', fontSize: 'var(--t-meta)', lineHeight: 1.5 }}>{message}</p>
+        <div style={{ margin: '2px 0 0', fontSize: 'var(--t-meta)', lineHeight: 1.5 }}>{message}</div>
       </div>
       {onRetry && (
         <Button variant="secondary" icon="refresh" onClick={onRetry}>
@@ -238,7 +239,7 @@ export function RestrictedState({
         style={{
           width: 48,
           height: 48,
-          borderRadius: 999,
+          borderRadius: 'var(--r-badge)',
           background: 'var(--st-progress-bg)',
           color: 'var(--st-progress-fg)',
           display: 'grid',
@@ -263,7 +264,7 @@ export function RestrictedState({
             alignItems: 'center',
             height: 22,
             padding: '0 9px',
-            borderRadius: 999,
+            borderRadius: 'var(--r-badge)',
             background: 'var(--card2)',
             border: '1px solid var(--border)',
             color: 'var(--text2)',

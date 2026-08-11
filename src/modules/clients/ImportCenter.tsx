@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
+import { Select } from '../../components/ui'
 import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { useToast } from '../../components/ui/Toast'
@@ -241,14 +242,14 @@ export default function ImportCenter() {
 
       {rawRows.length > 0 && (
         <>
-          <section style={{ ...cardStyle, padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <section style={{ ...cardStyle, padding: 'var(--sp-lg)', display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                 <Icon name="file" size={16} style={{ color: 'var(--text2)' }} />
                 <strong style={{ color: 'var(--text)', fontSize: 'var(--t-meta)' }}>{fileName}</strong>
                 <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>· {dataRows.length} data row{dataRows.length === 1 ? '' : 's'}</span>
               </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                   <input
                     type="checkbox"
@@ -281,7 +282,7 @@ export default function ImportCenter() {
                         <td style={{ ...td, fontWeight: 600 }}>{h || `Column ${colIndex + 1}`}</td>
                         <td style={{ ...td, color: 'var(--muted)' }}>{dataRows[0]?.[colIndex] || '—'}</td>
                         <td style={td}>
-                          <select
+                          <Select
                             value={mapping[colIndex] ?? 'skip'}
                             onChange={(e) => setMapping((prev) => ({ ...prev, [colIndex]: e.target.value as ImportTargetField }))}
                             style={{ ...inputStyle, width: '100%' }}
@@ -291,7 +292,7 @@ export default function ImportCenter() {
                                 {f.label}
                               </option>
                             ))}
-                          </select>
+                          </Select>
                         </td>
                       </tr>
                     ))}
@@ -363,7 +364,10 @@ export default function ImportCenter() {
                               ) : r.duplicateOf ? (
                                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5, color: 'var(--progress-text)', fontSize: 'var(--t-th)' }}>
                                   <Icon name="alert_triangle" size={12} style={{ marginTop: 2, flexShrink: 0 }} />
-                                  Possible duplicate of {r.duplicateOf.name} ({r.duplicateOf.id})
+                                  Possible duplicate of{' '}
+                                  <Link to={`/clients/${r.duplicateOf.id}`} style={{ color: 'var(--link)' }}>
+                                    {r.duplicateOf.name} ({r.duplicateOf.id})
+                                  </Link>
                                 </div>
                               ) : r.warnings.length > 0 ? (
                                 <div>
@@ -389,7 +393,7 @@ export default function ImportCenter() {
                 </div>
               </Card>
 
-              <section style={{ ...cardStyle, padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+              <section style={{ ...cardStyle, padding: 'var(--sp-lg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-md)' }}>
                 <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                   {imported
                     ? 'Imported. Redirecting to Clients…'

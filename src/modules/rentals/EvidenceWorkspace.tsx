@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, Button, cardStyle, Rail, SideRail } from '../../components/ui/Page'
+import { EmptyState } from '../../components/ui/StateViews'
 import { Donut, Legend } from '../../components/ui/Charts'
 import { STATUS } from '../../lib/status'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
@@ -89,7 +90,7 @@ export default function EvidenceWorkspace() {
   // Floor scale (DEVICES.md item 3) is applied automatically by route in App.tsx's Shell, not here.
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
             <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
@@ -116,7 +117,7 @@ export default function EvidenceWorkspace() {
             Upload once, reference everywhere. Files are matched to products automatically.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
           <Link
             to={`/rentals/${id}/packing`}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--btn-secondary-border)', background: 'var(--btn-secondary-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none' }}
@@ -164,7 +165,7 @@ export default function EvidenceWorkspace() {
             <span key={s} style={{ display: 'flex', alignItems: 'center', gap: 9, flex: 1, minWidth: 150 }}>
               <span
                 className="figure"
-                style={{ width: 22, height: 22, borderRadius: 999, display: 'grid', placeItems: 'center', border: `1.5px solid ${tone}`, color: tone, fontSize: 'var(--t-meta)', fontWeight: 700, flexShrink: 0 }}
+                style={{ width: 22, height: 22, borderRadius: 'var(--r-badge)', display: 'grid', placeItems: 'center', border: `1.5px solid ${tone}`, color: tone, fontSize: 'var(--t-meta)', fontWeight: 700, flexShrink: 0 }}
               >
                 {i + 1}
               </span>
@@ -220,7 +221,7 @@ export default function EvidenceWorkspace() {
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 8,
+                    gap: 'var(--sp-sm)',
                     width: '100%',
                     height: 30,
                     padding: '0 8px',
@@ -308,7 +309,7 @@ export default function EvidenceWorkspace() {
               </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10, padding: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10, padding: 'var(--sp-md)' }}>
               {visible.map((p) => {
                 const st = matchState(p)
                 const on = selected.includes(p.id)
@@ -327,8 +328,10 @@ export default function EvidenceWorkspace() {
                         type="button"
                         onClick={() => setActive(p.id)}
                         aria-label={`Preview ${p.file}, ${st}`}
-                        style={{ display: 'block', width: '100%', height: 92, border: 'none', background: 'linear-gradient(135deg,#334155,#0f172a)', cursor: 'pointer' }}
-                      />
+                        style={{ display: 'grid', placeItems: 'center', width: '100%', height: 92, border: 'none', background: 'var(--card2)', color: 'var(--muted)', cursor: 'pointer' }}
+                      >
+                        <Icon name="camera" size={22} />
+                      </button>
                       <input
                         type="checkbox"
                         checked={on}
@@ -362,7 +365,7 @@ export default function EvidenceWorkspace() {
                           <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--progress-text)', fontWeight: 600 }}>{p.confidence}%</span>
                         )}
                         {st === 'Review' && (
-                          <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                          <span style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--sp-xs)' }}>
                             <MiniBtn label="Accept" />
                             <MiniBtn label="Change" />
                           </span>
@@ -382,10 +385,11 @@ export default function EvidenceWorkspace() {
               })}
               {visible.length === 0 && (
                 <div style={{ gridColumn: '1 / -1', padding: 26, textAlign: 'center', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                  No photos match these filters.{' '}
-                  <button type="button" onClick={() => setFilter('All')} style={{ border: 'none', background: 'transparent', color: 'var(--link)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'var(--t-meta)' }}>
-                    Clear all filters
-                  </button>
+                  <EmptyState
+                    title="No photos match these filters"
+                    actionLabel="Clear all filters"
+                    onAction={() => setFilter('All')}
+                  />
                 </div>
               )}
             </div>
@@ -397,7 +401,9 @@ export default function EvidenceWorkspace() {
           <Card title="Selected Photo">
             {current ? (
               <>
-                <div aria-hidden style={{ height: 120, borderRadius: 'var(--r-btn)', background: 'linear-gradient(135deg,#334155,#0f172a)' }} />
+                <div aria-hidden style={{ height: 120, borderRadius: 'var(--r-btn)', background: 'var(--card2)', display: 'grid', placeItems: 'center', color: 'var(--muted)' }}>
+                  <Icon name="camera" size={28} />
+                </div>
                 <div className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginTop: 8 }}>{current.file}</div>
                 <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                   {current.size} · 16 Jul 2026, {current.at}
@@ -413,7 +419,7 @@ export default function EvidenceWorkspace() {
                       ['Bundle', current.product.bundle],
                       ['Source', current.source ?? '—'],
                     ].map(([l, v]) => (
-                      <div key={l} style={{ display: 'flex', gap: 8, padding: '3px 0', fontSize: 'var(--t-meta)' }}>
+                      <div key={l} style={{ display: 'flex', gap: 'var(--sp-sm)', padding: '3px 0', fontSize: 'var(--t-meta)' }}>
                         <span style={{ flex: 1, color: 'var(--text2)' }}>{l}</span>
                         <span style={{ fontWeight: 600, color: 'var(--text)', textAlign: 'right', minWidth: 0 }}>{v}</span>
                       </div>
@@ -425,12 +431,12 @@ export default function EvidenceWorkspace() {
                   )}
                   {matchState(current) === 'Review' && current.confidence && (
                     <div style={{ marginTop: 8 }}>
-                      <div style={{ display: 'flex', gap: 8, fontSize: 'var(--t-meta)' }}>
+                      <div style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
                         <span style={{ flex: 1, color: 'var(--text2)' }}>Confidence</span>
                         <span className="figure" style={{ fontWeight: 700, color: 'var(--progress-text)' }}>{current.confidence}%</span>
                       </div>
-                      <div aria-hidden style={{ height: 5, borderRadius: 999, background: 'var(--card2)', marginTop: 5, overflow: 'hidden' }}>
-                        <div style={{ width: `${current.confidence}%`, height: '100%', background: 'var(--progress)', borderRadius: 999 }} />
+                      <div aria-hidden style={{ height: 5, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 5, overflow: 'hidden' }}>
+                        <div style={{ width: `${current.confidence}%`, height: '100%', background: 'var(--progress)', borderRadius: 'var(--r-badge)' }} />
                       </div>
                       <p style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
                         ≥{THRESHOLDS.matched}% auto-matches · {THRESHOLDS.review}–{THRESHOLDS.matched - 1}% needs a human accept.
@@ -443,8 +449,8 @@ export default function EvidenceWorkspace() {
                 {/* §10 — Remove is a soft delete with a reason. There is no hard delete. */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, marginTop: 11 }}>
                   <Button icon="refresh">Change Product</Button>
-                  <Button icon="eye">Mark as Review</Button>
-                  <Button icon="close">Unmatch</Button>
+                  <Button icon="eye" onClick={() => import('../../actions/rentals').then(m => m.reviewEvidence({ evidenceId: current.id, action: 'review' }))}>Mark as Review</Button>
+                  <Button icon="close" onClick={() => import('../../actions/rentals').then(m => m.reviewEvidence({ evidenceId: current.id, action: 'remove', reason: 'Unmatched by user' }))}>Unmatch</Button>
                   <Button icon="alert_triangle" onClick={() => { setRemoving(current.id); setReason('') }}>
                     Remove
                   </Button>

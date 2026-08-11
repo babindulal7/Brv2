@@ -194,6 +194,7 @@ export const WAREHOUSES: Warehouse[] = [
     activeTransfers: 7,
     accuracyPct: 99.6,
     status: 'Active',
+    // Placeholder Unsplash stock photo pending a real photo of this warehouse.
     image: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=600&auto=format&fit=crop&q=80',
   },
   {
@@ -212,6 +213,7 @@ export const WAREHOUSES: Warehouse[] = [
     activeTransfers: 4,
     accuracyPct: 99.2,
     status: 'Active',
+    // Placeholder Unsplash stock photo pending a real photo of this warehouse.
     image: 'https://images.unsplash.com/photo-1553413077-190dd305871c?w=600&auto=format&fit=crop&q=80',
   },
   {
@@ -230,6 +232,7 @@ export const WAREHOUSES: Warehouse[] = [
     activeTransfers: 5,
     accuracyPct: 99.5,
     status: 'Active',
+    // Placeholder Unsplash stock photo pending a real photo of this warehouse.
     image: 'https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=600&auto=format&fit=crop&q=80',
   },
   {
@@ -248,6 +251,7 @@ export const WAREHOUSES: Warehouse[] = [
     activeTransfers: 2,
     accuracyPct: 98.9,
     status: 'Active',
+    // Placeholder Unsplash stock photo pending a real photo of this warehouse.
     image: 'https://images.unsplash.com/photo-1587293852726-70cdb56c2866?w=600&auto=format&fit=crop&q=80',
   },
 ]

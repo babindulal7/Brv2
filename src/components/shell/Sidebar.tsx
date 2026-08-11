@@ -124,7 +124,7 @@ export default function Sidebar({ active }: SidebarProps) {
         )}
       </div>
       {collapsed && (
-        <div style={{ display: 'flex', justifyContent: 'center', paddingBottom: 8, flexShrink: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', paddingBottom: 'var(--sp-sm)', flexShrink: 0 }}>
           <button
             type="button"
             onClick={toggleCollapsed}
@@ -243,7 +243,7 @@ export default function Sidebar({ active }: SidebarProps) {
                           gap: 9,
                           height: 30,
                           padding: '0 10px 0 22px',
-                          borderRadius: 8,
+                          borderRadius: 'var(--r-sm)',
                           textDecoration: 'none',
                           fontSize: 'var(--t-meta)',
                           fontWeight: on ? 600 : 500,
@@ -262,7 +262,7 @@ export default function Sidebar({ active }: SidebarProps) {
                           style={{
                             width: 5,
                             height: 5,
-                            borderRadius: 999,
+                            borderRadius: 'var(--r-badge)',
                             flexShrink: 0,
                             background: on ? 'var(--nav-active-accent)' : 'var(--disabled)',
                           }}
@@ -297,7 +297,7 @@ export default function Sidebar({ active }: SidebarProps) {
             gap: 10,
             height: 36,
             padding: collapsed ? '0' : '0 10px',
-            borderRadius: 8,
+            borderRadius: 'var(--r-sm)',
             textDecoration: 'none',
             fontSize: 'var(--t-ui)',
             fontWeight: active === SETTINGS_NAV.to ? 600 : 500,
@@ -329,7 +329,7 @@ export default function Sidebar({ active }: SidebarProps) {
               style={{
                 width: 32,
                 height: 32,
-                borderRadius: 8,
+                borderRadius: 'var(--r-sm)',
                 display: 'grid',
                 placeItems: 'center',
                 border: '1px solid var(--border)',

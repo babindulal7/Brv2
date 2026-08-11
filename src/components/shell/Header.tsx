@@ -61,7 +61,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 16,
+        gap: 'var(--sp-lg)',
         padding: '10px 20px',
         borderBottom: '1px solid var(--border)',
         background: 'var(--sidebar)',
@@ -95,7 +95,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
         </ol>
       </nav>
 
-      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', minWidth: 0, gap: 12 }}>
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', minWidth: 0, gap: 'var(--sp-md)' }}>
         <button
           type="button"
           onClick={() => {
@@ -104,7 +104,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
+            gap: 'var(--sp-sm)',
             width: '100%',
             maxWidth: 440,
             height: 38,
@@ -143,13 +143,13 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
               fontSize: '11px',
               fontWeight: 600,
               padding: '3px 8px',
-              borderRadius: 6,
+              borderRadius: 'var(--r-xs)',
               background: 'rgba(59, 130, 246, 0.12)',
               color: '#60a5fa',
               border: '1px solid rgba(59, 130, 246, 0.25)',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 4,
+              gap: 'var(--sp-xs)',
             }}
           >
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3b82f6' }} />
@@ -160,7 +160,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
               fontSize: '11px',
               fontWeight: 600,
               padding: '3px 8px',
-              borderRadius: 6,
+              borderRadius: 'var(--r-xs)',
               background: 'rgba(245, 158, 11, 0.12)',
               color: '#fbbf24',
               border: '1px solid rgba(245, 158, 11, 0.25)',
@@ -171,7 +171,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
         </div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexShrink: 0 }}>
         {actions}
 
         <button type="button" aria-label="Notifications, 12 unread" style={{ ...iconBtn, position: 'relative' }}>
@@ -184,7 +184,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
               right: 1,
               minWidth: 16,
               height: 16,
-              borderRadius: 999,
+              borderRadius: 'var(--r-badge)',
               /*
                * The AA-verified status pair, not raw `--danger`. Dark theme's
                * `--danger` is #ef4444, and white on it measured 3.76:1 — under
@@ -207,17 +207,21 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
           <Icon name="info" size={17} />
         </button>
 
-        <button
-          type="button"
+        {/*
+          Not a <button>: this wrapper carries no click handler of its own —
+          it is a static grouping of the avatar/name display plus the real
+          "Log Out" button below. It used to be a <button>, which put a
+          <button> inside a <button> (invalid DOM nesting) and gave the page
+          a focusable control that did nothing when activated. A plain <div>
+          fixes both: no nesting violation, and no phantom tab stop.
+        */}
+        <div
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: 8,
+            gap: 'var(--sp-sm)',
             height: 38,
             padding: '0 6px 0 3px',
-            border: 'none',
-            background: 'transparent',
-            cursor: 'pointer',
             fontFamily: 'inherit',
           }}
         >
@@ -225,11 +229,12 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
             style={{
               width: 30,
               height: 30,
-              borderRadius: 999,
-              background: 'linear-gradient(140deg,#334155,#475569)',
+              borderRadius: 'var(--r-badge)',
+              background: 'var(--card2)',
+              border: '1px solid var(--border)',
               display: 'grid',
               placeItems: 'center',
-              color: '#fff',
+              color: 'var(--text2)',
               fontSize: 'var(--t-meta)',
               fontWeight: 700,
               flexShrink: 0,
@@ -243,13 +248,14 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
             </span>
             <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{user?.role || ''}</span>
           </span>
-          <button 
+          <button
+            type="button"
             onClick={(e) => { e.stopPropagation(); handleLogoutRequest() }}
-            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 'var(--t-meta)', fontWeight: 600, marginLeft: 8 }}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 'var(--t-meta)', fontWeight: 600, marginLeft: 'var(--sp-sm)' }}
           >
             Log Out
           </button>
-        </button>
+        </div>
       </div>
 
       {showHandover && (

@@ -1,4 +1,4 @@
-import { Card, Button, Badge } from '../../components/ui'
+import { Card, Button, Badge, thStyle } from '../../components/ui'
 import Icon from '../../components/ui/Icon'
 import { PageHeader } from '../../components/ui'
 
@@ -30,14 +30,14 @@ export default function Timesheet() {
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-ui)' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                <th style={{ padding: '12px 20px' }}>Date</th>
-                <th style={{ padding: '12px 20px' }}>User</th>
-                <th style={{ padding: '12px 20px' }}>First Action</th>
-                <th style={{ padding: '12px 20px' }}>Last Action</th>
-                <th style={{ textAlign: 'right', padding: '12px 20px' }}>Hours Present</th>
-                <th style={{ textAlign: 'right', padding: '12px 20px' }}>Jobs Completed</th>
-                <th style={{ padding: '12px 20px' }}>Source</th>
-                <th style={{ width: 40, padding: '12px 20px' }}></th>
+                <th style={thStyle}>Date</th>
+                <th style={thStyle}>User</th>
+                <th style={thStyle}>First Action</th>
+                <th style={thStyle}>Last Action</th>
+                <th style={{ ...thStyle, textAlign: 'right' }}>Hours Present</th>
+                <th style={{ ...thStyle, textAlign: 'right' }}>Jobs Completed</th>
+                <th style={thStyle}>Source</th>
+                <th style={{ ...thStyle, width: 40 }}></th>
               </tr>
             </thead>
             <tbody>
@@ -64,7 +64,7 @@ export default function Timesheet() {
                       border: 'none',
                       color: 'var(--muted)',
                       cursor: 'pointer',
-                      padding: 4,
+                      padding: 'var(--sp-xs)',
                     }}
                     title="View Audit Log"
                   >

@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
+import { Input } from '../../components/ui/Input'
+import { Select } from '../../components/ui/Select'
 import { Card, PageHeader, Button, KpiStrip, Rail, SideRail, FooterNote, cardStyle } from '../../components/ui/Page'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { Donut, Legend, catColor } from '../../components/ui/Charts'
@@ -11,6 +13,11 @@ import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { canViewMoney } from '../../lib/rbac'
 import type { Role as SystemRole } from '../../lib/rbac'
 import { useAuth } from '../../lib/auth'
+import { gateContext } from '../../lib/fieldGating'
+import { useMenuFlip } from '../../lib/menuFlip'
+import { IntelCard } from '../../components/ui/IntelCard'
+import type { IntelGlance, IntelGroup } from '../../components/ui/IntelCard'
+import { documentGlance, documentDetailGroups } from '../../data/documentIntel'
 import {
   ALL_TAB,
   ALL_BRANCHES,
@@ -73,7 +80,7 @@ const fieldStyle = {
   width: '100%',
   height: 32,
   padding: '0 8px',
-  borderRadius: 8,
+  borderRadius: 'var(--r-sm)',
   border: '1px solid var(--input-border)',
   background: 'var(--input-bg)',
   color: 'var(--text)',
@@ -82,7 +89,7 @@ const fieldStyle = {
 } as const
 const labelStyle = {
   display: 'block',
-  marginBottom: 4,
+  marginBottom: 'var(--sp-xs)',
   fontSize: 'var(--t-th)',
   fontWeight: 600,
   color: 'var(--text2)',
@@ -105,7 +112,7 @@ function TypeChip({ text }: { text: string }) {
         alignItems: 'center',
         height: 20,
         padding: '0 7px',
-        borderRadius: 6,
+        borderRadius: 'var(--r-xs)',
         border: '1px solid var(--border2)',
         background: 'var(--card2)',
         color: 'var(--text2)',
@@ -150,7 +157,7 @@ function DocTile({ icon, index }: { icon: IconName; index: number }) {
       style={{
         width: 30,
         height: 30,
-        borderRadius: 8,
+        borderRadius: 'var(--r-sm)',
         flexShrink: 0,
         display: 'grid',
         placeItems: 'center',
@@ -174,7 +181,7 @@ function ActionIcon({ name, label, why }: { name: IconName; label: string; why: 
       style={{
         width: 24,
         height: 24,
-        borderRadius: 6,
+        borderRadius: 'var(--r-xs)',
         border: 'none',
         background: 'transparent',
         color: 'var(--disabled)',
@@ -195,20 +202,28 @@ function ActionIcon({ name, label, why }: { name: IconName; label: string; why: 
  * The menu itself is real; each entry that needs storage or delivery says why
  * it cannot run. `Open related record` is the one that works today.
  */
+/** Tallest the menu gets — the related-record link, divider, all 7 `ROW_MENU` entries, and the closing note. */
+const DOC_MENU_H = 320
+
 function RowMenu({ row, open, onToggle }: { row: DocRow; open: boolean; onToggle: () => void }) {
   const target = RELATED_TARGET[row.relatedKind]
+  const { ref, up, measure } = useMenuFlip<HTMLButtonElement>(DOC_MENU_H)
   return (
     <span style={{ position: 'relative', display: 'inline-flex' }}>
       <button
+        ref={ref}
         type="button"
         aria-label={`Actions for ${row.id}`}
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={onToggle}
+        onClick={() => {
+          if (!open) measure()
+          onToggle()
+        }}
         style={{
           width: 24,
           height: 24,
-          borderRadius: 6,
+          borderRadius: 'var(--r-xs)',
           border: 'none',
           background: open ? 'var(--hover-card)' : 'transparent',
           color: 'var(--muted)',
@@ -226,7 +241,7 @@ function RowMenu({ row, open, onToggle }: { row: DocRow; open: boolean; onToggle
           style={{
             position: 'absolute',
             right: 0,
-            top: 30,
+            ...(up ? { bottom: 30 } : { top: 30 }),
             minWidth: 208,
             padding: 6,
             borderRadius: 'var(--r-btn)',
@@ -237,9 +252,9 @@ function RowMenu({ row, open, onToggle }: { row: DocRow; open: boolean; onToggle
             whiteSpace: 'nowrap',
           }}
         >
-          {row.relatedKind === 'booking' ? (
+          {target.route ? (
             <Link
-              to={`/rentals/${row.relatedTo}`}
+              to={`${target.route}/${row.relatedTo}`}
               role="menuitem"
               style={{ ...menuItem, color: 'var(--text)', cursor: 'pointer' }}
             >
@@ -293,7 +308,7 @@ const menuItem = {
   width: '100%',
   height: 32,
   padding: '0 9px',
-  borderRadius: 8,
+  borderRadius: 'var(--r-sm)',
   border: 'none',
   background: 'transparent',
   fontSize: 'var(--t-meta)',
@@ -349,6 +364,10 @@ export default function Documents() {
   const { user } = useAuth()
   const role: SystemRole = user ? user.role : 'Client'
   const money = canViewMoney(role)
+  // `gateContext` returns a fresh object each call — memoized so it is a
+  // stable dependency for the row-intel memo below instead of invalidating
+  // it on every render.
+  const gctx = useMemo(() => gateContext(role), [role])
 
   const categories = useMemo(() => categoriesFor(money), [money])
   const allDocs = useMemo(() => documentsFor(money), [money])
@@ -438,8 +457,23 @@ export default function Documents() {
 
   const pageCount = Math.max(1, Math.ceil(rows.length / perPage))
   const current = Math.min(page, pageCount)
-  const visible = rows.slice((current - 1) * perPage, current * perPage)
+  // Memoized so its identity only changes when the page's actual row set
+  // does — a stable dependency for `visibleWithIntel` below.
+  const visible = useMemo(() => rows.slice((current - 1) * perPage, current * perPage), [rows, current, perPage])
   const allOnPageSelected = visible.length > 0 && visible.every((r) => selected.has(r.id))
+
+  /**
+   * Perf: `documentGlance`/`documentDetailGroups` build a full field-gated
+   * object graph per row. Calling them inline inside the table's `.map()`
+   * reran that work on every render of `Documents` (a search keystroke, a
+   * menu toggle, anything) even when the visible rows and `gctx` hadn't
+   * changed. Computed once per row here instead, keyed on the same
+   * dependencies the builders actually read.
+   */
+  const visibleWithIntel = useMemo<{ row: DocRow; glance: IntelGlance; detail: IntelGroup[] }[]>(
+    () => visible.map((d) => ({ row: d, glance: documentGlance(d, gctx), detail: documentDetailGroups(d, gctx) })),
+    [visible, gctx],
+  )
 
   /** The render's `Export`. Nothing else on this screen can produce a file. */
   function exportCsv() {
@@ -477,7 +511,7 @@ export default function Documents() {
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 4,
+        gap: 'var(--sp-xs)',
         border: 'none',
         background: 'transparent',
         padding: 0,
@@ -514,11 +548,17 @@ export default function Documents() {
             <Button icon="download" onClick={exportCsv}>
               Export
             </Button>
-            <Unavailable reason={NOT_BUILT}>
-              <Button icon="plus" variant="primary" disabled>
-                Create Document
-              </Button>
-            </Unavailable>
+            <Button
+              icon="plus"
+              variant="primary"
+              onClick={() =>
+                import('../../actions/documents/createDocument').then((m) =>
+                  m.createDocument({ title: 'New Agreement Document', docType: 'Agreement' })
+                )
+              }
+            >
+              Create Document
+            </Button>
           </>
         }
       />
@@ -527,7 +567,7 @@ export default function Documents() {
 
       {/* §2 — tabs. The rail's category list below shares this one selection,
           so the two controls can never disagree about what is on screen. */}
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
         {[{ key: 'All' as const, tab: ALL_TAB }, ...categories].map((t) => {
           const on = category === t.key
           return (
@@ -575,11 +615,11 @@ export default function Documents() {
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 8,
+                    gap: 'var(--sp-sm)',
                     width: '100%',
                     height: 32,
                     padding: '0 8px',
-                    borderRadius: 8,
+                    borderRadius: 'var(--r-sm)',
                     border: 'none',
                     background: on ? 'var(--nav-active-bg)' : 'transparent',
                     color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
@@ -637,7 +677,7 @@ export default function Documents() {
               <div>
                 <span style={labelStyle}>Date Range</span>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                  <input
+                  <Input
                     type="date"
                     aria-label="Created from"
                     value={from}
@@ -647,7 +687,7 @@ export default function Documents() {
                     }}
                     style={fieldStyle}
                   />
-                  <input
+                  <Input
                     type="date"
                     aria-label="Created to"
                     value={to}
@@ -662,7 +702,7 @@ export default function Documents() {
 
               <label>
                 <span style={labelStyle}>Document Type</span>
-                <select
+                <Select
                   value={type}
                   onChange={(e) => {
                     setType(e.target.value)
@@ -675,12 +715,12 @@ export default function Documents() {
                       {t}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
 
               <label>
                 <span style={labelStyle}>Status</span>
-                <select
+                <Select
                   value={status}
                   onChange={(e) => {
                     setStatus(e.target.value)
@@ -693,12 +733,12 @@ export default function Documents() {
                       {s}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
 
               <label>
                 <span style={labelStyle}>Related To</span>
-                <select
+                <Select
                   value={related}
                   onChange={(e) => {
                     setRelated(e.target.value)
@@ -711,14 +751,14 @@ export default function Documents() {
                       {k === ALL_RELATED ? ALL_RELATED : RELATED_TARGET[k as RelatedKind].label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
 
               {/* §16 — the branch filter shows because Settings carries more
                   than one branch; with a single branch it would be hidden. */}
               <label>
                 <span style={labelStyle}>Branch</span>
-                <select
+                <Select
                   value={branch}
                   onChange={(e) => {
                     setBranch(e.target.value)
@@ -731,7 +771,7 @@ export default function Documents() {
                       {b}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
 
               {/* §2 — filters apply instantly; the render's Apply Filters button
@@ -749,7 +789,7 @@ export default function Documents() {
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 8,
+              gap: 'var(--sp-sm)',
               padding: '10px 12px',
               borderBottom: '1px solid var(--border)',
               flexWrap: 'wrap',
@@ -757,7 +797,7 @@ export default function Documents() {
           >
             <span style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1, minWidth: 190 }}>
               <Icon name="search" size={14} style={{ position: 'absolute', left: 10, color: 'var(--muted)' }} />
-              <input
+              <Input
                 type="search"
                 value={query}
                 onChange={(e) => {
@@ -772,7 +812,7 @@ export default function Documents() {
 
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               Sort by
-              <select
+              <Select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as SortKey)}
                 style={{ ...fieldStyle, width: 'auto', height: 34 }}
@@ -782,7 +822,7 @@ export default function Documents() {
                     {s}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
 
             <span style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 10, background: 'var(--card2)', border: '1px solid var(--border)' }}>
@@ -822,7 +862,7 @@ export default function Documents() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
+                gap: 'var(--sp-sm)',
                 padding: '8px 12px',
                 borderBottom: '1px solid var(--border)',
                 background: 'var(--nav-active-bg)',
@@ -881,7 +921,7 @@ export default function Documents() {
               {visible.map((d) => {
                 const cat = categories.find((c) => c.key === d.category)
                 return (
-                  <article key={d.id} style={{ ...cardStyle, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <article key={d.id} style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
                       <DocTile icon={cat?.icon ?? 'file'} index={categoryIndex(d.category)} />
                       <span style={{ minWidth: 0 }}>
@@ -940,7 +980,7 @@ export default function Documents() {
                   </tr>
                 </thead>
                 <tbody>
-                  {visible.map((d) => {
+                  {visibleWithIntel.map(({ row: d, glance, detail }) => {
                     const cat = categories.find((c) => c.key === d.category)
                     const bs = toBs(d.createdAd)
                     const target = RELATED_TARGET[d.relatedKind]
@@ -956,18 +996,25 @@ export default function Documents() {
                         </td>
 
                         <td style={td}>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                            <DocTile icon={cat?.icon ?? 'file'} index={categoryIndex(d.category)} />
-                            <span style={{ minWidth: 0 }}>
-                              <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-                                {d.name}
-                              </span>
-                              {/* §4 — one prefix per type; templates carry id · version. */}
-                              <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 1 }}>
-                                {d.id}
+                          <IntelCard
+                            glance={glance}
+                            detail={detail}
+                            detailTitle={d.name}
+                            detailSubtitle={`${d.id} · ${d.type}`}
+                          >
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                              <DocTile icon={cat?.icon ?? 'file'} index={categoryIndex(d.category)} />
+                              <span style={{ minWidth: 0 }}>
+                                <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+                                  {d.name}
+                                </span>
+                                {/* §4 — one prefix per type; templates carry id · version. */}
+                                <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 1 }}>
+                                  {d.id}
+                                </span>
                               </span>
                             </span>
-                          </span>
+                          </IntelCard>
                         </td>
 
                         <td style={td}>
@@ -975,9 +1022,9 @@ export default function Documents() {
                         </td>
 
                         <td style={td}>
-                          {d.relatedKind === 'booking' ? (
+                          {target.route ? (
                             <Link
-                              to={`/rentals/${d.relatedTo}`}
+                              to={`${target.route}/${d.relatedTo}`}
                               className="identifier"
                               style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--link)', textDecoration: 'none' }}
                             >
@@ -1002,7 +1049,7 @@ export default function Documents() {
                           <span
                             style={{
                               display: 'block',
-                              marginTop: 4,
+                              marginTop: 'var(--sp-xs)',
                               fontSize: 'var(--t-th)',
                               fontWeight: 600,
                               color: STATUS[d.recordTone].fg,
@@ -1050,7 +1097,7 @@ export default function Documents() {
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 12,
+              gap: 'var(--sp-md)',
               padding: '10px 12px',
               flexWrap: 'wrap',
               fontSize: 'var(--t-meta)',
@@ -1074,7 +1121,7 @@ export default function Documents() {
 
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
               Rows per page
-              <select
+              <Select
                 value={perPage}
                 onChange={(e) => {
                   setPerPage(Number(e.target.value))
@@ -1088,7 +1135,7 @@ export default function Documents() {
                     {n} / page
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           </div>
         </Card>
@@ -1131,7 +1178,7 @@ export default function Documents() {
               {allDocs
                 .filter((d) => d.status === 'Pending Signature' && !d.archived)
                 .map((p) => (
-                  <div key={p.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 'var(--t-meta)' }}>
+                  <div key={p.id} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', fontSize: 'var(--t-meta)' }}>
                     <Icon name="crew" size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ display: 'block', color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -1174,7 +1221,7 @@ export default function Documents() {
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
               {missing.map((m) => (
-                <div key={m.doc + m.booking} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 'var(--t-meta)' }}>
+                <div key={m.doc + m.booking} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', fontSize: 'var(--t-meta)' }}>
                   <Icon name="alert_triangle" size={13} style={{ color: 'var(--danger-text)', flexShrink: 0 }} />
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'block', fontWeight: 600, color: 'var(--text)' }}>{m.doc}</span>
@@ -1270,7 +1317,7 @@ export default function Documents() {
                 gap: 7,
                 width: '100%',
                 height: 34,
-                marginTop: 8,
+                marginTop: 'var(--sp-sm)',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--btn-secondary-border)',
                 background: 'var(--btn-secondary-bg)',

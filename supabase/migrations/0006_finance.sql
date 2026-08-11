@@ -31,9 +31,9 @@ create table bank_accounts (
   is_primary      boolean      not null default false,
   is_active       boolean      not null default true,
   created_at      timestamptz  not null default now(),
-  created_by      uuid         references users (id),
+  created_by      uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at      timestamptz  not null default now(),
-  updated_by      uuid         references users (id),
+  updated_by      uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint bank_accounts_client_uuid_key unique (client_uuid),
   constraint bank_accounts_account_number_key unique (account_number)
@@ -54,9 +54,9 @@ create table fiscal_periods (
   end_date_ad     date         not null,
   is_closed       boolean      not null default false,
   closed_at       timestamptz,
-  closed_by       uuid         references users (id),
+  closed_by       uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   created_at      timestamptz  not null default now(),
-  created_by      uuid         references users (id),
+  created_by      uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint fiscal_periods_client_uuid_key unique (client_uuid),
   constraint fiscal_periods_fy_key unique (fiscal_year_bs),
@@ -76,7 +76,7 @@ create table invoices (
   invoice_no          text            not null,
   booking_id          uuid            not null references bookings (id),
   client_id           uuid            not null references clients (id),
-  branch_id           uuid            not null references branches (id),
+  branch_id           uuid            not null,  -- FK -> branches added in 0042 (cross-file forward ref)
   status              invoice_status  not null default 'Draft',
   issue_date          date            not null default current_date,
   due_date            date            not null,
@@ -86,6 +86,8 @@ create table invoices (
   subtotal            numeric(14,2)   not null default 0,
   discount_amount     numeric(14,2)   not null default 0,
   discount_percent    numeric(5,2)    not null default 0,
+  discount_reason     text,
+  discount_approved_by uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   taxable_amount      numeric(14,2)   not null default 0,
   vat_rate            numeric(5,4)    not null default 0.1300,
   vat_amount          numeric(14,2)   not null default 0,
@@ -95,16 +97,16 @@ create table invoices (
   
   -- Void & Credit Note handling
   voided_at           timestamptz,
-  voided_by           uuid            references users (id),
+  voided_by           uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   void_reason         text,
   credit_note_no      text,
   
   notes               text,
   pdf_url             text,
   created_at          timestamptz     not null default now(),
-  created_by          uuid            references users (id),
+  created_by          uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at          timestamptz     not null default now(),
-  updated_by          uuid            references users (id),
+  updated_by          uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint invoices_client_uuid_key unique (client_uuid),
   constraint invoices_no_key unique (invoice_no),
@@ -113,6 +115,12 @@ create table invoices (
     vat_amount >= 0 and total_amount >= 0 and paid_amount >= 0 and outstanding_amount >= 0
   ),
   constraint invoices_discount_cap check (discount_percent >= 0 and discount_percent <= 25),
+  -- Law 10, mirroring booking_discounts_over_ten_needs_reason_and_approver: a table CHECK
+  -- precisely so no role, no RLS policy, and no application path can bypass it.
+  constraint invoices_discount_over_ten_needs_reason_and_approver check (
+    discount_percent <= 10
+    or (char_length(btrim(discount_reason)) >= 10 and discount_approved_by is not null)
+  ),
   constraint invoices_void_requires_reason check (
     (voided_at is null and voided_by is null and void_reason is null and credit_note_no is null) or
     (voided_at is not null and voided_by is not null and length(trim(void_reason)) >= 10 and credit_note_no is not null)
@@ -139,6 +147,8 @@ create table invoice_lines (
   days              integer        not null default 1,
   unit_rate         numeric(14,2)  not null default 0,
   discount_percent  numeric(5,2)   not null default 0,
+  discount_reason   text,
+  discount_approved_by uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   line_total        numeric(14,2)  not null default 0,
   sort_order        integer        not null default 0,
   created_at        timestamptz    not null default now(),
@@ -147,6 +157,11 @@ create table invoice_lines (
   constraint invoice_lines_qty_positive check (quantity >= 1),
   constraint invoice_lines_days_mandatory check (days >= 1),
   constraint invoice_lines_discount_cap check (discount_percent >= 0 and discount_percent <= 25),
+  -- Law 10, same rule as invoices_discount_over_ten_needs_reason_and_approver above.
+  constraint invoice_lines_discount_over_ten_needs_reason_and_approver check (
+    discount_percent <= 10
+    or (char_length(btrim(discount_reason)) >= 10 and discount_approved_by is not null)
+  ),
   constraint invoice_lines_totals_valid check (unit_rate >= 0 and line_total >= 0)
 );
 
@@ -165,7 +180,7 @@ create table payments (
   booking_id        uuid            not null references bookings (id),
   invoice_id        uuid            references invoices (id),
   client_id         uuid            not null references clients (id),
-  branch_id         uuid            not null references branches (id),
+  branch_id         uuid            not null,  -- FK -> branches added in 0042 (cross-file forward ref)
   amount            numeric(14,2)   not null,
   payment_type      payment_type    not null default 'Advance Payment',
   status            payment_status  not null default 'Received',
@@ -173,7 +188,7 @@ create table payments (
   bank_account_id   uuid            references bank_accounts (id),
   transaction_ref   text,
   notes             text,
-  received_by       uuid            not null references users (id),
+  received_by       uuid            not null,  -- FK -> users added in 0042 (cross-file forward ref)
   created_at        timestamptz     not null default now(),
 
   constraint payments_client_uuid_key unique (client_uuid),
@@ -200,8 +215,8 @@ create table payment_reversals (
   original_payment_id   uuid           not null references payments (id),
   amount                numeric(14,2)  not null,
   reason                text           not null,
-  reversed_by           uuid           not null references users (id),
-  approved_by           uuid           not null references users (id),
+  reversed_by           uuid           not null,  -- FK -> users added in 0042 (cross-file forward ref)
+  approved_by           uuid           not null,  -- FK -> users added in 0042 (cross-file forward ref)
   reversed_at           timestamptz    not null default now(),
   created_at            timestamptz    not null default now(),
 
@@ -225,16 +240,16 @@ create table security_deposits (
   deposit_no        text           not null,
   booking_id        uuid           not null references bookings (id),
   client_id         uuid           not null references clients (id),
-  branch_id         uuid           not null references branches (id),
+  branch_id         uuid           not null,  -- FK -> branches added in 0042 (cross-file forward ref)
   required_amount   numeric(14,2)  not null default 0,
   received_amount   numeric(14,2)  not null default 0,
   refunded_amount   numeric(14,2)  not null default 0,
   applied_amount    numeric(14,2)  not null default 0,
   pending_amount    numeric(14,2)  not null default 0,
   created_at        timestamptz    not null default now(),
-  created_by        uuid           references users (id),
+  created_by        uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at        timestamptz    not null default now(),
-  updated_by        uuid           references users (id),
+  updated_by        uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint security_deposits_client_uuid_key unique (client_uuid),
   constraint security_deposits_no_key unique (deposit_no),
@@ -264,7 +279,7 @@ create table deposit_movements (
   transaction_ref        text,
   charge_type            deposit_charge_type,
   applied_reason         text,
-  handled_by             uuid                   not null references users (id),
+  handled_by             uuid                   not null,  -- FK -> users added in 0042 (cross-file forward ref)
   created_at             timestamptz            not null default now(),
 
   constraint deposit_movements_client_uuid_key unique (client_uuid),
@@ -292,9 +307,9 @@ create table expense_categories (
   description  text,
   is_active    boolean      not null default true,
   created_at   timestamptz  not null default now(),
-  created_by   uuid         references users (id),
+  created_by   uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at   timestamptz  not null default now(),
-  updated_by   uuid         references users (id),
+  updated_by   uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint expense_categories_client_uuid_key unique (client_uuid),
   constraint expense_categories_code_key unique (code)
@@ -312,7 +327,7 @@ create table expenses (
   client_uuid      uuid            not null,
   expense_no       text            not null,
   category_id      uuid            not null references expense_categories (id),
-  branch_id        uuid            not null references branches (id),
+  branch_id        uuid            not null,  -- FK -> branches added in 0042 (cross-file forward ref)
   vendor_name      text            not null,
   amount           numeric(14,2)   not null,
   expense_date     date            not null default current_date,
@@ -322,9 +337,9 @@ create table expenses (
   receipt_size     bigint,
   booking_id       uuid            references bookings (id),
   created_at       timestamptz     not null default now(),
-  created_by       uuid            references users (id),
+  created_by       uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at       timestamptz     not null default now(),
-  updated_by       uuid            references users (id),
+  updated_by       uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint expenses_client_uuid_key unique (client_uuid),
   constraint expenses_no_key unique (expense_no),
@@ -349,7 +364,7 @@ create table expense_reversals (
   original_expense_id  uuid           not null references expenses (id),
   amount               numeric(14,2)  not null,
   reason               text           not null,
-  reversed_by          uuid           not null references users (id),
+  reversed_by          uuid           not null,  -- FK -> users added in 0042 (cross-file forward ref)
   reversed_at          timestamptz    not null default now(),
   created_at           timestamptz    not null default now(),
 
@@ -380,9 +395,9 @@ create table coupons (
   current_redemptions  integer       not null default 0,
   is_active            boolean       not null default true,
   created_at           timestamptz   not null default now(),
-  created_by           uuid          references users (id),
+  created_by           uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at           timestamptz   not null default now(),
-  updated_by           uuid          references users (id),
+  updated_by           uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint coupons_client_uuid_key unique (client_uuid),
   constraint coupons_code_key unique (code),
@@ -406,7 +421,7 @@ create table coupon_redemptions (
   client_id       uuid           not null references clients (id),
   discount_amount numeric(14,2)  not null,
   redeemed_at     timestamptz    not null default now(),
-  redeemed_by     uuid           references users (id),
+  redeemed_by     uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint coupon_redemptions_client_uuid_key unique (client_uuid),
   constraint coupon_redemptions_unique_per_booking unique (coupon_id, booking_id),
@@ -426,7 +441,7 @@ create table tax_ledgers (
   client_uuid      uuid           not null,
   entry_no         text           not null,
   fiscal_period_id uuid           not null references fiscal_periods (id),
-  branch_id        uuid           not null references branches (id),
+  branch_id        uuid           not null,  -- FK -> branches added in 0042 (cross-file forward ref)
   invoice_id       uuid           references invoices (id),
   expense_id       uuid           references expenses (id),
   tax_type         text           not null default 'VAT',
@@ -447,6 +462,73 @@ create table tax_ledgers (
 create index idx_tax_ledgers_fp on tax_ledgers (fiscal_period_id);
 create index idx_tax_ledgers_invoice on tax_ledgers (invoice_id);
 create index idx_tax_ledgers_expense on tax_ledgers (expense_id);
+
+
+-- =============================================================================
+-- Invoice immutability once issued (Law 4 / this file's own header, line 9).
+--
+-- Every other trigger in this schema lives in 0010_triggers_functions.sql — this one is
+-- deliberately kept here instead, in the same file that owns `invoices`, because another
+-- session was concurrently editing 0010 while this fix was written; adding it here avoids
+-- touching a file mid-edit. TODO(decision): consider moving it to 0010 for consistency once
+-- that file is stable again — functionally it belongs there.
+--
+-- Before this trigger, `revoke update on ...` (below) covered payments/deposits/expenses/
+-- coupons/tax ledgers but never `invoices` — despite the header's own promise that mistakes
+-- "take Void + Credit Note", nothing in the database actually enforced it. A CHECK constraint
+-- can't express this (it needs OLD vs NEW), so it has to be a trigger, and it has to allow the
+-- two legitimate system-driven paths that update these same columns after issue:
+--   1. recalculate_invoice_totals() (0010, on invoice_lines) — only fires while status is
+--      still 'Draft' in the intended flow; if lines are ever edited after issue, this trigger
+--      correctly blocks the resulting invoices UPDATE, which is the point.
+--   2. sync_payment_to_invoice() (0010, on payments) — only ever touches paid_amount,
+--      outstanding_amount, status and updated_at, none of which this trigger protects.
+-- =============================================================================
+create or replace function reject_invoice_edit_after_issue()
+returns trigger
+language plpgsql
+as $$
+begin
+  -- Draft invoices are still being assembled — nothing is "issued" yet to protect.
+  if OLD.status = 'Draft' then
+    return NEW;
+  end if;
+
+  -- The Void + Credit Note path is the one lawful way to touch an issued invoice's own row:
+  -- voided_at/voided_by/void_reason/credit_note_no move together (already required by
+  -- invoices_void_requires_reason above), and the figures must travel unchanged with it.
+  if NEW.voided_at is not null and OLD.voided_at is null then
+    if NEW.subtotal is distinct from OLD.subtotal
+      or NEW.discount_amount is distinct from OLD.discount_amount
+      or NEW.discount_percent is distinct from OLD.discount_percent
+      or NEW.taxable_amount is distinct from OLD.taxable_amount
+      or NEW.vat_amount is distinct from OLD.vat_amount
+      or NEW.total_amount is distinct from OLD.total_amount
+      or NEW.due_date is distinct from OLD.due_date
+    then
+      raise exception 'Law 4/finance: invoice % cannot change its own figures while being voided — void it as issued, correct with a credit note or a new invoice.', OLD.invoice_no;
+    end if;
+    return NEW;
+  end if;
+
+  if NEW.subtotal is distinct from OLD.subtotal
+    or NEW.discount_amount is distinct from OLD.discount_amount
+    or NEW.discount_percent is distinct from OLD.discount_percent
+    or NEW.taxable_amount is distinct from OLD.taxable_amount
+    or NEW.vat_amount is distinct from OLD.vat_amount
+    or NEW.total_amount is distinct from OLD.total_amount
+    or NEW.due_date is distinct from OLD.due_date
+  then
+    raise exception 'Law 4/finance: invoice % is issued (status %) — its figures are immutable. Corrections take Void + Credit Note, never a direct edit.', OLD.invoice_no, OLD.status;
+  end if;
+
+  return NEW;
+end;
+$$;
+
+create trigger trg_invoices_immutable_once_issued
+  before update on invoices
+  for each row execute function reject_invoice_edit_after_issue();
 
 
 -- =============================================================================

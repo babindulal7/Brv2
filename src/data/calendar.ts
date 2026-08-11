@@ -365,7 +365,9 @@ export const KPIS: CalendarKpi[] = [
   },
   {
     label: 'Schedule Conflicts',
-    value: '4',
+    // Derived from ROWS, not hand-typed — the render had '4' but the seed data
+    // has exactly 1 Conflict bar (AUDIT_FINDINGS P2 / calendar.ts:368).
+    value: String(ROWS.flatMap((r) => r.bars).filter((b) => b.kind === 'Conflict').length),
     icon: 'alert_triangle',
     accent: 'danger',
     note: 'Requires attention',

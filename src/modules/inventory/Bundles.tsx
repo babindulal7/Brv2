@@ -3,9 +3,11 @@ import type { CSSProperties } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
+import { Select } from '../../components/ui/Select'
 import { Card, Button, KpiStrip, cardStyle, Rail, SummaryRows } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { Unavailable } from '../../components/ui/Unavailable'
+import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { Donut, Legend } from '../../components/ui/Charts'
 import type { Slice } from '../../components/ui/Charts'
 import { STATUS } from '../../lib/status'
@@ -14,6 +16,11 @@ import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useAuth } from '../../lib/auth'
+import { gateContext } from '../../lib/fieldGating'
+import { useMenuFlip } from '../../lib/menuFlip'
+import { IntelCard } from '../../components/ui/IntelCard'
+import { bundleGlance, bundleDetailGroups } from '../../data/bundleIntel'
 import {
   ACTIVE_BUNDLES,
   ARCHIVED_BUNDLES,
@@ -163,35 +170,22 @@ function BsAd({ date, prefix }: { date: Date; prefix?: string }) {
 /**
  * Foundation §6 — a failure is stated in place, naming the figures that
  * disagree. `data/bundles.ts` reports rather than throws, because a module-scope
- * throw runs before React mounts and blanks the app.
+ * throw runs before React mounts and blanks the app. Renders through the shared
+ * `ErrorBanner` (§2.4) rather than a local reimplementation — this exact banner
+ * used to be copy-pasted per-module (see `Maintenance.tsx`'s near-identical one).
  */
 function SeedDefectBanner({ messages }: { messages: string[] }) {
   return (
-    <div
-      role="alert"
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 10,
-        padding: '10px 12px',
-        borderRadius: 'var(--r-card)',
-        border: '1px solid var(--danger)',
-        background: 'var(--st-danger-bg)',
-        color: 'var(--st-danger-fg)',
-        fontSize: 'var(--t-meta)',
-        lineHeight: 1.55,
-      }}
-    >
-      <Icon name="alert_triangle" size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-      <span>
-        <strong style={{ display: 'block', marginBottom: 2 }}>These bundle figures do not reconcile.</strong>
-        <ul style={{ margin: 0, paddingLeft: 16 }}>
+    <ErrorBanner
+      title="These bundle figures do not reconcile."
+      message={
+        <ul style={{ margin: 0, paddingLeft: 'var(--sp-lg)' }}>
           {messages.map((m) => (
             <li key={m}>{m}</li>
           ))}
         </ul>
-      </span>
-    </div>
+      }
+    />
   )
 }
 
@@ -208,8 +202,10 @@ function Menu({
   items: Array<{ key: string; label: string; onSelect?: () => void; reason?: string }>
 }) {
   const [open, setOpen] = useState(false)
+  // ~32px per row (7px vertical padding + line height) plus the 4px container padding.
+  const { ref, up, measure } = useMenuFlip<HTMLSpanElement>(items.length * 32 + 8)
   return (
-    <span style={{ position: 'relative', display: 'inline-flex' }}>
+    <span ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
       {open && (
         <button
           type="button"
@@ -219,7 +215,14 @@ function Menu({
         />
       )}
       <span aria-haspopup="menu" aria-expanded={open}>
-        <Button {...(icon ? { icon } : {})} {...(variant ? { variant } : {})} onClick={() => setOpen((v) => !v)}>
+        <Button
+          {...(icon ? { icon } : {})}
+          {...(variant ? { variant } : {})}
+          onClick={() => {
+            if (!open) measure()
+            setOpen((v) => !v)
+          }}
+        >
           {label}
         </Button>
       </span>
@@ -228,15 +231,15 @@ function Menu({
           role="menu"
           style={{
             position: 'absolute',
-            top: 'calc(100% + 4px)',
+            ...(up ? { bottom: 'calc(100% + 4px)' } : { top: 'calc(100% + 4px)' }),
             right: 0,
             zIndex: 21,
             minWidth: 224,
             background: 'var(--dropdown)',
             border: '1px solid var(--border)',
-            borderRadius: 8,
+            borderRadius: 'var(--r-sm)',
             boxShadow: 'var(--shadow-modal)',
-            padding: 4,
+            padding: 'var(--sp-xs)',
           }}
         >
           {items.map((it) => (
@@ -256,7 +259,7 @@ function Menu({
                 width: '100%',
                 textAlign: 'left',
                 padding: '7px 9px',
-                borderRadius: 6,
+                borderRadius: 'var(--r-xs)',
                 border: 'none',
                 background: 'transparent',
                 color: it.onSelect ? 'var(--text)' : 'var(--disabled)',
@@ -364,6 +367,8 @@ const ROWS_PER_PAGE = [10, 25, 50]
 export function Bundles() {
   const navigate = useNavigate()
   const money = useCanViewMoney()
+  const { user } = useAuth()
+  const gctx = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
 
   const [chip, setChip] = useState<ChipKey>('All')
   const [category, setCategory] = useState('All')
@@ -429,7 +434,29 @@ export function Bundles() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage))
   const safePage = Math.min(page, pageCount)
   const start = (safePage - 1) * rowsPerPage
-  const visible = filtered.slice(start, start + rowsPerPage)
+  const visible = useMemo(
+    () => filtered.slice(start, start + rowsPerPage),
+    [filtered, start, rowsPerPage],
+  )
+
+  /*
+   * §HIS v2.1 perf — `bundleGlance`/`bundleDetailGroups` each build a full
+   * field-gated object graph (role/PII/money filtering) per row. Computing
+   * them inline inside the table's `.map()` reran that work on every
+   * re-render of the whole page (a search keystroke, a chip toggle, etc.)
+   * even for rows whose bundle/gate context hadn't changed. Memoized here
+   * per page of `visible` rows + `gctx`, so the builders only rerun when the
+   * page's rows or the viewing role/surface actually change.
+   */
+  const visibleWithIntel = useMemo(
+    () =>
+      visible.map((b) => ({
+        bundle: b,
+        glance: bundleGlance(b, gctx),
+        detail: bundleDetailGroups(b, gctx),
+      })),
+    [visible, gctx],
+  )
 
   const preview = filtered.find((b) => b.id === previewId) ?? filtered[0] ?? ACTIVE_BUNDLES[0]
   const previewFacts = preview ? factsOf(preview) : null
@@ -516,7 +543,7 @@ export function Bundles() {
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: 4,
+            gap: 'var(--sp-xs)',
             border: 'none',
             background: 'transparent',
             padding: 0,
@@ -542,7 +569,7 @@ export function Bundles() {
         <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
           Create and manage equipment kits and rental packages.
         </p>
-        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
           <Unavailable reason="Import is not built — there is no bundle intake pipeline in this release.">
             <Button icon="upload" disabled>
               Import
@@ -597,7 +624,7 @@ export function Bundles() {
                     gap: 6,
                     height: 30,
                     padding: '0 10px',
-                    borderRadius: 8,
+                    borderRadius: 'var(--r-sm)',
                     border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
                     background: on ? 'var(--nav-active-bg)' : 'var(--card)',
                     color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
@@ -638,44 +665,44 @@ export function Bundles() {
           </div>
 
           {/* Filter bar — the render's row, with every control wired to state. */}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap', alignItems: 'center' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
               <Icon name="checklist" size={14} />
               Filters
             </span>
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
               Category
-              <select value={category} onChange={(e) => { setCategory(e.target.value); setPage(1) }} style={selectStyle}>
+              <Select value={category} onChange={(e) => { setCategory(e.target.value); setPage(1) }} style={selectStyle}>
                 <option value="All">All</option>
                 {ALL_CATEGORIES.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
               Tags
-              <select value={tag} onChange={(e) => { setTag(e.target.value); setPage(1) }} style={selectStyle}>
+              <Select value={tag} onChange={(e) => { setTag(e.target.value); setPage(1) }} style={selectStyle}>
                 <option value="All">All</option>
                 {ALL_TAGS.map((t) => (
                   <option key={t} value={t}>{t}</option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
               Contains Crew
-              <select value={hasCrew} onChange={(e) => { setHasCrew(e.target.value as Triple); setPage(1) }} style={selectStyle}>
+              <Select value={hasCrew} onChange={(e) => { setHasCrew(e.target.value as Triple); setPage(1) }} style={selectStyle}>
                 <option value="Any">Any</option>
                 <option value="Yes">Yes</option>
                 <option value="No">No</option>
-              </select>
+              </Select>
             </label>
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
               Contains Vehicle
-              <select value={hasVehicle} onChange={(e) => { setHasVehicle(e.target.value as Triple); setPage(1) }} style={selectStyle}>
+              <Select value={hasVehicle} onChange={(e) => { setHasVehicle(e.target.value as Triple); setPage(1) }} style={selectStyle}>
                 <option value="Any">Any</option>
                 <option value="Yes">Yes</option>
                 <option value="No">No</option>
-              </select>
+              </Select>
             </label>
             {filtersOn ? (
               <Button icon="close" onClick={clearAll}>
@@ -689,10 +716,10 @@ export function Bundles() {
               </Unavailable>
             )}
 
-            <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
                 Sort by
-                <select
+                <Select
                   value={sort ? `${sort.key}:${sort.dir}` : 'none'}
                   onChange={(e) => {
                     const raw = e.target.value
@@ -709,9 +736,9 @@ export function Bundles() {
                   {SORT_OPTIONS.filter((o) => !o.money || money).map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
-                </select>
+                </Select>
               </label>
-              <span style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+              <span style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', overflow: 'hidden' }}>
                 {(['list', 'grid'] as const).map((v) => (
                   <button
                     key={v}
@@ -739,27 +766,24 @@ export function Bundles() {
 
           <Card bodyStyle={{ padding: 0 }}>
             {visible.length === 0 ? (
-              <div style={{ padding: '30px 16px', textAlign: 'center' }}>
-                <Icon name="queues" size={26} style={{ color: 'var(--muted)' }} />
-                <p style={{ margin: '8px 0 4px', fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--text)' }}>
-                  No bundles match these filters
-                </p>
-                <p style={{ margin: '0 0 12px', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                  {chip === 'Archived'
+              <EmptyState
+                icon={<Icon name="queues" size={22} />}
+                title="No bundles match these filters"
+                description={
+                  chip === 'Archived'
                     ? 'Nothing is on the archive shelf.'
-                    : 'Adjust the status chips or the filter row above.'}
-                </p>
-                <Button icon="refresh" onClick={clearAll}>
-                  Clear all filters
-                </Button>
-              </div>
+                    : 'Adjust the status chips or the filter row above.'
+                }
+                actionLabel="Clear all filters"
+                onAction={clearAll}
+              />
             ) : view === 'grid' ? (
               <div
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(auto-fill, minmax(232px, 1fr))',
                   gap: 10,
-                  padding: 12,
+                  padding: 'var(--sp-md)',
                 }}
               >
                 {visible.map((b) => {
@@ -782,7 +806,7 @@ export function Bundles() {
                         gap: 7,
                       }}
                     >
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                         <span
                           aria-hidden
                           style={{ width: 30, height: 30, borderRadius: 7, display: 'grid', placeItems: 'center', background: 'var(--card2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
@@ -840,7 +864,7 @@ export function Bundles() {
                     </tr>
                   </thead>
                   <tbody>
-                    {visible.map((b) => {
+                    {visibleWithIntel.map(({ bundle: b, glance, detail }) => {
                       const f = factsOf(b)
                       const open = expanded.has(b.id)
                       const isPreview = preview?.id === b.id
@@ -864,26 +888,33 @@ export function Bundles() {
                           </td>
 
                           <td style={{ ...td, maxWidth: 250 }}>
-                            <button
-                              type="button"
-                              onClick={() => setPreviewId(b.id)}
-                              aria-pressed={isPreview}
-                              title="Show this bundle in the preview rail"
-                              style={{ display: 'flex', alignItems: 'center', gap: 9, background: 'transparent', border: 'none', padding: 0, font: 'inherit', textAlign: 'left', cursor: 'pointer', color: 'var(--text)' }}
+                            <IntelCard
+                              glance={glance}
+                              detail={detail}
+                              detailTitle={b.name}
+                              detailSubtitle={`${b.id} · ${b.category}`}
                             >
-                              <span
-                                aria-hidden
-                                style={{ width: 38, height: 34, flexShrink: 0, borderRadius: 7, display: 'grid', placeItems: 'center', background: 'var(--card2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
+                              <button
+                                type="button"
+                                onClick={() => setPreviewId(b.id)}
+                                aria-pressed={isPreview}
+                                title="Show this bundle in the preview rail"
+                                style={{ display: 'flex', alignItems: 'center', gap: 9, background: 'transparent', border: 'none', padding: 0, font: 'inherit', textAlign: 'left', cursor: 'pointer', color: 'var(--text)' }}
                               >
-                                <Icon name={iconFor(b.category)} size={17} />
-                              </span>
-                              <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                                <span style={{ fontWeight: 600 }}>{b.name}</span>
-                                <span className="identifier" style={subtle}>
-                                  {b.id}
+                                <span
+                                  aria-hidden
+                                  style={{ width: 38, height: 34, flexShrink: 0, borderRadius: 7, display: 'grid', placeItems: 'center', background: 'var(--card2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
+                                >
+                                  <Icon name={iconFor(b.category)} size={17} />
                                 </span>
-                              </span>
-                            </button>
+                                <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                                  <span style={{ fontWeight: 600 }}>{b.name}</span>
+                                  <span className="identifier" style={subtle}>
+                                    {b.id}
+                                  </span>
+                                </span>
+                              </button>
+                            </IntelCard>
                           </td>
 
                           <td style={td}>
@@ -913,7 +944,7 @@ export function Bundles() {
 
                           <td style={{ ...td, minWidth: 190 }}>
                             <StatePill state={b.archived ? 'Archived' : f.state} />
-                            <span className="figure" style={{ display: 'block', ...subtle, marginTop: 4 }}>
+                            <span className="figure" style={{ display: 'block', ...subtle, marginTop: 'var(--sp-xs)' }}>
                               {ratioLabelOf(f)}
                             </span>
                             {showBlocked ? (
@@ -925,7 +956,7 @@ export function Bundles() {
                                   style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',
-                                    gap: 4,
+                                    gap: 'var(--sp-xs)',
                                     marginTop: 3,
                                     padding: 0,
                                     border: 'none',
@@ -1053,7 +1084,7 @@ export function Bundles() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 12,
+                gap: 'var(--sp-md)',
                 padding: '10px 14px',
                 borderTop: '1px solid var(--border)',
                 fontSize: 'var(--t-meta)',
@@ -1062,7 +1093,7 @@ export function Bundles() {
               }}
             >
               {selected.size > 0 && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                   <span className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>
                     {selected.size} selected
                   </span>
@@ -1086,14 +1117,14 @@ export function Bundles() {
                 </span>
               )}
 
-              <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-md)', flexWrap: 'wrap' }}>
                 <span className="figure">
                   Showing {filtered.length === 0 ? 0 : start + 1} to {Math.min(start + rowsPerPage, filtered.length)} of{' '}
                   {filtered.length} bundles
                 </span>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, ...subtle }}>
                   Rows per page
-                  <select
+                  <Select
                     value={rowsPerPage}
                     onChange={(e) => {
                       setRowsPerPage(Number(e.target.value))
@@ -1104,7 +1135,7 @@ export function Bundles() {
                     {ROWS_PER_PAGE.map((n) => (
                       <option key={n} value={n}>{n}</option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   <Button icon="chevron_left" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>
@@ -1194,12 +1225,12 @@ function PreviewCard({
     <Card
       title="Bundle Preview"
       action={
-        <span className="identifier" style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 6px' }}>
+        <span className="identifier" style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 'var(--r-xs)', padding: '2px 6px' }}>
           {bundle.id}
         </span>
       }
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 'var(--sp-sm)' }}>
         <Icon name={iconFor(bundle.category)} size={15} style={{ color: 'var(--text2)' }} />
         <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>{bundle.name}</span>
       </div>
@@ -1251,7 +1282,7 @@ function PreviewCard({
                     const showSerials = serialsOpen.has(key)
                     return (
                       <div key={l.model}>
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 'var(--t-th)' }}>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--sp-sm)', fontSize: 'var(--t-th)' }}>
                           <span style={{ color: 'var(--text2)', minWidth: 0, flex: 1 }}>
                             {l.model} <span className="figure">×{l.quantity}</span>
                           </span>
@@ -1320,7 +1351,7 @@ function SummaryCard({ bundle, facts }: { bundle: BundleRecord; facts: BundleFac
 
   return (
     <Card title="Bundle Summary">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', marginBottom: 10 }}>
         <Donut slices={slices} size={112} centreValue={`${centre} / ${facts.totalItems}`} centreLabel="Available" />
         <Legend slices={slices} showPercent={false} />
       </div>
@@ -1367,10 +1398,10 @@ function PricingCard({ bundle, facts }: { bundle: BundleRecord; facts: BundleFac
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
+          gap: 'var(--sp-sm)',
           marginTop: 10,
           padding: '8px 10px',
-          borderRadius: 8,
+          borderRadius: 'var(--r-sm)',
           background: 'var(--st-in-bg)',
           color: 'var(--st-in-fg)',
           fontSize: 'var(--t-meta)',
@@ -1401,7 +1432,7 @@ function QuickActionsCard({ bundle, money }: { bundle: BundleRecord; money: bool
     alignItems: 'center',
     gap: 5,
     padding: '11px 6px',
-    borderRadius: 8,
+    borderRadius: 'var(--r-sm)',
     border: '1px solid var(--border)',
     background: 'var(--card2)',
     fontSize: 'var(--t-th)',
@@ -1412,7 +1443,7 @@ function QuickActionsCard({ bundle, money }: { bundle: BundleRecord; money: bool
 
   return (
     <Card title="Quick Actions">
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
         {bundle.booking ? (
           <button
             type="button"

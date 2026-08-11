@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle, Rail, SideRail } from '../../components/ui/Page'
+import { EmptyState } from '../../components/ui/StateViews'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { JOBS } from '../../lib/workflow'
@@ -156,7 +157,7 @@ function problemReady(draft: ProblemDraft): boolean {
   return false
 }
 
-export default function ResetWorkspace() {
+export default function ResetWorkspace({ embedded = false, readOnly = false }: { embedded?: boolean; readOnly?: boolean } = {}) {
   const navigate = useNavigate()
   const { bookingNo } = useParams()
   const id = bookingNo ?? BOOKING.no
@@ -187,7 +188,7 @@ export default function ResetWorkspace() {
   const finished = counts.Waiting + counts.Cleaning + counts.QC === 0
   const jobState: JobState = finished ? 'Complete' : untouched ? 'Not Started' : 'In Progress'
   const remainingCount = counts.Waiting + counts.Cleaning + counts.QC
-  const completeReason = remainingCount > 0 ? `${remainingCount} item${remainingCount > 1 ? 's' : ''} not yet Ready` : null
+  const completeReason = remainingCount > 0 ? `${remainingCount} item${remainingCount > 1 ? 's' : ''} not yet Ready` : readOnly ? 'This booking is closed — read only' : null
   const canCompleteJob = completeReason === null && jobCompletedAt === null
 
   /* §4.3 — Next Priority lists Waiting items only; a started item is not "next". */
@@ -238,20 +239,26 @@ export default function ResetWorkspace() {
     const total = allTasksFor(u).length
     return rec.problem === 'No Problems' && total > 0 && rec.ticks.size === total
   })
-  const markCleanReason = eligibleUnits.length > 0 ? null : 'No item has a completed checklist'
+  const markCleanReason = readOnly ? 'This booking is closed — read only' : eligibleUnits.length > 0 ? null : 'No item has a completed checklist'
 
   /* ── selection & row actions ─────────────────────────────────────────── */
-  const toggleSelect = (uid: string) =>
+  const toggleSelect = (uid: string) => {
+    if (readOnly) return
     setSelected((prev) => {
       const next = new Set(prev)
       if (next.has(uid)) next.delete(uid)
       else next.add(uid)
       return next
     })
-  const selectAllVisible = () => setSelected(new Set(visible.filter((u) => (lines[u.id] as LineRec).problem === 'No Problems').map((u) => u.id)))
+  }
+  const selectAllVisible = () => {
+    if (readOnly) return
+    setSelected(new Set(visible.filter((u) => (lines[u.id] as LineRec).problem === 'No Problems').map((u) => u.id)))
+  }
   const clearSelection = () => setSelected(new Set())
 
   const start = (uid: string) => {
+    if (readOnly) return
     const rec = lines[uid] as LineRec
     set(uid, { queueState: 'Cleaning', actor: rec.actor ?? CURRENT_USER, actedAt: '—' })
     setSelected((prev) => new Set(prev).add(uid))
@@ -259,6 +266,7 @@ export default function ResetWorkspace() {
 
   /* ── checklist ticking — shared tasks cascade to every selected item ────── */
   const toggleShared = (task: string) => {
+    if (readOnly) return
     const allDone = selUnits.every((u) => (lines[u.id] as LineRec).ticks.has(task))
     setLines((prev) => {
       const next = { ...prev }
@@ -273,6 +281,7 @@ export default function ResetWorkspace() {
     })
   }
   const toggleUnitTask = (uid: string, task: string) => {
+    if (readOnly) return
     const rec = lines[uid] as LineRec
     const ticks = new Set(rec.ticks)
     if (ticks.has(task)) ticks.delete(task)
@@ -281,6 +290,7 @@ export default function ResetWorkspace() {
   }
 
   const markCleanMoveToQc = () => {
+    if (readOnly) return
     setLines((prev) => {
       const next = { ...prev }
       eligibleUnits.forEach((u) => {
@@ -292,18 +302,23 @@ export default function ResetWorkspace() {
   }
 
   /* ── §7.1 — "Any Problems?", per item ────────────────────────────────── */
-  const pickProblem = (uid: string, type: ProblemState) =>
+  const pickProblem = (uid: string, type: ProblemState) => {
+    if (readOnly) return
     setProblemDraft((prev) => ({
       ...prev,
       [uid]: { type, reason: prev[uid]?.reason ?? '', damageType: prev[uid]?.damageType ?? '', severity: prev[uid]?.severity ?? '', evidence: prev[uid]?.evidence ?? 0 },
     }))
-  const changeProblemField = (uid: string, patch: Partial<Omit<ProblemDraft, 'type'>>) =>
+  }
+  const changeProblemField = (uid: string, patch: Partial<Omit<ProblemDraft, 'type'>>) => {
+    if (readOnly) return
     setProblemDraft((prev) => {
       const cur = prev[uid]
       if (!cur) return prev
       return { ...prev, [uid]: { ...cur, ...patch } }
     })
+  }
   const confirmProblem = (uid: string) => {
+    if (readOnly) return
     const draft = problemDraft[uid]
     if (!draft || !problemReady(draft)) return
     set(uid, { problem: draft.type, problemReason: draft.reason, damageType: draft.damageType, damageSeverity: draft.severity })
@@ -324,10 +339,14 @@ export default function ResetWorkspace() {
       delete next[uid]
       return next
     })
-  const undoProblem = (uid: string) => set(uid, { problem: 'No Problems' })
+  const undoProblem = (uid: string) => {
+    if (readOnly) return
+    set(uid, { problem: 'No Problems' })
+  }
 
   /* ── §10 — QC, performed by someone other than the cleaner by default ───── */
   const passQc = (uid: string) => {
+    if (readOnly) return
     const rec = lines[uid] as LineRec
     const by = qcBy[uid] ?? defaultQcBy(rec.actor ?? '')
     const reason = qcReason[uid] ?? ''
@@ -336,6 +355,7 @@ export default function ResetWorkspace() {
     set(uid, { queueState: 'Ready', qcBy: by, qcAt: '—', ...(selfCheck ? { qcSkipReason: reason } : {}) })
   }
   const failQc = (uid: string) => {
+    if (readOnly) return
     const reason = qcReason[uid] ?? ''
     if (reason.trim().length < 5) return
     set(uid, { queueState: 'Waiting', qcFailReason: reason })
@@ -346,8 +366,18 @@ export default function ResetWorkspace() {
   // Floor scale (DEVICES.md item 3) is applied automatically by route in App.tsx's Shell, not here.
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      {/* ── header — booking status is fixed at Returned; only the job state moves ── */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+      {/* Closed bookings — OperationsShell still opens this tab so the queue stays viewable
+          (§4.1 "every step is always viewable"), but every write/checkbox/save control below
+          is disabled. Icon + text, never colour alone (Law 11). */}
+      {readOnly && (
+        <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '10px 14px', borderRadius: 'var(--r-btn)', background: 'var(--st-neutral-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600 }}>
+          <Icon name="lock" size={14} style={{ flexShrink: 0, color: 'var(--muted)' }} />
+          This booking is closed — read only.
+        </div>
+      )}
+      {!embedded && (
+      /* ── header — booking status is fixed at Returned; only the job state moves ── */
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
             <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
@@ -379,8 +409,8 @@ export default function ResetWorkspace() {
               {counts.Ready} / {TOTAL_ITEMS} Ready
             </span>
           </div>
-          <div aria-hidden style={{ height: 8, borderRadius: 999, background: 'var(--card2)', marginTop: 6, overflow: 'hidden' }}>
-            <div style={{ width: `${Math.round((counts.Ready / TOTAL_ITEMS) * 100)}%`, height: '100%', background: 'var(--success)', borderRadius: 999, transition: 'width var(--dur) ease' }} />
+          <div aria-hidden style={{ height: 8, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 6, overflow: 'hidden' }}>
+            <div style={{ width: '100%', height: '100%', background: 'var(--success)', borderRadius: 'var(--r-badge)', transform: `scaleX(${counts.Ready / TOTAL_ITEMS})`, transformOrigin: 'left', transition: 'transform var(--dur) ease' }} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, fontSize: 'var(--t-meta)', color: remainingCount ? 'var(--progress-text)' : 'var(--success-text)', fontWeight: 600 }}>
             <Icon name={remainingCount ? 'alert_triangle' : 'checklist'} size={12} />
@@ -388,6 +418,7 @@ export default function ResetWorkspace() {
           </div>
         </div>
       </div>
+      )}
 
       {/* §4 booking summary strip, same shape as the sibling workspaces. */}
       <div style={{ ...cardStyle, display: 'flex', gap: 0, flexWrap: 'wrap', overflow: 'hidden' }}>
@@ -462,7 +493,7 @@ export default function ResetWorkspace() {
           aria-pressed={priorityOnly}
           title="Priority is a flag, not a queue state — filters on top of whichever state chip is active"
           style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5, height: 28, padding: '0 10px', borderRadius: 999,
+            display: 'inline-flex', alignItems: 'center', gap: 5, height: 28, padding: '0 10px', borderRadius: 'var(--r-badge)',
             border: `1px solid ${priorityOnly ? 'var(--st-danger-fg)' : 'var(--border)'}`,
             background: priorityOnly ? STATUS.danger.bg : 'transparent', color: priorityOnly ? STATUS.danger.fg : 'var(--text2)',
             fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
@@ -481,7 +512,7 @@ export default function ResetWorkspace() {
             const units = UNITS.filter((u) => u.category === c.name)
             const ready = units.filter((u) => (lines[u.id] as LineRec).queueState === 'Ready' && (lines[u.id] as LineRec).problem === 'No Problems').length
             return (
-              <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0' }}>
+              <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '6px 0' }}>
                 <Icon name={ready === c.count ? 'checklist' : 'box'} size={13} style={{ color: ready === c.count ? 'var(--success-text)' : 'var(--muted)', flexShrink: 0 }} />
                 <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</span>
                 <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{ready}/{c.count}</span>
@@ -498,7 +529,7 @@ export default function ResetWorkspace() {
         <Card
           title="Reset Queue"
           bodyStyle={{ padding: 0 }}
-          action={<Button icon="checklist" onClick={selectAllVisible}>Select All Visible</Button>}
+          action={<Button icon="checklist" onClick={selectAllVisible} disabled={readOnly}>Select All Visible</Button>}
         >
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
@@ -523,7 +554,7 @@ export default function ResetWorkspace() {
                         <input
                           type="checkbox"
                           checked={selected.has(u.id)}
-                          disabled={isException}
+                          disabled={isException || readOnly}
                           aria-label={`Select ${u.name}`}
                           onChange={() => toggleSelect(u.id)}
                         />
@@ -544,7 +575,9 @@ export default function ResetWorkspace() {
                           </span>
                         )}
                       </td>
-                      <td className="identifier" style={{ padding: '8px 9px', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{u.serial}</td>
+                      <td className="identifier" style={{ padding: '8px 9px', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                        <Link to={`/inventory/${u.serial}`} style={{ color: 'inherit', textDecoration: 'none' }}>{u.serial}</Link>
+                      </td>
                       <td style={{ padding: '8px 9px', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{u.category}</td>
                       <td style={{ padding: '8px 9px' }}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', height: 20, padding: '0 8px', borderRadius: 'var(--r-badge)', background: tone.bg, color: tone.fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
@@ -555,15 +588,16 @@ export default function ResetWorkspace() {
                       <td className="figure" style={{ padding: '8px 9px', fontSize: 'var(--t-meta)', color: timeTone.fg, fontWeight: 600 }}>{fmtMinutes(u.waitingMinutes)}</td>
                       <td style={{ padding: '8px 9px', minWidth: 190 }}>
                         {isException ? (
-                          <RowAction label="Undo" onClick={() => undoProblem(u.id)} />
+                          <RowAction label="Undo" onClick={() => undoProblem(u.id)} disabled={readOnly} />
                         ) : rec.queueState === 'Waiting' ? (
-                          <RowAction label="Start" onClick={() => start(u.id)} />
+                          <RowAction label="Start" onClick={() => start(u.id)} disabled={readOnly} />
                         ) : rec.queueState === 'QC' ? (
                           <QcRowControls
                             unit={u}
                             rec={rec}
                             by={qcBy[u.id] ?? defaultQcBy(rec.actor ?? '')}
                             reason={qcReason[u.id] ?? ''}
+                            readOnly={readOnly}
                             onByChange={(v) => setQcByDraft((p) => ({ ...p, [u.id]: v }))}
                             onReasonChange={(v) => setQcReason((p) => ({ ...p, [u.id]: v }))}
                             onPass={() => passQc(u.id)}
@@ -580,8 +614,12 @@ export default function ResetWorkspace() {
                 })}
                 {visible.length === 0 && (
                   <tr>
-                    <td colSpan={8} style={{ padding: 24, textAlign: 'center', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                      No items match these filters.
+                    <td colSpan={8} style={{ padding: 'var(--sp-xl)', textAlign: 'center', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                      <EmptyState
+                        title="No items match these filters"
+                        actionLabel="Clear filters"
+                        onAction={() => { setFilter('All'); setPriorityOnly(false); setQuery('') }}
+                      />
                     </td>
                   </tr>
                 )}
@@ -601,12 +639,12 @@ export default function ResetWorkspace() {
                 <span>Overall Progress</span>
                 <span className="figure" style={{ marginLeft: 'auto', fontWeight: 700, color: 'var(--text)' }}>{overallDone} / {overallTotal}</span>
               </div>
-              <div aria-hidden style={{ height: 7, borderRadius: 999, background: 'var(--card2)', marginTop: 6, overflow: 'hidden' }}>
-                <div style={{ width: `${overallPct}%`, height: '100%', background: 'var(--success)', borderRadius: 999, transition: 'width var(--dur) ease' }} />
+              <div aria-hidden style={{ height: 7, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 6, overflow: 'hidden' }}>
+                <div style={{ width: '100%', height: '100%', background: 'var(--success)', borderRadius: 'var(--r-badge)', transform: `scaleX(${overallPct / 100})`, transformOrigin: 'left', transition: 'transform var(--dur) ease' }} />
               </div>
 
               {selCategoryBreakdown.length > 0 && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 8, marginTop: 11 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 'var(--sp-sm)', marginTop: 11 }}>
                   {selCategoryBreakdown.map((c) => (
                     <div key={c.name} style={{ ...cardStyle, padding: '8px 10px' }}>
                       <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{c.name} × {c.count}</div>
@@ -633,6 +671,7 @@ export default function ResetWorkspace() {
                     {m} Mode
                   </button>
                 ))}
+                {/* Display-only filter (§8) — left enabled even read-only, it changes nothing about the booking. */}
               </div>
               <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                 {mode === 'Clean' ? 'Physical cleaning — bodies, elements, screens, ports, cases.' : 'Configuration — format cards, reset settings, timecode, presets, firmware.'}
@@ -647,8 +686,8 @@ export default function ResetWorkspace() {
                     const doneCount = selUnits.filter((u) => (lines[u.id] as LineRec).ticks.has(task)).length
                     const allDone = doneCount === selUnits.length
                     return (
-                      <label key={task} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '3px 0', fontSize: 'var(--t-meta)', color: 'var(--text)', cursor: 'pointer' }}>
-                        <input type="checkbox" checked={allDone} onChange={() => toggleShared(task)} />
+                      <label key={task} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '3px 0', fontSize: 'var(--t-meta)', color: 'var(--text)', cursor: readOnly ? 'default' : 'pointer' }}>
+                        <input type="checkbox" checked={allDone} disabled={readOnly} onChange={() => toggleShared(task)} />
                         <span style={{ flex: 1 }}>{task}</span>
                         <span className="figure" style={{ color: 'var(--muted)' }}>{doneCount}/{selUnits.length}</span>
                       </label>
@@ -657,7 +696,7 @@ export default function ResetWorkspace() {
                 </div>
               )}
 
-              <div style={{ marginTop: 11, paddingTop: 10, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ marginTop: 11, paddingTop: 10, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
                 {selUnits.map((u) => {
                   const rec = lines[u.id] as LineRec
                   const full = allTasksFor(u)
@@ -667,15 +706,17 @@ export default function ResetWorkspace() {
                     <div key={u.id} style={{ paddingBottom: 12, borderBottom: '1px dashed var(--border)' }}>
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
                         {u.category} — {u.name}
-                        <span className="identifier" style={{ fontWeight: 400, color: 'var(--muted)' }}>{u.serial}</span>
+                        <span className="identifier" style={{ fontWeight: 400, color: 'var(--muted)' }}>
+                          <Link to={`/inventory/${u.serial}`} style={{ color: 'inherit', textDecoration: 'none' }}>{u.serial}</Link>
+                        </span>
                         <span className="figure" style={{ marginLeft: 'auto', color: 'var(--muted)' }}>{rec.ticks.size}/{full.length}</span>
                       </div>
                       {shown.length === 0 ? (
                         <p style={{ margin: '4px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>No {mode.toLowerCase()} tasks for this item.</p>
                       ) : (
                         shown.map((task) => (
-                          <label key={task} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '3px 0', fontSize: 'var(--t-meta)', color: 'var(--text)', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={rec.ticks.has(task)} onChange={() => toggleUnitTask(u.id, task)} />
+                          <label key={task} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '3px 0', fontSize: 'var(--t-meta)', color: 'var(--text)', cursor: readOnly ? 'default' : 'pointer' }}>
+                            <input type="checkbox" checked={rec.ticks.has(task)} disabled={readOnly} onChange={() => toggleUnitTask(u.id, task)} />
                             {task}
                           </label>
                         ))
@@ -691,12 +732,14 @@ export default function ResetWorkspace() {
                               <button
                                 key={q}
                                 type="button"
+                                disabled={readOnly}
                                 onClick={() => pickProblem(u.id, q)}
                                 style={{
-                                  height: 26, borderRadius: 6, fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                                  height: 26, borderRadius: 'var(--r-xs)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: readOnly ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
                                   border: `1px solid ${picked ? (q === 'No Problems' ? 'var(--st-in-fg)' : 'var(--st-danger-fg)') : 'var(--border)'}`,
                                   background: picked ? (q === 'No Problems' ? 'var(--st-in-bg)' : 'var(--st-danger-bg)') : 'transparent',
                                   color: picked ? (q === 'No Problems' ? 'var(--st-in-fg)' : 'var(--st-danger-fg)') : 'var(--text2)',
+                                  opacity: readOnly ? 0.6 : 1,
                                 }}
                               >
                                 {q}
@@ -732,7 +775,7 @@ export default function ResetWorkspace() {
                                   onChange={(e) => changeProblemField(u.id, { reason: e.target.value })}
                                   placeholder="Description (min 5 characters)"
                                   aria-label="Damage description"
-                                  style={{ minHeight: 44, padding: 8, borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
+                                  style={{ minHeight: 44, padding: 'var(--sp-sm)', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
                                 />
                                 <select
                                   value={draft.severity}
@@ -753,7 +796,7 @@ export default function ResetWorkspace() {
                             )}
                             <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{PROBLEM_ROUTE[draft.type as Exclude<ProblemState, 'No Problems'>]}</p>
                             <div style={{ display: 'flex', gap: 6 }}>
-                              <button type="button" onClick={() => cancelProblem(u.id)} style={{ height: 26, padding: '0 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                              <button type="button" onClick={() => cancelProblem(u.id)} style={{ height: 26, padding: '0 9px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                                 Cancel
                               </button>
                               <button
@@ -761,7 +804,7 @@ export default function ResetWorkspace() {
                                 disabled={!problemReady(draft)}
                                 onClick={() => confirmProblem(u.id)}
                                 style={{
-                                  height: 26, padding: '0 9px', borderRadius: 6, border: '1px solid transparent', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit',
+                                  height: 26, padding: '0 9px', borderRadius: 'var(--r-xs)', border: '1px solid transparent', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit',
                                   cursor: problemReady(draft) ? 'pointer' : 'not-allowed',
                                   background: problemReady(draft) ? 'var(--st-danger-fg)' : 'var(--card2)', color: problemReady(draft) ? '#fff' : 'var(--muted)',
                                 }}
@@ -780,9 +823,10 @@ export default function ResetWorkspace() {
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
+                disabled={readOnly}
                 placeholder="Notes (optional)"
                 aria-label="Batch notes"
-                style={{ width: '100%', minHeight: 44, marginTop: 4, padding: 8, borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
+                style={{ width: '100%', minHeight: 44, marginTop: 4, padding: 'var(--sp-sm)', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
               />
 
               {/* §9.2/§9.3 — the one primary action, owned by this panel. */}
@@ -813,7 +857,7 @@ export default function ResetWorkspace() {
       {/* §9.3 — the selection bar shows only the count and Clear Selection. No second primary. */}
       {selected.size > 0 && (
         <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px' }}>
-          <span className="figure" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, borderRadius: 999, background: 'var(--nav-active-bg)', color: 'var(--nav-active-accent)', fontSize: 'var(--t-meta)', fontWeight: 700 }}>
+          <span className="figure" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, borderRadius: 'var(--r-badge)', background: 'var(--nav-active-bg)', color: 'var(--nav-active-accent)', fontSize: 'var(--t-meta)', fontWeight: 700 }}>
             {selected.size}
           </span>
           <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>items selected</span>
@@ -850,14 +894,14 @@ export default function ResetWorkspace() {
               {priorityCount > 0 ? 'All priority items are already in progress.' : 'No priority items in this queue.'}
             </p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
               {nextPriority.map((u, i) => (
-                <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)' }}>
+                <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
                   <Icon name="flag" size={12} style={{ color: 'var(--st-danger-fg)' }} />
                   <span className="figure" style={{ color: 'var(--muted)' }}>{i + 1}</span>
                   <span style={{ flex: 1, minWidth: 0, color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name}</span>
                   <span className="figure" style={{ color: STATUS[queueTimeTone(u.waitingMinutes)].fg }}>{fmtMinutes(u.waitingMinutes)}</span>
-                  <RowAction label="Start" onClick={() => start(u.id)} />
+                  <RowAction label="Start" onClick={() => start(u.id)} disabled={readOnly} />
                 </div>
               ))}
             </div>
@@ -866,7 +910,7 @@ export default function ResetWorkspace() {
       </div>
 
       {/* footer — job-level completion. Ungated by money or any booking condition (§1.7). */}
-      <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', flexWrap: 'wrap' }}>
+      <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '12px 14px', flexWrap: 'wrap' }}>
         <button
           type="button"
           onClick={() => navigate(`/rentals/${id}`)}
@@ -881,7 +925,12 @@ export default function ResetWorkspace() {
           <button
             type="button"
             disabled={!canCompleteJob}
-            onClick={() => canCompleteJob && setJobCompletedAt('—')}
+            onClick={() => {
+              if (canCompleteJob) {
+                import('../../actions/rentals/index').then(m => m.completeReset({ id: id! }, { userId: 'USR-001', role: 'Manager' }));
+                setJobCompletedAt('—');
+              }
+            }}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 7, height: 36, padding: '0 16px', borderRadius: 'var(--r-btn)',
               fontSize: 'var(--t-ui)', fontWeight: 600, fontFamily: 'inherit', cursor: canCompleteJob ? 'pointer' : 'not-allowed',
@@ -900,12 +949,18 @@ export default function ResetWorkspace() {
   )
 }
 
-function RowAction({ label, onClick }: { label: string; onClick: () => void }) {
+function RowAction({ label, onClick, disabled = false }: { label: string; onClick: () => void; disabled?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      style={{ height: 22, padding: '0 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
+      disabled={disabled}
+      style={{
+        height: 22, padding: '0 7px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)',
+        background: 'var(--card2)', color: disabled ? 'var(--muted)' : 'var(--text2)',
+        fontSize: 'var(--t-meta)', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+        opacity: disabled ? 0.6 : 1,
+      }}
     >
       {label}
     </button>
@@ -925,6 +980,7 @@ function QcRowControls({
   onReasonChange,
   onPass,
   onFail,
+  readOnly = false,
 }: {
   unit: Unit
   rec: LineRec
@@ -934,16 +990,19 @@ function QcRowControls({
   onReasonChange: (v: string) => void
   onPass: () => void
   onFail: () => void
+  readOnly?: boolean
 }) {
   const selfCheck = by === rec.actor
-  const blocked = selfCheck && reason.trim().length < 5
+  const blocked = readOnly || (selfCheck && reason.trim().length < 5)
+  const failBlocked = readOnly || reason.trim().length < 5
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
       <select
         value={by}
         onChange={(e) => onByChange(e.target.value)}
+        disabled={readOnly}
         aria-label="QC performed by"
-        style={{ height: 24, borderRadius: 6, border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
+        style={{ height: 24, borderRadius: 'var(--r-xs)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
       >
         {STAFF.map((s) => <option key={s} value={s}>{s}</option>)}
       </select>
@@ -951,26 +1010,27 @@ function QcRowControls({
         <input
           value={reason}
           onChange={(e) => onReasonChange(e.target.value)}
+          disabled={readOnly}
           placeholder="Self-QC reason, audited (min 5)"
           aria-label="Reason for self-performed QC"
-          style={{ height: 24, padding: '0 6px', borderRadius: 6, border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
+          style={{ height: 24, padding: '0 6px', borderRadius: 'var(--r-xs)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
         />
       )}
-      <div style={{ display: 'flex', gap: 4 }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-xs)' }}>
         <button
           type="button"
           disabled={blocked}
           onClick={onPass}
-          style={{ height: 22, padding: '0 8px', borderRadius: 6, border: '1px solid var(--st-in-fg)', background: blocked ? 'var(--card2)' : 'var(--st-in-bg)', color: blocked ? 'var(--muted)' : 'var(--st-in-fg)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: blocked ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+          style={{ height: 22, padding: '0 8px', borderRadius: 'var(--r-xs)', border: '1px solid var(--st-in-fg)', background: blocked ? 'var(--card2)' : 'var(--st-in-bg)', color: blocked ? 'var(--muted)' : 'var(--st-in-fg)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: blocked ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
         >
           Pass
         </button>
         <button
           type="button"
-          disabled={reason.trim().length < 5}
+          disabled={failBlocked}
           onClick={onFail}
           title="Failing returns the item to Waiting with a reason (§10)"
-          style={{ height: 22, padding: '0 8px', borderRadius: 6, border: '1px solid var(--st-danger-fg)', background: reason.trim().length < 5 ? 'var(--card2)' : 'var(--st-danger-bg)', color: reason.trim().length < 5 ? 'var(--muted)' : 'var(--st-danger-fg)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: reason.trim().length < 5 ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+          style={{ height: 22, padding: '0 8px', borderRadius: 'var(--r-xs)', border: '1px solid var(--st-danger-fg)', background: failBlocked ? 'var(--card2)' : 'var(--st-danger-bg)', color: failBlocked ? 'var(--muted)' : 'var(--st-danger-fg)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: failBlocked ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
         >
           Fail
         </button>

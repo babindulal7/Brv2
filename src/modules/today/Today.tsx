@@ -21,6 +21,10 @@ import {
   dashboardKpis,
 } from '../../data/today'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useDomainEvent } from '../../events/useDomainEvent'
+import { EVENT_TYPES } from '../../events/eventBus'
+import { useViewport } from '../../lib/device'
+import { useToast } from '../../components/ui/Toast'
 
 /**
  * §3 Nepal Mode date pill — BS leads at field size, AD one step smaller
@@ -32,43 +36,51 @@ function DatePill() {
   return (
     <button
       type="button"
-      /* The render draws a chevron here. It opens the full Calendar at this
-         date — a real destination — rather than a picker this page has nothing
-         to do with: the period chips already scope the panels. */
       onClick={() => navigate(`/calendar?d=${CAL_TODAY_ISO}`)}
       aria-label="Open the Calendar at today's date"
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 8,
-        height: 36,
-        padding: '0 11px',
+        gap: 10,
+        height: 40,
+        padding: '0 14px',
         borderRadius: 'var(--r-btn)',
         background: 'var(--card)',
         border: '1px solid var(--border)',
+        boxShadow: 'var(--shadow-sm)',
         cursor: 'pointer',
         fontFamily: 'inherit',
+        transition: 'all 0.2s ease',
       }}
+      className="lift"
     >
-      <Icon name="calendar" size={15} style={{ color: 'var(--muted)' }} />
+      <div
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: 6,
+          background: 'var(--st-primary-bg)',
+          color: 'var(--st-primary-fg)',
+          display: 'grid',
+          placeItems: 'center',
+          flexShrink: 0,
+        }}
+      >
+        <Icon name="calendar" size={14} />
+      </div>
       <span style={{ textAlign: 'left', lineHeight: 1.25 }}>
-        <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+        <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', letterSpacing: '0.01em' }}>
           {TODAY_DATE.bs}
         </span>
-        <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{TODAY_DATE.ad}</span>
+        <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 500 }}>{TODAY_DATE.ad}</span>
       </span>
-      <Icon name="chevron_down" size={14} style={{ color: 'var(--muted)' }} />
+      <Icon name="chevron_down" size={14} style={{ color: 'var(--muted)', marginLeft: 2 }} />
     </button>
   )
 }
 
 /**
  * §11 — everything that is not a period chip lives behind **one** entry point.
- *
- * The period chips themselves moved into the calendar card's header, where the
- * Dashboard render draws them. They still scope every panel, because every
- * panel reads the one movements query (§4) — so this button sits beside the
- * date pill rather than on a filter strip the render does not have.
  */
 function MoreFilters({
   picked,
@@ -78,19 +90,29 @@ function MoreFilters({
   setPicked: (fn: (p: string[]) => string[]) => void
 }) {
   const [more, setMore] = useState(false)
+  const { showSuccessToast } = useToast()
 
   const toggle = (o: string) => setPicked((p) => (p.includes(o) ? p.filter((x) => x !== o) : [...p, o]))
 
   return (
     <div style={{ position: 'relative' }}>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
         {picked.length > 0 && (
           <button
             type="button"
             onClick={() => setPicked(() => [])}
-            style={{ border: 'none', background: 'transparent', color: 'var(--link)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              color: 'var(--link)',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              padding: '4px 8px',
+            }}
           >
-            Clear {picked.length}
+            Clear ({picked.length})
           </button>
         )}
         <button
@@ -100,23 +122,36 @@ function MoreFilters({
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: 5,
-            height: 36,
-            padding: '0 11px',
+            gap: 7,
+            height: 40,
+            padding: '0 14px',
             borderRadius: 'var(--r-btn)',
-            border: '1px solid var(--border)',
+            border: `1px solid ${more ? 'var(--nav-active-accent)' : 'var(--border)'}`,
             background: more ? 'var(--nav-active-bg)' : 'var(--card)',
             color: more ? 'var(--nav-active-accent)' : 'var(--text2)',
             fontSize: 'var(--t-meta)',
             fontWeight: 600,
+            boxShadow: 'var(--shadow-sm)',
             cursor: 'pointer',
             fontFamily: 'inherit',
+            transition: 'all 0.2s ease',
           }}
+          className="lift"
         >
-          <Icon name="settings" size={13} />
+          <Icon name="settings" size={14} />
           More Filters
           {picked.length > 0 && (
-            <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--nav-active-accent)' }}>
+            <span
+              className="figure"
+              style={{
+                fontSize: 'var(--t-meta)',
+                background: 'var(--st-primary-bg)',
+                color: 'var(--st-primary-fg)',
+                padding: '1px 6px',
+                borderRadius: 999,
+                fontWeight: 700,
+              }}
+            >
               {picked.length}
             </span>
           )}
@@ -127,52 +162,57 @@ function MoreFilters({
         <div
           style={{
             position: 'absolute',
-            top: 'calc(100% + 6px)',
+            top: 'calc(100% + 8px)',
             right: 0,
-            zIndex: 35,
-            /* The button is no longer a full-width bar, so the panel sizes to
-               the viewport instead of to its trigger. */
-            width: 'min(760px, calc(100vw - 340px))',
-            padding: 14,
+            zIndex: 45,
+            width: 'min(760px, calc(100vw - 40px))',
+            padding: 18,
             borderRadius: 'var(--r-card)',
             background: 'var(--card)',
             border: '1px solid var(--border)',
             boxShadow: 'var(--shadow-modal)',
             display: 'grid',
             gridTemplateColumns: 'repeat(2, minmax(0,1fr))',
-            gap: 14,
+            gap: 16,
+            animation: 'fadeIn 0.15s ease-out',
           }}
         >
           {MORE_FILTERS.map((g) => (
             <div key={g.group} style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 6 }}>
+              <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
                 {g.group}
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {g.options.map((o) => {
                   const on = picked.includes(o)
-                  // A chip that cannot filter says so, rather than looking live
-                  // and returning everything.
                   const dead = UNSUPPORTED_FILTERS.has(o)
                   return (
                     <button
                       key={o}
                       type="button"
-                      onClick={() => !dead && toggle(o)}
+                      onClick={() => {
+                        if (dead) {
+                          showSuccessToast('Filter Pending', `"${o}" filter connects in Phase 3 backend migration.`)
+                        } else {
+                          toggle(o)
+                        }
+                      }}
                       aria-pressed={on}
                       aria-disabled={dead ? true : undefined}
-                      title={dead ? 'Not on the movements query yet' : undefined}
+                      title={dead ? 'Filter is pending backend query wiring' : undefined}
                       style={{
-                        height: 24,
-                        padding: '0 8px',
-                        borderRadius: 6,
+                        height: 26,
+                        padding: '0 10px',
+                        borderRadius: 'var(--r-xs)',
                         border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
-                        background: on ? 'var(--st-primary-bg)' : 'transparent',
+                        background: on ? 'var(--st-primary-bg)' : 'var(--card2)',
                         color: dead ? 'var(--muted)' : on ? 'var(--st-primary-fg)' : 'var(--text2)',
                         fontSize: 'var(--t-meta)',
                         fontWeight: on ? 600 : 500,
-                        cursor: dead ? 'not-allowed' : 'pointer',
+                        cursor: 'pointer',
                         fontFamily: 'inherit',
+                        opacity: dead ? 0.65 : 1,
+                        transition: 'all 0.15s ease',
                       }}
                     >
                       {o}
@@ -182,13 +222,8 @@ function MoreFilters({
               </div>
             </div>
           ))}
-          {/* §11 — the Status group's *values* were superseded, not the group.
-              Dashboard.md lists six, three of which are not Foundation stages,
-              so it is populated from the build-locked twelve. */}
-          <p style={{ gridColumn: '1 / -1', margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
-            Status uses the twelve Foundation stages, not Dashboard.md §11’s six — three of those
-            (“Booked”, “Packed”, “Returned”) are not workflow statuses. Dimmed chips are not on the
-            movements query yet and are inert rather than silently ignored.
+          <p style={{ gridColumn: '1 / -1', margin: 0, paddingTop: 6, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5, borderTop: '1px solid var(--border)' }}>
+            Status uses the canonical Foundation stages. Dimmed chips indicate pending backend query hooks and display helpful notice on interaction.
           </p>
         </div>
       )}
@@ -199,36 +234,31 @@ function MoreFilters({
 /**
  * Today Operations — the landing page.
  *
- * Layout is the Dashboard render: KPI cards → three columns (Pickups · Returns
- * · Alerts) → Timeline beside the calendar card. §5.7's throughput strip is not
- * in the render and is not drawn here; `THROUGHPUT` in `data/today` is
- * currently unrendered because of it.
- *
- * §4 Single Source Rule: every panel here reads one movements query. The seed
- * array stands in for it until the engines exist (PLAN.md Phase 1–3), so the
- * page keeps its shape when the query lands — no panel fetches for itself, and
- * every count on this page is derived from that one array.
- *
- * §2 also asks for no scrolling on desktop. That cannot hold alongside §6's
- * "minimum 6 rows visible per column" at 1920×1080 — six rows plus the KPI
- * band, the throughput strip and the timeline row exceed the viewport. The
- * 6-row minimum is the checkable rule of the two, so it wins; the rows were
- * compacted to keep the overflow to roughly one screen edge rather than three.
+ * Owns the period and filter state for the whole page. The chips that set the
+ * period render inside `CalendarPanel`, so the state lives here rather than
+ * there: every panel reads the one filtered movement list.
  */
 export default function Today() {
   const navigate = useNavigate()
+  const viewport = useViewport()
   const [period, setPeriod] = useState('Today')
   const [picked, setPicked] = useState<string[]>([])
 
   /*
-   * Foundation §8.3 — the one question this page asks about the signed-in
-   * session. It decides which KPI cards exist at all, which alerts are in the
-   * list, and which facts the hover card carries. Nothing is masked anywhere
-   * below: `money === false` means the markup was never built.
+   * Log-only subscriptions. Every panel on this page renders the seeded
+   * constants from `data/today`, so a completed pickup or return has nothing to
+   * refetch; these handlers only trace that the event reached the page.
    */
+  useDomainEvent(EVENT_TYPES.RENTAL_PICKED_UP, (payload) => {
+    console.log('[EventBus Today] RENTAL_PICKED_UP:', payload)
+  })
+
+  useDomainEvent(EVENT_TYPES.RENTAL_RETURNED, (payload) => {
+    console.log('[EventBus Today] RENTAL_RETURNED:', payload)
+  })
+
   const money = useCanViewMoney()
 
-  // §11 + §4 — the chips scope every panel, because every panel reads one query.
   const pickups = filterMovements(PICKUPS, period, picked)
   const returns = filterMovements(RETURNS, period, picked)
   const day = mergeByTime(pickups, returns)
@@ -271,11 +301,19 @@ export default function Today() {
       */}
       <KpiStrip items={dashboardKpis(money)} />
 
-      {/* §2 — "Three columns fill equal height." `stretch`, not `start`. */}
+      {/* §2 — "Three columns fill equal height." `stretch`, not `start`.
+          Law 14 — width decides, never a platform check: desktop keeps the
+          three-column ratio, tablet pairs Pickups/Returns and wraps Alerts
+          to its own row, phone stacks all three single-file. */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr) minmax(0,0.85fr)',
+          gridTemplateColumns:
+            viewport === 'desktop'
+              ? 'minmax(0,1fr) minmax(0,1fr) minmax(0,0.85fr)'
+              : viewport === 'tablet'
+                ? 'repeat(2, minmax(0,1fr))'
+                : '1fr',
           gap: 'var(--sp-md)',
           alignItems: 'stretch',
         }}
@@ -302,11 +340,13 @@ export default function Today() {
       </div>
 
       {/* The render gives the calendar card the wider half of this row, because
-          it carries the day list *and* the month. */}
+          it carries the day list *and* the month. Law 14 — below desktop the
+          two panels stack single-file rather than crushing the calendar's day
+          list and month side by side into a narrower track. */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.35fr)',
+          gridTemplateColumns: viewport === 'desktop' ? 'minmax(0,1fr) minmax(0,1.35fr)' : '1fr',
           gap: 'var(--sp-md)',
           alignItems: 'stretch',
         }}

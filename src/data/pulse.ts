@@ -299,7 +299,7 @@ LEDGER.forEach((d, i) => {
   d.collected = (share(d.revenue, COLLECT_SAME_DAY) +
     share((lagged?.revenue ?? 0) as Paisa, COLLECT_LAGGED)) as Paisa
   const paid = LEDGER[Math.max(0, i - PAYABLE_LAG_DAYS)]
-  d.cashIn = (d.collected + d.deposits) as Paisa
+  d.cashIn = d.collected
   d.cashOut = ((paid?.expenses ?? 0) + d.capital) as Paisa
 })
 

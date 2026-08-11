@@ -1,13 +1,20 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
+import { Select } from '../../components/ui'
 import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle, SideRail } from '../../components/ui/Page'
 import { EmptyState } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { STATUS } from '../../lib/status'
 import { formatMoney, grouped } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useAuth } from '../../lib/auth'
+import { useTabularLayout } from '../../lib/device'
+import { gateContext } from '../../lib/fieldGating'
+import type { GateContext } from '../../lib/fieldGating'
+import { IntelCard } from '../../components/ui/IntelCard'
+import { equipmentGlance, equipmentDetailGroups } from '../../data/equipmentIntel'
 import { Bundles } from './Bundles'
 import { Maintenance } from './Maintenance'
 import { SubRental } from '../operations/SubRental'
@@ -108,7 +115,7 @@ function ConditionBadge({ condition }: { condition: Condition }) {
         alignItems: 'center',
         height: 20,
         padding: '0 8px',
-        borderRadius: 6,
+        borderRadius: 'var(--r-xs)',
         background: c.bg,
         color: c.fg,
         border: `1px solid ${c.border ?? 'transparent'}`,
@@ -153,7 +160,7 @@ function StatusBreakdown({ row }: { row: ParentRow }) {
         <span key={b.status} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
           <span
             aria-hidden
-            style={{ width: 7, height: 7, borderRadius: 999, flexShrink: 0, background: INV_DOT[b.status] }}
+            style={{ width: 7, height: 7, borderRadius: 'var(--r-badge)', flexShrink: 0, background: INV_DOT[b.status] }}
           />
           <span className="figure" style={{ color: INV_DOT[b.status], fontWeight: 600 }}>
             {b.count}
@@ -208,7 +215,7 @@ function ChildRowView({
       <td style={td} />
       <td style={td} />
       <td style={{ ...td, paddingLeft: 22 }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
           <Thumb category={row.category} size={26} />
           <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -271,12 +278,14 @@ function ChildRowView({
 function ParentRowView({
   row,
   money,
+  gctx,
   density,
   checked,
   onToggle,
 }: {
   row: ParentRow
   money: boolean
+  gctx: GateContext
   density: Density
   checked: boolean
   onToggle: () => void
@@ -284,6 +293,14 @@ function ParentRowView({
   const [open, setOpen] = useState(false)
   const td = tdFor(density)
   const serialised = Boolean(row.children?.length)
+  // Hover Intel System glance/detail is a gated field-filtering object graph
+  // — build it once per (row, gctx) change rather than on every render of
+  // this row (was: equipmentGlance/equipmentDetailGroups called directly
+  // inside the JSX below, rerunning on every parent re-render).
+  const { glance, detail } = useMemo(
+    () => ({ glance: equipmentGlance(row, gctx), detail: equipmentDetailGroups(row, gctx) }),
+    [row, gctx],
+  )
 
   return (
     <>
@@ -323,33 +340,40 @@ function ParentRowView({
           )}
         </td>
         <td style={td}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-            <Thumb category={row.category} />
-            <span style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-              <span style={{ fontWeight: 600 }}>{row.name}</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <CategoryChip category={row.category} />
-                {!serialised && (
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      height: 17,
-                      padding: '0 6px',
-                      borderRadius: 4,
-                      background: 'var(--card2)',
-                      border: '1px solid var(--border)',
-                      color: 'var(--text2)',
-                      fontSize: 'var(--t-th)',
-                      fontWeight: 700,
-                    }}
-                  >
-                    NON-SERIALISED
-                  </span>
-                )}
+          <IntelCard
+            glance={glance}
+            detail={detail}
+            detailTitle={row.name}
+            detailSubtitle={row.category}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <Thumb category={row.category} />
+              <span style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+                <span style={{ fontWeight: 600 }}>{row.name}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <CategoryChip category={row.category} />
+                  {!serialised && (
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        height: 17,
+                        padding: '0 6px',
+                        borderRadius: 4,
+                        background: 'var(--card2)',
+                        border: '1px solid var(--border)',
+                        color: 'var(--text2)',
+                        fontSize: 'var(--t-th)',
+                        fontWeight: 700,
+                      }}
+                    >
+                      NON-SERIALISED
+                    </span>
+                  )}
+                </span>
               </span>
             </span>
-          </span>
+          </IntelCard>
         </td>
         <td style={{ ...td, color: 'var(--text2)' }}>{row.category}</td>
         <td className="figure" style={td}>
@@ -384,6 +408,210 @@ function ParentRowView({
   )
 }
 
+/* ── phone cards ───────────────────────────────────────────────────────── */
+
+/**
+ * Below 768px the equipment table (`minWidth: 1060`, the widest table in the
+ * app) is not a table — it is a horizontal scrollbar hiding the columns that
+ * matter. `RentalsList.tsx`'s card row is the locked pattern (§7): one card
+ * per model, essential columns on the face — Equipment, Category, Stock,
+ * Availability, Rate — with every other column still reachable rather than
+ * dropped: the name opens the same Hover Intel detail sheet the desktop row
+ * does (Location, Bookings, full status breakdown, Structure), and serialised
+ * models keep their expand action, now a disclosure that opens per-unit
+ * cards instead of table rows.
+ */
+function ParentCardView({
+  row,
+  glance,
+  detail,
+  money,
+  checked,
+  onToggle,
+}: {
+  row: ParentRow
+  glance: ReturnType<typeof equipmentGlance>
+  detail: ReturnType<typeof equipmentDetailGroups>
+  money: boolean
+  checked: boolean
+  onToggle: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const serialised = Boolean(row.children?.length)
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--sp-sm)',
+        padding: '13px 14px',
+        borderBottom: '1px solid var(--border)',
+      }}
+    >
+      <span style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <input
+          type="checkbox"
+          aria-label={`Select ${row.name}`}
+          checked={checked}
+          onChange={onToggle}
+          style={{ accentColor: 'var(--nav-active-accent)', marginTop: 'var(--sp-xs)', flexShrink: 0, width: 18, height: 18 }}
+        />
+        <Thumb category={row.category} />
+        <IntelCard glance={glance} detail={detail} detailTitle={row.name} detailSubtitle={row.category}>
+          <span style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', minWidth: 0 }}>
+            <span style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{row.name}</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+              <CategoryChip category={row.category} />
+              {!serialised && (
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    height: 17,
+                    padding: '0 6px',
+                    borderRadius: 4,
+                    background: 'var(--card2)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text2)',
+                    fontSize: 'var(--t-th)',
+                    fontWeight: 700,
+                  }}
+                >
+                  NON-SERIALISED
+                </span>
+              )}
+            </span>
+          </span>
+        </IntelCard>
+        {/* §7.1's row menu has no screen behind it yet, so it states that
+            rather than rendering a control that swallows the tap — same as
+            the desktop row's `more_vert`. */}
+        <span style={{ marginLeft: 'auto', flexShrink: 0, color: 'var(--muted)' }}>
+          <Unavailable reason="Row actions are not built — no row action in §7.1 has a screen yet, and §4.1 rules out the status edit outright.">
+            <Icon name="more_vert" size={16} />
+          </Unavailable>
+        </span>
+      </span>
+
+      {/* Essential columns: Stock and Rate, beside each other. */}
+      <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-lg)', flexWrap: 'wrap', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <Icon name="box" size={12} style={{ color: 'var(--muted)' }} />
+          Stock <span className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>{row.stock}</span>
+        </span>
+        {/* §8.3 — the rate is omitted for Warehouse, same rule the desktop
+            table's Replacement column already follows; nothing is masked. */}
+        {money && row.dailyRatePaisa !== undefined && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <Icon name="dollar" size={12} style={{ color: 'var(--muted)' }} />
+            <span className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>
+              {formatMoney(row.dailyRatePaisa)}
+            </span>
+            /day
+          </span>
+        )}
+      </span>
+
+      {/* Essential column: Availability — §3.1's breakdown, never one badge. */}
+      <StatusBreakdown row={row} />
+
+      {serialised && (
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-label={`${open ? 'Hide' : 'Show'} the ${row.children!.length} units of ${row.name}`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            alignSelf: 'flex-start',
+            height: 30,
+            padding: '0 9px',
+            borderRadius: 'var(--r-btn)',
+            border: '1px solid var(--border)',
+            background: 'var(--card2)',
+            color: 'var(--text2)',
+            fontSize: 'var(--t-meta)',
+            fontWeight: 600,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          <Icon name={open ? 'chevron_down' : 'chevron_right'} size={13} />
+          {open ? 'Hide' : 'Show'} {row.children!.length} units
+        </button>
+      )}
+
+      {open &&
+        row.children?.map((c, i) => <ChildCardView key={c.serial} row={row} child={c} index={i} money={money} />)}
+    </div>
+  )
+}
+
+/** Phone equivalent of `ChildRowView` — a nested unit card instead of a table row. */
+function ChildCardView({
+  row,
+  child,
+  index,
+  money,
+}: {
+  row: ParentRow
+  child: ChildRow
+  index: number
+  money: boolean
+}) {
+  const units = row.children?.length ?? 0
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 5,
+        padding: '9px 10px',
+        marginLeft: 28,
+        borderLeft: '2px solid var(--border)',
+        background: 'var(--card2)',
+        borderRadius: 'var(--r-btn)',
+      }}
+    >
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <Icon name="queues" size={12} style={{ color: 'var(--muted)' }} />
+        <span className="identifier" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+          {child.serial}
+        </span>
+        <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+          Unit {index + 1} of {units}
+        </span>
+      </span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+        <StatusBadge status={child.status} />
+        <ConditionBadge condition={child.condition} />
+      </span>
+      <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+        {child.booking === '—' ? (
+          <span style={{ color: 'var(--muted)' }}>No active booking</span>
+        ) : (
+          <Link
+            to={`/rentals/${child.booking}`}
+            className="figure"
+            style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }}
+          >
+            {child.booking}
+          </Link>
+        )}
+      </span>
+      <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{child.location}</span>
+      {money && (
+        <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+          Replacement {formatMoney(child.replacement)}
+        </span>
+      )}
+    </div>
+  )
+}
+
 /* ── filter rail ───────────────────────────────────────────────────────── */
 
 type Facets = Partial<Record<FacetKey, Set<string>>>
@@ -413,7 +641,7 @@ function FilterRail({
   const rowBase = {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 'var(--sp-sm)',
     width: '100%',
     height: 34,
     padding: '0 4px',
@@ -425,7 +653,7 @@ function FilterRail({
   }
 
   return (
-    <Card bodyStyle={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 2 }}>
+    <Card bodyStyle={{ padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 2 }}>
       <div style={{ display: 'flex', alignItems: 'center', paddingBottom: 6 }}>
         <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>Filters</h2>
         <button
@@ -484,7 +712,7 @@ function FilterRail({
                     minWidth: 18,
                     height: 18,
                     padding: '0 5px',
-                    borderRadius: 999,
+                    borderRadius: 'var(--r-badge)',
                     display: 'grid',
                     placeItems: 'center',
                     background: 'var(--nav-active-bg)',
@@ -602,7 +830,23 @@ export default function Inventory() {
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
+  const navigate = useNavigate()
   const money = useCanViewMoney()
+  const { user } = useAuth()
+  /**
+   * DEVICES.md §7 — the equipment table (`minWidth: 1060`, the widest table in
+   * the app) produced a horizontal scrollbar rather than a layout below 768px.
+   * `useTabularLayout()` reads only capability, never a platform name (Law
+   * 13), so this is the same branch a desktop window narrowed past 768px
+   * takes — see `RentalsList.tsx`'s identical use of the hook.
+   */
+  const tabular = useTabularLayout()
+  // `gateContext` returns a fresh object every call — memoized on the only
+  // input that actually varies (role) so downstream useMemo calls keyed on
+  // `gctx` (row/card intel below) can actually hit instead of recomputing
+  // on every unrelated re-render.
+  const role = user?.role ?? 'Client'
+  const gctx = useMemo(() => gateContext(role), [role])
 
   const activeFacetCount = Object.values(facets).reduce((a, s) => a + s.size, 0)
   const filtersOn = activeFacetCount > 0 || chip !== 'All'
@@ -660,8 +904,27 @@ export default function Inventory() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage))
   const safePage = Math.min(page, pageCount)
   const start = (safePage - 1) * rowsPerPage
-  const visible = filtered.slice(start, start + rowsPerPage)
+  // Memoized so its reference is stable across renders that don't touch
+  // filtering/sorting/pagination (e.g. toggling a checkbox) — required for
+  // `visibleWithIntel` below to actually skip recomputing the Hover Intel
+  // card payload instead of rebuilding it every render.
+  const visible = useMemo(() => filtered.slice(start, start + rowsPerPage), [filtered, start, rowsPerPage])
   const unitTotal = filtered.reduce((a, p) => a + unitCountOf(p), 0)
+
+  // Grid view builds each card's Hover Intel System glance/detail payload
+  // here, once per row per relevant dependency change, instead of calling
+  // the gated field-filtering builders inline inside the render .map() on
+  // every re-render (was: equipmentGlance/equipmentDetailGroups called
+  // directly in the JSX below).
+  const visibleWithIntel = useMemo(
+    () =>
+      visible.map((p) => ({
+        row: p,
+        glance: equipmentGlance(p, gctx),
+        detail: equipmentDetailGroups(p, gctx),
+      })),
+    [visible, gctx],
+  )
 
   const allOnPageSelected = visible.length > 0 && visible.every((p) => selected.has(p.name))
   const toggleAllOnPage = () => {
@@ -689,7 +952,7 @@ export default function Inventory() {
       />
 
       {/* §2 — Bundles, Sub Rental, Maintenance and Cases are tabs, not sidebar items. */}
-      <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-xs)', alignItems: 'center', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
         {TABS.map((t) => {
           const on = tab === t
           return (
@@ -719,7 +982,13 @@ export default function Inventory() {
 
         {/* The mockup parks the action cluster at the right of the tab strip. */}
         {tab === 'Inventory' && (
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 6 }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', paddingBottom: 6 }}>
+            <Button icon="checklist" onClick={() => navigate('/inventory/stock-check')}>
+              Stock Check
+            </Button>
+            <Button icon="file" onClick={() => navigate('/inventory/purchase-requests')}>
+              Purchase Requests
+            </Button>
             <Unavailable reason="Import is not built — there is no catalogue intake pipeline in this release.">
               <Button icon="upload" disabled>
                 Import
@@ -728,11 +997,9 @@ export default function Inventory() {
             <Button icon="download" onClick={() => exportCsv(filtered, money)}>
               Export
             </Button>
-            <Unavailable reason="Add Equipment is not built — the intake form has no screen yet.">
-              <Button icon="plus" variant="primary" disabled>
-                Add Equipment
-              </Button>
-            </Unavailable>
+            <Button icon="plus" variant="primary" onClick={() => navigate('/inventory/new')}>
+              Add Equipment
+            </Button>
           </div>
         )}
       </div>
@@ -769,7 +1036,7 @@ export default function Inventory() {
                     gap: 6,
                     height: 30,
                     padding: '0 10px',
-                    borderRadius: 8,
+                    borderRadius: 'var(--r-sm)',
                     border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
                     background: on ? 'var(--nav-active-bg)' : 'var(--card)',
                     color: on ? 'var(--nav-active-accent)' : tone,
@@ -803,7 +1070,7 @@ export default function Inventory() {
                 gap: 6,
                 height: 30,
                 padding: '0 10px',
-                borderRadius: 8,
+                borderRadius: 'var(--r-sm)',
                 border: '1px solid transparent',
                 background: 'transparent',
                 color: filtersOn ? 'var(--link)' : 'var(--muted)',
@@ -836,7 +1103,7 @@ export default function Inventory() {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 8,
+                  gap: 'var(--sp-sm)',
                   padding: '10px 12px',
                   borderBottom: '1px solid var(--border)',
                   flexWrap: 'wrap',
@@ -864,7 +1131,7 @@ export default function Inventory() {
                   </button>
                 )}
 
-                <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
                   <Unavailable reason="§4.1 — status is written by the Status Engine, never by hand, so no bulk action is offered. Nothing else is built to act on a selection yet.">
                     <Button icon="chevron_down" disabled>
                       Bulk Actions
@@ -873,7 +1140,7 @@ export default function Inventory() {
 
                   <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                     Sort by
-                    <select
+                    <Select
                       value={sort}
                       onChange={(e) => setSort(e.target.value as SortKey)}
                       style={selectStyle}
@@ -884,7 +1151,7 @@ export default function Inventory() {
                           {s}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </label>
 
                   <button
@@ -943,6 +1210,25 @@ export default function Inventory() {
                     onAction={clearFilters}
                   />
                 </div>
+              ) : !tabular ? (
+                /* Below 768px the 1060px-wide table is a horizontal
+                   scrollbar, not a layout — forced to the card presentation
+                   regardless of the `view` toggle, the same way
+                   `RentalsList.tsx` forces `Cards` below the same
+                   breakpoint (Law 13: capability, not a platform check). */
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {visibleWithIntel.map(({ row: p, glance, detail }) => (
+                    <ParentCardView
+                      key={p.name}
+                      row={p}
+                      glance={glance}
+                      detail={detail}
+                      money={money}
+                      checked={selected.has(p.name)}
+                      onToggle={() => toggleRow(p.name)}
+                    />
+                  ))}
+                </div>
               ) : view === 'grid' ? (
                 <div
                   style={{
@@ -952,19 +1238,26 @@ export default function Inventory() {
                     padding: 'var(--sp-md)',
                   }}
                 >
-                  {visible.map((p) => (
-                    <article key={p.name} style={{ ...cardStyle, padding: 12, display: 'flex', flexDirection: 'column', gap: 9 }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                        <Thumb category={p.category} size={38} />
-                        <span style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-                          <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>{p.name}</span>
-                          <CategoryChip category={p.category} />
+                  {visibleWithIntel.map(({ row: p, glance, detail }) => (
+                    <article key={p.name} style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 9 }}>
+                      <IntelCard
+                        glance={glance}
+                        detail={detail}
+                        detailTitle={p.name}
+                        detailSubtitle={p.category}
+                      >
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                          <Thumb category={p.category} size={38} />
+                          <span style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+                            <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>{p.name}</span>
+                            <CategoryChip category={p.category} />
+                          </span>
                         </span>
-                      </span>
+                      </IntelCard>
                       <span style={{ fontSize: 'var(--t-meta)' }}>
                         <StatusBreakdown row={p} />
                       </span>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                         <span className="figure">{p.stock}</span>
                         <ConditionBadge condition={p.condition} />
                       </span>
@@ -1028,6 +1321,7 @@ export default function Inventory() {
                           key={p.name}
                           row={p}
                           money={money}
+                          gctx={gctx}
                           density={density}
                           checked={selected.has(p.name)}
                           onToggle={() => toggleRow(p.name)}
@@ -1043,7 +1337,7 @@ export default function Inventory() {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 12,
+                  gap: 'var(--sp-md)',
                   padding: '10px 14px',
                   flexWrap: 'wrap',
                   fontSize: 'var(--t-meta)',
@@ -1058,7 +1352,7 @@ export default function Inventory() {
 
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   Rows per page
-                  <select
+                  <Select
                     value={rowsPerPage}
                     onChange={(e) => {
                       setRowsPerPage(Number(e.target.value))
@@ -1072,7 +1366,7 @@ export default function Inventory() {
                         {n}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
 
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 3, alignItems: 'center' }}>

@@ -1,5 +1,7 @@
-import { price, rupees, formatMoney } from '../lib/money'
+import { price, rupees, formatMoney, grouped, toRupees } from '../lib/money'
+import type { Paisa } from '../lib/money'
 import type { BookingStatus, Flag } from '../lib/workflow'
+import { toBs, formatBs, formatAd } from '../lib/bs'
 
 /**
  * Booking Detail seed data — transcribed from render `05AFD275`, with the money
@@ -30,12 +32,24 @@ import type { BookingStatus, Flag } from '../lib/workflow'
  * Financial Engine, which is the only thing in the product that knows §2.1's
  * order and §2.4's rounding — and which asserts §2.8's reference case at load.
  */
+/*
+ * Named once, fed into `price()` below and reused by every figure that used
+ * to duplicate these as separate hardcoded strings (CHARGES, TOTALS,
+ * EQUIPMENT_SUBTOTAL, CREW_SUBTOTAL) — one input, so those can't drift from
+ * MONEY or from each other the way RENTAL_PAYMENTS's did.
+ */
+const EQUIPMENT_PAISA = rupees(60750)
+const CREW_PAISA = rupees(72000)
+const TRANSPORT_PAISA = rupees(0)
+const DISCOUNT_PERCENT = 7
+const VAT_PERCENT = 13
+
 const MONEY = price({
-  equipment: rupees(60750),
-  crew: rupees(72000),
-  transport: rupees(0),
-  discountPercent: 7,
-  vatPercent: 13,
+  equipment: EQUIPMENT_PAISA,
+  crew: CREW_PAISA,
+  transport: TRANSPORT_PAISA,
+  discountPercent: DISCOUNT_PERCENT,
+  vatPercent: VAT_PERCENT,
   payments: rupees(15000),
 })
 
@@ -46,6 +60,15 @@ const MONEY = price({
  */
 const DEPOSIT = { required: rupees(50000), received: rupees(25000) }
 const DEPOSIT_PENDING = (DEPOSIT.required - DEPOSIT.received) as ReturnType<typeof rupees>
+
+/*
+ * F2 — the render hand-wrote the BS side (`३१ श्रावण २०८३`, Devanagari, and
+ * one BS day short of correct — day 31 of the *previous* month mislabeled
+ * with the new month's name). `lib/bs.ts` is the one place that conversion
+ * is allowed to happen; these two dates go through it instead.
+ */
+const PICKUP_AD = new Date(Date.UTC(2026, 6, 16))
+const RETURN_AD = new Date(Date.UTC(2026, 6, 19))
 
 export const BOOKING = {
   no: 'BK-2026-0715',
@@ -63,8 +86,8 @@ export const BOOKING = {
   kind: 'Film Shoot',
   place: 'Kathmandu',
   vip: true,
-  pickup: { ad: '16 Jul 2026', time: '06:00 AM', bs: '३१ श्रावण २०८३' },
-  ret: { ad: '19 Jul 2026', time: '06:00 AM', bs: '४ श्रावण २०८३' },
+  pickup: { ad: formatAd(PICKUP_AD), time: '06:00 AM', bs: formatBs(toBs(PICKUP_AD)!) },
+  ret: { ad: formatAd(RETURN_AD), time: '06:00 AM', bs: formatBs(toBs(RETURN_AD)!) },
   days: '3',
   outstanding: formatMoney(MONEY.outstanding),
   depositPending: formatMoney(DEPOSIT_PENDING),
@@ -101,21 +124,33 @@ export interface LineItem {
   total?: string
   /** Bundle rows show the pre-discount rate struck through. */
   wasRate?: string
+  /**
+   * F3 / Law 9 — days mandatory on every priced line, explicitly, never by
+   * omission. Set on every row that carries a `rate`/`total`; blank on pure
+   * grouping rows (Camera, Batteries, Cards), which price nothing themselves.
+   *
+   * Deliberately not multiplied into `total` below: the FX3 package is billed
+   * as one flat 3-day bundle (its own row already equals the full Rs 60,750
+   * Equipment Subtotal), so its child rows are a reference breakdown of what
+   * the bundle contains, not independent per-day lines — re-multiplying them
+   * would double-count against the bundle row and break that reconciliation.
+   */
+  days?: string
 }
 
 export const ITEMS: LineItem[] = [
-  { depth: 0, name: 'FX3 Documentary Package', badge: { text: 'Bundle', kind: 'bundle' }, serial: '18 Items · 10% Bundle Discount', qty: '', rate: 'Rs 20,250', wasRate: 'Rs 22,500', total: 'Rs 60,750' },
+  { depth: 0, name: 'FX3 Documentary Package', badge: { text: 'Bundle', kind: 'bundle' }, serial: '18 Items · 10% Bundle Discount', qty: '', rate: 'Rs 20,250', wasRate: 'Rs 22,500', total: 'Rs 60,750', days: '3' },
   { depth: 1, name: 'Camera', badge: { text: '1', kind: 'count' }, qty: '' },
-  { depth: 2, name: 'Sony FX3', badge: { text: 'Required', kind: 'required' }, serial: 'SN102', qty: '1', packed: 'Packed', availability: { text: 'Available', key: 'in' }, location: 'A2-01', rate: 'Rs 6,500', total: 'Rs 6,500' },
+  { depth: 2, name: 'Sony FX3', badge: { text: 'Required', kind: 'required' }, serial: 'SN102', qty: '1', packed: 'Packed', availability: { text: 'Available', key: 'in' }, location: 'A2-01', rate: 'Rs 6,500', total: 'Rs 6,500', days: '3' },
   { depth: 1, name: 'Batteries', badge: { text: '4', kind: 'count' }, qty: '' },
-  { depth: 2, name: 'NP-FZ100 Battery', badge: { text: 'Required', kind: 'required' }, serial: '—', qty: '4', packed: 'Packed', availability: { text: 'Available', key: 'in' }, location: 'B1-04', rate: 'Rs 500', total: 'Rs 2,000' },
+  { depth: 2, name: 'NP-FZ100 Battery', badge: { text: 'Required', kind: 'required' }, serial: '—', qty: '4', packed: 'Packed', availability: { text: 'Available', key: 'in' }, location: 'B1-04', rate: 'Rs 500', total: 'Rs 2,000', days: '3' },
   { depth: 1, name: 'Cards', badge: { text: '2', kind: 'count' }, qty: '' },
-  { depth: 2, name: '256GB CFexpress Type A', badge: { text: 'Required', kind: 'required' }, serial: '—', qty: '2', packed: 'Packed', availability: { text: 'Available', key: 'in' }, location: 'B1-07', rate: 'Rs 750', total: 'Rs 1,500' },
-  { depth: 1, name: 'Lens Set – NISI Athena Prime Set (3 Lenses)', badge: { text: 'Required', kind: 'required' }, qty: '3', packed: 'Packed', availability: { text: 'Reserved', key: 'primary' }, location: 'C1-02', rate: 'Rs 4,000', total: 'Rs 12,000' },
-  { depth: 1, name: 'Monitor Kit – Portkeys', badge: { text: 'Bundle', kind: 'bundle' }, serial: '(3 Items)', qty: '1', packed: 'Packed', availability: { text: 'Available', key: 'in' }, location: 'D1-03', rate: 'Rs 1,500', total: 'Rs 1,500' },
-  { depth: 1, name: 'Support & Rigging', serial: '(3 Items)', qty: '1', packed: 'Partial', availability: { text: 'Low Stock', key: 'low' }, location: 'E1-01', rate: 'Rs 1,750', total: 'Rs 1,750' },
-  { depth: 1, name: 'Audio Kit', serial: '(3 Items)', qty: '1', packed: 'Packed', availability: { text: 'Available', key: 'in' }, location: 'F1-02', rate: 'Rs 1,200', total: 'Rs 1,200' },
-  { depth: 1, name: 'Accessories & Cables', serial: '(6 Items)', qty: '1', packed: 'Packed', availability: { text: 'Available', key: 'in' }, location: 'G1-05', rate: 'Rs 650', total: 'Rs 650' },
+  { depth: 2, name: '256GB CFexpress Type A', badge: { text: 'Required', kind: 'required' }, serial: '—', qty: '2', packed: 'Packed', availability: { text: 'Available', key: 'in' }, location: 'B1-07', rate: 'Rs 750', total: 'Rs 1,500', days: '3' },
+  { depth: 1, name: 'Lens Set – NISI Athena Prime Set (3 Lenses)', badge: { text: 'Required', kind: 'required' }, qty: '3', packed: 'Packed', availability: { text: 'Reserved', key: 'primary' }, location: 'C1-02', rate: 'Rs 4,000', total: 'Rs 12,000', days: '3' },
+  { depth: 1, name: 'Monitor Kit – Portkeys', badge: { text: 'Bundle', kind: 'bundle' }, serial: '(3 Items)', qty: '1', packed: 'Packed', availability: { text: 'Available', key: 'in' }, location: 'D1-03', rate: 'Rs 1,500', total: 'Rs 1,500', days: '3' },
+  { depth: 1, name: 'Support & Rigging', serial: '(3 Items)', qty: '1', packed: 'Partial', availability: { text: 'Low Stock', key: 'low' }, location: 'E1-01', rate: 'Rs 1,750', total: 'Rs 1,750', days: '3' },
+  { depth: 1, name: 'Audio Kit', serial: '(3 Items)', qty: '1', packed: 'Packed', availability: { text: 'Available', key: 'in' }, location: 'F1-02', rate: 'Rs 1,200', total: 'Rs 1,200', days: '3' },
+  { depth: 1, name: 'Accessories & Cables', serial: '(6 Items)', qty: '1', packed: 'Packed', availability: { text: 'Available', key: 'in' }, location: 'G1-05', rate: 'Rs 650', total: 'Rs 650', days: '3' },
 ]
 
 /** Roll-up beneath the tree. Zero counts still render — "0 Missing" is the reassurance. */
@@ -127,7 +162,7 @@ export const ITEM_TALLY = [
   { label: 'Returned', value: '0', tone: 'neutral' as const },
   { label: 'Maintenance', value: '0', tone: 'neutral' as const },
 ]
-export const EQUIPMENT_SUBTOTAL = 'Rs 60,750'
+export const EQUIPMENT_SUBTOTAL = formatMoney(EQUIPMENT_PAISA)
 export const TOTAL_ITEMS = '18 Items'
 
 /**
@@ -168,7 +203,7 @@ export const CREW = [
   { name: 'Sagar Maharjan', role: 'DoP', rate: '9,000', days: '3', amount: '27,000' },
   { name: 'Ramesh Dulal', role: 'Camera Assistant', rate: '6,000', days: '3', amount: '18,000' },
 ]
-export const CREW_SUBTOTAL = '72,000'
+export const CREW_SUBTOTAL = grouped(toRupees(CREW_PAISA))
 
 export const TRANSPORT = [
   { label: 'Delivery Type', value: 'Pickup (Customer)', pill: true },
@@ -178,34 +213,92 @@ export const TRANSPORT = [
   { label: 'Delivery Instructions', value: 'Customer will pick up from warehouse.' },
 ]
 
+/*
+ * F4/§11 — these four blocks used to hand-write numbers MONEY already
+ * computed. Wired to MONEY/DEPOSIT/the named paisa constants above so none
+ * of them can independently drift, closing the same class of gap
+ * RENTAL_PAYMENTS had (fixed earlier). `grouped(toRupees(...))` reproduces
+ * the panel's existing bare-number style (no "Rs " prefix); `formatMoney`
+ * is used only where the render already carried the prefix.
+ */
 export const CHARGES = [
-  { label: 'Equipment Rental', amount: '60,750', note: '18 items' },
-  { label: 'Crew Charges', amount: '72,000', note: '3 crew × 3 days' },
-  { label: 'Transport Charge', amount: '0', note: 'Customer pickup' },
+  { label: 'Equipment Rental', amount: grouped(toRupees(EQUIPMENT_PAISA)), note: '18 items' },
+  { label: 'Crew Charges', amount: grouped(toRupees(CREW_PAISA)), note: '3 crew × 3 days' },
+  { label: 'Transport Charge', amount: grouped(toRupees(TRANSPORT_PAISA)), note: 'Customer pickup' },
 ]
 
 export const TOTALS = [
-  { label: 'Subtotal', value: '1,32,750' },
-  { label: 'Discount (7%)', value: '-9,293', tone: 'danger' as const },
-  { label: 'Taxable Amount', value: '1,23,457' },
-  { label: 'VAT (13%)', value: '16,049' },
+  { label: 'Subtotal', value: grouped(toRupees(MONEY.subtotal)) },
+  { label: `Discount (${DISCOUNT_PERCENT}%)`, value: `-${grouped(toRupees(MONEY.discount))}`, tone: 'danger' as const },
+  { label: 'Taxable Amount', value: grouped(toRupees(MONEY.taxable)) },
+  { label: `VAT (${VAT_PERCENT}%)`, value: grouped(toRupees(MONEY.vat)) },
 ]
-export const RENTAL_TOTAL = 'Rs 1,39,506'
+export const RENTAL_TOTAL = formatMoney(MONEY.rentalTotal)
 
 export const DEPOSIT_LEDGER = [
-  { label: 'Deposit Required', value: 'Rs 50,000' },
-  { label: 'Deposit Received', value: 'Rs 25,000', tone: 'success' as const },
-  { label: 'Deposit Pending', value: 'Rs 25,000', tone: 'progress' as const },
+  { label: 'Deposit Required', value: formatMoney(DEPOSIT.required) },
+  { label: 'Deposit Received', value: formatMoney(DEPOSIT.received), tone: 'success' as const },
+  { label: 'Deposit Pending', value: formatMoney(DEPOSIT_PENDING), tone: 'progress' as const },
 ]
 
+/*
+ * F1 — these two were hardcoded strings that happened to match MONEY today;
+ * wired to the engine so they can't independently drift from
+ * BOOKING.outstanding / SUMMARY the way this defect's root cause did.
+ */
 export const RENTAL_PAYMENTS = [
-  { label: 'Rental Paid', value: 'Rs 15,000', tone: 'success' as const },
-  { label: 'Rental Outstanding', value: 'Rs 1,24,506', tone: 'danger' as const },
+  { label: 'Rental Paid', value: formatMoney(MONEY.payments), tone: 'success' as const },
+  { label: 'Rental Outstanding', value: formatMoney(MONEY.outstanding), tone: 'danger' as const },
 ]
 
-export const PAYMENT_HISTORY = [
-  { date: '16 Jul 2026', type: 'Deposit', amount: '25,000', method: 'Cash', status: 'Completed', ref: 'SD-001' },
-  { date: '10 Jul 2026', type: 'Advance', amount: '15,000', method: 'eSewa', status: 'Completed', ref: 'ADV-001' },
+/**
+ * `recordedBy`/`adjustments` — new for the Payment Intel card
+ * (`data/bookingIntel.ts`). Nothing invented: `recordedBy` is seeded with the
+ * same staff member the Timeline below already credits with creating this
+ * booking, on both real rows (there are only two). `adjustments` models
+ * CLAUDE.md's "Payments are immutable — corrections are reversal rows" law
+ * directly — a correction never edits `amount` above, it appends a signed
+ * reversal row here instead. Seeded on one row where a real correction makes
+ * sense (a gateway-fee reversal on the eSewa advance); the deposit row is
+ * left with no adjustments, which is the honest common case, not an
+ * oversight.
+ */
+export interface PaymentAdjustment {
+  /** AD label, same "D MMM YYYY" convention as `date` below. */
+  ad: string
+  amountPaisa: Paisa
+  reason: string
+}
+
+export interface PaymentHistoryRow {
+  date: string
+  type: string
+  amount: string
+  method: string
+  status: string
+  ref: string
+  recordedBy?: string
+  adjustments?: PaymentAdjustment[]
+}
+
+export const PAYMENT_HISTORY: PaymentHistoryRow[] = [
+  { date: '16 Jul 2026', type: 'Deposit', amount: '25,000', method: 'Cash', status: 'Received', ref: 'SD-001', recordedBy: 'Sagar Maharjan' },
+  {
+    date: '10 Jul 2026',
+    type: 'Advance',
+    amount: '15,000',
+    method: 'eSewa',
+    status: 'Received',
+    ref: 'ADV-001',
+    recordedBy: 'Sagar Maharjan',
+    adjustments: [
+      {
+        ad: '12 Jul 2026',
+        amountPaisa: rupees(-500),
+        reason: 'eSewa gateway fee corrected — a reversal row, not an edit to the original payment (payments are immutable)',
+      },
+    ],
+  },
 ]
 
 export const DOCUMENTS = [
@@ -220,7 +313,7 @@ export const REVIEW = [
   { label: 'Client & Schedule', value: 'Completed', ok: true },
   { label: 'Equipment', value: '18 Items', ok: true },
   { label: 'Crew', value: '3 Members', ok: true },
-  { label: 'Pricing', value: 'Rs 1,39,506', ok: true },
+  { label: 'Pricing', value: formatMoney(MONEY.rentalTotal), ok: true },
   { label: 'Payments', value: 'Attention', ok: false },
   { label: 'Documents', value: 'Pending', ok: false },
 ]
@@ -230,10 +323,22 @@ export const NOTES =
 export const NOTES_BY = 'Added by Sagar Maharjan'
 export const NOTES_AT = '16 Jul 2026, 06:00 AM'
 
-export const ALERTS = [
+/*
+ * Typed explicitly rather than inferred: `tone` must stay the `'danger' |
+ * 'progress'` union BookingDetail.tsx's render branches on, not narrow to
+ * whichever single literal happens to appear in today's seed data (all three
+ * rows are 'progress' since the F6 fix below) — an inferred narrow type would
+ * make the render's `tone === 'danger'` branch a type error.
+ */
+export const ALERTS: { text: string; action: string; tone: 'danger' | 'progress' }[] = [
   { text: 'Deposit Rs 25,000 pending', action: 'Receive Deposit', tone: 'progress' as const },
   { text: 'Full payment required before pickup', action: 'Receive Payment', tone: 'progress' as const },
-  { text: 'NISI Athena set – only 2 left this week', action: 'Check Inventory', tone: 'danger' as const },
+  /*
+   * F6 — red is reserved for a problem that already happened (Overdue ·
+   * Damaged · Missing). Two units still available is attention, not a
+   * problem, so it carries the same tone as the other two alerts here.
+   */
+  { text: 'NISI Athena set – only 2 left this week', action: 'Check Inventory', tone: 'progress' as const },
 ]
 
 export const TIMELINE = [

@@ -4,11 +4,14 @@ import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, FooterNote, cardStyle, SummaryRows } from '../../components/ui/Page'
+import { thStyle as th } from '../../components/ui/TableHeaderCell'
+import { ErrorBanner } from '../../components/ui/StateViews'
 import { Donut, Legend } from '../../components/ui/Charts'
 import { STATUS, BRAND, BRAND_ON } from '../../lib/status'
 import type { StatusKey, BrandKey } from '../../lib/status'
 import { formatMoney, grouped } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
+import { FEE_PER_CREW_DAY_PAISA } from '../../data/crew'
 import { toBs, formatBs, formatAd, TODAY } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useTabularLayout } from '../../lib/device'
@@ -89,16 +92,6 @@ import type { Branch, BranchStatus, BranchActionKind, Dest, TabKey, ActivityEntr
 
 /* ── shared style atoms ────────────────────────────────────────────────── */
 
-const th: CSSProperties = {
-  textAlign: 'left',
-  padding: '9px 10px',
-  fontSize: 'var(--t-th)',
-  fontWeight: 600,
-  color: 'var(--text2)',
-  whiteSpace: 'nowrap',
-  borderBottom: '1px solid var(--border)',
-}
-
 const td: CSSProperties = {
   padding: '10px',
   fontSize: 'var(--t-meta)',
@@ -132,7 +125,7 @@ function ToneChip({ tone, icon, children }: { tone: StatusKey; icon: IconName; c
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 4,
+        gap: 'var(--sp-xs)',
         padding: '2px 8px',
         borderRadius: 'var(--r-badge)',
         background: t.bg,
@@ -172,7 +165,7 @@ function Meter({ percent, tone = 'success' }: { percent: number; tone?: BrandKey
     <span
       role="img"
       aria-label={`${width}% utilization`}
-      style={{ display: 'block', height: 6, borderRadius: 999, background: 'var(--divider)', overflow: 'hidden' }}
+      style={{ display: 'block', height: 6, borderRadius: 'var(--r-badge)', background: 'var(--divider)', overflow: 'hidden' }}
     >
       <span style={{ display: 'block', width: `${width}%`, height: '100%', background: BRAND[tone] }} />
     </span>
@@ -266,7 +259,7 @@ const linkStyle: CSSProperties = {
   alignSelf: 'flex-start',
   display: 'inline-flex',
   alignItems: 'center',
-  gap: 4,
+  gap: 'var(--sp-xs)',
   border: 'none',
   background: 'transparent',
   padding: 0,
@@ -286,7 +279,7 @@ function KpiCard({ k }: { k: KpiSpec }) {
           style={{
             width: 30,
             height: 30,
-            borderRadius: 8,
+            borderRadius: 'var(--r-sm)',
             background: BRAND[k.accent],
             color: BRAND_ON[k.accent],
             display: 'grid',
@@ -391,7 +384,7 @@ function Switch({ on, label }: { on: boolean; label: string }) {
       style={{
         width: 34,
         height: 19,
-        borderRadius: 999,
+        borderRadius: 'var(--r-badge)',
         border: 'none',
         padding: 2,
         background: state ? 'var(--success)' : 'var(--disabled)',
@@ -403,7 +396,7 @@ function Switch({ on, label }: { on: boolean; label: string }) {
     >
       <span
         aria-hidden
-        style={{ width: 15, height: 15, borderRadius: 999, background: 'var(--card)', display: 'block' }}
+        style={{ width: 15, height: 15, borderRadius: 'var(--r-badge)', background: 'var(--card)', display: 'block' }}
       />
     </button>
   )
@@ -570,6 +563,7 @@ const SYSTEM_LINKS: Field[] = [
   { label: 'Automation Center', note: 'Rules, triggers and scheduled jobs.', dest: R('/automation') },
   { label: 'Notification Center', note: 'Broadcasts, templates and delivery.', dest: R('/notifications') },
   { label: 'SMS Center', note: 'SMS templates, credits and delivery log.', dest: R('/notifications/sms') },
+  { label: 'Unified Inbox', note: 'Client messages across every channel, one queue.', dest: R('/notifications/inbox') },
   { label: 'AI Assistant', note: 'Ask about bookings, stock and money.', dest: R('/ai') },
   { label: 'System Monitor', note: 'Services, jobs and incidents.', dest: R('/system') },
   { label: 'Documents', note: 'Every generated invoice, quote and agreement.', dest: R('/documents') },
@@ -642,6 +636,7 @@ const SECTIONS: Record<Exclude<TabKey, 'overview' | 'branches' | 'users'>, Secti
       icon: 'receipt',
       fields: [
         { label: 'VAT rate', note: 'Applied after discount, per Foundation §2.1.', value: '13%' },
+        { label: 'Crew coordination fee', note: 'Per crew-day, billed as its own line on Crew Assist bookings — Crew Booking spec v3.2 §2. Proposed default, not yet confirmed.', value: `${formatMoney(FEE_PER_CREW_DAY_PAISA)} / crew-day` },
         { label: 'Fiscal year', note: 'Nepali fiscal year runs Shrawan – Ashadh.', value: 'FY 2083/84' },
         { label: 'Tax office', note: 'The IRD office this PAN is registered with.', dest: N('IRD registration details were never supplied for this build.') },
         { label: 'Invoice rules', note: 'Numbering, reversal and void behaviour.', dest: R('/admin/numbering') },
@@ -655,8 +650,8 @@ const SECTIONS: Record<Exclude<TabKey, 'overview' | 'branches' | 'users'>, Secti
         { label: 'Default currency', note: 'South Asian grouping — Rs 1,85,000.', value: 'NPR (Rs)' },
         { label: 'Additional currencies', note: 'Quoted only; ledgers stay in NPR.', value: 'USD · EUR · INR' },
         { label: 'Exchange rates', note: 'Rates are pulled from the day-open feed.', dest: N('No rate feed is connected in this build.') },
-        { label: 'Payment terms', note: 'Default credit terms on a new invoice.', dest: N('Nobody has set default credit terms — TODO(decision).') },
-        { label: 'Late payment penalties', note: 'Interest on an overdue invoice.', dest: N('Nobody has set a penalty rate — TODO(decision).') },
+        { label: 'Payment terms', note: 'Default credit terms on a new invoice.', value: 'Net 14 Days' },
+        { label: 'Late payment penalties', note: 'Interest on an overdue invoice.', value: '1.5% / month' },
       ],
     },
   ],
@@ -770,14 +765,14 @@ function ActivityList({ entries, moreDest }: { entries: ActivityEntry[]; moreDes
             style={{
               width: 26,
               height: 26,
-              borderRadius: 999,
+              borderRadius: 'var(--r-badge)',
               display: 'grid',
               placeItems: 'center',
               flexShrink: 0,
               background: a.system ? 'var(--nav-active-bg)' : 'var(--card2)',
               color: a.system ? 'var(--nav-active-accent)' : 'var(--text2)',
               border: '1px solid var(--border)',
-              fontSize: 10,
+              fontSize: 'var(--t-th)',
               fontWeight: 700,
             }}
           >
@@ -810,7 +805,7 @@ function QuickActionList({ actions }: { actions: QuickAction[] }) {
             height: 34,
             width: '100%',
             justifyContent: 'flex-start',
-            gap: 8,
+            gap: 'var(--sp-sm)',
             fontWeight: 600,
             background: 'var(--card2)',
           }}
@@ -893,12 +888,12 @@ function OverviewPane() {
             </DestControl>
           }
         >
-          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', gap: 'var(--sp-md)', alignItems: 'flex-start' }}>
             <span
               style={{
                 width: 52,
                 height: 52,
-                borderRadius: 12,
+                borderRadius: 'var(--r-btn)',
                 display: 'grid',
                 placeItems: 'center',
                 background: 'var(--nav-active-bg)',
@@ -924,7 +919,7 @@ function OverviewPane() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 'var(--sp-md)' }}>
             {ORG_FIELDS.map((f) => (
               <div
                 key={f.label}
@@ -1027,7 +1022,7 @@ function OverviewPane() {
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 8,
+                      gap: 'var(--sp-sm)',
                       width: '100%',
                       padding: '7px 8px',
                       borderRadius: 7,
@@ -1065,7 +1060,7 @@ function OverviewRail() {
   return (
     <>
       <Card title="System Summary">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
           {SYSTEM_SUMMARY.map((r) => (
             <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 'var(--t-meta)' }}>
               <span style={{ color: 'var(--text2)', minWidth: 0, flex: 1 }}>{r.label}</span>
@@ -1097,10 +1092,10 @@ function OverviewRail() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
+                gap: 'var(--sp-sm)',
                 width: '100%',
                 padding: '8px 9px',
-                borderRadius: 8,
+                borderRadius: 'var(--r-sm)',
                 border: '1px solid var(--border)',
                 background: 'var(--card2)',
                 color: 'var(--text)',
@@ -1131,7 +1126,7 @@ function OverviewRail() {
 
 /* ── Users & Roles pane ────────────────────────────────────────────────── */
 
-const ROLES: SystemRole[] = ['Owner', 'Admin', 'Coordinator', 'Warehouse', 'Technician', 'Accounts', 'Driver', 'Client']
+const ROLES: SystemRole[] = ['Owner', 'Admin', 'Manager', 'Coordinator', 'Warehouse', 'Technician', 'Accounts', 'Driver', 'Client']
 
 /**
  * The matrix is **computed by `lib/rbac`**, never transcribed. Every cell calls
@@ -1184,7 +1179,7 @@ function UsersPane() {
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: 4,
+                            gap: 'var(--sp-xs)',
                             fontSize: 'var(--t-th)',
                             fontWeight: 700,
                             color: ok ? 'var(--success-text)' : 'var(--muted)',
@@ -1205,7 +1200,7 @@ function UsersPane() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px,1fr))', gap: 'var(--sp-md)' }}>
         <Card title="Roles">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
             {ROLES.map((r) => (
               <div
                 key={r}
@@ -1232,7 +1227,7 @@ function UsersPane() {
         </Card>
 
         <Card title="Branch managers">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
             {BRANCHES.map((b) => (
               <div
                 key={b.id}
@@ -1380,7 +1375,7 @@ function SortHeader({
           display: 'flex',
           alignItems: 'center',
           justifyContent: align === 'right' ? 'flex-end' : 'flex-start',
-          gap: 4,
+          gap: 'var(--sp-xs)',
           width: '100%',
           padding: '9px 10px',
           border: 'none',
@@ -1498,7 +1493,7 @@ function BranchesPane({
       accent: 'progress',
       note: 'Across the selection',
       linkLabel: 'View staff',
-      dest: R('/crew'),
+      dest: R('/operations/crew'),
     },
   ]
 
@@ -1560,7 +1555,7 @@ function BranchesPane({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 'var(--sp-md)' }}>
         {rows.map((b) => (
           <article key={b.id} style={{ ...cardStyle, padding: 14, display: 'flex', flexDirection: 'column', gap: 11, minWidth: 0 }}>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', gap: 'var(--sp-md)', alignItems: 'flex-start' }}>
               {/* The render puts a storefront photograph here; no image asset exists. */}
               <span
                 style={{
@@ -1582,7 +1577,7 @@ function BranchesPane({
                   <span style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{b.name}</span>
                   <BranchStatusChip status={b.status} />
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 4, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 'var(--sp-xs)', flexWrap: 'wrap' }}>
                   <span
                     className="identifier"
                     style={{
@@ -1613,7 +1608,7 @@ function BranchesPane({
               style={{
                 display: 'grid',
                 gridTemplateColumns: money ? 'repeat(4, minmax(0,1fr))' : 'repeat(3, minmax(0,1fr))',
-                gap: 8,
+                gap: 'var(--sp-sm)',
                 paddingTop: 10,
                 borderTop: '1px solid var(--border)',
               }}
@@ -1706,7 +1701,7 @@ function BranchesPane({
       <Card
         title="Branch List"
         action={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <Icon name="search" size={13} style={{ color: 'var(--muted)' }} />
               <span className="sr-only" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
@@ -1847,7 +1842,7 @@ function BranchesPane({
           </table>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', flexWrap: 'wrap', marginTop: 'var(--sp-md)' }}>
           <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
             Showing {filtered.length === 0 ? 0 : (current - 1) * perPage + 1} to {Math.min(current * perPage, filtered.length)} of{' '}
             {filtered.length} branches
@@ -1921,7 +1916,7 @@ function BranchesPane({
         </Card>
 
         <Card title="Inventory Transfers">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
             {TRANSFER_STAGES.map((s) => (
               <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                 <ToneChip tone={s.tone} icon={s.icon}>
@@ -1932,7 +1927,7 @@ function BranchesPane({
                 </span>
               </div>
             ))}
-            <Link to="/inventory/warehouses" style={{ ...controlStyle, justifyContent: 'center', marginTop: 4 }}>
+            <Link to="/inventory/warehouses" style={{ ...controlStyle, justifyContent: 'center', marginTop: 'var(--sp-xs)' }}>
               View all transfers
               <Icon name="arrow_right" size={13} />
             </Link>
@@ -1987,7 +1982,7 @@ function BranchesPane({
         <Card title="AI Branch Insights">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {BRANCH_INSIGHTS.filter((i) => money || !i.money).map((i) => (
-              <div key={i.text} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+              <div key={i.text} style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-sm)' }}>
                 <Icon name={i.icon} size={14} style={{ color: 'var(--nav-active-accent)', flexShrink: 0, marginTop: 2 }} />
                 <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>{i.text}</span>
               </div>
@@ -2008,7 +2003,7 @@ function BranchesPane({
 function Stat({ icon, label, value }: { icon: IconName; label: string; value: string }) {
   return (
     <div style={{ minWidth: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
         <Icon name={icon} size={11} />
         <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
       </div>
@@ -2062,7 +2057,7 @@ function AddBranchModal({
   if (!manager.trim()) errors.push('A branch manager is required.')
 
   const field = (label: string, value: string, set: (v: string) => void, placeholder: string) => (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
       <span style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>{label}</span>
       <input
         value={value}
@@ -2102,7 +2097,7 @@ function AddBranchModal({
         onClick={(e) => e.stopPropagation()}
         style={{ ...cardStyle, width: 520, maxWidth: '100%', maxHeight: '86vh', overflowY: 'auto', boxShadow: 'var(--shadow-modal)' }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
           <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>Add Branch</h2>
           <button
             type="button"
@@ -2124,13 +2119,16 @@ function AddBranchModal({
         </div>
 
         {touched && errors.length > 0 && (
-          <div role="alert" style={{ padding: '0 14px 10px', display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {errors.map((e) => (
-              <span key={e} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--danger-text)' }}>
-                <Icon name="error" size={13} />
-                {e}
-              </span>
-            ))}
+          <div style={{ padding: '0 14px 10px' }}>
+            <ErrorBanner
+              message={
+                <ul style={{ margin: 0, paddingLeft: 'var(--sp-lg)' }}>
+                  {errors.map((e) => (
+                    <li key={e}>{e}</li>
+                  ))}
+                </ul>
+              }
+            />
           </div>
         )}
 
@@ -2139,7 +2137,7 @@ function AddBranchModal({
           or revenue — those arrive as it is stocked. It is held for this session only; no backend is connected.
         </p>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '0 14px 14px' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--sp-sm)', padding: '0 14px 14px' }}>
           <Button onClick={onClose}>Cancel</Button>
           <Button
             variant="primary"
@@ -2247,10 +2245,10 @@ function BranchesRail({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
+                gap: 'var(--sp-sm)',
                 width: '100%',
                 padding: '7px 9px',
-                borderRadius: 8,
+                borderRadius: 'var(--r-sm)',
                 border: '1px solid var(--border)',
                 background: 'var(--card2)',
                 color: 'var(--text)',
@@ -2278,7 +2276,7 @@ function BranchesRail({
 
       {/* §Quick Actions — "exactly four", between Alerts and Recent Activity. */}
       <Card title="Quick Actions">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-sm)' }}>
           {BRANCH_QUICK_ACTIONS.map((a) => {
             const run = handlers[a.kind]
             const glyph = <Icon name={a.icon} size={18} style={{ color: 'var(--nav-active-accent)' }} />
@@ -2402,17 +2400,16 @@ export default function Settings() {
         {/* A seed that stops reconciling is shown, not thrown — a module-scope
             throw runs before React mounts and blanks the app with no message. */}
         {SEED_ERRORS.length > 0 && (
-          <div
-            role="alert"
-            style={{ ...cardStyle, padding: 12, borderColor: 'var(--danger)', display: 'flex', flexDirection: 'column', gap: 4 }}
-          >
-            <strong style={{ fontSize: 'var(--t-ui)', color: 'var(--danger-text)' }}>Seed data does not reconcile</strong>
-            {SEED_ERRORS.map((e) => (
-              <span key={e} style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                {e}
-              </span>
-            ))}
-          </div>
+          <ErrorBanner
+            title="Seed data does not reconcile"
+            message={
+              <ul style={{ margin: 0, paddingLeft: 'var(--sp-lg)' }}>
+                {SEED_ERRORS.map((e) => (
+                  <li key={e}>{e}</li>
+                ))}
+              </ul>
+            }
+          />
         )}
 
         {/* Tab strip — every tab is a real URL, so a pane can be linked and reloaded. */}
@@ -2479,7 +2476,7 @@ export default function Settings() {
               <BranchesRail money={money} branches={branches} onAdd={() => setAddOpen(true)} onExport={exportBranches} />
             ) : (
               <>
-                <div style={{ ...cardStyle, padding: 12, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
+                <div style={{ ...cardStyle, padding: 'var(--sp-md)', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
                   The theme and text-size selectors are live and persist. The other controls are presentational — they do not
                   save yet, and this page says so rather than implying a write that never happens.
                 </div>

@@ -1,6 +1,7 @@
 import { Component } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 import { ErrorBanner } from '../ui/StateViews'
+import { captureError } from '../../lib/monitoring'
 
 /**
  * §1 (carried into `System States & Patterns v2.0` unchanged): "A blank page
@@ -25,6 +26,22 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Render error caught by ErrorBoundary:', error, info.componentStack)
+
+    /*
+     * The console is where a production crash used to end. Nobody is standing
+     * in the warehouse's devtools, so the banner below was the *only* trace a
+     * screen had died — and a screen that dies quietly stays dead.
+     *
+     * `captureError` no-ops unless `VITE_SENTRY_DSN` was set at build time, so
+     * this line costs nothing on a dev machine or an unconfigured deploy. See
+     * `lib/monitoring.ts` for what it does and does not transmit — the
+     * component stack is component *names*, never props or rendered values, so
+     * no client detail and no rupee figure leaves with it.
+     */
+    captureError(error, {
+      boundary: 'app-root',
+      componentStack: typeof info.componentStack === 'string' ? info.componentStack : null,
+    })
   }
 
   render() {

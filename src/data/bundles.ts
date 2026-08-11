@@ -58,6 +58,32 @@ export interface BundleLine {
   /** Today's daily rate for one unit. §7 — sum of parts is computed from these. */
   unitRatePaisa: Paisa
 
+  /**
+   * Hover Intel System v2.1 — Bundle card, Structure group.
+   *
+   * `true` = the bundle cannot be booked without this component; `false` = it
+   * rides along but the booking still works without it; `undefined` = this
+   * line has not been triaged yet. The card renders "not set" rather than
+   * guessing — most lines below are still `undefined` on purpose, exactly the
+   * `weightKg` pattern above: seed only where a real decision was made, never
+   * default every line to `true` just to fill the column.
+   */
+  mandatory?: boolean
+  /**
+   * Whether a short unit of this line can be swapped for one of its
+   * `substitutes` instead of blocking the bundle. Independent of `mandatory`
+   * — a mandatory line can still be replaceable (any 35mm T-stop lens does
+   * the job), and an optional line can be fixed (this exact van or none).
+   */
+  replaceable?: boolean
+  /**
+   * Model names the packer may substitute when this line is short. Always
+   * real models already seeded elsewhere in this file — never an invented
+   * SKU — so a suggestion the card shows is a suggestion someone could
+   * actually pack today.
+   */
+  substitutes?: string[]
+
   /*
    * ── deliberately NOT seeded ──────────────────────────────────────────────
    *
@@ -92,6 +118,31 @@ export interface BundleRecord {
   archived?: boolean
   booking?: BundleBooking
   /**
+   * Hover Intel System v2.1 — Bundle card, Identity group.
+   *
+   * Rentman's own physical/virtual distinction: `'Physical'` locks this
+   * bundle instance to specific serials (used once it is actually packed or
+   * committed to a booking); `'Virtual'` is any-of-type — the packer assigns
+   * whichever unit is free, per §10 ("a bundle stores models, never
+   * serials"). `undefined` reads as the stated default, Virtual, rather than
+   * a blank field, because §10 already names Virtual as how every bundle in
+   * this file behaves until it is actually packed.
+   */
+  lockMode?: 'Physical' | 'Virtual'
+  /**
+   * Hover Intel System v2.1 — Bundle card glance line ("next conflict …").
+   *
+   * A short, already-formatted AD label — not a `Date` like the other `Ad`
+   * fields in this file — because it answers a forward-looking question this
+   * data model has no source for: the next time a component that is free
+   * *today* becomes double-booked by a future reservation. `BundleLine`'s
+   * `freesAd` answers the opposite question (when an already-short unit
+   * frees up); neither can derive the other, so this is seeded, not
+   * computed, and left `undefined` everywhere the fact is not actually
+   * known — never guessed from `freesAd`.
+   */
+  nextConflictAd?: string
+  /**
    * The advertised daily rate, equipment only (§7/§8).
    *
    * TODO(decision) — Bundles.md §14 ⭐: *"Is the bundle rate set manually, or a
@@ -124,12 +175,14 @@ export const BUNDLES: BundleRecord[] = [
     name: 'Sony FX3 Documentary Kit',
     category: 'Camera',
     tags: ['Documentary', 'Travel', 'Corporate'],
+    lockMode: 'Virtual',
+    nextConflictAd: '3 Aug 2026',
     bundleRatePaisa: rupees(18000),
     lines: [
-      { group: 'Camera', model: 'Sony FX3 Camera Body', kind: 'equipment', quantity: 1, unitsStock: 3, unitsAvailable: 1, unitRatePaisa: rupees(9000) },
-      { group: 'Camera', model: 'Sony FX3 Top Handle', kind: 'equipment', quantity: 1, unitsStock: 2, unitsAvailable: 2, unitRatePaisa: rupees(400) },
+      { group: 'Camera', model: 'Sony FX3 Camera Body', kind: 'equipment', quantity: 1, unitsStock: 3, unitsAvailable: 1, mandatory: true, replaceable: false, unitRatePaisa: rupees(9000) },
+      { group: 'Camera', model: 'Sony FX3 Top Handle', kind: 'equipment', quantity: 1, unitsStock: 2, unitsAvailable: 2, mandatory: false, replaceable: true, unitRatePaisa: rupees(400) },
       { group: 'Camera', model: 'SmallRig Cage', kind: 'equipment', quantity: 1, unitsStock: 2, unitsAvailable: 2, unitRatePaisa: rupees(600) },
-      { group: 'Lens', model: 'NISI Athena 35mm T1.9', kind: 'equipment', quantity: 1, unitsStock: 3, unitsAvailable: 3, unitRatePaisa: rupees(2500) },
+      { group: 'Lens', model: 'NISI Athena 35mm T1.9', kind: 'equipment', quantity: 1, unitsStock: 3, unitsAvailable: 3, mandatory: true, replaceable: true, substitutes: ['Sigma 35mm Art', 'DZOFilm Vespid 35mm T2.1'], unitRatePaisa: rupees(2500) },
       { group: 'Lens', model: 'NISI Athena 50mm T1.9', kind: 'equipment', quantity: 1, unitsStock: 3, unitsAvailable: 3, unitRatePaisa: rupees(2500) },
       { group: 'Lens', model: 'NISI Athena 85mm T1.9', kind: 'equipment', quantity: 1, unitsStock: 3, unitsAvailable: 3, unitRatePaisa: rupees(2500) },
       { group: 'Support', model: 'Manfrotto 504X Video Tripod', kind: 'equipment', quantity: 1, unitsStock: 4, unitsAvailable: 4, unitRatePaisa: rupees(1500) },
@@ -149,6 +202,7 @@ export const BUNDLES: BundleRecord[] = [
     name: 'RED Komodo X Basic Package',
     category: 'Camera',
     tags: ['Feature', 'Corporate'],
+    lockMode: 'Physical',
     bundleRatePaisa: rupees(24000),
     booking: {
       id: 'BK-2026-0712',
@@ -158,11 +212,11 @@ export const BUNDLES: BundleRecord[] = [
       state: 'out',
     },
     lines: [
-      { group: 'Camera', model: 'RED Komodo X Brain', kind: 'equipment', quantity: 1, unitsStock: 2, unitsAvailable: 0, blockedBy: 'On Rent', freesAd: ad(2026, 8, 3), unitRatePaisa: rupees(14000) },
-      { group: 'Camera', model: 'RED DSMC3 RF Mount', kind: 'equipment', quantity: 1, unitsStock: 2, unitsAvailable: 0, blockedBy: 'On Rent', freesAd: ad(2026, 8, 3), unitRatePaisa: rupees(800) },
-      { group: 'Lens', model: 'DZOFilm Vespid 35mm T2.1', kind: 'equipment', quantity: 1, unitsStock: 2, unitsAvailable: 0, blockedBy: 'On Rent', freesAd: ad(2026, 8, 3), unitRatePaisa: rupees(1800) },
-      { group: 'Lens', model: 'DZOFilm Vespid 50mm T2.1', kind: 'equipment', quantity: 1, unitsStock: 2, unitsAvailable: 0, blockedBy: 'On Rent', freesAd: ad(2026, 8, 3), unitRatePaisa: rupees(1800) },
-      { group: 'Lens', model: 'DZOFilm Vespid 75mm T2.1', kind: 'equipment', quantity: 1, unitsStock: 2, unitsAvailable: 0, blockedBy: 'On Rent', freesAd: ad(2026, 8, 3), unitRatePaisa: rupees(1800) },
+      { group: 'Camera', model: 'RED Komodo X Brain', kind: 'equipment', quantity: 1, unitsStock: 2, unitsAvailable: 0, blockedBy: 'On Rent', freesAd: ad(2026, 8, 3), mandatory: true, replaceable: false, unitRatePaisa: rupees(14000) },
+      { group: 'Camera', model: 'RED DSMC3 RF Mount', kind: 'equipment', quantity: 1, unitsStock: 2, unitsAvailable: 0, blockedBy: 'On Rent', freesAd: ad(2026, 8, 3), mandatory: true, replaceable: false, unitRatePaisa: rupees(800) },
+      { group: 'Lens', model: 'DZOFilm Vespid 35mm T2.1', kind: 'equipment', quantity: 1, unitsStock: 2, unitsAvailable: 0, blockedBy: 'On Rent', freesAd: ad(2026, 8, 3), mandatory: true, replaceable: true, substitutes: ['NISI Athena 35mm T1.9'], unitRatePaisa: rupees(1800) },
+      { group: 'Lens', model: 'DZOFilm Vespid 50mm T2.1', kind: 'equipment', quantity: 1, unitsStock: 2, unitsAvailable: 0, blockedBy: 'On Rent', freesAd: ad(2026, 8, 3), mandatory: true, replaceable: true, substitutes: ['NISI Athena 50mm T1.9'], unitRatePaisa: rupees(1800) },
+      { group: 'Lens', model: 'DZOFilm Vespid 75mm T2.1', kind: 'equipment', quantity: 1, unitsStock: 2, unitsAvailable: 0, blockedBy: 'On Rent', freesAd: ad(2026, 8, 3), mandatory: true, replaceable: true, substitutes: ['NISI Athena 85mm T1.9'], unitRatePaisa: rupees(1800) },
       { group: 'Power', model: 'Core SWX NANO Micro 98', kind: 'equipment', quantity: 4, unitsStock: 12, unitsAvailable: 4, blockedBy: 'On Rent', freesAd: ad(2026, 8, 3), unitRatePaisa: rupees(300) },
       { group: 'Storage', model: 'RED PRO CFexpress 660GB', kind: 'equipment', quantity: 2, unitsStock: 4, unitsAvailable: 0, blockedBy: 'On Rent', freesAd: ad(2026, 8, 3), unitRatePaisa: rupees(600) },
       { group: 'Monitor', model: 'SmallHD Indie 7', kind: 'equipment', quantity: 1, unitsStock: 2, unitsAvailable: 1, unitRatePaisa: rupees(1500) },
@@ -170,8 +224,8 @@ export const BUNDLES: BundleRecord[] = [
       { group: 'Accessory', model: '15mm Rod Set', kind: 'equipment', quantity: 2, unitsStock: 4, unitsAvailable: 2, unitRatePaisa: rupees(250) },
       { group: 'Accessory', model: 'Wooden Camera Cage', kind: 'equipment', quantity: 1, unitsStock: 2, unitsAvailable: 0, blockedBy: 'On Rent', freesAd: ad(2026, 8, 3), unitRatePaisa: rupees(700) },
       { group: 'Accessory', model: 'SDI Cable Set', kind: 'equipment', quantity: 2, unitsStock: 8, unitsAvailable: 5, unitRatePaisa: rupees(100) },
-      { group: 'Crew', model: 'Camera Assistant', kind: 'crew', quantity: 1, unitsStock: 4, unitsAvailable: 2, unitRatePaisa: rupees(0) },
-      { group: 'Vehicle', model: 'Pickup Van', kind: 'vehicle', quantity: 1, unitsStock: 2, unitsAvailable: 1, unitRatePaisa: rupees(0) },
+      { group: 'Crew', model: 'Camera Assistant', kind: 'crew', quantity: 1, unitsStock: 4, unitsAvailable: 2, mandatory: false, replaceable: true, unitRatePaisa: rupees(0) },
+      { group: 'Vehicle', model: 'Pickup Van', kind: 'vehicle', quantity: 1, unitsStock: 2, unitsAvailable: 1, mandatory: false, replaceable: true, substitutes: ['SUV'], unitRatePaisa: rupees(0) },
       { group: 'Boxes / Bags', model: 'Pelican 1637 Air Case', kind: 'box', quantity: 1, unitsStock: 3, unitsAvailable: 1, unitRatePaisa: rupees(500) },
       { group: 'Boxes / Bags', model: 'DZOFilm Lens Case', kind: 'box', quantity: 1, unitsStock: 2, unitsAvailable: 1, unitRatePaisa: rupees(300) },
     ],

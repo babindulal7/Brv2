@@ -40,6 +40,9 @@ import '@fontsource-variable/jetbrains-mono'
  */
 import './styles/theme.css'
 import { REFERENCE_CASE_ERROR } from './lib/money'
+import { startAuditLogging } from './events/auditLogger'
+
+startAuditLogging()
 
 const root = document.getElementById('root')
 if (!root) throw new Error('#root not found')

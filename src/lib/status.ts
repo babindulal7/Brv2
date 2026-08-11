@@ -7,8 +7,10 @@
  *
  * This file previously carried eight status hues — available, reserved, pickup,
  * return, inspection, maintenance, damage, cancelled — one of which
- * (inspection) was purple. §4.2 bans purple, cyan, teal, indigo and violet
- * outright. The eight collapse onto the five below.
+ * (inspection) was purple. §4.2 bans cyan, teal, indigo and violet outright.
+ * Purple itself is not banned — it is reserved exclusively for the Sub-Rental
+ * status (gold-outline styling) and must not be used for any other KPI or
+ * accent purpose. The eight collapse onto the five below.
  *
  * Each key resolves to a CSS variable pair that `styles/theme.css` redefines
  * per theme, so a component never branches on theme and never hardcodes a

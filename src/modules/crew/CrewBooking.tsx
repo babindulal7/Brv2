@@ -1,0 +1,719 @@
+import { Fragment, useMemo, useState } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
+import type { ReactNode } from 'react'
+import { Card, Button, PageHeader, Rail, SummaryRows, cardStyle } from '../../components/ui/Page'
+import { thStyle } from '../../components/ui/TableHeaderCell'
+import { Input } from '../../components/ui/Input'
+import { EmptyState } from '../../components/ui/StateViews'
+import { useToast } from '../../components/ui/Toast'
+import Icon from '../../components/ui/Icon'
+import type { IconName } from '../../components/ui/Icon'
+import { formatMoney, crewBilling } from '../../lib/money'
+import { useAuth } from '../../lib/auth'
+import { gateContext, canViewMoneyField, canViewPII } from '../../lib/fieldGating'
+import { IntelCard } from '../../components/ui/IntelCard'
+import type { IntelGlance, IntelGroup } from '../../components/ui/IntelCard'
+import { crewGlance, crewDetailGroups } from '../../data/crewIntel'
+import { STATUS } from '../../lib/status'
+import type { StatusKey } from '../../lib/status'
+import { TODAY } from '../../lib/bs'
+import {
+  CREW_DATA,
+  CREW_ROSTER,
+  OPEN_ROLE_REQUESTS,
+  FEE_PER_CREW_DAY_PAISA,
+  CREW_EXPENSES_THIS_MONTH_PAISA,
+  detectConflicts,
+  conflictedAssignmentIds,
+  detectTravelWarnings,
+  rosterSummary,
+  crewDaysBooked,
+  fillRate,
+} from '../../data/crew'
+import type { CrewAssignment, AssignmentStatus, PayoutStatus } from '../../data/crew'
+
+type FilterKey = AssignmentStatus | 'All'
+type CrewTab = 'Booking' | 'Directory' | 'Timesheets' | 'Payouts'
+
+/** §11.1 — Tentative and Confirmed share one tone (blue); "on shoot today" is the derived solid-green override. */
+function assignmentTone(a: CrewAssignment, onShootToday: boolean): StatusKey {
+  if (a.cancelled) return 'neutral'
+  if (onShootToday) return 'out'
+  switch (a.status) {
+    case 'Draft':
+      return 'neutral'
+    case 'Completed':
+      return 'in'
+    default:
+      return 'primary'
+  }
+}
+
+const PAYOUT_TONE: Record<PayoutStatus, StatusKey> = {
+  'Not due': 'neutral',
+  Due: 'progress',
+  Paid: 'in',
+}
+
+/** "25 Jul 2026" -> a UTC day number, or NaN if the string doesn't parse. Never throws on a malformed seed value. */
+function parseAdDay(s: string): number {
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const [d, mon, y] = s.trim().split(/\s+/)
+  const month = mon ? MONTHS.indexOf(mon) : -1
+  if (!d || month < 0 || !y) return NaN
+  return Date.UTC(Number(y), month, Number(d))
+}
+
+function onShootToday(a: CrewAssignment): boolean {
+  if (a.cancelled || a.status !== 'Confirmed') return false
+  const s = parseAdDay(a.startDateAd)
+  const e = parseAdDay(a.endDateAd)
+  const t = TODAY.getTime()
+  return !Number.isNaN(s) && !Number.isNaN(e) && t >= s && t <= e
+}
+
+export function CrewBooking() {
+  const { showSuccessToast } = useToast()
+  const navigate = useNavigate()
+  const { user } = useAuth()
+  // gateContext() returns a fresh object literal on every call (see
+  // lib/fieldGating.ts) — memoize it here so it has a stable reference
+  // across renders. Without this, rowsWithIntel below would recompute on
+  // every render regardless of its own deps, since gctx is one of them.
+  const gctx = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
+  // §4.1 — crew day-rate/payout is 'asset-finance', explicitly excluding
+  // Coordinator ("no crew pay"). Stricter than the 'booking' gate Booking/
+  // Invoice/Payment screens use — that is correct, not a mistake.
+  const canCrewMoney = canViewMoneyField(gctx, 'asset-finance')
+
+  const [activeTab, setActiveTab] = useState<CrewTab>('Booking')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
+
+  // HIS v2.1 Crew card is person-level; this screen lists one row per
+  // *assignment*. Group by name so the hover card can show a person's full
+  // schedule/pay even though the table itself stays assignment-per-row.
+  const crewByName = useMemo(() => {
+    const map = new Map<string, CrewAssignment[]>()
+    for (const c of CREW_DATA) {
+      const list = map.get(c.name) ?? []
+      list.push(c)
+      map.set(c.name, list)
+    }
+    return map
+  }, [])
+
+  // §5.1 — conflicts are derived, never stored.
+  const conflicts = useMemo(() => detectConflicts(CREW_DATA), [])
+  const conflictIds = useMemo(() => conflictedAssignmentIds(conflicts), [conflicts])
+  const travelWarnings = useMemo(() => detectTravelWarnings(CREW_DATA), [])
+  const roster = useMemo(() => rosterSummary(CREW_ROSTER), [])
+  const crewDays = useMemo(() => crewDaysBooked(CREW_DATA), [])
+  const fill = useMemo(() => fillRate(CREW_DATA, OPEN_ROLE_REQUESTS), [])
+
+  const billing = useMemo(() => {
+    const payoutsPaisa = CREW_DATA.filter((a) => !a.cancelled).reduce((sum, a) => sum + a.totalCostPaisa, 0) as CrewAssignment['totalCostPaisa']
+    return crewBilling({
+      crewDays,
+      payoutsPaisa,
+      feePerCrewDayPaisa: FEE_PER_CREW_DAY_PAISA,
+      expensesPaisa: CREW_EXPENSES_THIS_MONTH_PAISA,
+      rechargeExpenses: true, // §2.3 Model A — recharge at cost (spec's recommendation)
+    })
+  }, [crewDays])
+
+  const crewBookedToday = useMemo(() => CREW_DATA.filter((a) => onShootToday(a)).length, [])
+
+  const chipCounts = useMemo(() => {
+    const counts: Record<FilterKey, number> = { All: CREW_DATA.length, Draft: 0, Tentative: 0, Confirmed: 0, Completed: 0 }
+    for (const a of CREW_DATA) counts[a.status]++
+    return counts
+  }, [])
+
+  const filteredCrew = useMemo(() => {
+    return CREW_DATA.filter((c) => {
+      if (activeFilter !== 'All' && c.status !== activeFilter) return false
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase()
+        return (
+          c.id.toLowerCase().includes(q) ||
+          c.name.toLowerCase().includes(q) ||
+          c.role.toLowerCase().includes(q) ||
+          c.production.toLowerCase().includes(q) ||
+          c.linkedBooking.toLowerCase().includes(q)
+        )
+      }
+      return true
+    })
+  }, [searchQuery, activeFilter])
+
+  // HIS builders (crewGlance/crewDetailGroups) construct a full field-gated
+  // object graph per row — compute them once per relevant dependency change
+  // instead of on every render inside the table's .map().
+  const rowsWithIntel = useMemo(
+    () =>
+      filteredCrew.map((c) => {
+        const crewGroup = crewByName.get(c.name) ?? [c]
+        const glance: IntelGlance = crewGlance(crewGroup, gctx, conflictIds)
+        const detail: IntelGroup[] = crewDetailGroups(crewGroup, gctx)
+        return { row: c, crewGroup, glance, detail }
+      }),
+    [filteredCrew, crewByName, gctx, conflictIds]
+  )
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) setSelectedRowIds(new Set(filteredCrew.map((c) => c.id)))
+    else setSelectedRowIds(new Set())
+  }
+
+  const handleToggleRow = (id: string) => {
+    const next = new Set(selectedRowIds)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setSelectedRowIds(next)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+      <PageHeader
+        icon="crew"
+        title="Crew Booking"
+        description="Book, coordinate and reconcile production crew — schedule, cost and payouts in one place."
+        actions={
+          <Button
+            variant="primary"
+            icon="plus"
+            onClick={() => {
+              import('../../actions/crew/bookCrew').then((m) =>
+                m.bookCrew({ crewIds: Array.from(selectedRowIds.size ? selectedRowIds : ['CRW-101']) })
+              )
+              showSuccessToast('Book Crew', 'Opening crew booking flow')
+            }}
+          >
+            Book Crew
+          </Button>
+        }
+      />
+
+      {/* Tabs — §1: Booking · Directory · Timesheets · Payouts, hand-rolled per this codebase's Finance.tsx/Inventory.tsx convention (no shared Tabs component exists). */}
+      <div style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)' }}>
+        {(['Booking', 'Directory', 'Timesheets', 'Payouts'] as const).map((t) => {
+          const on = activeTab === t
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setActiveTab(t)}
+              aria-current={on ? 'page' : undefined}
+              style={{
+                height: 34,
+                padding: '0 13px',
+                border: 'none',
+                borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
+                background: 'transparent',
+                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: on ? 700 : 500,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                marginBottom: -1,
+              }}
+            >
+              {t}
+            </button>
+          )
+        })}
+      </div>
+
+      {activeTab !== 'Booking' ? (
+        <EmptyState
+          title={`${activeTab} — not built yet`}
+          description={
+            activeTab === 'Directory'
+              ? 'The full crew roster with skills, ratings-replaced-by-facts and documents lives here — §7 of the spec.'
+              : activeTab === 'Timesheets'
+                ? 'Planned/actual/overtime capture and approval-gates-payout live here — §8 of the spec.'
+                : 'Gross/TDS/net payout tracking lives here — §3 of the spec.'
+          }
+        />
+      ) : (
+        <>
+          {/* KPI row — §10, exactly six cards. Money cards omitted (not hidden) without asset-finance. */}
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${canCrewMoney ? 6 : 5}, minmax(0,1fr))`, gap: 'var(--sp-md)' }}>
+            <KpiTile label="Crew Booked Today" value={String(crewBookedToday)} note="Confirmed, shoot day is today" icon="crew" accent="primary" />
+            <KpiTile label="Available Today" value={String(roster.available)} note={`${roster.total} on the roster`} icon="check" accent="in" />
+            <KpiTile
+              label="Conflicts"
+              value={String(conflicts.length + travelWarnings.length)}
+              note="Double bookings + travel warnings, next 7 days"
+              icon="alert_triangle"
+              accent={conflicts.length > 0 ? 'danger' : 'neutral'}
+            />
+            <KpiTile label="Timesheets Outstanding" value="—" note="Not tracked yet — see Timesheets tab" icon="calendar" accent="neutral" />
+            {canCrewMoney && <BillingKpiTile billing={billing} />}
+            <KpiTile
+              label="Crew-Days · Fill Rate"
+              value={`${crewDays} · ${fill.pct}%`}
+              note={`${fill.filled} of ${fill.requested} roles filled this month`}
+              icon="users"
+              accent="primary"
+            />
+          </div>
+
+          {/* Toolbar & filter chips */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-lg)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+              {(['All', 'Draft', 'Tentative', 'Confirmed', 'Completed'] as const).map((label) => (
+                <button
+                  key={label}
+                  onClick={() => setActiveFilter(label)}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: 'var(--r-modal)',
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    border: activeFilter === label ? '1px solid var(--nav-active-accent)' : '1px solid var(--border)',
+                    background: activeFilter === label ? 'var(--nav-active-bg)' : 'var(--card)',
+                    color: activeFilter === label ? 'var(--nav-active-accent)' : 'var(--text)',
+                  }}
+                >
+                  {label} <span className="figure" style={{ opacity: 0.85, marginLeft: 'var(--sp-xs)' }}>{chipCounts[label]}</span>
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 240 }}>
+                <Input
+                  placeholder="Search crew, role, production…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              <Button variant="secondary" icon="download" onClick={() => showSuccessToast('Exporting', 'Generating crew payroll report…')}>
+                Export
+              </Button>
+            </div>
+          </div>
+
+          {/* Calendar + table (left) · rail (right) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
+              <WeekCalendar assignments={CREW_DATA} conflictIds={conflictIds} />
+
+              <Card style={{ overflow: 'hidden' }}>
+                {filteredCrew.length === 0 ? (
+                  <EmptyState
+                    title="No crew assignments found"
+                    description="Adjust your filters or search query to find crew assignments."
+                    actionLabel="Clear Filters"
+                    onAction={() => {
+                      setActiveFilter('All')
+                      setSearchQuery('')
+                    }}
+                  />
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 'var(--t-th)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          <th style={{ ...thStyle, width: 36 }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedRowIds.size === filteredCrew.length && filteredCrew.length > 0}
+                              onChange={(e) => handleSelectAll(e.target.checked)}
+                              style={{ accentColor: 'var(--nav-active-accent)' }}
+                            />
+                          </th>
+                          <th style={thStyle}>Crew Member</th>
+                          <th style={thStyle}>Production</th>
+                          <th style={thStyle}>Dates &amp; Duration</th>
+                          {canCrewMoney && <th style={thStyle}>Financials (Cost)</th>}
+                          <th style={thStyle}>Assignment Status</th>
+                          <th style={thStyle}>Payout Status</th>
+                          <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rowsWithIntel.map(({ row: c, crewGroup, glance, detail }) => {
+                          const inConflict = conflictIds.has(c.id)
+                          const tone = STATUS[assignmentTone(c, onShootToday(c))]
+                          const payoutTone = STATUS[PAYOUT_TONE[c.payoutStatus]]
+                          return (
+                            <tr
+                              key={c.id}
+                              style={{ borderBottom: '1px solid var(--border)', background: inConflict ? 'var(--st-danger-bg)' : 'transparent' }}
+                            >
+                              <td style={{ padding: '12px 14px' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedRowIds.has(c.id)}
+                                  onChange={() => handleToggleRow(c.id)}
+                                  style={{ accentColor: 'var(--nav-active-accent)' }}
+                                />
+                              </td>
+                              <td style={{ padding: '12px 14px' }}>
+                                <IntelCard
+                                  glance={glance}
+                                  detail={detail}
+                                  detailTitle={c.name}
+                                  detailSubtitle={crewGroup.length > 1 ? `${crewGroup.length} assignments` : c.role}
+                                >
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+                                      <div style={{ fontWeight: 600, color: 'var(--text)' }}>{c.name}</div>
+                                      {c.isInternalStaff && <Tag label="STAFF" tone="neutral" />}
+                                      {inConflict && <Tag label="CONFLICT" tone="danger" />}
+                                    </div>
+                                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>{c.role}</div>
+                                    {/* HIS v2.1 §4.2 — was unconditional; the hover card's own
+                                        Contact group already gated the same phone number. */}
+                                    {canViewPII(gctx) && (
+                                      <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>{c.phone}</div>
+                                    )}
+                                  </div>
+                                </IntelCard>
+                              </td>
+                              <td style={{ padding: '12px 14px' }}>
+                                <div style={{ fontWeight: 500, color: 'var(--text)' }}>{c.production}</div>
+                                <Link to={`/rentals/${c.linkedBooking}`} className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--link)', marginTop: 2, display: 'block', textDecoration: 'none' }}>
+                                  {c.linkedBooking}
+                                </Link>
+                              </td>
+                              <td style={{ padding: '12px 14px' }}>
+                                <div className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>
+                                  {c.startDateBs} — {c.endDateBs}
+                                </div>
+                                <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>
+                                  {c.startDateAd} — {c.endDateAd} ({c.days} day{c.days === 1 ? '' : 's'})
+                                </div>
+                              </td>
+                              {canCrewMoney && (
+                                <td style={{ padding: '12px 14px' }}>
+                                  <div className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>{formatMoney(c.totalCostPaisa)}</div>
+                                  <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>{formatMoney(c.dayRatePaisa)} / day</div>
+                                </td>
+                              )}
+                              <td style={{ padding: '12px 14px' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: tone.fg, fontWeight: 600 }}>
+                                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
+                                  {c.status}
+                                  {c.cancelled && ' · Cancelled'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '12px 14px' }}>
+                                <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--r-xs)', background: payoutTone.bg, color: payoutTone.fg }}>
+                                  {c.payoutStatus}
+                                </span>
+                              </td>
+                              <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                                <Button variant="secondary" onClick={() => navigate(`/rentals/${c.linkedBooking}`)}>
+                                  View
+                                </Button>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </Card>
+            </div>
+
+            {/* Right rail — §12 */}
+            <Rail width={320} label="Crew summary">
+              <RailSection title="Roster summary" badge={roster.reconciles ? undefined : 'invariant failed'}>
+                <SummaryRows
+                  rows={[
+                    { label: 'Available', value: String(roster.available) },
+                    { label: 'Booked', value: String(roster.booked) },
+                    { label: 'On leave', value: String(roster.onLeave) },
+                    { label: 'Off duty', value: String(roster.offDuty) },
+                    { label: 'Conflicts', value: String(conflicts.length), ...(conflicts.length > 0 ? { tone: 'danger' as const } : {}) },
+                    { label: 'Timesheets outstanding', value: '—' },
+                  ]}
+                />
+              </RailSection>
+
+              <RailSection title="Alerts" badge={String(railAlertCount(conflicts.length, travelWarnings.length, OPEN_ROLE_REQUESTS.length, CREW_DATA))}>
+                <AlertsList conflicts={conflicts} travelWarnings={travelWarnings} openRoles={OPEN_ROLE_REQUESTS} assignments={CREW_DATA} />
+              </RailSection>
+
+              <RailSection title="Quick actions">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
+                  <Button variant="primary" icon="plus" onClick={() => showSuccessToast('Book Crew', 'Opening crew booking flow')}>
+                    Book Crew
+                  </Button>
+                  <Button variant="secondary" icon="calendar" onClick={() => showSuccessToast('Create Call Sheet', 'Call sheets are not built yet — spec §13')}>
+                    Create Call Sheet
+                  </Button>
+                  <Button variant="secondary" icon="receipt" onClick={() => setActiveTab('Timesheets')}>
+                    Open Timesheets
+                  </Button>
+                  <Button variant="secondary" icon="card" onClick={() => setActiveTab('Payouts')}>
+                    Open Payouts
+                  </Button>
+                </div>
+              </RailSection>
+            </Rail>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+/* ── KPI tiles ────────────────────────────────────────────────────────── */
+
+function KpiTile({ label, value, note, icon, accent }: { label: string; value: string; note: string; icon: IconName; accent: StatusKey }) {
+  const c = STATUS[accent]
+  return (
+    <article className="lift" style={{ ...cardStyle, padding: '13px 14px', minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        <span style={{ width: 30, height: 30, borderRadius: 'var(--r-sm)', background: c.bg, color: c.fg, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+          <Icon name={icon} size={16} fill />
+        </span>
+        <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+      </div>
+      <div className="figure" style={{ marginTop: 9, fontSize: 'clamp(16px, 1.5vw, 22px)', fontWeight: 700, color: 'var(--text)' }}>{value}</div>
+      <div style={{ marginTop: 6, fontSize: 'var(--t-meta)', color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note}</div>
+    </article>
+  )
+}
+
+/**
+ * §2.4 — Billed · Cost · Margin, side by side, from the Financial Engine.
+ * No `Kpi` shape fits three linked numbers, so this is bespoke — the same
+ * move `Finance.tsx`'s `PL_CHAIN` makes for its P&L chain.
+ */
+function BillingKpiTile({ billing }: { billing: ReturnType<typeof crewBilling> }) {
+  return (
+    <article className="lift" style={{ ...cardStyle, padding: '13px 14px', minWidth: 0 }}>
+      <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>Billed · Cost · Margin</div>
+      <div style={{ marginTop: 9, display: 'flex', gap: 'var(--sp-md)' }}>
+        <MoneyStat label="Billed" value={billing.billedPaisa} />
+        <MoneyStat label="Cost" value={billing.costPaisa} />
+        <MoneyStat label="Margin" value={billing.marginPaisa} tone={billing.marginPaisa !== null && billing.marginPaisa < 0 ? 'var(--st-danger-fg)' : 'var(--st-in-fg)'} />
+      </div>
+      <div style={{ marginTop: 6, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>This month</div>
+    </article>
+  )
+}
+
+function MoneyStat({ label, value, tone }: { label: string; value: number | null; tone?: string }) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{label}</div>
+      <div className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: tone ?? 'var(--text)' }}>
+        {value === null ? 'Not configured' : formatMoney(value as never)}
+      </div>
+    </div>
+  )
+}
+
+function Tag({ label, tone }: { label: string; tone: StatusKey }) {
+  const c = STATUS[tone]
+  return (
+    <span style={{ fontSize: 'var(--t-th)', fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: c.bg, color: c.fg }}>{label}</span>
+  )
+}
+
+/* ── week calendar — §9, real assignment blocks, Week view only ─────────── */
+
+const DAY_MS = 86400000
+
+function mondayOf(d: Date): Date {
+  const day = d.getUTCDay() // 0=Sun..6=Sat
+  const diff = day === 0 ? -6 : 1 - day
+  return new Date(d.getTime() + diff * DAY_MS)
+}
+
+function WeekCalendar({ assignments, conflictIds }: { assignments: CrewAssignment[]; conflictIds: Set<string> }) {
+  const weekStart = useMemo(() => mondayOf(TODAY), [])
+  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => new Date(weekStart.getTime() + i * DAY_MS)), [weekStart])
+  const weekEnd = days[6] as Date
+
+  // One row per roster person with at least one assignment touching this week.
+  const rows = useMemo(() => {
+    const byName = new Map<string, CrewAssignment[]>()
+    for (const a of assignments) {
+      if (a.cancelled) continue
+      const s = parseAdDay(a.startDateAd)
+      const e = parseAdDay(a.endDateAd)
+      if (Number.isNaN(s) || Number.isNaN(e)) continue
+      if (e < weekStart.getTime() || s > weekEnd.getTime()) continue
+      const list = byName.get(a.name) ?? []
+      list.push(a)
+      byName.set(a.name, list)
+    }
+    return Array.from(byName.entries())
+  }, [assignments, weekStart, weekEnd])
+
+  const monthDay = (d: Date) => `${d.getUTCDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()]}`
+  const weekday = (d: Date) => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.getUTCDay() === 0 ? 6 : d.getUTCDay() - 1]
+
+  return (
+    <Card title="Crew Calendar" action={<span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Week view</span>}>
+      {rows.length === 0 ? (
+        <EmptyState title="No bookings this week" description="Nobody on the roster has an assignment overlapping this week." />
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '160px repeat(7, minmax(110px,1fr))', minWidth: 940 }}>
+            <div />
+            {days.map((d) => {
+              const isToday = d.getTime() === Date.UTC(TODAY.getUTCFullYear(), TODAY.getUTCMonth(), TODAY.getUTCDate())
+              return (
+                <div
+                  key={d.getTime()}
+                  className="figure"
+                  style={{
+                    padding: '6px 8px',
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: 600,
+                    color: isToday ? 'var(--nav-active-accent)' : 'var(--text2)',
+                    textAlign: 'center',
+                    borderBottom: `2px solid ${isToday ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+                  }}
+                >
+                  {weekday(d)} {monthDay(d)}
+                </div>
+              )
+            })}
+
+            {rows.map(([name, list]) => (
+              <Fragment key={name}>
+                <div style={{ padding: '10px 8px', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)', borderTop: '1px solid var(--border)' }}>
+                  {name}
+                  <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 500 }}>{list[0]?.role}</div>
+                </div>
+                {days.map((d) => {
+                  const dayStart = d.getTime()
+                  const block = list.find((a) => {
+                    const s = parseAdDay(a.startDateAd)
+                    const e = parseAdDay(a.endDateAd)
+                    return dayStart >= s && dayStart <= e
+                  })
+                  const tone = block ? STATUS[assignmentTone(block, onShootToday(block))] : null
+                  return (
+                    <div key={`${name}-${d.getTime()}`} style={{ padding: 'var(--sp-xs)', borderTop: '1px solid var(--border)' }}>
+                      {block && (
+                        <div
+                          title={`${block.production} — ${block.status}${conflictIds.has(block.id) ? ' · CONFLICT' : ''}`}
+                          style={{
+                            padding: '6px 7px',
+                            borderRadius: 'var(--r-xs)',
+                            background: tone?.bg,
+                            color: tone?.fg,
+                            fontSize: 'var(--t-th)',
+                            fontWeight: 600,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            border: conflictIds.has(block.id) ? '1px solid var(--st-danger-fg)' : undefined,
+                          }}
+                        >
+                          {block.production}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </Fragment>
+            ))}
+          </div>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+/* ── right rail helpers, matching CasesQueue.tsx's local pattern ────────── */
+
+function RailSection({ title, children, badge }: { title: string; children: ReactNode; badge?: string | undefined }) {
+  return (
+    <section style={{ ...cardStyle, padding: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginBottom: 10 }}>
+        <h3 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{title}</h3>
+        {badge && <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{badge}</span>}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function railAlertCount(conflictCount: number, travelCount: number, openRoleCount: number, assignments: CrewAssignment[]): number {
+  const payoutDue = assignments.filter((a) => !a.cancelled && a.payoutStatus === 'Due').length > 0 ? 1 : 0
+  return conflictCount + travelCount + openRoleCount + payoutDue
+}
+
+function AlertsList({
+  conflicts,
+  travelWarnings,
+  openRoles,
+  assignments,
+}: {
+  conflicts: ReturnType<typeof detectConflicts>
+  travelWarnings: ReturnType<typeof detectTravelWarnings>
+  openRoles: typeof OPEN_ROLE_REQUESTS
+  assignments: CrewAssignment[]
+}) {
+  const payoutsDue = assignments.filter((a) => !a.cancelled && a.payoutStatus === 'Due')
+
+  type Row = { title: string; detail: string; to: string; severity: 'Critical' | 'Warning'; icon: IconName }
+  const rows: Row[] = [
+    ...conflicts.map((c): Row => ({
+      title: 'Double booking',
+      detail: `${c.name} — ${c.a.linkedBooking} × ${c.b.linkedBooking}`,
+      to: `/rentals/${c.a.linkedBooking}`,
+      severity: c.severity === 'Critical' ? 'Critical' : 'Warning',
+      icon: 'alert_triangle',
+    })),
+    ...openRoles.map((r): Row => ({
+      title: `${r.role} unfilled`,
+      detail: `${r.production} — needed from ${r.neededFromAd}`,
+      to: '#',
+      severity: 'Critical',
+      icon: 'users',
+    })),
+    ...travelWarnings.map((w): Row => ({
+      title: 'Travel infeasible',
+      detail: `${w.name} — ${w.from.location} → ${w.to.location}, ${w.gapDays}d gap`,
+      to: `/rentals/${w.to.linkedBooking}`,
+      severity: 'Warning',
+      icon: 'calendar',
+    })),
+    ...(payoutsDue.length > 0
+      ? [{ title: 'Payout due', detail: `${payoutsDue.length} crew payout${payoutsDue.length === 1 ? '' : 's'} awaiting release`, to: '#', severity: 'Warning' as const, icon: 'card' as const }]
+      : []),
+  ]
+
+  if (rows.length === 0) {
+    return <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>No alerts right now.</div>
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {rows.map((r, i) => {
+        const tone = STATUS[r.severity === 'Critical' ? 'danger' : 'progress']
+        return (
+          <Link
+            key={i}
+            to={r.to}
+            style={{ display: 'grid', gridTemplateColumns: '26px minmax(0,1fr)', gap: 'var(--sp-sm)', padding: '7px 6px', borderRadius: 'var(--r-sm)', textDecoration: 'none', color: 'inherit' }}
+          >
+            <span style={{ width: 26, height: 26, borderRadius: 7, background: tone.bg, color: tone.fg, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+              <Icon name={r.icon} size={13} />
+            </span>
+            <span style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>{r.title}</div>
+              <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.detail}</div>
+            </span>
+          </Link>
+        )
+      })}
+    </div>
+  )
+}

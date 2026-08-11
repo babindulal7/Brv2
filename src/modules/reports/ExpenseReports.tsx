@@ -4,7 +4,7 @@ import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
 import { Donut, Legend } from '../../components/ui/Charts'
-import { EmptyState } from '../../components/ui/StateViews'
+import { EmptyState, ErrorBanner, RestrictedState } from '../../components/ui/StateViews'
 import { BRAND, BRAND_ON, STATUS } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
 import { formatMoney } from '../../lib/money'
@@ -117,7 +117,7 @@ function KpiCard({
           style={{
             width: 30,
             height: 30,
-            borderRadius: 8,
+            borderRadius: 'var(--r-sm)',
             background: BRAND[accent],
             color: BRAND_ON[accent],
             display: 'grid',
@@ -146,7 +146,7 @@ function KpiCard({
           paddingTop: 9,
           display: 'inline-flex',
           alignItems: 'center',
-          gap: 4,
+          gap: 'var(--sp-xs)',
           fontSize: 'var(--t-meta)',
           fontWeight: 600,
           color: 'var(--link)',
@@ -196,6 +196,10 @@ export default function ExpenseReports() {
   const totals = useMemo(() => totalsOf(rows), [rows])
   const budget = useMemo(() => budgetOf(rows), [rows])
   const slices = useMemo(() => toSlices(byCategory(rows)), [rows])
+  const largestExpense = useMemo(() => {
+    if (rows.length === 0) return null
+    return rows.reduce((max, r) => (r.amount > max.amount ? r : max))
+  }, [rows])
 
   const pageCount = Math.max(1, Math.ceil(rows.length / perPage))
   const current = Math.min(page, pageCount)
@@ -222,10 +226,9 @@ export default function ExpenseReports() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
         <PageHeader icon="card" title="Expenses" description="Track operating costs, control spending, and monitor company expenses." />
-        <EmptyState
-          icon={<Icon name="settings" size={26} />}
-          title="Expenses is not available for your role"
-          description="Every figure on this page is a monetary amount, so there is no version of it your role can see. Ask an Owner, Admin, Coordinator or Accounts user if you need an expense recorded."
+        <RestrictedState
+          reason="Expenses is not available for your role. Every figure on this page is a monetary amount, so there is no version of it your role can see. Ask an Owner, Admin, Coordinator or Accounts user if you need an expense recorded."
+          requiredRole="Owner, Admin, Coordinator or Accounts"
         />
         <FooterNote />
       </div>
@@ -252,17 +255,19 @@ export default function ExpenseReports() {
       {/* A seed that stops reconciling is shown, not thrown — a module-scope
           throw runs before React mounts and blanks the app with no message. */}
       {SEED_ERRORS.length > 0 && (
-        <div role="alert" style={{ ...cardStyle, padding: 12, borderColor: 'var(--danger)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <strong style={{ fontSize: 'var(--t-ui)', color: 'var(--danger-text)' }}>Seed data does not reconcile</strong>
-          {SEED_ERRORS.map((e) => (
-            <span key={e} style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-              {e}
-            </span>
-          ))}
-        </div>
+        <ErrorBanner
+          title="Seed data does not reconcile"
+          message={
+            <ul style={{ margin: 0, paddingLeft: 16 }}>
+              {SEED_ERRORS.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          }
+        />
       )}
 
-      <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+      <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
         <KpiCard
           label="Total Expenses"
           value={formatMoney(totals.total as Paisa)}
@@ -271,33 +276,6 @@ export default function ExpenseReports() {
           note={{ text: `${totals.count} recorded this period`, tone: 'neutral' }}
           to="/reports/expenses"
           linkLabel="View Detailed Report"
-        />
-        <KpiCard
-          label="Pending Approval"
-          value={String(totals.pendingCount)}
-          icon="timer"
-          accent="progress"
-          note={{ text: formatMoney(totals.pending as Paisa), tone: 'progress' }}
-          to="/reports/expenses"
-          linkLabel="View Pending"
-        />
-        <KpiCard
-          label="Paid"
-          value={formatMoney(totals.paid as Paisa)}
-          icon="dollar"
-          accent="success"
-          note={{ text: `${Math.round((totals.paid / (totals.total || 1)) * 100)}% of recorded spend`, tone: 'success' }}
-          to="/finance"
-          linkLabel="View Payments"
-        />
-        <KpiCard
-          label="Recurring Expenses"
-          value={String(totals.recurringCount)}
-          icon="refresh"
-          accent="primary"
-          note={{ text: formatMoney(totals.recurring as Paisa), tone: 'neutral' }}
-          to="/automation"
-          linkLabel="View Recurring"
         />
         <KpiCard
           label={budget.over ? 'Over Budget' : 'Budget Remaining'}
@@ -311,6 +289,24 @@ export default function ExpenseReports() {
           }
           to="/reports/expenses"
           linkLabel="View Budget"
+        />
+        <KpiCard
+          label="Pending Approval"
+          value={String(totals.pendingCount)}
+          icon="timer"
+          accent="progress"
+          note={{ text: formatMoney(totals.pending as Paisa), tone: 'progress' }}
+          to="/reports/expenses"
+          linkLabel="View Pending"
+        />
+        <KpiCard
+          label="Largest Expense"
+          value={largestExpense ? formatMoney(largestExpense.amount as Paisa) : '—'}
+          icon="arrow_up"
+          accent="neutral"
+          note={{ text: largestExpense ? largestExpense.vendor : 'No expenses recorded', tone: 'neutral' }}
+          to="/reports/expenses"
+          linkLabel="View Expense"
         />
       </section>
 
@@ -361,7 +357,7 @@ export default function ExpenseReports() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           {/* Filter bar. The period is the seeded ledger's own range, rendered
               BS above AD from the Date Engine — never a stored BS string. */}
-          <div style={{ ...cardStyle, padding: 11, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ ...cardStyle, padding: 11, display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 10px', borderRadius: 'var(--r-input)', border: '1px solid var(--border)', background: 'var(--card2)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               <Icon name="calendar" size={13} />
               {formatAd(PERIOD.from)} – {formatAd(PERIOD.to)}
@@ -476,13 +472,13 @@ export default function ExpenseReports() {
                     {budget.percent === null ? '—' : `${budget.percent.toFixed(0)}%`}
                   </span>
                 </div>
-                <div aria-hidden style={{ height: 5, borderRadius: 999, background: 'var(--card2)', marginTop: 5, overflow: 'hidden' }}>
+                <div aria-hidden style={{ height: 5, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 5, overflow: 'hidden' }}>
                   <div
                     style={{
                       width: `${Math.min(budget.percent ?? 0, 100)}%`,
                       height: '100%',
                       background: budget.over ? BRAND.danger : BRAND.progress,
-                      borderRadius: 999,
+                      borderRadius: 'var(--r-badge)',
                     }}
                   />
                 </div>
@@ -513,7 +509,7 @@ export default function ExpenseReports() {
               {RECURRING.map((s) => {
                 const bs = toBs(s.dueAd)
                 return (
-                  <div key={s.name} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <div key={s.name} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'flex-start' }}>
                     <Icon name="refresh" size={13} style={{ marginTop: 2, flexShrink: 0, color: 'var(--muted)' }} />
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{s.name}</div>
@@ -532,7 +528,7 @@ export default function ExpenseReports() {
           </Card>
 
           <Card title="Quick Actions">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-sm)' }}>
               {QUICK_ACTIONS.map((a) => (
                 <button key={a.label} type="button" className="lift" style={quickStyle}>
                   <Icon name={a.icon as IconName} size={17} />
@@ -540,7 +536,7 @@ export default function ExpenseReports() {
                 </button>
               ))}
             </div>
-            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
               {QUICK_ACTIONS_MORE.map((label) => (
                 <Link
                   key={label}

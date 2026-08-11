@@ -59,7 +59,7 @@ function MultiLine() {
   const max = Math.max(...PERFORMANCE.series.flatMap((s) => s.points))
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
         <div
           aria-hidden
           style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: 150, fontSize: 'var(--t-meta)', color: 'var(--muted)', textAlign: 'right', flexShrink: 0 }}
@@ -126,7 +126,7 @@ function MultiLine() {
           </span>
         ))}
       </div>
-      <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 9, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-md)', justifyContent: 'center', marginTop: 9, flexWrap: 'wrap' }}>
         {PERFORMANCE.series.map((s, i) => (
           <button
             key={s.name}
@@ -145,7 +145,7 @@ function MultiLine() {
               fontFamily: 'inherit',
             }}
           >
-            <span aria-hidden style={{ width: 8, height: 8, borderRadius: 999, background: catColor(i) }} />
+            <span aria-hidden style={{ width: 8, height: 8, borderRadius: 'var(--r-badge)', background: catColor(i) }} />
             {s.name}
           </button>
         ))}
@@ -227,7 +227,7 @@ export default function BroadcastCenter() {
                     gap: 9,
                     width: '100%',
                     padding: '7px 6px',
-                    borderRadius: 8,
+                    borderRadius: 'var(--r-sm)',
                     border: 'none',
                     background: 'transparent',
                     cursor: 'pointer',
@@ -256,7 +256,7 @@ export default function BroadcastCenter() {
                   </span>
                 </button>
               ))}
-              <div style={{ marginTop: 8 }}>
+              <div style={{ marginTop: 'var(--sp-sm)' }}>
                 <Button icon="plus">Create New Segment</Button>
               </div>
             </Card>
@@ -271,7 +271,7 @@ export default function BroadcastCenter() {
               }
               bodyStyle={{ padding: 0 }}
             >
-              <div style={{ display: 'flex', gap: 4, padding: '8px 12px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-xs)', padding: '8px 12px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
                 {CAMPAIGN_TABS.map((t) => {
                   const on = tab === t.label
                   return (
@@ -398,7 +398,7 @@ export default function BroadcastCenter() {
                         style={{
                           minWidth: 24,
                           height: 24,
-                          borderRadius: 6,
+                          borderRadius: 'var(--r-xs)',
                           border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
                           background: on ? 'var(--btn-primary-bg)' : 'transparent',
                           color: on ? 'var(--btn-primary-fg)' : 'var(--text2)',
@@ -421,13 +421,13 @@ export default function BroadcastCenter() {
             <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0,1fr) minmax(0,1.1fr) 180px', gap: 14 }}>
               <ol style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 9 }}>
                 {BUILDER_STEPS.map((s, i) => (
-                  <li key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)' }}>
+                  <li key={s} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
                     <span
                       className="figure"
                       style={{
                         width: 19,
                         height: 19,
-                        borderRadius: 999,
+                        borderRadius: 'var(--r-badge)',
                         display: 'grid',
                         placeItems: 'center',
                         background: i === 0 ? 'var(--btn-primary-bg)' : 'var(--card2)',
@@ -448,7 +448,7 @@ export default function BroadcastCenter() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                 <Field label="Campaign Name" value="Dashain Festival Offer 2082" />
                 <Field label="Campaign Type" value="Promotional" select />
-                <Field label="Description" value="Special discount offer for Dashain festival for our valued customers." area />
+                <Field label="Description" value="Special discount offer for Dashain festival for our valued clients." area />
                 <div>
                   <div style={fieldLabel}>Selected Channels</div>
                   <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
@@ -464,7 +464,7 @@ export default function BroadcastCenter() {
                             gap: 5,
                             height: 24,
                             padding: '0 8px',
-                            borderRadius: 6,
+                            borderRadius: 'var(--r-xs)',
                             border: '1px solid var(--border)',
                             background: 'var(--card2)',
                             fontSize: 'var(--t-meta)',
@@ -472,7 +472,7 @@ export default function BroadcastCenter() {
                             textTransform: 'capitalize',
                           }}
                         >
-                          <span aria-hidden style={{ width: 7, height: 7, borderRadius: 999, background: BRAND[meta.dot] }} />
+                          <span aria-hidden style={{ width: 7, height: 7, borderRadius: 'var(--r-badge)', background: BRAND[meta.dot] }} />
                           {ch}
                         </span>
                       )
@@ -483,7 +483,7 @@ export default function BroadcastCenter() {
               </div>
 
               <div>
-                <div style={{ display: 'flex', gap: 3, marginBottom: 8, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 3, marginBottom: 'var(--sp-sm)', flexWrap: 'wrap' }}>
                   {PREVIEW_TABS.map((p) => {
                     const on = preview === p
                     return (
@@ -495,7 +495,7 @@ export default function BroadcastCenter() {
                         style={{
                           height: 25,
                           padding: '0 9px',
-                          borderRadius: 6,
+                          borderRadius: 'var(--r-xs)',
                           border: 'none',
                           background: on ? 'var(--nav-active-bg)' : 'transparent',
                           color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
@@ -513,7 +513,7 @@ export default function BroadcastCenter() {
                 <div
                   style={{
                     padding: 11,
-                    borderRadius: 12,
+                    borderRadius: 'var(--r-btn)',
                     background: 'var(--st-in-bg)',
                     color: 'var(--st-in-fg)',
                     fontSize: 'var(--t-meta)',
@@ -531,7 +531,7 @@ export default function BroadcastCenter() {
 
               <div>
                 <div style={fieldLabel}>Personalization Variables</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
                   {VARIABLES.map((v) => (
                     <span
                       key={v}
@@ -539,7 +539,7 @@ export default function BroadcastCenter() {
                       style={{
                         fontSize: 'var(--t-meta)',
                         padding: '5px 8px',
-                        borderRadius: 6,
+                        borderRadius: 'var(--r-xs)',
                         border: '1px solid var(--border)',
                         background: 'var(--card2)',
                         color: 'var(--text2)',
@@ -563,9 +563,9 @@ export default function BroadcastCenter() {
                 </span>
               }
             >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
                 {FUNNEL.map((f, i) => (
-                  <div key={f.label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div key={f.label} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                     <span
                       aria-hidden
                       style={{
@@ -664,14 +664,14 @@ export default function BroadcastCenter() {
               </span>
             }
           >
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 'var(--sp-md)', alignItems: 'center' }}>
               <Donut slices={CHANNEL_MIX} centreLabel="Total Sent" centreValue={TOTAL_SENT} size={110} />
               <Legend slices={CHANNEL_MIX} />
             </div>
           </Card>
 
           <Card title="Quick Actions">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-sm)' }}>
               {QUICK_ACTIONS.map((q) => (
                 <button
                   key={q.label}
@@ -711,8 +711,8 @@ export default function BroadcastCenter() {
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {ACTIVITY.map((a) => (
-                <div key={a.what} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                  <Icon name="dot" size={9} style={{ color: BRAND[a.tone], flexShrink: 0, marginTop: 4 }} />
+                <div key={a.what} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'flex-start' }}>
+                  <Icon name="dot" size={9} style={{ color: BRAND[a.tone], flexShrink: 0, marginTop: 'var(--sp-xs)' }} />
                   <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{a.what}</span>
                   <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', flexShrink: 0 }}>
                     {a.at}
@@ -723,17 +723,17 @@ export default function BroadcastCenter() {
           </Card>
 
           <Card
-            title="AI Broadcast Advisor"
+            title="AI Broadcast Advisor — Preview"
             action={
               <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
                 View All →
               </span>
             }
           >
-            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
               {ADVISOR.map((t) => (
                 <li key={t} style={{ display: 'flex', gap: 7, fontSize: 'var(--t-meta)', alignItems: 'flex-start' }}>
-                  <Icon name="dot" size={9} style={{ color: 'var(--success-text)', flexShrink: 0, marginTop: 4 }} />
+                  <Icon name="dot" size={9} style={{ color: 'var(--success-text)', flexShrink: 0, marginTop: 'var(--sp-xs)' }} />
                   <span style={{ color: 'var(--text2)' }}>{t}</span>
                 </li>
               ))}
@@ -752,7 +752,7 @@ export default function BroadcastCenter() {
   )
 }
 
-const fieldLabel = { fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', marginBottom: 4 } as const
+const fieldLabel = { fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', marginBottom: 'var(--sp-xs)' } as const
 
 function Field({ label, value, select, area }: { label: string; value: string; select?: boolean; area?: boolean }) {
   return (

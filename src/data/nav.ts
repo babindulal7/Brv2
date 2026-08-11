@@ -1,5 +1,6 @@
 import type { IconName } from '../components/ui/Icon'
 import type { SystemRole } from '../types/database'
+import { canViewMoney } from '../lib/rbac'
 
 /**
  * The application's navigation tree — **Foundation v2.0 §5.1**.
@@ -85,18 +86,36 @@ export const SETTINGS_NAV: NavSection = { label: 'Settings', icon: 'settings', t
 /**
  * The single filter both the Sidebar and the phone bottom bar read, so the two
  * surfaces cannot drift into showing a different set for the same role — the
- * exact failure mode §0 exists to prevent. Warehouse's exclusion is the only
- * hard rule (money-adjacent sections stay absent, not disabled); everything
- * else stays visible in `NAV` order and `bottomBarNav()` below picks a
- * role-appropriate subset of it for the phone bar.
+ * exact failure mode §0 exists to prevent. The money-adjacent sections are the
+ * only hard rule (they stay absent, not disabled); everything else stays
+ * visible in `NAV` order and `bottomBarNav()` below picks a role-appropriate
+ * subset of it for the phone bar.
+ *
+ * The test was `role === 'Warehouse'` until 11 Aug 2026, which left Technician,
+ * Driver and Client — the other three members of `lib/rbac.ts`'s `MONEY_BLIND`
+ * set — holding a full sidebar with Finance in it. `App.tsx`'s Shell caught the
+ * click and rendered a `RestrictedState`, so the entry was shown, clicked, then
+ * refused: exactly the shape Law 6 and Phase 3's RBAC item forbid. Asking
+ * `canViewMoney()` instead of naming a role means this filter cannot fall out
+ * of step with the engine, or with the Shell guard that reads the same
+ * predicate. The Shell guard stays as the backstop for a typed URL, which is
+ * the one case nav omission cannot cover.
  */
 export function permittedNav(role: SystemRole | undefined): NavSection[] {
   if (!role) return []
-  if (role === 'Warehouse') {
-    return NAV.filter((s) => !['/finance', '/reports', '/admin'].includes(s.to))
+  if (!canViewMoney(role)) {
+    return NAV.filter((s) => !MONEY_ADJACENT_ROUTES.includes(s.to))
   }
   return NAV
 }
+
+/**
+ * Routes withheld from money-blind roles. `/reports` and `/admin` are not in
+ * `NAV` today (§5.1 folded them into Finance tabs and Settings), but they are
+ * kept here so that restoring either as a section cannot silently restore it
+ * for the floor as well.
+ */
+const MONEY_ADJACENT_ROUTES: readonly string[] = ['/finance', '/reports', '/admin']
 
 /**
  * Phone bottom bar item order per role — DEVICES.md §4: "the phone bottom bar
@@ -111,6 +130,9 @@ export function permittedNav(role: SystemRole | undefined): NavSection[] {
 export const BOTTOM_BAR_ROUTES: Record<SystemRole, string[]> = {
   Owner: ['/today', '/operations', '/finance'],
   Admin: ['/today', '/operations', '/finance'],
+  // Reopened 9 Aug 2026 (Hover Intel System v2.1) — Manager mirrors Admin
+  // everywhere unless a spec states otherwise; see types/database.ts.
+  Manager: ['/today', '/operations', '/finance'],
   Coordinator: ['/today', '/rentals', '/clients'],
   Warehouse: ['/today', '/operations', '/inventory'],
   Technician: ['/today', '/operations', '/inventory'],

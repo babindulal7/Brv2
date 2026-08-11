@@ -52,12 +52,12 @@ create table operation_sessions (
   session_no                        int not null default 1,
   state                             session_state not null default 'Not Started',
   started_at                        timestamptz,
-  started_by                        uuid references users (id),
+  started_by                        uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   completed_at                      timestamptz,
-  completed_by                      uuid references users (id),
+  completed_by                      uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   cancelled_at                      timestamptz,
   cancel_reason                     text,
-  warehouse_staff_id                uuid not null references users (id),
+  warehouse_staff_id                uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
   delivery_method                   delivery_method,
   receiver_name                     text,
   receiver_phone                    text,
@@ -79,7 +79,7 @@ create table operation_sessions (
   device_id                         text,
   notes                             text,
   created_at                        timestamptz not null default now(),
-  created_by                        uuid not null references users (id),
+  created_by                        uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at                        timestamptz not null default now(),
 
   constraint operation_sessions_session_no_unique
@@ -192,7 +192,7 @@ create table session_line_movements (
   client_uuid           uuid not null unique,
   session_id            uuid not null references operation_sessions (id),
   booking_line_id       uuid not null references booking_lines (id),
-  unit_id               uuid references assets (id),
+  unit_id               uuid, -- FK to product_units added in 0004_inventory.sql (forward cross-file reference; "assets" was never a real table)
   serial                text,
   qty                   int not null default 1,
   resulting_item_state  item_quantity_state,
@@ -201,7 +201,7 @@ create table session_line_movements (
   device_id             text,
   reverses_movement_id  uuid references session_line_movements (id),
   created_at            timestamptz not null default now(),
-  created_by            uuid not null references users (id),
+  created_by            uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint session_line_movements_qty_positive check (qty > 0)
 );
@@ -259,13 +259,13 @@ create table packing_lines (
   condition                    packing_condition,
   warehouse_location           text,
   packed_at                    timestamptz,
-  packed_by                    uuid references users (id),
+  packed_by                    uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   missing_reason               text,
   blocker_note                 text,
   replacement_packing_line_id  uuid references packing_lines (id),
   not_required_set_at          timestamptz,
   created_at                   timestamptz not null default now(),
-  created_by                   uuid not null references users (id),
+  created_by                   uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at                   timestamptz not null default now(),
 
   constraint packing_lines_one_row_per_booking_line unique (booking_line_id),
@@ -317,7 +317,7 @@ create table handover_lines (
   completed_session_id  uuid references operation_sessions (id),
   picked_up_at          timestamptz,
   created_at            timestamptz not null default now(),
-  created_by            uuid not null references users (id),
+  created_by            uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at            timestamptz not null default now(),
 
   constraint handover_lines_one_row_per_booking_line unique (booking_line_id),
@@ -364,13 +364,13 @@ create table return_lines (
   inspection_state       inspection_state not null default 'Pending',
   condition              item_condition,
   inspector_note         text,
-  inspected_by           uuid references users (id),
+  inspected_by           uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   inspected_at           timestamptz,
   returned_by_name       text,
   not_returned_reason    text,
   not_returned_decision  not_returned_decision,
   created_at             timestamptz not null default now(),
-  created_by             uuid not null references users (id),
+  created_by             uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at             timestamptz not null default now(),
 
   constraint return_lines_one_row_per_booking_line unique (booking_line_id),
@@ -413,12 +413,12 @@ create table return_accessory_checks (
   id                uuid not null default gen_random_uuid() primary key,
   client_uuid       uuid not null unique,
   return_line_id    uuid not null references return_lines (id),
-  accessory_id      uuid references items (id),
+  accessory_id      uuid, -- FK to accessories added in 0004_inventory.sql (forward reference; see §4.11's resolution)
   accessory_name    text not null,
   present           boolean not null,
   replacement_cost  numeric(14,2),
   created_at        timestamptz not null default now(),
-  created_by        uuid not null references users (id),
+  created_by        uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint return_accessory_checks_one_per_accessory
     unique (return_line_id, accessory_name)
@@ -452,20 +452,20 @@ create table damage_findings (
   source                   damage_source not null,
   return_line_id           uuid references return_lines (id),
   cleaning_queue_entry_id  uuid, -- FK to cleaning_queue_entries added at the foot of this file (forward reference)
-  unit_id                  uuid not null references assets (id),
+  unit_id                  uuid not null, -- FK to product_units added in 0004_inventory.sql (forward cross-file reference; "assets" was never a real table)
   damage_type              text not null,
   description              text not null,
   severity                 text not null,
   estimated_cost           numeric(14,2),
   approval_state           damage_approval_state not null default 'Pending Approval',
-  approved_by              uuid references users (id),
+  approved_by              uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   approved_at              timestamptz,
   disposition              damage_disposition,
-  case_id                  uuid references cases (id),
-  charge_id                uuid references charges (id),
+  case_id                  uuid, -- FK to cases added in 0023_cases_charges.sql (forward cross-file reference; cases/charges did not exist as real tables until then)
+  charge_id                uuid, -- FK to charges added in 0023_cases_charges.sql (see above)
   voided_at                timestamptz,
   created_at               timestamptz not null default now(),
-  created_by               uuid not null references users (id),
+  created_by               uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at               timestamptz not null default now(),
 
   constraint damage_findings_exactly_one_parent
@@ -527,7 +527,7 @@ create table signatures (
   is_required                 boolean not null,
   sealed_at                   timestamptz,
   created_at                  timestamptz not null default now(),
-  created_by                  uuid not null references users (id),
+  created_by                  uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint signatures_witness_is_never_required
     check (signature_role <> 'Witness' or is_required = false)
@@ -578,7 +578,7 @@ create table scan_events (
   booking_id              uuid references bookings (id),
   code                    text not null,
   code_type               scan_code_type not null,
-  resolved_unit_id        uuid references assets (id),
+  resolved_unit_id        uuid, -- FK to product_units added in 0004_inventory.sql (forward cross-file reference; "assets" was never a real table)
   result                  scan_result not null,
   result_reason           text,
   conflicting_booking_id  uuid references bookings (id),
@@ -588,7 +588,7 @@ create table scan_events (
   device_id               text not null,
   override_record_id      uuid, -- FK to override_records added at the foot of this file (forward reference)
   created_at              timestamptz not null default now(),
-  created_by              uuid not null references users (id),
+  created_by              uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint scan_events_job_context_names_a_job
     check (context in ('lookup', 'stock_check') or booking_id is not null),
@@ -647,7 +647,7 @@ create table scan_sync_conflicts (
   conflicting_scan_event_id uuid references scan_events (id),
   session_id                uuid not null references operation_sessions (id),
   detected_at               timestamptz not null,
-  resolved_by               uuid references users (id),
+  resolved_by               uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   resolved_at               timestamptz,
   resolution_note           text,
   created_at                timestamptz not null default now(),
@@ -696,19 +696,19 @@ create table evidence_files (
   match_state           evidence_match_state not null default 'Unmatched',
   match_source          evidence_match_source,
   confidence            numeric(5,2),
-  matched_item_id       uuid references items (id),
+  matched_item_id       uuid, -- FK to product_units added in 0004_inventory.sql (forward reference; see §4.11's resolution)
   matched_serial        text,
   unmatched_reason      text,
   category              evidence_category not null,
   derivative_of_file_id uuid references evidence_files (id),
   derivative_kind       text,
   removed_at            timestamptz,
-  removed_by            uuid references users (id),
+  removed_by            uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   removal_reason        text,
   locked_at             timestamptz,
   retention_until       date,
   created_at            timestamptz not null default now(),
-  created_by            uuid not null references users (id),
+  created_by            uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at            timestamptz not null default now(),
 
   constraint evidence_files_unmatched_resolves_nothing
@@ -790,20 +790,20 @@ create table evidence_references (
   operation_stage          evidence_operation_stage not null,
   session_id               uuid references operation_sessions (id),
   booking_id               uuid references bookings (id),
-  item_id                  uuid references items (id),
-  bundle_id                uuid references bundles (id),
+  item_id                  uuid, -- FK to product_units added in 0004_inventory.sql (forward reference; see §4.11's resolution)
+  bundle_id                uuid,  -- FK -> bundles added in 0042 (cross-file forward ref)
   serial                   text,
   packing_line_id          uuid references packing_lines (id),
   return_line_id           uuid references return_lines (id),
   damage_finding_id        uuid references damage_findings (id),
   cleaning_queue_entry_id  uuid, -- FK to cleaning_queue_entries added at the foot of this file (forward reference)
-  maintenance_id           uuid references maintenance_records (id),
-  client_id                uuid references clients (id),
-  case_id                  uuid references cases (id),
+  maintenance_id           uuid,  -- FK -> maintenance_records added in 0042 (cross-file forward ref)
+  client_id                uuid,  -- FK -> clients added in 0042 (cross-file forward ref)
+  case_id                  uuid, -- FK to cases added in 0023_cases_charges.sql (see the identical note on damage_findings.case_id above)
   removed_at               timestamptz,
   removal_reason           text,
   created_at               timestamptz not null default now(),
-  created_by               uuid not null references users (id),
+  created_by               uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint evidence_references_needs_a_target
     check (num_nonnulls(session_id, booking_id, item_id, bundle_id, serial,
@@ -859,7 +859,7 @@ alter table evidence_references enable row level security;
 create table cleaning_queue_entries (
   id                  uuid not null default gen_random_uuid() primary key,
   client_uuid         uuid not null unique,
-  unit_id             uuid not null references assets (id),
+  unit_id             uuid not null, -- FK to product_units added in 0004_inventory.sql (forward cross-file reference; "assets" was never a real table)
   booking_id          uuid references bookings (id),
   return_line_id      uuid references return_lines (id),
   state               cleaning_queue_state not null default 'Waiting',
@@ -870,9 +870,9 @@ create table cleaning_queue_entries (
   entered_queue_at    timestamptz not null default now(),
   first_task_at       timestamptz,
   completed_at        timestamptz,
-  assigned_to         uuid references users (id),
-  cleaned_by          uuid references users (id),
-  qc_by               uuid references users (id),
+  assigned_to         uuid,  -- FK -> users added in 0042 (cross-file forward ref)
+  cleaned_by          uuid,  -- FK -> users added in 0042 (cross-file forward ref)
+  qc_by               uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   qc_at               timestamptz,
   qc_skipped          boolean not null default false,
   qc_skip_reason      text,
@@ -880,7 +880,7 @@ create table cleaning_queue_entries (
   problem_state       cleaning_problem_state not null default 'No Problems',
   checklist_version   int,
   created_at          timestamptz not null default now(),
-  created_by          uuid not null references users (id),
+  created_by          uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at          timestamptz not null default now(),
 
   -- A self-approved check is not a check.
@@ -948,7 +948,7 @@ create table cleaning_task_results (
   completed_at             timestamptz not null default now(),
   batch_ref                uuid,
   created_at               timestamptz not null default now(),
-  created_by               uuid not null references users (id),
+  created_by               uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint cleaning_task_results_one_per_task_version
     unique (cleaning_queue_entry_id, checklist_task_id, checklist_version)
@@ -981,7 +981,7 @@ alter table cleaning_task_results enable row level security;
 create table category_checklist_tasks (
   id              uuid not null default gen_random_uuid() primary key,
   client_uuid     uuid not null unique,
-  category_id     uuid not null references categories (id),
+  category_id     uuid not null, -- FK to inventory_categories added in 0004_inventory.sql once that table exists (forward cross-file reference; "categories" was never a real table)
   mode            cleaning_mode not null,
   label           text not null,
   is_required     boolean not null default true,
@@ -990,7 +990,7 @@ create table category_checklist_tasks (
   effective_from  timestamptz not null default now(),
   retired_at      timestamptz,
   created_at      timestamptz not null default now(),
-  created_by      uuid not null references users (id),
+  created_by      uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at      timestamptz not null default now(),
 
   constraint category_checklist_tasks_unique_per_version
@@ -1027,11 +1027,11 @@ create table override_records (
   subject_id        uuid not null,
   gate_number       int,
   reason            text not null,
-  approver_user_id  uuid not null references users (id),
+  approver_user_id  uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
   approver_role     text not null,
-  audit_event_id    uuid not null references audit_events (id),
+  audit_event_id    uuid not null,  -- FK -> audit_events added in 0042 (cross-file forward ref)
   created_at        timestamptz not null default now(),
-  created_by        uuid not null references users (id),
+  created_by        uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
 
   -- A database constraint with no role bypass, including Owner.
   constraint override_records_reason_min_10_chars
@@ -1087,7 +1087,7 @@ create table crew_members (
   day_rate         numeric(14,2),
   internal_note    text,
   deactivated_at   timestamptz,
-  created_by       uuid not null references users (id),
+  created_by       uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now(),
 
@@ -1127,7 +1127,7 @@ create table crew_bookings (
   id                             uuid not null default gen_random_uuid() primary key,
   client_uuid                    uuid not null unique,
   crew_booking_no                text not null unique,
-  production_id                  uuid references productions (id),
+  production_id                  uuid, -- no FK: "productions" is a real, spec'd module (04 Operations/Crew Booking.md's "Production record") that has never been built as a table anywhere in this schema — genuinely unbuilt, not a phantom rename like assets/documents/categories/items. TODO(decision): design productions before this can be a real FK; not invented here, 10 Aug 2026.
   booking_id                     uuid references bookings (id),
   crew_member_id                 uuid references crew_members (id),
   position                       text not null,
@@ -1138,14 +1138,14 @@ create table crew_bookings (
   location                       text,
   state                          crew_booking_state not null default 'Draft',
   payout_state                   crew_payout_state not null default 'Not due',
-  conflict_override_by           uuid references users (id),
+  conflict_override_by           uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   conflict_override_reason       text,
   conflict_override_at           timestamptz,
-  travel_warning_acknowledged_by uuid references users (id),
+  travel_warning_acknowledged_by uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   travel_warning_acknowledged_at timestamptz,
   cancelled_at                   timestamptz,
   cancel_reason                  text,
-  created_by                     uuid not null references users (id),
+  created_by                     uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
   created_at                     timestamptz not null default now(),
   updated_at                     timestamptz not null default now(),
 
@@ -1228,21 +1228,21 @@ create table crew_shoot_days (
   wrap_time             timestamptz,
   location              text,
   driver_crew_member_id uuid references crew_members (id),
-  vehicle_id            uuid references vehicles (id),
+  vehicle_id            uuid,  -- FK -> vehicles added in 0042 (cross-file forward ref)
   planned_start         timestamptz,
   planned_end           timestamptz,
   actual_start          timestamptz,
   actual_end            timestamptz,
   break_minutes         int,
   submission_state      timesheet_submission_state not null default 'Not Submitted',
-  submitted_by          uuid references users (id),
+  submitted_by          uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   submitted_at          timestamptz,
   approval_state        timesheet_approval_state not null default 'Pending',
-  approved_by           uuid references users (id),
+  approved_by           uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   approved_at           timestamptz,
-  overtime_approved_by  uuid references users (id),
+  overtime_approved_by  uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   overtime_approved_at  timestamptz,
-  created_by            uuid not null references users (id),
+  created_by            uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now(),
 
@@ -1305,11 +1305,11 @@ create table crew_equipment_assignments (
   client_uuid      uuid not null unique,
   crew_booking_id  uuid not null references crew_bookings (id),
   booking_id       uuid not null references bookings (id),
-  asset_id         uuid not null references assets (id),
+  asset_id         uuid not null, -- FK to product_units added in 0004_inventory.sql (forward cross-file reference; "assets" was never a real table)
   released_at      timestamptz,
-  released_by      uuid references users (id),
+  released_by      uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   note             text,
-  created_by       uuid not null references users (id),
+  created_by       uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
   created_at       timestamptz not null default now(),
 
   constraint crew_equipment_assignments_release_names_an_actor
@@ -1358,11 +1358,11 @@ create table crew_documents (
   doc_type               crew_document_type not null,
   evidence_file_id       uuid not null references evidence_files (id),
   expires_on             date,
-  expiry_acknowledged_by uuid references users (id),
+  expiry_acknowledged_by uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   expiry_acknowledged_at timestamptz,
   retention_until        date,
   archived_at            timestamptz,
-  created_by             uuid not null references users (id),
+  created_by             uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
   created_at             timestamptz not null default now(),
 
   constraint crew_documents_acknowledgement_names_a_human
@@ -1407,7 +1407,7 @@ create table crew_leaves (
   end_date       date not null,
   reason         text,
   cancelled_at   timestamptz,
-  created_by     uuid not null references users (id),
+  created_by     uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now(),
 
@@ -1443,8 +1443,8 @@ create table inventory_reservations (
   client_uuid      uuid not null unique,
   booking_id       uuid not null references bookings (id),
   booking_line_id  uuid not null references booking_lines (id),
-  asset_id         uuid references assets (id),
-  product_id       uuid references products (id),
+  asset_id         uuid, -- FK to product_units added in 0004_inventory.sql (forward cross-file reference; "assets" was never a real table)
+  product_id       uuid,  -- FK -> products added in 0042 (cross-file forward ref)
   qty              int not null default 1,
   period           tstzrange not null,
   state            inventory_state not null default 'Reserved',
@@ -1452,7 +1452,7 @@ create table inventory_reservations (
   released_at      timestamptz,
   released_reason  text,
   created_at       timestamptz not null default now(),
-  created_by       uuid not null references users (id),
+  created_by       uuid not null,  -- FK -> users added in 0042 (cross-file forward ref)
 
   -- A hold is either serialised or quantity, never both.
   constraint inventory_reservations_serialised_xor_quantity
@@ -1511,23 +1511,23 @@ create table fulfillment_outcomes (
   client_uuid            uuid not null unique,
   booking_id             uuid not null references bookings (id),
   booking_line_id        uuid references booking_lines (id),
-  requested_model_id     uuid not null references products (id),
+  requested_model_id     uuid not null,  -- FK -> products added in 0042 (cross-file forward ref)
   requested_qty          int not null,
   delivered_qty          int not null default 0,
   fulfillment_status     fulfillment_status not null,
-  substituted_model_id   uuid references products (id),
+  substituted_model_id   uuid,  -- FK -> products added in 0042 (cross-file forward ref)
   swap_type              swap_type,
-  sub_rental_id          uuid references sub_rentals (id),
+  sub_rental_id          uuid references booking_lines (id), -- "sub_rentals" was never a real table; a sub-rental is a booking_lines row with line_type = 'Sub-rental' (0002_bookings.sql) carrying its own supplier_cost/markup_amount — matches this column's own comment ("its cost is a Profitability input") exactly. Same class of fix as the items/§4.11 rename, 10 Aug 2026.
   waiting_since          timestamptz,
   resolved_at            timestamptz,
   delivery_method        text,
-  assigned_staff_id      uuid references users (id),
+  assigned_staff_id      uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   due_date_ad            date,
-  branch_id              uuid not null references branches (id),
-  warehouse_id           uuid not null references warehouses (id),
+  branch_id              uuid not null,  -- FK -> branches added in 0042 (cross-file forward ref)
+  warehouse_id           uuid not null,  -- FK -> warehouses added in 0042 (cross-file forward ref)
   estimated_revenue_lost numeric(14,2),
   created_at             timestamptz not null default now(),
-  created_by             uuid references users (id),
+  created_by             uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint fulfillment_outcomes_delivered_within_requested
     check (delivered_qty >= 0 and delivered_qty <= requested_qty),

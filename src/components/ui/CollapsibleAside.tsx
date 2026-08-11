@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import Icon from './Icon'
 import type { IconName } from './Icon'
 import { useCollapsed } from '../../lib/collapse'
+import { useViewport } from '../../lib/device'
 
 /**
  * A page-side panel that remembers its own open/closed state per route
@@ -25,8 +26,15 @@ export function CollapsibleAside({
   label?: string
 }) {
   const location = useLocation()
+  const viewport = useViewport()
   const key = `${side}:${id ?? location.pathname}`
-  const [collapsed, toggle] = useCollapsed(key)
+  // Phone *and* tablet width have no room for a 210–300px rail sitting beside
+  // `minmax(0,1fr)` content — it squeezes the content column to nothing. This
+  // product's actual target device is the 768–1179px warehouse tablet (see
+  // device.ts's docstring), so the collapse-by-default has to cover that band
+  // too, not just phone. Default collapsed on both; `useCollapsed` still lets
+  // an explicit user toggle override it.
+  const [collapsed, toggle] = useCollapsed(key, viewport === 'phone' || viewport === 'tablet')
   const collapseIcon: IconName = side === 'right' ? 'chevron_right' : 'chevron_left'
   const expandIcon: IconName = side === 'right' ? 'chevron_left' : 'chevron_right'
 
@@ -41,7 +49,7 @@ export function CollapsibleAside({
           style={{
             width: 28,
             height: 28,
-            borderRadius: 8,
+            borderRadius: 'var(--r-sm)',
             border: '1px solid var(--border)',
             background: 'var(--card)',
             color: 'var(--text2)',

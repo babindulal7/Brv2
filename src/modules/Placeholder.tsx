@@ -17,7 +17,7 @@ export default function Placeholder({ title }: { title: string }) {
           style={{
             width: 44,
             height: 44,
-            borderRadius: 12,
+            borderRadius: 'var(--r-btn)',
             display: 'grid',
             placeItems: 'center',
             background: 'var(--card2)',

@@ -52,7 +52,7 @@ function Tip({ text, x, y }: { text: string; x: number; y: number }) {
         pointerEvents: 'none',
         background: 'var(--dropdown)',
         border: '1px solid var(--border)',
-        borderRadius: 8,
+        borderRadius: 'var(--r-sm)',
         boxShadow: 'var(--shadow-modal)',
         padding: '6px 9px',
         fontSize: 'var(--t-meta)',
@@ -158,7 +158,7 @@ export function Legend({ slices, showPercent = true }: { slices: Slice[]; showPe
         <li key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 'var(--t-meta)' }}>
           <span
             aria-hidden
-            style={{ width: 8, height: 8, borderRadius: 999, background: catColor(i), flexShrink: 0 }}
+            style={{ width: 8, height: 8, borderRadius: 'var(--r-badge)', background: catColor(i), flexShrink: 0 }}
           />
           <span
             style={{
@@ -220,7 +220,7 @@ export function LineChart({
 
   return (
     <div style={{ position: 'relative' }}>
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
         <div
           style={{
             display: 'flex',
@@ -321,7 +321,7 @@ export function LineChart({
 
       <div
         aria-hidden
-        style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: 40, marginTop: 6, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}
+        style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: 'var(--sp-3xl)', marginTop: 6, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}
       >
         {labels.map((l) => (
           <span key={l} className="figure">
@@ -361,7 +361,7 @@ export function GroupedBars({
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
         <div
           aria-hidden
           style={{
@@ -389,7 +389,7 @@ export function GroupedBars({
             height,
             display: 'flex',
             alignItems: 'flex-end',
-            gap: 4,
+            gap: 'var(--sp-xs)',
             borderBottom: '1px solid var(--chart-grid)',
             position: 'relative',
           }}
@@ -419,7 +419,7 @@ export function GroupedBars({
         </div>
       </div>
 
-      <div aria-hidden style={{ display: 'flex', gap: 4, paddingLeft: 40, marginTop: 5 }}>
+      <div aria-hidden style={{ display: 'flex', gap: 'var(--sp-xs)', paddingLeft: 'var(--sp-3xl)', marginTop: 5 }}>
         {groups.map((g) => (
           <span key={g.label} className="figure" style={{ flex: 1, textAlign: 'center', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
             {g.label}

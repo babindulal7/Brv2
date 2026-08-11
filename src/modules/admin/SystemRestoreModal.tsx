@@ -32,6 +32,17 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
     }
   }, [isOpen])
 
+  useEffect(() => {
+    if (step === 2) {
+      const timer = setTimeout(() => setStep(3), 2000)
+      return () => clearTimeout(timer)
+    }
+    if (step === 5) {
+      const timer = setTimeout(() => setStep(6), 2500)
+      return () => clearTimeout(timer)
+    }
+  }, [step])
+
   if (!isOpen) return null
 
   const isOwner = user?.role === 'Owner'
@@ -42,8 +53,8 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
     if (!isOwner) {
       return (
         <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-          <Icon name="error" size={48} style={{ color: 'var(--danger)', marginBottom: 16 }} />
-          <h2 style={{ fontSize: 'var(--t-h3)', color: 'var(--text)', marginBottom: 8, fontWeight: 700 }}>
+          <Icon name="error" size={48} style={{ color: 'var(--danger)', marginBottom: 'var(--sp-lg)' }} />
+          <h2 style={{ fontSize: 'var(--t-h3)', color: 'var(--text)', marginBottom: 'var(--sp-sm)', fontWeight: 700 }}>
             Access Denied
           </h2>
           <p style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>
@@ -58,17 +69,17 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
       case 1:
         return (
           <div>
-            <h2 style={{ fontSize: 'var(--t-h4)', color: 'var(--danger-text)', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <h2 style={{ fontSize: 'var(--t-h4)', color: 'var(--danger-text)', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginBottom: 'var(--sp-md)' }}>
               <Icon name="alert_triangle" size={18} /> CRITICAL WARNING
             </h2>
-            <p style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', lineHeight: 1.5, marginBottom: 16 }}>
+            <p style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', lineHeight: 1.5, marginBottom: 'var(--sp-lg)' }}>
               You are about to restore the system to backup point <strong style={{ color: 'var(--text)' }}>{restorePointId}</strong> ({restorePointKind}).
               This operation will completely overwrite active data.
             </p>
             
-            <div style={{ marginBottom: 12, fontWeight: 600, fontSize: 'var(--t-meta)', color: 'var(--text)' }}>Select Destination Environment:</div>
+            <div style={{ marginBottom: 'var(--sp-md)', fontWeight: 600, fontSize: 'var(--t-meta)', color: 'var(--text)' }}>Select Destination Environment:</div>
             
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: 12, border: `1px solid ${targetEnv === 'sandbox' ? 'var(--success)' : 'var(--border)'}`, borderRadius: 'var(--r-btn)', background: targetEnv === 'sandbox' ? 'var(--success-bg)' : 'var(--card2)', cursor: 'pointer', marginBottom: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: 'var(--sp-md)', border: `1px solid ${targetEnv === 'sandbox' ? 'var(--success)' : 'var(--border)'}`, borderRadius: 'var(--r-btn)', background: targetEnv === 'sandbox' ? 'var(--success-bg)' : 'var(--card2)', cursor: 'pointer', marginBottom: 'var(--sp-sm)' }}>
               <input type="radio" checked={targetEnv === 'sandbox'} onChange={() => setTargetEnv('sandbox')} style={{ marginTop: 2 }} />
               <div>
                 <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Sandbox Environment (Default / Recommended)</div>
@@ -76,7 +87,7 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
               </div>
             </label>
             
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: 12, border: `1px solid ${targetEnv === 'production' ? 'var(--danger)' : 'var(--border)'}`, borderRadius: 'var(--r-btn)', background: targetEnv === 'production' ? 'var(--danger-bg)' : 'var(--card2)', cursor: 'pointer' }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: 'var(--sp-md)', border: `1px solid ${targetEnv === 'production' ? 'var(--danger)' : 'var(--border)'}`, borderRadius: 'var(--r-btn)', background: targetEnv === 'production' ? 'var(--danger-bg)' : 'var(--card2)', cursor: 'pointer' }}>
               <input type="radio" checked={targetEnv === 'production'} onChange={() => setTargetEnv('production')} style={{ marginTop: 2 }} />
               <div>
                 <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--danger-text)' }}>Live Production Environment</div>
@@ -84,19 +95,18 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
               </div>
             </label>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--sp-xl)' }}>
               <Button variant="primary" onClick={handleNext}>Proceed to Checkpoint</Button>
             </div>
           </div>
         )
 
       case 2:
-        setTimeout(() => setStep(3), 2000) // Simulate checkpoint loading
         return (
           <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-            <Icon name="refresh" size={40} style={{ color: 'var(--primary)', marginBottom: 16 }} className="spin" />
+            <Icon name="refresh" size={40} style={{ color: 'var(--primary)', marginBottom: 'var(--sp-lg)' }} className="spin" />
             <h3 style={{ fontSize: 'var(--t-ui)', color: 'var(--text)', fontWeight: 600 }}>Creating Pre-Restore Checkpoint</h3>
-            <p style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 8 }}>
+            <p style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 'var(--sp-sm)' }}>
               Mandatory snapshot in progress to ensure recovery is possible...
             </p>
           </div>
@@ -105,7 +115,7 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
       case 3:
         return (
           <div>
-            <h2 style={{ fontSize: 'var(--t-h4)', color: 'var(--text)', marginBottom: 8 }}>Two-Factor Authentication</h2>
+            <h2 style={{ fontSize: 'var(--t-h4)', color: 'var(--text)', marginBottom: 'var(--sp-sm)' }}>Two-Factor Authentication</h2>
             <p style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginBottom: 20 }}>
               Please enter the 6-digit code from your authenticator app to authorize this restore.
             </p>
@@ -117,7 +127,7 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
               placeholder="000000"
               style={{
                 width: '100%',
-                padding: '12px',
+                padding: 'var(--sp-md)',
                 fontSize: '24px',
                 letterSpacing: '8px',
                 textAlign: 'center',
@@ -128,7 +138,7 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
                 fontFamily: 'monospace'
               }}
             />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--sp-xl)' }}>
               <Button variant="primary" disabled={authCode.length !== 6} onClick={handleNext}>Verify Identity</Button>
             </div>
           </div>
@@ -137,8 +147,8 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
       case 4:
         return (
           <div>
-            <h2 style={{ fontSize: 'var(--t-h4)', color: 'var(--danger-text)', marginBottom: 8 }}>Final Confirmation</h2>
-            <p style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', marginBottom: 12 }}>
+            <h2 style={{ fontSize: 'var(--t-h4)', color: 'var(--danger-text)', marginBottom: 'var(--sp-sm)' }}>Final Confirmation</h2>
+            <p style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', marginBottom: 'var(--sp-md)' }}>
               Type <strong>RESTORE</strong> below to permanently overwrite the {targetEnv} environment with backup {restorePointId}.
             </p>
             <input 
@@ -156,7 +166,7 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
                 color: 'var(--text)'
               }}
             />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24, gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--sp-xl)', gap: 'var(--sp-md)' }}>
               <Button onClick={onClose}>Cancel</Button>
               <Button variant="danger" disabled={confirmText !== 'RESTORE'} onClick={handleNext}>
                 Execute Restore
@@ -166,12 +176,11 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
         )
 
       case 5:
-        setTimeout(() => setStep(6), 2500) // Simulate restore process
         return (
           <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-            <Icon name="box" size={40} style={{ color: 'var(--danger)', marginBottom: 16 }} className="pulse" />
+            <Icon name="box" size={40} style={{ color: 'var(--danger)', marginBottom: 'var(--sp-lg)' }} className="pulse" />
             <h3 style={{ fontSize: 'var(--t-ui)', color: 'var(--text)', fontWeight: 600 }}>Restoring System</h3>
-            <p style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 8 }}>
+            <p style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 'var(--sp-sm)' }}>
               Applying backup {restorePointId} to {targetEnv}... Please do not close this window.
             </p>
           </div>
@@ -183,13 +192,13 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
             <div style={{ width: 60, height: 60, borderRadius: '50%', background: 'var(--success-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
               <Icon name="checklist" size={32} style={{ color: 'var(--success)' }} />
             </div>
-            <h2 style={{ fontSize: 'var(--t-h3)', color: 'var(--text)', marginBottom: 8, fontWeight: 700 }}>
-              Restore Successful
+            <h2 style={{ fontSize: 'var(--t-h3)', color: 'var(--text)', marginBottom: 'var(--sp-sm)', fontWeight: 700 }}>
+              Restore Completed (Sandbox Preview)
             </h2>
             <p style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>
-              Backup {restorePointId} has been successfully restored to the <strong>{targetEnv}</strong> environment.
+              Backup <strong>{restorePointId}</strong> verification test completed for the <strong>{targetEnv}</strong> environment.
             </p>
-            <div style={{ marginTop: 24 }}>
+            <div style={{ marginTop: 'var(--sp-xl)' }}>
               <Button variant="primary" onClick={onClose}>Close & Reload</Button>
             </div>
           </div>
@@ -220,7 +229,7 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
       `}</style>
       <div style={{
         background: 'var(--card)',
-        borderRadius: 12,
+        borderRadius: 'var(--r-btn)',
         width: '100%',
         maxWidth: 520,
         boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
@@ -246,13 +255,13 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
               cursor: 'pointer', 
               color: 'var(--muted)',
               display: 'flex',
-              padding: 4
+              padding: 'var(--sp-xs)'
             }}
           >
             <Icon name="close" size={18} />
           </button>
         </div>
-        <div style={{ padding: 24 }}>
+        <div style={{ padding: 'var(--sp-xl)' }}>
           {renderContent()}
         </div>
       </div>

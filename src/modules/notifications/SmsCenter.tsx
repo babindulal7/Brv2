@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows, FooterNote } from '../../components/ui/Page'
 import { Donut, Legend, catColor } from '../../components/ui/Charts'
@@ -111,10 +112,10 @@ function VolumeChart() {
           </span>
         ))}
       </div>
-      <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 8 }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-md)', justifyContent: 'center', marginTop: 'var(--sp-sm)' }}>
         {VOLUME.series.map((s, i) => (
           <span key={s.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-            <span aria-hidden style={{ width: 8, height: 8, borderRadius: 999, background: catColor(i) }} />
+            <span aria-hidden style={{ width: 8, height: 8, borderRadius: 'var(--r-badge)', background: catColor(i) }} />
             {s.name}
           </span>
         ))}
@@ -195,7 +196,7 @@ export default function SmsCenter() {
             </Card>
 
             <Card title="SMS Queue">
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-md)', alignItems: 'center' }}>
                 {/* Three across, not four — "Cancelled" and "2,086" do not fit
                     a quarter of this card beside the donut. */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 7, flex: 1, minWidth: 0 }}>
@@ -249,7 +250,7 @@ export default function SmsCenter() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
-                      {['ID', 'Customer', 'Phone Number', 'Type', 'Gateway', 'Status', 'Sent Time (BS / AD)', 'Delivery Time'].map((h) => (
+                      {['ID', 'Client', 'Phone Number', 'Type', 'Gateway', 'Status', 'Sent Time (BS / AD)', 'Delivery Time'].map((h) => (
                         <th key={h} style={th}>
                           {h}
                         </th>
@@ -262,7 +263,7 @@ export default function SmsCenter() {
                         <td className="identifier" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--link)', fontWeight: 600 }}>{m.id}</td>
                         <td style={td}>
                           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                            {m.customer}
+                            {m.client}
                             {m.vip && (
                               <span
                                 style={{ display: 'inline-flex', alignItems: 'center', height: 15, padding: '0 5px', borderRadius: 3, background: 'var(--st-progress-bg)', color: 'var(--st-progress-fg)', fontSize: 'var(--t-meta)', fontWeight: 700 }}
@@ -321,7 +322,7 @@ export default function SmsCenter() {
                         style={{
                           minWidth: 24,
                           height: 24,
-                          borderRadius: 6,
+                          borderRadius: 'var(--r-xs)',
                           border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
                           background: on ? 'var(--btn-primary-bg)' : 'transparent',
                           color: on ? 'var(--btn-primary-fg)' : 'var(--text2)',
@@ -363,7 +364,7 @@ export default function SmsCenter() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 9, marginTop: 10 }}>
                 {[
-                  { l: 'Customer', v: VIEWER.customer },
+                  { l: 'Client', v: VIEWER.client },
                   { l: 'Phone Number', v: VIEWER.phone },
                   { l: 'Gateway', v: VIEWER.gateway },
                 ].map((x) => (
@@ -380,7 +381,7 @@ export default function SmsCenter() {
                 style={{
                   marginTop: 10,
                   padding: 11,
-                  borderRadius: 12,
+                  borderRadius: 'var(--r-btn)',
                   border: '1px solid var(--border)',
                   background: 'var(--card2)',
                   fontSize: 'var(--t-meta)',
@@ -396,7 +397,7 @@ export default function SmsCenter() {
               </div>
               <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 5 }}>{VIEWER.meta}</div>
 
-              <div style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 'var(--sp-md)' }}>
                 <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 7 }}>Delivery Details</div>
                 {VIEWER.delivery.map((d) => (
                   <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '3px 0', fontSize: 'var(--t-meta)' }}>
@@ -413,21 +414,31 @@ export default function SmsCenter() {
                 ))}
               </div>
 
-              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+              <div style={{ marginTop: 'var(--sp-md)', paddingTop: 10, borderTop: '1px solid var(--border)' }}>
                 <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 7 }}>Linked Records</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 7 }}>
                   {VIEWER.linked.map((l) => (
                     <span
                       key={l.label}
-                      style={{ padding: '7px 8px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card2)', minWidth: 0 }}
+                      style={{ padding: '7px 8px', borderRadius: 'var(--r-sm)', border: '1px solid var(--border)', background: 'var(--card2)', minWidth: 0 }}
                     >
                       <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{l.label}</span>
-                      <span
-                        className="figure"
-                        style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--link)', fontWeight: 600, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                      >
-                        {l.value}
-                      </span>
+                      {l.label === 'Booking' ? (
+                        <Link
+                          to={`/rentals/${l.value}`}
+                          className="figure"
+                          style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--link)', fontWeight: 600, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: 'none' }}
+                        >
+                          {l.value}
+                        </Link>
+                      ) : (
+                        <span
+                          className="figure"
+                          style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--link)', fontWeight: 600, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                        >
+                          {l.value}
+                        </span>
+                      )}
                     </span>
                   ))}
                 </div>
@@ -496,9 +507,9 @@ export default function SmsCenter() {
                 <Donut slices={CAMPAIGN_PERF} centreLabel="Total Sent" centreValue={CAMPAIGN_TOTAL} size={104} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <Legend slices={CAMPAIGN_PERF} />
-                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+                  <div style={{ marginTop: 'var(--sp-sm)', paddingTop: 'var(--sp-sm)', borderTop: '1px solid var(--border)' }}>
                     {CAMPAIGN_EXTRA.map((x) => (
-                      <div key={x.label} style={{ display: 'flex', gap: 8, fontSize: 'var(--t-meta)', padding: '2px 0' }}>
+                      <div key={x.label} style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', padding: '2px 0' }}>
                         <span style={{ color: 'var(--text2)', flex: 1 }}>{x.label}</span>
                         <span className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>
                           {x.value}
@@ -534,7 +545,7 @@ export default function SmsCenter() {
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               {TEMPLATES.map((t, i) => (
-                <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)' }}>
+                <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
                   <Icon name="file" size={13} style={{ color: catColor(i), flexShrink: 0 }} />
                   <span style={{ flex: 1, minWidth: 0, color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {t.name}
@@ -572,7 +583,7 @@ export default function SmsCenter() {
           </Card>
 
           <Card title="Quick Actions">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-sm)' }}>
               {QUICK_ACTIONS.map((q) => (
                 <button
                   key={q.label}
@@ -611,8 +622,8 @@ export default function SmsCenter() {
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {ACTIVITY.map((a) => (
-                <div key={a.what} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                  <Icon name="dot" size={9} style={{ color: BRAND[a.tone], flexShrink: 0, marginTop: 4 }} />
+                <div key={a.what} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'flex-start' }}>
+                  <Icon name="dot" size={9} style={{ color: BRAND[a.tone], flexShrink: 0, marginTop: 'var(--sp-xs)' }} />
                   <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{a.what}</span>
                   <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', flexShrink: 0 }}>
                     {a.at}
@@ -623,17 +634,17 @@ export default function SmsCenter() {
           </Card>
 
           <Card
-            title="AI SMS Advisor"
+            title="AI SMS Advisor — Preview"
             action={
               <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
                 View All →
               </span>
             }
           >
-            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
               {ADVISOR.map((t) => (
                 <li key={t} style={{ display: 'flex', gap: 7, fontSize: 'var(--t-meta)', alignItems: 'flex-start' }}>
-                  <Icon name="dot" size={9} style={{ color: 'var(--success-text)', flexShrink: 0, marginTop: 4 }} />
+                  <Icon name="dot" size={9} style={{ color: 'var(--success-text)', flexShrink: 0, marginTop: 'var(--sp-xs)' }} />
                   <span style={{ color: 'var(--text2)' }}>{t}</span>
                 </li>
               ))}

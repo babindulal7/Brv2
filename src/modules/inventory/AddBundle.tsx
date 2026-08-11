@@ -3,9 +3,10 @@ import type { CSSProperties, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
+import { Select } from '../../components/ui/Select'
 import { Card, PageHeader, Button, Rail, SummaryRows, cardStyle } from '../../components/ui/Page'
 import { Unavailable } from '../../components/ui/Unavailable'
-import { EmptyState } from '../../components/ui/StateViews'
+import { RestrictedState } from '../../components/ui/StateViews'
 import { Donut, Legend } from '../../components/ui/Charts'
 import type { Slice } from '../../components/ui/Charts'
 import { useToast } from '../../components/ui/Toast'
@@ -223,7 +224,7 @@ function Section({
             width: 21,
             height: 21,
             flexShrink: 0,
-            borderRadius: 999,
+            borderRadius: 'var(--r-badge)',
             display: 'grid',
             placeItems: 'center',
             background: 'var(--nav-active-bg)',
@@ -235,7 +236,7 @@ function Section({
           {n}
         </span>
         <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{title}</h2>
-        {action && <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>{action}</span>}
+        {action && <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>{action}</span>}
       </div>
       <div style={{ padding: 14, minWidth: 0, ...bodyStyle }}>{children}</div>
     </section>
@@ -269,7 +270,7 @@ function NotInRate({ what }: { what: string }) {
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 4,
+        gap: 'var(--sp-xs)',
         height: 19,
         padding: '0 7px',
         borderRadius: 'var(--r-badge)',
@@ -421,10 +422,9 @@ export function AddBundle() {
           title="New Bundle"
           description="Create a reusable equipment kit and set bundle pricing."
         />
-        <EmptyState
-          icon={<Icon name="settings" size={26} />}
-          title="Creating a bundle is not available for your role"
-          description="A bundle sets prices — every rate, discount and the daily rate itself — so building one is a commercial decision your role does not carry. You can open any saved bundle from Inventory ▸ Bundles to see its contents and print its packing list. Ask an Owner, Admin, Coordinator or Accounts user to create a new one."
+        <RestrictedState
+          reason="Creating a bundle is not available for your role. A bundle sets prices — every rate, discount and the daily rate itself — so building one is a commercial decision your role does not carry. You can open any saved bundle from Inventory ▸ Bundles to see its contents and print its packing list. Ask an Owner, Admin, Coordinator or Accounts user to create a new one."
+          requiredRole="Owner, Admin, Coordinator or Accounts"
         />
       </div>
     )
@@ -657,7 +657,7 @@ export function AddBundle() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       {SEED_ERRORS.length > 0 && (
         <Banner tone="danger" icon="alert_triangle" title="The inventory tree does not reconcile.">
-          <ul style={{ margin: 0, paddingLeft: 16 }}>
+          <ul style={{ margin: 0, paddingLeft: 'var(--sp-lg)' }}>
             {SEED_ERRORS.map((m) => (
               <li key={m}>{m}</li>
             ))}
@@ -785,7 +785,7 @@ export function AddBundle() {
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: 8,
+                    gap: 'var(--sp-sm)',
                     height: 34,
                     padding: '0 10px',
                     borderRadius: 'var(--r-btn)',
@@ -804,7 +804,7 @@ export function AddBundle() {
                     style={{
                       width: 30,
                       height: 17,
-                      borderRadius: 999,
+                      borderRadius: 'var(--r-badge)',
                       background: active ? 'var(--success)' : 'var(--st-neutral-bg)',
                       position: 'relative',
                       transition: 'background-color var(--dur) ease',
@@ -814,12 +814,13 @@ export function AddBundle() {
                       style={{
                         position: 'absolute',
                         top: 2,
-                        left: active ? 15 : 2,
+                        left: 2,
                         width: 13,
                         height: 13,
-                        borderRadius: 999,
+                        borderRadius: 'var(--r-badge)',
                         background: 'var(--card)',
-                        transition: 'left var(--dur) ease',
+                        transform: active ? 'translateX(13px)' : 'translateX(0)',
+                        transition: 'transform var(--dur) ease',
                       }}
                     />
                   </span>
@@ -846,7 +847,7 @@ export function AddBundle() {
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 4,
+                        gap: 'var(--sp-xs)',
                         height: 24,
                         padding: '0 4px 0 9px',
                         borderRadius: 'var(--r-badge)',
@@ -867,7 +868,7 @@ export function AddBundle() {
                           width: 17,
                           height: 17,
                           border: 'none',
-                          borderRadius: 999,
+                          borderRadius: 'var(--r-badge)',
                           background: 'transparent',
                           color: 'inherit',
                           cursor: 'pointer',
@@ -900,7 +901,7 @@ export function AddBundle() {
                     style={{
                       width: 76,
                       height: 54,
-                      borderRadius: 8,
+                      borderRadius: 'var(--r-sm)',
                       border: '1px solid var(--border)',
                       background: 'var(--card2)',
                       display: 'grid',
@@ -939,7 +940,7 @@ export function AddBundle() {
             <div
               style={{
                 marginTop: 14,
-                paddingTop: 12,
+                paddingTop: 'var(--sp-md)',
                 borderTop: '1px solid var(--border)',
                 display: 'flex',
                 gap: 14,
@@ -951,7 +952,7 @@ export function AddBundle() {
                 label="Default Daily Rate (Equipment Only)"
                 hint="This rate covers equipment only. Crew and vehicle are not included."
               >
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                   <span
                     className="figure"
                     style={{
@@ -1043,7 +1044,7 @@ export function AddBundle() {
                 </button>
               }
             >
-              <div style={{ padding: 12, borderBottom: '1px solid var(--border)' }}>
+              <div style={{ padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>
                 <span style={{ position: 'relative', display: 'block' }}>
                   <Icon name="search" size={14} style={{ position: 'absolute', left: 9, top: 10, color: 'var(--muted)' }} />
                   <input
@@ -1078,7 +1079,7 @@ export function AddBundle() {
                       <tr>
                         <td colSpan={5} style={{ ...td, textAlign: 'center', color: 'var(--text2)', padding: '22px 12px' }}>
                           No model matches this search.
-                          <span style={{ display: 'block', marginTop: 8 }}>
+                          <span style={{ display: 'block', marginTop: 'var(--sp-sm)' }}>
                             <Button icon="refresh" onClick={clearFilters}>
                               Clear filters
                             </Button>
@@ -1118,32 +1119,32 @@ export function AddBundle() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
               {/* the render's filter row, every control wired */}
-              <div style={{ ...cardStyle, padding: '9px 12px', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ ...cardStyle, padding: '9px 12px', display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap', alignItems: 'center' }}>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, ...subtle }}>
                   Category
-                  <select value={fCategory} onChange={(e) => setFCategory(e.target.value as 'All' | InventoryCategory)} style={filterSelect}>
+                  <Select value={fCategory} onChange={(e) => setFCategory(e.target.value as 'All' | InventoryCategory)} style={filterSelect}>
                     <option value="All">All</option>
                     {USED_CATEGORIES.map((c) => (
                       <option key={c} value={c}>
                         {c}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, ...subtle }}>
                   Brand
-                  <select value={fBrand} onChange={(e) => setFBrand(e.target.value)} style={filterSelect}>
+                  <Select value={fBrand} onChange={(e) => setFBrand(e.target.value)} style={filterSelect}>
                     <option value="All">All</option>
                     {ALL_BRANDS.map((b) => (
                       <option key={b} value={b}>
                         {b}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, ...subtle }}>
                   Availability
-                  <select
+                  <Select
                     value={fAvailability}
                     onChange={(e) => setFAvailability(e.target.value as 'Any' | 'Free now' | 'Nothing free')}
                     style={filterSelect}
@@ -1151,15 +1152,15 @@ export function AddBundle() {
                     <option value="Any">Any</option>
                     <option value="Free now">Units free now</option>
                     <option value="Nothing free">Nothing free</option>
-                  </select>
+                  </Select>
                 </label>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, ...subtle }}>
                   Has Children
-                  <select value={fChildren} onChange={(e) => setFChildren(e.target.value as 'Any' | 'Yes' | 'No')} style={filterSelect}>
+                  <Select value={fChildren} onChange={(e) => setFChildren(e.target.value as 'Any' | 'Yes' | 'No')} style={filterSelect}>
                     <option value="Any">Any</option>
                     <option value="Yes">Yes</option>
                     <option value="No">No</option>
-                  </select>
+                  </Select>
                 </label>
                 {filtersOn ? (
                   <Button icon="close" onClick={clearFilters}>
@@ -1295,7 +1296,7 @@ export function AddBundle() {
 
               {discountProblems.length > 0 && (
                 <Banner tone="danger" icon="alert_triangle" title="A line discount is not authorised.">
-                  <ul style={{ margin: 0, paddingLeft: 16 }}>
+                  <ul style={{ margin: 0, paddingLeft: 'var(--sp-lg)' }}>
                     {discountProblems.map((p) => (
                       <li key={p.line.key}>
                         {p.model?.name ?? p.line.modelId} — {p.message}
@@ -1309,9 +1310,9 @@ export function AddBundle() {
 
           {/* ── 4 · Crew, Vehicle and Boxes ─────────────────────────────── */}
           <Section n={4} title="Crew, Vehicle and Boxes">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 'var(--sp-lg)' }}>
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginBottom: 'var(--sp-sm)' }}>
                   <Icon name="crew" size={14} style={{ color: 'var(--text2)' }} />
                   <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Crew suggestions</span>
                   <NotInRate what="crew" />
@@ -1323,7 +1324,7 @@ export function AddBundle() {
                 {crew.length === 0 && <p style={{ margin: '0 0 8px', ...subtle }}>No crew role suggested.</p>}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {crew.map((c) => (
-                    <div key={c.role} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div key={c.role} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                       <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', flex: 1, minWidth: 0 }}>{c.role}</span>
                       <input
                         type="number"
@@ -1344,7 +1345,7 @@ export function AddBundle() {
                         type="button"
                         aria-label={`Remove ${c.role}`}
                         onClick={() => setCrew((prev) => prev.filter((x) => x.role !== c.role))}
-                        style={{ border: 'none', background: 'transparent', color: 'var(--danger-text)', cursor: 'pointer', padding: 4 }}
+                        style={{ border: 'none', background: 'transparent', color: 'var(--danger-text)', cursor: 'pointer', padding: 'var(--sp-xs)' }}
                       >
                         <Icon name="close" size={13} />
                       </button>
@@ -1358,7 +1359,7 @@ export function AddBundle() {
                     const role = e.target.value as CrewRole
                     if (role) setCrew((prev) => [...prev, { role, headcount: 1 }])
                   }}
-                  style={{ ...selectStyle, marginTop: 8, height: 30 }}
+                  style={{ ...selectStyle, marginTop: 'var(--sp-sm)', height: 30 }}
                 >
                   <option value="">+ Add a crew role</option>
                   {CREW_ROLES.filter((r) => !crew.some((c) => c.role === r)).map((r) => (
@@ -1370,7 +1371,7 @@ export function AddBundle() {
               </div>
 
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginBottom: 'var(--sp-sm)' }}>
                   <Icon name="truck" size={14} style={{ color: 'var(--text2)' }} />
                   <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Vehicle suggestion</span>
                   <NotInRate what="transport" />
@@ -1395,7 +1396,7 @@ export function AddBundle() {
               </div>
 
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginBottom: 'var(--sp-sm)' }}>
                   <Icon name="package" size={14} style={{ color: 'var(--text2)' }} />
                   <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Boxes and bags</span>
                 </div>
@@ -1421,7 +1422,7 @@ export function AddBundle() {
                     const m = modelOf(e.target.value)
                     if (m) requestAdd(m)
                   }}
-                  style={{ ...selectStyle, marginTop: 8, height: 30 }}
+                  style={{ ...selectStyle, marginTop: 'var(--sp-sm)', height: 30 }}
                 >
                   <option value="">+ Add a case or bag</option>
                   {INVENTORY_MODELS.filter((m) => BOX_CATEGORIES.has(m.category)).map((m) => (
@@ -1459,7 +1460,7 @@ export function AddBundle() {
               alignItems: 'center',
               gap: 10,
               flexWrap: 'wrap',
-              paddingTop: 12,
+              paddingTop: 'var(--sp-md)',
               borderTop: '1px solid var(--border)',
             }}
           >
@@ -1467,7 +1468,19 @@ export function AddBundle() {
             <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
               <Button
                 icon="file"
-                onClick={() => showSuccessToast('Draft saved', `${BUNDLE_ID} · ${lines.length} lines held locally`)}
+                onClick={() => {
+                  const itemPayload = lines.map((l) => ({
+                    modelId: l.modelId,
+                    qty: l.qty,
+                    discountPct: l.discountPct,
+                    discountReason: l.discountReason,
+                    approvedBy: l.approvedBy,
+                  }))
+                  import('../../actions/inventory/createBundle').then((m) =>
+                    m.createBundle({ name: name || 'New Bundle', category, items: itemPayload, itemCount: lines.length, isDraft: true })
+                  )
+                  showSuccessToast('Draft saved', `${BUNDLE_ID} · ${lines.length} lines held locally`)
+                }}
               >
                 Save Draft
               </Button>
@@ -1482,6 +1495,16 @@ export function AddBundle() {
                   icon="plus"
                   variant="primary"
                   onClick={() => {
+                    const itemPayload = lines.map((l) => ({
+                      modelId: l.modelId,
+                      qty: l.qty,
+                      discountPct: l.discountPct,
+                      discountReason: l.discountReason,
+                      approvedBy: l.approvedBy,
+                    }))
+                    import('../../actions/inventory/createBundle').then((m) =>
+                      m.createBundle({ name: name || 'New Bundle', category, items: itemPayload, itemCount: breakdown.totalItems, isDraft: false })
+                    )
                     showSuccessToast(
                       'Bundle created',
                       `${BUNDLE_ID} · ${breakdown.totalItems} items · ${formatMoney(effectiveRatePaisa)} per day`,
@@ -1500,7 +1523,7 @@ export function AddBundle() {
         <Rail width={318} label="Bundle summary">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
             <Card title="Bundle Summary">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', marginBottom: 10 }}>
                 <Donut
                   slices={slices}
                   size={108}
@@ -1558,10 +1581,10 @@ export function AddBundle() {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 8,
+                  gap: 'var(--sp-sm)',
                   marginTop: 10,
                   padding: '8px 10px',
-                  borderRadius: 8,
+                  borderRadius: 'var(--r-sm)',
                   background: 'var(--st-in-bg)',
                   color: 'var(--st-in-fg)',
                   fontSize: 'var(--t-meta)',
@@ -1625,7 +1648,7 @@ export function AddBundle() {
                         key={b.key}
                         style={{
                           border: '1px solid var(--border)',
-                          borderRadius: 8,
+                          borderRadius: 'var(--r-sm)',
                           padding: '8px 9px',
                           background: 'var(--card2)',
                         }}
@@ -1638,7 +1661,7 @@ export function AddBundle() {
                             style={{
                               display: 'inline-flex',
                               alignItems: 'center',
-                              gap: 4,
+                              gap: 'var(--sp-xs)',
                               height: 19,
                               padding: '0 7px',
                               borderRadius: 'var(--r-badge)',
@@ -1670,7 +1693,7 @@ export function AddBundle() {
                       onClick={() => setBlockedOpen((v) => !v)}
                       aria-expanded={blockedOpen}
                       style={{
-                        marginTop: 8,
+                        marginTop: 'var(--sp-sm)',
                         border: 'none',
                         background: 'transparent',
                         color: 'var(--link)',
@@ -1694,7 +1717,7 @@ export function AddBundle() {
             </Card>
 
             <Card title="Quick Actions">
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
                 <Tile icon="checklist" label="Packing List" onClick={() => setPackingOpen((v) => !v)} disabled={lines.length === 0} disabledReason="There are no lines to pack." />
                 <Tile icon="download" label="Export Lines" onClick={exportLines} disabled={lines.length === 0} disabledReason="There are no lines to export." />
                 <Tile icon="refresh" label="Reset Draft" onClick={resetDraft} />
@@ -1705,7 +1728,7 @@ export function AddBundle() {
                   <p style={{ margin: '0 0 6px', ...subtle, lineHeight: 1.5 }}>
                     §12 — models only, never serials. A unit is assigned at packing from whatever is free.
                   </p>
-                  <ul style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <ul style={{ margin: 0, paddingLeft: 'var(--sp-lg)', display: 'flex', flexDirection: 'column', gap: 3 }}>
                     {lines.map((l) => {
                       const m = modelOf(l.modelId)
                       return (
@@ -1738,7 +1761,7 @@ export function AddBundle() {
         <Prompt
           title={`${askParent.name} — include required child items?`}
           body={
-            <ul style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <ul style={{ margin: 0, paddingLeft: 'var(--sp-lg)', display: 'flex', flexDirection: 'column', gap: 3 }}>
               {(askParent.children ?? []).map((c) => {
                 const child = modelOf(c.id)
                 if (!child) return null
@@ -1856,7 +1879,7 @@ function Tile({
     alignItems: 'center',
     gap: 5,
     padding: '11px 6px',
-    borderRadius: 8,
+    borderRadius: 'var(--r-sm)',
     border: '1px solid var(--border)',
     background: 'var(--card2)',
     fontSize: 'var(--t-th)',
@@ -1906,7 +1929,7 @@ function Prompt({
         zIndex: 60,
         display: 'grid',
         placeItems: 'center',
-        padding: 16,
+        padding: 'var(--sp-lg)',
         background: 'var(--scrim, rgba(0,0,0,0.55))',
       }}
       onKeyDown={(e) => {
@@ -1918,7 +1941,7 @@ function Prompt({
           ...cardStyle,
           maxWidth: 460,
           width: '100%',
-          padding: 16,
+          padding: 'var(--sp-lg)',
           borderRadius: 'var(--r-modal)',
           boxShadow: 'var(--shadow-modal)',
         }}
@@ -1928,7 +1951,7 @@ function Prompt({
         </h3>
         {body}
         {note && <p style={{ margin: '9px 0 0', ...subtle, lineHeight: 1.5 }}>{note}</p>}
-        <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 'var(--sp-sm)', marginTop: 14, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
           {actions.map((a) => (
             <Button key={a.key} {...(a.primary ? { variant: 'primary' as const } : {})} onClick={a.onSelect}>
               {a.label}
@@ -1965,7 +1988,7 @@ function TreeRow({
   return (
     <>
       <tr style={{ borderBottom: '1px solid var(--border)' }}>
-        <td style={{ ...td, paddingRight: 4 }}>
+        <td style={{ ...td, paddingRight: 'var(--sp-xs)' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             {kids.length > 0 ? (
               <button
@@ -2127,7 +2150,7 @@ function LineRow({
                 width: 24,
                 height: 24,
                 flexShrink: 0,
-                borderRadius: 6,
+                borderRadius: 'var(--r-xs)',
                 display: 'grid',
                 placeItems: 'center',
                 background: 'var(--card2)',
@@ -2162,7 +2185,7 @@ function LineRow({
 
         {/* §6.3 — percentage or fixed, never both. Switching clears the other. */}
         <td style={td}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
             <select
               aria-label={`Discount type for ${m.name}`}
               value={line.discountKind}
@@ -2311,7 +2334,7 @@ function LineRow({
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
               <strong style={{ fontSize: 'var(--t-meta)' }}>Included in this line</strong>
               <span style={subtle}>Priced inside the line's rate, at Rs 0 of their own (§5.3).</span>
-              <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+              <span style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--sp-sm)' }}>
                 <button
                   type="button"
                   onClick={() =>
@@ -2330,7 +2353,7 @@ function LineRow({
                 </button>
               </span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
               {kids.map((c) => {
                 const child = modelOf(c.id)
                 if (!child) return null
@@ -2341,7 +2364,7 @@ function LineRow({
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 8,
+                      gap: 'var(--sp-sm)',
                       fontSize: 'var(--t-meta)',
                       color: isLine ? 'var(--muted)' : 'var(--text)',
                     }}
@@ -2375,7 +2398,7 @@ function LineRow({
       {discountOpen && needsApproval && (
         <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
           <td colSpan={cols} style={{ ...td, paddingLeft: 46 }}>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 'var(--sp-md)', flexWrap: 'wrap', alignItems: 'flex-end' }}>
               <Field label="Reason for this discount" required hint="At least 10 characters. Stored and audited.">
                 <input
                   value={line.discountReason}

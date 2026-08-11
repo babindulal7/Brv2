@@ -66,15 +66,15 @@ create table clients (
   preferred_contact_channels preferred_contact_channel[]  not null default '{WhatsApp}',
   marketing_photo_consent    boolean                      not null default false,
   notes                      text,
-  assigned_staff_id          uuid                         references users (id),
+  assigned_staff_id          uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   status                     client_status                not null default 'Active',
   deactivated_at             timestamptz,
-  deactivated_by             uuid                         references users (id),
+  deactivated_by             uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   deactivation_reason        text,
   merged_into_client_id      uuid                         references clients (id),
   portal_default_language    portal_language              not null default 'NE',
   created_at                 timestamptz                  not null default now(),
-  created_by                 uuid                         references users (id),
+  created_by                 uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at                 timestamptz                  not null default now(),
 
   constraint clients_client_uuid_key unique (client_uuid),
@@ -187,9 +187,9 @@ create table client_contacts (
   is_primary     boolean       not null default false,
   status         client_status not null default 'Active',
   deactivated_at timestamptz,
-  deactivated_by uuid          references users (id),
+  deactivated_by uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   created_at     timestamptz   not null default now(),
-  created_by     uuid          references users (id),
+  created_by     uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at     timestamptz   not null default now(),
 
   constraint client_contacts_client_uuid_key unique (client_uuid)
@@ -230,9 +230,9 @@ create table client_flags (
   source         flag_source      not null default 'Manual',
   reason         text,
   created_at     timestamptz      not null default now(),
-  created_by     uuid             references users (id),
+  created_by     uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   removed_at     timestamptz,
-  removed_by     uuid             references users (id),
+  removed_by     uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   removal_reason text,
 
   constraint client_flags_client_uuid_key unique (client_uuid),
@@ -289,7 +289,7 @@ create table client_merges (
   typed_confirmation  text        not null,
   moved_summary       jsonb       not null,
   created_at          timestamptz not null default now(),
-  created_by          uuid        not null references users (id),
+  created_by          uuid        not null,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint client_merges_client_uuid_key unique (client_uuid),
 
@@ -354,7 +354,7 @@ create table membership_plans (
   status                    membership_plan_status not null default 'Active',
   retired_at                timestamptz,
   created_at                timestamptz            not null default now(),
-  created_by                uuid                   references users (id),
+  created_by                uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   updated_at                timestamptz            not null default now(),
 
   constraint membership_plans_client_uuid_key unique (client_uuid),
@@ -418,7 +418,7 @@ create table client_memberships (
   superseded_by_id uuid          references client_memberships (id),
   superseded_at    timestamptz,
   created_at       timestamptz   not null default now(),
-  created_by       uuid          references users (id),
+  created_by       uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint client_memberships_client_uuid_key unique (client_uuid),
 
@@ -476,7 +476,7 @@ create table membership_limit_breaches (
   limit_value   int                   not null,
   actual_value  int                   not null,
   created_at    timestamptz           not null default now(),
-  approved_by   uuid                  references users (id),
+  approved_by   uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint membership_limit_breaches_client_uuid_key unique (client_uuid),
 
@@ -519,11 +519,11 @@ create table client_commercial_overrides (
   requested_payment_terms payment_terms,
   reason                  text                       not null,
   status                  commercial_override_status not null default 'Pending',
-  approver_user_id        uuid                       references users (id),
+  approver_user_id        uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   approved_at             timestamptz,
   voided_at               timestamptz,
   created_at              timestamptz                not null default now(),
-  created_by              uuid                       not null references users (id),
+  created_by              uuid                       not null,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint client_commercial_overrides_client_uuid_key unique (client_uuid),
 
@@ -582,7 +582,7 @@ create table portal_users (
   role                          portal_user_role   not null default 'Member',
   language                      portal_language    not null default 'NE',
   status                        portal_user_status not null default 'Invited',
-  invited_by_staff_id           uuid               references users (id),
+  invited_by_staff_id           uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   invited_by_portal_user_id     uuid               references portal_users (id),
   activated_at                  timestamptz,
   last_active_at                timestamptz,
@@ -754,11 +754,11 @@ create table client_documents (
   mime_type                  text                   not null,
   file_size_bytes            bigint                 not null,
   status                     client_document_status not null default 'Pending',
-  uploaded_by_staff_id       uuid                   references users (id),
+  uploaded_by_staff_id       uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   uploaded_by_portal_user_id uuid                   references portal_users (id),
   uploaded_ip                inet,
   created_at                 timestamptz            not null default now(),
-  verified_by                uuid                   references users (id),
+  verified_by                uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   verified_at                timestamptz,
   signed_at                  timestamptz,
   signed_by_portal_user_id   uuid                   references portal_users (id),
@@ -819,11 +819,11 @@ create table client_tax_profiles (
   client_uuid           uuid                 not null,
   client_id             uuid                 not null references clients (id),
   profile_type          customer_tax_profile not null,
-  exemption_document_id uuid                 references documents (id),
+  exemption_document_id uuid, -- FK to document_registry added in 0009_crew_vehicles.sql once that table exists (forward cross-file reference; "documents" was never a real table)
   effective_from        date                 not null,
   superseded_at         timestamptz,
   created_at            timestamptz          not null default now(),
-  created_by            uuid                 references users (id),
+  created_by            uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint client_tax_profiles_client_uuid_key unique (client_uuid),
 
@@ -865,7 +865,7 @@ create table client_change_requests (
   proposed_changes jsonb                 not null,
   status           change_request_status not null default 'Edit requested',
   submitted_ip     inet,
-  reviewed_by      uuid                  references users (id),
+  reviewed_by      uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   reviewed_at      timestamptz,
   voided_at        timestamptz,
   created_at       timestamptz           not null default now(),
@@ -915,7 +915,7 @@ create table client_channel_identities (
   deactivated_at      timestamptz,
   deactivation_reason text,
   created_at          timestamptz  not null default now(),
-  created_by          uuid         references users (id),
+  created_by          uuid,  -- FK -> users added in 0042 (cross-file forward ref)
 
   constraint client_channel_identities_client_uuid_key unique (client_uuid)
 );
@@ -960,7 +960,7 @@ create table client_marketing_consents (
   state                  marketing_consent_state not null default 'Not asked',
   opted_in_at            timestamptz,
   opt_in_source          text,
-  opt_in_actor_id        uuid                    references users (id),
+  opt_in_actor_id        uuid,  -- FK -> users added in 0042 (cross-file forward ref)
   opted_out_at           timestamptz,
   opt_out_origin_channel channel_code,
   created_at             timestamptz             not null default now(),

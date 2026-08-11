@@ -3,7 +3,7 @@ import type { Kpi } from '../components/ui/Page'
 import type { BrandKey, StatusKey } from '../lib/status'
 import { statusToken, STATUS_ORDER } from '../lib/workflow'
 import type { BookingStatus, Flag } from '../lib/workflow'
-import { TODAY, toBs, formatBs, eachDay } from '../lib/bs'
+import { TODAY, toBs, formatBs, formatAd, eachDay } from '../lib/bs'
 import { clockPad } from '../lib/format'
 import { formatMoney, rupees } from '../lib/money'
 
@@ -46,7 +46,7 @@ import { formatMoney, rupees } from '../lib/money'
 const TODAY_BS = toBs(TODAY)
 export const TODAY_DATE = {
   bs: TODAY_BS ? formatBs(TODAY_BS) : '—',
-  ad: TODAY.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', weekday: 'long', timeZone: 'UTC' }),
+  ad: formatAd(TODAY),
 }
 
 /** The clock position the page is rendered at, in minutes since midnight. */
@@ -401,6 +401,8 @@ export const HOVER_FALLBACK: HoverFacts = {
 export const ROW_MENU = [
   'Open',
   'Edit',
+  'Complete Pickup',
+  'Complete Return',
   'Print Checklist',
   'Packing List',
   'QR',

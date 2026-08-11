@@ -6,6 +6,7 @@ import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
 import type { BookingStatus, Flag, ItemState } from '../../lib/workflow'
+import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { BOOKING } from '../../data/booking'
 import { PACKAGE } from '../../data/packing'
@@ -100,7 +101,7 @@ interface GateRow {
   resolve?: () => void
 }
 
-export default function HandoverWorkspace() {
+export default function HandoverWorkspace({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate()
   const { bookingNo } = useParams()
   const id = bookingNo ?? BOOKING.no
@@ -108,6 +109,7 @@ export default function HandoverWorkspace() {
   const [units, setUnits] = useState<Record<string, HandoverUnit>>(() =>
     Object.fromEntries(SEED_UNITS.map((u) => [u.id, { ...u }])),
   )
+  const [showScanner, setShowScanner] = useState(false)
   const [sessions, setSessions] = useState<Record<SessionId, HandoverSession>>(() => ({
     S1: { ...SEED_SESSIONS.S1, signatures: { ...SEED_SESSIONS.S1.signatures } },
     S2: { ...SEED_SESSIONS.S2, signatures: { ...SEED_SESSIONS.S2.signatures } },
@@ -171,11 +173,17 @@ export default function HandoverWorkspace() {
       return
     }
     set(uid, { state: 'Picked Up', sessionId: activeId, handoverAt: '02:15 PM' })
+    import('../../actions/rentals').then((m) =>
+      m.handoverRental({ bookingId: id, unitIds: [uid], sessionId: activeId })
+    )
     setScanLog((p) => [`✓ ${u.name} (${u.serial}) handed over`, ...p].slice(0, 5))
   }
 
   const handOverMany = (ids: string[]) => {
     ids.forEach((uid) => handOver(uid))
+    import('../../actions/rentals').then((m) =>
+      m.handoverRental({ bookingId: id, unitIds: ids, sessionId: activeId })
+    )
     setSelected(new Set())
   }
 
@@ -269,13 +277,14 @@ export default function HandoverWorkspace() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       {/* ── header ─────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+      {!embedded && (
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
             <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
               Handover Workspace
             </h1>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 22, padding: '0 9px', borderRadius: 'var(--r-badge)', background: STATUS.out.bg, color: STATUS.out.fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', height: 22, padding: '0 9px', borderRadius: 'var(--r-badge)', background: STATUS.out.bg, color: STATUS.out.fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}>
               <Icon name="truck" size={12} />
               Equipment Out
             </span>
@@ -305,8 +314,8 @@ export default function HandoverWorkspace() {
               {pickedUp.length} / {TOTAL_ITEMS} ({pct}%)
             </span>
           </div>
-          <div aria-hidden style={{ height: 8, borderRadius: 999, background: 'var(--card2)', marginTop: 6, overflow: 'hidden' }}>
-            <div style={{ width: `${pct}%`, height: '100%', background: 'var(--success)', borderRadius: 999, transition: 'width var(--dur) ease' }} />
+          <div aria-hidden style={{ height: 8, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 6, overflow: 'hidden' }}>
+            <div style={{ width: '100%', height: '100%', background: 'var(--success)', borderRadius: 'var(--r-badge)', transform: `scaleX(${pct / 100})`, transformOrigin: 'left', transition: 'transform var(--dur) ease' }} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, fontSize: 'var(--t-meta)', color: remaining.length ? 'var(--progress-text)' : 'var(--success-text)', fontWeight: 600 }}>
             <Icon name={remaining.length ? 'alert_triangle' : 'checklist'} size={12} />
@@ -315,13 +324,14 @@ export default function HandoverWorkspace() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
           <Link to={`/rentals/${id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--btn-secondary-border)', background: 'var(--btn-secondary-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none' }}>
             <Icon name="external_link" size={14} />
             View Booking
           </Link>
         </div>
       </div>
+      )}
 
       {/* ── §5 booking strip — read-only, no money (§8.3) ───────────────── */}
       <div style={{ ...cardStyle, display: 'flex', gap: 0, flexWrap: 'wrap', overflow: 'hidden' }}>
@@ -375,7 +385,7 @@ export default function HandoverWorkspace() {
             {DELIVERY_FIELDS[DELIVERY.method].warehouseStaff && <InfoRow label="Warehouse Staff" value={DELIVERY.warehouseStaff} />}
           </div>
           {/* §0 "Landed in the build" — warehouse map replaced by an explanation card. */}
-          <div style={{ marginTop: 10, padding: 10, borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <div style={{ marginTop: 10, padding: 10, borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)', display: 'flex', gap: 'var(--sp-sm)', alignItems: 'flex-start' }}>
             <Icon name="info" size={14} style={{ marginTop: 1, flexShrink: 0, color: 'var(--muted)' }} />
             <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{DELIVERY.note}</span>
           </div>
@@ -394,7 +404,7 @@ export default function HandoverWorkspace() {
                 {selected.size > 0 && <Button icon="checklist" onClick={() => handOverMany([...selected])}>Hand Over Selected ({selected.size})</Button>}
                 <Button icon="queues" onClick={() => setSelected(new Set(remaining.map((u) => u.id)))}>Select All Remaining</Button>
                 <Button icon="queues" onClick={() => handOverMany(remaining.map((u) => u.id))}>Bulk Scan</Button>
-                <Button icon="queues" onClick={() => setScanLog((p) => ['Scan Barcode opened', ...p].slice(0, 5))}>Scan Barcode</Button>
+                <Button icon="queues" onClick={() => setShowScanner(true)}>Scan Barcode</Button>
               </>
             }
           >
@@ -471,11 +481,15 @@ export default function HandoverWorkspace() {
                           </span>
                           <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{u.group}</span>
                         </td>
-                        <td className="identifier" style={{ ...td, color: 'var(--text2)' }}>{u.serial}</td>
+                        <td className="identifier" style={{ ...td, color: 'var(--text2)' }}>
+                          <Link to={`/inventory/${u.serial}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                            {u.serial}
+                          </Link>
+                        </td>
                         <td className="figure" style={td}>1</td>
                         <td style={td}>
                           {u.state === 'Picked Up' ? (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--success-text)', fontWeight: 600 }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', color: 'var(--success-text)', fontWeight: 600 }}>
                               <Icon name="checklist" size={12} />
                               {u.handoverAt}
                             </span>
@@ -491,14 +505,14 @@ export default function HandoverWorkspace() {
                           </span>
                         </td>
                         <td style={td}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--t-meta)', color: (casePhotos[u.case] ?? 0) > 0 ? 'var(--link)' : 'var(--muted)' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: (casePhotos[u.case] ?? 0) > 0 ? 'var(--link)' : 'var(--muted)' }}>
                             <Icon name="eye" size={12} />
                             {casePhotos[u.case] ?? 0}
                           </span>
                         </td>
                         <td className="identifier" style={{ ...td, color: 'var(--muted)' }}>{u.sessionId ? u.sessionId.slice(1) : '—'}</td>
                         <td style={{ ...td, width: 110 }}>
-                          <span style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', alignItems: 'center' }}>
+                          <span style={{ display: 'flex', gap: 'var(--sp-xs)', justifyContent: 'flex-end', alignItems: 'center' }}>
                             {u.state === 'Ready' && <RowAction label="Missing" onClick={() => markMissing(u.id)} />}
                             {canUndo && <RowAction label="Undo" onClick={() => undo(u.id)} />}
                             <Icon name="more_vert" size={14} style={{ color: 'var(--muted)', alignSelf: 'center' }} />
@@ -509,7 +523,7 @@ export default function HandoverWorkspace() {
                   })}
                   {visible.length === 0 && (
                     <tr>
-                      <td colSpan={9} style={{ padding: 24, textAlign: 'center', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                      <td colSpan={9} style={{ padding: 'var(--sp-xl)', textAlign: 'center', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                         No items match these filters.
                       </td>
                     </tr>
@@ -521,9 +535,9 @@ export default function HandoverWorkspace() {
 
           {/* ── §11 Session Gates, Evidence, Signatures ─────────────────── */}
           <Card title={`Session Gates — Session ${activeId.slice(1)}`} action={<span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{active.state}</span>}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
               {gates.map((g) => (
-                <div key={g.n} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '7px 9px', borderRadius: 8, background: g.passing ? 'var(--st-in-bg)' : 'var(--st-progress-bg)' }}>
+                <div key={g.n} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '7px 9px', borderRadius: 'var(--r-sm)', background: g.passing ? 'var(--st-in-bg)' : 'var(--st-progress-bg)' }}>
                   <Icon name={g.passing ? 'checklist' : 'alert_triangle'} size={14} style={{ color: g.passing ? 'var(--st-in-fg)' : 'var(--st-progress-fg)', marginTop: 2, flexShrink: 0 }} />
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: g.passing ? 'var(--st-in-fg)' : 'var(--text)' }}>{g.label}</div>
@@ -632,7 +646,7 @@ export default function HandoverWorkspace() {
         <Rail width={300} label="Handover summary">
           {/* §10 — no Outstanding, no Deposit Pending here (§13.1). Warehouse sees no money. */}
           <Card title="Handover Summary" action={<span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{pct}%</span>}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
               <Ring pct={pct} />
               <div>
                 <div className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
@@ -647,17 +661,17 @@ export default function HandoverWorkspace() {
                 ['Remaining', remaining.length, 'var(--progress-text)'],
                 ['Missing', missing.length, 'var(--danger-text)'],
               ] as const).map(([l, v, c]) => (
-                <div key={l} style={{ display: 'flex', gap: 8, padding: '3px 0', fontSize: 'var(--t-meta)' }}>
+                <div key={l} style={{ display: 'flex', gap: 'var(--sp-sm)', padding: '3px 0', fontSize: 'var(--t-meta)' }}>
                   <Icon name="dot" size={9} style={{ color: c, marginTop: 4 }} />
                   <span style={{ flex: 1, color: 'var(--text2)' }}>{l}</span>
                   <span className="figure" style={{ fontWeight: 700 }}>{v}</span>
                 </div>
               ))}
-              <div style={{ display: 'flex', gap: 8, padding: '3px 0', fontSize: 'var(--t-meta)' }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-sm)', padding: '3px 0', fontSize: 'var(--t-meta)' }}>
                 <span style={{ flex: 1, color: 'var(--text2)' }}>Sessions</span>
                 <span className="figure" style={{ fontWeight: 700 }}>2</span>
               </div>
-              <div style={{ display: 'flex', gap: 8, padding: '3px 0', fontSize: 'var(--t-meta)' }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-sm)', padding: '3px 0', fontSize: 'var(--t-meta)' }}>
                 <span style={{ flex: 1, color: 'var(--text2)' }}>Cases</span>
                 <span className="figure" style={{ fontWeight: 700 }}>{CASES.length}</span>
               </div>
@@ -671,7 +685,7 @@ export default function HandoverWorkspace() {
               const tone = STATUS[s.state === 'Complete' ? 'in' : s.state === 'In Progress' ? 'progress' : 'neutral']
               return (
                 <div key={sid} style={{ padding: '8px 0', borderBottom: sid === 'S1' ? '1px solid var(--border)' : undefined }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                     <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Session {sid.slice(1)}</span>
                     <span style={{ display: 'inline-flex', alignItems: 'center', height: 18, padding: '0 7px', borderRadius: 'var(--r-badge)', background: tone.bg, color: tone.fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
                       {s.state}
@@ -716,7 +730,7 @@ export default function HandoverWorkspace() {
           {/* §10 Documents — no Invoice, no Receipt (§13.1). Ungenerated rows carry no action (§0 #8). */}
           <Card title="Documents">
             {DOCUMENTS.map((d) => (
-              <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 'var(--t-meta)' }}>
+              <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 'var(--t-meta)' }}>
                 <span style={{ flex: 1, color: 'var(--text)' }}>{d.name}</span>
                 <span style={{ color: d.state === 'Generated' ? 'var(--success-text)' : 'var(--muted)', fontWeight: 600 }}>{d.state}</span>
                 {d.state === 'Generated' && <Icon name="download" size={14} style={{ color: 'var(--muted)' }} />}
@@ -755,7 +769,7 @@ export default function HandoverWorkspace() {
           {scanLog.length > 0 && (
             <div style={{ ...cardStyle, padding: 11 }}>
               <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Scan log</div>
-              <div role="status" aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div role="status" aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
                 {scanLog.map((l, i) => (
                   <span key={i} style={{ fontSize: 'var(--t-meta)', color: l.startsWith('✕') ? 'var(--danger-text)' : 'var(--text2)' }}>{l}</span>
                 ))}
@@ -766,7 +780,7 @@ export default function HandoverWorkspace() {
       </div>
 
       {/* ── §12 footer — two buttons, autosave, no Save Draft, no Previous ── */}
-      <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', flexWrap: 'wrap' }}>
+      <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '12px 14px', flexWrap: 'wrap' }}>
         <button
           type="button"
           onClick={() => navigate(`/rentals/${id}`)}
@@ -804,13 +818,29 @@ export default function HandoverWorkspace() {
         <p style={{ margin: '-4px 2px 0', textAlign: 'right', fontSize: 'var(--t-meta)', color: 'var(--progress-text)', fontWeight: 600 }}>{gateSummary}</p>
       )}
       <p style={{ margin: '-4px 2px 0', textAlign: 'right', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{caption}</p>
+
+      <BarcodeScannerModal
+        isOpen={showScanner}
+        onClose={() => setShowScanner(false)}
+        mode="handover"
+        bookingId={id}
+        items={SEED_UNITS.map((u) => ({
+          id: u.id,
+          name: u.name,
+          serial: u.serial,
+          assetTag: u.id,
+        }))}
+        onItemScanned={(item) => {
+          handOverMany([item.id])
+        }}
+      />
     </div>
   )
 }
 
 function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
       <span style={{ color: 'var(--text2)', minWidth: 100, flexShrink: 0 }}>{label}</span>
       <span className={mono ? 'identifier' : undefined} style={{ color: 'var(--text)', fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</span>
     </div>
@@ -819,7 +849,7 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
 
 function CheckLine({ label, checked, onToggle, disabled }: { label: string; checked: boolean; onToggle: () => void; disabled: boolean }) {
   return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)', color: checked ? 'var(--success-text)' : 'var(--text2)', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer' }}>
+    <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: checked ? 'var(--success-text)' : 'var(--text2)', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer' }}>
       <input type="checkbox" checked={checked} disabled={disabled} onChange={onToggle} />
       <Icon name={checked ? 'checklist' : 'alert_triangle'} size={13} />
       {label}
@@ -829,7 +859,7 @@ function CheckLine({ label, checked, onToggle, disabled }: { label: string; chec
 
 function SigRow({ label, sig, onCapture, required, disabled }: { label: string; sig: Sig | undefined; onCapture: () => void; required: boolean; disabled: boolean }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{label}</div>
         {sig ? (
@@ -844,7 +874,7 @@ function SigRow({ label, sig, onCapture, required, disabled }: { label: string; 
           type="button"
           onClick={onCapture}
           disabled={disabled}
-          style={{ height: 26, padding: '0 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
+          style={{ height: 26, padding: '0 9px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
         >
           Capture
         </button>
@@ -858,7 +888,7 @@ function RowAction({ label, onClick }: { label: string; onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      style={{ height: 22, padding: '0 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
+      style={{ height: 22, padding: '0 7px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
     >
       {label}
     </button>

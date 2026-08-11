@@ -22,11 +22,11 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   padding?: 'none' | 'sm' | 'md' | 'lg'
 }
 
-const PADDING: Record<NonNullable<CardProps['padding']>, number> = {
+const PADDING: Record<NonNullable<CardProps['padding']>, number | string> = {
   none: 0,
-  sm: 12,
+  sm: 'var(--sp-md)',
   md: 20,
-  lg: 24,
+  lg: 'var(--sp-xl)',
 }
 
 export function Card({
@@ -72,7 +72,7 @@ export function Card({
               <p style={{ margin: '2px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{subtitle}</p>
             )}
           </div>
-          {action && <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{action}</div>}
+          {action && <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>{action}</div>}
         </div>
       )}
 
@@ -116,10 +116,10 @@ export function KpiCard({ label, value, subtext, trend, icon, onClick }: KpiCard
         border: '1px solid var(--border)',
         borderRadius: 'var(--r-card)',
         boxShadow: 'var(--shadow-card)',
-        padding: 16,
+        padding: 'var(--sp-lg)',
         display: 'flex',
         flexDirection: 'column',
-        gap: 8,
+        gap: 'var(--sp-sm)',
         cursor: onClick ? 'pointer' : undefined,
         transition: 'background-color var(--dur-theme) ease, border-color var(--dur-theme) ease',
       }}
@@ -136,7 +136,7 @@ export function KpiCard({ label, value, subtext, trend, icon, onClick }: KpiCard
       </div>
 
       {(subtext || trend) && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
           {trend && (
             <span style={{ fontWeight: 700, color: trend.isPositive ? 'var(--st-in-fg)' : 'var(--st-progress-fg)' }}>
               {trend.value}

@@ -68,6 +68,15 @@ export default defineConfig({
   ],
   build: {
     rollupOptions: {
+      /* Two documents, deliberately. `marketing.html` is the public site; it
+         must not pull the ops app's bundle (Supabase, dexie, the router, every
+         module) down to a first-time visitor, and its Tailwind stylesheet must
+         not reach the app — see src/marketing/marketing.css for why that
+         isolation is load-bearing. */
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        marketing: path.resolve(__dirname, 'marketing.html'),
+      },
       output: {
         manualChunks: {
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],

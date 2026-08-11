@@ -1,0 +1,264 @@
+import type { CSSProperties, ReactNode } from 'react';
+import Icon from '../../../components/ui/Icon';
+import type { IconName } from '../../../components/ui/Icon';
+import { cardStyle } from '../../../components/ui/Page';
+import { STATUS } from '../../../lib/status';
+import type { StatusKey } from '../../../lib/status';
+import { CONDITION_TONE } from '../../../data/inventory';
+import { toBs, formatBs, formatAd } from '../../../lib/bs';
+import { NEXT_ASSET_CODE } from '../../../data/addEquipment';
+import type { IntakeCondition } from '../../../data/addEquipment';
+
+export const inputStyle = (hasError?: boolean): CSSProperties => ({
+  width: '100%',
+  minHeight: 44,
+  padding: '0 10px',
+  borderRadius: 'var(--r-input)',
+  border: `1px solid ${hasError ? 'var(--danger-text)' : 'var(--input-border)'}`,
+  background: 'var(--input-bg)',
+  color: 'var(--text)',
+  fontSize: 'var(--t-meta)',
+  fontFamily: 'inherit',
+})
+
+export const fieldRow: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+  gap: 14,
+}
+
+export function Field({
+  label,
+  required,
+  error,
+  hint,
+  children,
+  span,
+}: {
+  label: string
+  required?: boolean
+  error?: string | null | undefined
+  hint?: string | undefined
+  children: ReactNode
+  span?: number | undefined
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 5,
+        minWidth: 0,
+        ...(span ? { gridColumn: `span ${span}` } : {}),
+      }}
+    >
+      <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
+        {label} {required && <span style={{ color: 'var(--danger-text)' }}>*</span>}
+      </label>
+      {children}
+      {error ? (
+        <span style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-xs)', fontSize: 'var(--t-th)', color: 'var(--danger-text)' }}>
+          <Icon name="error" size={12} style={{ flexShrink: 0, marginTop: 1 }} />
+          {error}
+        </span>
+      ) : hint ? (
+        <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{hint}</span>
+      ) : null}
+    </div>
+  )
+}
+
+export function SectionCard({
+  id,
+  n,
+  title,
+  note,
+  action,
+  children,
+}: {
+  id: string
+  n: number
+  title: string
+  note?: string
+  action?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <section id={id} style={{ ...cardStyle, display: 'flex', flexDirection: 'column', minWidth: 0, scrollMarginTop: 84 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+        <span
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: '50%',
+            background: 'var(--btn-primary-bg)',
+            color: 'var(--btn-primary-fg)',
+            display: 'grid',
+            placeItems: 'center',
+            fontSize: 'var(--t-th)',
+            fontWeight: 700,
+            flexShrink: 0,
+          }}
+        >
+          {n}
+        </span>
+        <div style={{ minWidth: 0 }}>
+          <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{title}</h2>
+          {note && <p style={{ margin: '2px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{note}</p>}
+        </div>
+        {action && <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>{action}</div>}
+      </div>
+      <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>{children}</div>
+    </section>
+  )
+}
+
+/** §5.4 — the intake condition, badged with the tone Inventory already uses. */
+export function ConditionBadge({ condition }: { condition: IntakeCondition }) {
+  const c = STATUS[CONDITION_TONE[condition] as StatusKey]
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        height: 19,
+        padding: '0 7px',
+        borderRadius: 'var(--r-badge)',
+        background: c.bg,
+        color: c.fg,
+        border: `1px solid ${c.border ?? 'transparent'}`,
+        fontSize: 'var(--t-th)',
+        fontWeight: 600,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {condition}
+    </span>
+  )
+}
+
+/**
+ * §5.3 — status renders as a badge, never a control, and while the record is a
+ * Draft the units have no status at all. So the cell states that instead of
+ * inventing `Available` the way the render does.
+ */
+export function DraftStatusBadge() {
+  const s = STATUS.neutral
+  return (
+    <span
+      title="Status is engine-owned. Units take In Stock at creation; a Draft's units have no status."
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 'var(--sp-xs)',
+        height: 19,
+        padding: '0 7px',
+        borderRadius: 'var(--r-badge)',
+        background: s.bg,
+        color: s.fg,
+        fontSize: 'var(--t-th)',
+        fontWeight: 600,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <Icon name="dot" size={9} />
+      No status · Draft
+    </span>
+  )
+}
+
+export function Chip({ children, onRemove, icon }: { children: ReactNode; onRemove?: () => void; icon?: IconName }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '4px 9px',
+        borderRadius: 'var(--r-badge)',
+        background: 'var(--card2)',
+        border: '1px solid var(--border)',
+        fontSize: 'var(--t-meta)',
+        color: 'var(--text)',
+      }}
+    >
+      {icon && <Icon name={icon} size={12} style={{ color: 'var(--link)' }} />}
+      {children}
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label="Remove"
+          style={{ border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', padding: 0, display: 'grid', placeItems: 'center' }}
+        >
+          <Icon name="close" size={12} />
+        </button>
+      )}
+    </span>
+  )
+}
+
+/** Foundation v1.3 date form — BS above AD, both rendered from one AD instant. */
+export function BsAbove({ iso }: { iso: string }) {
+  if (!iso) return <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>No date set</span>
+  const d = new Date(`${iso}T00:00:00Z`)
+  if (Number.isNaN(d.getTime())) return <span style={{ fontSize: 'var(--t-th)', color: 'var(--danger-text)' }}>Not a date</span>
+  const bs = toBs(d)
+  return (
+    <span style={{ fontSize: 'var(--t-th)', color: bs ? 'var(--text2)' : 'var(--muted)' }}>
+      {bs ? `${formatBs(bs)} · ${formatAd(d)}` : `${formatAd(d)} — BS unavailable outside Shrawan 2083`}
+    </span>
+  )
+}
+
+export const th: CSSProperties = {
+  textAlign: 'left',
+  padding: '7px 8px',
+  fontSize: 'var(--t-th)',
+  fontWeight: 600,
+  color: 'var(--text2)',
+  whiteSpace: 'nowrap',
+  borderBottom: '1px solid var(--border)',
+}
+
+export const td: CSSProperties = { padding: '7px 8px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' }
+
+export interface UnitDraft {
+  id: string
+  serial: string
+  assetTag: string
+  condition: IntakeCondition
+  purchaseIso: string
+}
+
+export interface ContainedDraft {
+  id: string
+  modelId: string
+  quantity: number
+}
+
+export interface FileDraft {
+  id: string
+  file: File
+  url: string
+}
+
+/**
+ * What the unit's printed label carries. The render's Barcode column reads
+ * `EQ000234-SN102`, so the payload is the Asset Code joined to the serial — and
+ * where no serial exists yet (§4's whole reason for asset tags: cables, cases,
+ * worn plates) it falls back to the asset tag. The QR carries the same string.
+ */
+export function barcodePayload(u: { serial: string; assetTag: string }): string {
+  const s = u.serial.trim()
+  return s ? `${NEXT_ASSET_CODE}-${s}` : u.assetTag
+}
+
+/** `3 pieces`, `1 unit` — the count and its noun, agreeing. */
+export function countOf(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`
+}
+
+export function formatBytes(n: number): string {
+  return n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`
+}

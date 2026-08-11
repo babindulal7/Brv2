@@ -1,7 +1,9 @@
+import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
 import { Donut, Legend, HBars, catColor } from '../../components/ui/Charts'
 import { STATUS, BRAND, BRAND_TEXT } from '../../lib/status'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { PERIOD_CHIPS } from '../../data/expenseReports'
 import {
   KPIS,
@@ -117,10 +119,10 @@ function GrowthChart() {
           </span>
         ))}
       </div>
-      <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 8 }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-md)', justifyContent: 'center', marginTop: 8 }}>
         {GROWTH.series.map((s, i) => (
           <span key={s.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-            <span aria-hidden style={{ width: 8, height: 8, borderRadius: 999, background: catColor(i) }} />
+            <span aria-hidden style={{ width: 8, height: 8, borderRadius: 'var(--r-badge)', background: catColor(i) }} />
             {s.name}
           </span>
         ))}
@@ -136,7 +138,15 @@ function GrowthChart() {
  * carries that note precisely because the order is the exception, not the rule.
  */
 export default function ClientReports() {
+  const navigate = useNavigate()
   const [chip, setChip] = useState('This Month')
+  const money = useCanViewMoney()
+  const kpis = money ? KPIS : KPIS.filter((k) => k.label !== 'Outstanding Receivables')
+  const summary = money ? SUMMARY : SUMMARY.filter((s) => s.label !== 'Outstanding Receivables' && s.label !== 'Average Lifetime Value')
+  const membershipStats = money ? MEMBERSHIP.stats : MEMBERSHIP.stats.filter((s) => s.label === 'Renewal Rate')
+  // Law 6 / P0-5 (BUG_SWEEP_REGISTER_v1.0): the one ungated money tile on this
+  // screen — same filter shape as KPIS/SUMMARY above.
+  const frequency = money ? FREQUENCY : FREQUENCY.filter((f) => f.label !== 'Avg. Booking Value')
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageHeader
@@ -166,7 +176,7 @@ export default function ClientReports() {
               style={{
                 height: 30,
                 padding: '0 11px',
-                borderRadius: 8,
+                borderRadius: 'var(--r-sm)',
                 border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
                 background: on ? 'var(--nav-active-bg)' : 'var(--card)',
                 color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
@@ -183,7 +193,7 @@ export default function ClientReports() {
         })}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
         {FILTERS.map((f) => (
           <button
             key={f}
@@ -191,7 +201,7 @@ export default function ClientReports() {
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 8,
+              gap: 'var(--sp-sm)',
               height: 34,
               padding: '0 11px',
               borderRadius: 'var(--r-input)',
@@ -213,29 +223,31 @@ export default function ClientReports() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
-          <KpiStrip items={KPIS} columns={4} />
+          <KpiStrip items={kpis} columns={kpis.length} />
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: money ? 'repeat(3, minmax(0,1fr))' : 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
             <Card title="Client Growth Trend" action={<PeriodPill />}>
               <GrowthChart />
             </Card>
 
-            <Card title="Revenue by Client (Top 10)" action={<PeriodPill />}>
-              <HBars rows={REVENUE_BY_CLIENT} axisTicks={REVENUE_AXIS} colorIndex={2} />
-            </Card>
+            {money && (
+              <Card title="Revenue by Client (Top 10)" action={<PeriodPill />}>
+                <HBars rows={REVENUE_BY_CLIENT} axisTicks={REVENUE_AXIS} colorIndex={2} />
+              </Card>
+            )}
 
             <Card title="Client Retention Analysis" action={<PeriodPill />}>
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-md)', alignItems: 'center' }}>
                 <Donut slices={RETENTION} centreLabel="Total" centreValue={RETENTION_TOTAL} size={116} />
                 <Legend slices={RETENTION} />
               </div>
             </Card>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,0.75fr)', gap: 'var(--sp-md)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: money ? 'minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,0.75fr)' : 'minmax(0,1fr) minmax(0,1fr) minmax(0,0.75fr)', gap: 'var(--sp-md)' }}>
             <Card title="Booking Frequency" action={<PeriodPill />}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
-                {FREQUENCY.map((f, i) => (
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${frequency.length},1fr)`, gap: 'var(--sp-sm)' }}>
+                {frequency.map((f, i) => (
                   <div key={f.label} style={{ textAlign: 'center', minWidth: 0 }}>
                     <span
                       style={{ width: 34, height: 34, borderRadius: 9, display: 'inline-grid', placeItems: 'center', background: 'var(--card2)', border: '1px solid var(--border)', color: catColor(i) }}
@@ -251,12 +263,14 @@ export default function ClientReports() {
               </div>
             </Card>
 
-            <Card title="Outstanding Ageing" action={<PeriodPill />}>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <Donut slices={AGEING} centreLabel="Total" centreValue={AGEING_TOTAL} size={100} />
-                <Legend slices={AGEING} />
-              </div>
-            </Card>
+            {money && (
+              <Card title="Outstanding Ageing" action={<PeriodPill />}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <Donut slices={AGEING} centreLabel="Total" centreValue={AGEING_TOTAL} size={100} />
+                  <Legend slices={AGEING} />
+                </div>
+              </Card>
+            )}
 
             <Card title="Membership Analysis" action={<PeriodPill />}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
@@ -277,8 +291,8 @@ export default function ClientReports() {
                   </div>
                 ))}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 7, marginTop: 11, paddingTop: 9, borderTop: '1px solid var(--border)' }}>
-                {MEMBERSHIP.stats.map((s) => (
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${membershipStats.length},1fr)`, gap: 7, marginTop: 11, paddingTop: 9, borderTop: '1px solid var(--border)' }}>
+                {membershipStats.map((s) => (
                   <span key={s.label} style={{ minWidth: 0, textAlign: 'center' }}>
                     <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.3 }}>{s.label}</span>
                     <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginTop: 2 }}>
@@ -292,7 +306,7 @@ export default function ClientReports() {
             <Card title="Damage & Case Analysis">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {CASES.map((c) => (
-                  <div key={c.label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)' }}>
+                  <div key={c.label} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
                     <span style={{ flex: 1, minWidth: 0, color: 'var(--text2)' }}>{c.label}</span>
                     <span className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: BRAND_TEXT[c.tone] }}>
                       {c.value}
@@ -308,7 +322,10 @@ export default function ClientReports() {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)' }}>
-                    {['Client', 'Client ID', 'Membership', 'Bookings', 'Rental Days', 'Revenue (Rs)', 'Outstanding (Rs)', 'Lifetime Value (Rs)', 'Last Booking', 'Late Returns', 'Cases', 'Status', 'Actions'].map(
+                    {(money
+                      ? ['Client', 'Client ID', 'Membership', 'Bookings', 'Rental Days', 'Revenue (Rs)', 'Outstanding (Rs)', 'Lifetime Value (Rs)', 'Last Booking', 'Late Returns', 'Cases', 'Status', 'Actions']
+                      : ['Client', 'Client ID', 'Membership', 'Bookings', 'Rental Days', 'Last Booking', 'Late Returns', 'Cases', 'Status', 'Actions']
+                    ).map(
                       (h) => (
                         <th key={h} style={th}>
                           {h}
@@ -320,8 +337,16 @@ export default function ClientReports() {
                 <tbody>
                   {CLIENTS.map((c) => (
                     <tr key={c.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ ...td, fontWeight: 600 }}>{c.name}</td>
-                      <td className="identifier" style={{ ...td, color: 'var(--text2)', fontSize: 'var(--t-meta)' }}>{c.id}</td>
+                      <td style={{ ...td, fontWeight: 600 }}>
+                        <Link to={`/clients/${c.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                          {c.name}
+                        </Link>
+                      </td>
+                      <td className="identifier" style={{ ...td, color: 'var(--text2)', fontSize: 'var(--t-meta)' }}>
+                        <Link to={`/clients/${c.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                          {c.id}
+                        </Link>
+                      </td>
                       <td style={td}>
                         {c.membership === '—' ? (
                           <span style={{ color: 'var(--muted)' }}>—</span>
@@ -345,14 +370,16 @@ export default function ClientReports() {
                       </td>
                       <td className="figure" style={td}>{c.bookings}</td>
                       <td className="figure" style={{ ...td, color: 'var(--text2)' }}>{c.days}</td>
-                      <td className="figure" style={{ ...td, fontWeight: 600 }}>{c.revenue}</td>
-                      <td
-                        className="figure"
-                        style={{ ...td, fontWeight: 600, color: c.hasOutstanding ? 'var(--danger-text)' : 'var(--success-text)' }}
-                      >
-                        {c.outstanding}
-                      </td>
-                      <td className="figure" style={{ ...td, fontWeight: 600 }}>{c.lifetime}</td>
+                      {money && <td className="figure" style={{ ...td, fontWeight: 600 }}>{c.revenue}</td>}
+                      {money && (
+                        <td
+                          className="figure"
+                          style={{ ...td, fontWeight: 600, color: c.hasOutstanding ? 'var(--danger-text)' : 'var(--success-text)' }}
+                        >
+                          {c.outstanding}
+                        </td>
+                      )}
+                      {money && <td className="figure" style={{ ...td, fontWeight: 600 }}>{c.lifetime}</td>}
                       <td style={td}>
                         <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)' }}>{c.lastAd}</span>
                         <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--link)' }}>{c.lastBs}</span>
@@ -362,7 +389,14 @@ export default function ClientReports() {
                       <td style={{ ...td, color: 'var(--success-text)', fontWeight: 600 }}>Active</td>
                       <td style={{ ...td, color: 'var(--muted)' }}>
                         <span style={{ display: 'flex', gap: 5 }}>
-                          <Icon name="eye" size={14} />
+                          <span
+                            onClick={() => navigate(`/clients/${c.id}`)}
+                            role="button"
+                            aria-label="View client"
+                            style={{ display: 'inline-flex', cursor: 'pointer' }}
+                          >
+                            <Icon name="eye" size={14} />
+                          </span>
                           <Icon name="more_vert" size={14} />
                         </span>
                       </td>
@@ -371,7 +405,7 @@ export default function ClientReports() {
                 </tbody>
               </table>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', flexWrap: 'wrap', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '10px 14px', flexWrap: 'wrap', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               <span>
                 Showing 1 to 6 of 1,248 clients
                 <span style={{ display: 'block', color: 'var(--link)', fontSize: 'var(--t-meta)', marginTop: 2 }}>{BS_NOTE}</span>
@@ -387,7 +421,7 @@ export default function ClientReports() {
                       style={{
                         minWidth: 24,
                         height: 24,
-                        borderRadius: 6,
+                        borderRadius: 'var(--r-xs)',
                         border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
                         background: on ? 'var(--btn-primary-bg)' : 'transparent',
                         color: on ? 'var(--btn-primary-fg)' : 'var(--text2)',
@@ -408,61 +442,65 @@ export default function ClientReports() {
 
         <Rail>
           <Card title="Client Summary" action={<PeriodPill />}>
-            <SummaryRows rows={SUMMARY} />
+            <SummaryRows rows={summary} />
           </Card>
 
-          <Card title="Top Clients by Lifetime Value" action={<PeriodPill />}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {TOP_CLIENTS.map((c) => (
-                <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)' }}>
-                  <span className="figure" style={{ color: 'var(--muted)', flexShrink: 0 }}>
-                    {c.rank}
+          {money && (
+            <Card title="Top Clients by Lifetime Value" action={<PeriodPill />}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                {TOP_CLIENTS.map((c) => (
+                  <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
+                    <span className="figure" style={{ color: 'var(--muted)', flexShrink: 0 }}>
+                      {c.rank}
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {c.name}
+                    </span>
+                    <span className="figure" style={{ fontWeight: 600, color: 'var(--text)', flexShrink: 0 }}>
+                      {c.amount}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <Link to="/clients" style={{ ...link, display: 'inline-block', marginTop: 8 }}>
+                View All Clients →
+              </Link>
+            </Card>
+          )}
+
+          {money && (
+            <Card title="High Risk Clients" action={<PeriodPill />}>
+              <div
+                style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto', gap: 'var(--sp-sm)', paddingBottom: 6, borderBottom: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}
+              >
+                <span>Client</span>
+                <span style={{ textAlign: 'right' }}>Outstanding (Rs)</span>
+                <span style={{ textAlign: 'right' }}>Ageing</span>
+              </div>
+              {HIGH_RISK.map((r) => (
+                <div key={r.name} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto', gap: 'var(--sp-sm)', padding: '6px 0', fontSize: 'var(--t-meta)', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
+                  <span className="figure" style={{ textAlign: 'right', color: 'var(--text)', fontWeight: 600 }}>
+                    {r.outstanding}
                   </span>
-                  <span style={{ flex: 1, minWidth: 0, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {c.name}
-                  </span>
-                  <span className="figure" style={{ fontWeight: 600, color: 'var(--text)', flexShrink: 0 }}>
-                    {c.amount}
+                  <span
+                    className="figure"
+                    style={{ textAlign: 'right', color: r.severe ? 'var(--danger-text)' : 'var(--progress-text)', fontWeight: 600, minWidth: 56 }}
+                  >
+                    {r.ageing}
                   </span>
                 </div>
               ))}
-            </div>
-            <span style={{ ...link, display: 'inline-block', marginTop: 8 }} aria-disabled title="Not built yet — see SCREENS.md for what is done">
-              View All Clients →
-            </span>
-          </Card>
-
-          <Card title="High Risk Clients" action={<PeriodPill />}>
-            <div
-              style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto', gap: 8, paddingBottom: 6, borderBottom: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}
-            >
-              <span>Client</span>
-              <span style={{ textAlign: 'right' }}>Outstanding (Rs)</span>
-              <span style={{ textAlign: 'right' }}>Ageing</span>
-            </div>
-            {HIGH_RISK.map((r) => (
-              <div key={r.name} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto', gap: 8, padding: '6px 0', fontSize: 'var(--t-meta)', alignItems: 'center' }}>
-                <span style={{ color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
-                <span className="figure" style={{ textAlign: 'right', color: 'var(--text)', fontWeight: 600 }}>
-                  {r.outstanding}
-                </span>
-                <span
-                  className="figure"
-                  style={{ textAlign: 'right', color: r.severe ? 'var(--danger-text)' : 'var(--progress-text)', fontWeight: 600, minWidth: 56 }}
-                >
-                  {r.ageing}
-                </span>
-              </div>
-            ))}
-            <span style={{ ...link, display: 'inline-block', marginTop: 6 }} aria-disabled title="Not built yet — see SCREENS.md for what is done">
-              View All High Risk →
-            </span>
-          </Card>
+              <span style={{ ...link, display: 'inline-block', marginTop: 6 }} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+                View All High Risk →
+              </span>
+            </Card>
+          )}
 
           <Card title="Client Insights">
             <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 9 }}>
               {INSIGHTS.map((n) => (
-                <li key={n.text} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 'var(--t-meta)' }}>
+                <li key={n.text} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'flex-start', fontSize: 'var(--t-meta)' }}>
                   <Icon name="info" size={13} style={{ color: BRAND_TEXT[n.tone], flexShrink: 0, marginTop: 1 }} />
                   <span style={{ color: 'var(--text2)' }}>{n.text}</span>
                 </li>
@@ -470,7 +508,7 @@ export default function ClientReports() {
             </ul>
           </Card>
 
-          <div style={{ ...cardStyle, padding: 12, fontSize: 'var(--t-meta)', color: 'var(--muted)', display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <div style={{ ...cardStyle, padding: 'var(--sp-md)', fontSize: 'var(--t-meta)', color: 'var(--muted)', display: 'flex', flexDirection: 'column', gap: 5 }}>
             <span>All amounts are in NPR</span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               Data last updated: Today, 10:30 AM

@@ -1,20 +1,38 @@
 import { rupees, type Paisa } from '../lib/money'
 import type { StatusKey } from '../lib/status'
 
-export type ClientType =
-  | 'Production Company'
-  | 'Educational Institution'
-  | 'Freelancer'
-  | 'Government'
-  | 'NGO'
+export type ClientType = 'Organisation' | 'Individual' | 'Unassigned'
+
+export type OrganisationType =
+  | 'Production House'
+  | 'Rental House'
+  | 'College / Institution'
+  | 'Corporate / Agency'
+  | 'Government / NGO'
   | 'Broadcaster'
-  | 'Individual'
-  /* Added for the Add Client page's broad segmented control — a coarser
-     classification than the granular values above, not a replacement for
-     them. New records from that page carry these two; existing records keep
-     their original granular value. */
-  | 'Company'
-  | 'Student'
+  | 'Other'
+
+export type Profession =
+  | 'Cinematographer'
+  | 'Director'
+  | 'Assistant Camera'
+  | 'Gaffer'
+  | 'Editor'
+  | 'Photographer'
+  | 'Producer'
+  | 'Sound'
+  | 'Other'
+
+export type Segment =
+  | 'Wedding / Event'
+  | 'Corporate'
+  | 'Documentary'
+  | 'Music Video'
+  | 'Commercial'
+  | 'Feature'
+  | 'YouTube / Creator'
+  | 'Education'
+  | 'Other'
 
 export type MembershipTier =
   | 'Academy'
@@ -60,6 +78,9 @@ export interface ClientRecord {
   name: string
   company?: string
   clientType: ClientType
+  organisationType?: OrganisationType
+  profession?: Profession[]
+  segment?: Segment[]
   membership: MembershipTier
   phone: string
   email: string
@@ -108,6 +129,29 @@ export interface ClientRecord {
    */
   mergedIntoId?: string
   mergedAt?: string
+
+  /* ---- Hover Intel System v2.1 (9 Aug 2026) additions ----------------
+   * All optional and unbackfilled on the 36 existing records deliberately:
+   * this mock layer stands in for Phase 2's real client query, and
+   * `clientIntel.ts` renders "—" / omits a group rather than treat a
+   * missing value as zero. Only 3 records (0001, 0004, 0005) carry real
+   * values, enough to demonstrate every group in the spec. */
+
+  /** Present in `clients` table (`tags text[]`) but missing from this mock type until now. */
+  tags?: string[]
+  /** §1 "multiple addresses: billing + delivery/site". Falls back to the single `address` line above as one Billing entry when absent. */
+  addresses?: Array<{ kind: 'Billing' | 'Delivery'; label: string; address: string }>
+  /**
+   * §1 Commercial group. No per-category deposit-% table exists yet
+   * (Open ⭐ #1 in HIS v2.1 §"Open"), so `depositOverridePercent` stays
+   * genuinely absent rather than a guessed number — do not seed it.
+   */
+  standingDiscountPercent?: number
+  discountSource?: 'Type Rule' | 'Membership' | 'Named Client'
+  /** §1 Credit control. Richer than `isBlocked`/`blockReason` — carries who and when, per Current RMS's On-Stop model this spec adopts. */
+  onStop?: { reason: string; setBy: string; setAd: string }
+  /** §1 Reliability [NEW] — absent everywhere in the schema and this mock layer until now. Counts only; no ₨-recovered figure is modelled yet. */
+  reliability?: { lateReturns: number; totalReturns: number; damageCases: number; missingCases: number; avgDaysLateOverall: number }
 }
 
 export const CLIENTS_DATA: ClientRecord[] = [
@@ -115,7 +159,8 @@ export const CLIENTS_DATA: ClientRecord[] = [
     id: 'CL-2026-0001',
     name: 'Kathmandu Cinema Works',
     company: 'KCW Studios Pvt. Ltd.',
-    clientType: 'Production Company',
+    clientType: 'Organisation',
+    organisationType: 'Production House',
     membership: 'Production Alliance',
     phone: '+977 980-1234567',
     email: 'production@kcwstudios.com.np',
@@ -141,12 +186,21 @@ export const CLIENTS_DATA: ClientRecord[] = [
     kycDocsCount: 4,
     totalRentalsCount: 38,
     totalSpentPaisa: rupees(4850000),
+    tags: ['Feature Film', 'Repeat Client', 'Priority Support'],
+    addresses: [
+      { kind: 'Billing', label: 'Registered office', address: 'Baluwatar, Kathmandu, Ward 4' },
+      { kind: 'Delivery', label: 'Production office', address: 'Studio 3, Gairidhara, Kathmandu' },
+    ],
+    standingDiscountPercent: 8,
+    discountSource: 'Named Client',
+    reliability: { lateReturns: 1, totalReturns: 38, damageCases: 0, missingCases: 0, avgDaysLateOverall: 0.1 },
   },
   {
     id: 'CL-2026-0002',
     name: 'Kathmandu University',
     company: 'Department of Media & Film Studies',
-    clientType: 'Educational Institution',
+    clientType: 'Organisation',
+    organisationType: 'College / Institution',
     membership: 'Academy',
     phone: '+977 11-415100',
     email: 'media.dept@ku.edu.np',
@@ -176,7 +230,8 @@ export const CLIENTS_DATA: ClientRecord[] = [
   {
     id: 'CL-2026-0003',
     name: 'Bikram Rai',
-    clientType: 'Freelancer',
+    clientType: 'Individual',
+    profession: ['Cinematographer'],
     membership: 'Cinematographer',
     phone: '+977 984-1827364',
     email: 'bikram.dop@gmail.com',
@@ -202,12 +257,14 @@ export const CLIENTS_DATA: ClientRecord[] = [
     kycDocsCount: 2,
     totalRentalsCount: 22,
     totalSpentPaisa: rupees(1640000),
+    reliability: { lateReturns: 0, totalReturns: 22, damageCases: 0, missingCases: 0, avgDaysLateOverall: 0 },
   },
   {
     id: 'CL-2026-0004',
     name: 'Himalayan Mountain Media',
     company: 'Himalayan Media Group',
-    clientType: 'Broadcaster',
+    clientType: 'Organisation',
+    organisationType: 'Broadcaster',
     membership: 'Elite',
     phone: '+977 1-4412983',
     email: 'ops@himalayanmedia.tv',
@@ -233,12 +290,21 @@ export const CLIENTS_DATA: ClientRecord[] = [
     kycDocsCount: 5,
     totalRentalsCount: 52,
     totalSpentPaisa: rupees(7400000),
+    tags: ['Broadcast', 'Live Events', 'Gold Tier'],
+    addresses: [
+      { kind: 'Billing', label: 'Head office', address: 'Naxal, Kathmandu' },
+      { kind: 'Delivery', label: 'Studio / OB van bay', address: 'Gairigaun, Kathmandu' },
+    ],
+    standingDiscountPercent: 12,
+    discountSource: 'Membership',
+    reliability: { lateReturns: 4, totalReturns: 52, damageCases: 1, missingCases: 0, avgDaysLateOverall: 0.6 },
   },
   {
     id: 'CL-2026-0005',
     name: 'Shine Pictures Nepal',
     company: 'Shine Entertainment LLC',
-    clientType: 'Production Company',
+    clientType: 'Organisation',
+    organisationType: 'Production House',
     membership: 'Creator',
     phone: '+977 981-8765432',
     email: 'accounts@shinepictures.com',
@@ -265,11 +331,15 @@ export const CLIENTS_DATA: ClientRecord[] = [
     kycDocsCount: 1,
     totalRentalsCount: 6,
     totalSpentPaisa: rupees(380000),
+    tags: ['Payment Risk'],
+    onStop: { reason: 'Outstanding overdue > 60 days without dispute', setBy: 'Rita Manandhar', setAd: '05 Jul 2026' },
+    reliability: { lateReturns: 3, totalReturns: 6, damageCases: 1, missingCases: 1, avgDaysLateOverall: 4.2 },
   },
   {
     id: 'CL-2026-0006',
     name: 'Nepal Tourism Board',
-    clientType: 'Government',
+    clientType: 'Organisation',
+    organisationType: 'Government / NGO',
     membership: 'Production Alliance',
     phone: '+977 1-4256909',
     email: 'promotions@welcomenepal.com',
@@ -295,11 +365,13 @@ export const CLIENTS_DATA: ClientRecord[] = [
     kycDocsCount: 4,
     totalRentalsCount: 19,
     totalSpentPaisa: rupees(2950000),
+    reliability: { lateReturns: 1, totalReturns: 19, damageCases: 0, missingCases: 0, avgDaysLateOverall: 0.1 },
   },
   {
     id: 'CL-2026-0007',
     name: 'Sushil Lama Visuals',
-    clientType: 'Freelancer',
+    clientType: 'Individual',
+    profession: ['Cinematographer'],
     membership: 'Creator',
     phone: '+977 984-9988776',
     email: 'sushil.lama@outlook.com',
@@ -325,12 +397,14 @@ export const CLIENTS_DATA: ClientRecord[] = [
     kycDocsCount: 2,
     totalRentalsCount: 9,
     totalSpentPaisa: rupees(540000),
+    reliability: { lateReturns: 0, totalReturns: 9, damageCases: 0, missingCases: 0, avgDaysLateOverall: 0 },
   },
   {
     id: 'CL-2026-0008',
     name: 'Apex College Media Club',
     company: 'Apex College',
-    clientType: 'Educational Institution',
+    clientType: 'Organisation',
+    organisationType: 'College / Institution',
     membership: 'Academy',
     phone: '+977 1-4478440',
     email: 'apexmediaclub@apexcollege.edu.np',
@@ -361,7 +435,8 @@ export const CLIENTS_DATA: ClientRecord[] = [
     id: 'CL-2026-0009',
     name: 'ICIMOD Communications',
     company: 'International Centre for Integrated Mountain Development',
-    clientType: 'NGO',
+    clientType: 'Organisation',
+    organisationType: 'Government / NGO',
     membership: 'Production Alliance',
     phone: '+977 1-5275222',
     email: 'media@icimod.org',
@@ -391,7 +466,8 @@ export const CLIENTS_DATA: ClientRecord[] = [
   {
     id: 'CL-2026-0010',
     name: 'Red Dot Films',
-    clientType: 'Production Company',
+    clientType: 'Organisation',
+    organisationType: 'Production House',
     membership: 'Elite',
     phone: '+977 985-1192837',
     email: 'info@reddotfilms.com.np',
@@ -417,6 +493,7 @@ export const CLIENTS_DATA: ClientRecord[] = [
     kycDocsCount: 5,
     totalRentalsCount: 44,
     totalSpentPaisa: rupees(6120000),
+    reliability: { lateReturns: 1, totalReturns: 44, damageCases: 0, missingCases: 0, avgDaysLateOverall: 0.1 },
   },
   {
     id: 'CL-2026-0011',
@@ -452,7 +529,8 @@ export const CLIENTS_DATA: ClientRecord[] = [
     id: 'CL-2026-0012',
     name: 'Vortex Visuals Group',
     company: 'Vortex Productions',
-    clientType: 'Production Company',
+    clientType: 'Organisation',
+    organisationType: 'Production House',
     membership: 'Cinematographer',
     phone: '+977 980-8765123',
     email: 'vortex@gmail.com',
@@ -479,6 +557,7 @@ export const CLIENTS_DATA: ClientRecord[] = [
     kycDocsCount: 2,
     totalRentalsCount: 7,
     totalSpentPaisa: rupees(450000),
+    reliability: { lateReturns: 2, totalReturns: 7, damageCases: 1, missingCases: 0, avgDaysLateOverall: 2.1 },
   },
   /*
     The render's directory carries 284 clients over 12 pages. The seed below
@@ -490,7 +569,8 @@ export const CLIENTS_DATA: ClientRecord[] = [
     id: 'CL-2026-0013',
     name: 'Everest Frames',
     company: 'Everest Frames Pvt. Ltd.',
-    clientType: 'Production Company',
+    clientType: 'Organisation',
+    organisationType: 'Production House',
     membership: 'Cinematographer',
     phone: '+977 985-2938475',
     email: 'hello@everestframes.com.np',
@@ -512,11 +592,13 @@ export const CLIENTS_DATA: ClientRecord[] = [
     kycDocsCount: 3,
     totalRentalsCount: 12,
     totalSpentPaisa: rupees(870000),
+    reliability: { lateReturns: 0, totalReturns: 12, damageCases: 0, missingCases: 0, avgDaysLateOverall: 0 },
   },
   {
     id: 'CL-2026-0014',
     name: 'Pokhara Lakeside Studios',
-    clientType: 'Production Company',
+    clientType: 'Organisation',
+    organisationType: 'Production House',
     membership: 'Creator',
     phone: '+977 61-465120',
     email: 'studio@lakeside.com.np',
@@ -543,7 +625,8 @@ export const CLIENTS_DATA: ClientRecord[] = [
     id: 'CL-2026-0015',
     name: 'Sagarmatha Television',
     company: 'Sagarmatha Broadcasting',
-    clientType: 'Broadcaster',
+    clientType: 'Organisation',
+    organisationType: 'Broadcaster',
     membership: 'Production Alliance',
     phone: '+977 1-4102938',
     email: 'newsroom@sagarmathatv.com',
@@ -565,11 +648,13 @@ export const CLIENTS_DATA: ClientRecord[] = [
     kycDocsCount: 5,
     totalRentalsCount: 33,
     totalSpentPaisa: rupees(4120000),
+    reliability: { lateReturns: 1, totalReturns: 33, damageCases: 0, missingCases: 0, avgDaysLateOverall: 0.1 },
   },
   {
     id: 'CL-2026-0016',
     name: 'Bhaktapur Heritage Trust',
-    clientType: 'NGO',
+    clientType: 'Organisation',
+    organisationType: 'Government / NGO',
     membership: 'Academy',
     phone: '+977 1-6610283',
     email: 'archive@bhtrust.org.np',
@@ -595,7 +680,8 @@ export const CLIENTS_DATA: ClientRecord[] = [
   {
     id: 'CL-2026-0017',
     name: 'Manisha Bajracharya',
-    clientType: 'Freelancer',
+    clientType: 'Individual',
+    profession: ['Cinematographer'],
     membership: 'Creator',
     phone: '+977 986-1029384',
     email: 'manisha.dop@gmail.com',
@@ -622,7 +708,8 @@ export const CLIENTS_DATA: ClientRecord[] = [
     id: 'CL-2026-0018',
     name: 'Annapurna Post Media',
     company: 'Annapurna Media Network',
-    clientType: 'Broadcaster',
+    clientType: 'Organisation',
+    organisationType: 'Broadcaster',
     membership: 'Elite',
     phone: '+977 1-5970283',
     email: 'production@annapurnamedia.com',
@@ -644,11 +731,13 @@ export const CLIENTS_DATA: ClientRecord[] = [
     kycDocsCount: 5,
     totalRentalsCount: 61,
     totalSpentPaisa: rupees(8940000),
+    reliability: { lateReturns: 1, totalReturns: 61, damageCases: 0, missingCases: 0, avgDaysLateOverall: 0.1 },
   },
   {
     id: 'CL-2026-0019',
     name: 'Lumbini Development Trust',
-    clientType: 'Government',
+    clientType: 'Organisation',
+    organisationType: 'Government / NGO',
     membership: 'Production Alliance',
     phone: '+977 71-580123',
     email: 'media@lumbinitrust.gov.np',
@@ -674,7 +763,8 @@ export const CLIENTS_DATA: ClientRecord[] = [
   {
     id: 'CL-2026-0020',
     name: 'Chitwan Wildlife Films',
-    clientType: 'Production Company',
+    clientType: 'Organisation',
+    organisationType: 'Production House',
     membership: 'Cinematographer',
     phone: '+977 56-520394',
     email: 'shoot@chitwanwildlife.com',
@@ -696,11 +786,13 @@ export const CLIENTS_DATA: ClientRecord[] = [
     kycDocsCount: 3,
     totalRentalsCount: 17,
     totalSpentPaisa: rupees(1420000),
+    reliability: { lateReturns: 0, totalReturns: 17, damageCases: 0, missingCases: 0, avgDaysLateOverall: 0 },
   },
   {
     id: 'CL-2026-0021',
     name: 'Namaste Weddings',
-    clientType: 'Production Company',
+    clientType: 'Organisation',
+    organisationType: 'Production House',
     membership: 'Creator',
     phone: '+977 980-5647382',
     email: 'book@namasteweddings.np',
@@ -722,12 +814,14 @@ export const CLIENTS_DATA: ClientRecord[] = [
     kycDocsCount: 2,
     totalRentalsCount: 24,
     totalSpentPaisa: rupees(980000),
+    reliability: { lateReturns: 1, totalReturns: 24, damageCases: 0, missingCases: 0, avgDaysLateOverall: 0.2 },
   },
   {
     id: 'CL-2026-0022',
     name: 'Nepal Film Institute',
     company: 'NFI Academy',
-    clientType: 'Educational Institution',
+    clientType: 'Organisation',
+    organisationType: 'College / Institution',
     membership: 'Academy',
     phone: '+977 1-4433021',
     email: 'labs@nfi.edu.np',
@@ -749,11 +843,13 @@ export const CLIENTS_DATA: ClientRecord[] = [
     kycDocsCount: 3,
     totalRentalsCount: 29,
     totalSpentPaisa: rupees(1340000),
+    reliability: { lateReturns: 0, totalReturns: 29, damageCases: 0, missingCases: 0, avgDaysLateOverall: 0 },
   },
   {
     id: 'CL-2026-0023',
     name: 'Trishuli Adventure Media',
-    clientType: 'Production Company',
+    clientType: 'Organisation',
+    organisationType: 'Production House',
     membership: 'Creator',
     phone: '+977 982-1938475',
     email: 'raft@trishulimedia.com',
@@ -775,11 +871,13 @@ export const CLIENTS_DATA: ClientRecord[] = [
     kycDocsCount: 1,
     totalRentalsCount: 3,
     totalSpentPaisa: rupees(190000),
+    reliability: { lateReturns: 1, totalReturns: 3, damageCases: 1, missingCases: 0, avgDaysLateOverall: 4.0 },
   },
   {
     id: 'CL-2026-0024',
     name: 'Mustang Documentary Unit',
-    clientType: 'Production Company',
+    clientType: 'Organisation',
+    organisationType: 'Production House',
     membership: 'Cinematographer',
     phone: '+977 984-5738291',
     email: 'unit@mustangdocs.com',
@@ -801,11 +899,13 @@ export const CLIENTS_DATA: ClientRecord[] = [
     kycDocsCount: 4,
     totalRentalsCount: 21,
     totalSpentPaisa: rupees(2760000),
+    reliability: { lateReturns: 1, totalReturns: 21, damageCases: 0, missingCases: 0, avgDaysLateOverall: 0.3 },
   },
   {
     id: 'CL-2026-0025',
     name: 'Janakpur Culture Channel',
-    clientType: 'Broadcaster',
+    clientType: 'Organisation',
+    organisationType: 'Broadcaster',
     membership: 'Creator',
     phone: '+977 41-590283',
     email: 'desk@janakpurchannel.np',
@@ -831,7 +931,8 @@ export const CLIENTS_DATA: ClientRecord[] = [
   {
     id: 'CL-2026-0026',
     name: 'Gandaki Sports Media',
-    clientType: 'Production Company',
+    clientType: 'Organisation',
+    organisationType: 'Production House',
     membership: 'Production Alliance',
     phone: '+977 61-538291',
     email: 'ops@gandakisports.com',
@@ -853,6 +954,7 @@ export const CLIENTS_DATA: ClientRecord[] = [
     kycDocsCount: 4,
     totalRentalsCount: 26,
     totalSpentPaisa: rupees(3180000),
+    reliability: { lateReturns: 0, totalReturns: 26, damageCases: 0, missingCases: 0, avgDaysLateOverall: 0 },
   },
 ]
 
@@ -863,6 +965,24 @@ export const CLIENTS_DATA: ClientRecord[] = [
  * they are computed from it once rather than typed twice. A hardcoded "284"
  * beside a table of 26 rows is a number the screen cannot defend.
  */
+/**
+ * Booking number → client id. `CLIENTS_DATA`, `data/operations.ts`'s `Job`
+ * and `data/cases.ts`'s `Case` were authored independently and (like
+ * `data/rentals.ts`/`data/documents.ts`, see `ClientDetail.tsx`) carry
+ * disjoint client *names* for the same booking — so a Job/Case's own
+ * `client`/`counterpartyName` string is not a reliable way to find the real
+ * client record. The one thing genuinely shared is the booking number
+ * itself: every `ClientRecord.activeBookings` entry is a real `BK-...`
+ * number, so resolving through that instead of through name-matching finds
+ * the correct client whenever the two seed sets happen to reference the same
+ * booking, and returns `undefined` — never a guessed or partial match —
+ * when they don't.
+ */
+export function findClientIdByBooking(bookingNo: string | undefined, clients: ClientRecord[] = CLIENTS_DATA): string | undefined {
+  if (!bookingNo) return undefined
+  return clients.find((c) => c.activeBookings.includes(bookingNo))?.id
+}
+
 export function clientMetrics(rows: ClientRecord[]) {
   return {
     total: rows.length,
@@ -870,6 +990,9 @@ export function clientMetrics(rows: ClientRecord[]) {
     paymentDue: rows.filter((c) => c.outstandingPaisa > 0).length,
     blocked: rows.filter((c) => c.isBlocked).length,
     vip: rows.filter((c) => c.isVip).length,
+    typeOrg: rows.filter((c) => c.clientType === 'Organisation').length,
+    typeInd: rows.filter((c) => c.clientType === 'Individual').length,
+    typeUnassigned: rows.filter((c) => c.clientType === 'Unassigned').length,
     outstandingPaisa: rows.reduce((sum, c) => (sum + c.outstandingPaisa) as Paisa, rupees(0)),
     depositHeldPaisa: rows.reduce((sum, c) => (sum + c.depositHeldPaisa) as Paisa, rupees(0)),
   }

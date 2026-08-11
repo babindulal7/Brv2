@@ -1,4 +1,5 @@
 import type { IconName } from '../components/ui/Icon'
+import { rupees, type Paisa } from '../lib/money'
 
 export type PRStatus = 'Draft' | 'Submitted' | 'Approved' | 'Ordered' | 'Received' | 'Rejected' | 'Cancelled'
 export type PRPriority = 'High' | 'Medium' | 'Low'
@@ -17,7 +18,7 @@ export interface SubRentalEvidence {
   subRentalId: string
   subRentalRef: string
   supplier: string
-  costPaid: number
+  costPaid: Paisa
   date: string
 }
 
@@ -29,9 +30,9 @@ export interface PurchaseRequest {
   category: string
   requestedQty: number
   reason: PRReason
-  estimatedUnitCost: number
-  totalEstimatedCost: number
-  totalSubRentPaid: number
+  estimatedUnitCost: Paisa
+  totalEstimatedCost: Paisa
+  totalSubRentPaid: Paisa
   refusedCount: number
   subRentCount: number
   priorityScore: number
@@ -68,7 +69,7 @@ export const PURCHASE_REQUEST_KPIS = [
   { label: 'Draft Requests', value: '3', change: 'Accumulating evidence', icon: 'file' as IconName, accent: 'blue' as const },
   { label: 'Pending Approval', value: '2', change: 'NPR 845,000 total', icon: 'queues' as IconName, accent: 'amber' as const },
   { label: 'Approved / In Flight', value: '2', change: 'Expected next week', icon: 'check' as IconName, accent: 'green' as const },
-  { label: 'Sub-Rent Cost Avoidance', value: 'NPR 320,000', change: 'Projected annual ROI', icon: 'dollar' as IconName, accent: 'purple' as const },
+  { label: 'Sub-Rent Cost Avoidance', value: 'NPR 320,000', change: 'Projected annual ROI', icon: 'dollar' as IconName, accent: 'neutral' as const },
 ]
 
 export const PURCHASE_REQUESTS: PurchaseRequest[] = [
@@ -80,9 +81,9 @@ export const PURCHASE_REQUESTS: PurchaseRequest[] = [
     category: 'Camera',
     requestedQty: 2,
     reason: 'Demand exceeded',
-    estimatedUnitCost: 465000,
-    totalEstimatedCost: 930000,
-    totalSubRentPaid: 168000,
+    estimatedUnitCost: rupees(465000),
+    totalEstimatedCost: rupees(930000),
+    totalSubRentPaid: rupees(168000),
     refusedCount: 4,
     subRentCount: 3,
     priorityScore: 14.6,
@@ -94,15 +95,15 @@ export const PURCHASE_REQUESTS: PurchaseRequest[] = [
     dateCreatedBS: '2083-04-17',
     notes: 'Shortfall observed across 4 commercial shoots in Shrawan. Sub-renting frequently.',
     refusedBookings: [
-      { bookingId: 'b-089', bookingRef: 'BR-2026-0189', client: 'Gorkha Productions', startDate: '2026-08-10', endDate: '2026-08-14', quantityShort: 1 },
-      { bookingId: 'b-092', bookingRef: 'BR-2026-0192', client: 'Himal Media Works', startDate: '2026-08-12', endDate: '2026-08-15', quantityShort: 1 },
-      { bookingId: 'b-095', bookingRef: 'BR-2026-0195', client: 'Blackbox Films', startDate: '2026-08-18', endDate: '2026-08-22', quantityShort: 1 },
-      { bookingId: 'b-098', bookingRef: 'BR-2026-0198', client: 'Kathmandu Visuals', startDate: '2026-08-20', endDate: '2026-08-23', quantityShort: 1 },
+      { bookingId: 'b-089', bookingRef: 'BK-2026-0189', client: 'Gorkha Productions', startDate: '2026-08-10', endDate: '2026-08-14', quantityShort: 1 },
+      { bookingId: 'b-092', bookingRef: 'BK-2026-0192', client: 'Himal Media Works', startDate: '2026-08-12', endDate: '2026-08-15', quantityShort: 1 },
+      { bookingId: 'b-095', bookingRef: 'BK-2026-0195', client: 'Blackbox Films', startDate: '2026-08-18', endDate: '2026-08-22', quantityShort: 1 },
+      { bookingId: 'b-098', bookingRef: 'BK-2026-0198', client: 'Kathmandu Visuals', startDate: '2026-08-20', endDate: '2026-08-23', quantityShort: 1 },
     ],
     subRentals: [
-      { subRentalId: 'sr-011', subRentalRef: 'SUB-2026-0031', supplier: 'Everest Cine Partner', costPaid: 56000, date: '2026-07-22' },
-      { subRentalId: 'sr-014', subRentalRef: 'SUB-2026-0034', supplier: 'Everest Cine Partner', costPaid: 62000, date: '2026-07-29' },
-      { subRentalId: 'sr-018', subRentalRef: 'SUB-2026-0038', supplier: 'Pokhara Cine Equip', costPaid: 50000, date: '2026-08-03' },
+      { subRentalId: 'sr-011', subRentalRef: 'SUB-2026-0031', supplier: 'Everest Cine Partner', costPaid: rupees(56000), date: '2026-07-22' },
+      { subRentalId: 'sr-014', subRentalRef: 'SUB-2026-0034', supplier: 'Everest Cine Partner', costPaid: rupees(62000), date: '2026-07-29' },
+      { subRentalId: 'sr-018', subRentalRef: 'SUB-2026-0038', supplier: 'Pokhara Cine Equip', costPaid: rupees(50000), date: '2026-08-03' },
     ],
   },
   {
@@ -113,9 +114,9 @@ export const PURCHASE_REQUESTS: PurchaseRequest[] = [
     category: 'Lighting',
     requestedQty: 1,
     reason: 'Sub-rent event',
-    estimatedUnitCost: 285000,
-    totalEstimatedCost: 285000,
-    totalSubRentPaid: 85000,
+    estimatedUnitCost: rupees(285000),
+    totalEstimatedCost: rupees(285000),
+    totalSubRentPaid: rupees(85000),
     refusedCount: 2,
     subRentCount: 2,
     priorityScore: 8.9,
@@ -130,12 +131,12 @@ export const PURCHASE_REQUESTS: PurchaseRequest[] = [
     dateDecidedBS: '2083-04-18',
     notes: 'Approved by Owner. Sub-rental costs have surpassed 30% of asset value.',
     refusedBookings: [
-      { bookingId: 'b-081', bookingRef: 'BR-2026-0181', client: 'Music Video Collective', startDate: '2026-07-30', endDate: '2026-08-01', quantityShort: 1 },
-      { bookingId: 'b-085', bookingRef: 'BR-2026-0185', client: 'Red Panda Creative', startDate: '2026-08-05', endDate: '2026-08-07', quantityShort: 1 },
+      { bookingId: 'b-081', bookingRef: 'BK-2026-0181', client: 'Music Video Collective', startDate: '2026-07-30', endDate: '2026-08-01', quantityShort: 1 },
+      { bookingId: 'b-085', bookingRef: 'BK-2026-0185', client: 'Red Panda Creative', startDate: '2026-08-05', endDate: '2026-08-07', quantityShort: 1 },
     ],
     subRentals: [
-      { subRentalId: 'sr-008', subRentalRef: 'SUB-2026-0028', supplier: 'Lalitpur Lighting Co', costPaid: 45000, date: '2026-07-15' },
-      { subRentalId: 'sr-012', subRentalRef: 'SUB-2026-0032', supplier: 'Lalitpur Lighting Co', costPaid: 40000, date: '2026-07-25' },
+      { subRentalId: 'sr-008', subRentalRef: 'SUB-2026-0028', supplier: 'Lalitpur Lighting Co', costPaid: rupees(45000), date: '2026-07-15' },
+      { subRentalId: 'sr-012', subRentalRef: 'SUB-2026-0032', supplier: 'Lalitpur Lighting Co', costPaid: rupees(40000), date: '2026-07-25' },
     ],
   },
   {
@@ -146,9 +147,9 @@ export const PURCHASE_REQUESTS: PurchaseRequest[] = [
     category: 'Grip',
     requestedQty: 1,
     reason: 'Manual',
-    estimatedUnitCost: 145000,
-    totalEstimatedCost: 145000,
-    totalSubRentPaid: 22000,
+    estimatedUnitCost: rupees(145000),
+    totalEstimatedCost: rupees(145000),
+    totalSubRentPaid: rupees(22000),
     refusedCount: 1,
     subRentCount: 1,
     priorityScore: 4.5,
@@ -159,10 +160,10 @@ export const PURCHASE_REQUESTS: PurchaseRequest[] = [
     dateCreatedBS: '2083-04-20',
     notes: 'Backup stabilizer needed for wedding season peak.',
     refusedBookings: [
-      { bookingId: 'b-099', bookingRef: 'BR-2026-0199', client: 'Weddings Nepal', startDate: '2026-08-25', endDate: '2026-08-27', quantityShort: 1 },
+      { bookingId: 'b-099', bookingRef: 'BK-2026-0199', client: 'Weddings Nepal', startDate: '2026-08-25', endDate: '2026-08-27', quantityShort: 1 },
     ],
     subRentals: [
-      { subRentalId: 'sr-020', subRentalRef: 'SUB-2026-0040', supplier: 'Pokhara Cine Equip', costPaid: 22000, date: '2026-08-02' },
+      { subRentalId: 'sr-020', subRentalRef: 'SUB-2026-0040', supplier: 'Pokhara Cine Equip', costPaid: rupees(22000), date: '2026-08-02' },
     ],
   },
 ]

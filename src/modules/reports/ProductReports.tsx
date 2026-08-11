@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
 import { Donut, Legend, HBars, GroupedBars, catColor } from '../../components/ui/Charts'
 import { BRAND_TEXT } from '../../lib/status'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { PERIOD_CHIPS } from '../../data/expenseReports'
 import {
   KPIS,
@@ -117,10 +119,10 @@ function TrendChart() {
           </span>
         ))}
       </div>
-      <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 8 }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-md)', justifyContent: 'center', marginTop: 8 }}>
         {SALES_TREND.series.map((s, i) => (
           <span key={s.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-            <span aria-hidden style={{ width: 8, height: 8, borderRadius: 999, background: catColor(i === 0 ? 2 : 3) }} />
+            <span aria-hidden style={{ width: 8, height: 8, borderRadius: 'var(--r-badge)', background: catColor(i === 0 ? 2 : 3) }} />
             {s.name}
           </span>
         ))}
@@ -133,7 +135,7 @@ function TrendChart() {
 function MoverList({ rows, tone, unit }: { rows: Array<{ name: string; value: string; pct: number }>; tone: number; unit: string }) {
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, paddingBottom: 5, borderBottom: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-sm)', paddingBottom: 5, borderBottom: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>
         <span style={{ flex: 1 }}>Product</span>
         <span>{unit}</span>
       </div>
@@ -164,7 +166,11 @@ function MoverList({ rows, tone, unit }: { rows: Array<{ name: string; value: st
  * to read the row.
  */
 export default function ProductReports() {
+  const navigate = useNavigate()
   const [chip, setChip] = useState('This Month')
+  const money = useCanViewMoney()
+  const kpis = money ? KPIS : KPIS.filter((k) => k.label !== 'Total Product Revenue' && k.label !== 'Gross Profit')
+  const summary = money ? SUMMARY : SUMMARY.filter((s) => s.label !== 'Product Revenue' && s.label !== 'Gross Profit' && s.label !== 'Average Margin')
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageHeader
@@ -194,7 +200,7 @@ export default function ProductReports() {
               style={{
                 height: 30,
                 padding: '0 11px',
-                borderRadius: 8,
+                borderRadius: 'var(--r-sm)',
                 border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
                 background: on ? 'var(--nav-active-bg)' : 'var(--card)',
                 color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
@@ -211,7 +217,7 @@ export default function ProductReports() {
         })}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
         {FILTERS.map((f) => (
           <button
             key={f}
@@ -219,7 +225,7 @@ export default function ProductReports() {
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 8,
+              gap: 'var(--sp-sm)',
               height: 34,
               padding: '0 11px',
               borderRadius: 'var(--r-input)',
@@ -241,30 +247,36 @@ export default function ProductReports() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
-          <KpiStrip items={KPIS} columns={4} />
+          <KpiStrip items={kpis} columns={kpis.length} />
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
-            <Card title="Product Sales Trend (Rs)" action={<PeriodPill />}>
-              <TrendChart />
-            </Card>
+          <div style={{ display: 'grid', gridTemplateColumns: money ? 'repeat(4, minmax(0,1fr))' : 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+            {money && (
+              <Card title="Product Sales Trend (Rs)" action={<PeriodPill />}>
+                <TrendChart />
+              </Card>
+            )}
             <Card title="Sales by Category" action={<PeriodPill />}>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <Donut slices={BY_CATEGORY} centreLabel="Total" centreValue={`${CATEGORY_TOTAL} Units`} size={104} />
                 <Legend slices={BY_CATEGORY} />
               </div>
             </Card>
-            <Card title="Product Revenue (Top 5)" action={<PeriodPill />}>
-              <HBars rows={TOP_REVENUE.rows} axisTicks={TOP_REVENUE.axisTicks} colorIndex={2} />
-            </Card>
-            <Card title="Gross Profit Trend (Rs)" action={<PeriodPill />}>
-              <GroupedBars
-                groups={PROFIT_TREND.groups}
-                series={PROFIT_TREND.series}
-                yTicks={PROFIT_TREND.yTicks}
-                format={(v) => `Rs ${(v * 10000).toLocaleString('en-IN')}`}
-                height={140}
-              />
-            </Card>
+            {money && (
+              <Card title="Product Revenue (Top 5)" action={<PeriodPill />}>
+                <HBars rows={TOP_REVENUE.rows} axisTicks={TOP_REVENUE.axisTicks} colorIndex={2} />
+              </Card>
+            )}
+            {money && (
+              <Card title="Gross Profit Trend (Rs)" action={<PeriodPill />}>
+                <GroupedBars
+                  groups={PROFIT_TREND.groups}
+                  series={PROFIT_TREND.series}
+                  yTicks={PROFIT_TREND.yTicks}
+                  format={(v) => `Rs ${(v * 10000).toLocaleString('en-IN')}`}
+                  height={140}
+                />
+              </Card>
+            )}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
@@ -293,7 +305,10 @@ export default function ProductReports() {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1020 }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)' }}>
-                    {['Product', 'SKU', 'Category', 'Brand', 'Units Sold', 'Revenue (Rs)', 'Cost (Rs)', 'Profit (Rs)', 'Margin %', 'Stock', 'Supplier', 'Return Rate', 'Actions'].map(
+                    {(money
+                      ? ['Product', 'SKU', 'Category', 'Brand', 'Units Sold', 'Revenue (Rs)', 'Cost (Rs)', 'Profit (Rs)', 'Margin %', 'Stock', 'Supplier', 'Return Rate', 'Actions']
+                      : ['Product', 'SKU', 'Category', 'Brand', 'Units Sold', 'Stock', 'Supplier', 'Return Rate', 'Actions']
+                    ).map(
                       (h) => (
                         <th key={h} style={th}>
                           {h}
@@ -310,10 +325,10 @@ export default function ProductReports() {
                       <td style={{ ...td, color: 'var(--text2)' }}>{p.category}</td>
                       <td style={{ ...td, color: 'var(--text2)' }}>{p.brand}</td>
                       <td className="figure" style={td}>{p.sold}</td>
-                      <td className="figure" style={{ ...td, fontWeight: 600 }}>{p.revenue}</td>
-                      <td className="figure" style={{ ...td, color: 'var(--text2)' }}>{p.cost}</td>
-                      <td className="figure" style={{ ...td, fontWeight: 600 }}>{p.profit}</td>
-                      <td className="figure" style={{ ...td, color: 'var(--success-text)', fontWeight: 600 }}>{p.margin}</td>
+                      {money && <td className="figure" style={{ ...td, fontWeight: 600 }}>{p.revenue}</td>}
+                      {money && <td className="figure" style={{ ...td, color: 'var(--text2)' }}>{p.cost}</td>}
+                      {money && <td className="figure" style={{ ...td, fontWeight: 600 }}>{p.profit}</td>}
+                      {money && <td className="figure" style={{ ...td, color: 'var(--success-text)', fontWeight: 600 }}>{p.margin}</td>}
                       <td style={td}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                           <Icon name="dot" size={9} style={{ color: BRAND_TEXT[p.stockTone] }} />
@@ -335,7 +350,7 @@ export default function ProductReports() {
                 </tbody>
               </table>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', flexWrap: 'wrap', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '10px 14px', flexWrap: 'wrap', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               <span>Showing 1 to 5 of 158 products</span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 3 }}>
                 {['«', '‹', '1', '2', '3', '4', '5', '…', '16', '›', '»'].map((p, i) => {
@@ -348,7 +363,7 @@ export default function ProductReports() {
                       style={{
                         minWidth: 24,
                         height: 24,
-                        borderRadius: 6,
+                        borderRadius: 'var(--r-xs)',
                         border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
                         background: on ? 'var(--btn-primary-bg)' : 'transparent',
                         color: on ? 'var(--btn-primary-fg)' : 'var(--text2)',
@@ -365,7 +380,7 @@ export default function ProductReports() {
               </span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                 Rows per page
-                <span className="figure" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 26, padding: '0 8px', borderRadius: 7, border: '1px solid var(--border)' }}>
+                <span className="figure" style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', height: 26, padding: '0 8px', borderRadius: 7, border: '1px solid var(--border)' }}>
                   10
                   <Icon name="chevron_down" size={11} style={{ color: 'var(--muted)' }} />
                 </span>
@@ -376,20 +391,20 @@ export default function ProductReports() {
 
         <Rail>
           <Card title="Product Summary" action={<PeriodPill />}>
-            <SummaryRows rows={SUMMARY} />
+            <SummaryRows rows={summary} />
           </Card>
 
           <Card title="Top Selling Products" action={<PeriodPill />}>
             <div
-              style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto auto', gap: 7, paddingBottom: 5, borderBottom: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}
+              style={{ display: 'grid', gridTemplateColumns: money ? 'minmax(0,1fr) auto auto auto' : 'minmax(0,1fr) auto', gap: 7, paddingBottom: 5, borderBottom: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}
             >
               <span>Product</span>
               <span style={{ textAlign: 'right' }}>Units Sold</span>
-              <span style={{ textAlign: 'right' }}>Revenue (Rs)</span>
-              <span style={{ textAlign: 'right' }}>Profit (Rs)</span>
+              {money && <span style={{ textAlign: 'right' }}>Revenue (Rs)</span>}
+              {money && <span style={{ textAlign: 'right' }}>Profit (Rs)</span>}
             </div>
             {TOP_SELLING.map((p) => (
-              <div key={p.name} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto auto', gap: 7, padding: '6px 0', fontSize: 'var(--t-meta)', alignItems: 'center' }}>
+              <div key={p.name} style={{ display: 'grid', gridTemplateColumns: money ? 'minmax(0,1fr) auto auto auto' : 'minmax(0,1fr) auto', gap: 7, padding: '6px 0', fontSize: 'var(--t-meta)', alignItems: 'center' }}>
                 <span style={{ display: 'flex', gap: 6, minWidth: 0 }}>
                   <span className="figure" style={{ color: 'var(--muted)', flexShrink: 0 }}>
                     {p.rank}
@@ -397,11 +412,19 @@ export default function ProductReports() {
                   <span style={{ color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
                 </span>
                 <span className="figure" style={{ textAlign: 'right', color: 'var(--text)' }}>{p.sold}</span>
-                <span className="figure" style={{ textAlign: 'right', color: 'var(--text)', fontWeight: 600 }}>{p.revenue}</span>
-                <span className="figure" style={{ textAlign: 'right', color: 'var(--muted)' }}>{p.profit}</span>
+                {money && <span className="figure" style={{ textAlign: 'right', color: 'var(--text)', fontWeight: 600 }}>{p.revenue}</span>}
+                {money && <span className="figure" style={{ textAlign: 'right', color: 'var(--muted)' }}>{p.profit}</span>}
               </div>
             ))}
-            <span style={{ ...link, display: 'inline-block', marginTop: 6 }} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+            <span
+              role="link"
+              tabIndex={0}
+              onClick={() => navigate('/inventory')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') navigate('/inventory')
+              }}
+              style={{ ...link, display: 'inline-block', marginTop: 6, cursor: 'pointer' }}
+            >
               View All Products →
             </span>
           </Card>
@@ -423,39 +446,49 @@ export default function ProductReports() {
                 <span className="figure" style={{ textAlign: 'right', color: 'var(--text2)' }}>{p.reorder}</span>
               </div>
             ))}
-            <span style={{ ...link, display: 'inline-block', marginTop: 6 }} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+            <span
+              role="link"
+              tabIndex={0}
+              onClick={() => navigate('/inventory/stock-check')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') navigate('/inventory/stock-check')
+              }}
+              style={{ ...link, display: 'inline-block', marginTop: 6, cursor: 'pointer' }}
+            >
               View All Low Stock →
             </span>
           </Card>
 
-          <Card title="Supplier Ranking" action={<PeriodPill />}>
-            <div
-              style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto auto', gap: 7, paddingBottom: 5, borderBottom: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}
-            >
-              <span>Supplier</span>
-              <span style={{ textAlign: 'right' }}>Revenue (Rs)</span>
-              <span style={{ textAlign: 'right' }}>Margin %</span>
-              <span style={{ textAlign: 'right' }}>Lead Time</span>
-            </div>
-            {SUPPLIERS.map((s) => (
-              <div key={s.name} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto auto', gap: 7, padding: '6px 0', fontSize: 'var(--t-meta)', alignItems: 'center' }}>
-                <span style={{ display: 'flex', gap: 6, minWidth: 0 }}>
-                  <span className="figure" style={{ color: 'var(--muted)', flexShrink: 0 }}>
-                    {s.rank}
-                  </span>
-                  <span style={{ color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
-                </span>
-                <span className="figure" style={{ textAlign: 'right', color: 'var(--text)', fontWeight: 600 }}>{s.revenue}</span>
-                <span className="figure" style={{ textAlign: 'right', color: 'var(--text2)' }}>{s.margin}</span>
-                <span className="figure" style={{ textAlign: 'right', color: 'var(--muted)' }}>{s.lead}</span>
+          {money && (
+            <Card title="Supplier Ranking" action={<PeriodPill />}>
+              <div
+                style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto auto', gap: 7, paddingBottom: 5, borderBottom: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}
+              >
+                <span>Supplier</span>
+                <span style={{ textAlign: 'right' }}>Revenue (Rs)</span>
+                <span style={{ textAlign: 'right' }}>Margin %</span>
+                <span style={{ textAlign: 'right' }}>Lead Time</span>
               </div>
-            ))}
-            <span style={{ ...link, display: 'inline-block', marginTop: 6 }} aria-disabled title="Not built yet — see SCREENS.md for what is done">
-              View All Suppliers →
-            </span>
-          </Card>
+              {SUPPLIERS.map((s) => (
+                <div key={s.name} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto auto', gap: 7, padding: '6px 0', fontSize: 'var(--t-meta)', alignItems: 'center' }}>
+                  <span style={{ display: 'flex', gap: 6, minWidth: 0 }}>
+                    <span className="figure" style={{ color: 'var(--muted)', flexShrink: 0 }}>
+                      {s.rank}
+                    </span>
+                    <span style={{ color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
+                  </span>
+                  <span className="figure" style={{ textAlign: 'right', color: 'var(--text)', fontWeight: 600 }}>{s.revenue}</span>
+                  <span className="figure" style={{ textAlign: 'right', color: 'var(--text2)' }}>{s.margin}</span>
+                  <span className="figure" style={{ textAlign: 'right', color: 'var(--muted)' }}>{s.lead}</span>
+                </div>
+              ))}
+              <span style={{ ...link, display: 'inline-block', marginTop: 6 }} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+                View All Suppliers →
+              </span>
+            </Card>
+          )}
 
-          <div style={{ ...cardStyle, padding: 12, fontSize: 'var(--t-meta)', color: 'var(--muted)', display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <div style={{ ...cardStyle, padding: 'var(--sp-md)', fontSize: 'var(--t-meta)', color: 'var(--muted)', display: 'flex', flexDirection: 'column', gap: 5 }}>
             <span>All amounts are in NPR</span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               Data last updated: Today, 10:30 AM

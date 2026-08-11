@@ -55,7 +55,7 @@ export default function ScreenLock({ onUnlock }: { onUnlock: () => void }) {
           Enter PIN to resume session
         </p>
 
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', margin: '0 0 32px' }}>
+        <div style={{ display: 'flex', gap: 'var(--sp-md)', justifyContent: 'center', margin: '0 0 32px' }}>
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
@@ -70,7 +70,7 @@ export default function ScreenLock({ onUnlock }: { onUnlock: () => void }) {
           ))}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--sp-md)' }}>
           {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
             <button
               key={n}
@@ -135,7 +135,7 @@ export default function ScreenLock({ onUnlock }: { onUnlock: () => void }) {
             window.location.href = '/login'
           }}
           style={{
-            marginTop: 40,
+            marginTop: 'var(--sp-3xl)',
             background: 'transparent',
             border: 'none',
             color: 'var(--danger)',

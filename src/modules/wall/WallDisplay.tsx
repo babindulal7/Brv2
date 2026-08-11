@@ -36,7 +36,7 @@ function Row({ m, showDue }: { m: Movement; showDue: boolean }) {
         display: 'grid',
         gridTemplateColumns: '90px minmax(0,1fr) auto',
         alignItems: 'center',
-        gap: 16,
+        gap: 'var(--sp-lg)',
         padding: `${ROW_H / 2.5}px 4px`,
         borderBottom: '1px solid var(--border)',
       }}
@@ -89,7 +89,7 @@ function Column({ title, icon, rows, emptyText }: { title: string; icon: 'truck'
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 12,
+          gap: 'var(--sp-md)',
           padding: '18px 20px',
           borderBottom: '2px solid var(--border)',
           background: 'var(--card2)',
@@ -136,13 +136,13 @@ export default function WallDisplay() {
         background: 'var(--app)',
       }}
     >
-      <header style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+      <header style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-lg)' }}>
         <span
           aria-hidden
           style={{
             width: 56,
             height: 56,
-            borderRadius: 14,
+            borderRadius: 'var(--r-card)',
             display: 'grid',
             placeItems: 'center',
             background: 'var(--nav-active-bg)',

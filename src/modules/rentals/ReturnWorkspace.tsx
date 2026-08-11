@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle, Rail } from '../../components/ui/Page'
+import { thStyle as th } from '../../components/ui/TableHeaderCell'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
 import type { BookingStatus, JobState, ItemState } from '../../lib/workflow'
+import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { BOOKING } from '../../data/booking'
 import {
@@ -103,7 +105,6 @@ function cloneSession(s: ReturnSession): ReturnSession {
   return { ...s, signatures: { ...s.signatures } }
 }
 
-const th = { textAlign: 'left' as const, padding: '8px 9px', fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)', whiteSpace: 'nowrap' as const, borderBottom: '1px solid var(--border)' }
 const td = { padding: '8px 9px', fontSize: 'var(--t-meta)', color: 'var(--text)' }
 
 interface GateRow {
@@ -127,10 +128,17 @@ export default function ReturnWorkspace() {
     S2: cloneSession(SEED_SESSIONS.S2),
   }))
   const [expandedId, setExpandedId] = useState<string | null>('r11')
+  const [showScanner, setShowScanner] = useState(false)
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('All')
   const [query, setQuery] = useState('')
   const [scanLog, setScanLog] = useState<string[]>([])
 
+  const scannableUnits = SEED_UNITS.map((u) => ({
+    id: u.id,
+    name: u.name,
+    serial: u.serial,
+    isAccessory: !u.serial || u.serial === 'N/A' || u.name.toLowerCase().includes('cable') || u.name.toLowerCase().includes('cap'),
+  }))
   const activeId: SessionId = 'S2'
   const active = sessions[activeId]
 
@@ -294,7 +302,7 @@ export default function ReturnWorkspace() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       {/* ── header ─────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
             <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
@@ -325,8 +333,8 @@ export default function ReturnWorkspace() {
               {returned.length} / {TOTAL_ITEMS} ({pct}%)
             </span>
           </div>
-          <div aria-hidden style={{ height: 8, borderRadius: 999, background: 'var(--card2)', marginTop: 6, overflow: 'hidden' }}>
-            <div style={{ width: `${pct}%`, height: '100%', background: 'var(--success)', borderRadius: 999, transition: 'width var(--dur) ease' }} />
+          <div aria-hidden style={{ height: 8, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 6, overflow: 'hidden' }}>
+            <div style={{ width: '100%', height: '100%', background: 'var(--success)', borderRadius: 'var(--r-badge)', transform: `scaleX(${pct / 100})`, transformOrigin: 'left', transition: 'transform var(--dur) ease' }} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, fontSize: 'var(--t-meta)', color: outstanding.length ? 'var(--progress-text)' : 'var(--success-text)', fontWeight: 600 }}>
             <Icon name={outstanding.length ? 'alert_triangle' : 'checklist'} size={12} />
@@ -335,7 +343,7 @@ export default function ReturnWorkspace() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
           <Button icon="file">Print Return Report</Button>
           <Link to={`/rentals/${id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--btn-secondary-border)', background: 'var(--btn-secondary-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none' }}>
             <Icon name="external_link" size={14} />
@@ -375,10 +383,10 @@ export default function ReturnWorkspace() {
       {/* ── §5 scan bar ────────────────────────────────────────────────── */}
       <Card>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <button type="button" onClick={() => setScanLog((p) => ['Scan Barcode opened', ...p].slice(0, 5))} style={{ ...bigScanBtn, ...BLUE_PRIMARY }}>
+          <button type="button" onClick={() => setShowScanner(true)} style={{ ...bigScanBtn, ...BLUE_PRIMARY }}>
             <Icon name="queues" size={16} /> Scan Barcode
           </button>
-          <button type="button" onClick={() => setScanLog((p) => ['Scan QR opened', ...p].slice(0, 5))} style={{ ...bigScanBtn, background: 'var(--btn-secondary-bg)', color: 'var(--text)', border: '1px solid var(--btn-secondary-border)' }}>
+          <button type="button" onClick={() => setShowScanner(true)} style={{ ...bigScanBtn, background: 'var(--btn-secondary-bg)', color: 'var(--text)', border: '1px solid var(--btn-secondary-border)' }}>
             <Icon name="queues" size={16} /> Scan QR
           </button>
           <div style={{ flex: 1, minWidth: 180, display: 'flex', alignItems: 'center' }}>
@@ -464,7 +472,7 @@ export default function ReturnWorkspace() {
                   })}
                   {visible.length === 0 && (
                     <tr>
-                      <td colSpan={9} style={{ padding: 24, textAlign: 'center', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                      <td colSpan={9} style={{ padding: 'var(--sp-xl)', textAlign: 'center', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                         No items match these filters.
                       </td>
                     </tr>
@@ -474,7 +482,7 @@ export default function ReturnWorkspace() {
             </div>
 
             {/* §6.5 — two counters, never merged. */}
-            <div style={{ margin: 12, padding: '10px 12px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)', display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 'var(--t-meta)' }}>
+            <div style={{ margin: 12, padding: '10px 12px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)', display: 'flex', gap: 'var(--sp-xl)', flexWrap: 'wrap', fontSize: 'var(--t-meta)' }}>
               <span>
                 Items Not Returned: <b className="figure" style={{ color: missing.length ? 'var(--danger-text)' : 'var(--text)' }}>{missing.length}</b>
               </span>
@@ -488,9 +496,9 @@ export default function ReturnWorkspace() {
 
           {/* ── §12.1 Session Gates — full checklist, §5.6 ─────────────────── */}
           <Card title={`2 · Session Gates — ${active.id}`} action={<span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{active.state}</span>}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
               {gates.map((g) => (
-                <div key={g.n} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '7px 9px', borderRadius: 8, background: g.passing ? 'var(--st-in-bg)' : 'var(--st-progress-bg)' }}>
+                <div key={g.n} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '7px 9px', borderRadius: 'var(--r-sm)', background: g.passing ? 'var(--st-in-bg)' : 'var(--st-progress-bg)' }}>
                   <Icon name={g.passing ? 'checklist' : 'alert_triangle'} size={14} style={{ color: g.passing ? 'var(--st-in-fg)' : 'var(--st-progress-fg)', marginTop: 2, flexShrink: 0 }} />
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: g.passing ? 'var(--st-in-fg)' : 'var(--text)' }}>{g.label}</div>
@@ -535,7 +543,7 @@ export default function ReturnWorkspace() {
               const n = list.filter((u) => u.sessionId === sid).length
               return (
                 <div key={sid} style={{ padding: '8px 0', borderBottom: sid === 'S1' ? '1px solid var(--border)' : undefined }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                     <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Session {sid.slice(1)}</span>
                     <span style={{ display: 'inline-flex', alignItems: 'center', height: 18, padding: '0 7px', borderRadius: 'var(--r-badge)', background: STATUS[s.state === 'Complete' ? 'in' : s.state === 'In Progress' ? 'progress' : 'neutral'].bg, color: STATUS[s.state === 'Complete' ? 'in' : s.state === 'In Progress' ? 'progress' : 'neutral'].fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
                       {s.state}
@@ -608,7 +616,7 @@ export default function ReturnWorkspace() {
           {scanLog.length > 0 && (
             <div style={{ ...cardStyle, padding: 11 }}>
               <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Scan log</div>
-              <div role="status" aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div role="status" aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
                 {scanLog.map((l, i) => (
                   <span key={i} style={{ fontSize: 'var(--t-meta)', color: l.startsWith('✕') ? 'var(--danger-text)' : 'var(--text2)' }}>{l}</span>
                 ))}
@@ -619,7 +627,7 @@ export default function ReturnWorkspace() {
       </div>
 
       {/* ── §11 footer — two buttons, primary blue, autosave, no Save Draft ── */}
-      <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', flexWrap: 'wrap' }}>
+      <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '12px 14px', flexWrap: 'wrap' }}>
         <button
           type="button"
           onClick={() => navigate(`/rentals/${id}`)}
@@ -658,15 +666,26 @@ export default function ReturnWorkspace() {
       <p style={{ margin: '-4px 2px 0', textAlign: 'right', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
         {allResolved ? 'This will close the Return and set the booking to Returned.' : `This closes Session ${activeId.slice(1)} only; ${outstanding.length} item(s) remain outstanding.`}
       </p>
+
+      <BarcodeScannerModal
+        isOpen={showScanner}
+        onClose={() => setShowScanner(false)}
+        mode="return"
+        bookingId={id}
+        items={scannableUnits}
+        onItemScanned={(item) => {
+          scan(item.id)
+        }}
+      />
     </div>
   )
 }
 
-const bigScanBtn = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 44, padding: '0 18px', borderRadius: 'var(--r-btn)', fontSize: 'var(--t-ui)', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer' } as const
+const bigScanBtn = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--sp-sm)', height: 44, padding: '0 18px', borderRadius: 'var(--r-btn)', fontSize: 'var(--t-ui)', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer' } as const
 
 function SigRow({ label, sig, onCapture, required, disabled }: { label: string; sig: Sig | undefined; onCapture: () => void; required: boolean; disabled: boolean }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{label}</div>
         {sig ? (
@@ -681,7 +700,7 @@ function SigRow({ label, sig, onCapture, required, disabled }: { label: string; 
           type="button"
           onClick={onCapture}
           disabled={disabled}
-          style={{ height: 26, padding: '0 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
+          style={{ height: 26, padding: '0 9px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
         >
           Capture
         </button>
@@ -737,7 +756,9 @@ function UnitRow({
           <span style={{ fontWeight: 600 }}>{u.name}</span>
           <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{u.category}</span>
         </td>
-        <td className="identifier" style={{ ...td, color: 'var(--text2)' }}>{u.serial}</td>
+        <td className="identifier" style={{ ...td, color: 'var(--text2)' }}>
+          <Link to={`/inventory/${u.serial}`} style={{ color: 'inherit', textDecoration: 'none' }}>{u.serial}</Link>
+        </td>
         <td className="figure" style={td}>1</td>
         <td style={td}>
           <span style={{ display: 'inline-flex', alignItems: 'center', height: 20, padding: '0 8px', borderRadius: 'var(--r-badge)', background: itemTone.bg, color: itemTone.fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
@@ -756,7 +777,7 @@ function UnitRow({
         </td>
         <td style={td}>
           {u.state === 'Returned' ? (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: u.inspection === 'Inspected' ? 'var(--success-text)' : 'var(--progress-text)', fontWeight: 600 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', color: u.inspection === 'Inspected' ? 'var(--success-text)' : 'var(--progress-text)', fontWeight: 600 }}>
               <Icon name={u.inspection === 'Inspected' ? 'checklist' : 'alert_triangle'} size={12} />
               {u.inspection}
             </span>
@@ -766,7 +787,7 @@ function UnitRow({
         </td>
         <td className="identifier" style={{ ...td, color: 'var(--muted)' }}>{u.sessionId ?? '—'}</td>
         <td style={{ ...td, width: 150 }}>
-          <span style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', alignItems: 'center' }}>
+          <span style={{ display: 'flex', gap: 'var(--sp-xs)', justifyContent: 'flex-end', alignItems: 'center' }}>
             {u.state === 'Picked Up' && <RowAction label="Mark Returned" onClick={onScan} />}
             {u.state === 'Picked Up' && <RowAction label="Not Returned" onClick={onMarkMissing} />}
             {u.state === 'Missing' && <RowAction label="Mark Returned" onClick={onScan} />}
@@ -783,7 +804,7 @@ function UnitRow({
           <td colSpan={9} style={{ padding: 0, background: 'var(--card2)' }}>
             <div style={{ padding: 14 }}>
               {u.state !== 'Returned' ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                   <Icon name="info" size={14} />
                   Pickup: {u.pickup.at} · {u.pickup.by} ·{' '}
                   <Link to={`/rentals/${id}/evidence`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }}>View Pickup Photos ({u.pickup.photos})</Link>
@@ -791,7 +812,7 @@ function UnitRow({
                 </div>
               ) : (
                 <>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--sp-lg)' }}>
                     <div>
                       <div style={panelTitle}>Pickup Info</div>
                       <div style={panelLine}>{u.pickup.at}</div>
@@ -820,7 +841,7 @@ function UnitRow({
                               style={{
                                 height: 26,
                                 padding: '0 9px',
-                                borderRadius: 6,
+                                borderRadius: 'var(--r-xs)',
                                 border: `1px solid ${on ? STATUS[CONDITION_TONE[c]].fg : 'var(--border)'}`,
                                 background: on ? STATUS[CONDITION_TONE[c]].bg : 'transparent',
                                 color: on ? STATUS[CONDITION_TONE[c]].fg : 'var(--text2)',
@@ -841,7 +862,7 @@ function UnitRow({
                     <div>
                       <div style={panelTitle}>Accessories</div>
                       {u.accessories && u.accessories.length > 0 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
                           {u.accessories.map((a) => (
                             <div key={a.name} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)' }}>
                               <span style={{ flex: 1, color: a.present === false ? 'var(--danger-text)' : 'var(--text2)' }}>{a.name}</span>
@@ -866,7 +887,7 @@ function UnitRow({
                             aria-label={`Damage description for ${u.name}`}
                             style={{ width: '100%', minHeight: 46, padding: 7, borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
                           />
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginTop: 6 }}>
                             <span className="figure" style={{ fontSize: 'var(--t-meta)', color: (u.damage?.photos ?? 0) > 0 ? 'var(--success-text)' : 'var(--danger-text)' }}>
                               {u.damage?.photos ?? 0} photo(s)
                             </span>
@@ -882,7 +903,7 @@ function UnitRow({
                                 disabled={(u.damage?.photos ?? 0) === 0}
                                 onClick={onSendForApproval}
                                 title={(u.damage?.photos ?? 0) === 0 ? 'Evidence required before routing for approval' : undefined}
-                                style={{ height: 26, padding: '0 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card2)', color: (u.damage?.photos ?? 0) === 0 ? 'var(--muted)' : 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: (u.damage?.photos ?? 0) === 0 ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                                style={{ height: 26, padding: '0 9px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'var(--card2)', color: (u.damage?.photos ?? 0) === 0 ? 'var(--muted)' : 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: (u.damage?.photos ?? 0) === 0 ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
                               >
                                 Send for Manager Approval
                               </button>
@@ -904,7 +925,7 @@ function UnitRow({
                       placeholder="Notes for this inspection…"
                       style={{ width: '100%', minHeight: 36, padding: 7, borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
                     />
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 9 }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--sp-sm)', marginTop: 9 }}>
                       <button type="button" onClick={onCancel} style={{ height: 30, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                         Cancel
                       </button>
@@ -961,7 +982,7 @@ function RowAction({ label, onClick }: { label: string; onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      style={{ height: 22, padding: '0 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
+      style={{ height: 22, padding: '0 7px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
     >
       {label}
     </button>

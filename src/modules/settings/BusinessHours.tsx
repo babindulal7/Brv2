@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, FooterNote, cardStyle, SummaryRows } from '../../components/ui/Page'
-import { EmptyState } from '../../components/ui/StateViews'
+import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { STATUS, BRAND, BRAND_ON } from '../../lib/status'
 import type { StatusKey, BrandKey } from '../../lib/status'
 import { TODAY, toBs, formatBs, formatAd, isWeekend } from '../../lib/bs'
@@ -139,7 +139,7 @@ function ToneChip({ tone, icon, children }: { tone: StatusKey; icon: IconName; c
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 4,
+        gap: 'var(--sp-xs)',
         padding: '2px 8px',
         borderRadius: 'var(--r-badge)',
         background: t.bg,
@@ -228,7 +228,7 @@ const linkStyle: CSSProperties = {
   alignSelf: 'flex-start',
   display: 'inline-flex',
   alignItems: 'center',
-  gap: 4,
+  gap: 'var(--sp-xs)',
   border: 'none',
   background: 'transparent',
   padding: 0,
@@ -248,7 +248,7 @@ function KpiCard({ k }: { k: Tile }) {
           style={{
             width: 30,
             height: 30,
-            borderRadius: 8,
+            borderRadius: 'var(--r-sm)',
             background: BRAND[k.accent],
             color: BRAND_ON[k.accent],
             display: 'grid',
@@ -421,7 +421,7 @@ function BusinessHoursCard() {
         </span>
       }
     >
-      <div role="tablist" aria-label="Business hours scope" style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
+      <div role="tablist" aria-label="Business hours scope" style={{ display: 'flex', gap: 'var(--sp-xs)', marginBottom: 'var(--sp-md)', flexWrap: 'wrap' }}>
         {SCOPES.map((s) => {
           const on = s === scope
           return (
@@ -452,7 +452,7 @@ function BusinessHoursCard() {
 
       {scope === 'Company' ? (
         <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginBottom: 'var(--sp-sm)' }}>
             <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Company Default Hours</span>
             <ToneChip tone="in" icon="check">
               Active
@@ -541,7 +541,7 @@ function WeeklySchedule() {
                     />
                     <span style={{ fontWeight: 600 }}>{d.weekday}</span>
                   </span>
-                  <span className="figure" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginLeft: 16 }}>
+                  <span className="figure" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginLeft: 'var(--sp-lg)' }}>
                     {bsShort(d.date)}
                   </span>
                 </td>
@@ -571,9 +571,9 @@ function WeeklySchedule() {
         style={{
           display: 'flex',
           gap: 9,
-          marginTop: 12,
+          marginTop: 'var(--sp-md)',
           padding: '10px 11px',
-          borderRadius: 8,
+          borderRadius: 'var(--r-sm)',
           border: '1px solid var(--border)',
           background: 'var(--card2)',
         }}
@@ -624,7 +624,7 @@ function HolidayCalendar({ rows }: { rows: CalException[] }) {
           >
             <Icon name="chevron_right" size={14} />
           </span>
-          <span style={{ display: 'flex', gap: 2, marginLeft: 4 }}>
+          <span style={{ display: 'flex', gap: 2, marginLeft: 'var(--sp-xs)' }}>
             {CALENDAR_VIEWS.map((v) => {
               const active = v === view
               return (
@@ -699,7 +699,7 @@ function HolidayCalendar({ rows }: { rows: CalException[] }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0,1fr))', gap: 5 }}>
             {view === 'Month' &&
               Array.from({ length: lead }, (_, i) => (
-                <div key={`lead-${i}`} aria-hidden style={{ minHeight: 76, borderRadius: 8, background: 'var(--card2)', opacity: 0.4 }} />
+                <div key={`lead-${i}`} aria-hidden style={{ minHeight: 76, borderRadius: 'var(--r-sm)', background: 'var(--card2)', opacity: 0.4 }} />
               ))}
             {/* Week is the Sun–Sat week `lib/bs` generates, so it lines up under
                 the same seven headers Month does — a ±3-day window around today
@@ -720,7 +720,7 @@ function HolidayCalendar({ rows }: { rows: CalException[] }) {
                       flexDirection: 'column',
                       gap: 3,
                       padding: 6,
-                      borderRadius: 8,
+                      borderRadius: 'var(--r-sm)',
                       background: today ? 'var(--nav-active-bg)' : 'var(--card)',
                       border: today ? '1px solid var(--nav-active-accent)' : '1px solid var(--border)',
                       minWidth: 0,
@@ -773,7 +773,7 @@ function HolidayCalendar({ rows }: { rows: CalException[] }) {
         </>
       )}
 
-      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 12 }}>
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 'var(--sp-md)' }}>
         {legend.map((k) => (
           <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--text2)' }}>
             <Icon name={KIND_ICON[k]} size={12} style={{ color: STATUS[KIND_TONE[k]].fg }} />
@@ -831,7 +831,7 @@ function ShiftManagement({ rows, onAdd }: { rows: Shift[]; onAdd: () => void }) 
                     <span style={{ fontWeight: 600 }}>{s.name}</span>
                   </span>
                   {lapping.has(s.name) && (
-                    <span style={{ display: 'block', marginTop: 3, marginLeft: 16 }}>
+                    <span style={{ display: 'block', marginTop: 3, marginLeft: 'var(--sp-lg)' }}>
                       <ToneChip tone="progress" icon="crew">
                         Overlapping cover
                       </ToneChip>
@@ -910,7 +910,7 @@ function SpecialDays({ rows }: { rows: CalException[] }) {
           description="Nothing closes or runs reduced hours inside the month the Date Engine can name."
         />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
           {shown.map((e) => (
             <div
               key={e.id}
@@ -919,7 +919,7 @@ function SpecialDays({ rows }: { rows: CalException[] }) {
                 alignItems: 'center',
                 gap: 10,
                 padding: '8px 9px',
-                borderRadius: 8,
+                borderRadius: 'var(--r-sm)',
                 border: '1px solid var(--border)',
                 background: 'var(--card2)',
               }}
@@ -994,7 +994,7 @@ function ModalShell({ title, onClose, children }: { title: string; onClose: () =
         background: 'var(--modal)',
         display: 'grid',
         placeItems: 'center',
-        padding: 16,
+        padding: 'var(--sp-lg)',
         zIndex: 40,
       }}
     >
@@ -1010,10 +1010,10 @@ function ModalShell({ title, onClose, children }: { title: string; onClose: () =
           padding: 18,
           display: 'flex',
           flexDirection: 'column',
-          gap: 12,
+          gap: 'var(--sp-md)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
           <h2 style={{ margin: 0, fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--text)' }}>{title}</h2>
           <button
             type="button"
@@ -1033,13 +1033,15 @@ function ModalShell({ title, onClose, children }: { title: string; onClose: () =
 function Errors({ list }: { list: string[] }) {
   if (list.length === 0) return null
   return (
-    <div role="alert" style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      {list.map((e) => (
-        <span key={e} style={{ fontSize: 'var(--t-th)', color: 'var(--danger-text)' }}>
-          {e}
-        </span>
-      ))}
-    </div>
+    <ErrorBanner
+      message={
+        <ul style={{ margin: 0, paddingLeft: 'var(--sp-lg)' }}>
+          {list.map((e) => (
+            <li key={e}>{e}</li>
+          ))}
+        </ul>
+      }
+    />
   )
 }
 
@@ -1077,12 +1079,12 @@ function AddHolidayModal({ onClose, onAdd, existing }: { onClose: () => void; on
 
   return (
     <ModalShell title="Add holiday or shutdown" onClose={onClose}>
-      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
         <span style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>Name</span>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Janai Purnima" style={fieldBox()} />
       </label>
 
-      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
         <span style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>Kind</span>
         <select value={kind} onChange={(e) => setKind(e.target.value as ExceptionKind)} style={fieldBox()}>
           {(['public', 'festival', 'maintenance', 'special'] as ExceptionKind[]).map((k) => (
@@ -1093,7 +1095,7 @@ function AddHolidayModal({ onClose, onAdd, existing }: { onClose: () => void; on
         </select>
       </label>
 
-      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
         <span style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>Days from today</span>
         <input
           type="number"
@@ -1106,7 +1108,7 @@ function AddHolidayModal({ onClose, onAdd, existing }: { onClose: () => void; on
         </span>
       </label>
 
-      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
         <span style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>Scope</span>
         <input value={scope} onChange={(e) => setScope(e.target.value)} placeholder="All branches" style={fieldBox()} />
       </label>
@@ -1115,7 +1117,7 @@ function AddHolidayModal({ onClose, onAdd, existing }: { onClose: () => void; on
 
       <p style={{ margin: 0, fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.5 }}>{SESSION_NOTE}</p>
 
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-sm)', justifyContent: 'flex-end' }}>
         <Button onClick={onClose}>Cancel</Button>
         <Button variant="primary" icon="plus" onClick={submit}>
           Add to calendar
@@ -1176,28 +1178,28 @@ function AddShiftModal({ onClose, onAdd, existing }: { onClose: () => void; onAd
 
   return (
     <ModalShell title="Add shift" onClose={onClose}>
-      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
         <span style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>Shift name</span>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Evening Shift" style={fieldBox()} />
       </label>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
           <span style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>Start (24h)</span>
           <input value={start} onChange={(e) => setStart(e.target.value)} placeholder="06:00" style={fieldBox()} />
         </label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
           <span style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>End (24h)</span>
           <input value={end} onChange={(e) => setEnd(e.target.value)} placeholder="14:00" style={fieldBox()} />
         </label>
       </div>
 
-      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
         <span style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>Break (minutes)</span>
         <input type="number" value={breakMinutes} onChange={(e) => setBreakMinutes(Number(e.target.value))} style={fieldBox()} />
       </label>
 
-      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
         <span style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>Departments (comma separated)</span>
         <input value={departments} onChange={(e) => setDepartments(e.target.value)} placeholder="Warehouse, Operations" style={fieldBox()} />
       </label>
@@ -1208,7 +1210,7 @@ function AddShiftModal({ onClose, onAdd, existing }: { onClose: () => void; onAd
         Departments are roster groups, not roles — the business 8 stay the only role names in the product. {SESSION_NOTE}
       </p>
 
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-sm)', justifyContent: 'flex-end' }}>
         <Button onClick={onClose}>Cancel</Button>
         <Button variant="primary" icon="plus" onClick={submit}>
           Add shift
@@ -1303,17 +1305,16 @@ export function BusinessHoursPane({ state }: { state: BusinessHoursState }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
       {SEED_ERRORS.length > 0 && (
-        <div
-          role="alert"
-          style={{ ...cardStyle, padding: 12, borderColor: 'var(--danger)', display: 'flex', flexDirection: 'column', gap: 4 }}
-        >
-          <strong style={{ fontSize: 'var(--t-ui)', color: 'var(--danger-text)' }}>Seed data does not reconcile</strong>
-          {SEED_ERRORS.map((e) => (
-            <span key={e} style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-              {e}
-            </span>
-          ))}
-        </div>
+        <ErrorBanner
+          title="Seed data does not reconcile"
+          message={
+            <ul style={{ margin: 0, paddingLeft: 'var(--sp-lg)' }}>
+              {SEED_ERRORS.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          }
+        />
       )}
 
       <section
@@ -1417,10 +1418,10 @@ export function BusinessHoursRail({ state }: { state: BusinessHoursState }) {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
+                gap: 'var(--sp-sm)',
                 width: '100%',
                 padding: '8px 9px',
-                borderRadius: 8,
+                borderRadius: 'var(--r-sm)',
                 border: '1px solid var(--border)',
                 background: 'var(--card2)',
                 color: 'var(--text)',
@@ -1444,7 +1445,7 @@ export function BusinessHoursRail({ state }: { state: BusinessHoursState }) {
       </Card>
 
       <Card title="Quick Actions">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-sm)' }}>
           {[
             { label: 'Add Holiday', icon: 'calendar_event' as IconName, run: state.openHoliday },
             { label: 'Add Shift', icon: 'crew' as IconName, run: state.openShift },
@@ -1489,14 +1490,14 @@ export function BusinessHoursRail({ state }: { state: BusinessHoursState }) {
                 style={{
                   width: 26,
                   height: 26,
-                  borderRadius: 999,
+                  borderRadius: 'var(--r-badge)',
                   display: 'grid',
                   placeItems: 'center',
                   flexShrink: 0,
                   background: 'var(--card2)',
                   color: 'var(--text2)',
                   border: '1px solid var(--border)',
-                  fontSize: 10,
+                  fontSize: 'var(--t-th)',
                   fontWeight: 700,
                 }}
               >
@@ -1521,7 +1522,7 @@ export function BusinessHoursRail({ state }: { state: BusinessHoursState }) {
       <Card title="AI Scheduling Insights">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
           {insights.map((i) => (
-            <div key={i.text} style={{ display: 'flex', gap: 8 }}>
+            <div key={i.text} style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
               <Icon name={i.icon} size={14} style={{ color: STATUS[i.tone].fg, flexShrink: 0, marginTop: 2 }} />
               <span style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', lineHeight: 1.5 }}>{i.text}</span>
             </div>

@@ -40,7 +40,7 @@ export default function AlertsPanel() {
         <span
           className="figure"
           style={{
-            marginLeft: 8,
+            marginLeft: 'var(--sp-sm)',
             height: 21,
             padding: '0 8px',
             borderRadius: 'var(--r-badge)',
@@ -73,25 +73,27 @@ export default function AlertsPanel() {
               className="lift"
               style={{
                 display: 'grid',
-                gridTemplateColumns: '32px minmax(0,1fr) auto',
-                gap: 10,
-                padding: '11px 15px',
+                gridTemplateColumns: '34px minmax(0,1fr) auto',
+                gap: 12,
+                padding: '12px 15px',
                 borderBottom: i < alerts.length - 1 ? '1px solid var(--border)' : 'none',
-                alignItems: 'start',
+                alignItems: 'center',
                 color: 'inherit',
                 textDecoration: 'none',
+                transition: 'background-color 0.15s ease',
               }}
             >
               <span
                 style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 9,
+                  width: 34,
+                  height: 34,
+                  borderRadius: 10,
                   background: c.bg,
                   color: c.fg,
                   display: 'grid',
                   placeItems: 'center',
                   flexShrink: 0,
+                  boxShadow: 'var(--shadow-sm)',
                 }}
               >
                 <Icon name={a.icon} size={16} fill />
@@ -124,9 +126,6 @@ export default function AlertsPanel() {
         })}
       </div>
 
-      {/* The render's "+ 2 more alerts". The count is what is actually left
-          below Critical for *this* session, so it can never advertise a money
-          alert a money-blind role is not allowed to open. */}
       {rest > 0 && (
         <Link
           to="/notifications"
@@ -134,12 +133,13 @@ export default function AlertsPanel() {
             display: 'flex',
             alignItems: 'center',
             gap: 6,
-            padding: '10px 15px',
+            padding: '11px 15px',
             borderTop: '1px solid var(--border)',
             color: 'var(--link)',
             fontSize: 'var(--t-meta)',
             fontWeight: 600,
             textDecoration: 'none',
+            transition: 'color 0.15s ease',
           }}
         >
           <Icon name="plus" size={13} />

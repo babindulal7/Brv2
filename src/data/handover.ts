@@ -179,7 +179,7 @@ export const SESSIONS: Record<SessionId, HandoverSession> = {
     id: 'S1',
     state: 'Complete',
     receiver: 'Bikash Thapa',
-    receiverPhone: '+977 9841234567',
+    receiverPhone: '+977 9843927164',
     warehouseStaff: 'Sagar Maharjan',
     startedAt: '16 Jul 2026, 06:05 AM',
     closedAt: '16 Jul 2026, 06:16 AM',
@@ -193,7 +193,7 @@ export const SESSIONS: Record<SessionId, HandoverSession> = {
     id: 'S2',
     state: 'In Progress',
     receiver: 'Bikash Thapa',
-    receiverPhone: '+977 9841234567',
+    receiverPhone: '+977 9843927164',
     warehouseStaff: 'Sagar Maharjan',
     startedAt: '16 Jul 2026, 02:00 PM',
     // §9.2 — unsigned. Session 2 has not closed, so it carries no signature yet.
@@ -238,7 +238,7 @@ export function driverSignatureRequired(m: DeliveryMethod): boolean {
 export const DELIVERY = {
   method: 'Customer Pickup' as DeliveryMethod,
   pickupPerson: 'Bikash Thapa',
-  pickupPersonPhone: '+977 9841234567',
+  pickupPersonPhone: '+977 9843927164',
   warehouseStaff: 'Sagar Maharjan',
   /** §10.5-equivalent explanation card, replacing the render's warehouse map (§0 "Landed in the build"). */
   note: 'Items will be collected from our warehouse by the client. No delivery route to show.',
@@ -247,7 +247,7 @@ export const DELIVERY = {
 export const RECEIVER = {
   authorizedBy: 'Bikash Thapa (Director)',
   receiver: 'Bikash Thapa',
-  phone: '+977 9841234567',
+  phone: '+977 9843927164',
   email: 'bikash@himalayanfilms.com',
   govId: '27-01-74-12345',
 }

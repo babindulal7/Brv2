@@ -1,0 +1,75 @@
+/*
+ * Marketing site stylesheet — deliberately NOT the ops app's stylesheet.
+ *
+ * This file is loaded only by `marketing.html`, a separate Vite entry point.
+ * That isolation is load-bearing, not incidental: `src/styles/theme.css` (the
+ * ops app) has never imported Tailwind, so ~11 components across the app —
+ * including shared primitives like Table.tsx, Select.tsx and CommandPalette.tsx
+ * — still carry legacy utility classNames (`flex`, `text-xs`, `font-semibold`)
+ * that currently compile to nothing and are styled by inline styles instead.
+ * Generating Tailwind utilities into the app document would silently restyle
+ * every one of them. A separate HTML document cannot leak CSS into the SPA, so
+ * the marketing page gets full unprefixed Tailwind + preflight and the ops app
+ * is untouched.
+ */
+@import "tailwindcss";
+
+@theme {
+  /* Pulled from the ops app's own theme.css so the two surfaces read as one
+     company — the dark-theme gold is the brand mark, not a new colour. */
+  --color-ink: #0b1220;
+  --color-ink-2: #131c2b;
+  --color-ink-3: #1b2435;
+  --color-gold: #d8a93a;
+  --color-gold-deep: #c9982f;
+  --color-bone: #f8fafc;
+  --color-ash: #cbd5e1;
+  --color-slate-line: #26324a;
+
+  --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+}
+
+html {
+  scroll-behavior: smooth;
+  background-color: var(--color-ink);
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--color-bone);
+  background-color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Grain overlay — keeps the large flat dark fields from banding, and stops the
+   picsum imagery reading as flat stock. */
+.grain::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.marquee-track {
+  animation: marquee 42s linear infinite;
+}
+
+@keyframes marquee {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .marquee-track { animation: none; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

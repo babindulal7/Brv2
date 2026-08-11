@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Rail, SideRail } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
+import { EmptyState } from '../../components/ui/StateViews'
 import { formatMoney } from '../../lib/money'
 import { useAuth } from '../../lib/auth'
 import {
@@ -136,7 +137,7 @@ export default function UnifiedInbox() {
   const isWarehouse = user?.role === 'Warehouse'
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
       {/* Toast */}
       {toastMessage && (
         <div
@@ -149,7 +150,7 @@ export default function UnifiedInbox() {
             color: 'var(--text)',
             border: '1px solid var(--border)',
             padding: '12px 18px',
-            borderRadius: 6,
+            borderRadius: 'var(--r-xs)',
             boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
             display: 'flex',
             alignItems: 'center',
@@ -168,7 +169,7 @@ export default function UnifiedInbox() {
         title="Unified Communication Inbox"
         description="Single multi-channel workspace for client communications with rental context, consent gates & SLA tracking."
         actions={
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
             <Button
               variant="secondary"
               onClick={() => setShowTemplateModal(true)}
@@ -192,46 +193,46 @@ export default function UnifiedInbox() {
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-          gap: 12,
+          gap: 'var(--sp-md)',
         }}
       >
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-md)' }}>
           <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>Open Conversations</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)', marginTop: 4 }}>{metrics.openCount}</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)', marginTop: 'var(--sp-xs)' }}>{metrics.openCount}</div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>Active threads across channels</div>
         </div>
 
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-md)' }}>
           <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>Unread Inbound</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: metrics.unreadCount > 0 ? 'var(--warning-text, #f59e0b)' : 'var(--text)', marginTop: 4 }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: metrics.unreadCount > 0 ? 'var(--warning-text)' : 'var(--text)', marginTop: 'var(--sp-xs)' }}>
             {metrics.unreadCount}
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>Requires coordinator review</div>
         </div>
 
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-md)' }}>
           <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>Awaiting Reply</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--primary)', marginTop: 4 }}>{metrics.awaitingCount}</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--primary)', marginTop: 'var(--sp-xs)' }}>{metrics.awaitingCount}</div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>Client waiting for response</div>
         </div>
 
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-md)' }}>
           <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>Median First Response</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--in, #10b981)', marginTop: 4 }}>{metrics.medianFirstResponse}</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--success)', marginTop: 'var(--sp-xs)' }}>{metrics.medianFirstResponse}</div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>Nepal business hours only</div>
         </div>
 
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-md)' }}>
           <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>SLA Breaches</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: metrics.slaBreachCount > 0 ? 'var(--danger)' : 'var(--text)', marginTop: 4 }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: metrics.slaBreachCount > 0 ? 'var(--danger)' : 'var(--text)', marginTop: 'var(--sp-xs)' }}>
             {metrics.slaBreachCount}
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>Over target response time</div>
         </div>
 
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-md)' }}>
           <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>Messages Today</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)', marginTop: 4 }}>{metrics.messagesToday}</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)', marginTop: 'var(--sp-xs)' }}>{metrics.messagesToday}</div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>Inbound + outbound today</div>
         </div>
       </div>
@@ -241,15 +242,15 @@ export default function UnifiedInbox() {
         style={{
           display: 'grid',
           gridTemplateColumns: 'auto 320px 1fr auto',
-          gap: 16,
+          gap: 'var(--sp-lg)',
           minHeight: 640,
         }}
       >
         {/* Col 1: Filters & Channels */}
         <SideRail width={200} label="Mailboxes">
-        <Card style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <Card style={{ padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
           <div>
-            <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 }}>
+            <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 'var(--sp-sm)', letterSpacing: 0.5 }}>
               Channels ({channelCounts.All})
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -304,8 +305,8 @@ export default function UnifiedInbox() {
             </div>
           </div>
 
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-            <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 }}>
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 'var(--sp-md)' }}>
+            <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 'var(--sp-sm)', letterSpacing: 0.5 }}>
               Status
             </div>
             {(['Open', 'Snoozed', 'Closed', 'Archived', 'Spam'] as ConversationState[]).map((st) => (
@@ -334,8 +335,8 @@ export default function UnifiedInbox() {
             ))}
           </div>
 
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-            <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 }}>
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 'var(--sp-md)' }}>
+            <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 'var(--sp-sm)', letterSpacing: 0.5 }}>
               Compliance & SLA
             </div>
             <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.4 }}>
@@ -346,7 +347,7 @@ export default function UnifiedInbox() {
         </SideRail>
 
         {/* Col 2: Conversation List */}
-        <Card style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <Card style={{ padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 10 }}>
           {/* Search bar */}
           <div style={{ position: 'relative' }}>
             <input
@@ -372,8 +373,17 @@ export default function UnifiedInbox() {
           {/* List items */}
           <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
             {filteredConversations.length === 0 ? (
-              <div style={{ padding: '24px 12px', textAlign: 'center', color: 'var(--muted)', fontSize: 'var(--t-ui)' }}>
-                No conversations in this filter.
+              <div style={{ padding: '24px 12px' }}>
+                <EmptyState
+                  title="No conversations in this filter"
+                  description="Try switching channels, status, or clearing your search."
+                  actionLabel="Clear filters"
+                  onAction={() => {
+                    setSelectedChannel('All')
+                    setSelectedState('All')
+                    setSearchQuery('')
+                  }}
+                />
               </div>
             ) : (
               filteredConversations.map((c) => {
@@ -389,13 +399,13 @@ export default function UnifiedInbox() {
                     }}
                     style={{
                       padding: 10,
-                      borderRadius: 6,
+                      borderRadius: 'var(--r-xs)',
                       background: isSelected ? 'var(--hover)' : 'transparent',
                       border: isSelected ? '1px solid var(--border)' : '1px solid transparent',
                       cursor: 'pointer',
                       display: 'flex',
                       flexDirection: 'column',
-                      gap: 4,
+                      gap: 'var(--sp-xs)',
                       position: 'relative',
                     }}
                   >
@@ -444,28 +454,31 @@ export default function UnifiedInbox() {
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
-                      <div style={{ display: 'flex', gap: 4 }}>
+                      <div style={{ display: 'flex', gap: 'var(--sp-xs)' }}>
                         {c.linkedBookingId && (
-                          <span
+                          <Link
+                            to={`/rentals/${c.linkedBookingId}`}
+                            onClick={(e) => e.stopPropagation()}
                             style={{
-                              fontSize: 10,
+                              fontSize: 'var(--t-th)',
                               fontWeight: 600,
                               background: 'var(--hover)',
                               padding: '1px 5px',
                               borderRadius: 3,
                               color: 'var(--text2)',
+                              textDecoration: 'none',
                             }}
                           >
                             {c.linkedBookingId}
-                          </span>
+                          </Link>
                         )}
                         {c.slaBreached && (
                           <span
                             style={{
-                              fontSize: 10,
+                              fontSize: 'var(--t-th)',
                               fontWeight: 700,
-                              background: 'var(--danger-bg, #ffebee)',
-                              color: 'var(--danger)',
+                              background: 'var(--st-danger-bg)',
+                              color: 'var(--st-danger-fg)',
                               padding: '1px 5px',
                               borderRadius: 3,
                             }}
@@ -501,7 +514,7 @@ export default function UnifiedInbox() {
                 }}
               >
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                     <h3 style={{ margin: 0, fontSize: 'var(--t-title)', color: 'var(--text)' }}>
                       {activeThread.clientName}
                     </h3>
@@ -536,7 +549,7 @@ export default function UnifiedInbox() {
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 4,
+                        gap: 'var(--sp-xs)',
                         fontSize: 'var(--t-meta)',
                         fontWeight: 600,
                         padding: '5px 8px',
@@ -553,11 +566,11 @@ export default function UnifiedInbox() {
                   )}
                   {activeThread.clientId && (
                     <Link
-                      to="/clients"
+                      to={`/clients/${activeThread.clientId}`}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 4,
+                        gap: 'var(--sp-xs)',
                         fontSize: 'var(--t-meta)',
                         fontWeight: 600,
                         padding: '5px 8px',
@@ -579,8 +592,8 @@ export default function UnifiedInbox() {
               {!activeThread.clientId && (
                 <div
                   style={{
-                    background: 'var(--warning-bg, #fff8e1)',
-                    color: 'var(--warning-text, #b78103)',
+                    background: 'var(--st-progress-bg)',
+                    color: 'var(--st-progress-fg)',
                     padding: '8px 16px',
                     fontSize: 'var(--t-meta)',
                     fontWeight: 600,
@@ -605,10 +618,10 @@ export default function UnifiedInbox() {
                 style={{
                   flex: 1,
                   overflowY: 'auto',
-                  padding: 16,
+                  padding: 'var(--sp-lg)',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 12,
+                  gap: 'var(--sp-md)',
                   background: 'var(--app)',
                 }}
               >
@@ -622,7 +635,7 @@ export default function UnifiedInbox() {
                         maxWidth: '80%',
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: 4,
+                        gap: 'var(--sp-xs)',
                       }}
                     >
                       <div
@@ -641,8 +654,8 @@ export default function UnifiedInbox() {
                         {m.isInternalNote && (
                           <span
                             style={{
-                              background: 'var(--warning-bg, #fff3e0)',
-                              color: '#e65100',
+                              background: 'var(--st-progress-bg)',
+                              color: 'var(--st-progress-fg)',
                               padding: '1px 4px',
                               borderRadius: 3,
                               fontWeight: 700,
@@ -656,15 +669,15 @@ export default function UnifiedInbox() {
                       <div
                         style={{
                           padding: '10px 14px',
-                          borderRadius: 8,
+                          borderRadius: 'var(--r-sm)',
                           background: m.isInternalNote
-                            ? 'var(--warning-bg, #fffde7)'
+                            ? 'var(--st-progress-bg)'
                             : isMe
                             ? 'var(--primary)'
                             : 'var(--card)',
-                          color: isMe && !m.isInternalNote ? '#ffffff' : 'var(--text)',
+                          color: isMe && !m.isInternalNote ? 'var(--on-brand)' : 'var(--text)',
                           border: m.isInternalNote
-                            ? '1px solid #ffd54f'
+                            ? '1px solid var(--st-progress-fg)'
                             : isMe
                             ? '1px solid var(--primary)'
                             : '1px solid var(--border)',
@@ -677,7 +690,7 @@ export default function UnifiedInbox() {
 
                         {/* Attachments */}
                         {m.attachments && m.attachments.length > 0 && (
-                          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <div style={{ marginTop: 'var(--sp-sm)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
                             {m.attachments.map((att) => (
                               <div
                                 key={att.id}
@@ -692,9 +705,14 @@ export default function UnifiedInbox() {
                                   fontWeight: 500,
                                 }}
                               >
-                                <Icon name="checklist" size={13} />
-                                <span style={{ flex: 1, textDecoration: 'underline' }}>{att.name}</span>
-                                <span style={{ opacity: 0.8 }}>({att.size})</span>
+                                <Icon name="checklist" size={13} style={{ flexShrink: 0 }} />
+                                <span
+                                  style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: 'underline' }}
+                                  title={att.name}
+                                >
+                                  {att.name}
+                                </span>
+                                <span style={{ opacity: 0.8, flexShrink: 0 }}>({att.size})</span>
                               </div>
                             ))}
                           </div>
@@ -703,12 +721,12 @@ export default function UnifiedInbox() {
 
                       <div
                         style={{
-                          fontSize: 10,
+                          fontSize: 'var(--t-th)',
                           color: 'var(--muted)',
                           alignSelf: isMe ? 'flex-end' : 'flex-start',
                           display: 'flex',
                           alignItems: 'center',
-                          gap: 4,
+                          gap: 'var(--sp-xs)',
                         }}
                       >
                         {isMe && <span>Status: {m.status}</span>}
@@ -745,16 +763,16 @@ export default function UnifiedInbox() {
               {/* Composer */}
               <div
                 style={{
-                  padding: 12,
+                  padding: 'var(--sp-md)',
                   borderTop: '1px solid var(--border)',
                   background: 'var(--card)',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 8,
+                  gap: 'var(--sp-sm)',
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)', cursor: 'pointer' }}>
                       <input
                         type="checkbox"
@@ -775,7 +793,7 @@ export default function UnifiedInbox() {
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 4,
+                        gap: 'var(--sp-xs)',
                       }}
                     >
                       <Icon name="checklist" size={13} />
@@ -788,7 +806,7 @@ export default function UnifiedInbox() {
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
                   <textarea
                     rows={2}
                     placeholder={
@@ -800,10 +818,10 @@ export default function UnifiedInbox() {
                     onChange={(e) => setComposerText(e.target.value)}
                     style={{
                       flex: 1,
-                      padding: 8,
+                      padding: 'var(--sp-sm)',
                       borderRadius: 4,
-                      border: isInternalNote ? '1px solid #ffd54f' : '1px solid var(--border)',
-                      background: isInternalNote ? 'var(--warning-bg, #fffde7)' : 'var(--input-bg, transparent)',
+                      border: isInternalNote ? '1px solid var(--st-progress-fg)' : '1px solid var(--border)',
+                      background: isInternalNote ? 'var(--st-progress-bg)' : 'var(--input-bg, transparent)',
                       color: 'var(--text)',
                       fontSize: 'var(--t-ui)',
                       fontFamily: 'inherit',
@@ -830,15 +848,15 @@ export default function UnifiedInbox() {
 
         {/* Col 4: Client Context Panel (Right Rail) */}
         <Rail width={300} label="Details">
-        <Card style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
+        <Card style={{ padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)', overflowY: 'auto' }}>
           {activeThread && (
             <>
               {/* Identity */}
               <div>
-                <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 }}>
+                <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 'var(--sp-sm)', letterSpacing: 0.5 }}>
                   Client Identity
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
                   <div style={{ fontWeight: 700, fontSize: 'var(--t-title)', color: 'var(--text)' }}>
                     {activeThread.clientName}
                   </div>
@@ -846,13 +864,13 @@ export default function UnifiedInbox() {
                     {activeThread.clientType ?? 'Unidentified Type'}
                   </div>
                   {activeThread.membership && (
-                    <div style={{ marginTop: 4 }}>
+                    <div style={{ marginTop: 'var(--sp-xs)' }}>
                       <span
                         style={{
                           fontSize: 'var(--t-meta)',
                           fontWeight: 600,
                           padding: '2px 8px',
-                          borderRadius: 12,
+                          borderRadius: 'var(--r-btn)',
                           background: 'var(--hover)',
                           color: 'var(--text)',
                           border: '1px solid var(--border)',
@@ -862,7 +880,7 @@ export default function UnifiedInbox() {
                       </span>
                     </div>
                   )}
-                  <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 4 }}>
+                  <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 'var(--sp-xs)' }}>
                     Phone: {activeThread.clientPhone}
                   </div>
                   <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
@@ -872,8 +890,8 @@ export default function UnifiedInbox() {
               </div>
 
               {/* Consent Model (§3) */}
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-                <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 }}>
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 'var(--sp-md)' }}>
+                <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 'var(--sp-sm)', letterSpacing: 0.5 }}>
                   Consent Status
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--t-meta)' }}>
@@ -887,7 +905,7 @@ export default function UnifiedInbox() {
                             fontWeight: 600,
                             color:
                               c.marketing === 'Opted in'
-                                ? 'var(--in, #10b981)'
+                                ? 'var(--success)'
                                 : c.marketing === 'Opted out'
                                 ? 'var(--danger)'
                                 : 'var(--muted)',
@@ -902,8 +920,8 @@ export default function UnifiedInbox() {
               </div>
 
               {/* Financial Summary (Strict Law 6 compliance: masked for Warehouse) */}
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-                <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 }}>
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 'var(--sp-md)' }}>
+                <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 'var(--sp-sm)', letterSpacing: 0.5 }}>
                   Financial Summary
                 </div>
                 {isWarehouse ? (
@@ -932,7 +950,7 @@ export default function UnifiedInbox() {
                         {formatMoney(activeThread.financials.depositHeldPaisa)}
                       </strong>
                     </div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+                    <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 'var(--sp-xs)' }}>
                       Deposits are held liabilities, separate from rental balance.
                     </div>
                   </div>
@@ -940,8 +958,8 @@ export default function UnifiedInbox() {
               </div>
 
               {/* Direct Actions */}
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 4, letterSpacing: 0.5 }}>
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 'var(--sp-xs)', letterSpacing: 0.5 }}>
                   Quick Launchers
                 </div>
                 <Link to="/rentals/new" style={{ textDecoration: 'none' }}>
@@ -949,11 +967,18 @@ export default function UnifiedInbox() {
                     Create Booking
                   </Button>
                 </Link>
-                <Link to="/finance" style={{ textDecoration: 'none' }}>
-                  <Button variant="secondary" icon="credit_card">
-                    Receive Payment
-                  </Button>
-                </Link>
+                <Button
+                  variant="secondary"
+                  icon="credit_card"
+                  onClick={() => {
+                    import('../../actions/finance/recordPayment').then((m) =>
+                      m.recordPayment({ bookingId: activeThread.linkedBookingId, amountPaisa: 100000 })
+                    )
+                    showToast('Payment recorded via Global Action')
+                  }}
+                >
+                  Receive Payment
+                </Button>
                 <Link to="/operations/cases" style={{ textDecoration: 'none' }}>
                   <Button variant="secondary" icon="alert_triangle">
                     Open Operational Case
@@ -983,13 +1008,13 @@ export default function UnifiedInbox() {
           <div
             style={{
               background: 'var(--card)',
-              borderRadius: 8,
+              borderRadius: 'var(--r-sm)',
               width: 540,
               maxWidth: '90vw',
               padding: 20,
               display: 'flex',
               flexDirection: 'column',
-              gap: 16,
+              gap: 'var(--sp-lg)',
               boxShadow: '0 12px 36px rgba(0,0,0,0.25)',
             }}
             onClick={(e) => e.stopPropagation()}
@@ -1011,14 +1036,14 @@ export default function UnifiedInbox() {
               Templates enforce consistent communication and policy compliance. Variables are populated from the active booking and client profile.
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 360, overflowY: 'auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', maxHeight: 360, overflowY: 'auto' }}>
               {QUICK_TEMPLATES.map((tpl) => (
                 <div
                   key={tpl.id}
                   onClick={() => handleApplyTemplate(tpl)}
                   style={{
-                    padding: 12,
-                    borderRadius: 6,
+                    padding: 'var(--sp-md)',
+                    borderRadius: 'var(--r-xs)',
                     border: '1px solid var(--border)',
                     background: 'var(--hover)',
                     cursor: 'pointer',
@@ -1036,7 +1061,7 @@ export default function UnifiedInbox() {
                   <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.35 }}>
                     {tpl.body}
                   </div>
-                  <div style={{ fontSize: 10, color: tpl.requiresHumanDraft ? 'var(--warning-text, #b78103)' : 'var(--in, #10b981)' }}>
+                  <div style={{ fontSize: 'var(--t-th)', color: tpl.requiresHumanDraft ? 'var(--warning-text)' : 'var(--success)' }}>
                     {tpl.requiresHumanDraft ? '🔒 Mandatory Human Draft Review' : '⚡ Auto-send permitted'}
                   </div>
                 </div>

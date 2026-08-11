@@ -5,9 +5,10 @@ import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
+import { thStyle } from '../../components/ui/TableHeaderCell'
 import { Donut, Legend } from '../../components/ui/Charts'
 import type { Slice } from '../../components/ui/Charts'
-import { EmptyState } from '../../components/ui/StateViews'
+import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { BRAND, BRAND_ON, BRAND_TEXT, STATUS } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
 import { price, rupees, parseMoney, formatMoney, discountGate, DISCOUNT_CAP } from '../../lib/money'
@@ -191,7 +192,7 @@ function Results({ rows }: { rows: ResultRow[] }) {
   return (
     <div
       style={{
-        marginTop: 12,
+        marginTop: 'var(--sp-md)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--r-card)',
         background: 'var(--card2)',
@@ -207,7 +208,7 @@ function Results({ rows }: { rows: ResultRow[] }) {
           style={{
             display: 'flex',
             alignItems: 'baseline',
-            gap: 12,
+            gap: 'var(--sp-md)',
             padding: '7px 0',
             borderTop: i === 0 ? 'none' : '1px solid var(--border)',
             flexWrap: 'wrap',
@@ -280,7 +281,7 @@ function Gap({ children }: { children: ReactNode }) {
 const fieldGrid: CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-  gap: 12,
+  gap: 'var(--sp-md)',
   alignItems: 'start',
 }
 
@@ -579,7 +580,7 @@ drop-frame, at 29.97 and 59.94 only:
         <NumField label="Frames" value={ff} onChange={setFf} step="1" />
       </div>
 
-      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 'var(--t-meta)', color: rate.dropCapable ? 'var(--text)' : 'var(--muted)' }}>
+      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-sm)', marginTop: 'var(--sp-md)', fontSize: 'var(--t-meta)', color: rate.dropCapable ? 'var(--text)' : 'var(--muted)' }}>
         <input type="checkbox" checked={dropOn} disabled={!rate.dropCapable} onChange={(e) => setDrop(e.target.checked)} />
         Drop-frame {rate.dropCapable ? '' : '— not available at this rate'}
       </label>
@@ -800,7 +801,7 @@ function DiscountCalculator() {
       <div
         role="status"
         style={{
-          marginTop: 12,
+          marginTop: 'var(--sp-md)',
           display: 'flex',
           alignItems: 'flex-start',
           gap: 9,
@@ -847,7 +848,7 @@ function StateChip({ tone, icon, children }: { tone: 'ok' | 'link' | 'off'; icon
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 4,
+        gap: 'var(--sp-xs)',
         height: 19,
         padding: '0 7px',
         borderRadius: 'var(--r-badge)',
@@ -928,7 +929,7 @@ function ToolTile({
           style={{
             width: 30,
             height: 30,
-            borderRadius: 8,
+            borderRadius: 'var(--r-sm)',
             display: 'grid',
             placeItems: 'center',
             flexShrink: 0,
@@ -1173,19 +1174,21 @@ export default function Tools() {
       />
 
       {SEED_ERRORS.length > 0 && (
-        <div role="alert" style={{ ...cardStyle, padding: 12, borderColor: 'var(--danger)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <strong style={{ fontSize: 'var(--t-ui)', color: 'var(--danger-text)' }}>The tool registry does not reconcile</strong>
-          {SEED_ERRORS.map((e) => (
-            <span key={e} style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-              {e}
-            </span>
-          ))}
-        </div>
+        <ErrorBanner
+          title="The tool registry does not reconcile"
+          message={
+            <ul style={{ margin: 0, paddingLeft: 'var(--sp-lg)' }}>
+              {SEED_ERRORS.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          }
+        />
       )}
 
       <KpiStrip items={KPIS} />
 
-      <div style={{ ...cardStyle, padding: '9px 12px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+      <div style={{ ...cardStyle, padding: '9px 12px', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
         <Icon name="info" size={14} style={{ color: 'var(--muted)', flexShrink: 0 }} />
         <span>
           §6 locks these four headline figures and the build cannot supply one of them — there is no tool-execution log,
@@ -1297,7 +1300,7 @@ export default function Tools() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                 {TOOL_GROUPS.filter((g) => visible.some((t) => t.group === g.key)).map((g) => (
                   <section key={g.key}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, flexWrap: 'wrap', marginBottom: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, flexWrap: 'wrap', marginBottom: 'var(--sp-xs)' }}>
                       <h3 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{g.title}</h3>
                       <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 700 }}>
                         {visible.filter((t) => t.group === g.key).length} tools
@@ -1373,7 +1376,7 @@ export default function Tools() {
                 type="button"
                 onClick={showEveryTool}
                 style={{
-                  marginTop: 8,
+                  marginTop: 'var(--sp-sm)',
                   border: 'none',
                   background: 'none',
                   padding: 0,
@@ -1453,7 +1456,7 @@ export default function Tools() {
               <Donut slices={slices} centreLabel="Registered" centreValue={String(tools.length)} />
               <Legend slices={slices} />
             </div>
-            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--border)', paddingTop: 11 }}>
+            <div style={{ marginTop: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', borderTop: '1px solid var(--border)', paddingTop: 11 }}>
               <RailRow label="Favourite" value={String(favourites.length)} flag />
               <RailRow label="Opened this session" value={String(recent.length)} flag />
             </div>
@@ -1502,7 +1505,7 @@ export default function Tools() {
           </Card>
 
           <Card title="Keyboard">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
               <ShortcutRow keys="Ctrl / ⌘ + K" what="Command palette" />
               <ShortcutRow keys="Ctrl / ⌘ + B" what="Scanner" />
             </div>
@@ -1523,15 +1526,6 @@ export default function Tools() {
 
 /* ══ small parts ═════════════════════════════════════════════════════════ */
 
-const thStyle: CSSProperties = {
-  textAlign: 'left',
-  padding: '8px 10px',
-  fontSize: 'var(--t-th)',
-  fontWeight: 600,
-  color: 'var(--text2)',
-  borderBottom: '1px solid var(--border)',
-}
-
 const tdStyle: CSSProperties = {
   padding: '8px 10px',
   fontSize: 'var(--t-meta)',
@@ -1541,7 +1535,7 @@ const tdStyle: CSSProperties = {
 
 function RailRow({ label, value, flag }: { label: string; value: string; flag?: boolean }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
       {flag && <Icon name="flag" size={12} style={{ color: 'var(--muted)', flexShrink: 0 }} />}
       <span style={{ flex: 1, minWidth: 0, color: 'var(--text2)' }}>{label}</span>
       <span className="figure" style={{ fontWeight: 700, color: 'var(--text)' }}>
@@ -1558,7 +1552,7 @@ function ShortcutRow({ keys, what }: { keys: string; what: string }) {
         className="figure"
         style={{
           padding: '2px 7px',
-          borderRadius: 6,
+          borderRadius: 'var(--r-xs)',
           border: '1px solid var(--border)',
           background: 'var(--card2)',
           color: 'var(--text2)',
@@ -1595,7 +1589,7 @@ function PanelRow({ tool, onOpen, trailing }: { tool: Tool; onOpen: () => void; 
     flex: 1,
     minWidth: 0,
     padding: '8px 6px',
-    borderRadius: 8,
+    borderRadius: 'var(--r-sm)',
     border: 'none',
     background: 'transparent',
     cursor: 'pointer',
@@ -1604,7 +1598,7 @@ function PanelRow({ tool, onOpen, trailing }: { tool: Tool; onOpen: () => void; 
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
       {tool.action.kind === 'calculator' ? (
         <button type="button" onClick={onOpen} style={shell}>
           {inner}

@@ -11,6 +11,10 @@ import type { Role } from '../../lib/rbac'
 import { formatMoney } from '../../lib/money'
 import { formatAd } from '../../lib/bs'
 import { useTabularLayout } from '../../lib/device'
+import { gateContext } from '../../lib/fieldGating'
+import { useMenuFlip } from '../../lib/menuFlip'
+import { IntelCard } from '../../components/ui/IntelCard'
+import { caseGlance, caseDetailGroups } from '../../data/caseIntel'
 import {
   CASES,
   CASE_TYPE_ICON,
@@ -39,6 +43,7 @@ import {
   openedBsLabel,
 } from '../../data/cases'
 import type { Case, CaseStatus, CaseFlag } from '../../data/cases'
+import { findClientIdByBooking } from '../../data/clients'
 
 /**
  * **Cases — Incident Management** — `04 Operations/Cases.md` v1.1 (Build
@@ -65,7 +70,7 @@ import type { Case, CaseStatus, CaseFlag } from '../../data/cases'
 const BLUE_PRIMARY = { background: 'var(--cat-1)', color: '#fff', border: '1px solid transparent' } as const
 /** `CASES` is asserted non-empty at module load in `data/cases.ts`; this names that guarantee once instead of an unchecked index everywhere below. */
 const FIRST_CASE = CASES[0] as Case
-const ROLES: Role[] = ['Owner', 'Admin', 'Coordinator', 'Warehouse', 'Technician', 'Accounts', 'Driver', 'Client']
+const ROLES: Role[] = ['Owner', 'Admin', 'Manager', 'Coordinator', 'Warehouse', 'Technician', 'Accounts', 'Driver', 'Client']
 /** §11 — Resolution is Manager/Owner only. */
 function canResolve(role: Role): boolean {
   return role === 'Owner' || role === 'Admin'
@@ -140,6 +145,15 @@ export default function CasesQueue() {
   const [newCaseNote, setNewCaseNote] = useState(false)
 
   const money = canViewMoney(role)
+  // No auth session yet (Phase 7, same as `money` above) — the Hover Intel
+  // gate context reads the same local "viewing as" toggle rather than
+  // `useAuth`, so it can never disagree with this screen's own money gate.
+  // Memoized on `role` alone: `gateContext()` (lib/fieldGating.ts) returns a
+  // fresh object literal on every call, so calling it unmemoized here would
+  // silently defeat `rowsWithIntel`'s memoization below — every unrelated
+  // re-render (a search-box keystroke, a checkbox toggle) would still hand
+  // it a new `gctx` reference and force every glance/detail to rebuild.
+  const gctx = useMemo(() => gateContext(role), [role])
 
   /* ── overrides let "Confirm Disposition" be a real action instead of a dead radio group ── */
   const cases = useMemo(() => CASES.map((c) => (overrides[c.id] ? { ...c, ...overrides[c.id] } : c)), [overrides])
@@ -168,7 +182,18 @@ export default function CasesQueue() {
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage))
   const pageSafe = Math.min(page, pageCount)
-  const pageRows = filtered.slice((pageSafe - 1) * rowsPerPage, pageSafe * rowsPerPage)
+  const pageRows = useMemo(() => filtered.slice((pageSafe - 1) * rowsPerPage, pageSafe * rowsPerPage), [filtered, pageSafe, rowsPerPage])
+
+  /* Hover Intel perf: `caseGlance`/`caseDetailGroups` build a full field-gated
+     object graph per row (role/PII/money filtering). Computing them here once
+     per page-row change — instead of inline inside the .map() below, which
+     used to rerun on every keystroke/role-toggle re-render — keeps both the
+     card view and the table view (mutually exclusive, but sharing this same
+     page of rows) off the hot path. */
+  const rowsWithIntel = useMemo(
+    () => pageRows.map((c) => ({ row: c, glance: caseGlance(c, gctx), detail: caseDetailGroups(c, gctx) })),
+    [pageRows, gctx],
+  )
 
   const selected = byId.get(selectedId) ?? FIRST_CASE
 
@@ -207,14 +232,14 @@ export default function CasesQueue() {
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-            <span style={{ width: 30, height: 30, borderRadius: 8, display: 'grid', placeItems: 'center', background: 'var(--nav-active-bg)', color: 'var(--nav-active-accent)', flexShrink: 0 }}>
+            <span style={{ width: 30, height: 30, borderRadius: 'var(--r-sm)', display: 'grid', placeItems: 'center', background: 'var(--nav-active-bg)', color: 'var(--nav-active-accent)', flexShrink: 0 }}>
               <Icon name="eye" size={17} fill />
             </span>
             <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>Cases</h1>
           </div>
           <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Manage damage, missing items, disputes, theft and operational incidents.</p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
             Viewing as
             <select
@@ -248,7 +273,7 @@ export default function CasesQueue() {
         </div>
       </div>
       {newCaseNote && (
-        <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', fontSize: 'var(--t-meta)', color: 'var(--progress-text)' }}>
+        <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '9px 12px', fontSize: 'var(--t-meta)', color: 'var(--progress-text)' }}>
           <Icon name="info" size={13} />
           {NEW_CASE_UNAVAILABLE_REASON}
           <button type="button" onClick={() => setNewCaseNote(false)} style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: 'var(--link)', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit', fontSize: 'var(--t-meta)' }}>
@@ -260,7 +285,7 @@ export default function CasesQueue() {
       {/* ── §3 KPI cards ────────────────────────────────────────────────── */}
       <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: money ? 'repeat(4, minmax(0,1fr))' : 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
         <div style={{ ...cardStyle, padding: '13px 14px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
             <Icon name="alert_triangle" size={14} style={{ color: STATUS.danger.fg }} />
             Open Cases
           </div>
@@ -268,7 +293,7 @@ export default function CasesQueue() {
           <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>Open + Under Review + Awaiting Decision + In Progress</div>
         </div>
         <div style={{ ...cardStyle, padding: '13px 14px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
             <Icon name="timer" size={14} style={{ color: STATUS.progress.fg }} />
             Awaiting Decision
           </div>
@@ -278,7 +303,7 @@ export default function CasesQueue() {
         {money && (
           <>
             <div style={{ ...cardStyle, padding: '13px 14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
                 <Icon name="briefcase" size={14} style={{ color: 'var(--primary)' }} />
                 Exposure
               </div>
@@ -286,7 +311,7 @@ export default function CasesQueue() {
               <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>Assessed value of open cases</div>
             </div>
             <div style={{ ...cardStyle, padding: '13px 14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
                 <Icon name="checklist" size={14} style={{ color: STATUS.in.fg }} />
                 Recovered This Month
               </div>
@@ -297,14 +322,14 @@ export default function CasesQueue() {
         )}
       </section>
       {!money && (
-        <div style={{ ...cardStyle, display: 'flex', gap: 7, alignItems: 'flex-start', padding: 12, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
+        <div style={{ ...cardStyle, display: 'flex', gap: 7, alignItems: 'flex-start', padding: 'var(--sp-md)', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
           <Icon name="info" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
           Warehouse view — Exposure, Recovered This Month, Assessed and Outstanding are not shown or requested on this screen (Foundation §8.3, Cases §11).
         </div>
       )}
 
       {/* ── §2 status chips + flag chips ───────────────────────────────── */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
         <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
           {(['All', ...CASE_STATUSES] as const).map((s) => {
             const on = statusFilter === s
@@ -316,7 +341,7 @@ export default function CasesQueue() {
                 onClick={() => setFilter(s)}
                 aria-pressed={on}
                 style={{
-                  height: 30, padding: '0 12px', borderRadius: 8, border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+                  height: 30, padding: '0 12px', borderRadius: 'var(--r-sm)', border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
                   background: on ? 'var(--nav-active-bg)' : 'transparent', color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
                   fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
                 }}
@@ -339,7 +364,7 @@ export default function CasesQueue() {
                 onClick={() => toggleFlag(f)}
                 aria-pressed={on}
                 style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 5, height: 24, padding: '0 8px', borderRadius: 999,
+                  display: 'inline-flex', alignItems: 'center', gap: 5, height: 24, padding: '0 8px', borderRadius: 'var(--r-badge)',
                   border: `1px solid ${on ? t.fg : 'var(--border)'}`, background: on ? t.bg : 'transparent', color: on ? t.fg : 'var(--text2)',
                   fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
                 }}
@@ -353,7 +378,7 @@ export default function CasesQueue() {
       </div>
 
       {/* ── toolbar ─────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', flexWrap: 'wrap' }}>
         <input
           value={query}
           onChange={(e) => {
@@ -381,7 +406,7 @@ export default function CasesQueue() {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: tabular ? 'minmax(0,1fr) 340px' : '1fr',
+          gridTemplateColumns: tabular ? 'minmax(0,1fr) auto' : '1fr',
           gap: 'var(--sp-md)',
           alignItems: 'start',
         }}
@@ -397,7 +422,7 @@ export default function CasesQueue() {
             </div>
           )}
           {!tabular && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', padding: 10 }}>
               {pageRows.length === 0 && (
                 <EmptyState
                   title="No cases found"
@@ -410,7 +435,7 @@ export default function CasesQueue() {
                   }}
                 />
               )}
-              {pageRows.map((c) => {
+              {rowsWithIntel.map(({ row: c, glance, detail }) => {
                 const isSel = c.id === selectedId
                 const note = agingNote(c)
                 return (
@@ -419,7 +444,7 @@ export default function CasesQueue() {
                     onClick={() => selectRow(c.id)}
                     style={{
                       ...cardStyle,
-                      padding: 12,
+                      padding: 'var(--sp-md)',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: 7,
@@ -428,8 +453,10 @@ export default function CasesQueue() {
                       background: isSel ? 'var(--nav-active-bg)' : 'var(--card)',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                      <span className="identifier" style={{ fontWeight: 700, color: 'var(--text)' }}>{c.id}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-sm)' }}>
+                      <IntelCard glance={glance} detail={detail} detailTitle={c.title} detailSubtitle={`${c.id} · ${c.type}`}>
+                        <span className="identifier" style={{ fontWeight: 700, color: 'var(--text)' }}>{c.id}</span>
+                      </IntelCard>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                         <Icon name={CASE_TYPE_ICON[c.type]} size={13} />
                         {c.type}
@@ -439,7 +466,17 @@ export default function CasesQueue() {
                     <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600 }}>{c.title}</div>
 
                     <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                      {c.counterpartyKind} · {c.counterpartyName}
+                      {c.counterpartyKind} ·{' '}
+                      {(() => {
+                        const clientId = c.linked.linkedRecordKind === 'Booking' ? findClientIdByBooking(c.linked.linkedRecordId) : undefined
+                        return clientId ? (
+                          <Link to={`/clients/${clientId}`} onClick={(e) => e.stopPropagation()} style={{ color: 'inherit', textDecoration: 'none' }}>
+                            {c.counterpartyName}
+                          </Link>
+                        ) : (
+                          c.counterpartyName
+                        )
+                      })()}
                     </div>
 
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -450,7 +487,7 @@ export default function CasesQueue() {
                       ))}
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 'var(--t-meta)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
                       <span className="figure" style={{ color: note ? 'var(--danger-text)' : 'var(--text2)', fontWeight: note ? 700 : 400 }}>
                         {ageDays(c.openedAd)}d open
                         {note && <Icon name="alert_triangle" size={11} style={{ color: 'var(--danger-text)', marginLeft: 3 }} />}
@@ -503,7 +540,7 @@ export default function CasesQueue() {
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map((c) => {
+                {rowsWithIntel.map(({ row: c, glance, detail }) => {
                   const isSel = c.id === selectedId
                   const note = agingNote(c)
                   return (
@@ -529,7 +566,9 @@ export default function CasesQueue() {
                         <input type="checkbox" checked={checked.has(c.id)} onChange={() => toggleChecked(c.id)} aria-label={`Select ${c.id}`} />
                       </td>
                       <td style={td}>
-                        <div className="identifier" style={{ fontWeight: 700, color: 'var(--text)' }}>{c.id}</div>
+                        <IntelCard glance={glance} detail={detail} detailTitle={c.title} detailSubtitle={`${c.id} · ${c.type}`}>
+                          <div className="identifier" style={{ fontWeight: 700, color: 'var(--text)' }}>{c.id}</div>
+                        </IntelCard>
                         <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Opened</div>
                         <DateCell ad={c.openedAd} />
                       </td>
@@ -549,7 +588,18 @@ export default function CasesQueue() {
                         ) : (
                           <span className="identifier" style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600 }}>{c.linked.linkedRecordId}</span>
                         )}
-                        <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{c.counterpartyName}</div>
+                        <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                          {(() => {
+                            const clientId = c.linked.linkedRecordKind === 'Booking' ? findClientIdByBooking(c.linked.linkedRecordId) : undefined
+                            return clientId ? (
+                              <Link to={`/clients/${clientId}`} onClick={(e) => e.stopPropagation()} style={{ color: 'inherit', textDecoration: 'none' }}>
+                                {c.counterpartyName}
+                              </Link>
+                            ) : (
+                              c.counterpartyName
+                            )
+                          })()}
+                        </div>
                       </td>
                       <td style={{ ...td, color: 'var(--text2)' }}>
                         {c.equipment === 'Multiple' ? 'Multiple' : (
@@ -583,7 +633,7 @@ export default function CasesQueue() {
                         <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
                           <Link
                             to={CASE_WORKSPACE_ROUTE(c.id)}
-                            style={{ display: 'inline-flex', alignItems: 'center', height: 24, padding: '0 8px', borderRadius: 6, fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none', ...BLUE_PRIMARY }}
+                            style={{ display: 'inline-flex', alignItems: 'center', height: 24, padding: '0 8px', borderRadius: 'var(--r-xs)', fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none', ...BLUE_PRIMARY }}
                           >
                             Open Case
                           </Link>
@@ -653,7 +703,7 @@ export default function CasesQueue() {
         </Card>
 
         {/* ── §6 right rail — Case Summary → Evidence → Resolution → Financial Impact → Linked Records → Timeline → Quick Actions ── */}
-        <Rail>
+        <Rail width={340} label="Case detail">
           <CaseRail c={selected} role={role} money={money} draft={draftDisposition[selected.id] ?? ''} onDraft={(v) => setDraftDisposition((p) => ({ ...p, [selected.id]: v }))} onConfirm={() => confirmDisposition(selected)} />
         </Rail>
       </div>
@@ -665,31 +715,39 @@ export default function CasesQueue() {
 
 function pagerBtn(on: boolean) {
   return {
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 26, height: 26, borderRadius: 6,
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 26, height: 26, borderRadius: 'var(--r-xs)',
     border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`, background: on ? 'var(--nav-active-bg)' : 'transparent',
     color: on ? 'var(--nav-active-accent)' : 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
   } as const
 }
 
+/** Tallest the menu gets — all 5 items below. */
+const CASE_MENU_H = 190
+
 /** §4.5's `⋮` — Assign Owner · Add Note · View Timeline · Duplicate · Archive. Same disclosure pattern as `BookingDetail.tsx`'s Operations menu. */
 function RowMenu({ caseId }: { caseId: string }) {
   const [open, setOpen] = useState(false)
+  const { ref, up, measure } = useMenuFlip<HTMLButtonElement>(CASE_MENU_H)
   const items = ['Assign Owner', 'Add Note', 'View Timeline', 'Duplicate', 'Archive']
   return (
     <span style={{ position: 'relative' }}>
       <button
+        ref={ref}
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (!open) measure()
+          setOpen((o) => !o)
+        }}
         aria-label={`More actions for ${caseId}`}
         aria-haspopup="menu"
-        style={{ display: 'grid', placeItems: 'center', width: 24, height: 24, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer' }}
+        style={{ display: 'grid', placeItems: 'center', width: 24, height: 24, borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer' }}
       >
         <Icon name="more_vert" size={13} />
       </button>
       {open && (
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: 20 }} onClick={() => setOpen(false)} />
-          <div role="menu" style={{ position: 'absolute', right: 0, top: 28, minWidth: 168, padding: 6, borderRadius: 'var(--r-btn)', background: 'var(--dropdown)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-modal)', zIndex: 21 }}>
+          <div role="menu" style={{ position: 'absolute', right: 0, ...(up ? { bottom: 28 } : { top: 28 }), minWidth: 168, padding: 6, borderRadius: 'var(--r-btn)', background: 'var(--dropdown)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-modal)', zIndex: 21 }}>
             {items.map((label) => (
               <span
                 key={label}
@@ -712,7 +770,7 @@ function RowMenu({ caseId }: { caseId: string }) {
 function RailSection({ title, children, badge }: { title: string; children: React.ReactNode; badge?: string | undefined }) {
   return (
     <section style={{ ...cardStyle, padding: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginBottom: 10 }}>
         <h3 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{title}</h3>
         {badge && <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{badge}</span>}
       </div>
@@ -724,7 +782,7 @@ function RailSection({ title, children, badge }: { title: string; children: Reac
 function EvidencePhotoBox({ label, at }: { label: string; at?: string | undefined }) {
   return (
     <div style={{ borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', overflow: 'hidden' }}>
-      <div style={{ height: 76, background: at ? 'linear-gradient(135deg,#334155,#0f172a)' : 'var(--card2)', display: 'grid', placeItems: 'center', color: '#94a3b8' }}>
+      <div style={{ height: 76, background: 'var(--card2)', display: 'grid', placeItems: 'center', color: 'var(--muted)' }}>
         <Icon name="photo" size={18} />
       </div>
       <div style={{ padding: '6px 8px' }}>
@@ -780,12 +838,12 @@ function CaseRail({
             { label: 'Owner', value: `${c.owner} (${c.ownerRole})` },
           ]}
         />
-        <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 'var(--sp-sm)', marginTop: 10, alignItems: 'center' }}>
           <PriorityPill priority={c.priority} />
           <StatusPill status={c.status} />
         </div>
         {c.flags.length > 0 && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 'var(--sp-sm)' }}>
             {c.flags.map((f) => (
               <FlagPill key={f} flag={f} />
             ))}
@@ -802,12 +860,12 @@ function CaseRail({
       {/* 2 · Evidence — above Resolution, §6.1's restored panel */}
       <RailSection title="Evidence" badge={c.type === 'Damage' ? 'Pickup vs Return' : undefined}>
         {c.type === 'Damage' && (c.evidence.pickup?.length || c.evidence.return?.length) ? (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-sm)' }}>
             <EvidencePhotoBox label="At Pickup" at={c.evidence.pickup?.[0]?.at} />
             <EvidencePhotoBox label="At Return" at={c.evidence.return?.[0]?.at} />
           </div>
         ) : c.evidence.general?.length ? (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-sm)' }}>
             {c.evidence.general.map((p) => (
               <EvidencePhotoBox key={p.id} label={p.file} at={p.at} />
             ))}
@@ -832,7 +890,7 @@ function CaseRail({
               {dispositions.map((opt) => {
                 const picked = draft === opt
                 return (
-                  <label key={opt} style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '7px 8px', borderRadius: 8, border: `1px solid ${picked ? 'var(--nav-active-accent)' : 'var(--border)'}`, background: picked ? 'var(--nav-active-bg)' : 'transparent', cursor: 'pointer' }}>
+                  <label key={opt} style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '7px 8px', borderRadius: 'var(--r-sm)', border: `1px solid ${picked ? 'var(--nav-active-accent)' : 'var(--border)'}`, background: picked ? 'var(--nav-active-bg)' : 'transparent', cursor: 'pointer' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
                       <input type="radio" name={`disposition-${c.id}`} checked={picked} onChange={() => onDraft(opt)} />
                       {opt}
@@ -845,7 +903,12 @@ function CaseRail({
             <button
               type="button"
               disabled={!draft}
-              onClick={onConfirm}
+              onClick={() => {
+                onConfirm()
+                import('../../actions/cases/resolveCase').then((m) =>
+                  m.resolveCase({ caseId: c.id, resolution: draft })
+                )
+              }}
               style={{
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%', height: 34, marginTop: 10,
                 borderRadius: 'var(--r-btn)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', cursor: draft ? 'pointer' : 'not-allowed',
@@ -903,9 +966,19 @@ function CaseRail({
           }
         />
         {c.linked.linkedRecordKind === 'Booking' ? (
-          <Link to={`/rentals/${c.linked.linkedRecordId}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 9, fontSize: 'var(--t-meta)', color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }}>
-            Open booking <Icon name="external_link" size={11} />
-          </Link>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 9 }}>
+            <Link to={`/rentals/${c.linked.linkedRecordId}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }}>
+              Open booking <Icon name="external_link" size={11} />
+            </Link>
+            {(() => {
+              const clientId = findClientIdByBooking(c.linked.linkedRecordId)
+              return clientId ? (
+                <Link to={`/clients/${clientId}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }}>
+                  View client <Icon name="external_link" size={11} />
+                </Link>
+              ) : null
+            })()}
+          </div>
         ) : (
           <p style={{ margin: '9px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Sub-rental, maintenance, invoice and insurance detail routes are not built yet — shown as reference text.</p>
         )}
@@ -915,8 +988,8 @@ function CaseRail({
       <RailSection title="Timeline">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
           {timeline.map((t, i) => (
-            <div key={i} style={{ display: 'flex', gap: 8, fontSize: 'var(--t-meta)' }}>
-              <Icon name="dot" size={9} style={{ color: 'var(--muted)', marginTop: 4, flexShrink: 0 }} />
+            <div key={i} style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
+              <Icon name="dot" size={9} style={{ color: 'var(--muted)', marginTop: 'var(--sp-xs)', flexShrink: 0 }} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ color: 'var(--text)' }}>{t.text}</div>
                 <div style={{ color: 'var(--muted)', marginTop: 1 }}>
@@ -936,7 +1009,7 @@ function CaseRail({
               <button
                 type="button"
                 disabled
-                style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '9px 4px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--muted)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'not-allowed', fontFamily: 'inherit' }}
+                style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '9px 4px', borderRadius: 'var(--r-sm)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--muted)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'not-allowed', fontFamily: 'inherit' }}
               >
                 <Icon name={label === 'Add Note' ? 'file' : label === 'Upload Evidence' ? 'upload' : 'more_vert'} size={15} />
                 {label}

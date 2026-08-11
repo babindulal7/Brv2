@@ -52,7 +52,7 @@ export const QUEUE_TOTAL = '2,158'
 
 export interface SmsRow {
   id: string
-  customer: string
+  client: string
   vip?: boolean
   phone: string
   type: string
@@ -65,20 +65,20 @@ export interface SmsRow {
 }
 
 export const MESSAGES: SmsRow[] = [
-  { id: 'SMS-2505148', customer: 'Suman Shrestha', vip: true, phone: '+977 9841 234 567', type: 'Booking Confirm.', typeKey: 'primary', gateway: 'Sparrow', status: 'Delivered', bs: '2082/02/31 BS', ad: 'May 14, 2025 10:21 AM', delivered: 'May 14, 2025 10:21 AM' },
-  { id: 'SMS-2505147', customer: 'Anita Shakya', phone: '+977 9803 112 228', type: 'Payment Reminder', typeKey: 'progress', gateway: 'Ncell', status: 'Delivered', bs: '2082/02/31 BS', ad: 'May 14, 2025 10:15 AM', delivered: 'May 14, 2025 10:15 AM' },
-  { id: 'SMS-2505146', customer: 'Prakash Films', phone: '+977 9849 556 677', type: 'Pickup Reminder', typeKey: 'progress', gateway: 'Nepal Telecom', status: 'Delivered', bs: '2082/02/31 BS', ad: 'May 14, 2025 09:58 AM', delivered: 'May 14, 2025 09:59 AM' },
-  { id: 'SMS-2505145', customer: 'Cine Vision Pvt. Ltd.', phone: '+977 9851 009 887', type: 'Invoice Notice', typeKey: 'neutral', gateway: 'Twilio', status: 'Failed', bs: '2082/02/31 BS', ad: 'May 14, 2025 09:40 AM', delivered: '—' },
-  { id: 'SMS-2505144', customer: 'Bipin Gurung', phone: '+977 9813 445 566', type: 'Return Reminder', typeKey: 'in', gateway: 'Ncell', status: 'Delivered', bs: '2082/02/31 BS', ad: 'May 14, 2025 09:32 AM', delivered: 'May 14, 2025 09:33 AM' },
-  { id: 'SMS-2505143', customer: 'Sunil Shrestha', phone: '+977 9860 778 990', type: 'Payment Receipt', typeKey: 'in', gateway: 'Sparrow', status: 'Delivered', bs: '2082/02/31 BS', ad: 'May 14, 2025 09:25 AM', delivered: 'May 14, 2025 09:26 AM' },
-  { id: 'SMS-2505142', customer: 'Nepal Film Academy', phone: '+977 9840 556 221', type: 'OTP', typeKey: 'progress', gateway: 'Twilio', status: 'Delivered', bs: '2082/02/31 BS', ad: 'May 14, 2025 09:18 AM', delivered: 'May 14, 2025 09:18 AM' },
-  { id: 'SMS-2505141', customer: 'The Frame Productions', phone: '+977 9800 123 456', type: 'Marketing', typeKey: 'danger', gateway: 'Nepal Telecom', status: 'Delivered', bs: '2082/02/31 BS', ad: 'May 14, 2025 09:05 AM', delivered: 'May 14, 2025 09:06 AM' },
+  { id: 'SMS-2505148', client: 'Suman Shrestha', vip: true, phone: '+977 9841 234 567', type: 'Booking Confirm.', typeKey: 'primary', gateway: 'Sparrow', status: 'Delivered', bs: '2082/02/31 BS', ad: 'May 14, 2025 10:21 AM', delivered: 'May 14, 2025 10:21 AM' },
+  { id: 'SMS-2505147', client: 'Anita Shakya', phone: '+977 9803 112 228', type: 'Payment Reminder', typeKey: 'progress', gateway: 'Ncell', status: 'Delivered', bs: '2082/02/31 BS', ad: 'May 14, 2025 10:15 AM', delivered: 'May 14, 2025 10:15 AM' },
+  { id: 'SMS-2505146', client: 'Prakash Films', phone: '+977 9849 556 677', type: 'Pickup Reminder', typeKey: 'progress', gateway: 'Nepal Telecom', status: 'Delivered', bs: '2082/02/31 BS', ad: 'May 14, 2025 09:58 AM', delivered: 'May 14, 2025 09:59 AM' },
+  { id: 'SMS-2505145', client: 'Cine Vision Pvt. Ltd.', phone: '+977 9851 009 887', type: 'Invoice Notice', typeKey: 'neutral', gateway: 'Twilio', status: 'Failed', bs: '2082/02/31 BS', ad: 'May 14, 2025 09:40 AM', delivered: '—' },
+  { id: 'SMS-2505144', client: 'Bipin Gurung', phone: '+977 9813 445 566', type: 'Return Reminder', typeKey: 'in', gateway: 'Ncell', status: 'Delivered', bs: '2082/02/31 BS', ad: 'May 14, 2025 09:32 AM', delivered: 'May 14, 2025 09:33 AM' },
+  { id: 'SMS-2505143', client: 'Sunil Shrestha', phone: '+977 9860 778 990', type: 'Payment Receipt', typeKey: 'in', gateway: 'Sparrow', status: 'Delivered', bs: '2082/02/31 BS', ad: 'May 14, 2025 09:25 AM', delivered: 'May 14, 2025 09:26 AM' },
+  { id: 'SMS-2505142', client: 'Nepal Film Academy', phone: '+977 9840 556 221', type: 'OTP', typeKey: 'progress', gateway: 'Twilio', status: 'Delivered', bs: '2082/02/31 BS', ad: 'May 14, 2025 09:18 AM', delivered: 'May 14, 2025 09:18 AM' },
+  { id: 'SMS-2505141', client: 'The Frame Productions', phone: '+977 9800 123 456', type: 'Marketing', typeKey: 'danger', gateway: 'Nepal Telecom', status: 'Delivered', bs: '2082/02/31 BS', ad: 'May 14, 2025 09:05 AM', delivered: 'May 14, 2025 09:06 AM' },
 ]
 
 export const VIEWER = {
   id: 'SMS-2505148',
   status: 'Delivered',
-  customer: 'Suman Shrestha',
+  client: 'Suman Shrestha',
   vip: true,
   phone: '+977 9841 234 567',
   gateway: 'Sparrow',
