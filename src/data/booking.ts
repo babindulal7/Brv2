@@ -247,11 +247,11 @@ export const CREW = [
 export const CREW_SUBTOTAL = grouped(toRupees(CREW_PAISA))
 
 export const TRANSPORT = [
-  { label: 'Delivery Type', value: 'Pickup (Customer)', pill: true },
-  { label: 'Vehicle', value: 'Customer Vehicle' },
+  { label: 'Delivery Type', value: 'Pickup (Client)', pill: true },
+  { label: 'Vehicle', value: 'Client Vehicle' },
   { label: 'Driver', value: '–' },
   { label: 'Transport Charge', value: 'Rs 0' },
-  { label: 'Delivery Instructions', value: 'Customer will pick up from warehouse.' },
+  { label: 'Delivery Instructions', value: 'The client will pick up from the warehouse.' },
 ]
 
 /*
@@ -265,7 +265,7 @@ export const TRANSPORT = [
 export const CHARGES = [
   { label: 'Equipment Rental', amount: grouped(toRupees(EQUIPMENT_PAISA)), note: '18 items' },
   { label: 'Crew Charges', amount: grouped(toRupees(CREW_PAISA)), note: '3 crew × 3 days' },
-  { label: 'Transport Charge', amount: grouped(toRupees(TRANSPORT_PAISA)), note: 'Customer pickup' },
+  { label: 'Transport Charge', amount: grouped(toRupees(TRANSPORT_PAISA)), note: 'Client pickup' },
 ]
 
 export const TOTALS = [
@@ -360,7 +360,7 @@ export const REVIEW = [
 ]
 
 export const NOTES =
-  'Customer will pick up some items in the morning and remaining items in the evening. Please keep all equipment ready.'
+  'The client will pick up some items in the morning and the rest in the evening. Please keep all equipment ready.'
 export const NOTES_BY = 'Added by Sagar Maharjan'
 export const NOTES_AT = '16 Jul 2026, 06:00 AM'
 

@@ -10,46 +10,69 @@ import { getPendingMutations, getDeadLetterMutations, drainQueue } from '../../l
 /**
  * **System Monitor** — spec-derived. No render covers this screen.
  *
- * Every figure is an observation of the running system, so nothing here is
- * actionable and nothing writes. That is the whole point of the screen: it
- * reports, and the actions live where the thing being reported on lives.
+ * Every figure is meant to be an observation of the running system, so nothing
+ * here is actionable and nothing writes. That is the whole point of the
+ * screen: it reports, and the actions live where the thing being reported on
+ * lives.
+ *
+ * ## Which figures are real
+ *
+ * Exactly two: the offline queue's pending and dead-letter counts, read from
+ * `lib/offlineQueue`. Everything else on this page — uptime, p95 latency,
+ * error rate, active sessions, DB storage, background jobs, per-service
+ * latency, CPU/Memory/Disk, the incident list, last deploy — was hand-typed,
+ * and the week-over-week deltas were the strongest tell: they claimed a prior
+ * measurement that never existed. Nothing in this repo measures any of it:
+ * there is no telemetry pipeline, no metrics store, no deploy log and no
+ * incident register.
+ *
+ * Rulings §8: *"a report with no data source shows 'not tracked yet', never
+ * zeros… Never seed a plausible default."* It matters more here than on a
+ * dormant page, because `settings/sections/Overview.tsx` links to `/system`
+ * twice — so an operator arrives from the Settings landing expecting a
+ * reading. The invented `Active Sessions: 18` here also contradicted the
+ * invented `12` there, which is what two fabrications look like from outside.
+ *
+ * `TODO(decision)` — wiring any of this needs a monitoring stack that has not
+ * been chosen. It belongs in `PLAN.md` §4, not in a literal here.
  */
 
+/** Rulings §8 — the one string this page may print for a figure it cannot measure. */
+const NOT_TRACKED = 'Not tracked yet'
+
 const KPIS: Kpi[] = [
-  { label: 'Uptime (30 days)', value: '99.98%', icon: 'activity', accent: 'success', note: '8m 38s downtime' },
-  { label: 'API p95 Latency', value: '182 ms', icon: 'timer', accent: 'primary', delta: { direction: 'down', text: '14 ms vs last week', good: true } },
-  { label: 'Error Rate', value: '0.06%', icon: 'alert_triangle', accent: 'progress', delta: { direction: 'down', text: '0.02% vs last week', good: true } },
-  { label: 'Active Sessions', value: '18', icon: 'users', accent: 'primary', note: 'Across 6 branches' },
-  { label: 'DB Storage', value: '486 GB', icon: 'queues', accent: 'primary', note: '38% of 1.2 TB' },
-  { label: 'Background Jobs', value: '3', icon: 'refresh', accent: 'success', note: 'Running, none stuck' },
+  { label: 'Uptime (30 days)', value: NOT_TRACKED, icon: 'activity', accent: 'neutral', note: 'No uptime probe exists' },
+  { label: 'API p95 Latency', value: NOT_TRACKED, icon: 'timer', accent: 'neutral', note: 'No request-timing pipeline exists' },
+  { label: 'Error Rate', value: NOT_TRACKED, icon: 'alert_triangle', accent: 'neutral', note: 'No error aggregator exists' },
+  { label: 'Active Sessions', value: NOT_TRACKED, icon: 'users', accent: 'neutral', note: 'No session store is read anywhere in src/lib/queries' },
+  { label: 'DB Storage', value: NOT_TRACKED, icon: 'queues', accent: 'neutral', note: 'No storage metric is collected' },
+  { label: 'Background Jobs', value: NOT_TRACKED, icon: 'refresh', accent: 'neutral', note: 'No job runner reports in' },
 ]
 
-const SERVICES: Array<{ name: string; status: 'Operational' | 'Degraded' | 'Down'; latency: string; note: string }> = [
-  { name: 'Web App', status: 'Operational', latency: '96 ms', note: 'All regions' },
-  { name: 'API', status: 'Operational', latency: '182 ms', note: 'p95' },
-  { name: 'Database', status: 'Operational', latency: '11 ms', note: 'Primary + replica' },
-  { name: 'File Storage', status: 'Operational', latency: '140 ms', note: 'Object store' },
-  { name: 'SMS Gateway', status: 'Degraded', latency: '210 ms', note: 'Vonage slow' },
-  { name: 'Payment Gateway', status: 'Operational', latency: '320 ms', note: 'eSewa, Khalti' },
-  { name: 'Background Worker', status: 'Operational', latency: '—', note: '3 running' },
-  { name: 'Backup Service', status: 'Operational', latency: '—', note: 'Last run 02:15 AM' },
+/**
+ * The service list is kept — Rulings §1, a panel survives — but its statuses
+ * and latencies are not. "Operational" for a service nothing polls is a claim,
+ * not a reading, and `SMS Gateway · Degraded · Vonage slow` named a vendor
+ * incident that never happened.
+ */
+const SERVICES: Array<{ name: string; status: 'Operational' | 'Degraded' | 'Down' | 'Unknown'; latency: string; note: string }> = [
+  { name: 'Web App', status: 'Unknown', latency: '—', note: 'No health check' },
+  { name: 'API', status: 'Unknown', latency: '—', note: 'No health check' },
+  { name: 'Database', status: 'Unknown', latency: '—', note: 'No health check' },
+  { name: 'File Storage', status: 'Unknown', latency: '—', note: 'No health check' },
+  { name: 'SMS Gateway', status: 'Unknown', latency: '—', note: 'No health check' },
+  { name: 'Payment Gateway', status: 'Unknown', latency: '—', note: 'No health check' },
+  { name: 'Background Worker', status: 'Unknown', latency: '—', note: 'No health check' },
+  { name: 'Backup Service', status: 'Unknown', latency: '—', note: 'No health check' },
 ]
 
-const SERVICE_TOKEN = { Operational: 'in', Degraded: 'progress', Down: 'danger' } as const
+const SERVICE_TOKEN = { Operational: 'in', Degraded: 'progress', Down: 'danger', Unknown: 'neutral' } as const
 
-const RESOURCES = [
-  { label: 'CPU', pct: 34 },
-  { label: 'Memory', pct: 58 },
-  { label: 'Disk', pct: 38 },
-  { label: 'DB Connections', pct: 46 },
-]
+/** Four invented percentages with four invented bars. Nothing samples a host. */
+const RESOURCES: Array<{ label: string; pct: number }> = []
 
-const INCIDENTS = [
-  { what: 'SMS gateway latency above threshold', when: '11 min ago', tone: 'progress' as const, open: true },
-  { what: 'Backup verification failed', when: '2 h ago', tone: 'danger' as const, open: true },
-  { what: 'Scheduled maintenance completed', when: 'Yesterday', tone: 'success' as const, open: false },
-  { what: 'API rate limit spike from webhook', when: '2 days ago', tone: 'progress' as const, open: false },
-]
+/** Four invented incidents, two of them "open". There is no incident register. */
+const INCIDENTS: Array<{ what: string; when: string; tone: 'progress' | 'danger' | 'success'; open: boolean }> = []
 
 const bs = toBs(TODAY)
 
@@ -186,6 +209,12 @@ export default function SystemMonitor() {
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 'var(--sp-md)' }}>
             <Card title="Resource Usage">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+                {RESOURCES.length === 0 && (
+                  <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
+                    {NOT_TRACKED} — no host metrics are collected. CPU, memory, disk and connection-pool
+                    figures need a monitoring agent that has not been chosen.
+                  </p>
+                )}
                 {RESOURCES.map((r, i) => {
                   const tone = r.pct >= 80 ? 'danger' : r.pct >= 60 ? 'progress' : 'success'
                   return (
@@ -207,6 +236,12 @@ export default function SystemMonitor() {
 
             <Card title="Incidents">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {INCIDENTS.length === 0 && (
+                  <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
+                    {NOT_TRACKED} — there is no incident register in this build, so an incident feed has
+                    nothing to read.
+                  </p>
+                )}
                 {INCIDENTS.map((n) => (
                   <div key={n.what} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 'var(--t-meta)' }}>
                     <Icon
@@ -232,8 +267,8 @@ export default function SystemMonitor() {
                 { label: 'Version', value: 'v3.0.0' },
                 { label: 'Environment', value: 'Production' },
                 { label: 'Region', value: 'Asia / Kathmandu' },
-                { label: 'Last deploy', value: '3 days ago' },
-                { label: 'Open incidents', value: '2', tone: 'progress' },
+                { label: 'Last deploy', value: NOT_TRACKED },
+                { label: 'Open incidents', value: NOT_TRACKED },
               ]}
             />
           </Card>

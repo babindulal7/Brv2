@@ -661,11 +661,28 @@ export const SYSTEM_SUMMARY: SummaryRow[] = [
   { label: 'Last backup', value: 'Today, 02:15 AM', tone: 'default' },
   { label: 'Next scheduled backup', value: 'Tomorrow, 02:00 AM', tone: 'default' },
   { label: 'Environment', value: 'Production', tone: 'default' },
-  { label: 'Active sessions', value: '12', tone: 'default' },
+  // Same defect as SYSTEM_STATS above: no session store is read, so the
+  // figure states its absence rather than inventing one (rulings §8).
+  { label: 'Active sessions', value: 'Not tracked yet', tone: 'default' },
 ]
 
-/** The one figure the Overview KPI strip needs that no branch row carries. */
-export const SYSTEM_STATS = { activeUsers: 28, uptime: '99.98%', activeSessions: 12 }
+/**
+ * ⛔ `SYSTEM_STATS = { activeUsers: 28, uptime: '99.98%', activeSessions: 12 }`
+ * used to live here and was rendered on Settings ▸ Overview under the notes
+ * "Last 30 days" and "Signed in right now" — notes that assert a measurement
+ * window and a live reading. There is no uptime probe in this repo, no session
+ * reader in `lib/queries/`, and no count query behind 28; the figure also
+ * disagreed with `/system`'s own invented "Active Sessions 18" on the page it
+ * linked to. Rulings §8: *"Never seed a plausible default."*
+ *
+ * Deleted rather than left exported, so no later screen can print it again.
+ * The Overview strip now states what is missing instead.
+ */
+export const SYSTEM_STATS_UNAVAILABLE = {
+  activeUsers: 'No staff-account query exists in this build',
+  uptime: 'No uptime monitor is connected',
+  activeSessions: 'No session store is read',
+} as const
 
 /* ── quick access ──────────────────────────────────────────────────────── */
 

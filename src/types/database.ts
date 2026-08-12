@@ -437,6 +437,75 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['products']['Insert']>
       }
 
+      /**
+       * `0004_inventory.sql:380` — applied, but missing from this file, which
+       * is why `actions/inventory/createBundle.ts`'s `idempotentInsert('bundles', …)`
+       * did not typecheck. Transcribed column-for-column from the migration;
+       * nothing here is inferred.
+       */
+      bundles: {
+        Row: {
+          id: string
+          client_uuid: string
+          bundle_code: string
+          name: string
+          description: string | null
+          category_id: string | null
+          daily_rate: number
+          weekly_rate: number
+          is_active: boolean
+          created_at: string
+          created_by: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          bundle_code: string
+          name: string
+          description?: string | null
+          category_id?: string | null
+          daily_rate?: number
+          weekly_rate?: number
+          is_active?: boolean
+          created_at?: string
+          created_by?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: Partial<Database['public']['Tables']['bundles']['Insert']>
+      }
+
+      /** `0004_inventory.sql:407`. `days` carries Law 9 — never by omission. */
+      bundle_items: {
+        Row: {
+          id: string
+          client_uuid: string
+          bundle_id: string
+          product_id: string
+          quantity: number
+          days: number
+          is_mandatory: boolean
+          sort_order: number
+          created_at: string
+          created_by: string | null
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          bundle_id: string
+          product_id: string
+          quantity?: number
+          days?: number
+          is_mandatory?: boolean
+          sort_order?: number
+          created_at?: string
+          created_by?: string | null
+        }
+        Update: Partial<Database['public']['Tables']['bundle_items']['Insert']>
+      }
+
       inventory_units: {
         Row: {
           id: string

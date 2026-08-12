@@ -265,7 +265,8 @@ function HoverCard({ m }: { m: MovementRow }) {
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
         {actions.map(({ label, to, onClick }) => {
           const style = {
-            height: 28,
+            // Law 15 — 44×44 at every width; these are the hover card's real actions.
+            minHeight: 44,
             padding: '0 11px',
             borderRadius: 'var(--r-btn)',
             border: '1px solid var(--border)',
@@ -598,11 +599,13 @@ export default function MovementList({
                     background: 'transparent',
                     color: 'var(--muted)',
                     cursor: 'pointer',
-                    /* Law 15 — the phone layout is only ever touched, so its
-                       target is a full 44. Bringing the pointer widths to 44
-                       as well is the app-wide sweep, not this page's call. */
-                    width: phone ? 44 : 26,
-                    height: phone ? 44 : 26,
+                    /* Law 15 — "44×44 touch targets on every device, desktop
+                       included". This used to be `phone ? 44 : 26` with a
+                       comment deferring the pointer widths to an app-wide
+                       sweep; that sweep is this one, and the law has no
+                       pointer exemption to defer to. */
+                    minWidth: 44,
+                    minHeight: 44,
                     borderRadius: 'var(--r-xs)',
                     display: 'grid',
                     placeItems: 'center',
@@ -625,7 +628,7 @@ export default function MovementList({
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  height: phone ? 44 : 30,
+                  minHeight: 44,
                   minWidth: phone ? 128 : 78,
                   padding: '0 14px',
                   borderRadius: 'var(--r-btn)',

@@ -6,6 +6,7 @@ import type { Kpi } from '../../components/ui/Page'
 import { EditableRows } from '../../components/ui/EditableRows'
 import type { EditableRowDef } from '../../components/ui/EditableRows'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
+import { useViewport } from '../../lib/device'
 import { PageBody } from '../../components/ui/PageBody'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useClientProfile } from '../../lib/queries/useClients'
@@ -227,6 +228,16 @@ export default function ClientDetail() {
   const role = user?.role ?? 'Client'
   const gctx = useMemo(() => gateContext(role), [role])
   const pii = canViewPII(gctx)
+  /*
+    Spec 8.2 draws three layouts and this file had no width read at all — both
+    of its tables fell back to a horizontal scrollbar on a phone, which the
+    shell block of every spec forbids ("Tables become card rows below 768").
+    The record's own "one section at a time" requirement is already met by the
+    tab strip below, which exists at every width; what was missing is the
+    table→cards swap and a tab strip that scrolls instead of squashing.
+  */
+  const viewport = useViewport()
+  const tabular = viewport !== 'phone'
 
   /**
    * The record, from `client_directory_v` keyed on the code in the URL.
@@ -257,11 +268,18 @@ export default function ClientDetail() {
   const editRecord = useMemo(() => (client ? toEditable(client) : {}), [client])
 
   /**
-   * Every action under `src/actions/` is a stub — `implemented` defaults to
-   * `false` in `actions/core.ts`, so `updateClient` would throw
+   * `updateClient` is still a stub — `implemented` defaults to `false` in
+   * `actions/core.ts`, so dispatching it would throw
    * `ActionNotImplementedError` and no field would ever save. That is the
-   * dispatcher being honest, not a bug to route around: nothing in this app
-   * persists yet, and `CLIENTS_DATA` is a seed array.
+   * dispatcher being honest, not a bug to route around.
+   *
+   * ⚠ Narrowed from "every action under `src/actions/` is a stub", which was
+   * true when it was written and is not now: the 12 Aug rebuild marked eight
+   * actions `implemented: true` (`createClient`, `blockClient`,
+   * `recordPayment`, `confirmRental`, `createBundle` and the four floor
+   * verbs). `updateClient` is not among them. A blanket claim that has gone
+   * stale is worse than no claim, because the next reader routes around a
+   * working path on its word.
    *
    * So the edit lands where every other write on this page lands — the record
    * held in this component — and the page says so out loud in edit mode rather
@@ -400,16 +418,30 @@ export default function ClientDetail() {
             {/*
               Block / Unblock is disabled and says why, instead of appearing to
               work. It used to flip `isBlocked` in component state, fire a
-              success toast and call `actions/clients/blockClient` — which throws
-              `ActionNotImplementedError` (nothing in `src/actions/` sets
-              `implemented: true`) into a promise with no `.catch()`, so the
-              rejection was unobserved and the toast claimed a block that had
-              never left the browser.
+              success toast and call `actions/clients/blockClient` into a promise
+              with no `.catch()`, so the rejection was unobserved and the toast
+              claimed a block that had never left the browser.
+
+              ⚠ The old reason text said "blockClient.ts is a stub". That went
+              stale in the 12 Aug rebuild: `blockClient.ts:195` is now
+              `implemented: true` with a real body. What still blocks it is one
+              level up — its capability string `client.block` is not in
+              `core.ts:checkCapability`'s switch, so `checkCapability` returns
+              `undefined` and the dispatcher denies it for every role, Owner
+              included. That is fail-closed and therefore safe, but it is a
+              different gap from the one this control used to name, and the same
+              verb IS reachable from the directory's bulk action — so the reason
+              has to be accurate or the two screens look arbitrary.
+
+              TODO(decision) — PLAN.md §4: which roles hold `client.block`,
+              `client.create` and `rental.confirm`. A page may not answer that
+              (CLAUDE.md), and until it is ruled the capability must not be
+              mapped to a guess.
 
               Now that `isBlocked` is a database fact (0054), a local flip would
               also be painting over a real value rather than filling a gap.
             */}
-            <Unavailable reason="Blocking writes a row to client_flags and the app has no write path for it yet — actions/clients/blockClient.ts is a stub, and 0005 records that whether a block reason is mandatory is still unruled">
+            <Unavailable reason="Blocking is built but not yet reachable: its capability `client.block` is unruled, so actions/core.ts denies it for every role. Which roles may block a client is an open decision (PLAN.md §4), as is whether a block reason is mandatory (migration 0005)">
               <Button
                 icon={client.isBlocked ? 'checklist' : 'alert_triangle'}
                 variant={client.isBlocked ? 'secondary' : 'danger'}
@@ -478,7 +510,9 @@ export default function ClientDetail() {
 
       <KpiStrip items={kpis} columns={kpis.length} />
 
-      <div style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)' }}>
+      {/* Spec 8.2 TABLET — "section tabs scroll". They used to squash instead,
+          because the row had no overflow behaviour of its own. */}
+      <div style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)', overflowX: 'auto', overscrollBehaviorX: 'contain' }}>
         {tabs.map((t) => {
           const on = activeTab === t.key
           return (
@@ -488,7 +522,9 @@ export default function ClientDetail() {
               onClick={() => setTab(t.key)}
               aria-current={on ? 'page' : undefined}
               style={{
-                height: 34,
+                // Law 15 — this strip is the record's only section switch.
+                minHeight: 44,
+                flexShrink: 0,
                 padding: '0 12px',
                 border: 'none',
                 borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
@@ -668,6 +704,30 @@ export default function ClientDetail() {
                 : 'This client has never rented anything.'
             }
           >
+            {!tabular ? (
+              /* Shell rule — below 768 a 640px table is a horizontal scrollbar
+                 hiding the columns that matter. One card per booking, one
+                 primary action. */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', padding: 'var(--sp-sm)' }}>
+                {rentals.rows.map((r) => (
+                  <article key={r.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                      <span className="identifier" style={{ color: 'var(--link)', fontWeight: 700 }}>{r.bookingNo}</span>
+                      <Tone text={r.stage} tone={statusToken(r.stage)} />
+                      {r.isCancelled && <span style={{ color: 'var(--danger-text)', fontSize: 'var(--t-th)' }}>Cancelled</span>}
+                    </div>
+                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{r.project ?? '—'}</div>
+                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Pickup {formatAd(new Date(r.pickupAtAd))}</div>
+                    <Link
+                      to={`/rentals/${r.bookingNo}`}
+                      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minHeight: 44, borderRadius: 'var(--r-btn)', background: 'var(--btn-secondary-bg)', border: '1px solid var(--btn-secondary-border)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none' }}
+                    >
+                      Open booking
+                    </Link>
+                  </article>
+                ))}
+              </div>
+            ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
                 <thead>
@@ -708,6 +768,7 @@ export default function ClientDetail() {
                 </tbody>
               </table>
             </div>
+            )}
           </PageBody>
         </Card>
       )}
@@ -750,6 +811,35 @@ export default function ClientDetail() {
               emptyMessage="Nothing has been invoiced to this client, or every invoice against it has been voided."
               {...financeRestriction(money)}
             >
+              {!tabular ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', padding: 'var(--sp-sm)' }}>
+                  {invoices.rows.map((inv) => (
+                    <article key={inv.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                        <span className="identifier" style={{ fontWeight: 700 }}>{inv.invoiceNo}</span>
+                        <Tone text={inv.status} tone={INVOICE_TOKEN[inv.status]} />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 'var(--t-meta)' }}>
+                        <span style={{ color: 'var(--text2)' }}>Total</span>
+                        <span className="figure" style={{ fontWeight: 600 }}>{formatMoney(inv.totalAmount)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 'var(--t-meta)' }}>
+                        <span style={{ color: 'var(--text2)' }}>Outstanding</span>
+                        <span className="figure" style={{ color: inv.outstandingAmount > 0 ? 'var(--danger-text)' : 'var(--text2)' }}>
+                          {formatMoney(inv.outstandingAmount)}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Due {inv.dueDateAd}</div>
+                      <Link
+                        to={`/rentals/${inv.bookingNo}`}
+                        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minHeight: 44, borderRadius: 'var(--r-btn)', background: 'var(--btn-secondary-bg)', border: '1px solid var(--btn-secondary-border)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none' }}
+                      >
+                        Open {inv.bookingNo}
+                      </Link>
+                    </article>
+                  ))}
+                </div>
+              ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
                   <thead>
@@ -797,6 +887,7 @@ export default function ClientDetail() {
                   </tbody>
                 </table>
               </div>
+              )}
             </PageBody>
           </Card>
         </div>

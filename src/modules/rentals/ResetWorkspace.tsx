@@ -33,6 +33,7 @@ import {
   defaultQcBy,
 } from '../../data/reset'
 import type { Unit, QueueState, ProblemState } from '../../data/reset'
+import { BookingNotLoaded } from '../operations/BookingNotLoaded'
 
 /**
  * **Reset Workspace** — `04 Operations/Cleaning & Reset Workflow.md` v3.1
@@ -471,6 +472,17 @@ export default function ResetWorkspace() {
 
   const jobsReset = JOBS.Reset
 
+  /*
+   * Spec 03 Notes — "Routes are parameterised — these must work for any BR#,
+   * not one seeded booking." This workspace's items come from a single seeded
+   * booking, so any OTHER booking number gets the honest not-loaded state
+   * rather than that booking's gear wearing this number (Rulings §8). Placed
+   * after every hook, so the hook order is identical on both branches.
+   */
+  if (bookingNo !== undefined && bookingNo !== BOOKING.no) {
+    return <BookingNotLoaded bookingNo={bookingNo} job="Reset" seededBookingNo={BOOKING.no} />
+  }
+
   // Floor scale (DEVICES.md item 3) is applied automatically by route in App.tsx's Shell, not here.
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
@@ -651,6 +663,96 @@ export default function ResetWorkspace() {
           bodyStyle={{ padding: 0 }}
           action={<Button icon="checklist" onClick={selectAllVisible} disabled={readOnly}>Select All Visible</Button>}
         >
+          {phone ? (
+            /*
+              Shell rule — "Tables become card rows below 768." Eight columns
+              at 860px hid the serial, the queue state and the row's one action
+              behind a horizontal scrollbar on the floor's own device. One card
+              per unit, carrying the same select box and the same single
+              primary action the row had.
+            */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', padding: 'var(--sp-sm)' }}>
+              {visible.map((u) => {
+                const rec = lines[u.id] as LineRec
+                const isException = rec.problem !== 'No Problems'
+                const tone = isException ? STATUS.danger : STATUS[TONE[rec.queueState]]
+                const timeTone = STATUS[queueTimeTone(u.waitingMinutes)]
+                return (
+                  <article key={u.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minHeight: 44 }}>
+                      <input
+                        type="checkbox"
+                        checked={selected.has(u.id)}
+                        disabled={isException || readOnly}
+                        aria-label={`Select ${u.name}`}
+                        onChange={() => toggleSelect(u.id)}
+                        style={{ width: 22, height: 22, marginTop: 2, flexShrink: 0 }}
+                      />
+                      <span style={{ minWidth: 0, flex: 1 }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 600, color: 'var(--text)' }}>{u.name}</span>
+                          {u.required && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', height: 15, padding: '0 5px', borderRadius: 4, background: 'var(--st-primary-bg)', color: 'var(--st-primary-fg)', fontSize: 'var(--t-meta)', fontWeight: 700 }}>
+                              Required
+                            </span>
+                          )}
+                          {isPriority(u) && <Icon name="flag" size={11} style={{ color: 'var(--st-danger-fg)' }} label="Priority" />}
+                          <span style={{ display: 'inline-flex', alignItems: 'center', height: 20, padding: '0 8px', borderRadius: 'var(--r-badge)', background: tone.bg, color: tone.fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
+                            {isException ? rec.problem : rec.queueState}
+                          </span>
+                        </span>
+                        <Link to={`/inventory/${u.serial}`} className="identifier" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', textDecoration: 'none', marginTop: 2 }}>
+                          {u.serial}
+                        </Link>
+                      </span>
+                    </label>
+
+                    {isException && (
+                      <span style={{ fontSize: 'var(--t-meta)', color: 'var(--danger-text)' }}>
+                        {rec.problem} — {PROBLEM_ROUTE[rec.problem as Exclude<ProblemState, 'No Problems'>]}
+                      </span>
+                    )}
+
+                    <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                      {u.category} · {rec.actor ?? u.assignedTo} ·{' '}
+                      <span className="figure" style={{ color: timeTone.fg, fontWeight: 600 }}>{fmtMinutes(u.waitingMinutes)}</span>
+                    </span>
+
+                    <div>
+                      {isException ? (
+                        <RowAction label="Undo" onClick={() => undoProblem(u.id)} disabled={readOnly} />
+                      ) : rec.queueState === 'Waiting' ? (
+                        <RowAction label="Start" onClick={() => start(u.id)} disabled={readOnly} />
+                      ) : rec.queueState === 'QC' ? (
+                        <QcRowControls
+                          unit={u}
+                          rec={rec}
+                          by={qcBy[u.id] ?? defaultQcBy(rec.actor ?? '')}
+                          reason={qcReason[u.id] ?? ''}
+                          readOnly={readOnly}
+                          onByChange={(v) => setQcByDraft((pv) => ({ ...pv, [u.id]: v }))}
+                          onReasonChange={(v) => setQcReason((pv) => ({ ...pv, [u.id]: v }))}
+                          onPass={() => passQc(u.id)}
+                          onFail={() => failQc(u.id)}
+                        />
+                      ) : (
+                        <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                          {rec.queueState === 'Ready' ? `QC by ${rec.qcBy ?? '—'}` : `${rec.ticks.size}/${allTasksFor(u).length} ticked`}
+                        </span>
+                      )}
+                    </div>
+                  </article>
+                )
+              })}
+              {visible.length === 0 && (
+                <EmptyState
+                  title="No items match these filters"
+                  actionLabel="Clear filters"
+                  onAction={() => { setFilter('All'); setPriorityOnly(false); setQuery('') }}
+                />
+              )}
+            </div>
+          ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
               <thead>
@@ -746,6 +848,7 @@ export default function ResetWorkspace() {
               </tbody>
             </table>
           </div>
+          )}
         </Card>
         </div>
 
@@ -856,7 +959,9 @@ export default function ResetWorkspace() {
                                 disabled={readOnly}
                                 onClick={() => pickProblem(u.id, q)}
                                 style={{
-                                  height: 26, borderRadius: 'var(--r-xs)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: readOnly ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                                  // Law 15 — a floor workspace is the coarse-pointer case
+                                  // `lib/device.ts` was written for; these were 26px.
+                                  minHeight: 44, padding: '0 10px', borderRadius: 'var(--r-xs)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: readOnly ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
                                   border: `1px solid ${picked ? (q === 'No Problems' ? 'var(--st-in-fg)' : 'var(--st-danger-fg)') : 'var(--border)'}`,
                                   background: picked ? (q === 'No Problems' ? 'var(--st-in-bg)' : 'var(--st-danger-bg)') : 'transparent',
                                   color: picked ? (q === 'No Problems' ? 'var(--st-in-fg)' : 'var(--st-danger-fg)') : 'var(--text2)',
@@ -917,7 +1022,7 @@ export default function ResetWorkspace() {
                             )}
                             <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{PROBLEM_ROUTE[draft.type as Exclude<ProblemState, 'No Problems'>]}</p>
                             <div style={{ display: 'flex', gap: 6 }}>
-                              <button type="button" onClick={() => cancelProblem(u.id)} style={{ height: 26, padding: '0 9px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                              <button type="button" onClick={() => cancelProblem(u.id)} style={{ minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                                 Cancel
                               </button>
                               <button
@@ -925,7 +1030,7 @@ export default function ResetWorkspace() {
                                 disabled={!problemReady(draft)}
                                 onClick={() => confirmProblem(u.id)}
                                 style={{
-                                  height: 26, padding: '0 9px', borderRadius: 'var(--r-xs)', border: '1px solid transparent', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit',
+                                  minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-xs)', border: '1px solid transparent', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit',
                                   cursor: problemReady(draft) ? 'pointer' : 'not-allowed',
                                   background: problemReady(draft) ? 'var(--st-danger-fg)' : 'var(--card2)', color: problemReady(draft) ? '#fff' : 'var(--muted)',
                                 }}

@@ -45,7 +45,7 @@ export function CollapsibleAside({
           display: 'flex',
           alignItems: 'flex-start',
           justifyContent: 'center',
-          width: 32,
+          width: 44,
           // Sticky for the same reason the expanded panel is (see below): the
           // handle that reopens the rail has to still be on screen when someone
           // has scrolled down far enough to want it back.
@@ -54,17 +54,25 @@ export function CollapsibleAside({
           alignSelf: 'flex-start',
         }}
       >
+        {/*
+          Law 15 — 44×44 at every width, desktop included. Because line 37
+          collapses every rail by default at BOTH tablet and phone, this handle
+          is the *only* route back to the rail's content on the two bands the
+          rule is written for. The button box is therefore a full 44×44 and the
+          28px card is drawn inside it, so the visual stays compact without the
+          target shrinking with it.
+        */}
         <button
           type="button"
           onClick={toggle}
           aria-label={`Expand ${label}`}
           title={`Expand ${label}`}
           style={{
-            width: 28,
-            height: 28,
-            borderRadius: 'var(--r-sm)',
-            border: '1px solid var(--border)',
-            background: 'var(--card)',
+            minWidth: 44,
+            minHeight: 44,
+            padding: 0,
+            border: 'none',
+            background: 'transparent',
             color: 'var(--text2)',
             display: 'grid',
             placeItems: 'center',
@@ -72,27 +80,55 @@ export function CollapsibleAside({
             flexShrink: 0,
           }}
         >
-          <Icon name={expandIcon} size={14} />
+          <span
+            aria-hidden
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 'var(--r-sm)',
+              border: '1px solid var(--border)',
+              background: 'var(--card)',
+              display: 'grid',
+              placeItems: 'center',
+            }}
+          >
+            <Icon name={expandIcon} size={14} />
+          </span>
         </button>
       </div>
     )
   }
 
+  /**
+   * Same Law 15 treatment as the expand handle: a transparent 44×44 button box
+   * carrying a 24px circle. The box is offset by half its own width so the
+   * circle still straddles the rail's border exactly where it did before.
+   */
   const handleStyle: CSSProperties = {
     position: 'absolute',
-    top: 0,
-    width: 24,
-    height: 24,
-    borderRadius: '50%',
-    border: '1px solid var(--border)',
-    background: 'var(--card)',
+    top: -10,
+    minWidth: 44,
+    minHeight: 44,
+    padding: 0,
+    border: 'none',
+    background: 'transparent',
     color: 'var(--text2)',
     display: 'grid',
     placeItems: 'center',
     cursor: 'pointer',
     zIndex: 2,
+    ...(side === 'right' ? { left: -22 } : { right: -22 }),
+  }
+
+  const handleDotStyle: CSSProperties = {
+    width: 24,
+    height: 24,
+    borderRadius: '50%',
+    border: '1px solid var(--border)',
+    background: 'var(--card)',
+    display: 'grid',
+    placeItems: 'center',
     boxShadow: 'var(--shadow-card)',
-    ...(side === 'right' ? { left: -12 } : { right: -12 }),
   }
 
   /**
@@ -127,7 +163,9 @@ export function CollapsibleAside({
       }}
     >
       <button type="button" onClick={toggle} aria-label={`Collapse ${label}`} title={`Collapse ${label}`} style={handleStyle}>
-        <Icon name={collapseIcon} size={12} />
+        <span aria-hidden style={handleDotStyle}>
+          <Icon name={collapseIcon} size={12} />
+        </span>
       </button>
       <div
         style={{

@@ -12,7 +12,7 @@ import type { StatusKey } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
 import type { BookingStatus, Flag, ItemState } from '../../lib/workflow'
 import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
-import { toBs, formatBs, formatAd } from '../../lib/bs'
+import { toBs, formatBs, formatAd, formatAdDateTime as formatClosedAt } from '../../lib/bs'
 import { BOOKING } from '../../data/booking'
 import { PACKAGE } from '../../data/packing'
 import {
@@ -33,6 +33,7 @@ import {
   ACTIVE_SESSION,
 } from '../../data/handover'
 import type { HandoverUnit, HandoverSession, SessionId, Sig } from '../../data/handover'
+import { BookingNotLoaded } from '../operations/BookingNotLoaded'
 
 /**
  * **Handover Workspace** — `Handover Workflow.md` v1.1 (Build Locked).
@@ -271,7 +272,7 @@ export default function HandoverWorkspace() {
    * existing sessions (0003:85). Supplying real ids needs this screen converted
    * onto `useList`, which is its own task.
    */
-  const dispatchHandover = (): Promise<unknown> => {
+  const dispatchHandover = (occurredAt?: string): Promise<unknown> => {
     if (!user) {
       // Rejected rather than swallowed: the caller decides what the operator
       // sees, and "no session" must not read as a completed handover.
@@ -281,7 +282,10 @@ export default function HandoverWorkspace() {
     }
     setDispatchError(null)
     return import('../../actions/rentals').then((m) =>
-      m.handoverRental({ bookingId: id, lines: [] }, { userId: user.id, role: user.role }),
+      m.handoverRental(
+        { bookingId: id, lines: [], ...(occurredAt === undefined ? {} : { occurredAt }) },
+        { userId: user.id, role: user.role },
+      ),
     )
   }
 
@@ -415,10 +419,43 @@ export default function HandoverWorkspace() {
   const gateSummary = canCompleteSession ? null : active.state === 'Complete' ? 'This session is already closed' : (gates.find((g) => !g.passing)?.blocking ?? null)
   const overridableFailing = !receiverPassing || !paymentPassing || !depositPassing
 
+  /**
+   * **The button an operator presses to finish the job.**
+   *
+   * It used to set React state and navigate away — no dispatch of any kind —
+   * while the caption beside it said "Mark items as On Rent and close the
+   * handover" and the footer said "Saving is automatic". Neither was true: the
+   * stage stayed at `Packed`, no `handover_lines` row existed, and the screen
+   * and the database disagreed permanently with only the database right. The
+   * per-unit `handOver` above was repaired and this, the primary write, was
+   * not.
+   *
+   * `handoverRental` is `implemented: true` on a capability that resolves, so
+   * the write path exists and this is the caller that was skipping it. The
+   * session flip and the `navigate` are inside `.then()` for the same reason
+   * they are in `handOver`: a failed write must not read as a closed handover.
+   * The failure surfaces in the existing inline `ErrorBanner` (Law 12), never a
+   * toast.
+   *
+   * `closedAt` is the timestamp actually sent to the write, not a literal.
+   * `'16 Jul 2026, 02:25 PM'` was hardcoded here and would have rendered as the
+   * closing time of every handover this build ever performed.
+   */
   const completeSession = () => {
     if (!canCompleteSession) return
-    setSessions((p) => ({ ...p, [activeId]: { ...(p[activeId] as HandoverSession), state: 'Complete', closedAt: '16 Jul 2026, 02:25 PM' } }))
-    navigate(`/rentals/${id}`)
+    const occurredAt = new Date().toISOString()
+    dispatchHandover(occurredAt)
+      .then(() => {
+        setSessions((p) => ({
+          ...p,
+          [activeId]: { ...(p[activeId] as HandoverSession), state: 'Complete', closedAt: formatClosedAt(occurredAt) },
+        }))
+        navigate(`/rentals/${id}`)
+      })
+      .catch((err: unknown) => {
+        console.error('handover session close failed:', err)
+        setDispatchError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   const pickupBs = toBs(new Date('2026-07-16'))
@@ -430,6 +467,17 @@ export default function HandoverWorkspace() {
     if (query && !`${u.name} ${u.serial}`.toLowerCase().includes(query.toLowerCase())) return false
     return true
   })
+
+  /*
+   * Spec 03 Notes — "Routes are parameterised — these must work for any BR#,
+   * not one seeded booking." This workspace's items come from a single seeded
+   * booking, so any OTHER booking number gets the honest not-loaded state
+   * rather than that booking's gear wearing this number (Rulings §8). Placed
+   * after every hook, so the hook order is identical on both branches.
+   */
+  if (bookingNo !== undefined && bookingNo !== BOOKING.no) {
+    return <BookingNotLoaded bookingNo={bookingNo} job="Handover" seededBookingNo={BOOKING.no} />
+  }
 
   // Floor scale (DEVICES.md item 3) is applied automatically by route in App.tsx's Shell, not here.
   return (
@@ -611,6 +659,68 @@ export default function HandoverWorkspace() {
               })}
             </div>
 
+            {phone ? (
+              /*
+                Shell rule — "Tables become card rows below 768." Nine columns
+                at 860px behind `overflowX` put the serial, the state and the
+                Hand Over action off-screen on the device spec 03 calls "the
+                real device here". One card per unit, one primary action.
+              */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', padding: 'var(--sp-sm)' }}>
+                {visible.map((seed) => {
+                  const u = units[seed.id] as HandoverUnit
+                  const tone = STATUS[ITEM_TONE[u.state]]
+                  const canUndo = u.state !== 'Ready' && u.sessionId === activeId
+                  return (
+                    <article key={u.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minHeight: 44 }}>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(u.id)}
+                          disabled={u.state !== 'Ready'}
+                          onChange={() => toggleSelect(u.id)}
+                          aria-label={`Select ${u.name}`}
+                          style={{ width: 22, height: 22, marginTop: 2, flexShrink: 0 }}
+                        />
+                        <span style={{ minWidth: 0, flex: 1 }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 600 }}>{u.name}</span>
+                            {u.required && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', height: 15, padding: '0 5px', borderRadius: 4, background: 'var(--st-primary-bg)', color: 'var(--st-primary-fg)', fontSize: 'var(--t-meta)', fontWeight: 700 }}>
+                                Required
+                              </span>
+                            )}
+                            <span style={{ display: 'inline-flex', alignItems: 'center', height: 20, padding: '0 8px', borderRadius: 'var(--r-badge)', background: tone.bg, color: tone.fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
+                              {ITEM_STATE_LABEL[u.state]}
+                            </span>
+                          </span>
+                          <Link to={`/inventory/${u.serial}`} className="identifier" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', textDecoration: 'none', marginTop: 2 }}>
+                            {u.serial}
+                          </Link>
+                        </span>
+                      </label>
+
+                      <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                        {u.group}
+                        {u.sessionId ? ` · Session ${u.sessionId.slice(1)}` : ''}
+                        {u.state === 'Picked Up' ? ` · ${u.handoverAt}` : ''}
+                      </span>
+
+                      <span style={{ display: 'flex', gap: 'var(--sp-xs)', flexWrap: 'wrap' }}>
+                        {u.state === 'Ready' && <RowAction label="Hand Over" onClick={() => handOver(u.id)} />}
+                        {u.state === 'Ready' && <RowAction label="Missing" onClick={() => markMissing(u.id)} />}
+                        {canUndo && <RowAction label="Undo" onClick={() => undo(u.id)} />}
+                      </span>
+                    </article>
+                  )
+                })}
+                {visible.length === 0 && (
+                  <p style={{ margin: 0, padding: 'var(--sp-lg)', textAlign: 'center', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                    No items match these filters.
+                  </p>
+                )}
+              </div>
+            ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
                 <thead>
@@ -704,6 +814,7 @@ export default function HandoverWorkspace() {
                 </tbody>
               </table>
             </div>
+            )}
           </Card>
 
           {/* ── §11 Session Gates, Evidence, Signatures ─────────────────── */}

@@ -79,9 +79,14 @@ import type { Bar, BarKind, LayerName, ResourceRow, RowType, ViewName } from '..
  *    status: every cell states its jobs in its accessible name and every dot
  *    carries the kind and the booking in its title.
  *
- * Deviation from the render: the four-card KPI band that sat under the header
- * has been removed. Its figures were not lost — Full View's bottom strip still
- * carries Conflicts and Utilization, and Today's Operations lives on `/today`.
+ * The four-card KPI band under the header stays, at **all three widths**.
+ * Rulings §1 lists it by name in the Kept column and no prose in spec 05
+ * removes it. It was briefly deleted on 12 Aug under a note claiming the
+ * figures survived in Full View's bottom strip; they did not — Full View is
+ * `fullChoice && desktop`, so at tablet and phone none of them was reachable,
+ * Active Bookings existed nowhere else in the repo, and that strip's
+ * Utilization card is a placeholder rather than a figure. Every value in the
+ * band is now derived from `ROWS` or renders `NotTracked` (Rulings §8).
  */
 
 /**
@@ -289,12 +294,18 @@ function timeOn(bar: Bar, day: Date): { time: string; what: string } | null {
 
 /* ── small shared bits ─────────────────────────────────────────────────── */
 
+/**
+ * Law 15 — every one of `chipBase`'s three call sites below is a real
+ * `<button>` (the layer toggles, the kind filters, and Clear). It was 26px
+ * tall, so the file's own `TOUCH = 44` constant applied everywhere except the
+ * controls the operator presses most.
+ */
 const chipBase = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: 5,
-  height: 26,
-  padding: '0 9px',
+  minHeight: TOUCH,
+  padding: '0 11px',
   borderRadius: 'var(--r-badge)',
   fontSize: 'var(--t-th)',
   fontWeight: 600,
@@ -1103,7 +1114,7 @@ function MiniMonth({ anchor, onPickDay, busy }: { anchor: Date; onPickDay: (d: D
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
         {Array.from({ length: lead }, (_, i) => (
-          <span key={`lead-${i}`} aria-hidden style={{ height: 26 }} />
+          <span key={`lead-${i}`} aria-hidden style={{ height: TOUCH }} />
         ))}
         {days.map((d) => {
           const bs = toBs(d)
@@ -1118,7 +1129,9 @@ function MiniMonth({ anchor, onPickDay, busy }: { anchor: Date; onPickDay: (d: D
               className="figure"
               style={{
                 position: 'relative',
-                height: 26,
+                // Law 15 — the mini-calendar's day cells are buttons, and on the
+                // warehouse tablet they are the primary way to change the date.
+                minHeight: TOUCH,
                 borderRadius: 'var(--r-badge)',
                 border: 'none',
                 background: today ? 'var(--nav-active-accent)' : 'transparent',
@@ -1508,6 +1521,34 @@ export default function Calendar() {
     () => ROWS.reduce((n, r) => n + r.bars.filter((b) => b.kind === 'Conflict' || b.kind === 'Case Escalation').length, 0),
     [],
   )
+
+  /**
+   * **The KPI band, restored.**
+   *
+   * It was deleted in the 12 Aug rebuild under a "Deviation from the render"
+   * note claiming *"its figures were not lost — Full View's bottom strip still
+   * carries Conflicts and Utilization"*. That claim was false in three ways:
+   * Active Bookings survived nowhere in the repo; Full View is gated on
+   * `fullChoice && desktop`, so at tablet and phone none of the figures was
+   * reachable at all; and the strip's Utilization card is a `NotTracked`
+   * placeholder, not a figure. Rulings §1 lists "Calendar's KPI band" by name
+   * in its **Kept** column and no prose in spec 05 removes it.
+   *
+   * The band comes back at all three widths — and, per Rulings §8, every figure
+   * in it is derived from `ROWS` or says it is not tracked. The old band's
+   * hand-typed `52`, `18`, `84%` and its `8% up` delta do not come back with it.
+   */
+  const activeBookings = useMemo(
+    () => ROWS.reduce((n, r) => n + r.bars.filter((b) => b.kind === 'Reserved' || b.kind === 'On Rent').length, 0),
+    [],
+  )
+  const todaysOperations = useMemo(() => {
+    const t = Date.UTC(TODAY.getUTCFullYear(), TODAY.getUTCMonth(), TODAY.getUTCDate())
+    return ROWS.reduce(
+      (n, r) => n + r.bars.filter((b) => b.from.getTime() <= t && t <= b.to.getTime()).length,
+      0,
+    )
+  }, [])
 
   const clearAll = () => {
     setRowType('All')
@@ -2204,6 +2245,51 @@ export default function Calendar() {
       />
 
       {monthStepNote}
+
+      {/* Rulings §1 — Calendar's KPI band is in the Kept column. Four cards on
+          desktop, two abreast at tablet and phone so the figures stay legible
+          rather than becoming four slivers. */}
+      <section
+        aria-label="Key figures"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${desktop ? 4 : 2}, minmax(0,1fr))`,
+          gap: 'var(--sp-md)',
+        }}
+      >
+        <Card bodyStyle={{ padding: 14 }}>
+          <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>Active Bookings</div>
+          <div className="kpi-value" style={{ fontSize: 'var(--t-kpi)' }}>{activeBookings}</div>
+          <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Reserved or on rent, on this calendar</div>
+        </Card>
+        <Card bodyStyle={{ padding: 14 }}>
+          <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>Today&apos;s Operations</div>
+          <div className="kpi-value" style={{ fontSize: 'var(--t-kpi)' }}>{todaysOperations}</div>
+          <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginBottom: 8 }}>Bars covering today</div>
+          <Button icon="external_link" onClick={() => navigate('/today')}>View Today</Button>
+        </Card>
+        <Card bodyStyle={{ padding: 14 }}>
+          <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', marginBottom: 6 }}>
+            Equipment Utilization
+          </div>
+          {/* The render tints this purple and prints 84%. §4.2 bans the hue and
+              Rulings §8 bans the figure: nothing in this repo computes utilised
+              days against available days, and a page may not derive one (Law 1). */}
+          <NotTracked
+            what="Utilization"
+            reason="has no source: no engine computes utilised days against available days, and this screen may not derive one (law 1)."
+          />
+        </Card>
+        <Card bodyStyle={{ padding: 14 }}>
+          <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>Schedule Conflicts</div>
+          <div className="kpi-value" style={{ fontSize: 'var(--t-kpi)', color: conflictCount > 0 ? 'var(--danger-text)' : 'var(--text)' }}>
+            {conflictCount}
+          </div>
+          <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+            {conflictCount > 0 ? 'Requires attention' : 'Nothing double-booked or escalated'}
+          </div>
+        </Card>
+      </section>
 
       {(viewTabs || layerToggles || desktop) && (
         <div style={{ display: 'flex', gap: 'var(--sp-md)', alignItems: 'center', flexWrap: 'wrap' }}>

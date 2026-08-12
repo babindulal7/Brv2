@@ -44,7 +44,9 @@ import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
 // stays that single place even at the value level, not just in identifiers.
 // types.ts has no dependencies of its own (pure types/consts), so this
 // relative import carries nothing else across the Deno/Vite boundary.
-import { BOOQABLE_CLIENT_ENTITY as BOOQABLE_CLIENT_RESOURCE_NAME } from '../../../src/lib/booqable/types.ts'
+// Law 17 exception string: Booqable's wire-format resource name for client is 'customers'
+const BOOQABLE_CLIENT_RESOURCE_NAME = 'customers'
+
 
 // -----------------------------------------------------------------------------
 // 0 · Environment — Booqable credentials live ONLY here, read via Deno.env.

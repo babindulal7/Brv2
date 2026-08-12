@@ -1,17 +1,18 @@
 import { useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
+import type { IconName } from '../../components/ui/Icon'
 import { Card, Button, KpiStrip, cardStyle, Rail, SideRail } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { Modal } from '../../components/ui/Modal'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useToast } from '../../components/ui/Toast'
-import { STATUS } from '../../lib/status'
+import { STATUS, STATUS_ICON } from '../../lib/status'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { canRecordPayment } from '../../lib/rbac'
-import { useTabularLayout } from '../../lib/device'
+import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
 import { newClientUuid } from '../../lib/supabase'
@@ -125,13 +126,23 @@ function SortHeader({
   )
 }
 
-function Tone({ text, tone }: { text: string; tone: keyof typeof STATUS }) {
+/**
+ * Law 11 — *"never colour alone; every status renders colour + icon + label"* —
+ * and spec 08 line 45 names this chip specifically: *"⛔ blocked row carries
+ * icon + label + colour, never colour"*. It used to render a bare coloured
+ * `<span>` with the word in it and no glyph, on both the table row and the card
+ * row. The icon defaults out of `STATUS_ICON`, which `lib/status.ts:52` exists
+ * for precisely so "a bare colour chip cannot be built by accident".
+ */
+function Tone({ text, tone, icon }: { text: string; tone: keyof typeof STATUS; icon?: IconName }) {
   const c = STATUS[tone]
+  const glyph = (icon ?? STATUS_ICON[tone]) as IconName
   return (
     <span
       style={{
         display: 'inline-flex',
         alignItems: 'center',
+        gap: 4,
         height: 19,
         padding: '0 7px',
         borderRadius: 5,
@@ -143,6 +154,7 @@ function Tone({ text, tone }: { text: string; tone: keyof typeof STATUS }) {
         whiteSpace: 'nowrap',
       }}
     >
+      <Icon name={glyph} size={10} />
       {text}
     </span>
   )
@@ -203,8 +215,18 @@ export function ClientsDirectory({
   const [params] = useSearchParams()
   /* DEVICES.md §7 build order item 1 — below 768 the table can't be read even
      scrolled, so the phone gets the card view unconditionally (Law 13: branch
-     on capability, not platform). */
-  const tabular = useTabularLayout()
+     on capability, not platform).
+     Spec 8.1 draws THREE layouts, not two, so this reads the band rather than
+     the phone-vs-not boolean it used to: `tabular` still decides table-vs-cards
+     at 768, and `desktop` decides whether the two rails sit beside the list or
+     reflow beneath it. Rulings §7 — "collapse below 1180" is *reflow*, not
+     *hide*, so at tablet the Filters/Saved Views and Client-profile content
+     renders inline rather than going into `CollapsibleAside`'s handle. */
+  const viewport = useViewport()
+  const tabular = viewport !== 'phone'
+  const desktop = viewport === 'desktop'
+  /** Tablet keeps the table but not nine columns of it — see the `<table>` below. */
+  const narrow = viewport === 'tablet'
 
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all')
   /**
@@ -607,7 +629,9 @@ export function ClientsDirectory({
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 7,
-                height: 32,
+                // Law 15 — 44×44 at every width, desktop included. Matches
+                // `Inventory.tsx:1547`, the same control built to the rule.
+                minHeight: 44,
                 padding: '0 11px',
                 borderRadius: 'var(--r-sm)',
                 border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
@@ -656,7 +680,7 @@ export function ClientsDirectory({
               aria-label="Search clients"
               style={{
                 width: 280,
-                height: 34,
+                minHeight: 44,
                 padding: '0 10px 0 29px',
                 borderRadius: 'var(--r-input)',
                 border: '1px solid var(--input-border)',
@@ -692,13 +716,24 @@ export function ClientsDirectory({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: tabular ? 'auto minmax(0,1fr)' : '1fr',
+          gridTemplateColumns: desktop ? 'auto minmax(0,1fr)' : '1fr',
           gap: 'var(--sp-md)',
           alignItems: 'start',
         }}
       >
-        {tabular && (
-        <SideRail width={210} label="Filters">
+        {/*
+          Rulings §7 — below 1180 this content REFLOWS, it does not hide. The
+          same children go into `SideRail` (which is `CollapsibleAside`, and
+          therefore a 44px handle at tablet/phone) only at desktop; below that
+          they render as a plain column that `order: 2` places beneath the
+          list, so Filters and Saved Views stay reachable on the warehouse
+          tablet and on a phone — where, before this, the whole panel was not
+          rendered at all.
+        */}
+        <div style={desktop ? undefined : { order: 2, display: 'grid', gridTemplateColumns: tabular ? 'repeat(2, minmax(0,1fr))' : '1fr', gap: 'var(--sp-md)', alignItems: 'start' }}>
+        {(() => {
+          const filtersContent = (
+            <>
           <Card
             title="Filters"
             action={
@@ -734,7 +769,7 @@ export function ClientsDirectory({
                   alignItems: 'center',
                   gap: 9,
                   width: '100%',
-                  height: 34,
+                  minHeight: 44,
                   padding: '0 8px',
                   borderRadius: 'var(--r-sm)',
                   color: 'var(--muted)',
@@ -767,7 +802,7 @@ export function ClientsDirectory({
                     alignItems: 'center',
                     gap: 9,
                     width: '100%',
-                    height: 32,
+                    minHeight: 44,
                     padding: '0 8px',
                     borderRadius: 'var(--r-sm)',
                     border: 'none',
@@ -792,13 +827,16 @@ export function ClientsDirectory({
               </Unavailable>
             </div>
           </Card>
-        </SideRail>
-        )}
+            </>
+          )
+          return desktop ? <SideRail width={210} label="Filters">{filtersContent}</SideRail> : filtersContent
+        })()}
+        </div>
 
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: tabular && selectedClient ? 'minmax(0,1fr) auto' : 'minmax(0,1fr)',
+            gridTemplateColumns: desktop && selectedClient ? 'minmax(0,1fr) auto' : 'minmax(0,1fr)',
             gap: 'var(--sp-md)',
             alignItems: 'start',
           }}
@@ -876,8 +914,8 @@ export function ClientsDirectory({
                 title={density === 'compact' ? 'Compact rows — click for comfortable' : 'Comfortable rows — click for compact'}
                 style={{
                   marginLeft: 'auto',
-                  width: 32,
-                  height: 32,
+                  minWidth: 44,
+                  minHeight: 44,
                   borderRadius: 'var(--r-input)',
                   border: '1px solid var(--input-border)',
                   background: density === 'compact' ? 'var(--nav-active-bg)' : 'var(--input-bg)',
@@ -900,7 +938,9 @@ export function ClientsDirectory({
                   }}
                   className="figure"
                   style={{
-                    height: 26,
+                    // Law 15 — 44×44 at every width, desktop included. A real
+                    // <select> the operator has to hit; it was 26px tall.
+                    minHeight: 44,
                     padding: '0 6px',
                     borderRadius: 7,
                     border: '1px solid var(--border)',
@@ -1021,8 +1061,16 @@ export function ClientsDirectory({
                 })}
               </div>
             ) : (
+              /*
+                Spec 8.1's TABLET drawing is four columns — `code │ name │
+                member │ ⋮` — not the desktop nine scrolled sideways. `narrow`
+                drops the five that do not fit and takes the table's floor down
+                with them, the same shape `RentalsList` uses for its own tablet
+                band; the dropped facts are all still on the row's IntelCard and
+                in the profile panel, so nothing becomes unreachable.
+              */
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: money ? 1180 : 900 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: narrow ? 620 : money ? 1180 : 900 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
                       <th style={{ ...th, width: 30 }}>
@@ -1034,13 +1082,13 @@ export function ClientsDirectory({
                         />
                       </th>
                       <SortHeader label="Client" sortKey="name" sort={sort} onSort={applySortKey} />
-                      {pii && <SortHeader label="Contact" sort={sort} onSort={applySortKey} />}
-                      <SortHeader label="Type" sortKey="type" sort={sort} onSort={applySortKey} />
+                      {pii && !narrow && <SortHeader label="Contact" sort={sort} onSort={applySortKey} />}
+                      {!narrow && <SortHeader label="Type" sortKey="type" sort={sort} onSort={applySortKey} />}
                       <SortHeader label="Membership" sortKey="membership" sort={sort} onSort={applySortKey} />
-                      <SortHeader label="Current Rentals" sortKey="rentals" sort={sort} onSort={applySortKey} />
+                      {!narrow && <SortHeader label="Current Rentals" sortKey="rentals" sort={sort} onSort={applySortKey} />}
                       {money && <SortHeader label="Outstanding" sortKey="outstanding" sort={sort} onSort={applySortKey} />}
-                      {money && <SortHeader label="Deposit Held" sortKey="deposit" sort={sort} onSort={applySortKey} />}
-                      <SortHeader label="Last Rental (BS / AD)" sortKey="lastRental" sort={sort} onSort={applySortKey} />
+                      {money && !narrow && <SortHeader label="Deposit Held" sortKey="deposit" sort={sort} onSort={applySortKey} />}
+                      {!narrow && <SortHeader label="Last Rental (BS / AD)" sortKey="lastRental" sort={sort} onSort={applySortKey} />}
                       <SortHeader label="Action" sort={sort} onSort={applySortKey} align="right" />
                     </tr>
                   </thead>
@@ -1051,6 +1099,15 @@ export function ClientsDirectory({
                       return (
                         <tr
                           key={client.id}
+                          /* Spec 08 line 67 verbatim: "Rows are keyboard-reachable
+                             — `role="button"`, `tabIndex`, Enter and Space." Two of
+                             the three shipped; without the role a focusable `<tr>`
+                             carrying a click handler is announced as a plain table
+                             row, so the interaction was invisible to assistive tech.
+                             The accessible name says what pressing it does. */
+                          role="button"
+                          aria-label={`Open ${client.name}'s profile`}
+                          aria-pressed={isSelected}
                           tabIndex={0}
                           onClick={() => setSelectedClientId(isSelected ? null : client.id)}
                           onKeyDown={(e) => {
@@ -1137,7 +1194,7 @@ export function ClientsDirectory({
                             </IntelCard>
                           </td>
 
-                          {pii && (
+                          {pii && !narrow && (
                             <td style={td}>
                               <span className="figure" style={{ display: 'block', color: 'var(--text)' }}>
                                 {client.phone}
@@ -1148,12 +1205,13 @@ export function ClientsDirectory({
                             </td>
                           )}
 
-                          <td style={{ ...td, color: 'var(--text2)' }}>{client.clientType}</td>
+                          {!narrow && <td style={{ ...td, color: 'var(--text2)' }}>{client.clientType}</td>}
 
                           <td style={td}>
                             <Tone text={client.membership} tone={TIER_TONE[client.membership]} />
                           </td>
 
+                          {!narrow && (
                           <td style={td}>
                             {client.currentRentalsCount > 0 ? (
                               <span className="figure" style={{ color: 'var(--link)', fontWeight: 600 }}>
@@ -1165,6 +1223,7 @@ export function ClientsDirectory({
                               </span>
                             )}
                           </td>
+                          )}
 
                           {money && (
                             <td style={td}>
@@ -1178,7 +1237,7 @@ export function ClientsDirectory({
                             </td>
                           )}
 
-                          {money && (
+                          {money && !narrow && (
                             <td style={td}>
                               {client.depositHeldPaisa > 0 ? (
                                 <>
@@ -1197,6 +1256,7 @@ export function ClientsDirectory({
                             </td>
                           )}
 
+                          {!narrow && (
                           <td style={td}>
                             {client.lastRentalBs === '—' ? (
                               <span style={{ color: 'var(--muted)' }}>No rental yet</span>
@@ -1211,6 +1271,7 @@ export function ClientsDirectory({
                               </>
                             )}
                           </td>
+                          )}
 
                           <td style={{ ...td, textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', position: 'relative' }}>
@@ -1234,8 +1295,11 @@ export function ClientsDirectory({
                                   background: openMenuId?.id === client.id ? 'var(--hover-card)' : 'transparent',
                                   color: 'var(--muted)',
                                   cursor: 'pointer',
-                                  width: 26,
-                                  height: 26,
+                                  // Law 15 — the row's overflow menu is a real
+                                  // control; 26×26 put it 18px under the floor.
+                                  minWidth: 44,
+                                  minHeight: 44,
+                                  padding: 0,
                                   borderRadius: 'var(--r-xs)',
                                   display: 'grid',
                                   placeItems: 'center',
@@ -1305,7 +1369,7 @@ export function ClientsDirectory({
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: 9,
-                                        height: 32,
+                                        minHeight: 44,
                                         padding: '0 9px',
                                         borderRadius: 'var(--r-sm)',
                                         border: 'none',
@@ -1359,8 +1423,8 @@ export function ClientsDirectory({
           </Card>
 
           {/* ── client profile rail ─────────────────────────────────── */}
-          {selectedClient && (
-            <Rail width={330} label="Client profile">
+          {selectedClient && (() => {
+            const profileContent = (
             <Card bodyStyle={{ padding: 0 }}>
               <div
                 style={{
@@ -1391,8 +1455,10 @@ export function ClientsDirectory({
                     background: 'transparent',
                     color: 'var(--muted)',
                     cursor: 'pointer',
-                    width: 26,
-                    height: 26,
+                    // Law 15 — the rail's only dismiss control.
+                    minWidth: 44,
+                    minHeight: 44,
+                    padding: 0,
                     borderRadius: 'var(--r-xs)',
                     display: 'grid',
                     placeItems: 'center',
@@ -1578,8 +1644,12 @@ export function ClientsDirectory({
                 </div>
               </div>
             </Card>
-            </Rail>
-          )}
+            )
+            /* Rulings §7 again — the profile rail is beside the list at
+               desktop and inline beneath it below 1180, never behind the
+               collapse handle. */
+            return desktop ? <Rail width={330} label="Client profile">{profileContent}</Rail> : profileContent
+          })()}
         </div>
       </div>
 
@@ -1669,8 +1739,11 @@ function PageBtn({ label, active, disabled, onClick }: { label: string; active?:
       disabled={disabled}
       aria-current={active ? 'page' : undefined}
       style={{
-        minWidth: 26,
-        height: 26,
+        // Law 15 — pagination is a real target on the tablet this product
+        // runs on; 26×26 was 18px under the floor.
+        minWidth: 44,
+        minHeight: 44,
+        padding: '0 6px',
         borderRadius: 7,
         border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
         background: active ? 'var(--btn-primary-bg)' : 'transparent',

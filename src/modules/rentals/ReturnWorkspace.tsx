@@ -3,7 +3,9 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
 import { FloorAside } from '../operations/FloorAside'
+import { ErrorBanner } from '../../components/ui/StateViews'
 import { useViewport } from '../../lib/device'
+import { useAuth } from '../../lib/auth'
 import { thStyle as th } from '../../components/ui/TableHeaderCell'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
@@ -11,7 +13,7 @@ import { statusToken } from '../../lib/workflow'
 import type { BookingStatus, JobState, ItemState } from '../../lib/workflow'
 import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
 import { Unavailable } from '../../components/ui/Unavailable'
-import { toBs, formatBs, formatAd } from '../../lib/bs'
+import { toBs, formatBs, formatAd, formatAdDateTime } from '../../lib/bs'
 /* `lateBand` and its two formatters return no monetary value — that is the
    whole reason they exist. `lib/money.ts` stays unimported here (§8.3). */
 import { lateBand, formatOverage, bandConsequence } from '../../lib/lateFee'
@@ -37,6 +39,7 @@ import type {
   NotReturnedDecision,
   Sig,
 } from '../../data/returnInspection'
+import { BookingNotLoaded } from '../operations/BookingNotLoaded'
 
 /**
  * **Return & Inspection Workspace** — `Return Workflow.md` v2.1 (Build Locked)
@@ -150,6 +153,10 @@ export default function ReturnWorkspace() {
      beneath the list — not collapsing to a handle (Rulings §7). */
   const viewport = useViewport()
   const desktop = viewport === 'desktop'
+  const phone = viewport === 'phone'
+  const { user } = useAuth()
+  /** Law 12 — the dispatch failure is shown inline and stays there. Never a toast. */
+  const [dispatchError, setDispatchError] = useState<string | null>(null)
 
   const [units, setUnits] = useState<Record<string, ReturnUnit>>(() =>
     Object.fromEntries(SEED_UNITS.map((u) => [u.id, cloneUnit(u)])),
@@ -336,10 +343,53 @@ export default function ReturnWorkspace() {
   const primaryLabel = allResolved ? 'Complete Return' : 'Complete Session'
   const gateSummary = canCompleteSession ? null : active.state === 'Complete' ? 'This session is already closed' : (gates.find((g) => !g.passing)?.blocking ?? null)
 
+  /**
+   * **Complete Return — the write this screen exists to make.**
+   *
+   * It used to set React state, stamp a hardcoded `'19 Jul 2026, 10:20 AM'` and
+   * navigate away, dispatching nothing, while the footer beside it said "Saving
+   * is automatic" and "This will close the Return and set the booking to
+   * Returned". Neither happened: no `return_lines`, no `operation_sessions`, no
+   * `session_line_movements`, and `bookings.stage` left at `On Rent` — so the
+   * gear read as out indefinitely, the deposit was never released, and the
+   * booking stayed double-bookable while its own Return screen said it was
+   * closed.
+   *
+   * `completeReturn` (`actions/rentals/returnRental.ts`) is `implemented: true`
+   * on `operations.perform` and routes through `runFloorVerb`, so the write path
+   * exists and this caller was walking around it. Same caller shape as
+   * `PackingWorkspace`, `ResetWorkspace` and `HandoverWorkspace`:
+   *
+   *  - refuse inline when nobody is signed in — a floor record with no actor is
+   *    not a record;
+   *  - `lines: []`, deliberately, because this workspace's ids come from
+   *    `data/returnInspection`'s seed rather than `booking_lines`, so
+   *    `validateFloorVerb` refuses it *visibly* instead of the screen silently
+   *    claiming success;
+   *  - the session flip and the `navigate` both inside `.then()`, so a rejected
+   *    write cannot read as a closed return.
+   */
   const completeSession = () => {
     if (!canCompleteSession) return
-    setSessions((p) => ({ ...p, [activeId]: { ...(p[activeId] as ReturnSession), state: 'Complete', closedAt: '19 Jul 2026, 10:20 AM' } }))
-    navigate(`/rentals/${id}`)
+    if (!user) {
+      setDispatchError('You are not signed in, so this return cannot be recorded against anyone. Nothing was written.')
+      return
+    }
+    setDispatchError(null)
+    const occurredAt = new Date().toISOString()
+    import('../../actions/rentals')
+      .then((m) => m.completeReturn({ rentalId: id, lines: [], occurredAt }, { userId: user.id, role: user.role }))
+      .then(() => {
+        setSessions((p) => ({
+          ...p,
+          [activeId]: { ...(p[activeId] as ReturnSession), state: 'Complete', closedAt: formatAdDateTime(occurredAt) },
+        }))
+        navigate(`/rentals/${id}`)
+      })
+      .catch((err: unknown) => {
+        console.error('return failed:', err)
+        setDispatchError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   const expected = toBs(new Date('2026-07-19'))
@@ -351,6 +401,17 @@ export default function ReturnWorkspace() {
     if (query && !`${u.name} ${u.serial}`.toLowerCase().includes(query.toLowerCase())) return false
     return true
   })
+
+  /*
+   * Spec 03 Notes — "Routes are parameterised — these must work for any BR#,
+   * not one seeded booking." This workspace's items come from a single seeded
+   * booking, so any OTHER booking number gets the honest not-loaded state
+   * rather than that booking's gear wearing this number (Rulings §8). Placed
+   * after every hook, so the hook order is identical on both branches.
+   */
+  if (bookingNo !== undefined && bookingNo !== BOOKING.no) {
+    return <BookingNotLoaded bookingNo={bookingNo} job="Return" seededBookingNo={BOOKING.no} />
+  }
 
   // Floor scale (DEVICES.md item 3) is applied automatically by route in App.tsx's Shell, not here.
   return (
@@ -508,6 +569,89 @@ export default function ReturnWorkspace() {
               })}
             </div>
 
+            {/* §3.4 PHONE — "one serial card at a time, [OK] / [Flag] full width."
+                A 880px table on a 375px screen is a horizontal scrollbar hiding
+                the columns that matter (`lib/device.ts:139`); the same triage
+                panel renders inside the card, so the two layouts cannot drift. */}
+            {phone ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', padding: 'var(--sp-md)' }}>
+                {visible.length === 0 && (
+                  <div style={{ padding: 'var(--sp-lg)', textAlign: 'center', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                    No items match these filters.
+                  </div>
+                )}
+                {visible.map((seed) => {
+                  const u = units[seed.id] as ReturnUnit
+                  const isOpen = expandedId === u.id
+                  const itemTone = STATUS[ITEM_TONE[u.state]]
+                  return (
+                    <article key={u.id} style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div>
+                        <div style={{ fontWeight: 600, color: 'var(--text)' }}>{u.name}</div>
+                        <Link to={`/inventory/${u.serial}`} className="identifier" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', textDecoration: 'none' }}>
+                          {u.serial}
+                        </Link>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 22, padding: '0 8px', borderRadius: 'var(--r-badge)', background: itemTone.bg, color: itemTone.fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
+                          <Icon name={u.state === 'Missing' ? 'alert_triangle' : u.state === 'Returned' ? 'return_arrow' : 'truck'} size={11} />
+                          {ITEM_STATE_LABEL[u.state]}
+                        </span>
+                        {u.condition && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', height: 22, padding: '0 8px', borderRadius: 'var(--r-badge)', background: STATUS[CONDITION_TONE[u.condition]].bg, color: STATUS[CONDITION_TONE[u.condition]].fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
+                            {u.condition}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Full width, per the drawing. `Mark Returned` is the OK
+                          half; `Not Returned` is the Flag half. */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-sm)' }}>
+                        <button
+                          type="button"
+                          onClick={() => scan(u.id)}
+                          disabled={u.state === 'Returned'}
+                          style={{ minHeight: 44, borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: u.state === 'Returned' ? 'var(--card2)' : 'transparent', color: u.state === 'Returned' ? 'var(--muted)' : 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', cursor: u.state === 'Returned' ? 'not-allowed' : 'pointer' }}
+                        >
+                          Mark Returned
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => (u.state === 'Missing' ? undoMissing(u.id) : markMissing(u.id))}
+                          style={{ minHeight: 44, borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger-text)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer' }}
+                        >
+                          {u.state === 'Missing' ? 'Undo' : 'Not Returned'}
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setExpandedId(isOpen ? null : u.id)}
+                        aria-expanded={isOpen}
+                        style={{ minHeight: 44, borderRadius: 'var(--r-btn)', border: 'none', background: 'transparent', color: 'var(--link)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer', textAlign: 'left' }}
+                      >
+                        {isOpen ? 'Hide inspection' : 'Inspect this item'}
+                      </button>
+
+                      {isOpen && (
+                        <UnitDetail
+                          u={u}
+                          onSetCondition={(c) => setCondition(u.id, c)}
+                          onSetAccessory={(name, present) => setAccessory(u.id, name, present)}
+                          onDamageField={(patch) => setDamage(u.id, patch)}
+                          onAddPhoto={() => setDamage(u.id, { photos: (u.damage?.photos ?? 0) + 1 })}
+                          onSendForApproval={() => setDamage(u.id, { routedForApproval: true })}
+                          onSaveInspection={() => saveInspection(u.id)}
+                          onCancel={() => setExpandedId(null)}
+                          onSetNote={(note) => setNote(u.id, note)}
+                          id={id}
+                        />
+                      )}
+                    </article>
+                  )
+                })}
+              </div>
+            ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
                 <thead>
@@ -553,6 +697,7 @@ export default function ReturnWorkspace() {
                 </tbody>
               </table>
             </div>
+            )}
 
             {/* §6.5 — two counters, never merged. */}
             <div style={{ margin: 12, padding: '10px 12px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)', display: 'flex', gap: 'var(--sp-xl)', flexWrap: 'wrap', fontSize: 'var(--t-meta)' }}>
@@ -735,16 +880,25 @@ export default function ReturnWorkspace() {
         </FloorAside>
       </div>
 
-      {/* ── §11 footer — two buttons, primary blue, autosave, no Save Draft ── */}
+      {/* Law 12 — the dispatch failure is inline and persistent, right where the
+          operator pressed. It replaces a session that used to flip to Complete
+          whether or not anything was written. */}
+      {dispatchError && <ErrorBanner title="This return was not recorded" message={dispatchError} />}
+
+      {/* ── §11 footer — two buttons, primary blue, no Save Draft ── */}
       <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '12px 14px', flexWrap: 'wrap' }}>
         <button
           type="button"
           onClick={() => navigate(`/rentals/${id}`)}
-          style={{ height: 34, padding: '0 14px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger-text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+          style={{ minHeight: 44, padding: '0 14px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger-text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
         >
           Cancel Return
         </button>
-        <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Saving is automatic</span>
+        {/* Was "Saving is automatic". Nothing on this screen autosaves — triage
+            lives in React state until Complete Return dispatches it — and a
+            false persistence claim beside a completion gate is the worst place
+            for one. */}
+        <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Nothing is saved until you complete this session</span>
         <span style={{ marginLeft: 'auto' }} title={gateSummary ?? undefined}>
           <button
             type="button"
@@ -773,7 +927,9 @@ export default function ReturnWorkspace() {
         <p style={{ margin: '-4px 2px 0', textAlign: 'right', fontSize: 'var(--t-meta)', color: 'var(--progress-text)', fontWeight: 600 }}>{gateSummary}</p>
       )}
       <p style={{ margin: '-4px 2px 0', textAlign: 'right', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-        {allResolved ? 'This will close the Return and set the booking to Returned.' : `This closes Session ${activeId.slice(1)} only; ${outstanding.length} item(s) remain outstanding.`}
+        {allResolved
+          ? 'This dispatches the Return; the booking moves to Returned only if the write is accepted.'
+          : `This closes Session ${activeId.slice(1)} only; ${outstanding.length} item(s) remain outstanding.`}
       </p>
 
       <BarcodeScannerModal
@@ -871,8 +1027,6 @@ function UnitRow({
   id: string
 }) {
   const itemTone = STATUS[ITEM_TONE[u.state]]
-  const needsDamagePanel = u.condition === 'Damaged' || u.condition === 'Lost'
-  const route = u.condition ? routeFor(u.condition) : null
 
   return (
     <>
@@ -932,159 +1086,208 @@ function UnitRow({
       {isOpen && (
         <tr style={{ borderBottom: '1px solid var(--border)' }}>
           <td colSpan={9} style={{ padding: 0, background: 'var(--card2)' }}>
-            <div style={{ padding: 14 }}>
-              {u.state !== 'Returned' ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                  <Icon name="info" size={14} />
-                  Pickup: {u.pickup.at} · {u.pickup.by} ·{' '}
-                  <Link to={`/rentals/${id}/evidence`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }}>View Pickup Photos ({u.pickup.photos})</Link>
-                  <span style={{ marginLeft: 'auto', color: 'var(--muted)' }}>Scan this item to begin inspection.</span>
-                </div>
-              ) : (
-                <>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--sp-lg)' }}>
-                    <div>
-                      <div style={panelTitle}>Pickup Info</div>
-                      <div style={panelLine}>{u.pickup.at}</div>
-                      <div style={panelLine}>{u.pickup.by}</div>
-                      <Link to={`/rentals/${id}/evidence`} style={panelLink}>View Pickup Photos ({u.pickup.photos})</Link>
-                    </div>
-
-                    <div>
-                      <div style={panelTitle}>Return Info</div>
-                      <div style={panelLine}>Returned by {u.ret?.by ?? '—'}</div>
-                      <div style={panelLine}>{u.ret?.at ?? '—'}</div>
-                      <Link to={`/rentals/${id}/evidence`} style={panelLink}>View Return Photos ({u.ret?.photos ?? 0})</Link>
-                    </div>
-
-                    <div>
-                      <div style={panelTitle}>Condition</div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                        {CONDITIONS.map((c) => {
-                          const on = u.condition === c
-                          return (
-                            <button
-                              key={c}
-                              type="button"
-                              aria-pressed={on}
-                              onClick={() => onSetCondition(c)}
-                              style={{
-                                height: 26,
-                                padding: '0 9px',
-                                borderRadius: 'var(--r-xs)',
-                                border: `1px solid ${on ? STATUS[CONDITION_TONE[c]].fg : 'var(--border)'}`,
-                                background: on ? STATUS[CONDITION_TONE[c]].bg : 'transparent',
-                                color: on ? STATUS[CONDITION_TONE[c]].fg : 'var(--text2)',
-                                fontSize: 'var(--t-meta)',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                fontFamily: 'inherit',
-                              }}
-                            >
-                              {c}
-                            </button>
-                          )
-                        })}
-                      </div>
-                      {route && <div style={{ marginTop: 7, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Routes to {route.queue} → {route.then}</div>}
-                    </div>
-
-                    <div>
-                      <div style={panelTitle}>Accessories</div>
-                      {u.accessories && u.accessories.length > 0 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
-                          {u.accessories.map((a) => (
-                            <div key={a.name} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)' }}>
-                              <span style={{ flex: 1, color: a.present === false ? 'var(--danger-text)' : 'var(--text2)' }}>{a.name}</span>
-                              <button type="button" onClick={() => onSetAccessory(a.name, true)} style={miniToggle(a.present === true, 'in')}>Present</button>
-                              <button type="button" onClick={() => onSetAccessory(a.name, false)} style={miniToggle(a.present === false, 'danger')}>Missing</button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>No accessory checklist on this item.</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <div style={panelTitle}>Damage Details</div>
-                      {needsDamagePanel ? (
-                        <>
-                          <textarea
-                            value={u.damage?.description ?? ''}
-                            onChange={(e) => onDamageField({ description: e.target.value })}
-                            placeholder="Describe the damage"
-                            aria-label={`Damage description for ${u.name}`}
-                            style={{ width: '100%', minHeight: 46, padding: 7, borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
-                          />
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginTop: 6 }}>
-                            <span className="figure" style={{ fontSize: 'var(--t-meta)', color: (u.damage?.photos ?? 0) > 0 ? 'var(--success-text)' : 'var(--danger-text)' }}>
-                              {u.damage?.photos ?? 0} photo(s)
-                            </span>
-                            <RowAction label="Add Photo" onClick={onAddPhoto} />
-                          </div>
-                          {/* §13.1 — Warehouse routes it; no cost field, no amount. */}
-                          <div style={{ marginTop: 7 }}>
-                            {u.damage?.routedForApproval ? (
-                              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--success-text)', fontWeight: 600 }}>Sent for Manager approval</span>
-                            ) : (
-                              <button
-                                type="button"
-                                disabled={(u.damage?.photos ?? 0) === 0}
-                                onClick={onSendForApproval}
-                                title={(u.damage?.photos ?? 0) === 0 ? 'Evidence required before routing for approval' : undefined}
-                                style={{ height: 26, padding: '0 9px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'var(--card2)', color: (u.damage?.photos ?? 0) === 0 ? 'var(--muted)' : 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: (u.damage?.photos ?? 0) === 0 ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
-                              >
-                                Send for Manager Approval
-                              </button>
-                            )}
-                          </div>
-                        </>
-                      ) : (
-                        <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>No damage recorded.</p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-                    <label style={{ ...panelTitle, display: 'block' }} htmlFor={`note-${u.id}`}>Inspector Note</label>
-                    <textarea
-                      id={`note-${u.id}`}
-                      value={u.note ?? ''}
-                      onChange={(e) => onSetNote(e.target.value)}
-                      placeholder="Notes for this inspection…"
-                      style={{ width: '100%', minHeight: 36, padding: 7, borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
-                    />
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--sp-sm)', marginTop: 9 }}>
-                      <button type="button" onClick={onCancel} style={{ height: 30, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!u.condition}
-                        onClick={onSaveInspection}
-                        style={{
-                          height: 30,
-                          padding: '0 14px',
-                          borderRadius: 'var(--r-btn)',
-                          fontSize: 'var(--t-meta)',
-                          fontWeight: 600,
-                          fontFamily: 'inherit',
-                          cursor: u.condition ? 'pointer' : 'not-allowed',
-                          ...(u.condition ? ACCENT_OUTLINE : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
-                        }}
-                      >
-                        Save Inspection
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
+            <UnitDetail
+              u={u}
+              onSetCondition={onSetCondition}
+              onSetAccessory={onSetAccessory}
+              onDamageField={onDamageField}
+              onAddPhoto={onAddPhoto}
+              onSendForApproval={onSendForApproval}
+              onSaveInspection={onSaveInspection}
+              onCancel={onCancel}
+              onSetNote={onSetNote}
+              id={id}
+            />
           </td>
         </tr>
       )}
     </>
+  )
+}
+
+/**
+ * The inspection/triage panel, lifted out of `UnitRow` so the SAME panel serves
+ * both layouts. Above 768 it is the expanded row inside a `<td colSpan>`; below
+ * 768 the table is gone entirely (shell rule — "tables become card rows below
+ * 768") and this renders inside the unit's card. One panel, so the phone and
+ * the desktop can never drift into two different triage flows.
+ */
+function UnitDetail({
+  u,
+  onSetCondition,
+  onSetAccessory,
+  onDamageField,
+  onAddPhoto,
+  onSendForApproval,
+  onSaveInspection,
+  onCancel,
+  onSetNote,
+  id,
+}: {
+  u: ReturnUnit
+  onSetCondition: (c: Condition) => void
+  onSetAccessory: (name: string, present: boolean) => void
+  onDamageField: (patch: Partial<DamageDetail>) => void
+  onAddPhoto: () => void
+  onSendForApproval: () => void
+  onSaveInspection: () => void
+  onCancel: () => void
+  onSetNote: (note: string) => void
+  id: string
+}) {
+  const needsDamagePanel = u.condition === 'Damaged' || u.condition === 'Lost'
+  const route = u.condition ? routeFor(u.condition) : null
+
+  return (
+    <div style={{ padding: 14 }}>
+      {u.state !== 'Returned' ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+          <Icon name="info" size={14} />
+          Pickup: {u.pickup.at} · {u.pickup.by} ·{' '}
+          <Link to={`/rentals/${id}/evidence`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }}>View Pickup Photos ({u.pickup.photos})</Link>
+          <span style={{ marginLeft: 'auto', color: 'var(--muted)' }}>Scan this item to begin inspection.</span>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--sp-lg)' }}>
+            <div>
+              <div style={panelTitle}>Pickup Info</div>
+              <div style={panelLine}>{u.pickup.at}</div>
+              <div style={panelLine}>{u.pickup.by}</div>
+              <Link to={`/rentals/${id}/evidence`} style={panelLink}>View Pickup Photos ({u.pickup.photos})</Link>
+            </div>
+
+            <div>
+              <div style={panelTitle}>Return Info</div>
+              <div style={panelLine}>Returned by {u.ret?.by ?? '—'}</div>
+              <div style={panelLine}>{u.ret?.at ?? '—'}</div>
+              <Link to={`/rentals/${id}/evidence`} style={panelLink}>View Return Photos ({u.ret?.photos ?? 0})</Link>
+            </div>
+
+            <div>
+              <div style={panelTitle}>Condition</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {CONDITIONS.map((c) => {
+                  const on = u.condition === c
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => onSetCondition(c)}
+                      style={{
+                        height: 26,
+                        padding: '0 9px',
+                        borderRadius: 'var(--r-xs)',
+                        border: `1px solid ${on ? STATUS[CONDITION_TONE[c]].fg : 'var(--border)'}`,
+                        background: on ? STATUS[CONDITION_TONE[c]].bg : 'transparent',
+                        color: on ? STATUS[CONDITION_TONE[c]].fg : 'var(--text2)',
+                        fontSize: 'var(--t-meta)',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      {c}
+                    </button>
+                  )
+                })}
+              </div>
+              {route && <div style={{ marginTop: 7, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Routes to {route.queue} → {route.then}</div>}
+            </div>
+
+            <div>
+              <div style={panelTitle}>Accessories</div>
+              {u.accessories && u.accessories.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
+                  {u.accessories.map((a) => (
+                    <div key={a.name} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)' }}>
+                      <span style={{ flex: 1, color: a.present === false ? 'var(--danger-text)' : 'var(--text2)' }}>{a.name}</span>
+                      <button type="button" onClick={() => onSetAccessory(a.name, true)} style={miniToggle(a.present === true, 'in')}>Present</button>
+                      <button type="button" onClick={() => onSetAccessory(a.name, false)} style={miniToggle(a.present === false, 'danger')}>Missing</button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>No accessory checklist on this item.</p>
+              )}
+            </div>
+
+            <div>
+              <div style={panelTitle}>Damage Details</div>
+              {needsDamagePanel ? (
+                <>
+                  <textarea
+                    value={u.damage?.description ?? ''}
+                    onChange={(e) => onDamageField({ description: e.target.value })}
+                    placeholder="Describe the damage"
+                    aria-label={`Damage description for ${u.name}`}
+                    style={{ width: '100%', minHeight: 46, padding: 7, borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginTop: 6 }}>
+                    <span className="figure" style={{ fontSize: 'var(--t-meta)', color: (u.damage?.photos ?? 0) > 0 ? 'var(--success-text)' : 'var(--danger-text)' }}>
+                      {u.damage?.photos ?? 0} photo(s)
+                    </span>
+                    <RowAction label="Add Photo" onClick={onAddPhoto} />
+                  </div>
+                  {/* §13.1 — Warehouse routes it; no cost field, no amount. */}
+                  <div style={{ marginTop: 7 }}>
+                    {u.damage?.routedForApproval ? (
+                      <span style={{ fontSize: 'var(--t-meta)', color: 'var(--success-text)', fontWeight: 600 }}>Sent for Manager approval</span>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={(u.damage?.photos ?? 0) === 0}
+                        onClick={onSendForApproval}
+                        title={(u.damage?.photos ?? 0) === 0 ? 'Evidence required before routing for approval' : undefined}
+                        style={{ height: 26, padding: '0 9px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'var(--card2)', color: (u.damage?.photos ?? 0) === 0 ? 'var(--muted)' : 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: (u.damage?.photos ?? 0) === 0 ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                      >
+                        Send for Manager Approval
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>No damage recorded.</p>
+              )}
+            </div>
+          </div>
+
+          <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+            <label style={{ ...panelTitle, display: 'block' }} htmlFor={`note-${u.id}`}>Inspector Note</label>
+            <textarea
+              id={`note-${u.id}`}
+              value={u.note ?? ''}
+              onChange={(e) => onSetNote(e.target.value)}
+              placeholder="Notes for this inspection…"
+              style={{ width: '100%', minHeight: 36, padding: 7, borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--sp-sm)', marginTop: 9 }}>
+              <button type="button" onClick={onCancel} style={{ height: 30, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!u.condition}
+                onClick={onSaveInspection}
+                style={{
+                  height: 30,
+                  padding: '0 14px',
+                  borderRadius: 'var(--r-btn)',
+                  fontSize: 'var(--t-meta)',
+                  fontWeight: 600,
+                  fontFamily: 'inherit',
+                  cursor: u.condition ? 'pointer' : 'not-allowed',
+                  ...(u.condition ? ACCENT_OUTLINE : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
+                }}
+              >
+                Save Inspection
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 

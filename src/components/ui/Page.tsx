@@ -109,6 +109,14 @@ export function PageHeader({
 
 /* ── buttons ───────────────────────────────────────────────────────────── */
 
+/**
+ * The app's most-imported button. 67 module files take it from here rather than
+ * from `components/ui/Button`, so its height is the single largest lever on
+ * **Law 15 — 44×44 on every device, desktop included.** It used to be a fixed
+ * `height: 34`, which put every one of those call sites 10px under the floor at
+ * every width; `minHeight` rather than `height` so a wrapped label grows the
+ * button instead of overflowing it.
+ */
 export function Button({
   children,
   icon,
@@ -143,7 +151,7 @@ export function Button({
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
-        height: 34,
+        minHeight: 44,
         padding: '0 12px',
         borderRadius: 'var(--r-btn)',
         fontSize: 'var(--t-meta)',
@@ -320,6 +328,69 @@ export function Rail({
       {children}
     </CollapsibleAside>
   )
+}
+
+/**
+ * `Rail` at desktop; the same children as a plain column below 1180.
+ *
+ * Rulings §7 (binding): *"'Right rails collapse below 1180' means **reflow**,
+ * not **hide**… Do not wrap those in `CollapsibleAside`, and do not change its
+ * default: other pages depend on it."* `Rail` **is** `CollapsibleAside`, which
+ * defaults to collapsed at tablet *and* phone, so any screen that renders
+ * `<Rail>` unconditionally puts its rail content behind a handle on the
+ * warehouse tablet this product targets.
+ *
+ * The pages that got this right hand-rolled the same three lines each
+ * (`Finance.tsx`, `OperationsQueues.tsx`, `Payments.tsx`). This is that shape
+ * once, so a screen only has to pick the right component rather than remember
+ * the rule. The parent grid still has to drop its rail track below 1180 —
+ * `RailGrid` below does that half.
+ */
+export function ReflowRail({
+  children,
+  id,
+  width = 288,
+  label = 'Page summary',
+}: {
+  children: ReactNode
+  id?: string
+  width?: number
+  label?: string
+}) {
+  const viewport = useViewport()
+  if (viewport === 'desktop') {
+    return (
+      <Rail width={width} label={label} {...(id !== undefined ? { id } : {})}>
+        {children}
+      </Rail>
+    )
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>{children}</div>
+  )
+}
+
+/**
+ * The other half of `ReflowRail`: the `content | rail` grid's own tracks. The
+ * rail track has to disappear below 1180, or the reflowed column lands in a
+ * second column that is still there and the content is squeezed anyway.
+ *
+ * A hook rather than a wrapper component because the screens that need it
+ * already own their grid `<div>` (with their own margins, gaps and
+ * `alignItems`); this changes only the one property that has to change.
+ */
+export function useRailGridColumns(): string {
+  return useViewport() === 'desktop' ? 'minmax(0,1fr) auto' : 'minmax(0,1fr)'
+}
+
+/**
+ * `KpiStrip`'s column clamp (2 at phone, 3 at tablet), for the screens that
+ * hand-roll their own `<section aria-label="Key figures">` grid instead of
+ * going through it. Same rule in one place rather than a magic number per page.
+ */
+export function useBandColumns(): (n: number) => number {
+  const viewport = useViewport()
+  return (n: number) => (viewport === 'phone' ? Math.min(n, 2) : viewport === 'tablet' ? Math.min(n, 3) : n)
 }
 
 /**

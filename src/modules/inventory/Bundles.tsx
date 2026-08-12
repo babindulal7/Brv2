@@ -19,6 +19,7 @@ import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useAuth } from '../../lib/auth'
 import { gateContext } from '../../lib/fieldGating'
 import { useMenuFlip } from '../../lib/menuFlip'
+import { useViewport } from '../../lib/device'
 import { IntelCard } from '../../components/ui/IntelCard'
 import { bundleGlance, bundleDetailGroups } from '../../data/bundleIntel'
 import {
@@ -376,7 +377,18 @@ export function Bundles() {
   const [hasCrew, setHasCrew] = useState<Triple>('Any')
   const [hasVehicle, setHasVehicle] = useState<Triple>('Any')
   const [sort, setSort] = useState<Sort>({ key: 'name', dir: 'asc' })
-  const [view, setView] = useState<'list' | 'grid'>('list')
+  /*
+    Spec 7.2 draws a bundle-CARD grid, not a table: "TABLET 2-up · PHONE 1-up,
+    full-width cards." This defaulted to `'list'` at every width, so a 375px
+    phone landed on a 960–1100px table behind a horizontal scrollbar and only a
+    manual toggle reached the layout the spec draws. The toggle survives (Law 3
+    / Rulings §1 — nothing is deleted) but the width now chooses the default,
+    and below 768 the grid is forced: `effectiveView` is what renders, `view`
+    is only the operator's desktop preference.
+  */
+  const viewport = useViewport()
+  const [view, setView] = useState<'list' | 'grid'>(() => 'list')
+  const effectiveView: 'list' | 'grid' = viewport === 'phone' ? 'grid' : viewport === 'tablet' && view === 'list' ? 'grid' : view
   const [rowsPerPage, setRowsPerPage] = useState(25)
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -601,7 +613,9 @@ export function Bundles() {
         </span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      {/* Rulings §7 — the Bundle preview rail sits beside the grid at desktop
+          and reflows inline beneath it below 1180, never behind a handle. */}
+      <div style={{ display: 'grid', gridTemplateColumns: viewport === 'desktop' ? 'minmax(0,1fr) auto' : 'minmax(0,1fr)', gap: 'var(--sp-md)', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <KpiStrip items={kpis} columns={4} />
 
@@ -744,16 +758,19 @@ export function Bundles() {
                     key={v}
                     type="button"
                     onClick={() => setView(v)}
-                    aria-pressed={view === v}
+                    /* `effectiveView`, not `view` — below 768 the width forces the
+                       grid, so the pressed state has to say what is rendering. */
+                    aria-pressed={effectiveView === v}
                     aria-label={v === 'list' ? 'List view' : 'Grid view'}
                     style={{
-                      width: 34,
-                      height: 32,
+                      // Law 15 — 44×44 at every width; this was 34×32.
+                      minWidth: 44,
+                      minHeight: 44,
                       display: 'grid',
                       placeItems: 'center',
                       border: 'none',
-                      background: view === v ? 'var(--nav-active-bg)' : 'var(--card)',
-                      color: view === v ? 'var(--nav-active-accent)' : 'var(--text2)',
+                      background: effectiveView === v ? 'var(--nav-active-bg)' : 'var(--card)',
+                      color: effectiveView === v ? 'var(--nav-active-accent)' : 'var(--text2)',
                       cursor: 'pointer',
                     }}
                   >
@@ -777,11 +794,14 @@ export function Bundles() {
                 actionLabel="Clear all filters"
                 onAction={clearAll}
               />
-            ) : view === 'grid' ? (
+            ) : effectiveView === 'grid' ? (
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(232px, 1fr))',
+                  // Spec 7.2 sets the bands explicitly — TABLET 2-up, PHONE
+                  // 1-up full-width — rather than letting `auto-fill` decide.
+                  gridTemplateColumns:
+                    viewport === 'phone' ? '1fr' : viewport === 'tablet' ? 'repeat(2, minmax(0,1fr))' : 'repeat(auto-fill, minmax(232px, 1fr))',
                   gap: 10,
                   padding: 'var(--sp-md)',
                 }}
@@ -1160,7 +1180,9 @@ export function Bundles() {
         </div>
 
         {/* ── right rail ─────────────────────────────────────────────────── */}
-        <Rail width={324} label="Bundle preview">
+        {(() => {
+          const railContent = (
+          <>
           {preview && previewFacts ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
               <PreviewCard
@@ -1183,7 +1205,10 @@ export function Bundles() {
               </p>
             </Card>
           )}
-        </Rail>
+          </>
+          )
+          return viewport === 'desktop' ? <Rail width={324} label="Bundle preview">{railContent}</Rail> : railContent
+        })()}
       </div>
     </div>
   )

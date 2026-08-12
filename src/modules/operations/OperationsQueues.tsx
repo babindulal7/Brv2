@@ -402,20 +402,45 @@ export default function OperationsQueues() {
       : 'No booking is sitting at a stage that has floor work in this range.'
 
   const railContent = (
-    <div
-      style={{
-        ...cardStyle,
-        padding: 'var(--sp-md)',
-        display: 'flex',
-        gap: 7,
-        alignItems: 'flex-start',
-        fontSize: 'var(--t-meta)',
-        color: 'var(--muted)',
-        lineHeight: 1.5,
-      }}
-    >
-      <Icon name="info" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-      {NO_MONEY_NOTE}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
+      {/*
+        Rulings §8 words the remedy for an invented figure as *"each renders
+        'not tracked yet' until a real source exists"* — and §1 keeps a panel
+        no spec removes in prose. `CREW_LOAD`'s four invented people with
+        invented open/capacity figures were rightly diagnosed (see
+        `data/operations.ts`), but the card was deleted rather than emptied,
+        which is the one place this rebuild answered a fabrication by removal
+        instead of honesty. Restored as the empty state, naming what it needs,
+        so the operator learns the gap rather than losing the panel silently.
+        Finance's P&L rows and Calendar's Utilization tile carry exactly this
+        treatment.
+      */}
+      <Card title="Crew Load">
+        <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
+          Not tracked yet — a per-person warehouse-job load needs an assignment this schema does not carry.
+          {' '}
+          <code style={{ fontFamily: 'inherit' }}>booking_crew_lines</code> is priced crew hired for the shoot, and
+          {' '}
+          <code style={{ fontFamily: 'inherit' }}>cleaning_queue_entries.assigned_to</code> covers cleaning only.
+          Neither says who is working a Packing, Handover, Return or Reset job.
+        </p>
+      </Card>
+
+      <div
+        style={{
+          ...cardStyle,
+          padding: 'var(--sp-md)',
+          display: 'flex',
+          gap: 7,
+          alignItems: 'flex-start',
+          fontSize: 'var(--t-meta)',
+          color: 'var(--muted)',
+          lineHeight: 1.5,
+        }}
+      >
+        <Icon name="info" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+        {NO_MONEY_NOTE}
+      </div>
     </div>
   )
 

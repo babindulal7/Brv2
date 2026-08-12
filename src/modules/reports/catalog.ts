@@ -245,7 +245,20 @@ export const REPORTS: readonly CatalogReport[] = [
   /* ── 03 Equipment · 5 ────────────────────────────────────────────────── */
   { key: 'utilization', name: 'Utilization', group: '03', route: null, projection: 'utilization' },
   { key: 'revenue-by-equipment', name: 'Revenue by Equipment', group: '03', route: null, projection: 'equipment' },
-  { key: 'roi', name: 'ROI', group: '03', route: '/reports/equipment-performance', projection: 'equipment' },
+  {
+    key: 'roi',
+    name: 'ROI',
+    group: '03',
+    route: null,
+    projection: null,
+    // The `equipment` projection is `Σ revenue over the period` — revenue, not
+    // return on investment. This file's own rule at the top ("a number under
+    // the wrong name is a fabrication with extra steps") is honoured for
+    // `sales` seven entries down and was not honoured here; and the route sent
+    // the operator to a screen printing hand-typed ROI multiples on top.
+    needs:
+      'Return on investment needs what each unit cost. No migration provides a purchase-cost column and no engine amortises one, so revenue cannot be rendered under this name (rulings §8).',
+  },
   { key: 'asset-performance', name: 'Asset Performance', group: '03', route: '/reports/equipment-performance', projection: 'equipment' },
   {
     key: 'equipment-lifecycle',

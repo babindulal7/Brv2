@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import Icon from './Icon'
+import { useViewport } from '../../lib/device'
 
 // Matches --dur in theme.css (the app's generic transition-duration token).
 // Kept as a JS constant so the close-unmount timer stays in sync with the
@@ -76,9 +77,30 @@ export function Modal({
     }
   }, [isOpen, onClose])
 
-  if (!shouldRender) return null
+  /*
+   * The three bands, taught here once rather than per caller.
+   *
+   * This is the app's single dialog: every sheet in the rebuild renders
+   * through it, and it had no width awareness at all — `SIZE_MAX_WIDTH[size]`
+   * at every width, and a 90vh sheet on a phone. Spec 9.4 states the bands for
+   * the sheet form ("TABLET: sheet is 60% width. PHONE: full-screen"), and
+   * `Expenses.tsx` already flags in a comment that this component does not
+   * honour them. Teaching `Modal` fixes every caller at once.
+   *
+   *   · phone  — full-screen surface, no rounded corners, no inset, so the
+   *                sticky footer sits on the bottom edge where a thumb is.
+   *   · tablet — 60vw for a sheet, capped at its size token otherwise.
+   *   · desktop— exactly as before.
+   */
+  const viewport = useViewport()
+  const phone = viewport === 'phone'
+  const tablet = viewport === 'tablet'
+  const maxWidth = phone ? '100%' : tablet && sheet ? '60vw' : SIZE_MAX_WIDTH[size]
+  const surfaceMaxHeight = phone ? '100dvh' : sheet ? '90vh' : '85vh'
+  const surfaceRadius = phone ? 0 : sheet ? '16px 16px 0 0' : 16
 
-  const maxWidth = SIZE_MAX_WIDTH[size]
+  // After every hook: `useViewport` is one, so the early return cannot precede it.
+  if (!shouldRender) return null
 
   return (
     <div
@@ -87,9 +109,9 @@ export function Modal({
         inset: 0,
         zIndex: 60,
         display: 'flex',
-        alignItems: sheet ? 'flex-end' : 'center',
+        alignItems: phone || sheet ? 'flex-end' : 'center',
         justifyContent: 'center',
-        padding: sheet ? 0 : 'var(--sp-lg)',
+        padding: phone || sheet ? 0 : 'var(--sp-lg)',
         background: 'rgba(0, 0, 0, 0.6)',
         opacity: isOpen ? 1 : 0,
         transition: 'opacity var(--dur) ease',
@@ -109,12 +131,13 @@ export function Modal({
           zIndex: 1,
           width: '100%',
           maxWidth,
-          maxHeight: sheet ? '90vh' : '85vh',
+          maxHeight: surfaceMaxHeight,
+          ...(phone ? { height: '100dvh' } : {}),
           display: 'flex',
           flexDirection: 'column',
           background: 'var(--card)',
           border: '1px solid var(--border)',
-          borderRadius: sheet ? '16px 16px 0 0' : 16,
+          borderRadius: surfaceRadius,
           boxShadow: 'var(--shadow-modal)',
           overflow: 'hidden',
           opacity: isOpen ? 1 : 0,

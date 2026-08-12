@@ -610,7 +610,7 @@ const BOOKING_FIELDS: FieldSpec[] = [
   {
     key: 'vehicle',
     group: 'transport',
-    validate: (v) => (String(v ?? '').trim() ? null : 'Name the vehicle, or set Delivery Type to customer pickup.'),
+    validate: (v) => (String(v ?? '').trim() ? null : 'Name the vehicle, or set Delivery Type to client pickup.'),
   },
   { key: 'driver', group: 'transport' },
   { key: 'instructions' },

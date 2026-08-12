@@ -1,4 +1,4 @@
-import { Card, PageHeader, KpiStrip, Rail, SummaryRows, FooterNote } from '../../components/ui/Page'
+import { Card, PageHeader, KpiStrip, ReflowRail, SummaryRows, FooterNote, useRailGridColumns } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar, reportDateRange } from '../../components/ui/ReportToolbar'
@@ -153,6 +153,9 @@ function workingCapitalCsv(): ReportCsvRow[] {
 }
 
 export default function WorkingCapitalReport() {
+  /* Rulings §7 — the rail track goes away below 1180 so `ReflowRail`'s
+     inline column is not squeezed by a rail column that is still there. */
+  const railGridColumns = useRailGridColumns()
   const canSeeMoney = useCanViewMoney()
 
   // Law 6 — a balance sheet is money in every line. Shared RESTRICTED state, so
@@ -363,7 +366,7 @@ export default function WorkingCapitalReport() {
         <KpiStrip items={kpis} columns={5} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', marginTop: 'var(--sp-md)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: railGridColumns, gap: 'var(--sp-md)', marginTop: 'var(--sp-md)' }}>
         <Card title={`The position · ${asAt}`}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -445,7 +448,7 @@ export default function WorkingCapitalReport() {
           </table>
         </Card>
 
-        <Rail width={300}>
+        <ReflowRail width={300}>
           <Card title="Liquidity">
             <SummaryRows
               rows={[
@@ -458,7 +461,7 @@ export default function WorkingCapitalReport() {
               ]}
             />
           </Card>
-        </Rail>
+        </ReflowRail>
       </div>
 
       <FooterNote

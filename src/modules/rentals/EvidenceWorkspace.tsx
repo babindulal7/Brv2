@@ -25,6 +25,7 @@ import {
   LIMITS,
 } from '../../data/evidence'
 import type { MatchState, Photo } from '../../data/evidence'
+import { BookingNotLoaded } from '../operations/BookingNotLoaded'
 
 /**
  * **Evidence Workspace** — `Evidence Workspace.md` v1.1 (Build Locked).
@@ -162,6 +163,17 @@ export default function EvidenceWorkspace() {
     { label: 'Review', value: counts.Review, display: String(counts.Review), percent: pct(counts.Review) },
     { label: 'Unmatched', value: counts.Unmatched, display: String(counts.Unmatched), percent: pct(counts.Unmatched) },
   ]
+
+  /*
+   * Spec 03 Notes — "Routes are parameterised — these must work for any BR#,
+   * not one seeded booking." This workspace's items come from a single seeded
+   * booking, so any OTHER booking number gets the honest not-loaded state
+   * rather than that booking's gear wearing this number (Rulings §8). Placed
+   * after every hook, so the hook order is identical on both branches.
+   */
+  if (bookingNo !== undefined && bookingNo !== BOOKING.no) {
+    return <BookingNotLoaded bookingNo={bookingNo} job="Evidence" seededBookingNo={BOOKING.no} />
+  }
 
   // Floor scale (DEVICES.md item 3) is applied automatically by route in App.tsx's Shell, not here.
   return (

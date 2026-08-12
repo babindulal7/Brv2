@@ -1,4 +1,4 @@
-import { PageHeader, Card, Rail, cardStyle } from '../../components/ui/Page'
+import { PageHeader, Card, ReflowRail, cardStyle, useBandColumns } from '../../components/ui/Page'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { INVENTORY_METRICS, ASSET_HEALTH, TOP_CATEGORIES } from '../../data/inventoryReports'
@@ -49,6 +49,9 @@ function inventoryCsv(money: boolean): ReportCsvRow[] {
 }
 
 export default function InventoryReports() {
+  /* KpiStrip's clamp, applied to this screen's hand-rolled key-figure grid:
+     four or six cards side by side is unreadable below 1180. */
+  const bandCols = useBandColumns()
   const money = useCanViewMoney()
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
@@ -65,7 +68,7 @@ export default function InventoryReports() {
       */}
       <ReportToolbar title="Inventory Reports" csv={{ filename: 'inventory-reports', build: () => inventoryCsv(money) }} />
 
-      <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+      <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: `repeat(${bandCols(4)}, minmax(0,1fr))`, gap: 'var(--sp-md)' }}>
         <InventoryKpiCard
           label="Total Assets"
           value={INVENTORY_METRICS.totalAssets}
@@ -96,7 +99,7 @@ export default function InventoryReports() {
         />
       </section>
 
-      <Rail>
+      <ReflowRail>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
           <section aria-label="Asset Health" style={cardStyle}>
             <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Asset Health Distribution</div>
@@ -144,7 +147,7 @@ export default function InventoryReports() {
             </section>
           )}
         </div>
-      </Rail>
+      </ReflowRail>
     </div>
   )
 }

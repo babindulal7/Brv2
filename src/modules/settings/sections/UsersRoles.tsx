@@ -12,7 +12,7 @@ import {
   isStaff,
 } from '../../../lib/rbac'
 import type { SystemRole } from '../../../types/database'
-import { BRANCHES, SYSTEM_STATS } from '../../../data/settings'
+import { BRANCHES } from '../../../data/settings'
 import { ToneChip, td } from './shared'
 
 /**
@@ -140,9 +140,9 @@ export function UsersPane() {
               </div>
             ))}
             <p style={{ margin: '4px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.5 }}>
-              {SYSTEM_STATS.activeUsers} staff accounts exist. The full directory, user creation and role assignment need the
-              auth backend, which is not connected in this build — only the branch managers named in the branch records can be
-              listed here.
+              How many staff accounts exist is not tracked yet — there is no user query in this build. The full directory,
+              user creation and role assignment need the auth backend, which is not connected — only the branch managers named
+              in the branch records can be listed here.
             </p>
           </div>
         </Card>

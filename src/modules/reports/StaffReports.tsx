@@ -1,4 +1,4 @@
-import { PageHeader, Card, Rail, cardStyle } from '../../components/ui/Page'
+import { PageHeader, Card, ReflowRail, cardStyle, useBandColumns } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
@@ -49,6 +49,9 @@ function staffCsv(isManager: boolean, myName: string | undefined): ReportCsvRow[
 }
 
 export default function StaffReports() {
+  /* KpiStrip's clamp, applied to this screen's hand-rolled key-figure grid:
+     four or six cards side by side is unreadable below 1180. */
+  const bandCols = useBandColumns()
   const money = useCanViewMoney()
   const { user } = useAuth()
 
@@ -95,7 +98,7 @@ export default function StaffReports() {
         }}
       />
 
-      <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+      <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: `repeat(${bandCols(4)}, minmax(0,1fr))`, gap: 'var(--sp-md)' }}>
         <StaffKpiCard
           label="Revenue Handled"
           value={formatMoney(STAFF_METRICS.revenueHandled as Paisa)}
@@ -126,7 +129,7 @@ export default function StaffReports() {
         />
       </section>
 
-      <Rail>
+      <ReflowRail>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
           <section aria-label="Staff Breakdown" style={cardStyle}>
             <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Team Breakdown</div>
@@ -170,7 +173,7 @@ export default function StaffReports() {
             </table>
           </section>
         </div>
-      </Rail>
+      </ReflowRail>
     </div>
   )
 }

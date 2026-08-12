@@ -25,9 +25,11 @@ import { formatAd } from '../../lib/bs'
 import { cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 
+// Law 15 — 44×44 at every width. Spread onto the previous/next day and
+// previous/next month buttons, whose 15px chevrons had no hit area around them.
 const ghostBtn = {
-  width: 26,
-  height: 26,
+  minWidth: 44,
+  minHeight: 44,
   borderRadius: 7,
   border: 'none',
   background: 'transparent',

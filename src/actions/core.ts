@@ -120,6 +120,21 @@ async function checkCapability(capability: string, ctx: ActionContext): Promise<
       return rbac.canPerformOperations(ctx.role);
     case 'money.view':
       return rbac.canViewMoney(ctx.role);
+    /*
+     * ⚠ Three capability strings are declared by actions and NOT handled here:
+     * `client.block` (`clients/blockClient.ts:195`), `client.create`
+     * (`clients/createClient.ts:274`) and `rental.confirm`
+     * (`rentals/confirmRental.ts:252`). All three were flipped to
+     * `implemented: true` in the 12 Aug rebuild, so their bodies are real — but
+     * an unhandled capability falls through to `undefined` below, which the
+     * dispatcher treats as a denial for EVERY role, Owner included. Fail-closed
+     * is the right default and is deliberately left in place.
+     *
+     * TODO(decision) — PLAN.md §4: which roles hold each of the three. A guess
+     * here would silently grant a write nobody ruled, which is worse than the
+     * current "denied" (CLAUDE.md: never invent a product decision to unblock
+     * yourself). `ClientDetail.tsx` states the same gap to the operator.
+     */
     default:
       return undefined;
   }

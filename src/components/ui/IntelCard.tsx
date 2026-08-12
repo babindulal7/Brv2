@@ -385,7 +385,9 @@ function Glance({
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              height: 28,
+              // Law 15 — 44×44 at every width, the same rule the peek button
+              // above this one already carries.
+              minHeight: 44,
               padding: '0 11px',
               borderRadius: 'var(--r-btn)',
               background: 'var(--btn-primary-bg)',

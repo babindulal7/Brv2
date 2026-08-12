@@ -14,6 +14,7 @@ import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { BOOKING } from '../../data/booking'
 import { UNITS, PACKAGE, GROUPS, CASES, TOTAL_ITEMS, EVIDENCE, NOTES, FILTERS } from '../../data/packing'
 import type { LineState, Condition } from '../../data/packing'
+import { BookingNotLoaded } from '../operations/BookingNotLoaded'
 
 /**
  * **Packing Workspace** — `Packing Workflow.md` v2.1 (Build Locked).
@@ -203,6 +204,17 @@ export default function PackingWorkspace() {
 
   const bs = toBs(new Date('2026-07-16'))
   const retBs = toBs(new Date('2026-07-19'))
+
+  /*
+   * Spec 03 Notes — "Routes are parameterised — these must work for any BR#,
+   * not one seeded booking." This workspace's items come from a single seeded
+   * booking, so any OTHER booking number gets the honest not-loaded state
+   * rather than that booking's gear wearing this number (Rulings §8). Placed
+   * after every hook, so the hook order is identical on both branches.
+   */
+  if (bookingNo !== undefined && bookingNo !== BOOKING.no) {
+    return <BookingNotLoaded bookingNo={bookingNo} job="Packing" seededBookingNo={BOOKING.no} />
+  }
 
   // Floor scale (DEVICES.md item 3) is applied automatically by route in App.tsx's Shell, not here.
   return (
@@ -470,7 +482,7 @@ export default function PackingWorkspace() {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search item, serial, accessory…"
               aria-label="Search items"
-              style={{ flex: 1, minWidth: 180, height: 30, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
+              style={{ flex: 1, minWidth: 180, minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
             />
             {FILTERS.map((f) => {
               const on = filter === f
@@ -499,6 +511,83 @@ export default function PackingWorkspace() {
             })}
           </div>
 
+          {phone ? (
+            /*
+              Shell rule, repeated at the top of all eleven specs: "Tables
+              become card rows below 768." Spec 03 calls the phone "the real
+              device here", and a ten-column 820px table behind `overflowX`
+              hides the serial, the status and the row actions the gate
+              depends on — a Required line blocked by Cleaning could never be
+              reached, so Complete Packing could never enable.
+              One card per unit: serial + status + one primary action.
+            */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', padding: 'var(--sp-sm)' }}>
+              {visible.map((u) => {
+                const rec = lines[u.id] as LineStateRec
+                const tone = LINE_TONE[rec.state]
+                const dim = highlight !== null && u.group !== highlight
+                return (
+                  <article
+                    key={u.id}
+                    style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: 7, opacity: dim ? 0.35 : 1 }}
+                  >
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minHeight: 44 }}>
+                      <input
+                        type="checkbox"
+                        checked={rec.state === 'Packed'}
+                        disabled={Boolean(u.blocker)}
+                        aria-label={`Pack ${u.name}`}
+                        style={{ width: 22, height: 22, marginTop: 2, flexShrink: 0 }}
+                        onChange={() => (rec.state === 'Packed' ? set(u.id, { state: 'Pending', packedAt: undefined as never }) : pack(u.id))}
+                      />
+                      <span style={{ minWidth: 0, flex: 1 }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 600 }}>{u.name}</span>
+                          {u.required && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', height: 15, padding: '0 5px', borderRadius: 4, background: 'var(--st-primary-bg)', color: 'var(--st-primary-fg)', fontSize: 'var(--t-meta)', fontWeight: 700 }}>
+                              Required
+                            </span>
+                          )}
+                          <span style={{ display: 'inline-flex', alignItems: 'center', height: 20, padding: '0 8px', borderRadius: 'var(--r-badge)', background: tone.bg, color: tone.fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
+                            {rec.state}
+                          </span>
+                        </span>
+                        <Link to={`/inventory/${u.serial}`} className="identifier" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', textDecoration: 'none', marginTop: 2 }}>
+                          {u.serial}
+                        </Link>
+                      </span>
+                    </label>
+
+                    {u.blocker && rec.state === 'Pending' && (
+                      <span style={{ fontSize: 'var(--t-meta)', color: 'var(--progress-text)' }}>Pending — {u.blocker}</span>
+                    )}
+
+                    <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                      {u.location}
+                      {rec.condition ? ` · ${rec.condition}` : ''}
+                      {rec.packedAt ? ` · packed ${rec.packedAt}` : ''}
+                    </span>
+
+                    <span style={{ display: 'flex', gap: 'var(--sp-xs)', flexWrap: 'wrap' }}>
+                      {rec.state === 'Pending' && <RowAction label="Missing" onClick={() => set(u.id, { state: 'Missing' })} />}
+                      {rec.state === 'Pending' && !u.required && (
+                        <RowAction label="Not Req." onClick={() => set(u.id, { state: 'Not Required' })} />
+                      )}
+                      {rec.state === 'Missing' && <RowAction label="Undo" onClick={() => set(u.id, { state: 'Pending', reason: '' })} />}
+                      {rec.state === 'Not Required' && <RowAction label="Undo" onClick={() => set(u.id, { state: 'Pending' })} />}
+                    </span>
+                  </article>
+                )
+              })}
+              {visible.length === 0 && (
+                <EmptyState
+                  title="No items match these filters"
+                  actionLabel="Clear all filters"
+                  onAction={() => { setFilter('All'); setQuery('') }}
+                />
+              )}
+            </div>
+          ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
               <thead>
@@ -610,6 +699,7 @@ export default function PackingWorkspace() {
               </tbody>
             </table>
           </div>
+          )}
 
           {pending === 0 && missing.length === 0 && (
             <div style={{ margin: 12, padding: '10px 12px', borderRadius: 'var(--r-btn)', background: 'var(--st-in-bg)', color: 'var(--st-in-fg)', fontSize: 'var(--t-meta)', fontWeight: 600, display: 'flex', gap: 7, alignItems: 'center' }}>
@@ -769,7 +859,9 @@ export default function PackingWorkspace() {
                         onChange={(e) => set(uid, { reason: e.target.value })}
                         placeholder="Reason (min 10 characters)"
                         aria-label={`Reason ${u?.name} is missing`}
-                        style={{ width: '100%', height: 28, marginTop: 5, padding: '0 8px', borderRadius: 'var(--r-input)', border: `1px solid ${(l.reason ?? '').trim().length < 10 ? 'var(--danger)' : 'var(--input-border)'}`, background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
+                        /* Law 15 — a typed field on a touch device, inside a blocking gate: the
+                           Law 10 reason (≥10 characters) is entered here. It was 28px. */
+                        style={{ width: '100%', minHeight: 44, marginTop: 5, padding: '0 8px', borderRadius: 'var(--r-input)', border: `1px solid ${(l.reason ?? '').trim().length < 10 ? 'var(--danger)' : 'var(--input-border)'}`, background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
                       />
                       <div style={{ marginTop: 6 }}>
                         <Button icon="refresh">Swap Unit</Button>
@@ -822,7 +914,7 @@ export default function PackingWorkspace() {
               ))}
               <Link
                 to={`/rentals/${id}/evidence`}
-                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, height: 34, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--btn-secondary-border)', background: 'var(--btn-secondary-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none' }}
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--btn-secondary-border)', background: 'var(--btn-secondary-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none' }}
               >
                 <Icon name="external_link" size={14} />
                 Open Evidence

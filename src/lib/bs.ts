@@ -116,6 +116,24 @@ export function formatAd(ad: Date): string {
 }
 
 /**
+ * `"16 Jul 2026, 02:25 PM"` — a stored AD/UTC instant rendered in Kathmandu.
+ *
+ * Exists because the floor workspaces were stamping their session-close times
+ * as string literals (`closedAt: '16 Jul 2026, 02:25 PM'`), which would have
+ * rendered as the closing time of every handover and every return the build
+ * ever performed. Law 7: the instant is stored in UTC and rendered here; the
+ * caller passes the same ISO string it sent to the write, so what the screen
+ * says and what the database holds are the same moment.
+ */
+export function formatAdDateTime(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  const date = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kathmandu' })
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' })
+  return `${date}, ${time.toUpperCase()}`
+}
+
+/**
  * §4.1 — columns are **generated from a range, never hand-listed**. The build
  * the spec reviewed rendered 28 Jul twice and WED twice: seven days occupying
  * eight columns, which no generated range can produce.

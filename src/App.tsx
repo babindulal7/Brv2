@@ -1,10 +1,9 @@
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
 import { lazy, Suspense } from 'react'
 import type { ReactNode } from 'react'
 import Sidebar from './components/shell/Sidebar'
 import BottomBar, { BAR_BOX } from './components/shell/BottomBar'
 import HeaderBar from './components/shell/Header'
-import { SessionlessBanner } from './components/shell/SessionlessBanner'
 import type { Crumb } from './components/shell/Header'
 import ScannerFab from './components/shell/ScannerFab'
 import { ErrorBoundary } from './components/shell/ErrorBoundary'
@@ -188,72 +187,69 @@ export default function App() {
         <Route
           path="/rentals/:bookingNo/packing"
           element={
-            <Shell
-              crumbs={[{ label: 'Rentals List' }, { label: 'Bookings' }, { label: 'B-715' }, { label: 'Packing' }]}
+            <BookingShell
+              tail="Packing"
               search="Search item, serial, accessory…"
             >
               <PackingWorkspace />
-            </Shell>
+            </BookingShell>
           }
         />
         <Route
           path="/rentals/:bookingNo/handover"
           element={
-            <Shell
-              crumbs={[{ label: 'Rentals List' }, { label: 'Bookings' }, { label: 'B-715' }, { label: 'Handover' }]}
+            <BookingShell
+              tail="Handover"
               search="Search item, serial, accessory…"
             >
               <HandoverWorkspace />
-            </Shell>
+            </BookingShell>
           }
         />
         <Route
           path="/rentals/:bookingNo/return"
           element={
-            <Shell
-              crumbs={[{ label: 'Rentals List' }, { label: 'Bookings' }, { label: 'B-715' }, { label: 'Return' }]}
+            <BookingShell
+              tail="Return"
               search="Search item, serial, accessory…"
             >
               <ReturnWorkspace />
-            </Shell>
+            </BookingShell>
           }
         />
         <Route
           path="/rentals/:bookingNo/reset"
           element={
-            <Shell
-              crumbs={[{ label: 'Rentals List' }, { label: 'Bookings' }, { label: 'B-715' }, { label: 'Reset' }]}
+            <BookingShell
+              tail="Reset"
               search="Search item, serial, accessory…"
             >
               <ResetWorkspace />
-            </Shell>
+            </BookingShell>
           }
         />
         <Route
           path="/rentals/:bookingNo/evidence"
           element={
-            <Shell
-              crumbs={[{ label: 'Rentals List' }, { label: 'Bookings' }, { label: 'B-715' }, { label: 'Evidence' }]}
+            <BookingShell
+              tail="Evidence"
               search="Search file, product, serial…"
             >
               <EvidenceWorkspace />
-            </Shell>
+            </BookingShell>
           }
         />
 
-        {/* Booking detail. The ID form is whatever `data/numbering.ts` issues for
-            `BK` — `B-715` under the 12 Aug ruling. Never re-state it here: this
-            comment and the crumb four lines below contradicted each other for
-            exactly as long as the form was written down twice. */}
+        {/* Booking detail. The ID form is whatever `data/numbering.ts` issues
+            for `BK`. It is not written down here at all any more: `BookingShell`
+            reads the number off the route, which is the only version that cannot
+            contradict the URL beside it. */}
         <Route
           path="/rentals/:bookingNo"
           element={
-            <Shell
-              crumbs={[{ label: 'Rentals List' }, { label: 'Bookings' }, { label: 'B-715' }]}
-              search="Search booking, client, equipment, invoice…"
-            >
+            <BookingShell search="Search booking, client, equipment, invoice…">
               <BookingDetail />
-            </Shell>
+            </BookingShell>
           }
         />
 
@@ -904,6 +900,45 @@ function OfflineBanner() {
  */
 const FLOOR_ROUTE_SUFFIXES = ['/packing', '/handover', '/return', '/reset', '/evidence']
 
+/**
+ * **The crumb reads the route, not a literal.**
+ *
+ * All six parameterised booking routes used to pass
+ * `crumbs={[…, { label: 'B-715' }, …]}` while their path was
+ * `/rentals/:bookingNo/…`, so every booking's Packing, Handover, Return, Reset,
+ * Evidence and detail page claimed to be booking B-715. Rulings §4 makes the
+ * breadcrumb the *only* wayfinding on these screens — there is no `←` — so a
+ * wrong crumb is the only orientation the operator gets, and it was wrong for
+ * every booking but one.
+ *
+ * The comment above the detail route already warned "Never re-state it here";
+ * the crumb four lines below it restated it anyway. Reading `useParams` is the
+ * fix that cannot drift, because there is nowhere left to write the number down.
+ */
+function BookingShell({
+  tail,
+  search,
+  children,
+}: {
+  /** The step this route is, appended after the booking. Omitted on the detail page. */
+  tail?: string
+  search?: string
+  children: ReactNode
+}) {
+  const { bookingNo } = useParams()
+  const crumbs: Crumb[] = [
+    { label: 'Rentals List' },
+    { label: 'Bookings' },
+    { label: bookingNo ?? 'Booking' },
+    ...(tail ? [{ label: tail }] : []),
+  ]
+  return (
+    <Shell crumbs={crumbs} {...(search === undefined ? {} : { search })}>
+      {children}
+    </Shell>
+  )
+}
+
 function Shell({
   crumbs,
   search,
@@ -968,9 +1003,6 @@ function Shell({
       {!phone && <Sidebar active={pathname + query} />}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <OfflineBanner />
-        {/* Above the header on purpose: it explains why everything BELOW the
-            header is empty, so it has to be read before the empty thing is. */}
-        <SessionlessBanner />
         <HeaderBar crumbs={crumbs} {...(search ? { searchPlaceholder: search } : {})} />
         <main
           data-floor={isFloor ? 'true' : undefined}

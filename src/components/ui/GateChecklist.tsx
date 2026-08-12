@@ -1,8 +1,27 @@
 import React from 'react'
-import { IconCheck, IconX, IconLock, IconAlertTriangle } from '@tabler/icons-react'
+import { IconCheck, IconX, IconAlertTriangle } from '@tabler/icons-react'
 import type { Role } from '../../lib/rbac'
 import { canViewMoney } from '../../lib/rbac'
 import { formatPaisa, type Paisa } from '../../lib/money'
+
+/**
+ * ⚠ Not mounted anywhere yet — `components/ui/index.ts` is its only importer.
+ * Kept per Law 3, but two defects are fixed here so it cannot be mounted
+ * carrying them:
+ *
+ *  1. **Law 15** — the toggle was `w-6 h-6` (24×24) on a real `<button>`.
+ *  2. **Law 6 / Rulings §7** — money surfaces are **omitted**, not disabled
+ *     and not masked. The financial column used to render a padlock and the
+ *     words "Pending Billing" for a money-blind role, which still tells the
+ *     floor there is a billing state to wait on. It is now not constructed at
+ *     all for those roles, which is what "the warehouse sees no money" means.
+ *
+ * ⚠ Still outstanding, and the reason this should not be mounted as-is: every
+ * class below is Tailwind, and `components/ui/Button.tsx:5-9` records that
+ * Tailwind compiles to nothing in this build — so this would render unstyled.
+ * Porting it to the app's inline-style + CSS-variable system is a separate
+ * piece of work from the two law breaches above.
+ */
 
 export interface GateChecklistItem {
   id: string
@@ -65,7 +84,9 @@ export const GateChecklist: React.FC<GateChecklistProps> = ({
                 type="button"
                 disabled={disabled || !onToggleItem}
                 onClick={() => onToggleItem && onToggleItem(item.id, !item.passed)}
-                className={`w-6 h-6 rounded-md flex items-center justify-center border transition-all cursor-pointer ${
+                /* Law 15 — 44×44 at every width, desktop included. */
+                style={{ minWidth: 44, minHeight: 44 }}
+                className={`rounded-md flex items-center justify-center border transition-all cursor-pointer ${
                   item.passed
                     ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-400'
                     : 'bg-slate-800 border-slate-700 text-slate-500 hover:border-slate-600'
@@ -82,21 +103,13 @@ export const GateChecklist: React.FC<GateChecklistProps> = ({
               </div>
             </div>
 
-            {/* Financial status with Warehouse masking (Law 6) */}
-            {item.isFinancial && (
+            {/* Law 6 — omitted, never masked. A money-blind session does not get
+                a padlock and a billing state; it gets no financial cell. */}
+            {item.isFinancial && userCanSeeMoney && item.financialAmount !== undefined && (
               <div className="shrink-0 text-right">
-                {userCanSeeMoney ? (
-                  item.financialAmount !== undefined && (
-                    <span className="text-xs font-mono font-semibold text-slate-300">
-                      {formatPaisa(item.financialAmount)}
-                    </span>
-                  )
-                ) : (
-                  <span className="text-xs text-slate-500 flex items-center gap-1">
-                    <IconLock className="w-3 h-3" />
-                    <span>{item.passed ? 'Billing Verified' : 'Pending Billing'}</span>
-                  </span>
-                )}
+                <span className="text-xs font-mono font-semibold text-slate-300">
+                  {formatPaisa(item.financialAmount)}
+                </span>
               </div>
             )}
           </div>

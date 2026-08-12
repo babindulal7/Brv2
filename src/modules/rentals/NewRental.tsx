@@ -1114,16 +1114,41 @@ export default function NewRental() {
    * Rs 0)"). Phone is an accordion with **one open at a time**, per the same
    * spec's phone block; Equipment is the one it lands on.
    */
+  /*
+   * Read from `viewport`, not `window.innerWidth`.
+   *
+   * This used to call `window.innerWidth < BREAKPOINT.phone` twice — once in
+   * the lazy initializer and once inside `toggle` — which is an imperative
+   * read of a value `lib/device` already publishes reactively off
+   * `matchMedia` change events. It gave the right answer only at mount:
+   * narrowing a desktop window past 768 left four sections open where §1.1's
+   * phone block wants one, and the first paint before layout settles could
+   * pick the wrong band and never correct it. The effect below is what makes
+   * a band change actually reach the accordion.
+   */
+  const phoneAccordion = viewport === 'phone'
   const [open, setOpen] = useState<boolean[]>(() =>
     typeof window !== 'undefined' && window.innerWidth < BREAKPOINT.phone
       ? [false, false, true, false, false, false]
       : [true, true, true, false, false, true],
   )
+  useEffect(() => {
+    if (!phoneAccordion) return
+    // Crossing into the phone band collapses to one open section, keeping the
+    // first one already open (Equipment by default) rather than closing them
+    // all and leaving a wall of headers.
+    setOpen((p) => {
+      const openCount = p.filter(Boolean).length
+      if (openCount <= 1) return p
+      const first = p.indexOf(true)
+      return p.map((_, j) => j === first)
+    })
+  }, [phoneAccordion])
   const toggle = (i: number) =>
     setOpen((p) =>
       // Phone: opening a section closes the others. Width decides, never
       // orientation and never a platform check (Law 13/14).
-      typeof window !== 'undefined' && window.innerWidth < BREAKPOINT.phone
+      phoneAccordion
         ? p.map((v, j) => (j === i ? !v : false))
         : p.map((v, j) => (j === i ? !v : v)),
     )

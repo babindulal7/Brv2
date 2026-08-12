@@ -2,6 +2,7 @@ import { createAction, ActionContext } from '../core';
 import { EVENT_TYPES } from '../../events/eventBus';
 import { validateDiscount } from '../../lib/discount';
 import { issue } from '../../data/numbering';
+import { idempotentInsert } from '../../lib/dataAccess';
 
 export type CreateBundleItemInput = {
   modelId: string;
@@ -22,6 +23,7 @@ export type CreateBundleInput = {
 export const createBundle = createAction<CreateBundleInput, { success: boolean; bundleId: string }>({
   name: 'CREATE_BUNDLE',
   permissions: ['inventory.create'],
+  implemented: true,
 
   validate: (input) => {
     if (!input.name) throw new Error('Bundle name is required.');
@@ -43,6 +45,35 @@ export const createBundle = createAction<CreateBundleInput, { success: boolean; 
        `Settings ▸ Numbering` — ruling §2.2 — so there is one. */
     const generatedId = issue('BND', Number(Date.now().toString().slice(-4)));
     console.log(`[DB TX] Created bundle ${generatedId}: ${input.name} (Draft: ${!!input.isDraft}, Items: ${input.items?.length ?? 0})`);
+
+    const { data: dbBundle } = await idempotentInsert('bundles', {
+      bundle_code: generatedId,
+      name: input.name,
+      category_id: input.category || null,
+      is_active: !input.isDraft,
+      created_by: ctx.userId,
+      daily_rate: 0,
+      weekly_rate: 0,
+    });
+
+    if (input.items && input.items.length > 0 && dbBundle) {
+      for (let i = 0; i < input.items.length; i++) {
+        const item = input.items[i];
+        if (!item) continue;
+        await idempotentInsert('bundle_items', {
+          bundle_id: dbBundle.id,
+          product_id: item.modelId,
+          quantity: item.qty,
+          /* Law 9 — days is mandatory on every priced line, explicitly `1`,
+             never by omission. The column defaults to 1, but stating it here
+             means the insert cannot become silent if the default is ever
+             dropped. */
+          days: 1,
+          sort_order: i,
+          created_by: ctx.userId,
+        });
+      }
+    }
 
     const events = [
       {

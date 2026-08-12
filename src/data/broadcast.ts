@@ -77,7 +77,7 @@ export const PREVIEW_TABS = ['WhatsApp Preview', 'Email Preview', 'SMS Preview',
  * interface chrome around it stays English.
  */
 export const PREVIEW_MESSAGE = [
-  'नमस्ते {{customer_name}}! 🎉',
+  'नमस्ते {{client_name}}! 🎉',
   'दशैं को अवसरमा Cine Sewa बाट',
   'सबै रेन्टलमा 15% छुट!',
   '{{booking_equipment}} रेन्ट गर्नुहोस् र',
@@ -88,7 +88,7 @@ export const PREVIEW_MESSAGE = [
   '– Cine Sewa Team',
 ]
 
-export const VARIABLES = ['{{customer_name}}', '{{booking_id}}', '{{equipment}}', '{{offer_start}}', '{{offer_end}}', '{{website_link}}']
+export const VARIABLES = ['{{client_name}}', '{{booking_id}}', '{{equipment}}', '{{offer_start}}', '{{offer_end}}', '{{website_link}}']
 
 export const FUNNEL = [
   { label: 'Recipients', value: '18,540', pct: '100%', width: 100 },
@@ -129,7 +129,7 @@ export const ACTIVITY = [
   { what: 'Template "Dashain Greeting" updated', at: '09:58 AM', tone: 'primary' as const },
   { what: 'Campaign "New Camera Arrivals" completed', at: '09:32 AM', tone: 'success' as const },
   { what: 'Approval granted for "Overdue Reminder"', at: '09:10 AM', tone: 'primary' as const },
-  { what: 'Audience segment "VIP Customers" updated', at: '08:45 AM', tone: 'progress' as const },
+  { what: 'Audience segment "VIP Clients" updated', at: '08:45 AM', tone: 'progress' as const },
 ]
 
 export const ADVISOR = [

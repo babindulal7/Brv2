@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { PageHeader, Button, FooterNote, KpiStrip, type Kpi } from '../../components/ui/Page'
@@ -287,11 +287,12 @@ function MoreFilters({
                   }
 
                   // A `disabled` button fires no pointer events, so the tooltip
-                  // goes on the wrapper. The reason is also in the accessible
-                  // name, because a title attribute is not reachable by keyboard.
+                  // goes on the wrapper. By relying on the wrapper's title, we avoid 
+                  // duplicate screen reader announcements that happen when both title 
+                  // and aria-label are present.
                   return reason ? (
-                    <span key={o} title={reason} style={{ display: 'inline-flex' }}>
-                      <button type="button" disabled aria-label={`${o} — unavailable. ${reason}`} style={style}>
+                    <span key={o} title={`${o} — unavailable. ${reason}`} style={{ display: 'inline-flex' }}>
+                      <button type="button" disabled style={style}>
                         {o}
                       </button>
                     </span>
@@ -343,7 +344,7 @@ function SegmentedControl({
 }) {
   return (
     <div
-      role="tablist"
+      role="group"
       aria-label="Which list to show"
       style={{
         display: 'grid',
@@ -361,8 +362,7 @@ function SegmentedControl({
           <button
             key={s.key}
             type="button"
-            role="tab"
-            aria-selected={on}
+            aria-pressed={on}
             onClick={() => setSegment(s.key)}
             style={{
               /* Law 15 — 44px on the one layout that is only ever touched. */
@@ -562,7 +562,7 @@ export default function Today() {
    * rows, merged chronologically. Never a third fetch, so a booking cannot
    * carry one time in a list and another on the rail.
    */
-  const day = mergeByTime(pickups.rows, returns.rows)
+  const day = useMemo(() => mergeByTime(pickups.rows, returns.rows), [pickups.rows, returns.rows])
   const dayError = pickups.error ?? returns.error
   const dayLoading = pickups.loading || returns.loading
 
@@ -588,11 +588,15 @@ export default function Today() {
    * — so §5.6's card-equals-column rule survives in the only form spec 02
    * leaves room for.
    */
-  const alertRows = [
+  const alertRows = useMemo(() => [
     ...alerts.rows.map((r: BookingListRow) => overdueAlert(r, NOW_AD)),
     ...quotes.rows.map((r: BookingListRow) => quoteLapsedAlert(r)),
-  ]
-  const alertsState = { loading: alerts.loading || quotes.loading, error: alerts.error ?? quotes.error }
+  ], [alerts.rows, quotes.rows])
+  
+  const alertsState = useMemo(() => ({ 
+    loading: alerts.loading || quotes.loading, 
+    error: alerts.error ?? quotes.error 
+  }), [alerts.loading, quotes.loading, alerts.error, quotes.error])
 
   /*
    * §5.8 — "card counts must equal the counts shown on the panels below." Each
@@ -613,7 +617,7 @@ export default function Today() {
    * `lib/queries/` produces either, and both already live in Reports ▸ Pulse,
    * which is where `data/today.ts`'s two seeded constants still go.
    */
-  const specKpis: Kpi[] = [
+  const specKpis: Kpi[] = useMemo(() => [
     {
       label: period === 'Today' ? 'Outgoing today' : `Outgoing · ${period}`,
       value: countOf(pickups, pickups.rows.length),
@@ -666,9 +670,9 @@ export default function Today() {
           },
         ] satisfies Kpi[])
       : []),
-  ]
+  ], [period, pickups, returns, alerts, money, overdueReturns])
 
-  const reachableKpis: Kpi[] = [
+  const reachableKpis: Kpi[] = useMemo(() => [
     {
       label: 'Active Rentals',
       value: countOf(active, active.total),
@@ -683,7 +687,7 @@ export default function Today() {
       accent: 'danger',
       note: 'Exactly what the Alerts panel lists',
     },
-  ]
+  ], [active, alertsState, alertRows.length])
 
   /*
    * The lists title themselves "Outgoing today" / "Incoming today". That is only

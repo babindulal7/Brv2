@@ -1,4 +1,4 @@
-import { Card, PageHeader, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, KpiStrip, ReflowRail, SummaryRows, FooterNote, cardStyle, useRailGridColumns } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar, reportDateRange } from '../../components/ui/ReportToolbar'
@@ -111,6 +111,9 @@ function cashFlowCsv(): ReportCsvRow[] {
 }
 
 export default function CashFlowReport() {
+  /* Rulings §7 — the rail track goes away below 1180 so `ReflowRail`'s
+     inline column is not squeezed by a rail column that is still there. */
+  const railGridColumns = useRailGridColumns()
   const canSeeMoney = useCanViewMoney()
 
   // Law 6: a money-blind role is not shown a masked figure — the page is not
@@ -247,7 +250,7 @@ export default function CashFlowReport() {
         <KpiStrip items={kpis} columns={5} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', marginTop: 'var(--sp-md)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: railGridColumns, gap: 'var(--sp-md)', marginTop: 'var(--sp-md)' }}>
         <Card title={`Cash movement · ${period}`}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <caption style={{ captionSide: 'top', textAlign: 'left', paddingBottom: 8, fontSize: 'var(--fs-meta)', color: 'var(--text-3)' }}>
@@ -300,7 +303,7 @@ export default function CashFlowReport() {
           </p>
         </Card>
 
-        <Rail width={300}>
+        <ReflowRail width={300}>
           <Card title="Reconciliation">
             <SummaryRows
               rows={[
@@ -311,7 +314,7 @@ export default function CashFlowReport() {
               ]}
             />
           </Card>
-        </Rail>
+        </ReflowRail>
       </div>
 
       <FooterNote extra={['Cash basis — actual money in and out, not the accrual P&L.']} />

@@ -270,37 +270,55 @@ describe('Rulings §3 — OperationsShell is a launcher, not a modal host', () =
   })
 })
 
+/**
+ * These five used to assert only that the route's booking number appeared
+ * somewhere on the page. It did — in the title — while the body rendered the
+ * FX3 Documentary Package's 18 seeded items underneath it, so a second booking
+ * number produced another booking's packing list wearing that number. That is
+ * the class Rulings §8 forbids: a screen asserting a subject it has no source
+ * for. The number-from-the-route assertion is kept and **strengthened** with
+ * the thing it was missing — that the seeded booking's own content is not what
+ * is being shown.
+ *
+ * The Evidence case additionally used to require a link to
+ * `/rentals/:bookingNo/packing`. That link belongs to the loaded workspace and
+ * is still asserted at the seeded booking below; at a foreign number there is
+ * no evidence set to cross-link, so requiring it there would be requiring the
+ * defect.
+ */
 describe('Spec 03 Notes — routes are parameterised, not one seeded booking', () => {
   const SECOND = 'B-9001'
+  /* The identifier the seed uses; no workspace may render its contents under
+     another booking's number. */
+  const SEED = 'B-715'
 
-  it('Packing renders the booking number from the route', async () => {
-    await mountAt(`/rentals/${SECOND}/packing`, <PackingWorkspace />, '/rentals/:bookingNo/packing')
-    expect(text()).toContain(SECOND)
+  const cases: Array<[string, ReactNode, string, string]> = [
+    ['Packing', <PackingWorkspace key="p" />, '/rentals/:bookingNo/packing', 'packing'],
+    ['Handover', <HandoverWorkspace key="h" />, '/rentals/:bookingNo/handover', 'handover'],
+    ['Return', <ReturnWorkspace key="r" />, '/rentals/:bookingNo/return', 'return'],
+    ['Reset', <ResetWorkspace key="x" />, '/rentals/:bookingNo/reset', 'reset'],
+    ['Evidence', <EvidenceWorkspace key="e" />, '/rentals/:bookingNo/evidence', 'evidence'],
+  ]
+
+  for (const [name, element, pattern, segment] of cases) {
+    it(`${name} states the route's booking number and refuses to show the seed under it`, async () => {
+      await mountAt(`/rentals/${SECOND}/${segment}`, element, pattern)
+      expect(text()).toContain(SECOND)
+      // The honest gap, not another booking's gear.
+      expect(text()).toContain('is not loaded yet')
+      expect(
+        [...container.querySelectorAll('a')].some((a) => a.getAttribute('href') === `/rentals/${SECOND}`),
+      ).toBe(true)
+      // Named only as "floor data exists for …", never as this page's subject.
+      expect(text().indexOf(SEED)).toBeGreaterThan(text().indexOf(SECOND))
+    })
+  }
+
+  it('Evidence at the seeded booking still links across to its packing workspace', async () => {
+    await mountAt(`/rentals/${SEED}/evidence`, <EvidenceWorkspace />, '/rentals/:bookingNo/evidence')
+    expect(text()).toContain(SEED)
     expect(
-      [...container.querySelectorAll('a')].some((a) => a.getAttribute('href') === `/rentals/${SECOND}`),
-    ).toBe(true)
-  })
-
-  it('Handover renders the booking number from the route', async () => {
-    await mountAt(`/rentals/${SECOND}/handover`, <HandoverWorkspace />, '/rentals/:bookingNo/handover')
-    expect(text()).toContain(SECOND)
-  })
-
-  it('Return renders the booking number from the route', async () => {
-    await mountAt(`/rentals/${SECOND}/return`, <ReturnWorkspace />, '/rentals/:bookingNo/return')
-    expect(text()).toContain(SECOND)
-  })
-
-  it('Reset renders the booking number from the route', async () => {
-    await mountAt(`/rentals/${SECOND}/reset`, <ResetWorkspace />, '/rentals/:bookingNo/reset')
-    expect(text()).toContain(SECOND)
-  })
-
-  it('Evidence renders the booking number from the route and links back to it', async () => {
-    await mountAt(`/rentals/${SECOND}/evidence`, <EvidenceWorkspace />, '/rentals/:bookingNo/evidence')
-    expect(text()).toContain(SECOND)
-    expect(
-      [...container.querySelectorAll('a')].some((a) => a.getAttribute('href') === `/rentals/${SECOND}/packing`),
+      [...container.querySelectorAll('a')].some((a) => a.getAttribute('href') === `/rentals/${SEED}/packing`),
     ).toBe(true)
   })
 })

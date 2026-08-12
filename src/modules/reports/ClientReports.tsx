@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, KpiStrip, ReflowRail, SummaryRows, FooterNote, cardStyle, useRailGridColumns } from '../../components/ui/Page'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { Donut, Legend, HBars, catColor } from '../../components/ui/Charts'
@@ -172,6 +172,9 @@ function clientsCsv(money: boolean): ReportCsvRow[] {
  * carries that note precisely because the order is the exception, not the rule.
  */
 export default function ClientReports() {
+  /* Rulings §7 — the rail track goes away below 1180 so `ReflowRail`'s
+     inline column is not squeezed by a rail column that is still there. */
+  const railGridColumns = useRailGridColumns()
   const navigate = useNavigate()
   const money = useCanViewMoney()
   const kpis = money ? KPIS : KPIS.filter((k) => k.label !== 'Outstanding Receivables')
@@ -206,7 +209,7 @@ export default function ClientReports() {
       */}
       <ReportToolbar title="Client Reports" csv={{ filename: 'client-reports', build: () => clientsCsv(money) }} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: railGridColumns, gap: 'var(--sp-md)', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <KpiStrip items={kpis} columns={kpis.length} />
 
@@ -425,7 +428,7 @@ export default function ClientReports() {
           </Card>
         </div>
 
-        <Rail>
+        <ReflowRail>
           <Card title="Client Summary">
             <SummaryRows rows={summary} />
           </Card>
@@ -500,7 +503,7 @@ export default function ClientReports() {
               <Icon name="refresh" size={12} />
             </span>
           </div>
-        </Rail>
+        </ReflowRail>
       </div>
 
       <FooterNote />

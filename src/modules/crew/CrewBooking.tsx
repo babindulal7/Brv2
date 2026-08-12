@@ -14,8 +14,9 @@ import { gateContext, canViewMoneyField, canViewPII } from '../../lib/fieldGatin
 import { IntelCard } from '../../components/ui/IntelCard'
 import type { IntelGlance, IntelGroup } from '../../components/ui/IntelCard'
 import { crewGlance, crewDetailGroups } from '../../data/crewIntel'
-import { STATUS } from '../../lib/status'
+import { STATUS, STATUS_ICON } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
+import { useViewport } from '../../lib/device'
 import { TODAY } from '../../lib/bs'
 import {
   CREW_DATA,
@@ -23,17 +24,18 @@ import {
   OPEN_ROLE_REQUESTS,
   FEE_PER_CREW_DAY_PAISA,
   CREW_EXPENSES_THIS_MONTH_PAISA,
+  ROSTER_CHIPS,
   detectConflicts,
   conflictedAssignmentIds,
   detectTravelWarnings,
   rosterSummary,
+  rosterChipCounts,
+  matchesRosterChip,
+  payoutLedger,
   crewDaysBooked,
   fillRate,
 } from '../../data/crew'
-import type { CrewAssignment, AssignmentStatus, PayoutStatus } from '../../data/crew'
-
-type FilterKey = AssignmentStatus | 'All'
-type CrewTab = 'Booking' | 'Directory' | 'Timesheets' | 'Payouts'
+import type { CrewAssignment, PayoutStatus, RosterChip, CrewMember } from '../../data/crew'
 
 /** §11.1 — Tentative and Confirmed share one tone (blue); "on shoot today" is the derived solid-green override. */
 function assignmentTone(a: CrewAssignment, onShootToday: boolean): StatusKey {
@@ -136,6 +138,36 @@ const CALL_SHEET_UNAVAILABLE = 'Not built yet — call sheets are spec §13'
  */
 const EXPORT_UNAVAILABLE = 'Not built yet — no payroll-report generator is connected in this build'
 
+/**
+ * §6.1 draws `[date range ▾]` beside the chip row. No assignment-date filter
+ * model exists on this screen — `CREW_ROSTER` carries no availability calendar
+ * (`data/crew.ts:59` says so outright), so a range picker here would filter
+ * nothing. Stated where it stands rather than drawn as a working control.
+ */
+const DATE_RANGE_UNAVAILABLE =
+  'Not built yet — the roster carries no availability calendar to filter a date range against'
+
+/**
+ * Rulings §1 removes the Booking/Directory/Timesheets/Payouts tab strip
+ * ("06 §6.1 draws none"), and three of its four tabs rendered nothing but an
+ * `EmptyState`. Two rail buttons and one alert row used to navigate into those
+ * dead tabs; with the strip gone they have no destination, so they state the
+ * gap rather than moving the operator somewhere that says the same thing one
+ * click later. The payout figures that *do* exist were not lost with the tab —
+ * `payoutLedger()` renders them in the rail's PAYOUT LEDGER section, which is
+ * where §6.1 draws them.
+ */
+const TIMESHEETS_UNAVAILABLE = 'Not built yet — planned/actual/overtime capture is spec 06 §8'
+const PAYOUTS_UNAVAILABLE =
+  'Not built yet — gross is in the rail’s payout ledger; TDS and net need a ruled rate (PLAN.md §4.12)'
+
+const ROSTER_STATE_TONE: Record<CrewMember['state'], StatusKey> = {
+  Available: 'in',
+  Booked: 'primary',
+  'On Leave': 'progress',
+  'Off Duty': 'neutral',
+}
+
 export function CrewBooking() {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -149,9 +181,19 @@ export function CrewBooking() {
   // Invoice/Payment screens use — that is correct, not a mistake.
   const canCrewMoney = canViewMoneyField(gctx, 'asset-finance')
 
-  const [activeTab, setActiveTab] = useState<CrewTab>('Booking')
+  // Shell rule, repeated at the top of all eleven specs: tables become card
+  // rows below 768, right rails collapse below 1180 — and Rulings §7 reads
+  // "collapse" as REFLOW, naming spec 06 explicitly. Both need the band, not a
+  // phone/not-phone boolean, because the tablet layout differs from both.
+  const viewport = useViewport()
+  const desktop = viewport === 'desktop'
+  const phone = viewport === 'phone'
+
   const [searchQuery, setSearchQuery] = useState('')
-  const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
+  // §6.1's chip row is roster availability, not assignment status. `data/crew.ts`
+  // owns the three-chips-over-four-states union (law 1), so the count and the
+  // predicate can never drift apart.
+  const [rosterChip, setRosterChip] = useState<RosterChip>('All')
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
 
   // HIS v2.1 Crew card is person-level; this screen lists one row per
@@ -187,16 +229,23 @@ export function CrewBooking() {
   }, [crewDays])
 
   const crewBookedToday = useMemo(() => CREW_DATA.filter((a) => onShootToday(a)).length, [])
+  const ledger = useMemo(() => payoutLedger(CREW_DATA), [])
 
-  const chipCounts = useMemo(() => {
-    const counts: Record<FilterKey, number> = { All: CREW_DATA.length, Draft: 0, Tentative: 0, Confirmed: 0, Completed: 0 }
-    for (const a of CREW_DATA) counts[a.status]++
-    return counts
-  }, [])
+  const chipCounts = useMemo(() => rosterChipCounts(CREW_ROSTER), [])
 
+  /** §6.1's CREW list — roster people, filtered by the chip row and the search box. */
+  const filteredRoster = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    return CREW_ROSTER.filter((m) => {
+      if (!matchesRosterChip(m, rosterChip)) return false
+      if (!q) return true
+      return m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q) || m.role.toLowerCase().includes(q)
+    })
+  }, [searchQuery, rosterChip])
+
+  /** §6.1's ASSIGNMENTS list. Search only — the chips above govern the roster. */
   const filteredCrew = useMemo(() => {
     return CREW_DATA.filter((c) => {
-      if (activeFilter !== 'All' && c.status !== activeFilter) return false
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
         return (
@@ -209,7 +258,7 @@ export function CrewBooking() {
       }
       return true
     })
-  }, [searchQuery, activeFilter])
+  }, [searchQuery])
 
   // HIS builders (crewGlance/crewDetailGroups) construct a full field-gated
   // object graph per row — compute them once per relevant dependency change
@@ -237,11 +286,97 @@ export function CrewBooking() {
     setSelectedRowIds(next)
   }
 
+  /**
+   * Rulings §7 — "right rails collapse below 1180" means **reflow**, not hide,
+   * and the ruling names spec 06 by number: its tablet drawing puts the day
+   * strip and the payout ledger *below the list*, still visible. So the rail's
+   * sections are hoisted into one variable and rendered either inside `Rail`
+   * (desktop) or as a plain column beneath the list (tablet and phone).
+   * `CollapsibleAside`'s collapse defaults are NOT changed — other pages depend
+   * on them, and the ruling says so explicitly.
+   */
+  const railContent = (
+    <>
+      <RailSection title="Roster summary" badge={roster.reconciles ? undefined : 'invariant failed'}>
+        <SummaryRows
+          rows={[
+            { label: 'Available', value: String(roster.available) },
+            { label: 'Booked', value: String(roster.booked) },
+            { label: 'On leave', value: String(roster.onLeave) },
+            { label: 'Off duty', value: String(roster.offDuty) },
+            { label: 'Conflicts', value: String(conflicts.length), ...(conflicts.length > 0 ? { tone: 'danger' as const } : {}) },
+            { label: 'Timesheets outstanding', value: '—' },
+          ]}
+        />
+      </RailSection>
+
+      {/* §6.1's PAYOUT LEDGER — "(money roles only)", so it is OMITTED rather
+          than masked for a money-blind role (Law 6). Gross is real; TDS and net
+          are `null` in the engine because no rate is ruled (PLAN.md §4.12), and
+          the card says "not tracked yet" rather than seeding a plausible one. */}
+      {canCrewMoney && (
+        <RailSection title="Payout ledger" badge={`${ledger.count} assignment${ledger.count === 1 ? '' : 's'}`}>
+          <SummaryRows
+            rows={[
+              { label: 'Gross', value: formatMoney(ledger.grossPaisa) },
+              ...ledger.byStatus.map((s) => ({ label: s.status, value: `${s.count} · ${formatMoney(s.grossPaisa)}` })),
+              { label: 'TDS withheld', value: 'Not tracked yet' },
+              { label: 'Net payable', value: 'Not tracked yet' },
+            ]}
+          />
+          <div style={{ marginTop: 8, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+            TDS needs a ruled rate — PLAN.md §4.12. Never derived from an assumed one.
+          </div>
+        </RailSection>
+      )}
+
+      <RailSection title="Alerts" badge={String(railAlertCount(conflicts.length, travelWarnings.length, OPEN_ROLE_REQUESTS.length, CREW_DATA))}>
+        <AlertsList
+          conflicts={conflicts}
+          travelWarnings={travelWarnings}
+          openRoles={OPEN_ROLE_REQUESTS}
+          assignments={CREW_DATA}
+        />
+      </RailSection>
+
+      <RailSection title="Quick actions">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
+          {/* `Unavailable` is `inline-flex`, which would collapse these to
+              content width beside a full-width button. `display: grid` makes the
+              single child a grid item, which stretches — one stack again. */}
+          <Unavailable reason={BOOK_CREW_UNAVAILABLE} style={{ display: 'grid', width: '100%' }}>
+            <Button variant="primary" icon="plus" disabled>
+              Book Crew
+            </Button>
+          </Unavailable>
+          <Unavailable reason={CALL_SHEET_UNAVAILABLE} style={{ display: 'grid', width: '100%' }}>
+            <Button variant="secondary" icon="calendar" disabled>
+              Create Call Sheet
+            </Button>
+          </Unavailable>
+          <Unavailable reason={TIMESHEETS_UNAVAILABLE} style={{ display: 'grid', width: '100%' }}>
+            <Button variant="secondary" icon="receipt" disabled>
+              Open Timesheets
+            </Button>
+          </Unavailable>
+          <Unavailable reason={PAYOUTS_UNAVAILABLE} style={{ display: 'grid', width: '100%' }}>
+            <Button variant="secondary" icon="card" disabled>
+              Open Payouts
+            </Button>
+          </Unavailable>
+        </div>
+      </RailSection>
+    </>
+  )
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageHeader
         icon="crew"
-        title="Crew Booking"
+        // The nav item (`data/nav.ts:73`), the route breadcrumb (`App.tsx:264`)
+        // and spec 06's own heading all read "Crew Assist". The `<h1>` said
+        // "Crew Booking"; three surfaces against one is not a naming question.
+        title="Crew Assist"
         description="Book, coordinate and reconcile production crew — schedule, cost and payouts in one place."
         actions={
           <Unavailable reason={BOOK_CREW_UNAVAILABLE}>
@@ -252,51 +387,23 @@ export function CrewBooking() {
         }
       />
 
-      {/* Tabs — §1: Booking · Directory · Timesheets · Payouts, hand-rolled per this codebase's Finance.tsx/Inventory.tsx convention (no shared Tabs component exists). */}
-      <div style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)' }}>
-        {(['Booking', 'Directory', 'Timesheets', 'Payouts'] as const).map((t) => {
-          const on = activeTab === t
-          return (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setActiveTab(t)}
-              aria-current={on ? 'page' : undefined}
-              style={{
-                height: 34,
-                padding: '0 13px',
-                border: 'none',
-                borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
-                background: 'transparent',
-                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: on ? 700 : 500,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                marginBottom: -1,
-              }}
-            >
-              {t}
-            </button>
-          )
-        })}
-      </div>
-
-      {activeTab !== 'Booking' ? (
-        <EmptyState
-          title={`${activeTab} — not built yet`}
-          description={
-            activeTab === 'Directory'
-              ? 'The full crew roster with skills, ratings-replaced-by-facts and documents lives here — §7 of the spec.'
-              : activeTab === 'Timesheets'
-                ? 'Planned/actual/overtime capture and approval-gates-payout live here — §8 of the spec.'
-                : 'Gross/TDS/net payout tracking lives here — §3 of the spec.'
-          }
-        />
-      ) : (
-        <>
-          {/* KPI row — §10, exactly six cards. Money cards omitted (not hidden) without asset-finance. */}
-          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${canCrewMoney ? 6 : 5}, minmax(0,1fr))`, gap: 'var(--sp-md)' }}>
+      {/*
+        The Booking/Directory/Timesheets/Payouts tab strip that used to sit here
+        is removed by Rulings §1's binding table ("06 §6.1 draws none"), and
+        three of its four tabs rendered nothing but "— not built yet". §6.1 is a
+        single surface: chips, CREW, ASSIGNMENTS, rail.
+      */}
+      <>
+          {/* KPI row — §10, exactly six cards. Money cards omitted (not hidden) without asset-finance.
+              Clamped per band the way `KpiStrip` (Page.tsx:204) does: six 1fr
+              columns on a 375px phone is six unreadable slivers. */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${kpiColumns(canCrewMoney ? 6 : 5, viewport)}, minmax(0,1fr))`,
+              gap: 'var(--sp-md)',
+            }}
+          >
             <KpiTile label="Crew Booked Today" value={String(crewBookedToday)} note="Confirmed, shoot day is today" icon="crew" accent="primary" />
             <KpiTile label="Available Today" value={String(roster.available)} note={`${roster.total} on the roster`} icon="check" accent="in" />
             <KpiTile
@@ -317,22 +424,29 @@ export function CrewBooking() {
             />
           </div>
 
-          {/* Toolbar & filter chips */}
+          {/* Toolbar & filter chips — §6.1 draws `(All)(Available)(Booked)(Unavailable)`,
+              roster availability rather than assignment status. The union and its
+              counts live in `data/crew.ts` so the chip and its number cannot drift. */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-              {(['All', 'Draft', 'Tentative', 'Confirmed', 'Completed'] as const).map((label) => (
+              {ROSTER_CHIPS.map((label) => (
                 <button
                   key={label}
-                  onClick={() => setActiveFilter(label)}
+                  type="button"
+                  aria-pressed={rosterChip === label}
+                  onClick={() => setRosterChip(label)}
                   style={{
+                    // Law 15 — 44×44 at every width, desktop included.
+                    minHeight: 44,
                     padding: '6px 14px',
                     borderRadius: 'var(--r-modal)',
                     fontSize: 'var(--t-meta)',
                     fontWeight: 500,
                     cursor: 'pointer',
-                    border: activeFilter === label ? '1px solid var(--nav-active-accent)' : '1px solid var(--border)',
-                    background: activeFilter === label ? 'var(--nav-active-bg)' : 'var(--card)',
-                    color: activeFilter === label ? 'var(--nav-active-accent)' : 'var(--text)',
+                    fontFamily: 'inherit',
+                    border: rosterChip === label ? '1px solid var(--nav-active-accent)' : '1px solid var(--border)',
+                    background: rosterChip === label ? 'var(--nav-active-bg)' : 'var(--card)',
+                    color: rosterChip === label ? 'var(--nav-active-accent)' : 'var(--text)',
                   }}
                 >
                   {label} <span className="figure" style={{ opacity: 0.85, marginLeft: 'var(--sp-xs)' }}>{chipCounts[label]}</span>
@@ -340,14 +454,19 @@ export function CrewBooking() {
               ))}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 240 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ width: phone ? '100%' : 240 }}>
                 <Input
                   placeholder="Search crew, role, production…"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
+              <Unavailable reason={DATE_RANGE_UNAVAILABLE}>
+                <Button variant="secondary" icon="calendar" disabled>
+                  Date range
+                </Button>
+              </Unavailable>
               <Unavailable reason={EXPORT_UNAVAILABLE}>
                 <Button variant="secondary" icon="download" disabled>
                   Export
@@ -356,22 +475,100 @@ export function CrewBooking() {
             </div>
           </div>
 
-          {/* Calendar + table (left) · rail (right) */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
+          {/* Calendar + tables (left) · rail (right).
+              One column below 1180 so the rail's sections reflow beneath the
+              list rather than squeezing `minmax(0,1fr)` to nothing. */}
+          <div style={{ display: 'grid', gridTemplateColumns: desktop ? 'minmax(0,1fr) auto' : '1fr', gap: 'var(--sp-md)', alignItems: 'start' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
               <WeekCalendar assignments={CREW_DATA} conflictIds={conflictIds} />
 
-              <Card style={{ overflow: 'hidden' }}>
-                {filteredCrew.length === 0 ? (
+              {/* §6.1's CREW list — `name │ role │ rate │ [Book] ⋮`. */}
+              <Card title="Crew" style={{ overflow: 'hidden' }}>
+                {filteredRoster.length === 0 ? (
                   <EmptyState
-                    title="No crew assignments found"
-                    description="Adjust your filters or search query to find crew assignments."
+                    title="Nobody matches this filter"
+                    description="Adjust the availability chips or the search box."
                     actionLabel="Clear Filters"
                     onAction={() => {
-                      setActiveFilter('All')
+                      setRosterChip('All')
                       setSearchQuery('')
                     }}
                   />
+                ) : phone ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
+                    {filteredRoster.map((m) => (
+                      <RosterCard key={m.id} member={m} showRate={canCrewMoney} />
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 'var(--t-th)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          <th style={thStyle}>Name</th>
+                          <th style={thStyle}>Role</th>
+                          <th style={thStyle}>Availability</th>
+                          {canCrewMoney && <th style={thStyle}>Day rate</th>}
+                          <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredRoster.map((m) => {
+                          const tone = STATUS[ROSTER_STATE_TONE[m.state]]
+                          return (
+                            <tr key={m.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                              <td style={{ padding: '12px 14px', fontWeight: 600, color: 'var(--text)' }}>{m.name}</td>
+                              <td style={{ padding: '12px 14px', color: 'var(--text2)' }}>{m.role}</td>
+                              <td style={{ padding: '12px 14px' }}>
+                                <StateChip label={m.state} tone={ROSTER_STATE_TONE[m.state]} />
+                              </td>
+                              {canCrewMoney && (
+                                <td className="figure" style={{ padding: '12px 14px', color: tone.fg === '' ? undefined : 'var(--text)' }}>
+                                  {formatMoney(m.dayRatePaisa)} / day
+                                </td>
+                              )}
+                              <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                                <Unavailable reason={BOOK_CREW_UNAVAILABLE}>
+                                  <Button variant="secondary" disabled>
+                                    Book
+                                  </Button>
+                                </Unavailable>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </Card>
+
+              <Card title="Assignments" style={{ overflow: 'hidden' }}>
+                {filteredCrew.length === 0 ? (
+                  <EmptyState
+                    title="No crew assignments found"
+                    description="Adjust your search query to find crew assignments."
+                    actionLabel="Clear Filters"
+                    onAction={() => {
+                      setRosterChip('All')
+                      setSearchQuery('')
+                    }}
+                  />
+                ) : phone ? (
+                  /* Shell rule — below 768 a table is a horizontal scrollbar, not
+                     a layout. §6.1's phone drawing is `name · role / rate [Book]`:
+                     one card per assignment, one primary action. */
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
+                    {rowsWithIntel.map(({ row: c }) => (
+                      <AssignmentCard
+                        key={c.id}
+                        assignment={c}
+                        inConflict={conflictIds.has(c.id)}
+                        showMoney={canCrewMoney}
+                        onOpen={() => navigate(`/rentals/${c.linkedBooking}`)}
+                      />
+                    ))}
+                  </div>
                 ) : (
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
@@ -386,11 +583,14 @@ export function CrewBooking() {
                             />
                           </th>
                           <th style={thStyle}>Crew Member</th>
-                          <th style={thStyle}>Production</th>
+                          {/* Tablet drops the three widest columns — §6.1's tablet
+                              drawing is `name │ role │ [Book] ⋮`, and eight columns
+                              in 768–1179px is a sideways scroll, not a layout. */}
+                          {desktop && <th style={thStyle}>Production</th>}
                           <th style={thStyle}>Dates &amp; Duration</th>
-                          {canCrewMoney && <th style={thStyle}>Financials (Cost)</th>}
+                          {desktop && canCrewMoney && <th style={thStyle}>Financials (Cost)</th>}
                           <th style={thStyle}>Assignment Status</th>
-                          <th style={thStyle}>Payout Status</th>
+                          {desktop && <th style={thStyle}>Payout Status</th>}
                           <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
                         </tr>
                       </thead>
@@ -434,12 +634,14 @@ export function CrewBooking() {
                                   </div>
                                 </IntelCard>
                               </td>
-                              <td style={{ padding: '12px 14px' }}>
-                                <div style={{ fontWeight: 500, color: 'var(--text)' }}>{c.production}</div>
-                                <Link to={`/rentals/${c.linkedBooking}`} className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--link)', marginTop: 2, display: 'block', textDecoration: 'none' }}>
-                                  {c.linkedBooking}
-                                </Link>
-                              </td>
+                              {desktop && (
+                                <td style={{ padding: '12px 14px' }}>
+                                  <div style={{ fontWeight: 500, color: 'var(--text)' }}>{c.production}</div>
+                                  <Link to={`/rentals/${c.linkedBooking}`} className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--link)', marginTop: 2, display: 'block', textDecoration: 'none' }}>
+                                    {c.linkedBooking}
+                                  </Link>
+                                </td>
+                              )}
                               <td style={{ padding: '12px 14px' }}>
                                 <div className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>
                                   {c.startDateBs} — {c.endDateBs}
@@ -448,24 +650,29 @@ export function CrewBooking() {
                                   {c.startDateAd} — {c.endDateAd} ({c.days} day{c.days === 1 ? '' : 's'})
                                 </div>
                               </td>
-                              {canCrewMoney && (
+                              {desktop && canCrewMoney && (
                                 <td style={{ padding: '12px 14px' }}>
                                   <div className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>{formatMoney(c.totalCostPaisa)}</div>
                                   <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>{formatMoney(c.dayRatePaisa)} / day</div>
                                 </td>
                               )}
                               <td style={{ padding: '12px 14px' }}>
+                                {/* Law 11 — the dot is colour, so the glyph and the
+                                    word carry the state as well. */}
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: tone.fg, fontWeight: 600 }}>
-                                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
+                                  <Icon name={STATUS_ICON[assignmentTone(c, onShootToday(c))] as IconName} size={12} />
                                   {c.status}
                                   {c.cancelled && ' · Cancelled'}
                                 </span>
                               </td>
-                              <td style={{ padding: '12px 14px' }}>
-                                <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--r-xs)', background: payoutTone.bg, color: payoutTone.fg }}>
-                                  {c.payoutStatus}
-                                </span>
-                              </td>
+                              {desktop && (
+                                <td style={{ padding: '12px 14px' }}>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--t-meta)', fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--r-xs)', background: payoutTone.bg, color: payoutTone.fg }}>
+                                    <Icon name={STATUS_ICON[PAYOUT_TONE[c.payoutStatus]] as IconName} size={11} />
+                                    {c.payoutStatus}
+                                  </span>
+                                </td>
+                              )}
                               <td style={{ padding: '12px 14px', textAlign: 'right' }}>
                                 <Button variant="secondary" onClick={() => navigate(`/rentals/${c.linkedBooking}`)}>
                                   View
@@ -481,60 +688,134 @@ export function CrewBooking() {
               </Card>
             </div>
 
-            {/* Right rail — §12 */}
-            <Rail width={320} label="Crew summary">
-              <RailSection title="Roster summary" badge={roster.reconciles ? undefined : 'invariant failed'}>
-                <SummaryRows
-                  rows={[
-                    { label: 'Available', value: String(roster.available) },
-                    { label: 'Booked', value: String(roster.booked) },
-                    { label: 'On leave', value: String(roster.onLeave) },
-                    { label: 'Off duty', value: String(roster.offDuty) },
-                    { label: 'Conflicts', value: String(conflicts.length), ...(conflicts.length > 0 ? { tone: 'danger' as const } : {}) },
-                    { label: 'Timesheets outstanding', value: '—' },
-                  ]}
-                />
-              </RailSection>
-
-              <RailSection title="Alerts" badge={String(railAlertCount(conflicts.length, travelWarnings.length, OPEN_ROLE_REQUESTS.length, CREW_DATA))}>
-                <AlertsList
-                  conflicts={conflicts}
-                  travelWarnings={travelWarnings}
-                  openRoles={OPEN_ROLE_REQUESTS}
-                  assignments={CREW_DATA}
-                  onOpenPayouts={() => setActiveTab('Payouts')}
-                />
-              </RailSection>
-
-              <RailSection title="Quick actions">
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
-                  {/* `Unavailable` is `inline-flex`, which would collapse these two
-                      to content width beside the two full-width live buttons below.
-                      `display: grid` makes the single child a grid item, which
-                      stretches — the column reads as one stack again. */}
-                  <Unavailable reason={BOOK_CREW_UNAVAILABLE} style={{ display: 'grid', width: '100%' }}>
-                    <Button variant="primary" icon="plus" disabled>
-                      Book Crew
-                    </Button>
-                  </Unavailable>
-                  <Unavailable reason={CALL_SHEET_UNAVAILABLE} style={{ display: 'grid', width: '100%' }}>
-                    <Button variant="secondary" icon="calendar" disabled>
-                      Create Call Sheet
-                    </Button>
-                  </Unavailable>
-                  <Button variant="secondary" icon="receipt" onClick={() => setActiveTab('Timesheets')}>
-                    Open Timesheets
-                  </Button>
-                  <Button variant="secondary" icon="card" onClick={() => setActiveTab('Payouts')}>
-                    Open Payouts
-                  </Button>
-                </div>
-              </RailSection>
-            </Rail>
+            {/* Right rail — §12. Rulings §7: rendered as a rail only at desktop;
+                below 1180 the same sections reflow into the column beneath the
+                lists, still visible, never behind a handle. */}
+            {desktop ? (
+              <Rail width={320} label="Crew summary">
+                {railContent}
+              </Rail>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>{railContent}</div>
+            )}
           </div>
-        </>
-      )}
+      </>
     </div>
+  )
+}
+
+/**
+ * Six KPI cards across a 375px phone is six unreadable slivers. Same clamp
+ * `KpiStrip` applies at `Page.tsx:204`, kept local because this screen's tiles
+ * are bespoke (`BillingKpiTile` carries three linked figures).
+ */
+function kpiColumns(count: number, viewport: 'phone' | 'tablet' | 'desktop'): number {
+  if (viewport === 'phone') return Math.min(count, 2)
+  if (viewport === 'tablet') return Math.min(count, 3)
+  return count
+}
+
+/** Law 11 — colour + icon + label, never colour alone. */
+function StateChip({ label, tone }: { label: string; tone: StatusKey }) {
+  const c = STATUS[tone]
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        fontSize: 'var(--t-meta)',
+        fontWeight: 600,
+        padding: '2px 8px',
+        borderRadius: 'var(--r-xs)',
+        background: c.bg,
+        color: c.fg,
+        ...(c.border ? { border: `1px solid ${c.border}` } : {}),
+      }}
+    >
+      <Icon name={STATUS_ICON[tone] as IconName} size={11} />
+      {label}
+    </span>
+  )
+}
+
+/** §6.1's phone drawing for the CREW list: `name · role / rate [Book]`. */
+function RosterCard({ member, showRate }: { member: CrewMember; showRate: boolean }) {
+  return (
+    <article style={{ ...cardStyle, padding: 'var(--sp-sm) var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-sm)' }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 600, color: 'var(--text)' }}>{member.name}</div>
+          <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{member.role}</div>
+        </div>
+        <StateChip label={member.state} tone={ROSTER_STATE_TONE[member.state]} />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-sm)' }}>
+        {showRate ? (
+          <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            {formatMoney(member.dayRatePaisa)} / day
+          </span>
+        ) : (
+          <span />
+        )}
+        <Unavailable reason={BOOK_CREW_UNAVAILABLE}>
+          <Button variant="primary" disabled>
+            Book
+          </Button>
+        </Unavailable>
+      </div>
+    </article>
+  )
+}
+
+/** One assignment as a card row, one primary action — the sub-768 alternative to the table. */
+function AssignmentCard({
+  assignment: c,
+  inConflict,
+  showMoney,
+  onOpen,
+}: {
+  assignment: CrewAssignment
+  inConflict: boolean
+  showMoney: boolean
+  onOpen: () => void
+}) {
+  const toneKey = assignmentTone(c, onShootToday(c))
+  return (
+    <article
+      style={{
+        ...cardStyle,
+        padding: 'var(--sp-sm) var(--sp-md)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        ...(inConflict ? { background: 'var(--st-danger-bg)' } : {}),
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+        <span style={{ fontWeight: 600, color: 'var(--text)' }}>{c.name}</span>
+        <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>· {c.role}</span>
+        {c.isInternalStaff && <Tag label="STAFF" tone="neutral" />}
+        {inConflict && <Tag label="CONFLICT" tone="danger" />}
+      </div>
+      <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+        {c.linkedBooking} · {c.startDateAd} — {c.endDateAd} ({c.days} day{c.days === 1 ? '' : 's'})
+      </div>
+      {showMoney && (
+        <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+          {formatMoney(c.totalCostPaisa)} · {formatMoney(c.dayRatePaisa)} / day
+        </div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <StateChip label={c.cancelled ? `${c.status} · Cancelled` : c.status} tone={toneKey} />
+          <StateChip label={c.payoutStatus} tone={PAYOUT_TONE[c.payoutStatus]} />
+        </div>
+        <Button variant="primary" onClick={onOpen}>
+          View booking
+        </Button>
+      </div>
+    </article>
   )
 }
 
@@ -586,10 +867,26 @@ function MoneyStat({ label, value, tone }: { label: string; value: number | null
   )
 }
 
+/** Law 11 — CONFLICT was colour + word only; the glyph comes from the token so no call site can forget it. */
 function Tag({ label, tone }: { label: string; tone: StatusKey }) {
   const c = STATUS[tone]
   return (
-    <span style={{ fontSize: 'var(--t-th)', fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: c.bg, color: c.fg }}>{label}</span>
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 3,
+        fontSize: 'var(--t-th)',
+        fontWeight: 700,
+        padding: '1px 5px',
+        borderRadius: 4,
+        background: c.bg,
+        color: c.fg,
+      }}
+    >
+      <Icon name={STATUS_ICON[tone] as IconName} size={10} />
+      {label}
+    </span>
   )
 }
 
@@ -672,9 +969,19 @@ function WeekCalendar({ assignments, conflictIds }: { assignments: CrewAssignmen
                   return (
                     <div key={`${name}-${d.getTime()}`} style={{ padding: 'var(--sp-xs)', borderTop: '1px solid var(--border)' }}>
                       {block && (
+                        // Law 11 — the block used to carry its status ONLY in the
+                        // fill colour plus a `title`, which is not an accessible
+                        // name and is unreachable by touch. The status now has a
+                        // glyph, and the whole block has an `aria-label` stating
+                        // production, status and conflict in words — the treatment
+                        // `Calendar.tsx:755` gives its day cells.
                         <div
+                          aria-label={`${block.production} — ${block.status}${conflictIds.has(block.id) ? ', conflict' : ''}`}
                           title={`${block.production} — ${block.status}${conflictIds.has(block.id) ? ' · CONFLICT' : ''}`}
                           style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
                             padding: '6px 7px',
                             borderRadius: 'var(--r-xs)',
                             background: tone?.bg,
@@ -682,12 +989,19 @@ function WeekCalendar({ assignments, conflictIds }: { assignments: CrewAssignmen
                             fontSize: 'var(--t-th)',
                             fontWeight: 600,
                             overflow: 'hidden',
-                            textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
                             border: conflictIds.has(block.id) ? '1px solid var(--st-danger-fg)' : undefined,
                           }}
                         >
-                          {block.production}
+                          <Icon
+                            name={
+                              (conflictIds.has(block.id)
+                                ? STATUS_ICON.danger
+                                : STATUS_ICON[assignmentTone(block, onShootToday(block))]) as IconName
+                            }
+                            size={10}
+                          />
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{block.production}</span>
                         </div>
                       )}
                     </div>
@@ -760,13 +1074,11 @@ function AlertsList({
   travelWarnings,
   openRoles,
   assignments,
-  onOpenPayouts,
 }: {
   conflicts: ReturnType<typeof detectConflicts>
   travelWarnings: ReturnType<typeof detectTravelWarnings>
   openRoles: typeof OPEN_ROLE_REQUESTS
   assignments: CrewAssignment[]
-  onOpenPayouts: () => void
 }) {
   const payoutsDue = assignments.filter((a) => !a.cancelled && a.payoutStatus === 'Due')
 
@@ -801,12 +1113,15 @@ function AlertsList({
       severity: 'Warning',
       icon: 'calendar',
     })),
+    // The Payouts tab this row used to open is removed by Rulings §1. Its gross
+    // figures now sit in the rail's PAYOUT LEDGER on this same screen, so the
+    // row is information rather than a link to nowhere — the treatment this
+    // file already documents for the unfilled-role rows.
     ...(payoutsDue.length > 0
       ? [
           {
             title: 'Payout due',
             detail: `${payoutsDue.length} crew payout${payoutsDue.length === 1 ? '' : 's'} awaiting release`,
-            onSelect: onOpenPayouts,
             severity: 'Warning' as const,
             icon: 'card' as const,
           },

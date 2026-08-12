@@ -15,6 +15,7 @@ import type { Paisa } from '../../lib/money'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { validateDiscount } from '../../lib/discount'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
 import { canApproveDiscount } from '../../lib/rbac'
 import type { SystemRole } from '../../types/database'
@@ -384,6 +385,16 @@ const NOTES_LIMIT = 500
 export function AddBundle() {
   const navigate = useNavigate()
   const money = useCanViewMoney()
+  /*
+    Spec 7.7: "TABLET: three panes become three stacked sections. PHONE: three
+    accordion steps with a sticky [Save]." This screen had no width read at all
+    and pinned a two-pane grid plus a 318px rail at every width, so the form was
+    unusable below 1180. `viewport` now drives the three bands; the sticky save
+    bar below 768 follows BookingDetail's in-repo precedent.
+  */
+  const viewport = useViewport()
+  const desktop = viewport === 'desktop'
+  const phone = viewport === 'phone'
   const { user } = useAuth()
   const { showSuccessToast } = useToast()
   const fileRef = useRef<HTMLInputElement | null>(null)
@@ -902,7 +913,7 @@ export function AddBundle() {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'minmax(0,1fr) auto',
+          gridTemplateColumns: desktop ? 'minmax(0,1fr) auto' : 'minmax(0,1fr)',
           gap: 'var(--sp-md)',
           alignItems: 'start',
         }}
@@ -910,7 +921,7 @@ export function AddBundle() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           {/* ── 1 · Bundle Details ─────────────────────────────────────── */}
           <Section n={1} title="Bundle Details">
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr) auto', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: phone ? '1fr' : desktop ? 'minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr) auto' : 'repeat(2, minmax(0,1fr))', gap: 14 }}>
               <Field label="Bundle Name" required>
                 <input
                   value={name}
@@ -998,7 +1009,7 @@ export function AddBundle() {
               </FieldBlock>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) minmax(0,1fr) auto', gap: 14, marginTop: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: phone ? '1fr' : desktop ? 'minmax(0,1.6fr) minmax(0,1fr) auto' : 'repeat(2, minmax(0,1fr))', gap: 14, marginTop: 14 }}>
               <Field label="Description">
                 <textarea
                   value={description}
@@ -1198,7 +1209,7 @@ export function AddBundle() {
           </Section>
 
           {/* ── 2 · Search Inventory + 3 · Bundle Items ─────────────────── */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(230px, 286px) minmax(0,1fr)', gap: 'var(--sp-md)', alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: desktop ? 'minmax(230px, 286px) minmax(0,1fr)' : '1fr', gap: 'var(--sp-md)', alignItems: 'start' }}>
             <Section
               n={2}
               title="Search Inventory"
@@ -1622,7 +1633,10 @@ export function AddBundle() {
             </div>
           </Section>
 
-          {/* §3 — the footer owns Cancel, Save Draft and Create Bundle. */}
+          {/* §3 — the footer owns Cancel, Save Draft and Create Bundle.
+              Spec 7.7 PHONE: "three accordion steps with a sticky [Save]" — so
+              below 768 this bar sticks to the bottom of the viewport instead of
+              sitting at the end of a very long scroll. */}
           <div
             style={{
               display: 'flex',
@@ -1631,6 +1645,15 @@ export function AddBundle() {
               flexWrap: 'wrap',
               paddingTop: 'var(--sp-md)',
               borderTop: '1px solid var(--border)',
+              ...(phone
+                ? {
+                    position: 'sticky' as const,
+                    bottom: 0,
+                    zIndex: 3,
+                    background: 'var(--bg)',
+                    paddingBottom: 'var(--sp-sm)',
+                  }
+                : {}),
             }}
           >
             <Button onClick={() => navigate('/inventory')}>Cancel</Button>
@@ -1671,7 +1694,8 @@ export function AddBundle() {
         </div>
 
         {/* ── right rail ─────────────────────────────────────────────────── */}
-        <Rail width={318} label="Bundle summary">
+        {(() => {
+          const railContent = (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
             <Card title="Bundle Summary">
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', marginBottom: 10 }}>
@@ -1904,7 +1928,11 @@ export function AddBundle() {
               )}
             </Card>
           </div>
-        </Rail>
+          )
+          /* Rulings §7 — reflow, not hide. The summary sits beside the form at
+             desktop and beneath it below 1180, never behind the rail handle. */
+          return desktop ? <Rail width={318} label="Bundle summary">{railContent}</Rail> : railContent
+        })()}
       </div>
 
       {/* ── §5.2 · include required children? ─────────────────────────────── */}

@@ -362,8 +362,12 @@ function download(filename: string, text: string): void {
 
 /* ── styles ────────────────────────────────────────────────────────────── */
 
+// Law 15 — 44×44 at every width, desktop included. This one object is spread
+// onto the date-range select, both date inputs and the branch select, on every
+// report screen; `Input.tsx:71` and `Select.tsx:71` already use 44 for the same
+// job elsewhere in the app.
 const controlStyle: CSSProperties = {
-  height: 32,
+  minHeight: 44,
   padding: '0 8px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--border)',

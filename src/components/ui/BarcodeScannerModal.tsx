@@ -192,7 +192,8 @@ export function BarcodeScannerModal({
                 type="button"
                 onClick={() => setScanType(t)}
                 style={{
-                  height: 30,
+                  // Law 15 — 44×44 at every width.
+                  minHeight: 44,
                   padding: '0 12px',
                   borderRadius: 'var(--r-btn)',
                   border: scanType === t ? '1px solid var(--nav-active-accent)' : '1px solid var(--border)',
@@ -224,7 +225,7 @@ export function BarcodeScannerModal({
                 }
               }}
               style={{
-                height: 30,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -320,7 +321,8 @@ export function BarcodeScannerModal({
                   setQuery(i.serial || i.id)
                 }}
                 style={{
-                  height: 26,
+                  minHeight: 44,
+                  minWidth: 44,
                   padding: '0 8px',
                   borderRadius: 4,
                   border: '1px solid var(--border)',

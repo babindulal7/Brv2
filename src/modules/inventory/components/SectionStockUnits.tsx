@@ -235,7 +235,7 @@ export function SectionStockUnits() {
                       type="button"
                       onClick={() => setQuantity((q) => Math.max(1, q - 1))}
                       aria-label="Decrease quantity"
-                      style={{ width: 34, height: 36, borderRadius: 'var(--r-input)', border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text)', cursor: 'pointer' }}
+                      style={{ minWidth: 44, minHeight: 44, borderRadius: 'var(--r-input)', border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text)', cursor: 'pointer' }}
                     >
                       −
                     </button>
@@ -253,7 +253,7 @@ export function SectionStockUnits() {
                       type="button"
                       onClick={() => setQuantity((q) => q + 1)}
                       aria-label="Increase quantity"
-                      style={{ width: 34, height: 36, borderRadius: 'var(--r-input)', border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text)', cursor: 'pointer' }}
+                      style={{ minWidth: 44, minHeight: 44, borderRadius: 'var(--r-input)', border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text)', cursor: 'pointer' }}
                     >
                       +
                     </button>

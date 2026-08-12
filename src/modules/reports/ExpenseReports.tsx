@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Card, PageHeader, Button, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, Button, ReflowRail, FooterNote, cardStyle, useRailGridColumns, useBandColumns } from '../../components/ui/Page'
 import { Donut, Legend } from '../../components/ui/Charts'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { PageBody } from '../../components/ui/PageBody'
@@ -174,6 +174,12 @@ function KpiCard({
 }
 
 export default function ExpenseReports() {
+  /* KpiStrip's clamp, applied to this screen's hand-rolled key-figure grid:
+     four or six cards side by side is unreadable below 1180. */
+  const bandCols = useBandColumns()
+  /* Rulings §7 — the rail track goes away below 1180 so `ReflowRail`'s
+     inline column is not squeezed by a rail column that is still there. */
+  const railGridColumns = useRailGridColumns()
   const money = useCanViewMoney()
 
   const [category, setCategory] = useState<string>('All')
@@ -324,7 +330,7 @@ export default function ExpenseReports() {
         />
       )}
 
-      <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+      <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: `repeat(${bandCols(4)}, minmax(0,1fr))`, gap: 'var(--sp-md)' }}>
         <KpiCard
           label="Total Expenses"
           value={formatMoney(totals.total as Paisa)}
@@ -410,7 +416,7 @@ export default function ExpenseReports() {
         })}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: railGridColumns, gap: 'var(--sp-md)', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           {/*
             The shared toolbar owns the date range, the branch and the export;
@@ -527,7 +533,7 @@ export default function ExpenseReports() {
           </Card>
         </div>
 
-        <Rail width={300}>
+        <ReflowRail width={300}>
           <Card title="Expense Summary">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
               <SumRow label="Total Expenses" value={formatMoney(totals.total as Paisa)} />
@@ -618,7 +624,7 @@ export default function ExpenseReports() {
               ))}
             </div>
           </Card>
-        </Rail>
+        </ReflowRail>
       </div>
 
       <FooterNote extra={['Capital purchases become assets in Inventory, never expenses']} />

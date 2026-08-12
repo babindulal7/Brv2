@@ -8,7 +8,7 @@ import {
   ORG_FIELDS,
   BRANCHES,
   totalsOf,
-  SYSTEM_STATS,
+  SYSTEM_STATS_UNAVAILABLE,
   SYSTEM_SUMMARY,
   SYSTEM_ALERTS,
   PRIORITY_TONE,
@@ -69,30 +69,35 @@ export function OverviewPane() {
          route still resolves; the tab is where it is administered now. */
       dest: { kind: 'tab', tab: 'branches' },
     },
+    /* Rulings §8 — these three were `28`, `99.98%` and `12`, hand-typed in
+       `data/settings.ts` and captioned "Last 30 days" and "Signed in right
+       now": captions that claim a measurement window and a live reading behind
+       figures that had neither. Each now names what is missing, and the accent
+       drops to neutral so a green tile never sits over an absent figure. */
     {
       label: 'Active Users',
-      value: String(SYSTEM_STATS.activeUsers),
+      value: 'Not tracked yet',
       icon: 'users',
-      accent: 'success',
-      note: 'Staff accounts in use',
+      accent: 'neutral',
+      note: SYSTEM_STATS_UNAVAILABLE.activeUsers,
       linkLabel: 'Users & roles',
       dest: { kind: 'tab', tab: 'users' },
     },
     {
       label: 'System Uptime',
-      value: SYSTEM_STATS.uptime,
+      value: 'Not tracked yet',
       icon: 'activity',
-      accent: 'success',
-      note: 'Last 30 days',
+      accent: 'neutral',
+      note: SYSTEM_STATS_UNAVAILABLE.uptime,
       linkLabel: 'System monitor',
       dest: R('/system'),
     },
     {
       label: 'Active Sessions',
-      value: String(SYSTEM_STATS.activeSessions),
+      value: 'Not tracked yet',
       icon: 'crew',
-      accent: 'progress',
-      note: 'Signed in right now',
+      accent: 'neutral',
+      note: SYSTEM_STATS_UNAVAILABLE.activeSessions,
       linkLabel: 'System monitor',
       dest: R('/system'),
     },

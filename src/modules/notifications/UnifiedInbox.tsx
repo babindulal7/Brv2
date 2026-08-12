@@ -1295,10 +1295,14 @@ export default function UnifiedInbox() {
         and settle later.
 
         The success toast lives in `onSuccess`, which the modal calls only after
-        `recordPayment` resolves. That action is still a stub, so today the
-        dispatcher rejects it and the modal shows the reason on its own inline
-        error line (Law 12 — there is no error toast, and none is invented). This
-        screen no longer announces a payment that was not written.
+        `recordPayment` resolves. ⚠ That sentence used to end "That action is
+        still a stub, so today the dispatcher rejects it" — no longer true:
+        `actions/finance/recordPayment.ts:252` is `implemented: true` on
+        `payment.create`, a capability `core.ts:checkCapability` does resolve, so
+        the dispatch reaches the database and the toast now follows a real write.
+        A rejection still shows on the modal's own inline error line (Law 12 —
+        there is no error toast, and none is invented). Either way this screen
+        never announces a payment that was not written.
       */}
       {showPaymentModal && activeThread && paymentBookingId && (
         <RecordPaymentModal

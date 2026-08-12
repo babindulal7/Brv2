@@ -5,6 +5,7 @@ import { Card, Button, cardStyle } from '../../components/ui/Page'
 import { EditableRows } from '../../components/ui/EditableRows'
 import { EmptyState } from '../../components/ui/StateViews'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
 import { gateContext, canViewUtilization } from '../../lib/fieldGating'
 import { useEditMode } from '../../lib/edit/useEditMode'
@@ -145,6 +146,17 @@ export default function AssetDetail() {
   const utilization = canViewUtilization(gctx)
 
   const [activeTab, setActiveTab] = useState<AssetTab>('Units')
+  /*
+    Spec 7.5 names two layout changes for this screen — "TABLET: rail drops
+    beneath the photos. PHONE: segmented [Units][History][Finance][Service]" —
+    and the file had no width read at all, so every `repeat(N, 1fr)` below put
+    up to four cards side by side on a 375px phone. `cols()` clamps each band
+    the way `KpiStrip` already does (Page.tsx:212): 2 at phone, 3 at tablet.
+    The tab strip below IS the segmented control; it only needed to scroll
+    rather than squash, and to meet the 44px floor.
+  */
+  const viewport = useViewport()
+  const cols = (n: number) => (viewport === 'phone' ? Math.min(n, 2) : viewport === 'tablet' ? Math.min(n, 3) : n)
   const [expandedUnits, setExpandedUnits] = useState<Set<string>>(new Set(['SN-FX3-001', 'SN-FX3-002']))
   const [selectedUnitForQr, setSelectedUnitForQr] = useState<string | null>(null)
   /** Serial of the unit whose inline editor is open, or null. One at a time. */
@@ -322,7 +334,7 @@ export default function AssetDetail() {
       </div>
 
       {/* Answer Strip: 4 Figures (No donuts) */}
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${2 + (utilization ? 1 : 0) + (money ? 1 : 0)}, 1fr)`, gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols(2 + (utilization ? 1 : 0) + (money ? 1 : 0))}, minmax(0,1fr))`, gap: 14 }}>
         <div style={{ ...cardStyle, padding: '14px 16px' }}>
           <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>AVAILABLE NOW</div>
           <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success-text)', marginTop: 'var(--sp-xs)' }}>
@@ -377,7 +389,7 @@ export default function AssetDetail() {
       </div>
 
       {/* Tabs Navigation */}
-      <div style={{ display: 'flex', gap: 'var(--sp-sm)', borderBottom: '1px solid var(--border)', paddingBottom: 'var(--sp-sm)' }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-sm)', borderBottom: '1px solid var(--border)', paddingBottom: 'var(--sp-sm)', overflowX: 'auto', overscrollBehaviorX: 'contain' }}>
         {tabs.map(t => {
           const active = activeTab === t
           return (
@@ -386,7 +398,11 @@ export default function AssetDetail() {
               type="button"
               onClick={() => setActiveTab(t)}
               style={{
-                padding: '8px 16px',
+                // Law 15 — this strip is the record's only section switch, and
+                // below 768 it is the segmented control spec 7.5 draws.
+                minHeight: 44,
+                flexShrink: 0,
+                padding: '0 16px',
                 borderRadius: 'var(--r-btn)',
                 border: `1px solid ${active ? 'var(--nav-active-accent)' : 'transparent'}`,
                 background: active ? 'var(--card2)' : 'transparent',
@@ -406,7 +422,39 @@ export default function AssetDetail() {
       {activeTab === 'Units' && (
         <Card title="Fleet Units & Serial Records">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)' }}>
+            {viewport === 'phone' ? (
+              /* Shell rule, repeated at the top of every spec: "Tables become
+                 card rows below 768." Nine columns do not survive 375px as a
+                 table; each unit becomes one card carrying the same facts and
+                 the same two actions, with the editor and the accessory
+                 checklist opening in place exactly as they do in the table. */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
+                {asset?.children?.map((u) => (
+                  <article key={u.serial} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                      <span className="identifier" style={{ fontWeight: 700, color: 'var(--text)' }}>{u.serial}</span>
+                      <span style={{ padding: '2px 8px', borderRadius: 4, background: 'var(--card2)', border: '1px solid var(--border)', fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>{u.status}</span>
+                      <span style={{ padding: '2px 8px', borderRadius: 4, background: u.condition === 'Excellent' ? 'var(--st-in-bg)' : 'var(--card2)', color: u.condition === 'Excellent' ? 'var(--success-text)' : 'var(--text2)', border: '1px solid var(--border)', fontSize: 'var(--t-th)', fontWeight: 600 }}>{u.condition}</span>
+                    </div>
+                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{u.location}</div>
+                    <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                      <span className="identifier">{u.assetTag ?? 'EQ000234-01'}</span>
+                      {' · '}
+                      {u.lastSeen ? `Last seen ${formatAd(u.lastSeen)}` : 'Last seen —'}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <Button variant="ghost" onClick={() => setSelectedUnitForQr(u.serial)}>Label</Button>
+                      <Button variant="ghost" onClick={() => setEditingUnit((v) => (v === u.serial ? null : u.serial))}>
+                        {editingUnit === u.serial ? 'Close' : 'Edit'}
+                      </Button>
+                    </div>
+                    {editingUnit === u.serial && <UnitEditor unit={u} onDone={() => setEditingUnit(null)} />}
+                  </article>
+                ))}
+              </div>
+            ) : (
+            <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)', minWidth: viewport === 'tablet' ? 720 : 900 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--muted)' }}>
                   <th style={{ padding: '8px', width: 30 }} />
@@ -546,6 +594,8 @@ export default function AssetDetail() {
                 })}
               </tbody>
             </table>
+            </div>
+            )}
           </div>
         </Card>
       )}
@@ -618,8 +668,26 @@ export default function AssetDetail() {
               </div>
             )}
 
-            {asset?.serviceHistory?.length ? (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)' }}>
+            {asset?.serviceHistory?.length && viewport === 'phone' ? (
+              /* Shell rule — seven columns become one card per service event. */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
+                {asset.serviceHistory.map((m, i) => (
+                  <article key={i} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700 }}>{m.type}</span>
+                      <span className="identifier" style={{ color: 'var(--muted)', fontSize: 'var(--t-th)' }}>{m.unit}</span>
+                    </div>
+                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text)' }}>{m.details}</div>
+                    <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                      {m.dateAd} · {m.downtime} · {m.tech}
+                    </div>
+                    <div className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 600 }}>{formatMoney(m.costPaisa)}</div>
+                  </article>
+                ))}
+              </div>
+            ) : asset?.serviceHistory?.length ? (
+              <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)', minWidth: viewport === 'tablet' ? 640 : 760 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--muted)' }}>
                     <th style={{ padding: '8px' }}>Date</th>
@@ -645,6 +713,7 @@ export default function AssetDetail() {
                   ))}
                 </tbody>
               </table>
+              </div>
             ) : (
               <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                 No per-event service history recorded for this asset — needs a service-ticket engine (TODO(decision), PLAN.md §4.9).
@@ -657,7 +726,7 @@ export default function AssetDetail() {
       {/* Tab 4: Money (Omitted for Floor Roles) */}
       {activeTab === 'Money' && money && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols(4)}, minmax(0,1fr))`, gap: 14 }}>
             <div style={{ ...cardStyle, padding: 'var(--sp-lg)' }}>
               <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>PURCHASE PRICE</div>
               {asset?.purchasePricePaisa !== undefined ? (
@@ -716,7 +785,7 @@ export default function AssetDetail() {
       {/* Tab 5: Documents */}
       {activeTab === 'Documents' && (
         <Card title="Asset Documents & Certificates">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols(3)}, minmax(0,1fr))`, gap: 14 }}>
             {[
               { name: 'Original Purchase Invoice (Tax VAT)', size: '1.4 MB', date: '15 Jun 2025' },
               { name: 'Sony Alpha Official Warranty Card', size: '820 KB', date: '15 Jun 2025' },

@@ -154,7 +154,7 @@ export function clientDetailGroups(client: ClientRecord, gctx: GateContext): Int
     fields: [
       { label: 'Name', value: client.name },
       ...(client.company ? [{ label: 'Company', value: client.company }] : []),
-      { label: 'Customer type', value: client.clientType },
+      { label: 'Client type', value: client.clientType },
       { label: 'Tags', value: client.tags?.length ? client.tags.join(', ') : '—' },
       { label: 'Client since', value: client.clientSinceAd ?? '—' },
       { label: 'PAN / VAT no.', value: client.pan ?? 'Not on file' },

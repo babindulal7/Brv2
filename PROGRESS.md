@@ -2,7 +2,214 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
-## 2026-08-12 (end) — Sign-in resolves to Owner, and the lists fill
+## 2026-08-13 — Post-rebuild sweep, second pass
+**Phase:** cross-cutting UI/IA restructure (task #6) · **Status:** gate-verified —
+`tsc --noEmit` exit 0, `vitest run` 1800 passed / 73 files, `vite build` exit 0
+
+Five independent auditors reviewed the 11-section rebuild and filed 67 findings (11
+blockers, 38 majors). A first sweep had already closed most of them; this pass verified
+each against the file as it stands today and closed what remained.
+
+### Verified NOT-REAL (already fixed before this pass — changed nothing)
+`Page.tsx`'s `Button` is `minHeight: 44`, not `height: 34`. `CollapsibleAside`'s two
+handles are already 44×44 boxes carrying 28/24px visuals. `Header`'s `iconBtn` and search
+launcher are already 44. `ReportToolbar`'s `controlStyle`, `BarcodeScannerModal`'s three
+control classes, `WarehouseMap`'s three map buttons, `CalendarPanel`'s `ghostBtn`,
+`IntelCard`'s primary Link, `MovementList`'s kebab/primary/hover-card — all already 44.
+Return and Handover's `completeSession` both dispatch real actions and derive `closedAt`
+from the result. `Maintenance`'s KPI strip is counted off `MAINTENANCE_DATA`. Calendar's
+KPI band is restored with a test. The four floor workspaces gate on `BookingNotLoaded`
+rather than rendering the seed under a foreign booking number. `CasesQueue` reflows its
+rail. `catalog.ts`'s ROI entry is `projection: null, route: null` with a `needs` line.
+`SYSTEM_STATS` is `SYSTEM_STATS_UNAVAILABLE`. `App.tsx` has no literal `B-715` crumb.
+Law 11 icons are on the Rentals, Clients and Crew status chips. Law 17: only one leak
+survived (below).
+
+### Fixed this pass
+**Responsive — the specs' three bands, on the six screens that still shipped one layout.**
+`ClientsDirectory` (was phone-vs-not: now a tablet column drop, a 620px tablet table, and
+both rails reflowed inline rather than rendered into `CollapsibleAside` — the Filters rail
+was not rendered *at all* below 768 before this). `ClientDetail` (no width read at all:
+both tables now become card rows below 768, the section tabs scroll and meet 44).
+`Bundles` (spec 7.2 draws a card grid: the width now chooses it, 2-up at tablet and 1-up at
+phone, and the preview rail reflows). `AssetDetail` (fixed `repeat(N,1fr)` grids clamped
+per band, both tables get card rows, tab strip scrolls at 44). `AddBundle` (three panes →
+stacked → accordion, with a sticky save bar at phone). `Documents` (both rails reflowed,
+card view forced below 768, grid 4/3/2-up per band).
+
+**The floor workspaces' phone layout.** Packing, Handover and Reset each rendered an
+820-860px table behind `overflowX: auto` at phone width — on the device spec 03 calls "the
+real device here", and with the row actions the completion gate depends on scrolled
+off-screen. All three now render card rows below 768 (Return already did).
+
+**A root fix for the report screens.** Five of the nine bespoke reports wrapped their
+*entire body* in `<Rail>` — so at tablet and phone the whole report collapsed to a handle.
+`Page.tsx` gains `ReflowRail`, `useRailGridColumns` and `useBandColumns`; all ten report
+screens now use them. That is Rulings §7's shape in one place instead of hand-rolled per
+page.
+
+**Rulings §8 — two more fabricated surfaces made honest.** `CasesReports` was six string
+literals, a hand-typed 12-month trend and a `CASE_ROWS` table sharing no id with any real
+case, sitting beside `CasesQueue`, which renders the real register; it now counts off
+`CASES` and says "not tracked yet" for Overdue and Avg Resolution Time, which have no
+source. `SystemMonitor` printed uptime, p95 latency, error rate, sessions, storage,
+CPU/memory/disk, an incident feed and week-over-week deltas — all invented, one click from
+the rebuilt Settings landing, and its `Active Sessions: 18` contradicted Overview's `12`.
+Every tile now names the missing source. `OperationsQueues`' Crew Load card is restored as
+the empty state rather than deleted (§8 says "renders not tracked yet", §1 keeps the panel).
+
+**Law 15 leftovers.** `ClientsDirectory` (per-page select, row kebab, profile close,
+pagination), `CasesReports` period chips, `SectionStockUnits` quantity steppers,
+`PackingWorkspace` (the Law 10 reason input inside the blocking gate, the checklist search,
+the Evidence link), `ResetWorkspace`'s problem drawer, `Calendar`'s `chipBase` and
+mini-calendar day cells, `Documents` and `Bundles` view toggles, `GateChecklist`'s toggle.
+
+**Law 6.** `GateChecklist` rendered a padlock and "Pending Billing" for money-blind roles;
+the financial cell is now not constructed for them at all.
+
+**Law 17.** `data/booking.ts:268` still read `note: 'Customer pickup'` on a rendered
+Booking Detail charge row. Now 'Client pickup'.
+
+**Law 13/14.** `NewRental`'s accordion read `window.innerWidth` imperatively at mount and
+inside `toggle`; it now uses the reactive `viewport` already in scope plus an effect, so
+crossing 768 actually reaches the accordion.
+
+**`Modal` learned the three bands** — full-screen at phone, 60vw for a sheet at tablet.
+It is the app's single dialog, so every sheet in the rebuild inherits it.
+
+**Two stale doc blocks corrected**, both of which would have misled the next reader:
+`RentalsList`'s `filtersCard` claimed a §7 reflow it does not implement (it renders in a
+`position: fixed` drawer, which is what spec 04's tablet `⌄` disclosure asks for), and
+`ClientDetail` claimed "every action under `src/actions/` is a stub" — eight are now
+`implemented: true`; `updateClient` is not, and the comment now says only that.
+
+### Also fixed — the typecheck gate was red on arrival
+`actions/inventory/createBundle.ts` inserted into `bundles`/`bundle_items`, which
+`src/types/database.ts` did not carry even though `0004_inventory.sql:380,407` creates
+them. Both table types transcribed column-for-column from the migration, and the insert
+now states `days: 1` explicitly (Law 9, never by omission).
+
+### Deferred, with reasons
+- **Routing the nine bespoke reports through `ReportTemplate`** (which already implements
+  9.7's three bands including phone card rows). Their rails and KPI bands are fixed; their
+  own tables still lack a phone card branch. Moving them is a catalog decision about which
+  bespoke charts survive, not a layout edit.
+- **Everything in Rulings §9.** Untouched, as instructed.
+
+### Blocked
+Task #9 — migration `0055` still needs approval before the DB accepts the ruled ID format.
+
+---
+
+## 2026-08-12 — All 11 sections rebuilt to the "updated mds" wireframes
+**Phase:** cross-cutting UI/IA restructure · **Status:** built and gate-verified; browser
+verification not possible; one migration blocked on approval
+
+Commits: `6fb1c62` (restore point, 278 previously-uncommitted files) → `d8c7df4` (the
+rebuild, 274 files, +124,997/−13,465). Rulings live in
+[`WIREFRAME_RULINGS_2026-08-12.md`](WIREFRAME_RULINGS_2026-08-12.md) — **read it before
+touching any of this**; it records eleven decisions and thirteen deliberately-open items.
+
+### Method
+A read-only audit (one agent per spec) diffed all eleven wireframes against the code first:
+**235 gaps, 79 conflicts**. That audit is why nothing was deleted by accident — its finding,
+repeated in nearly every spec, was that *the wireframes draw less than the code contains and
+the code defends its extras with cited section numbers from the older specs.*
+
+### The ruling that shaped everything
+**The wireframes are a layout spec, not a content inventory. A panel survives unless a spec
+removes it in prose.** Eight things genuinely are removed (Productions, Warehouses-out-of-
+Inventory, the Sub-Rental/Cases tabs, Automation/Channels/AI, Finance's Audit tab, Crew's tab
+strip, the four Sales & Marketing reports, Purchase Requests off-surface). Everything else —
+Calendar's rail and Full View, New Rental's Pricing & Payments, Settings' rails, Today's
+Timeline — was kept. The literal reading would have deleted ~1,500 lines of working UI.
+
+### Did
+- **Shell.** The fixed 11-item nav, flat, Settings as item 11. 219px desktop / 72px tablet
+  icon rail / absent at phone. Phone gains a five-slot bar with a centre Scan triggering the
+  existing FAB, plus a More sheet with a focus trap. Foundation §5.1's "8 + Settings, hard
+  ceiling" is superseded and `nav.ts` no longer argues for it.
+- **Identifiers.** `B-` `C-` `M-` `INV-` `Q-` `BND-`, no year segment, no padding — `B-1`,
+  not `B-0001`. Prefixes read from the numbering engine, never hardcoded. **Closes
+  `PLAN.md` §4.4**, open since 4 Aug.
+- **Pages.** All eleven built to their three drawn layouts. `Settings.tsx` split 2,501 → 618
+  lines across eight sections behind a real loading state.
+
+### Found — three defects the rebuild exposed
+1. **A live wrong number.** `liquidityReports.ts:113` hand-typed `Trade payables:
+   rupees(42_200)` against a supplier-invoice table that does not exist, and fed it to
+   `currentLiabilities()`, `workingCapital()`, `currentRatio()` and `freeCash()`. Those now
+   withhold rather than compute, and the CSV writes "Not tracked yet" rather than a blank —
+   a spreadsheet SUMs blanks as zero.
+2. **Two live Law 6 holes.** Making Tools nav item 10 exposed `/tools/pricing` and
+   `/tools/depreciation` to money-blind roles, and the Shell guard covered only `/finance`,
+   so every `/reports/*` screen was reachable by typing the URL. Both now read one
+   `isMoneySurface()` predicate over one list, so nav and guard cannot drift apart again.
+3. **A phone layout bug.** `BottomBar` had `paddingBottom: env(safe-area-inset-bottom)` on a
+   fixed-height element under `box-sizing: border-box`, which reserves nothing — the bar
+   would have sat under the iPhone home indicator.
+
+Also: twelve **shadow identifiers** naming a booking under a second number (`J-1041` job
+ids, `PROD-BK-…`, `BKG-4102`, `CS-2026-…`) are collapsed, per the ruling that a booking has
+exactly one number. And `src/modules/settings/Tools.tsx` — 1,616 lines — turned out to be
+**unreachable**: nothing imported it and no route rendered it.
+
+### Deliberately NOT faked — each renders its reason on the page
+The BS month arrows (needs Ashadh/Bhadra 2083 lengths, which `PLAN.md` says must not be
+inferred), the availability engine (building it in the page is the Law 1 violation), crew
+TDS (no ruled rate), depreciation asset lives and the IRD pool rates (no source anywhere),
+and ROI (needs a purchase cost no column carries — it ships as "Top 8 by revenue", because
+printing real revenue under an ROI label is a fabricated figure with a correct number in it).
+
+### Verified
+| Check | How | Result |
+|---|---|---|
+| Typecheck | `node node_modules/typescript/bin/tsc --noEmit` | exit 0, 0 errors |
+| Tests | `npx vitest run` | **1,794 passing, 72 files** |
+| Nothing over-deleted | `git diff --diff-filter=D` vs `6fb1c62` | only the 2 authorised files + 2 `.tmp` scratch tests |
+
+**Not verified in a browser.** `VITE_DEV_AUTH_BYPASS` is off — correctly, since screens
+reading the database must not render empty behind a header that says "Owner" — and signing in
+through the real form is not something an agent can do. Every responsive and layout claim
+here rests on reading the code and on jsdom assertions, **not on looking at it.**
+
+### Blocked
+- ⛔ **`0055_ruled_identifier_formats.sql` is written and NOT applied.** The app mints `B-1`
+  but `bookings_booking_no_format` still enforces `^BK-[0-9]{4}-[0-9]{4}$`. Needs explicit
+  approval (`CLAUDE.md`). Two notes in its header: it must be applied **before** `0047`,
+  which now carries 38 `B-<n>` literals and would abort on the old CHECK; and
+  `next_document_number()` still resets the counter to 1 on year change, which under a
+  no-year scheme would re-issue `B-1` every January.
+- **Calendar's four-card KPI band was removed** without prose authority (figures preserved in
+  Full View's bottom strip). Outside the layout ruling — flagged for a keep/drop call.
+- Thirteen items in Rulings §9 are deliberately unresolved. Do not resolve them while
+  building.
+
+## 2026-08-12 (end) — Login is Supabase Auth, and only Supabase Auth
+
+Both dev doors are **deleted**, not disabled: `VITE_DEV_AUTH_BYPASS` (Owner on page load, no
+credentials) and the credential fallback (Owner for `owner@babinrentals.com` /
+`babindulal7@gmail.com` with `123` or `123123`). `signIn` is now four lines around
+`supabase.auth.signInWithPassword`, and the only way to hold a session is to have one.
+
+Gone with them: `DEV_AUTH_BYPASS`, `DEV_CREDENTIAL_FALLBACK`, `DEV_BYPASS_USER`, the
+`sessionless` context flag and `SessionlessBanner`. The banner existed to make a JWT-less
+session visible; with no way to produce one it would have been dead code claiming to guard
+something impossible, so it went too — about ninety minutes after it was added.
+
+The reasoning is on `signIn` as a comment aimed at whoever wants the convenience back. Briefly:
+both doors set the React `user` without signing in to Supabase, so every query went out as
+`anon`, RLS denied it, and the app drew a header reading "Owner" over empty lists — 200s, no
+errors, correct-looking empty states. Both carried a loud `console.warn` saying precisely that
+would happen, and it was not enough; that is the argument against any replacement.
+
+`tsc --noEmit` clean · `vitest` **72 files / 1794 tests green**.
+
+⚠ There is now **no way into the app without a real Supabase password**. That is the point, but
+it means a forgotten password is a dashboard trip (Authentication → Users → reset, or a magic
+link), not a code change.
+
+## 2026-08-12 (earlier) — Sign-in resolves to Owner, and the lists fill
 
 **Status:** verified by query, still not by eye. Migrations **0056–0058** applied live and now
 present in `supabase/migrations/`.

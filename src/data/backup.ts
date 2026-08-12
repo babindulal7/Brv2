@@ -61,7 +61,7 @@ export const RESTORE_SCOPES = [
   'Entire System',
   'Database Only',
   'Inventory',
-  'Customers',
+  'Clients',
   'Bookings',
   'Finance',
   'Documents',

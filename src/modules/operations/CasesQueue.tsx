@@ -11,7 +11,7 @@ import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useAuth } from '../../lib/auth'
 import { formatMoney } from '../../lib/money'
 import { formatAd } from '../../lib/bs'
-import { useTabularLayout } from '../../lib/device'
+import { useTabularLayout, useViewport } from '../../lib/device'
 import { gateContext } from '../../lib/fieldGating'
 import { useMenuFlip } from '../../lib/menuFlip'
 import { IntelCard } from '../../components/ui/IntelCard'
@@ -141,6 +141,12 @@ export default function CasesQueue() {
      1180) is unreadable below 768; the right rail's fixed 340px column breaks
      too. Law 13: branch on capability, not platform. */
   const tabular = useTabularLayout()
+  /* Rulings §7 names spec 03: "collapse" below 1180 means REFLOW, not hide.
+     `tabular` is phone-vs-not, so on its own it left the 340px Case detail
+     rail beside the list through the whole 768–1179 band, where
+     `CollapsibleAside` defaults it collapsed behind a handle. The band is
+     what decides, exactly as `OperationsQueues.tsx:694` on the same page. */
+  const viewport = useViewport()
   /* Law 6 — the session decides, not this component. `user` is null before the
      first session lookup resolves and for a signed-out visitor; both are
      treated as `Client`, the portal-only role every staff gate already
@@ -451,7 +457,7 @@ export default function CasesQueue() {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: tabular ? 'minmax(0,1fr) auto' : '1fr',
+          gridTemplateColumns: viewport === 'desktop' ? 'minmax(0,1fr) auto' : '1fr',
           gap: 'var(--sp-md)',
           alignItems: 'start',
         }}
@@ -552,7 +558,8 @@ export default function CasesQueue() {
                         alignItems: 'center',
                         justifyContent: 'center',
                         width: '100%',
-                        height: 40,
+                        // Law 15 — 44×44, and this is the primary action on the smallest screen.
+                        minHeight: 44,
                         marginTop: 2,
                         borderRadius: 'var(--r-btn)',
                         fontSize: 'var(--t-meta)',
@@ -748,17 +755,29 @@ export default function CasesQueue() {
         </Card>
 
         {/* ── §6 right rail — Case Summary → Evidence → Resolution → Financial Impact → Linked Records → Timeline → Quick Actions ── */}
-        <Rail width={340} label="Case detail">
-          <CaseRail
-            c={selected}
-            role={role}
-            money={money}
-            draft={draftDisposition[selected.id] ?? ''}
-            onDraft={(v) => setDraftDisposition((p) => ({ ...p, [selected.id]: v }))}
-            onConfirm={() => confirmDisposition(selected)}
-            error={resolveError?.caseId === selected.id ? resolveError.message : null}
-          />
-        </Rail>
+        {(() => {
+          const caseRail = (
+            <CaseRail
+              c={selected}
+              role={role}
+              money={money}
+              draft={draftDisposition[selected.id] ?? ''}
+              onDraft={(v) => setDraftDisposition((p) => ({ ...p, [selected.id]: v }))}
+              onConfirm={() => confirmDisposition(selected)}
+              error={resolveError?.caseId === selected.id ? resolveError.message : null}
+            />
+          )
+          /* Same shape `OperationsQueues.tsx:694` uses one file away — the rail
+             at desktop, the same element inline beneath the list below 1180.
+             `CollapsibleAside`'s defaults are NOT changed: other pages rely on them. */
+          return viewport === 'desktop' ? (
+            <Rail width={340} label="Case detail">
+              {caseRail}
+            </Rail>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>{caseRail}</div>
+          )
+        })()}
       </div>
 
       <FooterNote extra={['Open Cases, chip counts and Exposure are computed from the case list, never hand-typed']} />
@@ -768,7 +787,7 @@ export default function CasesQueue() {
 
 function pagerBtn(on: boolean) {
   return {
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 26, height: 26, borderRadius: 'var(--r-xs)',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 44, minHeight: 44, borderRadius: 'var(--r-xs)',
     border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`, background: on ? 'var(--nav-active-bg)' : 'transparent',
     color: on ? 'var(--nav-active-accent)' : 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
   } as const

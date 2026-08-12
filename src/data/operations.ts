@@ -41,7 +41,10 @@ import { JOBS, JOB_ORDER, type BookingStatus, type JobName } from '../lib/workfl
  *   not joined by `listBookings`. The column is gone rather than dashed.
  * - **`CREW_LOAD`** — four invented people with invented open/capacity figures.
  *   It needs exactly the per-person job assignment that does not exist, so the
- *   Crew Load rail is gone too.
+ *   seed is gone. The **card** is not: Rulings §8 words the remedy as "renders
+ *   'not tracked yet' until a real source exists", and §1 keeps a panel no
+ *   spec removes in prose. `OperationsQueues.tsx`'s `railContent` carries it
+ *   as the empty state, naming the missing assignment.
  */
 
 /* ── The five chips ────────────────────────────────────────────────────────

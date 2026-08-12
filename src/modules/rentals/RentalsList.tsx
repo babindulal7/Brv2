@@ -6,7 +6,7 @@ import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ActiveFilterChips, FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import { Unavailable } from '../../components/ui/Unavailable'
-import { STATUS, BRAND } from '../../lib/status'
+import { STATUS, STATUS_ICON, BRAND } from '../../lib/status'
 import type { IconName } from '../../components/ui/Icon'
 import type { StatusKey, BrandKey } from '../../lib/status'
 import { formatMoney } from '../../lib/money'
@@ -70,6 +70,7 @@ import type { ChipKey, OptionalColumn, RentalListRow } from '../../data/rentals'
  * candidates; they are flagged there, not deleted here.
  */
 
+/** Law 11 — colour + icon + label. The glyph comes from the token (`lib/status.ts:52`), so no call site can ship a bare colour chip. */
 function Tag({ text, status }: { text: string; status: StatusKey }) {
   const c = STATUS[status]
   return (
@@ -77,6 +78,7 @@ function Tag({ text, status }: { text: string; status: StatusKey }) {
       style={{
         display: 'inline-flex',
         alignItems: 'center',
+        gap: 3,
         height: 18,
         padding: '0 6px',
         borderRadius: 5,
@@ -87,6 +89,7 @@ function Tag({ text, status }: { text: string; status: StatusKey }) {
         whiteSpace: 'nowrap',
       }}
     >
+      <Icon name={STATUS_ICON[status] as IconName} size={10} />
       {text}
     </span>
   )
@@ -905,13 +908,23 @@ export default function RentalsList() {
   const countedTitle = total === null ? 'Rentals' : `${total} ${total === 1 ? 'Rental' : 'Rentals'} found`
 
   /**
-   * The Filters rail's card, lifted to a variable so the SAME element can sit
-   * in the grid's left track on desktop and inline beneath the list below 1180.
+   * The Filters panel's card.
    *
-   * ⚠ Rulings §7: *"right rails collapse below 1180" means **reflow**, not
-   * hide.* So this is not wrapped in `CollapsibleAside` at tablet/phone and
-   * `CollapsibleAside`'s own defaults are untouched — other pages depend on
-   * them.
+   * ⚠ This block used to claim the card "can sit in the grid's left track on
+   * desktop and inline beneath the list below 1180". It cannot and does not:
+   * `filtersCard` has exactly one render site, inside `<FilterDrawer>` near
+   * the bottom of this file, which is `position: fixed` and opens from the
+   * Filters button at **every** width. The accurate account is the earlier
+   * comment on `filtersOpen` — "the filter panel is now an overlay, not a
+   * column… it costs zero layout at every width" — and that is the single
+   * account of this screen now.
+   *
+   * Why that does not breach Rulings §7: §7 governs the **right** rails whose
+   * tablet drawings put rail content *below the list, still visible*. This is
+   * a left filter panel, and spec 04's tablet drawing shows it as a `⌣`
+   * disclosure rather than an always-visible band — a drawer is that
+   * disclosure, reachable identically at all three widths. `CollapsibleAside`
+   * is not involved either way, and its defaults are untouched.
    *
    * ⚠ Rulings §1 names this rail (ten of eleven groups inert) and the disabled
    * Timeline toggle as the strongest deletion candidates now that Status has
@@ -1441,12 +1454,17 @@ export default function RentalsList() {
                             height: 20,
                             padding: '0 8px',
                             borderRadius: 'var(--r-badge)',
+                            gap: 4,
                             background: STATUS[r.statusKey].bg,
                             color: STATUS[r.statusKey].fg,
                             fontSize: 'var(--t-meta)',
                             fontWeight: 600,
                           }}
                         >
+                          {/* Law 11 — `STAGE_ICON` was declared for this and used
+                              only by the filter chips, so the row's own status
+                              was colour + word alone. */}
+                          <Icon name={STAGE_ICON[r.status]} size={11} />
                           {r.status}
                         </span>
                         {r.isOverdue && <Tag text="Overdue" status="danger" />}
@@ -1726,12 +1744,14 @@ export default function RentalsList() {
                                 height: 22,
                                 padding: '0 9px',
                                 borderRadius: 'var(--r-badge)',
+                                gap: 4,
                                 background: STATUS[r.statusKey].bg,
                                 color: STATUS[r.statusKey].fg,
                                 fontSize: 'var(--t-meta)',
                                 fontWeight: 600,
                               }}
                             >
+                              <Icon name={STAGE_ICON[r.status]} size={11} />
                               {r.status}
                             </span>
                             {/* The stage is one of Foundation's six; the only

@@ -442,6 +442,26 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
+## 4.20 ⬅ OPEN — who holds `client.block`, `client.create` and `rental.confirm`
+
+**Raised 13 Aug 2026 by the post-rebuild sweep.** Three actions were flipped to
+`implemented: true` during the 11-section rebuild and carry real bodies —
+`clients/blockClient.ts:195`, `clients/createClient.ts:274`,
+`rentals/confirmRental.ts:252` — but each declares a capability string that
+`src/actions/core.ts:checkCapability` does not handle. An unhandled capability
+returns `undefined`, which the dispatcher reads as a denial **for every role,
+Owner included**.
+
+That is fail-closed and therefore safe; it is not correct. Today Create Client,
+Bulk Block and Confirm Rental are *permission-denied* rather than
+*not-implemented* — a different error for the same non-outcome, and
+`ClientDetail.tsx` now says so where the control stands.
+
+**Needs a ruling, not a guess:** which of Foundation §11's six system roles may
+block a client, create a client, and confirm a rental. Once ruled, add the three
+cases to `checkCapability` beside `operations.perform`. Nothing in `src/` may map
+them on its own (CLAUDE.md hard rule).
+
 ## 4.0 ✅ RESOLVED — the design source
 
 **Ruled 4 Aug 2026.** The module specs and the 113 renders in

@@ -5,6 +5,7 @@ import type { IconName } from '../../components/ui/Icon'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Card, Button, KpiStrip, Rail, SideRail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { useViewport } from '../../lib/device'
 import { ScreenHeader } from '../finance/TabHeader'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { Donut, Legend, catColor } from '../../components/ui/Charts'
@@ -438,7 +439,18 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   const [related, setRelated] = useState(ALL_RELATED)
   const [branch, setBranch] = useState(ALL_BRANCHES)
   const [sort, setSort] = useState<SortKey>('Created Date')
+  /*
+    Spec 9.5 draws a card grid ("TABLET 3-up · PHONE 2-up") and this screen
+    had no width read at all: `cards` defaulted to false at every width, so a
+    375px phone landed on an 820px table behind a horizontal scrollbar and only
+    a manual toggle reached the drawn layout. The toggle stays — it is the
+    desktop preference — but below 768 cards are forced, and the grid's column
+    count is set per band rather than left to `auto-fill`.
+  */
+  const viewport = useViewport()
+  const desktop = viewport === 'desktop'
   const [cards, setCards] = useState(false)
+  const cardView = viewport === 'phone' ? true : cards
   const [perPage, setPerPage] = useState<number>(PER_PAGE[0] ?? 10)
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -645,9 +657,11 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
       {/* The render's three columns: a ~200px category + filter rail, the list,
           and a 300px summary rail. The left rail is a little wider here so
           "Maintenance Documents" sets on one line at the theme's UI size. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: desktop ? 'auto minmax(0,1fr) auto' : 'minmax(0,1fr)', gap: 'var(--sp-md)', alignItems: 'start' }}>
         {/* ── left rail ─────────────────────────────────────────────────── */}
-        <SideRail width={228} label="Categories">
+        {(() => {
+          const categoriesContent = (
+          <>
           <Card title="Document Categories" bodyStyle={{ padding: 6 }}>
             {[{ key: 'All' as const, rail: ALL_TAB, icon: 'file' as IconName, count: total }, ...categories].map((c) => {
               const on = category === c.key
@@ -827,7 +841,16 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
               </p>
             </div>
           </Card>
-        </SideRail>
+          </>
+          )
+          /* Rulings §7 — reflow, not hide. `order: 2` puts the categories and
+             filters beneath the list below 1180 instead of behind a handle. */
+          return desktop ? (
+            <SideRail width={228} label="Categories">{categoriesContent}</SideRail>
+          ) : (
+            <div style={{ order: 2, display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>{categoriesContent}</div>
+          )
+        })()}
 
         {/* ── centre ────────────────────────────────────────────────────── */}
         <Card bodyStyle={{ padding: 0 }}>
@@ -882,7 +905,9 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
 
             <span style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 10, background: 'var(--card2)', border: '1px solid var(--border)' }}>
               {([['Table', false], ['Cards', true]] as const).map(([label, isCards]) => {
-                const on = cards === isCards
+                // `cardView`, not `cards` — below 768 the width forces cards, so
+                // the pressed state has to say what is actually rendering.
+                const on = cardView === isCards
                 return (
                   <button
                     key={label}
@@ -892,8 +917,9 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                     aria-label={`${label} view`}
                     title={`${label} view`}
                     style={{
-                      width: 30,
-                      height: 28,
+                      // Law 15 — 44××4 at every width; this was 30×28.
+                      minWidth: 44,
+                      minHeight: 44,
                       borderRadius: 7,
                       border: 'none',
                       background: on ? 'var(--card)' : 'transparent',
@@ -988,11 +1014,12 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                 onAction={dirty ? clearAll : () => pickCategory('All')}
               />
             </div>
-          ) : cards ? (
+          ) : cardView ? (
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(238px, 1fr))',
+                gridTemplateColumns:
+                  viewport === 'phone' ? 'repeat(2, minmax(0,1fr))' : viewport === 'tablet' ? 'repeat(3, minmax(0,1fr))' : 'repeat(auto-fill, minmax(238px, 1fr))',
                 gap: 'var(--sp-md)',
                 padding: 'var(--sp-md)',
               }}
@@ -1220,7 +1247,9 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
         </Card>
 
         {/* ── right rail ────────────────────────────────────────────────── */}
-        <Rail width={300} label="Document summary">
+        {(() => {
+          const summaryContent = (
+          <>
           <Card title="Document Summary">
             <div style={{ display: 'flex', gap: 11, alignItems: 'center' }}>
               <Donut slices={slices} centreLabel="Total" centreValue={total.toLocaleString('en-IN')} size={96} />
@@ -1415,7 +1444,14 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
               Creating and uploading documents needs storage, which is unwired — the tiles stay visible and say so.
             </p>
           </Card>
-        </Rail>
+          </>
+          )
+          return desktop ? (
+            <Rail width={300} label="Document summary">{summaryContent}</Rail>
+          ) : (
+            <div style={{ order: 3, display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>{summaryContent}</div>
+          )
+        })()}
       </div>
 
       <FooterNote

@@ -1,4 +1,4 @@
-import { PageHeader, Card, Rail, SideRail, cardStyle } from '../../components/ui/Page'
+import { PageHeader, Card, ReflowRail, SideRail, cardStyle, useBandColumns } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
@@ -54,6 +54,9 @@ function promotionsCsv(totalIssued: number): ReportCsvRow[] {
 }
 
 export default function PromotionsReports() {
+  /* KpiStrip's clamp, applied to this screen's hand-rolled key-figure grid:
+     four or six cards side by side is unreadable below 1180. */
+  const bandCols = useBandColumns()
   const money = useCanViewMoney()
 
   // Law 6 — promotion revenue, discounts given and net impact are all rupees.
@@ -89,7 +92,7 @@ export default function PromotionsReports() {
       */}
       <ReportToolbar title="Promotions & Discounts" csv={{ filename: 'promotions', build: () => promotionsCsv(totalIssued) }} />
 
-      <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+      <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: `repeat(${bandCols(4)}, minmax(0,1fr))`, gap: 'var(--sp-md)' }}>
         <PromoKpiCard
           label="Promotion Revenue"
           value={formatMoney(METRICS.promotionRevenue as Paisa)}
@@ -120,7 +123,7 @@ export default function PromotionsReports() {
         />
       </section>
 
-      <Rail>
+      <ReflowRail>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
           <section aria-label="Discount Impact" style={cardStyle}>
             <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Discount Impact Must Net Out</div>
@@ -231,7 +234,7 @@ export default function PromotionsReports() {
             </div>
           </section>
         </SideRail>
-      </Rail>
+      </ReflowRail>
     </div>
   )
 }

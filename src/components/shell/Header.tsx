@@ -17,9 +17,12 @@ interface HeaderProps {
   actions?: React.ReactNode
 }
 
+// Law 15 — 44×44 at every width, desktop included. This is the shell, so a
+// short target here fails on every page at every width; `Sidebar.tsx:19`,
+// `BottomBar.tsx:39` and `ScannerFab.tsx:247` all pin 44 for the same reason.
 const iconBtn = {
-  width: 34,
-  height: 34,
+  minWidth: 44,
+  minHeight: 44,
   borderRadius: 9,
   border: 'none',
   background: 'transparent',
@@ -114,7 +117,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
             gap: 'var(--sp-sm)',
             width: '100%',
             maxWidth: 440,
-            height: 38,
+            minHeight: 44,
             padding: '0 12px',
             borderRadius: 'var(--r-input)',
             background: 'var(--input-bg)',

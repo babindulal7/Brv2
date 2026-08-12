@@ -17,7 +17,7 @@ export const CATEGORIES: Array<{ name: string; count: string; icon: 'calendar' |
   { name: 'Finance', count: '16', icon: 'dollar' },
   { name: 'Inventory', count: '18', icon: 'box' },
   { name: 'Maintenance', count: '12', icon: 'tool' },
-  { name: 'Customers', count: '14', icon: 'users' },
+  { name: 'Clients', count: '14', icon: 'users' },
   { name: 'Staff', count: '10', icon: 'crew' },
   { name: 'System', count: '28', icon: 'settings' },
 ]
@@ -85,7 +85,7 @@ export const TRIGGERS: TriggerRow[] = [
   { name: 'Low Stock Alert', module: 'Inventory', event: 'Stock Below Limit', workflow: 'Low Stock Notification', bs: '2082/02/08 09:05:33 AM', ad: 'May 21, 2025 09:05:33 AM', response: '38 ms', success: '99.6%', status: 'Active', statusKey: 'in' },
   { name: 'Invoice Generated', module: 'Finance', event: 'Invoice Generated', workflow: 'Invoice Notification', bs: '2082/02/08 08:58:41 AM', ad: 'May 21, 2025 08:58:41 AM', response: '30 ms', success: '100%', status: 'Active', statusKey: 'in' },
   { name: 'Maintenance Due', module: 'Maintenance', event: 'Service Due', workflow: 'Maintenance Reminder', bs: '2082/02/08 08:45:10 AM', ad: 'May 21, 2025 08:45:10 AM', response: '55 ms', success: '99.7%', status: 'Paused', statusKey: 'progress' },
-  { name: 'Customer Created', module: 'Customers', event: 'Customer Created', workflow: 'Welcome Email', bs: '2082/02/08 08:40:22 AM', ad: 'May 21, 2025 08:40:22 AM', response: '25 ms', success: '100%', status: 'Active', statusKey: 'in' },
+  { name: 'Client Created', module: 'Clients', event: 'Client Created', workflow: 'Welcome Email', bs: '2082/02/08 08:40:22 AM', ad: 'May 21, 2025 08:40:22 AM', response: '25 ms', success: '100%', status: 'Active', statusKey: 'in' },
 ]
 
 export const QUEUE: Array<{ label: string; value: string; icon: 'timer' | 'arrow_right' | 'refresh' | 'checklist' | 'alert_triangle'; tone: 'progress' | 'primary' | 'primary' | 'success' | 'danger' }> = [

@@ -97,8 +97,9 @@ export default function WarehouseMap({ warehouseId }: { warehouseId: string }) {
             onClick={zoomIn}
             aria-label="Zoom In"
             style={{
-              width: 36,
-              height: 36,
+              // Law 15 — 44×44 at every width.
+              minWidth: 44,
+              minHeight: 44,
               display: 'grid',
               placeItems: 'center',
               background: 'transparent',
@@ -115,8 +116,9 @@ export default function WarehouseMap({ warehouseId }: { warehouseId: string }) {
             onClick={zoomOut}
             aria-label="Zoom Out"
             style={{
-              width: 36,
-              height: 36,
+              // Law 15 — 44×44 at every width.
+              minWidth: 44,
+              minHeight: 44,
               display: 'grid',
               placeItems: 'center',
               background: 'transparent',
@@ -133,8 +135,8 @@ export default function WarehouseMap({ warehouseId }: { warehouseId: string }) {
           onClick={reset}
           aria-label="Reset Map"
           style={{
-            width: 36,
-            height: 36,
+            minWidth: 44,
+            minHeight: 44,
             display: 'grid',
             placeItems: 'center',
             background: 'var(--card)',

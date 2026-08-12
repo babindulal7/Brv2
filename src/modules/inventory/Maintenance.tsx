@@ -11,6 +11,7 @@ import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { formatMoney, rupees, type Paisa } from '../../lib/money'
 import { toBs, formatBs, formatAd, TODAY } from '../../lib/bs'
+import { useViewport } from '../../lib/device'
 import { DamageTab } from './DamageTab'
 import {
   MAINTENANCE_REGISTRY_FLAGS,
@@ -185,14 +186,25 @@ const MAINTENANCE_DATA: MaintenanceRecord[] = [
 
 type FilterKey = MaintenanceStatus | MaintenanceRegistryFlag | MaintenanceCondition | 'All'
 
+/**
+ * **Every count on this screen is derived from `MAINTENANCE_DATA` above.**
+ *
+ * The chips used to be hand-typed — `All 86`, `Completed 54`, `Scheduled 12` —
+ * over a seed holding three jobs, and the KPI strip claimed 18 active against
+ * the same three rows rendered directly beneath it. Rulings §8: *"a report with
+ * no data source shows 'not tracked yet', never zeros… Never seed a plausible
+ * default."* A screen that states 86 and shows 3 is the strongest form of that
+ * defect, because the contradiction is visible in one glance.
+ *
+ * The reconciliation guard below is kept — it now checks arithmetic that is
+ * derived rather than typed, which is where an invariant belongs.
+ */
 const STATUS_CHIPS: Array<{ label: FilterKey; count: number }> = [
-  { label: 'All', count: 86 },
-  { label: 'Scheduled', count: 12 },
-  { label: 'In Progress', count: 8 },
-  { label: 'Waiting Parts', count: 6 },
-  { label: 'At Vendor', count: 4 },
-  { label: 'Completed', count: 54 },
-  { label: 'Cancelled', count: 2 },
+  { label: 'All', count: MAINTENANCE_DATA.length },
+  ...MAINTENANCE_STATUSES.map((s) => ({
+    label: s as FilterKey,
+    count: MAINTENANCE_DATA.filter((m) => m.status === s).length,
+  })),
 ]
 
 const CHIP_TOTAL = STATUS_CHIPS.find((c) => c.label === 'All')?.count ?? 0
@@ -213,13 +225,16 @@ const CHIP_ERROR: string | null =
     ? null
     : `The status chips sum to ${CHIP_SUM}, but the All chip reads ${CHIP_TOTAL}. They are required to reconcile, so these counts are wrong — see src/modules/inventory/Maintenance.tsx.`
 
-/** Seeded pill counts, keyed by the same union the pills and the filter use. */
-const PILL_COUNTS: Record<MaintenanceRegistryFlag | MaintenanceCondition, number> = {
-  Overdue: 4,
-  'Under Warranty': 12,
-  'Holding a Booking': 3,
-  'Repair Approval Pending': 5,
-}
+/**
+ * Pill counts, keyed by the same union the pills and the filter use — and, like
+ * the status chips above, counted off `MAINTENANCE_DATA` rather than typed. The
+ * pill is a filter: a pill reading 12 that selects 1 row is a broken control,
+ * not just a wrong number.
+ */
+const PILL_COUNTS: Record<MaintenanceRegistryFlag | MaintenanceCondition, number> = Object.fromEntries([
+  ...MAINTENANCE_REGISTRY_FLAGS.map((f) => [f, MAINTENANCE_DATA.filter((m) => (m.flags as string[]).includes(f)).length]),
+  ...MAINTENANCE_CONDITIONS.map((c) => [c, MAINTENANCE_DATA.filter((m) => (m.conditions as string[]).includes(c)).length]),
+]) as Record<MaintenanceRegistryFlag | MaintenanceCondition, number>
 
 interface PillChip {
   key: MaintenanceRegistryFlag | MaintenanceCondition
@@ -289,6 +304,13 @@ const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', v
 const DAY_MS = 86_400_000
 const daysFromToday = (d: Date) => Math.round((d.getTime() - TODAY.getTime()) / DAY_MS)
 
+/** The three statuses that mean a job is in flight. Named once so the KPI and any later filter agree. */
+const ACTIVE_STATUSES: MaintenanceStatus[] = ['In Progress', 'Waiting Parts', 'At Vendor']
+
+/** Past its estimated completion and not yet finished. `Cancelled` cannot be overdue — it is closed (Law 3's terminal action). */
+const isOverdue = (m: MaintenanceRecord): boolean =>
+  Boolean(m.estCompletion) && m.status !== 'Completed' && m.status !== 'Cancelled' && daysFromToday(m.estCompletion as Date) < 0
+
 function Pill({ tone, icon, title, children }: { tone: StatusKey; icon: IconName; title?: string; children: ReactNode }) {
   const c = STATUS[tone]
   return (
@@ -312,6 +334,77 @@ function Pill({ tone, icon, title, children }: { tone: StatusKey; icon: IconName
       <Icon name={icon} size={11} />
       {children}
     </span>
+  )
+}
+
+/**
+ * §7.4's phone layout: `ticket / asset / badge / [primary]`. One card per job,
+ * one primary action — the locked alternative to a 1080px table on a 375px
+ * screen (`lib/device.ts:139`).
+ */
+function JobCard({ record: m, money }: { record: MaintenanceRecord; money: boolean }) {
+  const bs = m.estCompletion ? toBs(m.estCompletion) : null
+  const days = m.estCompletion ? daysFromToday(m.estCompletion) : null
+  return (
+    <article style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', background: 'var(--card)', padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div>
+        <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{m.id}</span>
+        <span style={{ display: 'block', fontWeight: 600, color: 'var(--text)' }}>{m.equipmentName}</span>
+        <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{m.serialNumber}</span>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-xs)' }}>
+        <Pill tone={STATUS_TONE[m.status]} icon={STATUS_ICON[m.status]}>{m.status}</Pill>
+        {m.flags.map((f) => (
+          <Pill key={f} tone={registryFlagTone(f)} icon={MAINTENANCE_REGISTRY_FLAG_ICON[f]} title={REGISTRY_FLAG_TITLE}>
+            {f}
+          </Pill>
+        ))}
+        {m.conditions.map((c) => (
+          <Pill key={c} tone={MAINTENANCE_CONDITION_META[c].token} icon={MAINTENANCE_CONDITION_META[c].icon} title={MAINTENANCE_CONDITION_META[c].why}>
+            {c}
+          </Pill>
+        ))}
+      </div>
+
+      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+        {m.type} · {m.priority} priority
+        {m.technician || m.vendor ? ` · ${m.technician ?? m.vendor}` : ''}
+      </div>
+
+      {m.estCompletion && (
+        <div className="figure" style={{ fontSize: 'var(--t-meta)', color: days !== null && days < 0 ? 'var(--danger-text)' : 'var(--text2)' }}>
+          Due {bs ? formatBs(bs, { suffix: true }) : formatAd(m.estCompletion)} · {formatAd(m.estCompletion)}
+          {days !== null && ` · ${days < 0 ? `${Math.abs(days)} days ago` : days === 0 ? 'today' : `in ${days} days`}`}
+        </div>
+      )}
+
+      {/* §8.3 — omitted for a money-blind role, never blanked. */}
+      {money && (
+        <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+          {m.costActualPaisa
+            ? `${formatMoney(m.costActualPaisa)} actual`
+            : m.costEstPaisa > 0
+              ? `${formatMoney(m.costEstPaisa)} estimate`
+              : 'Not quoted'}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+        {m.bookingImpact ? (
+          <Link to={`/rentals/${m.bookingImpact}`} className="identifier" style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none', fontSize: 'var(--t-meta)' }}>
+            {m.bookingImpact}
+          </Link>
+        ) : (
+          <span style={{ color: 'var(--muted)', fontSize: 'var(--t-meta)' }}>No booking held</span>
+        )}
+        <Unavailable reason="The maintenance job detail screen is not built yet.">
+          <Button icon="external_link" disabled>
+            Open job
+          </Button>
+        </Unavailable>
+      </div>
+    </article>
   )
 }
 
@@ -373,6 +466,14 @@ function SeedDefectBanner({ message }: { message: string }) {
 export function Maintenance() {
   const money = useCanViewMoney()
   const { user } = useAuth()
+  /* Spec 07 §7.4: "TABLET: same, fewer columns.  PHONE: card rows." — and the
+     shell block at the top of all eleven specs repeats "Tables become card rows
+     below 768". This table's `minWidth: 1080` made a 375px phone a sideways
+     scroll rather than a layout; the sibling Equipment tab in the same page
+     (`Inventory.tsx:1815`) already branched and this one did not. */
+  const viewport = useViewport()
+  const desktop = viewport === 'desktop'
+  const phone = viewport === 'phone'
   // gateContext() returns a fresh object literal on every call (see
   // lib/fieldGating.ts), so calling it inline on every render would defeat
   // the useMemo below — its dependency array would never see a stable
@@ -390,16 +491,60 @@ export function Maintenance() {
    * placeholder that a Warehouse session sees blanked. Bookings Held is the
    * figure the floor actually needs, so it is there for everyone.
    */
+  /**
+   * ⚠ All four counts were hand-typed — 18 / 12 / 4 / 3 — over a seed of three
+   * jobs rendered in the table directly below, and the money tile printed a
+   * `rupees(45000)` literal under the note "Actual, jobs completed" with no
+   * relationship to any row's `costActualPaisa`. Rulings §8 forbids exactly
+   * this, and two of the figures were trivially checkable against the rows
+   * beside them: Overdue is 1, not 4, and Bookings Held is 1, not 3.
+   *
+   * Each is now counted off `MAINTENANCE_DATA`, the same source
+   * `filteredRecords` renders, so the strip and the list cannot disagree.
+   */
   const kpis: Kpi[] = [
-    { label: 'Active Maintenance', value: '18', icon: 'tool', accent: 'progress', note: 'In progress, waiting parts, at vendor' },
-    { label: 'Scheduled', value: '12', icon: 'calendar', accent: 'primary', note: 'Upcoming jobs' },
-    { label: 'Overdue', value: '4', icon: 'timer', accent: 'danger', note: 'Past estimated completion' },
+    {
+      label: 'Active Maintenance',
+      value: String(MAINTENANCE_DATA.filter((m) => ACTIVE_STATUSES.includes(m.status)).length),
+      icon: 'tool',
+      accent: 'progress',
+      note: 'In progress, waiting parts, at vendor',
+    },
+    {
+      label: 'Scheduled',
+      value: String(MAINTENANCE_DATA.filter((m) => m.status === 'Scheduled').length),
+      icon: 'calendar',
+      accent: 'primary',
+      note: 'Upcoming jobs',
+    },
+    {
+      label: 'Overdue',
+      value: String(MAINTENANCE_DATA.filter(isOverdue).length),
+      icon: 'timer',
+      accent: 'danger',
+      note: 'Past estimated completion',
+    },
     // Paired with the `Holding a Booking` chip below, and worded so it cannot be read
     // as §1.9's client-scoped `Blocked` flag.
-    { label: 'Bookings Held', value: '3', icon: 'alert_triangle', accent: 'danger', note: 'A booking is waiting on a repair' },
+    {
+      label: 'Bookings Held',
+      value: String(MAINTENANCE_DATA.filter((m) => Boolean(m.bookingImpact)).length),
+      icon: 'alert_triangle',
+      accent: 'danger',
+      note: 'A booking is waiting on a repair',
+    },
   ]
   if (money) {
-    kpis.push({ label: 'Cost This Month', value: formatMoney(rupees(45000)), icon: 'receipt', accent: 'neutral', note: 'Actual, jobs completed' })
+    // `MaintenanceRecord` carries no completion date, so "this month" cannot be
+    // selected for and the figure cannot be derived. Rulings §8: it says so,
+    // rather than printing a plausible Rs 45,000.
+    kpis.push({
+      label: 'Cost This Month',
+      value: 'Not tracked yet',
+      icon: 'receipt',
+      accent: 'neutral',
+      note: 'No completion date is recorded, so a monthly actual cannot be selected',
+    })
   }
 
   const filteredRecords = useMemo(() => {
@@ -602,9 +747,19 @@ export function Maintenance() {
               onAction={clearFilters}
             />
           </div>
+        ) : phone ? (
+          /* §7.4 PHONE — card rows, one primary action each. */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', padding: 'var(--sp-md)' }}>
+            {filteredRecords.map((m) => (
+              <JobCard key={m.id} record={m} money={money} />
+            ))}
+          </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
+            {/* §7.4 TABLET — "same, fewer columns". Technician, Vendor and
+                Booking Impact are dropped there, which takes the 1080px minimum
+                down inside the 768–1179 band instead of scrolling it sideways. */}
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: desktop ? 1080 : 660 }}>
               <thead>
                 <tr style={{ background: 'var(--th-bg)' }}>
                   <th style={{ ...th, width: 30 }}>
@@ -619,12 +774,12 @@ export function Maintenance() {
                   <th style={th}>Job / Equipment</th>
                   <th style={th}>Type &amp; Priority</th>
                   <th style={th}>Status &amp; Flags</th>
-                  <th style={th}>Technician</th>
-                  <th style={th}>Vendor</th>
+                  {desktop && <th style={th}>Technician</th>}
+                  {desktop && <th style={th}>Vendor</th>}
                   <th style={th}>Est. Completion</th>
                   {/* §8.3 — omitted for Warehouse, never blanked. */}
                   {money && <th style={{ ...th, textAlign: 'right' }}>Cost (Est / Actual)</th>}
-                  <th style={th}>Booking Impact</th>
+                  {desktop && <th style={th}>Booking Impact</th>}
                   <th style={{ ...th, textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
@@ -706,8 +861,8 @@ export function Maintenance() {
                           </span>
                         )}
                       </td>
-                      <td style={td}>{m.technician ?? <span style={{ color: 'var(--muted)' }}>—</span>}</td>
-                      <td style={td}>{m.vendor ?? <span style={{ color: 'var(--muted)' }}>—</span>}</td>
+                      {desktop && <td style={td}>{m.technician ?? <span style={{ color: 'var(--muted)' }}>—</span>}</td>}
+                      {desktop && <td style={td}>{m.vendor ?? <span style={{ color: 'var(--muted)' }}>—</span>}</td>}
                       <td style={td}>
                         {m.estCompletion ? (
                           <>
@@ -747,15 +902,17 @@ export function Maintenance() {
                           )}
                         </td>
                       )}
-                      <td style={td}>
-                        {m.bookingImpact ? (
-                          <Link to={`/rentals/${m.bookingImpact}`} className="identifier" style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none', fontSize: 'var(--t-meta)' }}>
-                            {m.bookingImpact}
-                          </Link>
-                        ) : (
-                          <span style={{ color: 'var(--muted)' }}>None</span>
-                        )}
-                      </td>
+                      {desktop && (
+                        <td style={td}>
+                          {m.bookingImpact ? (
+                            <Link to={`/rentals/${m.bookingImpact}`} className="identifier" style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none', fontSize: 'var(--t-meta)' }}>
+                              {m.bookingImpact}
+                            </Link>
+                          ) : (
+                            <span style={{ color: 'var(--muted)' }}>None</span>
+                          )}
+                        </td>
+                      )}
                       <td style={{ ...td, textAlign: 'right' }}>
                         <Unavailable reason="The maintenance job detail screen is not built yet.">
                           <Button icon="external_link" disabled>
