@@ -161,11 +161,38 @@ TDS (no ruled rate), depreciation asset lives and the IRD pool rates (no source 
 and ROI (needs a purchase cost no column carries — it ships as "Top 8 by revenue", because
 printing real revenue under an ROI label is a fabricated figure with a correct number in it).
 
+### Then a cross-cutting sweep — `201f772`
+Five independent lenses (responsive · laws · fabrication · regression · spec conformance)
+raised **67 findings**. **24 were verified NOT-REAL** against the current files — stale line
+numbers from an earlier pass that had already closed them — and nothing was changed to
+satisfy those. 22 fixed, 2 deferred, the rest already closed.
+
+What it caught that the gates could not:
+- **Six screens still shipped one layout.** `ClientsDirectory` did not render its Filters
+  rail *at all* below 768. Five of the nine bespoke reports wrapped their **entire body** in
+  `Rail`, so the whole report collapsed to a 28px handle at tablet and phone. `Page.tsx`
+  gained `ReflowRail`/`useRailGridColumns`/`useBandColumns`; all ten report screens use them.
+  Packing, Handover and Reset each hid an 820–860px table behind `overflowX` at phone.
+  `Modal` learned the three bands, which fixed every sheet in the rebuild at once.
+- **More invented figures.** `CasesReports` counted off six string literals and a hand-typed
+  trend against a `CASE_ROWS` table sharing no id with the real register. `SystemMonitor`
+  showed invented uptime, latency, error rate, sessions, storage, CPU and incidents. All now
+  name their missing source.
+- **Calendar's KPI band** — deleted in the first pass without prose authority — **restored,
+  with a regression test.**
+- **Law 6:** `GateChecklist` built a padlock and "Pending Billing" for money-blind roles; the
+  financial cell is no longer constructed for them at all.
+- **Law 17:** `data/booking.ts` rendered "Customer pickup" on Booking Detail charge rows. The
+  `delivery_type` enum member keeps its schema spelling, guarded by a test.
+- **Law 13:** `NewRental` read `window.innerWidth` imperatively, so crossing 768 never
+  reached the accordion.
+
 ### Verified
 | Check | How | Result |
 |---|---|---|
 | Typecheck | `node node_modules/typescript/bin/tsc --noEmit` | exit 0, 0 errors |
-| Tests | `npx vitest run` | **1,794 passing, 72 files** |
+| Tests | `npx vitest run` | **1,800 passing, 73 files** |
+| Build | `npx vite build` | clean, precache 147 entries |
 | Nothing over-deleted | `git diff --diff-filter=D` vs `6fb1c62` | only the 2 authorised files + 2 `.tmp` scratch tests |
 
 **Not verified in a browser.** `VITE_DEV_AUTH_BYPASS` is off — correctly, since screens
