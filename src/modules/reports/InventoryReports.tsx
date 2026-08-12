@@ -1,4 +1,6 @@
 import { PageHeader, Card, Rail, cardStyle } from '../../components/ui/Page'
+import { ReportToolbar } from '../../components/ui/ReportToolbar'
+import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { INVENTORY_METRICS, ASSET_HEALTH, TOP_CATEGORIES } from '../../data/inventoryReports'
 import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
@@ -14,6 +16,38 @@ function InventoryKpiCard({ label, value, accent, note }: any) {
   )
 }
 
+/**
+ * The export body.
+ *
+ * ⚠ Takes `money` and drops the whole Top Categories by Value section without
+ * it — the same cut the page makes. This report is NOT restricted as a whole,
+ * because asset counts, utilization and audit accuracy are operational facts a
+ * warehouse role needs; only the valuation is money. An export that carried the
+ * valuation regardless would hand a money-blind role, in a file, the one table
+ * the screen withholds.
+ */
+function inventoryCsv(money: boolean): ReportCsvRow[] {
+  return [
+    ['Figure', 'Value'],
+    ['Total assets', INVENTORY_METRICS.totalAssets],
+    ['Utilization', `${INVENTORY_METRICS.utilization}%`],
+    ['Available', INVENTORY_METRICS.available],
+    ['Inventory accuracy', `${INVENTORY_METRICS.inventoryAccuracy}%`],
+    [],
+    ['Asset health distribution'],
+    ['Status', 'Count', 'Percentage'],
+    ...ASSET_HEALTH.map((h): ReportCsvRow => [h.status, h.count, `${h.percentage}%`]),
+    ...(money
+      ? ([
+          [],
+          ['Top categories by value'],
+          ['Category', 'Asset count', 'Total value'],
+          ...TOP_CATEGORIES.map((c): ReportCsvRow => [c.name, c.count, formatMoney(c.value as Paisa)]),
+        ] as ReportCsvRow[])
+      : []),
+  ]
+}
+
 export default function InventoryReports() {
   const money = useCanViewMoney()
   return (
@@ -23,6 +57,13 @@ export default function InventoryReports() {
         title="Inventory Reports"
         description="Monitor stock levels, asset health, and overall inventory accuracy."
       />
+
+      {/*
+        Export only. `data/inventoryReports` is a 20-line snapshot — a count per
+        health status and a value per category — with no date and no warehouse
+        column, so there is nothing here for a range or a branch to narrow.
+      */}
+      <ReportToolbar title="Inventory Reports" csv={{ filename: 'inventory-reports', build: () => inventoryCsv(money) }} />
 
       <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
         <InventoryKpiCard

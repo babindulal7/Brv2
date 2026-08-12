@@ -6,6 +6,8 @@ import {
   canApproveDiscount,
   canVoidInvoice,
   canPerformOperations,
+  canApproveDamage,
+  canApproveLateFeeWaiver,
   canRecordPayment,
   canOverrideCreditLimit,
   canManageSettings,
@@ -189,5 +191,60 @@ describe('the Client role holds no staff capability', () => {
     expect(canManageSettings('Client')).toBe(false)
     expect(canApproveDiscount('Client', 5)).toBe(false)
     expect(isStaff('Client')).toBe(false)
+  })
+})
+
+/* ── damage sign-off — ruled 12 Aug 2026: Owner and Manager only ─────────── */
+
+describe('canApproveDamage', () => {
+  it('grants an Owner-level charge to the Owner alone', () => {
+    const allowed = ALL_ROLES.filter((r) => canApproveDamage(r, 'Owner'))
+    expect(allowed).toEqual(['Owner'])
+  })
+
+  it('grants a Manager-level charge to Owner and Manager, and nobody else', () => {
+    const allowed = ALL_ROLES.filter((r) => canApproveDamage(r, 'Manager'))
+    expect(allowed).toEqual(['Owner', 'Manager'])
+  })
+
+  /*
+   * The regression this exists to catch. DamageTab.tsx used to compute the rule
+   * inline as `role === 'Owner' || role === 'Admin' || role === 'Manager'`, so
+   * an Admin could sign off a damage charge. The 12 Aug ruling excludes Admin.
+   */
+  it('excludes Admin at both levels', () => {
+    expect(canApproveDamage('Admin', 'Manager')).toBe(false)
+    expect(canApproveDamage('Admin', 'Owner')).toBe(false)
+  })
+
+  it('never lets a Manager sign off what the engine routed to the Owner', () => {
+    expect(canApproveDamage('Manager', 'Manager')).toBe(true)
+    expect(canApproveDamage('Manager', 'Owner')).toBe(false)
+  })
+})
+
+/* ── late-fee waiver — lib/lateFee.ts:26, made enforceable ───────────────── */
+
+describe('canApproveLateFeeWaiver', () => {
+  it('is Owner and Manager, and nobody else', () => {
+    const allowed = ALL_ROLES.filter((r) => canApproveLateFeeWaiver(r))
+    expect(allowed).toEqual(['Owner', 'Manager'])
+  })
+
+  /*
+   * Deliberately unlike canApproveDamage, which bands at Rs 25,000, and unlike
+   * canApproveDiscount, which bands by percentage. lib/lateFee's
+   * WAIVER_NEEDS_APPROVER is unconditional: waiving is giving money away, and the
+   * direction is what makes it an approval, not the amount. A threshold here
+   * would be an invented rule.
+   */
+  it('takes no amount — every waiver needs the same rank whatever its size', () => {
+    expect(canApproveLateFeeWaiver.length).toBe(1)
+  })
+
+  it('excludes Admin and Accounts, who hold other money capabilities', () => {
+    expect(canApproveLateFeeWaiver('Admin')).toBe(false)
+    expect(canApproveLateFeeWaiver('Accounts')).toBe(false)
+    expect(canVoidInvoice('Accounts')).toBe(true)
   })
 })

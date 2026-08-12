@@ -26,12 +26,14 @@ export const cardStyle = {
 } as const
 
 export function Card({
+  id,
   title,
   action,
   children,
   style,
   bodyStyle,
 }: {
+  id?: string
   title?: string
   action?: ReactNode
   children: ReactNode
@@ -39,7 +41,7 @@ export function Card({
   bodyStyle?: CSSProperties
 }) {
   return (
-    <section style={{ ...cardStyle, display: 'flex', flexDirection: 'column', minWidth: 0, ...style }}>
+    <section id={id} style={{ ...cardStyle, display: 'flex', flexDirection: 'column', minWidth: 0, ...style }}>
       {title && (
         <div
           style={{

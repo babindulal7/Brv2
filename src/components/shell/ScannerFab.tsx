@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Icon from '../ui/Icon'
 import { BrowserMultiFormatReader } from '@zxing/browser'
 import { useViewport } from '../../lib/device'
-import { BOTTOM_BAR_HEIGHT } from './BottomBar'
+import { BAR_BOX } from './BottomBar'
 
 /**
  * **Scanner — Foundation v2.0 §5.5.**
@@ -23,11 +23,34 @@ const CONTEXTS = [
 
 type Feedback = { tone: 'ok' | 'wrong-job' | 'unknown' | 'duplicate'; text: string } | null
 
+/**
+ * The one way another surface reaches this scanner.
+ *
+ * The updated wireframe gives the phone bar a centre **Scan ⦿** slot as well as
+ * keeping the FAB at every width. That slot must *trigger this component* — a
+ * second scanner would mean a second camera lifecycle, a second continuous-mode
+ * flag and two places for the wrong-job tone to drift. So `BottomBar` dispatches
+ * this event and the panel below opens, exactly as Ctrl/⌘-B already does.
+ *
+ * Nothing else about this file changed: it was never width-gated (`phone` only
+ * lifts the FAB clear of the bottom bar), so it already satisfied the spec's
+ * "exists at every width — not phone-only".
+ */
+export const SCANNER_TOGGLE_EVENT = 'br:scanner:toggle'
+
+/** Open or close the single Scanner from anywhere. */
+export function toggleScanner(): void {
+  window.dispatchEvent(new CustomEvent(SCANNER_TOGGLE_EVENT))
+}
+
 export default function ScannerFab() {
   /*
-   * §5.5 locks this "bottom-right, at every width" — the phone bottom bar
-   * (BottomBar.tsx) never carries a Scanner slot itself, it only makes room
-   * beneath this FAB so the two don't overlap.
+   * The only thing `phone` decides is where the FAB sits: lifted clear of the
+   * bottom bar's full box (58px + the home-indicator inset) instead of 20px off
+   * the floor. It never decides *whether* the FAB renders — §5.5 and the
+   * wireframe both keep it at every width. The phone bar's centre Scan slot is
+   * a second trigger for this same panel, not a replacement for it; see the doc
+   * block above `SCANNER_TOGGLE_EVENT`.
    */
   const phone = useViewport() === 'phone'
   const [open, setOpen] = useState(false)
@@ -56,11 +79,15 @@ export default function ScannerFab() {
         setOpen(false)
       }
     }
+    /* The phone bar's centre Scan slot — same panel, not a second scanner. */
+    const external = () => setOpen((v) => !v)
     document.addEventListener('keydown', handleKey)
     document.addEventListener('pointerdown', away)
+    window.addEventListener(SCANNER_TOGGLE_EVENT, external)
     return () => {
       document.removeEventListener('keydown', handleKey)
       document.removeEventListener('pointerdown', away)
+      window.removeEventListener(SCANNER_TOGGLE_EVENT, external)
     }
   }, [open])
 
@@ -175,7 +202,16 @@ export default function ScannerFab() {
   const bannerFg = tone === 'ok' ? 'var(--st-in-fg)' : tone === 'wrong-job' ? 'var(--st-danger-fg)' : 'var(--st-progress-fg)'
 
   return (
-    <div data-scanner data-floor="true" style={{ position: 'fixed', right: 20, bottom: phone ? BOTTOM_BAR_HEIGHT + 16 : 20, zIndex: 60 }}>
+    <div
+      data-scanner
+      data-floor="true"
+      style={{
+        position: 'fixed',
+        right: 20,
+        bottom: phone ? `calc(16px + ${BAR_BOX})` : 20,
+        zIndex: 60,
+      }}
+    >
       {open && (
         <div
           ref={panel}
@@ -195,9 +231,25 @@ export default function ScannerFab() {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
             <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>Scanner</div>
-            <button 
+            <button
+              type="button"
               onClick={() => setOpen(false)}
-              style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 'var(--sp-xs)' }}
+              aria-label="Close scanner"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--muted)',
+                cursor: 'pointer',
+                /* Law 15 — 44×44, and this panel is now reachable from the phone
+                   bar's Scan slot, so it is a thumb target. `-10px` margin keeps
+                   the icon optically where the render puts it while the hit area
+                   grows outward. */
+                minWidth: 44,
+                minHeight: 44,
+                margin: -10,
+                display: 'grid',
+                placeItems: 'center',
+              }}
               title="Close (Esc)"
             >
               <Icon name="close" size={16} />
@@ -218,7 +270,12 @@ export default function ScannerFab() {
                   aria-pressed={on}
                   title={c.hint}
                   style={{
-                    height: 30,
+                    /* Law 15 — 44 minimum, not the render's 30. These six are
+                       the gate contexts (Packing · Handover · Return · Reset),
+                       and PLAN.md §0 calls a gate accessibility failure a
+                       release blocker. Laws outrank the wireframe's
+                       proportions. */
+                    minHeight: 44,
                     borderRadius: 7,
                     border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
                     background: on ? 'var(--st-primary-bg)' : 'transparent',
@@ -268,11 +325,14 @@ export default function ScannerFab() {
               }}
               style={{
                 width: '100%',
-                height: 36,
+                /* Law 15. `--app-bg` was never defined in `theme.css` and had no
+                   fallback, so this field painted transparent in both themes —
+                   the token is `--app`. */
+                height: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-sm)',
                 border: '1px solid var(--border)',
-                background: 'var(--app-bg)',
+                background: 'var(--app)',
                 color: 'var(--text)',
                 fontSize: 'var(--t-ui)',
                 fontFamily: 'inherit'

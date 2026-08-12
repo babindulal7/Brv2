@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Input, Select } from '../../components/ui'
+import { ConfirmDialog, Input, Select } from '../../components/ui'
 import { Card, PageHeader, Button, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
 import { EmptyState } from '../../components/ui/StateViews'
 import { useToast } from '../../components/ui/Toast'
@@ -12,6 +12,9 @@ import { STATUS } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
+import { validateDiscount } from '../../lib/discount'
+import type { DiscountValidationResult } from '../../lib/discount'
+import { getSetting } from '../../lib/settingsStore'
 import { price, formatMoney, rupees, roundHalfUp } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { CLIENTS_DATA } from '../../data/clients'
@@ -23,6 +26,7 @@ import type { CrewMember } from '../../data/crew'
 import { useAuth } from '../../lib/auth'
 import type { ActionContext } from '../../actions/core'
 import { gateContext, canViewMoneyField } from '../../lib/fieldGating'
+import { canRecordPayment } from '../../lib/rbac'
 import {
   AddClientModal,
   AddItemPanel,
@@ -30,6 +34,8 @@ import {
   ClientHealthEye,
   ClientHistoryDrawer,
   ClientQuickView,
+  DateTimeField,
+  DraftEmailModal,
   clientHealth,
 } from './booking'
 import type { AddItemSource, BookingLineDraft, BookingWindow } from './booking'
@@ -69,7 +75,31 @@ import type { AddItemSource, BookingLineDraft, BookingWindow } from './booking'
  */
 
 const DAY = 86400000
-const VAT_PCT = 13
+
+/**
+ * The VAT rate is **read from Settings**, never a literal.
+ *
+ * `VAT_PCT = 13` used to live here and is deleted: `PLAN.md` §5 Conventions
+ * bans "a hardcoded VAT rate", and `WIREFRAME_RULINGS_2026-08-12.md` §7 rules
+ * that spec 01's drawn `VAT 13%` is read as `VAT {rate}%` off
+ * `settingsStore`'s `vatRatePercent`. Read once per mount — the same shape
+ * every other consumer of `getSetting` uses; a rate changed in another tab
+ * lands on the next mount, not mid-booking.
+ */
+function readVatRatePercent(): number {
+  const n = Number(getSetting('vatRatePercent'))
+  return Number.isFinite(n) ? n : 0
+}
+
+/**
+ * 01_NEW_RENTAL §1.1 rail — `Discount  chips`.
+ *
+ * Law 10 caps discounts at 25%, so **no chip may exceed 25** and none does.
+ * Anything above 10 opens the reason + approver popover before it can be
+ * applied; `lib/discount.ts`'s `validateDiscount()` is what actually gates
+ * Confirm, so a chip can never quietly authorise itself.
+ */
+const DISCOUNT_CHIPS = [0, 5, 10, 15, 20, 25] as const
 
 /** A bookable equipment row, flattened from `PARENTS`' parent/child tree — one row per serialized unit, or per non-serialized SKU. */
 interface CatalogueItem {
@@ -152,13 +182,37 @@ interface CrewLine {
   mealsPaisa: Paisa
 }
 
+// redesign v1 §6 — "Documents & Review" is no longer a section in the body;
+// it moved into the rail as the Review + Documents cards, so the checklist
+// that decides whether Confirm is ready sits beside Confirm instead of a
+// screen away from it.
+/**
+ * 01_NEW_RENTAL §1.1 draws five boxes down the main column — CLIENT · DATES ·
+ * EQUIPMENT · ＋Crew · ＋Delivery — so Client & Schedule splits into Client and
+ * Dates, and Crew & Transport splits into Crew and Delivery. Pricing &
+ * Payments is **not** in the drawing and stays anyway: the wireframes are a
+ * layout spec, not a content inventory (`WIREFRAME_RULINGS_2026-08-12.md` §1
+ * names this section explicitly as kept), and the rail is a summary of it
+ * rather than a replacement for it.
+ */
 const SECTIONS = [
-  'Client & Schedule',
+  'Client',
+  'Dates',
   'Equipment, Bundles & Services',
-  'Crew & Transport',
+  'Crew',
+  'Delivery',
   'Pricing & Payments',
-  'Documents & Review',
 ] as const
+
+/** redesign v1 §6 — one review item per fact, shared by the rail's Review
+ *  card and the id each maps to. Payments and Documents don't have their own
+ *  body section any more; Payments jumps to Pricing & Payments and Documents
+ *  jumps to the rail's own Documents card. */
+interface ReviewItem {
+  label: string
+  ok: boolean
+  targetId: string
+}
 
 const inputStyle = {
   width: '100%',
@@ -224,6 +278,41 @@ function TouchInset() {
   )
 }
 
+/**
+ * redesign v1 §7.4 — qty and days as steppers rather than boxed number
+ * inputs, so the equipment table reads as a table again instead of a form
+ * embedded in one. Each glyph button keeps the 44×44 hit area via
+ * `TouchInset` while staying visually compact for table density.
+ */
+function Stepper({ value, min = 1, onChange, disabled, label }: { value: number; min?: number; onChange: (n: number) => void; disabled?: boolean; label: string }) {
+  const btnStyle = (dis: boolean) => ({
+    position: 'relative' as const,
+    width: 20,
+    height: 20,
+    display: 'grid' as const,
+    placeItems: 'center' as const,
+    borderRadius: 'var(--r-xs)',
+    border: '1px solid var(--border)',
+    background: 'var(--card2)',
+    color: 'var(--text2)',
+    cursor: dis ? 'not-allowed' : 'pointer',
+    opacity: dis ? 0.5 : 1,
+  })
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+      <button type="button" className="press" aria-label={`Decrease ${label}`} disabled={disabled || value <= min} onClick={() => onChange(Math.max(min, value - 1))} style={btnStyle(Boolean(disabled) || value <= min)}>
+        <TouchInset />
+        <Icon name="minus" size={10} />
+      </button>
+      <span className="figure" style={{ minWidth: 18, textAlign: 'center', fontSize: 'var(--t-meta)', fontWeight: 600, color: disabled ? 'var(--muted)' : 'var(--text)' }}>{value}</span>
+      <button type="button" className="press" aria-label={`Increase ${label}`} disabled={disabled} onClick={() => onChange(value + 1)} style={btnStyle(Boolean(disabled))}>
+        <TouchInset />
+        <Icon name="plus" size={10} />
+      </button>
+    </div>
+  )
+}
+
 function Field({
   label,
   children,
@@ -269,16 +358,20 @@ function Field({
 }
 
 /**
- * §59 — **the** section header. All five sections render through this one
+ * §59 — **the** section header. All sections render through this one
  * component; there is no second heading style anywhere on the page, which is
  * what stops Section 4 slowly drifting away from Section 1.
+ *
+ * redesign v1 §7.1 — plain heading and its collapse chevron only, no numbered
+ * pill. A numbered circle reads as step one of a wizard, and the footer says
+ * explicitly "Sections are not a wizard" — the pills contradicted the note.
  *
  * Equipment is expanded by default (§6); on a phone the lower sections start
  * collapsed (§65) and their header carries a one-line summary so a collapsed
  * section is still informative.
  */
 function Section({
-  no,
+  id,
   title,
   open,
   onToggle,
@@ -286,7 +379,8 @@ function Section({
   summary,
   children,
 }: {
-  no: number
+  /** Scroll target for the rail's Review card — see `jumpToSection`. */
+  id?: string
   title: string
   open: boolean
   onToggle: () => void
@@ -296,15 +390,8 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <section style={{ ...cardStyle, minWidth: 0 }}>
+    <section id={id} style={{ ...cardStyle, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', borderBottom: open ? '1px solid var(--border)' : 'none' }}>
-        <span
-          className="figure"
-          aria-hidden
-          style={{ width: 20, height: 20, borderRadius: 5, display: 'grid', placeItems: 'center', background: 'var(--btn-primary-bg)', color: 'var(--btn-primary-fg)', fontSize: 'var(--t-th)', fontWeight: 700, flexShrink: 0 }}
-        >
-          {no}
-        </span>
         <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>{title}</h2>
         {!open && summary && (
           <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -441,6 +528,132 @@ function OperationsMenu({ disabled, reason, items }: { disabled: boolean; reason
   )
 }
 
+/**
+ * redesign v1 §5 — `Send Quote` becomes a split button: `[Send Quote ▾]` →
+ * Email to client · Download PDF · Copy link · Print. Same shell as
+ * `OperationsMenu` above (outside-click + Escape close), but each item
+ * carries a real handler — Operations' items are inert by design (§4.1,
+ * nothing to dispatch to at Draft); this menu's are not.
+ *
+ * Download PDF and Copy link have no generator/link service in this build —
+ * disabled with the reason stated, the same "honest gap" shape
+ * `itemCatalogue.ts`'s `SERVICES_UNAVAILABLE_REASON` and Settings.tsx's `N()`
+ * destinations already use, rather than a button that does nothing.
+ */
+function SendQuoteMenu({ onEmail }: { onEmail: () => void }) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDocDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node | null)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDocDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDocDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const items: Array<{ label: string; icon: IconName; onClick?: () => void; disabledReason?: string }> = [
+    { label: 'Email to client', icon: 'mail', onClick: onEmail },
+    { label: 'Download PDF', icon: 'download', disabledReason: 'No PDF generator is connected in this build.' },
+    { label: 'Copy link', icon: 'external_link', disabledReason: 'No shareable-link service is connected in this build.' },
+    { label: 'Print', icon: 'file', onClick: () => window.print() },
+  ]
+
+  return (
+    <div ref={rootRef} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        className="press"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Send Quote"
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          height: 34,
+          padding: '0 12px',
+          borderRadius: 'var(--r-btn)',
+          background: 'transparent',
+          color: 'var(--text2)',
+          border: '1px solid var(--btn-secondary-border)',
+          fontFamily: 'inherit',
+          fontSize: 'var(--t-meta)',
+          fontWeight: 600,
+          whiteSpace: 'nowrap',
+          cursor: 'pointer',
+        }}
+      >
+        Send Quote
+        <Icon name="chevron_down" size={14} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          aria-label="Send Quote options"
+          style={{
+            position: 'absolute',
+            zIndex: 40,
+            top: 'calc(100% + 6px)',
+            right: 0,
+            minWidth: 200,
+            padding: 5,
+            background: 'var(--dropdown)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--r-card)',
+            boxShadow: 'var(--shadow-modal)',
+          }}
+        >
+          {items.map((it) => (
+            <button
+              key={it.label}
+              type="button"
+              role="menuitem"
+              className="press"
+              disabled={!it.onClick}
+              title={it.disabledReason}
+              onClick={() => {
+                it.onClick?.()
+                setOpen(false)
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--sp-sm)',
+                width: '100%',
+                minHeight: 40,
+                padding: '0 9px',
+                borderRadius: 'var(--r-btn)',
+                border: 'none',
+                background: 'transparent',
+                color: 'var(--text)',
+                fontFamily: 'inherit',
+                fontSize: 'var(--t-meta)',
+                fontWeight: 600,
+                textAlign: 'left',
+                cursor: it.onClick ? 'pointer' : 'not-allowed',
+                opacity: it.onClick ? 1 : 0.5,
+              }}
+            >
+              <Icon name={it.icon} size={15} style={{ color: 'var(--text2)' }} />
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** §6 — one strip cell: small label, large value, small support line. */
 function StripCell({ label, value, support, tone, big, style }: { label: string; value: string; support?: string | undefined; tone?: string | undefined; big?: boolean | undefined; style?: React.CSSProperties | undefined }) {
   return (
@@ -492,6 +705,370 @@ function MoneyRow({ label, value, tone, strong, big }: { label: string; value: s
   )
 }
 
+/** Off-screen but in the accessibility tree — no global `.sr-only` exists in this build. */
+const srOnly = {
+  position: 'absolute' as const,
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap' as const,
+  border: 0,
+}
+
+/* ── Equipment grouping — 01_NEW_RENTAL Notes: "Equipment list renders
+ *    parent-first with children nested." ─────────────────────────────────── */
+
+interface LineGroup {
+  key: string
+  kind: 'bundle' | 'model'
+  /** The parent row's name — a bundle name, or the model name off its units. */
+  label: string
+  lines: Line[]
+}
+
+/**
+ * Parent-first grouping. The key already exists in the data — a line added as
+ * part of a bundle carries `bundleCode`/`bundleName` (stamped in `addDrafts`),
+ * and every serialised unit of one model shares that model's `name`. Only the
+ * *rendering* was flat, so this derives the tree and invents nothing.
+ *
+ * Insertion order is preserved: a group takes the position of its first line,
+ * so adding a second unit of a model never reshuffles the table.
+ */
+function groupLines(lines: readonly Line[]): LineGroup[] {
+  const order: string[] = []
+  const byKey = new Map<string, LineGroup>()
+  for (const l of lines) {
+    const key = l.bundleCode ? `bundle:${l.bundleCode}` : `model:${l.name}`
+    let g = byKey.get(key)
+    if (!g) {
+      g = {
+        key,
+        kind: l.bundleCode ? 'bundle' : 'model',
+        label: l.bundleCode ? (l.bundleName ?? l.bundleCode) : l.name,
+        lines: [],
+      }
+      byKey.set(key, g)
+      order.push(key)
+    }
+    g.lines.push(l)
+  }
+  return order.map((k) => byKey.get(k)).filter((g): g is LineGroup => g !== undefined)
+}
+
+/**
+ * A bundle always nests (parent → children is what a bundle *is*). A model
+ * nests once it holds more than one physical unit; a single line would
+ * otherwise be a parent row with one identical child under it.
+ */
+function isNested(g: LineGroup): boolean {
+  return g.kind === 'bundle' || g.lines.length > 1
+}
+
+/**
+ * The `⋮` the wireframe draws on every parent row. Only real actions appear —
+ * there is no third "…" entry standing in for something unbuilt.
+ */
+function RowMenu({ label, items }: { label: string; items: Array<{ label: string; icon: IconName; onClick: () => void }> }) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node | null)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div ref={rootRef} style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        type="button"
+        className="press"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        onClick={() => setOpen((o) => !o)}
+        style={{ position: 'relative', width: 26, height: 26, display: 'grid', placeItems: 'center', borderRadius: 'var(--r-xs)', border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer' }}
+      >
+        <TouchInset />
+        <Icon name="more_vert" size={15} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          aria-label={label}
+          style={{ position: 'absolute', zIndex: 40, top: 'calc(100% + 4px)', right: 0, minWidth: 210, padding: 5, background: 'var(--dropdown)', border: '1px solid var(--border)', borderRadius: 'var(--r-card)', boxShadow: 'var(--shadow-modal)' }}
+        >
+          {items.map((it) => (
+            <button
+              key={it.label}
+              type="button"
+              role="menuitem"
+              className="press"
+              onClick={() => {
+                it.onClick()
+                setOpen(false)
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', width: '100%', minHeight: 40, padding: '0 9px', borderRadius: 'var(--r-btn)', border: 'none', background: 'transparent', color: 'var(--text)', fontFamily: 'inherit', fontSize: 'var(--t-meta)', fontWeight: 600, textAlign: 'left', cursor: 'pointer' }}
+            >
+              <Icon name={it.icon} size={15} style={{ color: 'var(--text2)' }} />
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The rail's `VAT {rate}%  [on ▢]` control.
+ *
+ * Law 11 — never colour alone: the switch carries an icon and the words On /
+ * Off beside it, so the state is readable with no colour perception at all.
+ * The *rate* is the caller's, read from Settings; this component never knows
+ * a number.
+ */
+function VatToggle({ ratePercent, on, onChange }: { ratePercent: number; on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      className="press"
+      onClick={() => onChange(!on)}
+      style={{
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 7,
+        width: '100%',
+        minHeight: 30,
+        padding: '3px 2px',
+        border: 'none',
+        background: 'transparent',
+        color: 'var(--text2)',
+        fontFamily: 'inherit',
+        fontSize: 'var(--t-meta)',
+        cursor: 'pointer',
+        textAlign: 'left',
+      }}
+    >
+      <TouchInset />
+      <span style={{ flex: 1, minWidth: 0 }}>VAT {ratePercent}%</span>
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          height: 20,
+          padding: '0 7px',
+          borderRadius: 'var(--r-badge)',
+          background: on ? 'var(--st-in-bg)' : 'var(--st-neutral-bg)',
+          color: on ? 'var(--st-in-fg)' : 'var(--st-neutral-fg)',
+          fontSize: 'var(--t-th)',
+          fontWeight: 700,
+        }}
+      >
+        <Icon name={on ? 'check' : 'close'} size={11} />
+        {on ? 'On' : 'Off'}
+      </span>
+    </button>
+  )
+}
+
+/**
+ * The rail's `Discount  chips` row, plus the Law 10 popover it opens.
+ *
+ * `WIREFRAME_RULINGS_2026-08-12.md` §7: *"Chips open a popover carrying both
+ * fields; `validateDiscount()` gates Confirm; no chip above 25%."* A 300px rail
+ * has nowhere to put a ten-character reason and a named approver inline, and
+ * the chip row on its own cannot satisfy Law 10 — so a chip above 10% opens
+ * the popover and the popover carries both fields.
+ *
+ * The chips do **not** authorise anything. They set the percent; the page's
+ * `validateDiscount()` verdict is what blocks Confirm, and it stays blocked
+ * until the reason and the approver are real.
+ */
+function DiscountChips({
+  percent,
+  onPercent,
+  reason,
+  onReason,
+  approver,
+  onApprover,
+  verdict,
+  amount,
+  open,
+  onOpenChange,
+  inputStyle: fieldStyle,
+}: {
+  percent: number
+  onPercent: (n: number) => void
+  reason: string
+  onReason: (v: string) => void
+  approver: string
+  onApprover: (v: string) => void
+  verdict: DiscountValidationResult
+  amount: string
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  inputStyle: React.CSSProperties
+}) {
+  const rootRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node | null)) onOpenChange(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onOpenChange(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open, onOpenChange])
+
+  return (
+    <div ref={rootRef} style={{ position: 'relative', padding: '3px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
+        <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Discount</span>
+        <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: percent > 0 ? 'var(--danger-text)' : 'var(--text)', whiteSpace: 'nowrap' }}>
+          {percent > 0 ? `− ${amount}` : amount}
+        </span>
+      </div>
+      <div role="group" aria-label="Discount percentage" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
+        {DISCOUNT_CHIPS.map((p) => {
+          const active = percent === p
+          return (
+            <button
+              key={p}
+              type="button"
+              className="press"
+              aria-pressed={active}
+              aria-label={`${p}% discount`}
+              onClick={() => {
+                onPercent(p)
+                // Law 10 — anything above the threshold needs a reason and an
+                // approver, so the fields open with the chip rather than the
+                // operator having to find them.
+                onOpenChange(p > 10)
+              }}
+              style={{
+                position: 'relative',
+                minHeight: 24,
+                padding: '0 9px',
+                borderRadius: 'var(--r-badge)',
+                border: `1px solid ${active ? 'var(--st-primary-fg)' : 'var(--border)'}`,
+                background: active ? 'var(--st-primary-bg)' : 'var(--card2)',
+                color: active ? 'var(--st-primary-fg)' : 'var(--text2)',
+                fontFamily: 'inherit',
+                fontSize: 'var(--t-th)',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              <TouchInset />
+              {p}%
+            </button>
+          )
+        })}
+        {/* The chips are presets, not the whole range — a 7% booking must still
+            be reachable, and it is, from Pricing & Payments' own field. This
+            button is how the operator gets from the rail to that field's
+            approval pair without leaving the summary. */}
+        {percent > 10 && (
+          <button
+            type="button"
+            className="press"
+            aria-expanded={open}
+            aria-label={verdict.valid ? 'Edit discount approval' : 'Discount approval required'}
+            onClick={() => onOpenChange(!open)}
+            style={{
+              position: 'relative',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              minHeight: 24,
+              padding: '0 9px',
+              borderRadius: 'var(--r-badge)',
+              border: `1px solid ${verdict.valid ? 'var(--st-in-fg)' : 'var(--st-danger-fg)'}`,
+              background: verdict.valid ? 'var(--st-in-bg)' : 'var(--st-danger-bg)',
+              color: verdict.valid ? 'var(--st-in-fg)' : 'var(--st-danger-fg)',
+              fontFamily: 'inherit',
+              fontSize: 'var(--t-th)',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            <TouchInset />
+            <Icon name={verdict.valid ? 'check' : 'error'} size={11} />
+            {verdict.valid ? 'Approved' : 'Approval needed'}
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div
+          role="group"
+          aria-label="Discount approval"
+          style={{
+            position: 'absolute',
+            zIndex: 40,
+            top: 'calc(100% + 6px)',
+            right: 0,
+            left: 0,
+            padding: 10,
+            background: 'var(--dropdown)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--r-card)',
+            boxShadow: 'var(--shadow-modal)',
+          }}
+        >
+          <p style={{ margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--danger-text)', lineHeight: 1.4 }}>
+            <Icon name="error" size={12} style={{ flexShrink: 0, marginTop: 2 }} />
+            {verdict.error ?? 'Above 10% — a reason of at least 10 characters and a named approver. No bypass, including Owner.'}
+          </p>
+          <Input
+            value={reason}
+            onChange={(e) => onReason(e.target.value)}
+            placeholder="Reason (10 characters minimum)"
+            aria-label="Discount reason"
+            style={{ ...fieldStyle, marginTop: 7 }}
+          />
+          <Input
+            value={approver}
+            onChange={(e) => onApprover(e.target.value)}
+            placeholder="Approver"
+            aria-label="Discount approver"
+            style={{ ...fieldStyle, marginTop: 6 }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+            <Button onClick={() => onOpenChange(false)}>Done</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function NewRental() {
   const navigate = useNavigate()
   const viewport = useViewport()
@@ -509,19 +1086,47 @@ export default function NewRental() {
   const canBookingMoney = canViewMoneyField(gctx, 'booking')
   const canCrewMoney = canViewMoneyField(gctx, 'asset-finance')
   const canClientBalance = canViewMoneyField(gctx, 'client-balance')
+  /*
+   * Money VISIBILITY (`canBookingMoney`, above) is not permission to move
+   * money. The rail's `Receive Payment` / `Receive Deposit` pair is the same
+   * action `RecordPaymentModal` performs elsewhere, and `rbac.canRecordPayment`
+   * — Owner / Coordinator / Accounts — is the rule `actions/core.ts` resolves
+   * `payment.create` through. Admin and Manager pass the visibility gate and
+   * fail this one, which is exactly the gap that put a refusable button in
+   * front of them on Finance and BookingDetail.
+   *
+   * ⚠ These two buttons are inert in this build (no `onClick`), so nothing is
+   * refused today. The gate is here so that whoever wires them up inherits the
+   * permission rather than reopening the hole. Absent, not disabled —
+   * `MovementList.tsx`'s row menu drops the entry it cannot offer.
+   */
+  const canTakePayment = user ? canRecordPayment(user.role) : false
   // §1.4 — the retired `Draft` stage is status Quote plus a Draft flag.
   const status: BookingStatus = 'Quote'
   const flag = 'Draft'
 
-  // Any section, any order — all open by default except on a phone, where §65
-  // wants expandable sections rather than one endless scroll. Equipment stays
-  // expanded there because §6 makes it the section the operator lands in.
+  /**
+   * Any section, any order — never a wizard.
+   *
+   * Desktop and tablet open Client · Dates · Equipment · Pricing and leave
+   * Crew and Delivery collapsed, which is exactly what 01_NEW_RENTAL §1.1
+   * draws ("＋ Crew (collapsed)", "＋ Delivery (collapsed → Client Pickup
+   * Rs 0)"). Phone is an accordion with **one open at a time**, per the same
+   * spec's phone block; Equipment is the one it lands on.
+   */
   const [open, setOpen] = useState<boolean[]>(() =>
     typeof window !== 'undefined' && window.innerWidth < BREAKPOINT.phone
-      ? [true, true, false, false, false]
-      : [true, true, true, true, true],
+      ? [false, false, true, false, false, false]
+      : [true, true, true, false, false, true],
   )
-  const toggle = (i: number) => setOpen((p) => p.map((v, j) => (j === i ? !v : v)))
+  const toggle = (i: number) =>
+    setOpen((p) =>
+      // Phone: opening a section closes the others. Width decides, never
+      // orientation and never a platform check (Law 13/14).
+      typeof window !== 'undefined' && window.innerWidth < BREAKPOINT.phone
+        ? p.map((v, j) => (j === i ? !v : false))
+        : p.map((v, j) => (j === i ? !v : v)),
+    )
 
   // §02 — the client selector reads data/clients.ts, the same source
   // ClientsDirectory/ClientDetail read, instead of a free-text field. §18 — a
@@ -539,12 +1144,27 @@ export default function NewRental() {
   const [quickViewOpen, setQuickViewOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [addClientOpen, setAddClientOpen] = useState(false)
+  /* The tablet/phone rail handle is gone. `WIREFRAME_RULINGS_2026-08-12.md` §7:
+     "Right rails collapse below 1180" means **reflow, not hide** — the rail's
+     cards render inline beneath the workspace at tablet and phone, always
+     visible, and only the summary + Confirm move into the sticky bar. A
+     collapsed handle hid the blocking notices, which Law 12 forbids. */
+  /** redesign v1 §5 — which document the draft-email modal is composing for; null = closed. */
+  const [emailDraftDoc, setEmailDraftDoc] = useState<string | null>(null)
 
   const [project, setProject] = useState("'Echoes of Mustang'")
   const [kind, setKind] = useState('Documentary Film')
   const [govId, setGovId] = useState(client?.pan ?? '')
   const [pickup, setPickup] = useState('2026-07-16')
   const [ret, setRet] = useState('2026-07-19')
+  // redesign v1 §4 — the rental day runs 06:00→06:00, so a booking with no
+  // time cannot be priced correctly at the boundary. Defaults are 09:00
+  // pickup / 18:00 return, editable, never blank. Day-count pricing still
+  // reads dates only (unchanged engine behaviour, §67) — capturing the time
+  // here is the UI half of the fix; teaching `price()` the 06:00 boundary is
+  // a pricing-engine change, out of scope for a layout-and-behaviour redesign.
+  const [pickupTime, setPickupTime] = useState('09:00')
+  const [returnTime, setReturnTime] = useState('18:00')
   /**
    * Law 17 (PLAN.md §6.1) — the UI reads **Client Pickup**, which is the 27 Jul
    * lock's own wording. This union is private to the page and is never written:
@@ -607,11 +1227,30 @@ export default function NewRental() {
   const [crew, setCrew] = useState<CrewLine[]>(() =>
     CREW_ROSTER.filter((m) => ['CR-001', 'CR-005', 'CR-007'].includes(m.id)).map(seedCrewLine),
   )
+  /** redesign v1 §7.5 — Overtime and Meals were clipped at this table's width;
+   *  they now live behind a per-row expand instead of two columns of their own. */
+  const [expandedCrew, setExpandedCrew] = useState<Set<string>>(new Set())
+  const toggleCrewExpanded = (crewId: string) =>
+    setExpandedCrew((prev) => {
+      const next = new Set(prev)
+      if (next.has(crewId)) next.delete(crewId)
+      else next.add(crewId)
+      return next
+    })
   const [deliveryChargePaisa, setDeliveryChargePaisa] = useState<Paisa>(rupees(0) as Paisa)
   const [fuelChargePaisa, setFuelChargePaisa] = useState<Paisa>(rupees(0) as Paisa)
   const [discountPct, setDiscountPct] = useState(7)
   const [discountReason, setDiscountReason] = useState('')
   const [approver, setApprover] = useState('')
+  /** The rail's chip row opens this when a chip above 10% is chosen (Law 10). */
+  const [discountPopoverOpen, setDiscountPopoverOpen] = useState(false)
+  /**
+   * The VAT rate, read from Settings ▸ Financial once per mount. The literal
+   * `VAT_PCT = 13` this page used to carry is deleted — see `readVatRatePercent`.
+   */
+  const [vatRatePercent] = useState<number>(readVatRatePercent)
+  /** 01_NEW_RENTAL §1.1 rail — `VAT {rate}%  [on ▢]`. On is the default. */
+  const [vatOn, setVatOn] = useState(true)
   const [advancePaisa, setAdvancePaisa] = useState<Paisa>(rupees(15000) as Paisa)
   const depositRequiredPaisa = rupees(50000) as Paisa
   const depositReceivedPaisa = rupees(25000) as Paisa
@@ -650,10 +1289,12 @@ export default function NewRental() {
         crew: crewChargesPaisa,
         transport: transportPaisa,
         discountPercent: discountPct,
-        vatPercent: VAT_PCT,
+        // The rail's VAT switch: off means the rate is 0 for this booking, not
+        // that the configured rate changed. The rate itself is Settings'.
+        vatPercent: vatOn ? vatRatePercent : 0,
         payments: advancePaisa,
       }),
-    [equipmentPaisa, crewChargesPaisa, transportPaisa, discountPct, advancePaisa],
+    [equipmentPaisa, crewChargesPaisa, transportPaisa, discountPct, vatOn, vatRatePercent, advancePaisa],
   )
 
   /** §10.4, as ruled: this is the *invoice* state, not a payment status. */
@@ -664,9 +1305,17 @@ export default function NewRental() {
   /* ── §12 alerts. Critical blocks Confirm; Warning blocks Handover. ─────── */
   // §03 — a real conflict reads the unit's own status/booking, not a fabricated one.
   const conflictLines = lines.filter((l) => l.status !== 'In Stock')
-  // §10.8 — above 10% needs a reason of at least 10 characters AND a named
-  // approver. No bypass, including Owner.
-  const discountUnapproved = discountPct > 10 && (discountReason.trim().length < 10 || approver.trim().length === 0)
+  /**
+   * Law 10, through the engine rather than a re-derivation on the page.
+   *
+   * This used to be a hand-written `discountPct > 10 && (reason < 10 ||
+   * !approver)` here — the same rule `lib/discount.ts` already owns, which is
+   * exactly the Law 1 duplication that lets one copy drift. `validateDiscount`
+   * is now the single source, it is what gates Confirm, and its own message is
+   * what the operator reads.
+   */
+  const discountVerdict = validateDiscount(discountPct, discountReason, approver.trim() || null)
+  const discountUnapproved = !discountVerdict.valid
 
   const alerts: Array<{ text: string; severity: 'Critical' | 'Warning' | 'Information'; action: string }> = [
     ...conflictLines.map((l) => ({
@@ -676,20 +1325,55 @@ export default function NewRental() {
     })),
     ...(!client ? [{ text: 'No client selected', severity: 'Critical' as const, action: 'Select Client' }] : []),
     ...(client && govId.trim().length === 0 ? [{ text: 'Missing client ID or PAN', severity: 'Critical' as const, action: 'Edit Client' }] : []),
-    ...(discountUnapproved ? [{ text: 'Discount above 10% unapproved', severity: 'Critical' as const, action: 'Request Approval' }] : []),
+    ...(discountUnapproved
+      ? [{ text: discountVerdict.error ?? 'Discount is not authorised.', severity: 'Critical' as const, action: 'Request Approval' }]
+      : []),
     // §02 — client financial warning. Booking may still proceed; this is a warning, not a block.
     ...(canBookingMoney && client && client.outstandingPaisa > 0
       ? [{ text: `Client has ${formatMoney(client.outstandingPaisa)} outstanding`, severity: 'Warning' as const, action: 'View Client' }]
       : []),
+    /*
+     * These two notices are NOT gated on `canTakePayment`, deliberately.
+     *
+     * Their button does not record anything — `runNoticeAction` scrolls to the
+     * rail's Summary card (redesign v1 §1: "a notice never repeats the money
+     * buttons"). The notice TEXT is a warning a Manager is entitled to read,
+     * and §12 requires every alert to carry exactly one action, so dropping
+     * either the row or its button would break a spec invariant to fix a label.
+     *
+     * TODO(decision): for a role that may see booking money but may not record
+     * a payment (Admin, Manager), these notices still say "Receive Payment" /
+     * "Receive Deposit" while the rail card they scroll to now has no such
+     * button. What the notice should say instead — "View Balance"? nothing? —
+     * is a copy/product decision and is not invented here.
+     */
     ...(canBookingMoney && depositRequiredPaisa > depositReceivedPaisa
       ? [{ text: `Deposit ${formatMoney(depositPendingPaisa)} pending`, severity: 'Warning' as const, action: 'Receive Deposit' }]
       : []),
     ...(canBookingMoney && breakdown.outstanding > 0 ? [{ text: 'Rental outstanding', severity: 'Warning' as const, action: 'Receive Payment' }] : []),
   ]
   const critical = alerts.filter((a) => a.severity === 'Critical')
+  /** Warnings and information — the criticals live in the blocking-notices card. */
+  const nonBlockingAlerts = alerts.filter((a) => a.severity !== 'Critical')
   const confirmBlocked = critical.length > 0 || days === 0
+
+  /**
+   * 01_NEW_RENTAL §1.1 — the rail's `⚠ blocking notices (inline, persists)`.
+   *
+   * Every reason Confirm is refused, in full, in one list. The bad date is in
+   * here too: it blocks Confirm and had no home in the alert model, so it read
+   * only as a sentence under the page header.
+   *
+   * Law 12 — inline and persistent. This never becomes a toast and is never
+   * truncated into the sticky bar; at tablet and phone the card detaches from
+   * the rail and renders immediately above that bar instead.
+   */
+  const blockingNotices: Array<{ text: string; action: string }> = [
+    ...(days === 0 ? [{ text: 'The return date must be later than the pickup date.', action: 'Open Dates' }] : []),
+    ...critical.map((a) => ({ text: a.text, action: a.action })),
+  ]
   const blockReasonText = confirmBlocked
-    ? `Blocked — ${critical[0]?.text ?? 'the return date must be later than the pickup date'}. Resolve it in the alerts panel, then Confirm.`
+    ? `Blocked — ${blockingNotices.length} ${blockingNotices.length === 1 ? 'notice' : 'notices'} must be resolved before this booking can be confirmed.`
     : undefined
 
   const pickupBs = toBs(new Date(pickup))
@@ -751,6 +1435,19 @@ export default function NewRental() {
    *    'error' exists because 'saved' is a success claim: the footer reads
    *    "All changes saved", and it may not say that after a save that failed. */
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved')
+  /**
+   * Has a Save Draft actually landed? This is what makes `[Cancel]` two
+   * behaviours instead of one (Law 3, and `WIREFRAME_RULINGS_2026-08-12.md` §7):
+   *
+   *  - **false** — nothing was persisted, so Cancel discards local state and
+   *    navigates away. No law is engaged; there is no row to delete.
+   *  - **true** — a draft row exists, so Cancel is a *named terminal
+   *    transition* on it (`CANCEL_RENTAL`), behind a `ConfirmDialog` with a
+   *    reason. It is never a delete.
+   */
+  const [draftPersisted, setDraftPersisted] = useState(false)
+  /** null = closed. 'discard' is the pre-save behaviour, 'cancel' the post-save one. */
+  const [cancelIntent, setCancelIntent] = useState<'discard' | 'cancel' | null>(null)
   const saveDraft = useCallback(() => {
     const ctx = dispatchContext()
     if (!ctx) {
@@ -777,6 +1474,10 @@ export default function NewRental() {
        */
       .then(() => {
         setSaveState('saved')
+        // Only a *landed* save flips this. Cancel's second behaviour hangs off
+        // it, so setting it optimistically would offer a terminal transition
+        // on a row that does not exist.
+        setDraftPersisted(true)
         showSuccessToast('Draft saved', 'This booking is saved as a draft. Nothing has been confirmed.')
       })
       .catch((err: unknown) => {
@@ -793,22 +1494,91 @@ export default function NewRental() {
       setActionError('Not confirmed — you are not signed in, so this booking cannot be attributed to anyone. Sign in and confirm again.')
       return
     }
-    setActionError(null)
     /*
-     * `navigate('/rentals')` used to run unconditionally on the line after a
-     * fire-and-forget dispatch with no `.catch()`. Landing on the rentals list
-     * is this app's universal "the write landed" signal, so a rejected confirm
-     * looked exactly like a confirmed booking. The navigation is now on the
-     * resolved path only; a rejection stays on the page and says why.
+     * ⛔ This used to dispatch `confirmRental({ id: 'bk-new' }, ctx)`.
+     *
+     * `'bk-new'` is not a booking. This screen holds the whole booking in local
+     * state and has never persisted a row — `saveDraft` and `createRental` are
+     * both still stubs — so there is no `bookings.id` and no `BK-YYYY-NNNN` to
+     * name. CONFIRM_RENTAL is now a real write (`actions/rentals/confirmRental.ts`):
+     * it resolves the reference against `bookings` and moves the stage
+     * `Quote → Booked` by inserting a `booking_stage_transitions` row. Sent a
+     * placeholder, it refuses with "No booking matches bk-new" — truthful, but
+     * it reports a reference the operator never typed and hides the actual gap.
+     *
+     * So the gap is stated instead, and no fabricated id is sent. Confirm is a
+     * transition on a SAVED Quote; this page's job is to create one first.
+     * TODO: when CREATE_RENTAL persists a booking, dispatch it here and pass the
+     * returned `bookings.id` (or its `booking_no`) straight into `confirmRental`
+     * with a `clientUuid` minted at this press — see `BookingDetail.tsx`'s
+     * `confirmBooking`, which is the wired version of exactly that call.
+     *
+     * `navigate('/rentals')` is deliberately not called: landing on the rentals
+     * list is this app's universal "the write landed" signal, and nothing
+     * landed.
      */
-    void import('../../actions/rentals/index')
-      .then((m) => m.confirmRental({ id: 'bk-new' }, ctx))
-      .then(() => navigate('/rentals'))
-      .catch((err: unknown) => {
-        console.error('confirm booking failed:', err)
-        setActionError(`Not confirmed — ${err instanceof Error ? err.message : String(err)}`)
-      })
-  }, [confirmBlocked, dispatchContext, navigate])
+    setActionError(
+      'Not confirmed — this booking has not been saved yet, so there is nothing to confirm. Confirm moves a ' +
+        'SAVED quote from Quote to Booked; creating the booking row is CREATE_RENTAL, which is not built yet ' +
+        '(src/actions/rentals/createRental.ts). Nothing was written, and nothing entered here has been lost.',
+    )
+  }, [confirmBlocked, dispatchContext])
+
+  /**
+   * `[Cancel]` — **two behaviours, never one**.
+   *
+   * `WIREFRAME_RULINGS_2026-08-12.md` §7 rules spec 01's single `[Cancel]`
+   * against Law 3 ("Nothing is deleted"): a Cancel that discards a *saved*
+   * draft is a delete. So the button asks which situation it is in first.
+   *
+   * The discard path touches nothing persisted, so it just leaves. It still
+   * confirms, because a half-built booking is real work even when no row
+   * exists for it — but it takes no reason and dispatches nothing.
+   */
+  const discardDraft = useCallback(() => {
+    setCancelIntent(null)
+    navigate('/rentals')
+  }, [navigate])
+
+  /**
+   * The post-save path: `CANCEL_RENTAL`, the named terminal transition, with
+   * the reason the dialog collected. The action is not marked `implemented`
+   * (see `SUCCESS_FABRICATION_REGISTER_2026-08-12.md` — no page agent may mark
+   * one, doing so turns a lie into a wrong write), so `actions/core.ts` refuses
+   * it and the operator reads *why* instead of a fabricated success.
+   */
+  const cancelDraftBooking = useCallback(
+    (reason?: string) => {
+      setCancelIntent(null)
+      const ctx = dispatchContext()
+      if (!ctx) {
+        setActionError('Not cancelled — you are not signed in, so this cancellation cannot be attributed to anyone. Sign in and try again.')
+        return
+      }
+      setActionError(null)
+      /*
+       * TODO(decision) — `CancelRentalInput` (`actions/rentals/cancelRental.ts`,
+       * not this agent's file) is `{ id: string }` and carries no `reason`
+       * field, so the reason the dialog collects rides along in the payload
+       * without a declared home. Widening that input, and where the reason is
+       * stored, belongs to whoever owns the actions layer. It is sent rather
+       * than dropped so the fix is a schema change, not a re-collection.
+       *
+       * `id: 'draft-new'` is the same placeholder `saveDraft` uses — this
+       * screen holds the booking in local state and has no persisted row to
+       * name. Left as found rather than guessed at.
+       */
+      const input = { id: 'draft-new', reason: reason ?? null }
+      void import('../../actions/rentals/index')
+        .then((m) => m.cancelRental(input, ctx))
+        .then(() => navigate('/rentals'))
+        .catch((err: unknown) => {
+          console.error('cancel booking failed:', err)
+          setActionError(`Not cancelled — ${err instanceof Error ? err.message : String(err)}`)
+        })
+    },
+    [dispatchContext, navigate],
+  )
 
   /* ── §7–20 — client selection handlers. ───────────────────────────────── */
   const selectClient = useCallback((c: ClientRecord) => {
@@ -829,13 +1599,14 @@ export default function NewRental() {
 
   const health = useMemo(() => (client ? clientHealth(client) : null), [client])
 
-  // §5.2 summary bar — the 5-up strip only has room on desktop; below that
-  // every value (client name, "Rs 1,19,069" outstanding) ellipsizes into
+  // §5.2 / redesign v1 §7.6 — Pickup and Return merged into one Dates cell,
+  // so the strip is four cells on desktop (Client · Dates · Stage ·
+  // Outstanding), not five. Below desktop every value still ellipsizes into
   // unreadable fragments, so it collapses to fewer columns per Law 14.
   const summaryCols = isDesktop
     ? canBookingMoney
-      ? 'repeat(4, minmax(0,1fr)) minmax(0,1.15fr)'
-      : 'repeat(4, minmax(0,1fr))'
+      ? 'repeat(3, minmax(0,1fr)) minmax(0,1.15fr)'
+      : 'repeat(3, minmax(0,1fr))'
     : viewport === 'tablet'
       ? 'repeat(2, minmax(0,1fr))'
       : '1fr'
@@ -843,9 +1614,84 @@ export default function NewRental() {
 
   const bundleCount = useMemo(() => new Set(lines.map((l) => l.bundleCode).filter(Boolean)).size, [lines])
   const totalUnits = lines.reduce((s, l) => s + l.qty, 0)
+  /** 01_NEW_RENTAL Notes — "renders parent-first with children nested". */
+  const lineGroups = useMemo(() => groupLines(lines), [lines])
+
+  /** redesign v1 §6 — the rail's Review card jumps to the section that owns
+   *  the fact, opening it first if it was collapsed (§65 collapses lower
+   *  sections on a phone by default) so the jump never lands on an empty view. */
+  const jumpToSection = useCallback((targetId: string) => {
+    // Derived from SECTIONS rather than a hand-listed array, so splitting
+    // Client & Schedule into Client + Dates (and Crew & Transport into Crew +
+    // Delivery) cannot leave a stale id behind.
+    const sectionIndex = SECTIONS.findIndex((_, i) => `section-${i}` === targetId)
+    if (sectionIndex >= 0) setOpen((prev) => prev.map((v, j) => (j === sectionIndex ? true : v)))
+    globalThis.requestAnimationFrame(() => {
+      document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [])
+
+  /**
+   * §12 — every notice carries exactly one action, and both the blocking-notices
+   * card and the warnings card dispatch through here. Lifted out of an inline
+   * `onClick` so the two panels cannot drift into meaning different things by
+   * the same button label.
+   */
+  const runNoticeAction = useCallback(
+    (action: string) => {
+      if (action === 'Open Inventory') navigate('/inventory')
+      // §11 — inspecting the client is a disclosure, not a route change; a
+      // half-built booking must survive it.
+      if ((action === 'View Client' || action === 'Edit Client') && client) setQuickViewOpen(true)
+      // Was `setAddClientOpen(false)` — a "Select Client" button whose only
+      // effect was closing a dialog that was not open. Selection happens in the
+      // Client section, so that is where it goes.
+      if (action === 'Select Client') jumpToSection('section-0')
+      if (action === 'Open Dates') jumpToSection('section-1')
+      if (action === 'Request Approval') {
+        setDiscountPopoverOpen(true)
+        document.getElementById('rail-booking-summary')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+      // redesign v1 §1 / §7.3 — a notice never repeats the money buttons; it
+      // links to the one place they live, in the rail's Summary card.
+      if (action === 'Receive Payment' || action === 'Receive Deposit') {
+        document.getElementById('rail-booking-summary')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    },
+    [client, jumpToSection, navigate],
+  )
+
+  // §11 — never all green while a Critical alert is open. Documents has no
+  // body section of its own any more (§6), so it jumps to the rail's own
+  // Documents card rather than a section.
+  const reviewItems: ReviewItem[] = [
+    { label: 'Client', ok: Boolean(client) && govId.trim().length > 0, targetId: 'section-0' },
+    { label: 'Dates', ok: days > 0, targetId: 'section-1' },
+    { label: 'Equipment', ok: lines.length > 0 && conflictLines.length === 0, targetId: 'section-2' },
+    { label: 'Crew', ok: true, targetId: 'section-3' },
+    { label: 'Delivery', ok: true, targetId: 'section-4' },
+    { label: 'Pricing', ok: !discountUnapproved && breakdown.rentalTotal > 0, targetId: 'section-5' },
+    { label: 'Payments', ok: breakdown.outstanding <= 0, targetId: 'section-5' },
+    { label: 'Documents', ok: false, targetId: 'rail-documents' },
+  ]
+  const reviewCompleteCount = reviewItems.filter((r) => r.ok).length
+
+  /** redesign v1 §5 — nothing is pre-generated on a Draft (§11). Quote,
+   *  Rental Agreement, Invoice and Delivery Note are client-facing and gain
+   *  a ✉ action (§7); Packing List is warehouse-internal and does not. */
+  const documentTiles: Array<{ n: string; from: string; ready: boolean; emailable: boolean }> = [
+    { n: 'Quote', from: 'Quote', ready: true, emailable: true },
+    { n: 'Rental Agreement', from: 'Confirmed', ready: false, emailable: true },
+    { n: 'Packing List', from: 'Preparing', ready: false, emailable: false },
+    { n: 'Delivery Note', from: 'Dispatched', ready: false, emailable: true },
+    { n: 'Invoice', from: 'invoice generated', ready: false, emailable: true },
+  ]
 
   /* ── §36–38 — the equipment table's columns, declared once so the header,
    *    the alignment and the empty-state colSpan cannot drift apart. ─────── */
+  // redesign v1 §7.4 — Location no longer has its own column; it moved onto
+  // the Item cell's second line, where it has room to read in full instead
+  // of truncating.
   const equipmentColumns: Array<{ key: string; align: 'left' | 'right' }> = canBookingMoney
     ? [
         { key: 'Item', align: 'left' },
@@ -856,7 +1702,6 @@ export default function NewRental() {
         { key: 'Disc.', align: 'right' },
         { key: 'Amount', align: 'right' },
         { key: 'Availability', align: 'left' },
-        { key: 'Location', align: 'left' },
         { key: '', align: 'right' },
       ]
     : [
@@ -865,46 +1710,324 @@ export default function NewRental() {
         { key: 'Qty', align: 'right' },
         { key: 'Days', align: 'right' },
         { key: 'Availability', align: 'left' },
-        { key: 'Location', align: 'left' },
         { key: '', align: 'right' },
       ]
 
+  /**
+   * One equipment line as a table row.
+   *
+   * `child` is what the wireframe draws as `└ child tick`: the row indents
+   * under its parent and drops the bundle chip (the parent row already carries
+   * the bundle's name). The `└` itself is `aria-hidden` decoration — a glyph is
+   * not an accessible name — and the relationship is stated in words for
+   * assistive tech instead.
+   *
+   * A row that is *not* nested is a parent in its own right, so it carries the
+   * wireframe's `⋮`; a nested child carries the compact remove, because
+   * "remove all of these" already lives on the group's menu.
+   */
+  const equipmentRow = (
+    l: Line,
+    child: boolean,
+    groupLabel: string,
+    menuItems?: Array<{ label: string; icon: IconName; onClick: () => void }>,
+  ) => {
+    const inv = INV_STYLE[l.status]
+    return (
+      <tr key={l.id} style={{ borderBottom: '1px solid var(--border)' }}>
+        {/* §36 — item name strong, serial small and secondary underneath it.
+            redesign v1 §7.4 — Location sits on the row's second line rather
+            than a column of its own that truncated at this width. */}
+        <td style={{ ...td, whiteSpace: 'normal', maxWidth: 260, paddingLeft: child ? 26 : 9 }}>
+          <span style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+            {child && (
+              <span aria-hidden="true" style={{ color: 'var(--muted)', fontSize: 'var(--t-th)', flexShrink: 0 }}>
+                └
+              </span>
+            )}
+            <span style={{ fontSize: child ? 'var(--t-meta)' : 'var(--t-ui)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.25 }}>
+              {child && <span style={srOnly}>Part of {groupLabel}: </span>}
+              {l.name}
+            </span>
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 1, fontSize: 'var(--t-th)', color: 'var(--text2)', flexWrap: 'wrap' }}>
+            {l.serial !== '—' ? (
+              <Link className="identifier" to={`/inventory/${l.serial}`} style={{ color: 'inherit', textDecoration: 'none' }} title={`Open unit ${l.serial} in Inventory`}>
+                {l.serial}
+              </Link>
+            ) : (
+              <span>Bulk stock — no serial</span>
+            )}
+            <span aria-hidden style={{ opacity: 0.5 }}>·</span>
+            <span>{l.location}</span>
+            {/* Nested under its bundle already — repeating the bundle name on
+                every child was the same word five times in one card. */}
+            {l.bundleName && !child && (
+              <span
+                title={`Added as part of the ${l.bundleName} bundle`}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '0 5px', borderRadius: 'var(--r-badge)', background: 'var(--st-primary-bg)', color: 'var(--st-primary-fg)', fontWeight: 700 }}
+              >
+                <Icon name="package" size={10} />
+                {l.bundleName}
+              </span>
+            )}
+          </span>
+        </td>
+        {/* §36 — category muted. */}
+        <td style={{ ...td, color: 'var(--text2)' }}>{l.category}</td>
+        {/* redesign v1 §7.4 — qty as a stepper, not a boxed input. A serialized
+            row is one physical unit; quantity only varies for bulk stock. */}
+        <td style={{ ...td, textAlign: 'right' }} title={l.serial !== '—' ? 'One serialized unit per row' : undefined}>
+          <Stepper
+            value={l.qty}
+            disabled={l.serial !== '—'}
+            label={`quantity for ${l.name}`}
+            onChange={(n) => setLines((p) => p.map((x) => (x.id === l.id ? { ...x, qty: n } : x)))}
+          />
+        </td>
+        {/* §8.3 — Days is mandatory and explicit on every line, now a stepper. */}
+        <td style={{ ...td, textAlign: 'right' }}>
+          <Stepper
+            value={l.days}
+            label={`days for ${l.name}`}
+            onChange={(n) => setLines((p) => p.map((x) => (x.id === l.id ? { ...x, days: n } : x)))}
+          />
+        </td>
+        {canBookingMoney && (
+          <>
+            {/* §37 — rate right-aligned, discount a compact badge, amount bold. */}
+            <td className="figure" style={{ ...td, textAlign: 'right', color: 'var(--text2)' }}>{formatMoney(l.ratePaisa)}</td>
+            <td style={{ ...td, textAlign: 'right' }}>
+              {l.discountPct > 0 ? (
+                <span
+                  className="figure"
+                  title={`${l.discountPct}% line discount`}
+                  style={{ display: 'inline-flex', alignItems: 'center', height: 18, padding: '0 6px', borderRadius: 'var(--r-badge)', background: 'var(--st-neutral-bg)', color: 'var(--st-neutral-fg)', fontSize: 'var(--t-th)', fontWeight: 700 }}
+                >
+                  −{l.discountPct}%
+                </span>
+              ) : (
+                <span style={{ color: 'var(--muted)' }}>—</span>
+              )}
+            </td>
+            <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{formatMoney(lineAmountPaisa(l))}</td>
+          </>
+        )}
+        {/* §38 — availability is a status pill: icon + label + colour, never colour alone. */}
+        <td style={td}>
+          <span
+            title={l.committedTo !== '—' ? `${l.status} — committed to ${l.committedTo}` : l.status}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 'var(--sp-xs)',
+              height: 20,
+              padding: '0 7px',
+              borderRadius: 'var(--r-badge)',
+              fontSize: 'var(--t-th)',
+              fontWeight: 700,
+              background: inv.bg === 'transparent' ? 'var(--st-in-bg)' : inv.bg,
+              color: inv.bg === 'transparent' ? 'var(--st-in-fg)' : inv.fg,
+            }}
+          >
+            <Icon name={inv.icon} size={11} />
+            {l.status}
+          </span>
+        </td>
+        <td style={{ ...td, width: 34, textAlign: 'right' }}>
+          {menuItems ? (
+            <RowMenu label={`Actions for ${l.name}`} items={menuItems} />
+          ) : (
+            <button
+              type="button"
+              className="press"
+              aria-label={`Remove ${l.name} from this booking`}
+              title={`Remove ${l.name}`}
+              onClick={() => setLines((p) => p.filter((x) => x.id !== l.id))}
+              style={{ position: 'relative', width: 26, height: 26, display: 'grid', placeItems: 'center', borderRadius: 'var(--r-xs)', border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer' }}
+            >
+              <TouchInset />
+              <Icon name="close" size={13} />
+            </button>
+          )}
+        </td>
+      </tr>
+    )
+  }
+
+  /**
+   * 01_NEW_RENTAL §1.1 — the rail's SUMMARY card, in the spec's own order:
+   *
+   *     Gear subtotal / Crew / Delivery
+   *     ───────────────────────────────
+   *     Discount  chips
+   *     VAT {rate}%  [on ▢]
+   *     ───────────────────────────────
+   *     TOTAL / Deposit (separate) / Advance due
+   *
+   * This *is* the old "Booking Summary" card, re-typeset — nothing was dropped.
+   * Rental Paid, Rental Outstanding, the Law 5 deposit-liability note and both
+   * money buttons all still live here; they follow the drawn rows rather than
+   * replacing them.
+   *
+   * Law 6 — the whole card is booking money, so a money-blind role never gets
+   * it in the DOM at all; the Crew row is separately `asset-finance`, which is
+   * the one figure a Coordinator may not see.
+   */
+  const summaryCard = canBookingMoney ? (
+    <Card id="rail-booking-summary" title="Summary">
+      <MoneyRow label="Gear subtotal" value={formatMoney(equipmentPaisa)} />
+      {canCrewMoney && <MoneyRow label="Crew" value={formatMoney(crewChargesPaisa)} />}
+      <MoneyRow label="Delivery" value={formatMoney(transportPaisa)} />
+
+      <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
+        <DiscountChips
+          percent={discountPct}
+          onPercent={setDiscountPct}
+          reason={discountReason}
+          onReason={setDiscountReason}
+          approver={approver}
+          onApprover={setApprover}
+          verdict={discountVerdict}
+          amount={formatMoney(breakdown.discount)}
+          open={discountPopoverOpen}
+          onOpenChange={setDiscountPopoverOpen}
+          inputStyle={inputStyle}
+        />
+        <VatToggle ratePercent={vatRatePercent} on={vatOn} onChange={setVatOn} />
+        <MoneyRow label={vatOn ? `VAT at ${vatRatePercent}%` : 'VAT not applied'} value={formatMoney(breakdown.vat)} />
+      </div>
+
+      <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
+        <MoneyRow label="TOTAL" value={formatMoney(breakdown.rentalTotal)} big />
+        <MoneyRow label="Rental paid" value={formatMoney(advancePaisa)} tone="var(--success-text)" />
+        <MoneyRow
+          label="Rental outstanding"
+          value={formatMoney(breakdown.outstanding)}
+          tone={breakdown.outstanding > 0 ? 'var(--danger-text)' : 'var(--success-text)'}
+          strong
+        />
+      </div>
+
+      {/* Law 5 — the deposit is a separate obligation and the spec draws it as
+          "Deposit (separate)". It never enters TOTAL and never reduces
+          Outstanding, which is why it sits below its own rule with its own
+          words rather than as a fourth line in the block above. */}
+      <div style={{ ...moneyBlock, marginTop: 10 }}>
+        <h3 style={sub}>Deposit — separate, held as a liability</h3>
+        <MoneyRow label="Required" value={formatMoney(depositRequiredPaisa)} />
+        <MoneyRow label="Received" value={formatMoney(depositReceivedPaisa)} tone="var(--success-text)" />
+        <MoneyRow label="Pending" value={formatMoney(depositPendingPaisa)} tone="var(--progress-text)" strong />
+        <p style={{ margin: '7px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
+          Never added to Rental Outstanding — these are two separate obligations.
+        </p>
+      </div>
+
+      {/*
+        "Advance due" is the amount of advance a booking is *required* to carry
+        before pickup. Nothing in this build derives it: there is no advance
+        policy in `settingsStore`, none in `lib/money.ts`, and no column for
+        one. `WIREFRAME_RULINGS_2026-08-12.md` §8 — "Never seed a plausible
+        default" — so it says so rather than borrowing Rental Outstanding,
+        which is a different number for a different obligation.
+
+        TODO(decision) — where does the required advance come from? A
+        percentage of Rental Total in Settings ▸ Financial, a per-client credit
+        term, or a per-booking figure the coordinator types? Until that is
+        ruled this row has no source.
+      */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, marginTop: 10, padding: '3px 0' }}>
+        <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Advance due</span>
+        <span
+          title="No advance policy is configured, so the required advance has no source in this build."
+          style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap' }}
+        >
+          not tracked yet
+        </span>
+      </div>
+
+      {/* The rail is where redesign v1 §1 puts the two money buttons, once.
+          They are the same action as `RecordPaymentModal`'s, so they carry its
+          permission — see `canTakePayment` where it is defined. The rest of
+          this Summary card (the figures) stays on `canBookingMoney`. */}
+      {canTakePayment && (
+        <div style={{ marginTop: 11, display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+          <Button icon="dollar" variant="secondary">Receive Payment</Button>
+          <Button icon="dollar" variant="secondary">Receive Deposit</Button>
+        </div>
+      )}
+    </Card>
+  ) : null
+
+  /**
+   * 01_NEW_RENTAL §1.1 — `⚠ blocking notices (inline, persists)`.
+   *
+   * One card, every reason Confirm is refused, in full. Law 12 keeps it inline
+   * and persistent: it is never a toast, and at tablet/phone it detaches from
+   * the rail and renders immediately above the sticky bar rather than being
+   * truncated into it.
+   *
+   * Law 11 — icon + label + colour on each row, never the tone alone.
+   */
+  const noticesCard = (
+    <Card
+      id="rail-blocking-notices"
+      title={blockingNotices.length === 0 ? 'Blocking notices' : `Blocking notices (${blockingNotices.length})`}
+    >
+      {blockingNotices.length === 0 ? (
+        <EmptyState title="Nothing is blocking this booking" description="Every requirement for Confirm Booking is met." />
+      ) : (
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {blockingNotices.map((n) => (
+            <li key={n.text} style={{ padding: '8px 9px', borderRadius: 'var(--r-btn)', background: 'var(--st-danger-bg)' }}>
+              <div style={{ display: 'flex', gap: 7, alignItems: 'flex-start' }}>
+                <Icon name="error" size={13} style={{ color: 'var(--st-danger-fg)', flexShrink: 0, marginTop: 2 }} />
+                {/* The full sentence, never clipped — Law 12. */}
+                <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--st-danger-fg)', lineHeight: 1.4 }}>
+                  <span style={srOnly}>Blocking: </span>
+                  {n.text}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="press"
+                onClick={() => runNoticeAction(n.action)}
+                style={{ position: 'relative', marginTop: 5, marginLeft: 20, minHeight: 26, padding: '0 8px', borderRadius: 'var(--r-btn)', border: '1px solid var(--st-danger-fg)', background: 'transparent', color: 'var(--st-danger-fg)', fontFamily: 'inherit', fontSize: 'var(--t-th)', fontWeight: 700, cursor: 'pointer' }}
+              >
+                <TouchInset />
+                {n.action}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  )
+
+  /**
+   * 01_NEW_RENTAL §1.1 — `[ Confirm Booking ]` lives at the bottom of the rail,
+   * not in the header. Moving it also closes an existing defect: at tablet and
+   * phone the header button and the sticky bar's button were two primaries for
+   * one action on one screen.
+   *
+   * Rendered by the desktop rail only; below 1180 the sticky bar owns it, so
+   * there is exactly one Confirm at every width.
+   */
+  const confirmBlock = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }} title={blockReasonText}>
+      <Button icon="check" variant="primary" onClick={confirmBooking} disabled={confirmBlocked}>
+        Confirm Booking
+      </Button>
+      {blockReasonText && (
+        <span style={{ fontSize: 'var(--t-meta)', color: 'var(--danger-text)', fontWeight: 600, lineHeight: 1.4 }}>
+          {blockReasonText}
+        </span>
+      )}
+    </div>
+  )
+
   const railCards = (
     <>
-      {/* §51 — Booking Summary first. §52 — large type is reserved for Rental
-          Total and Rental Outstanding; everything else is a --t-meta row.
-          Law 5 / §47 — rental and deposit are two blocks with two labels and
-          are never summed into a single "balance". */}
-      {canBookingMoney && (
-        <Card title="Booking Summary">
-          <div style={moneyBlock}>
-            <h3 style={sub}>Rental</h3>
-            <MoneyRow label="Rental Total" value={formatMoney(breakdown.rentalTotal)} big />
-            <MoneyRow label="Rental Paid" value={formatMoney(advancePaisa)} tone="var(--success-text)" />
-            <MoneyRow
-              label="Rental Outstanding"
-              value={formatMoney(breakdown.outstanding)}
-              tone={breakdown.outstanding > 0 ? 'var(--danger-text)' : 'var(--success-text)'}
-              big
-            />
-          </div>
-
-          <div style={{ ...moneyBlock, marginTop: 10 }}>
-            <h3 style={sub}>Deposit — held as a liability</h3>
-            <MoneyRow label="Deposit Required" value={formatMoney(depositRequiredPaisa)} />
-            <MoneyRow label="Deposit Received" value={formatMoney(depositReceivedPaisa)} tone="var(--success-text)" />
-            <MoneyRow label="Deposit Pending" value={formatMoney(depositPendingPaisa)} tone="var(--progress-text)" strong />
-            <p style={{ margin: '7px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
-              Never added to Rental Outstanding — these are two separate obligations.
-            </p>
-          </div>
-
-          <div style={{ marginTop: 11 }}>
-            <Button icon="dollar" variant="primary">Receive Payment</Button>
-          </div>
-        </Card>
-      )}
-
       {/* §53 / §13 — exactly three tiles. */}
       <Card title="Quick Actions">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 'var(--sp-sm)' }}>
@@ -929,15 +2052,77 @@ export default function NewRental() {
         </div>
       </Card>
 
+      {/* redesign v1 §6 — Review moved from the bottom-of-page Section 5 into
+          the rail, so the checklist that decides whether Confirm is ready
+          sits beside Confirm instead of a screen away from it. Each row jumps
+          to the section that owns the fact. */}
+      <Card title={`Review · ${reviewCompleteCount}/${reviewItems.length}`}>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {reviewItems.map((r) => (
+            <button
+              key={r.label}
+              type="button"
+              className="press"
+              onClick={() => jumpToSection(r.targetId)}
+              style={{ position: 'relative', display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', width: '100%', minHeight: 30, padding: '4px 2px', border: 'none', background: 'transparent', textAlign: 'left', fontFamily: 'inherit', fontSize: 'var(--t-meta)', cursor: 'pointer' }}
+            >
+              <TouchInset />
+              <Icon name={r.ok ? 'check' : 'alert_triangle'} size={13} style={{ color: r.ok ? 'var(--success-text)' : 'var(--progress-text)', flexShrink: 0 }} />
+              <span style={{ flex: 1, minWidth: 0, color: 'var(--text2)' }}>{r.label}</span>
+              <span style={{ fontWeight: 600, color: r.ok ? 'var(--text)' : 'var(--progress-text)' }}>{r.ok ? 'Complete' : 'Pending'}</span>
+              <Icon name="chevron_right" size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      {/* redesign v1 §6 — Documents also moved from Section 5 into the rail.
+          §11 — nothing is pre-generated on a Draft. */}
+      <Card id="rail-documents" title="Documents">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {documentTiles.map((d) => (
+            <div
+              key={d.n}
+              title={d.ready ? `${d.n} is available now` : `${d.n} becomes available at ${d.from}`}
+              style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '6px 2px', fontSize: 'var(--t-meta)' }}
+            >
+              <Icon name="file" size={16} style={{ color: d.ready ? 'var(--link)' : 'var(--disabled)', flexShrink: 0 }} />
+              <span style={{ flex: 1, minWidth: 0, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.n}</span>
+              <span style={{ flexShrink: 0, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{d.ready ? 'Available' : `At ${d.from}`}</span>
+              {/* redesign v1 §5 — every client-facing document tile gains a ✉
+                  action once it is actually available; Packing List stays
+                  internal (documentTiles.emailable) and none fire on click. */}
+              {d.emailable && d.ready && (
+                <button
+                  type="button"
+                  className="press"
+                  aria-label={`Email ${d.n} to client`}
+                  onClick={() => setEmailDraftDoc(d.n)}
+                  style={{ position: 'relative', flexShrink: 0, width: 22, height: 22, display: 'grid', placeItems: 'center', borderRadius: 'var(--r-xs)', border: 'none', background: 'transparent', color: 'var(--link)', cursor: 'pointer' }}
+                >
+                  <TouchInset />
+                  <Icon name="mail" size={13} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </Card>
+
       {/* §54–56 — compact alerts. Severity is a labelled chip, not a colour;
           the blocking rules themselves are untouched (§67): Critical blocks
-          Confirm, Warning blocks Handover, Information blocks nothing. */}
-      <Card title={`Alerts (${alerts.length})`}>
-        {alerts.length === 0 ? (
-          <EmptyState title="No open alerts" description="This booking has no critical or warning alerts." />
+          Confirm, Warning blocks Handover, Information blocks nothing.
+
+          Criticals are **not** repeated here: they are the rail's blocking-
+          notices card now (01_NEW_RENTAL §1.1), with the same action button.
+          Rendering them in both places would have put the same sentence twice
+          in one rail. Nothing was removed — the row moved home. */}
+      <Card title={`Warnings & information (${nonBlockingAlerts.length})`}>
+        {nonBlockingAlerts.length === 0 ? (
+          <EmptyState title="No open warnings" description="This booking has no warning or information alerts." />
         ) : (
           <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {alerts.map((a) => {
+            {nonBlockingAlerts.map((a) => {
               const tone = a.severity === 'Critical' ? 'danger' : a.severity === 'Warning' ? 'progress' : 'primary'
               const t = STATUS[tone]
               const icon: IconName = a.severity === 'Critical' ? 'error' : a.severity === 'Warning' ? 'alert_triangle' : 'info'
@@ -956,13 +2141,7 @@ export default function NewRental() {
                   <button
                     type="button"
                     className="press"
-                    onClick={() => {
-                      if (a.action === 'Open Inventory') navigate('/inventory')
-                      // §11 — inspecting the client is a disclosure, not a route
-                      // change; a half-built booking must survive it.
-                      if ((a.action === 'View Client' || a.action === 'Edit Client') && client) setQuickViewOpen(true)
-                      if (a.action === 'Select Client') setAddClientOpen(false)
-                    }}
+                    onClick={() => runNoticeAction(a.action)}
                     style={{
                       position: 'relative',
                       marginTop: 5,
@@ -988,7 +2167,8 @@ export default function NewRental() {
           </ul>
         )}
         <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
-          Critical blocks Confirm. Warning blocks Handover, not Confirm. Information blocks nothing.
+          Warning blocks Handover, not Confirm. Information blocks nothing. What blocks Confirm is in
+          Blocking notices, above.
         </p>
       </Card>
 
@@ -1015,9 +2195,21 @@ export default function NewRental() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      {/* §5.1 — breadcrumb only (in the shell), one primary, Operations gated.
-          §4 — and one hierarchy: Confirm Booking is the only filled button,
-          Send Quote is outlined, Save Draft is text, Operations is a menu. */}
+      {/*
+        Breadcrumb only (in the shell) — no Back button. Spec 01 draws a `←` at
+        all three widths; `WIREFRAME_RULINGS_2026-08-12.md` §4 rules that glyph
+        as shorthand for "this is a sub-page", and PLAN.md Phase 5's
+        "Breadcrumbs, no Back buttons" stands.
+
+        01_NEW_RENTAL §1.1 header — `[Save Draft]  [Cancel]`. **Confirm Booking
+        has moved to the rail**, which is where the spec draws it and which also
+        ends a real defect: at tablet and phone the header primary and the
+        sticky bar's primary were two filled buttons for one action.
+
+        Operations and Send Quote stay. Neither is drawn, but the wireframes are
+        a layout spec, not a content inventory (Rulings §1), and no prose
+        removes them.
+      */}
       <PageHeader
         title="New Rental"
         description={`${client?.name ?? 'No client selected'} · ${kind}`}
@@ -1042,26 +2234,22 @@ export default function NewRental() {
                 { label: 'Create Sub-Rental', icon: 'truck' },
               ]}
             />
-            <Button icon="arrow_right">Send Quote</Button>
-            <span title={blockReasonText}>
-              <Button icon="check" variant="primary" onClick={confirmBooking} disabled={confirmBlocked}>
-                Confirm Booking
-              </Button>
-            </span>
+            <SendQuoteMenu onEmail={() => setEmailDraftDoc('Quote')} />
+            {/* Two behaviours behind one label — see `discardDraft` /
+                `cancelDraftBooking`. Which one runs depends on whether a draft
+                row exists, never on which button was pressed. */}
+            <Button icon="close" onClick={() => setCancelIntent(draftPersisted ? 'cancel' : 'discard')}>
+              Cancel
+            </Button>
           </>
         }
       />
       {/* Errors are inline and persistent, never a toast and never an alert().
-          Two independent facts share the one affordance: what blocks Confirm,
-          and what the last dispatch did instead of succeeding. They are separate
-          paragraphs because a Save Draft can fail while Confirm is also blocked,
-          and collapsing them would drop one of the two. */}
-      {blockReasonText && (
-        <p role="status" style={inlineErrorStyle}>
-          <Icon name="error" size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-          {blockReasonText}
-        </p>
-      )}
+          What *blocks Confirm* is no longer repeated here: it is the rail's
+          blocking-notices card, which spec 01 draws and which now states each
+          reason in full. This line is only ever what the last dispatch did
+          instead of succeeding — a different fact, which can be true while
+          Confirm is also blocked. */}
       {actionError && (
         <p role="status" style={inlineErrorStyle}>
           <Icon name="error" size={14} style={{ flexShrink: 0, marginTop: 1 }} />
@@ -1069,24 +2257,21 @@ export default function NewRental() {
         </p>
       )}
 
-      {/* §6 — the booking status strip: small label, large value, small
-          support line. Outstanding is the largest figure and the only red one. */}
+      {/* §6 / redesign v1 §1 §7.6 — the booking status strip: small label,
+          large value, small support line. Four cells, not five — Pickup and
+          Return share one Dates cell, and Outstanding drops the deposit
+          footnote (the rail is its one home now). Outstanding is the largest
+          figure and the only red one. */}
       <div style={{ ...cardStyle, display: 'grid', gridTemplateColumns: summaryCols }}>
         <StripCell label="Client" value={client?.name ?? 'Not selected'} support={client ? (client.company ?? kind) : 'Choose a client to continue'} style={summaryDivider} />
         <StripCell
-          label="Pickup"
-          value={pickupBs ? formatBs(pickupBs) : '—'}
-          support={Number.isNaN(Date.parse(pickup)) ? '—' : formatAd(new Date(pickup))}
+          label="Dates"
+          value={`${pickupBs ? formatBs(pickupBs) : '—'} → ${returnBs ? formatBs(returnBs) : '—'}`}
+          support={`${Number.isNaN(Date.parse(pickup)) ? '—' : formatAd(new Date(pickup))} → ${Number.isNaN(Date.parse(ret)) ? '—' : formatAd(new Date(ret))}`}
           style={summaryDivider}
         />
         <StripCell
-          label="Return"
-          value={returnBs ? formatBs(returnBs) : '—'}
-          support={Number.isNaN(Date.parse(ret)) ? '—' : formatAd(new Date(ret))}
-          style={summaryDivider}
-        />
-        <StripCell
-          label="Booking"
+          label="Stage"
           value={`${status} · ${flag}`}
           support={`${days} rental days · ${lines.length} items · ${crew.length} crew`}
           style={canBookingMoney ? summaryDivider : undefined}
@@ -1095,7 +2280,6 @@ export default function NewRental() {
           <StripCell
             label="Rental Outstanding"
             value={formatMoney(breakdown.outstanding)}
-            support={`Deposit pending ${formatMoney(depositPendingPaisa)} — tracked separately`}
             tone="var(--danger-text)"
             big
             style={{
@@ -1116,7 +2300,7 @@ export default function NewRental() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <Section
-            no={1}
+            id="section-0"
             title={SECTIONS[0]}
             open={open[0] ?? true}
             onToggle={() => toggle(0)}
@@ -1173,63 +2357,70 @@ export default function NewRental() {
               >
                 <Input value={govId} onChange={(e) => setGovId(e.target.value)} style={inputStyle} />
               </Field>
-              <Field label="Pickup">
-                <Input type="date" value={pickup} onChange={(e) => setPickup(e.target.value)} style={inputStyle} />
-              </Field>
-              {/* §7 — return must be later than pickup. */}
-              <Field label="Return" error={days === 0 ? 'Return must be later than pickup. Pick a later return date.' : undefined}>
-                <Input type="date" value={ret} onChange={(e) => setRet(e.target.value)} style={inputStyle} />
-              </Field>
               {/* §60 "no duplicate information" — Delivery Type is *not* repeated
-                  here. It lives once, in Section 3, beside the delivery and fuel
-                  charges it drives (§9.2). */}
+                  here. It lives once, in the Delivery section, beside the
+                  delivery and fuel charges it drives (§9.2). */}
             </div>
-
-            {/* §02 / §12 — real client fields, loaded from the same record
-                ClientDetail.tsx reads. Health travels as icon + label + colour. */}
-            {client && (
-              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', marginTop: 11, paddingTop: 10, borderTop: '1px solid var(--border)', fontSize: 'var(--t-meta)' }}>
-                <span style={{ color: 'var(--text2)' }}>
-                  Phone <span className="figure" style={{ color: 'var(--text)', fontWeight: 600 }}>{client.phone}</span>
-                </span>
-                <span style={{ color: 'var(--text2)' }}>
-                  Email <span style={{ color: 'var(--text)', fontWeight: 600 }}>{client.email}</span>
-                </span>
-                {canClientBalance && (
-                  <span style={{ color: 'var(--text2)' }}>
-                    Credit limit{' '}
-                    <span className="figure" style={{ color: 'var(--text)', fontWeight: 600 }}>{formatMoney(client.creditLimitPaisa)}</span>
-                  </span>
-                )}
-                {canClientBalance && client.outstandingPaisa > 0 && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--danger-text)', fontWeight: 600 }}>
-                    <Icon name="alert_triangle" size={12} />
-                    <span className="figure">{formatMoney(client.outstandingPaisa)}</span> outstanding
-                  </span>
-                )}
-                <button
-                  type="button"
-                  className="press"
-                  onClick={() => setQuickViewOpen(true)}
-                  style={{ position: 'relative', marginLeft: 'auto', minHeight: 30, padding: '0 9px', borderRadius: 'var(--r-btn)', border: '1px solid var(--btn-secondary-border)', background: 'transparent', color: 'var(--text2)', fontFamily: 'inherit', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer' }}
-                >
-                  <TouchInset />
-                  Client health details
-                </button>
-              </div>
-            )}
+            {/* redesign v1 §1 — the footer row (phone, email, credit limit,
+                outstanding, "Client health details") is gone entirely. Every
+                one of those facts is already one hover away on the client
+                chip's health eye, and the link duplicated the ⚠ Attention
+                Required alert action sitting above it. */}
           </Section>
 
+          {/* 01_NEW_RENTAL §1.1 DATES box — `Out ▾  Return ▾   Days: 2`, with
+              BS above AD on both. Split out of Client & Schedule because the
+              wireframe draws it as its own box at all three widths, and on a
+              phone as its own accordion. */}
           <Section
-            no={2}
+            id="section-1"
             title={SECTIONS[1]}
             open={open[1] ?? true}
             onToggle={() => toggle(1)}
+            summary={
+              days === 0
+                ? 'Return must be later than pickup'
+                : `${pickupBs ? formatBs(pickupBs) : formatAd(new Date(pickup))} → ${days} days`
+            }
+          >
+            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(0,1fr)) auto', gap: 11, alignItems: 'start' }}>
+              {/* `DateTimeField` renders its own label and its own BS line, so
+                  it is not wrapped in `Field` (that would double the label).
+                  `lib/bs.ts` is the one Date Engine — nothing here hand-writes
+                  a BS date. */}
+              <DateTimeField label="Out" dateValue={pickup} timeValue={pickupTime} onDateChange={setPickup} onTimeChange={setPickupTime} />
+              {/* §7 — return must be later than pickup. */}
+              <DateTimeField
+                label="Return"
+                dateValue={ret}
+                timeValue={returnTime}
+                onDateChange={setRet}
+                onTimeChange={setReturnTime}
+                error={days === 0 ? 'Return must be later than pickup. Pick a later return date.' : undefined}
+              />
+              {/* §8.6 — an unset value is an em dash, never a zero. */}
+              <div style={{ minWidth: 0, alignSelf: 'end', paddingBottom: 8 }}>
+                <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', marginBottom: 3 }}>Days</span>
+                <span className="figure" style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: days === 0 ? 'var(--muted)' : 'var(--text)' }}>
+                  {days === 0 ? '—' : days}
+                </span>
+              </div>
+            </div>
+          </Section>
+
+          <Section
+            id="section-2"
+            title={SECTIONS[2]}
+            open={open[2] ?? true}
+            onToggle={() => toggle(2)}
             summary={`${lines.length} lines · ${conflictLines.length} conflicts`}
-            /* §24 — the Add Item… <select> is replaced by the §23–35 search
-               panel. It still lives in this section's toolbar, at the same
-               height, and it still only raises a callback (§34). */
-            action={
+          >
+            {/* 01_NEW_RENTAL §1.1 EQUIPMENT box — `search gear…` is drawn as the
+                **first row inside the card**, above the list, not as a control
+                in the section header. Moved off the header's `action` slot; it
+                is the same panel, raising the same callback (§34), and it still
+                answers availability for the booking's own dates (§32). */}
+            <div style={{ marginBottom: 10 }}>
               <AddItemPanel
                 window={bookingWindow}
                 days={days || 1}
@@ -1238,8 +2429,8 @@ export default function NewRental() {
                 showPrices={canBookingMoney}
                 inputStyle={inputStyle}
               />
-            }
-          >
+            </div>
+
             {/* §8.5 — inline conflict check on every change to dates or items, read from each unit's own real status/booking, never fabricated. */}
             <div
               style={{
@@ -1273,114 +2464,90 @@ export default function NewRental() {
                   </tr>
                 </thead>
                 <tbody>
-                  {lines.map((l) => {
-                    const inv = INV_STYLE[l.status]
+                  {/* 01_NEW_RENTAL Notes — "Equipment list renders parent-first
+                      with children nested." The key already exists in the data:
+                      a bundle stamps `bundleCode`/`bundleName` on every line it
+                      contributes, and each serialised unit of one model shares
+                      that model's name. Only the rendering was flat. */}
+                  {lineGroups.map((g) => {
+                    const nested = isNested(g)
+                    const groupUnits = g.lines.reduce((s, l) => s + l.qty, 0)
+                    const dayValues = Array.from(new Set(g.lines.map((l) => l.days)))
+                    const minDays = Math.min(...dayValues)
+                    const maxDays = Math.max(...dayValues)
+                    const groupAmountPaisa = g.lines.reduce((s, l) => s + lineAmountPaisa(l), 0) as Paisa
+                    // The parent row states the group's *worst* availability —
+                    // one blocked unit blocks the group, and saying "In Stock"
+                    // over a blocked child would be the lie.
+                    const blocked = g.lines.find((l) => l.status !== 'In Stock')
+                    const parentStatus: InvStatus = blocked?.status ?? g.lines[0]?.status ?? 'In Stock'
+                    const parentInv = INV_STYLE[parentStatus]
+                    const menuItems = [
+                      {
+                        label: nested ? `Remove all ${g.lines.length} lines` : 'Remove from this booking',
+                        icon: 'close' as IconName,
+                        onClick: () => setLines((p) => p.filter((x) => !g.lines.some((y) => y.id === x.id))),
+                      },
+                      ...(!nested && g.lines[0] && g.lines[0].serial !== '—'
+                        ? [{ label: 'Open in Inventory', icon: 'external_link' as IconName, onClick: () => navigate(`/inventory/${g.lines[0]?.serial ?? ''}`) }]
+                        : []),
+                    ]
+
                     return (
-                      <tr key={l.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                        {/* §36 — item name strong, serial small and secondary underneath it. */}
-                        <td style={{ ...td, whiteSpace: 'normal', maxWidth: 260 }}>
-                          <span style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.25 }}>{l.name}</span>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 1, fontSize: 'var(--t-th)', color: 'var(--text2)' }}>
-                            {l.serial !== '—' ? (
-                              <Link className="identifier" to={`/inventory/${l.serial}`} style={{ color: 'inherit', textDecoration: 'none' }} title={`Open unit ${l.serial} in Inventory`}>
-                                {l.serial}
-                              </Link>
-                            ) : (
-                              <span>Bulk stock — no serial</span>
-                            )}
-                            {l.bundleName && (
-                              <span
-                                title={`Added as part of the ${l.bundleName} bundle`}
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '0 5px', borderRadius: 'var(--r-badge)', background: 'var(--st-primary-bg)', color: 'var(--st-primary-fg)', fontWeight: 700 }}
-                              >
-                                <Icon name="package" size={10} />
-                                {l.bundleName}
+                      <Fragment key={g.key}>
+                        {nested ? (
+                          <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
+                            <td style={{ ...td, whiteSpace: 'normal', maxWidth: 260 }}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Icon name={g.kind === 'bundle' ? 'package' : 'box'} size={13} style={{ color: 'var(--text2)', flexShrink: 0 }} />
+                                <span style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', lineHeight: 1.25 }}>{g.label}</span>
                               </span>
-                            )}
-                          </span>
-                        </td>
-                        {/* §36 — category muted. */}
-                        <td style={{ ...td, color: 'var(--text2)' }}>{l.category}</td>
-                        {/* §36 — qty compact. A serialized row is one physical unit; quantity only varies for non-serialized bulk stock. */}
-                        <td style={{ ...td, textAlign: 'right' }}>
-                          <Input
-                            type="number"
-                            min={1}
-                            value={l.qty}
-                            disabled={l.serial !== '—'}
-                            title={l.serial !== '—' ? 'One serialized unit per row' : undefined}
-                            aria-label={`Quantity for ${l.name}`}
-                            onChange={(e) => setLines((p) => p.map((x) => (x.id === l.id ? { ...x, qty: Math.max(1, Number(e.target.value) || 1) } : x)))}
-                            style={{ ...inputStyle, width: 48, height: 26, padding: '0 6px', textAlign: 'right', opacity: l.serial !== '—' ? 0.55 : 1, cursor: l.serial !== '—' ? 'not-allowed' : 'text' }}
-                          />
-                        </td>
-                        {/* §8.3 — Days is mandatory and explicit on every line. */}
-                        <td style={{ ...td, textAlign: 'right' }}>
-                          <Input
-                            type="number"
-                            min={1}
-                            value={l.days}
-                            aria-label={`Days for ${l.name}`}
-                            onChange={(e) => setLines((p) => p.map((x) => (x.id === l.id ? { ...x, days: Math.max(1, Number(e.target.value) || 1) } : x)))}
-                            style={{ ...inputStyle, width: 48, height: 26, padding: '0 6px', textAlign: 'right' }}
-                          />
-                        </td>
-                        {canBookingMoney && (
-                          <>
-                            {/* §37 — rate right-aligned, discount a compact badge, amount bold. */}
-                            <td className="figure" style={{ ...td, textAlign: 'right', color: 'var(--text2)' }}>{formatMoney(l.ratePaisa)}</td>
-                            <td style={{ ...td, textAlign: 'right' }}>
-                              {l.discountPct > 0 ? (
-                                <span
-                                  className="figure"
-                                  title={`${l.discountPct}% line discount`}
-                                  style={{ display: 'inline-flex', alignItems: 'center', height: 18, padding: '0 6px', borderRadius: 'var(--r-badge)', background: 'var(--st-neutral-bg)', color: 'var(--st-neutral-fg)', fontSize: 'var(--t-th)', fontWeight: 700 }}
-                                >
-                                  −{l.discountPct}%
-                                </span>
-                              ) : (
-                                <span style={{ color: 'var(--muted)' }}>—</span>
-                              )}
+                              <span style={{ display: 'block', marginTop: 1, fontSize: 'var(--t-th)', color: 'var(--text2)' }}>
+                                {g.kind === 'bundle'
+                                  ? `Bundle · ${g.lines.length} component${g.lines.length === 1 ? '' : 's'}`
+                                  : `${g.lines.length} units`}
+                              </span>
                             </td>
-                            <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{formatMoney(lineAmountPaisa(l))}</td>
-                          </>
-                        )}
-                        {/* §38 — availability is a status pill: icon + label + colour, never colour alone. */}
-                        <td style={td}>
-                          <span
-                            title={l.committedTo !== '—' ? `${l.status} — committed to ${l.committedTo}` : l.status}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 'var(--sp-xs)',
-                              height: 20,
-                              padding: '0 7px',
-                              borderRadius: 'var(--r-badge)',
-                              fontSize: 'var(--t-th)',
-                              fontWeight: 700,
-                              background: inv.bg === 'transparent' ? 'var(--st-in-bg)' : inv.bg,
-                              color: inv.bg === 'transparent' ? 'var(--st-in-fg)' : inv.fg,
-                            }}
-                          >
-                            <Icon name={inv.icon} size={11} />
-                            {l.status}
-                          </span>
-                        </td>
-                        <td style={{ ...td, fontSize: 'var(--t-th)', color: 'var(--text2)' }}>{l.location}</td>
-                        <td style={{ ...td, width: 34, textAlign: 'right' }}>
-                          <button
-                            type="button"
-                            className="press"
-                            aria-label={`Remove ${l.name} from this booking`}
-                            title={`Remove ${l.name}`}
-                            onClick={() => setLines((p) => p.filter((x) => x.id !== l.id))}
-                            style={{ position: 'relative', width: 26, height: 26, display: 'grid', placeItems: 'center', borderRadius: 'var(--r-xs)', border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer' }}
-                          >
-                            <TouchInset />
-                            <Icon name="close" size={13} />
-                          </button>
-                        </td>
-                      </tr>
+                            <td style={{ ...td, color: 'var(--text2)' }}>{g.lines[0]?.category ?? '—'}</td>
+                            <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{groupUnits}</td>
+                            <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>
+                              {minDays === maxDays ? minDays : `${minDays}–${maxDays}`}
+                            </td>
+                            {canBookingMoney && (
+                              <>
+                                <td style={{ ...td, textAlign: 'right', color: 'var(--muted)' }}>—</td>
+                                <td style={{ ...td, textAlign: 'right', color: 'var(--muted)' }}>—</td>
+                                <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{formatMoney(groupAmountPaisa)}</td>
+                              </>
+                            )}
+                            {/* Law 11 — icon + label + colour, never the colour alone. */}
+                            <td style={td}>
+                              <span
+                                title={blocked ? `${blocked.name} is ${blocked.status}` : parentStatus}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 'var(--sp-xs)',
+                                  height: 20,
+                                  padding: '0 7px',
+                                  borderRadius: 'var(--r-badge)',
+                                  fontSize: 'var(--t-th)',
+                                  fontWeight: 700,
+                                  background: parentInv.bg === 'transparent' ? 'var(--st-in-bg)' : parentInv.bg,
+                                  color: parentInv.bg === 'transparent' ? 'var(--st-in-fg)' : parentInv.fg,
+                                }}
+                              >
+                                <Icon name={parentInv.icon} size={11} />
+                                {parentStatus}
+                              </span>
+                            </td>
+                            <td style={{ ...td, width: 34, textAlign: 'right' }}>
+                              <RowMenu label={`Actions for ${g.label}`} items={menuItems} />
+                            </td>
+                          </tr>
+                        ) : null}
+                        {g.lines.map((l) => equipmentRow(l, nested, g.label, nested ? undefined : menuItems))}
+                      </Fragment>
                     )
                   })}
                   {lines.length === 0 && (
@@ -1421,12 +2588,14 @@ export default function NewRental() {
             </div>
           </Section>
 
+          {/* 01_NEW_RENTAL §1.1 — `＋ Crew (collapsed)` is its own box, so Crew
+              & Transport splits here. Delivery follows as its own box below. */}
           <Section
-            no={3}
-            title={SECTIONS[2]}
-            open={open[2] ?? true}
-            onToggle={() => toggle(2)}
-            summary={`${crew.length} crew · ${deliveryType}`}
+            id="section-3"
+            title={SECTIONS[3]}
+            open={open[3] ?? false}
+            onToggle={() => toggle(3)}
+            summary={crew.length === 0 ? 'No crew assigned' : `${crew.length} crew`}
             action={
               <Select
                 aria-label="Add crew"
@@ -1445,55 +2614,85 @@ export default function NewRental() {
               </Select>
             }
           >
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: isDesktop
-                  ? 'minmax(0,1.35fr) minmax(0,1fr)'
-                  : viewport === 'tablet'
-                    ? 'repeat(2, minmax(0,1fr))'
-                    : 'minmax(0,1fr)',
-                gap: 14,
-              }}
-            >
+            <div>
               <div style={{ minWidth: 0 }}>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
                     <thead>
                       <tr style={{ background: 'var(--th-bg)' }}>
-                        {(canCrewMoney ? ['Name', 'Role', 'Day Rate', 'Days', 'Overtime', 'Meals', 'Amount'] : ['Name', 'Role']).map((h, i) => (
-                          <th key={h} scope="col" style={{ ...th, textAlign: i >= 2 ? 'right' : 'left' }}>
+                        {(canCrewMoney ? ['Name', 'Role', 'Day Rate', 'Days', 'Amount', ''] : ['Name', 'Role']).map((h, i) => (
+                          <th key={h || 'expand'} scope="col" style={{ ...th, textAlign: i >= 2 && i <= 4 ? 'right' : 'left' }}>
                             {h}
                           </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {crew.map((c) => (
-                        <tr key={c.crewId} style={{ borderBottom: '1px solid var(--border)' }}>
-                          <td style={{ ...td, fontWeight: 600 }}>
-                            <Link to={`/crew`} style={{ color: 'inherit', textDecoration: 'none' }} title={`Open ${c.name} in Crew Assist`}>
-                              {c.name}
-                            </Link>
-                          </td>
-                          <td style={{ ...td, color: 'var(--text2)' }}>{c.role}</td>
-                          {canCrewMoney && (
-                            <>
-                              <td className="figure" style={{ ...td, textAlign: 'right', color: 'var(--text2)' }}>{formatMoney(c.dayRatePaisa)}</td>
-                              <td className="figure" style={{ ...td, textAlign: 'right' }}>{days}</td>
-                              <td className="figure" style={{ ...td, textAlign: 'right', color: 'var(--text2)' }}>{c.overtimePaisa > 0 ? formatMoney(c.overtimePaisa) : '—'}</td>
-                              <td className="figure" style={{ ...td, textAlign: 'right', color: 'var(--text2)' }}>{c.mealsPaisa > 0 ? formatMoney(c.mealsPaisa) : '—'}</td>
-                              <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>
-                                {formatMoney((c.dayRatePaisa * days + c.overtimePaisa + c.accommodationPaisa + c.mealsPaisa) as Paisa)}
+                      {crew.map((c) => {
+                        const expanded = expandedCrew.has(c.crewId)
+                        const hasExtras = c.overtimePaisa > 0 || c.mealsPaisa > 0 || c.accommodationPaisa > 0
+                        return (
+                          <Fragment key={c.crewId}>
+                            <tr style={{ borderBottom: expanded ? 'none' : '1px solid var(--border)' }}>
+                              <td style={{ ...td, fontWeight: 600 }}>
+                                <Link to={`/crew`} style={{ color: 'inherit', textDecoration: 'none' }} title={`Open ${c.name} in Crew Assist`}>
+                                  {c.name}
+                                </Link>
                               </td>
-                            </>
-                          )}
-                        </tr>
-                      ))}
+                              <td style={{ ...td, color: 'var(--text2)' }}>{c.role}</td>
+                              {canCrewMoney && (
+                                <>
+                                  <td className="figure" style={{ ...td, textAlign: 'right', color: 'var(--text2)' }}>{formatMoney(c.dayRatePaisa)}</td>
+                                  <td className="figure" style={{ ...td, textAlign: 'right' }}>{days}</td>
+                                  <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>
+                                    {formatMoney((c.dayRatePaisa * days + c.overtimePaisa + c.accommodationPaisa + c.mealsPaisa) as Paisa)}
+                                  </td>
+                                  {/* redesign v1 §7.5 — Overtime/Meals/Accommodation live behind this
+                                      per-row expand instead of two columns clipped at this width. */}
+                                  <td style={{ ...td, width: 30, textAlign: 'right' }}>
+                                    <button
+                                      type="button"
+                                      className="press"
+                                      aria-label={`${expanded ? 'Hide' : 'Show'} overtime, meals and accommodation for ${c.name}`}
+                                      aria-expanded={expanded}
+                                      onClick={() => toggleCrewExpanded(c.crewId)}
+                                      style={{ position: 'relative', width: 22, height: 22, display: 'grid', placeItems: 'center', borderRadius: 'var(--r-xs)', border: 'none', background: 'transparent', color: hasExtras ? 'var(--text2)' : 'var(--muted)', cursor: 'pointer' }}
+                                    >
+                                      <TouchInset />
+                                      <Icon name={expanded ? 'chevron_up' : 'chevron_down'} size={13} />
+                                    </button>
+                                  </td>
+                                </>
+                              )}
+                            </tr>
+                            {canCrewMoney && expanded && (
+                              <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                                <td colSpan={6} style={{ ...td, background: 'var(--card2)' }}>
+                                  <div style={{ display: 'flex', gap: 'var(--sp-lg)', flexWrap: 'wrap', fontSize: 'var(--t-meta)' }}>
+                                    <span style={{ display: 'inline-flex', gap: 5 }}>
+                                      <span style={{ color: 'var(--text2)' }}>Overtime</span>
+                                      <span className="figure" style={{ fontWeight: 600 }}>{c.overtimePaisa > 0 ? formatMoney(c.overtimePaisa) : '—'}</span>
+                                    </span>
+                                    <span style={{ display: 'inline-flex', gap: 5 }}>
+                                      <span style={{ color: 'var(--text2)' }}>Meals</span>
+                                      <span className="figure" style={{ fontWeight: 600 }}>{c.mealsPaisa > 0 ? formatMoney(c.mealsPaisa) : '—'}</span>
+                                    </span>
+                                    <span style={{ display: 'inline-flex', gap: 5 }}>
+                                      <span style={{ color: 'var(--text2)' }}>Accommodation</span>
+                                      <span className="figure" style={{ fontWeight: 600 }}>{c.accommodationPaisa > 0 ? formatMoney(c.accommodationPaisa) : '—'}</span>
+                                    </span>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        )
+                      })}
                       {canCrewMoney && (
                         <tr>
-                          <td colSpan={6} style={{ ...td, fontWeight: 700, color: 'var(--text2)' }}>Crew Subtotal</td>
+                          <td colSpan={4} style={{ ...td, fontWeight: 700, color: 'var(--text2)' }}>Crew Subtotal</td>
                           <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{formatMoney(crewChargesPaisa)}</td>
+                          <td style={td} />
                         </tr>
                       )}
                     </tbody>
@@ -1510,9 +2709,21 @@ export default function NewRental() {
                   </div>
                 )}
               </div>
+            </div>
+          </Section>
 
+          {/* 01_NEW_RENTAL §1.1 — `＋ Delivery (collapsed → Client Pickup Rs 0)`.
+              Its own box, and its summary states the default the wireframe
+              annotates so a collapsed section still carries the fact. */}
+          <Section
+            id="section-4"
+            title={SECTIONS[4]}
+            open={open[4] ?? false}
+            onToggle={() => toggle(4)}
+            summary={clientPickup ? 'Client Pickup · Rs 0' : `Babin Delivery · ${canBookingMoney ? formatMoney(transportPaisa) : 'charged'}`}
+          >
+            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(0,1fr))', gap: 14 }}>
               <div style={{ minWidth: 0 }}>
-                <h3 style={sub}>Transport</h3>
                 <Field label="Delivery Type">
                   <Select
                     value={deliveryType}
@@ -1562,12 +2773,16 @@ export default function NewRental() {
             </div>
           </Section>
 
+          {/* Kept deliberately. `WIREFRAME_RULINGS_2026-08-12.md` §1 names
+              "New Rental's Pricing & Payments" among the sections that survive
+              because no spec removes them in prose — the rail summarises this
+              section, it does not replace it. */}
           {canBookingMoney && (
             <Section
-              no={4}
-              title={SECTIONS[3]}
-              open={open[3] ?? true}
-              onToggle={() => toggle(3)}
+              id="section-5"
+              title={SECTIONS[5]}
+              open={open[5] ?? true}
+              onToggle={() => toggle(5)}
               summary={`${formatMoney(breakdown.rentalTotal)} total · ${formatMoney(breakdown.outstanding)} outstanding`}
             >
               {/* §43–47 — three visually separate blocks: Rental Charges,
@@ -1576,12 +2791,16 @@ export default function NewRental() {
               <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? 'repeat(3, minmax(0,1fr))' : isPhone ? '1fr' : 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
                 <div style={moneyBlock}>
                   <h3 style={sub}>Rental Charges</h3>
-                  {/* §10.1 in order — the displayed column sums to the displayed total. */}
+                  {/* §10.1 in order — the displayed column sums to the displayed total.
+                      Crew Charges is `asset-finance` money: HIS v2.1 §4.1 gives a
+                      Coordinator booking money but explicitly "no crew pay", and this
+                      row was leaking it while the crew table one section up hid the
+                      same figure. Law 6 — omitted, not masked. */}
                   {[
                     { l: 'Equipment Rental', v: formatMoney(equipmentPaisa) },
                     { l: 'Sub-Rental', v: '—' },
                     { l: 'Services', v: '—' },
-                    { l: 'Crew Charges', v: formatMoney(crewChargesPaisa) },
+                    ...(canCrewMoney ? [{ l: 'Crew Charges', v: formatMoney(crewChargesPaisa) }] : []),
                     { l: 'Transport', v: formatMoney(transportPaisa) },
                   ].map((r) => (
                     <MoneyRow key={r.l} label={r.l} value={r.v} {...(r.v === '—' ? { tone: 'var(--muted)' } : {})} />
@@ -1590,7 +2809,14 @@ export default function NewRental() {
                     <MoneyRow label="Subtotal" value={formatMoney(breakdown.subtotal)} />
                     <MoneyRow label={`Discount (${discountPct}%)`} value={`− ${formatMoney(breakdown.discount)}`} tone="var(--danger-text)" />
                     <MoneyRow label="Taxable Amount" value={formatMoney(breakdown.taxable)} />
-                    <MoneyRow label={`VAT (${VAT_PCT}%)`} value={formatMoney(breakdown.vat)} />
+                    {/* The rate is Settings', and the switch that turns it off is
+                        the rail's. Both facts are stated so this block never
+                        reads as a silent 0%. */}
+                    <MoneyRow
+                      label={vatOn ? `VAT (${vatRatePercent}%)` : 'VAT — off for this booking'}
+                      value={formatMoney(breakdown.vat)}
+                      {...(vatOn ? {} : { tone: 'var(--muted)' })}
+                    />
                   </div>
                   {/* §45 — Rental Total is the dominant figure in this block. */}
                   <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
@@ -1608,12 +2834,14 @@ export default function NewRental() {
                         style={inputStyle}
                       />
                     </Field>
-                    {/* §10.8 — hard block: ≥10 characters of reason AND a named approver. */}
+                    {/* Law 10 — hard block: ≥10 characters of reason AND a named
+                        approver. The message is `validateDiscount()`'s own, so the
+                        rail's popover and this block cannot state different rules. */}
                     {discountPct > 10 && (
                       <div style={{ marginTop: 9, padding: 10, borderRadius: 'var(--r-btn)', background: 'var(--st-danger-bg)' }}>
                         <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--st-danger-fg)', lineHeight: 1.4 }}>
                           <Icon name="error" size={12} style={{ flexShrink: 0, marginTop: 2 }} />
-                          Above 10% — enter a reason of at least 10 characters and a named approver. No bypass.
+                          {discountVerdict.error ?? 'Above 10% — a reason of at least 10 characters and a named approver. No bypass, including Owner.'}
                         </div>
                         <Input value={discountReason} onChange={(e) => setDiscountReason(e.target.value)} placeholder="Reason" aria-label="Discount reason" style={{ ...inputStyle, marginTop: 7 }} />
                         <Input value={approver} onChange={(e) => setApprover(e.target.value)} placeholder="Approver" aria-label="Discount approver" style={{ ...inputStyle, marginTop: 6 }} />
@@ -1622,84 +2850,69 @@ export default function NewRental() {
                   </div>
                 </div>
 
-                <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-                  {/* §10.3 / §46 — deposits sit in their own block, outside the breakdown. */}
-                  <div style={moneyBlock}>
-                    <h3 style={sub}>Deposit — liability</h3>
-                    <MoneyRow label="Deposit Required" value={formatMoney(depositRequiredPaisa)} />
-                    <MoneyRow label="Deposit Received" value={formatMoney(depositReceivedPaisa)} tone="var(--success-text)" />
-                    <MoneyRow label="Deposit Pending" value={formatMoney(depositPendingPaisa)} tone="var(--progress-text)" strong />
-                    <p style={{ margin: '8px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
-                      Deposits are liabilities. They never enter Rental Total and never reduce Rental Outstanding.
-                    </p>
+                {/* redesign v1 §1 — the Deposit block is gone from here entirely.
+                    The rail's Booking Summary card is its one home now; repeating
+                    it here was the same three figures shown twice on one screen. */}
+                <div style={moneyBlock}>
+                  <h3 style={sub}>Payments — rental only</h3>
+                  <Field label="Advance Payment">
+                    <Input
+                      type="number"
+                      min={0}
+                      value={advancePaisa / 100}
+                      onChange={(e) => setAdvancePaisa(rupees(Math.max(0, Number(e.target.value) || 0)))}
+                      style={inputStyle}
+                    />
+                  </Field>
+                  {/* redesign v1 §1 — Rental Outstanding is not repeated here; it
+                      already has a home in the header strip and the rail. Invoice
+                      State is the one fact this block adds that lives nowhere else. */}
+                  <div style={{ display: 'flex', gap: 9, padding: '7px 0 3px', fontSize: 'var(--t-meta)' }}>
+                    <span style={{ flex: 1, color: 'var(--text2)' }}>Invoice State</span>
+                    <span style={{ fontWeight: 600 }}>{invoiceState}</span>
                   </div>
-
-                  {/* §47 — rental payments are their own block with their own label. */}
-                  <div style={moneyBlock}>
-                    <h3 style={sub}>Payments — rental only</h3>
-                    <Field label="Advance Payment">
-                      <Input
-                        type="number"
-                        min={0}
-                        value={advancePaisa / 100}
-                        onChange={(e) => setAdvancePaisa(rupees(Math.max(0, Number(e.target.value) || 0)))}
-                        style={inputStyle}
-                      />
-                    </Field>
-                    <div style={{ marginTop: 7 }}>
-                      <MoneyRow
-                        label="Rental Outstanding"
-                        value={formatMoney(breakdown.outstanding)}
-                        tone={breakdown.outstanding > 0 ? 'var(--danger-text)' : 'var(--success-text)'}
-                        strong
-                      />
-                      <div style={{ display: 'flex', gap: 9, padding: '3px 0', fontSize: 'var(--t-meta)' }}>
-                        <span style={{ flex: 1, color: 'var(--text2)' }}>Invoice State</span>
-                        <span style={{ fontWeight: 600 }}>{invoiceState}</span>
-                      </div>
-                    </div>
-                    <p style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
-                      <strong style={{ color: 'var(--text2)' }}>Partially Paid</strong> is an invoice state, not a payment
-                      status — a payment is Received in full or it is not.
-                    </p>
-                  </div>
+                  <p style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
+                    <strong style={{ color: 'var(--text2)' }}>Partially Paid</strong> is an invoice state, not a payment
+                    status — a payment is Received in full or it is not.
+                  </p>
                 </div>
 
                 <div style={moneyBlock}>
                   <h3 style={sub}>Payment History</h3>
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ background: 'var(--th-bg)' }}>
-                          {['Date', 'Type', 'Amount', 'Method', 'Collected By'].map((h, i) => (
-                            <th key={h} scope="col" style={{ ...th, textAlign: i === 2 ? 'right' : 'left' }}>
-                              {h}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[
-                          { d: '16 Jul 2026', t: 'Deposit', a: '25,000', m: 'Cash', by: 'Sagar Maharjan' },
-                          { d: '10 Jul 2026', t: 'Advance', a: '15,000', m: 'eSewa', by: 'Sagar Maharjan' },
-                        ].map((r) => (
-                          <tr key={r.t} style={{ borderBottom: '1px solid var(--border)' }}>
-                            <td className="figure" style={td}>{r.d}</td>
-                            <td style={td}>{r.t}</td>
-                            <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 600 }}>{r.a}</td>
-                            <td style={{ ...td, color: 'var(--text2)' }}>{r.m}</td>
-                            <td style={{ ...td, color: 'var(--text2)' }}>{r.by}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div style={{ display: 'flex', gap: 7, marginTop: 10, flexWrap: 'wrap' }}>
-                    <Button icon="dollar" variant="primary">Receive Payment</Button>
-                    <Button>Receive Deposit</Button>
-                  </div>
-                  {/* §10.7 — immutable; corrections are reversal entries. */}
-                  <p style={{ margin: '8px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
+                  {/*
+                   * ⛔ **What stood here.** A hardcoded two-row table asserting
+                   * that *Sagar Maharjan collected Rs 25,000 in cash on 16 Jul
+                   * 2026* and took a *Rs 15,000 eSewa advance on 10 Jul 2026* —
+                   * rendered against whatever booking the operator happened to
+                   * be building, and identical on every one of them. A
+                   * fabricated collector and two fabricated figures, on a money
+                   * panel: the record named an actor nobody signed in as and an
+                   * amount nobody entered.
+                   *
+                   * A NEW rental has no payment history by definition. A payment
+                   * references a booking, and this screen has never persisted
+                   * one — `confirmBooking` above says exactly that ("this
+                   * booking has not been saved yet"). So there is no figure to
+                   * degrade to and no collector to fall back on; the honest
+                   * render is the empty state.
+                   *
+                   * `EmptyState` rather than an empty table, and rather than
+                   * dropping the panel: it is the affordance this screen already
+                   * uses for a section that is real but not yet applicable
+                   * (Equipment before the first line, Crew before the first
+                   * assignment), and a header row over nothing still frames the
+                   * panel as a ledger that has been consulted.
+                   *
+                   * Law 6 is untouched — this block sits inside Section 5, which
+                   * only renders behind `canBookingMoney`.
+                   */}
+                  <EmptyState
+                    title="No payments on this booking"
+                    description="Payments are recorded against a saved booking. Once this rental exists, every payment and deposit taken on it is listed here with its date, method and the person who collected it."
+                  />
+                  {/* redesign v1 §1 — Receive Payment / Receive Deposit are not
+                      repeated here. Both money buttons live once, in the rail. */}
+                  <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
                     Payments are immutable — no Edit, no Void. A mistake is corrected by a reversal entry referencing
                     the original.
                   </p>
@@ -1708,67 +2921,9 @@ export default function NewRental() {
             </Section>
           )}
 
-          <Section
-            no={5}
-            title={SECTIONS[4]}
-            open={open[4] ?? true}
-            onToggle={() => toggle(4)}
-            summary="1 of 5 documents available"
-          >
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: isDesktop
-                  ? 'minmax(0,1.4fr) minmax(0,1fr)'
-                  : viewport === 'tablet'
-                    ? 'repeat(2, minmax(0,1fr))'
-                    : 'minmax(0,1fr)',
-                gap: 14,
-              }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <h3 style={sub}>Documents</h3>
-                <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-                  {/* §11 — nothing is pre-generated on a Draft. */}
-                  {[
-                    { n: 'Quote', from: 'Quote', ready: true },
-                    { n: 'Rental Agreement', from: 'Confirmed', ready: false },
-                    { n: 'Packing List', from: 'Preparing', ready: false },
-                    { n: 'Delivery Note', from: 'Dispatched', ready: false },
-                    { n: 'Invoice', from: 'invoice generated', ready: false },
-                  ].map((d) => (
-                    <div
-                      key={d.n}
-                      title={d.ready ? `${d.n} is available now` : `${d.n} becomes available at ${d.from}`}
-                      style={{ width: 104, padding: '10px 9px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', textAlign: 'center' }}
-                    >
-                      <Icon name="file" size={18} style={{ color: d.ready ? 'var(--link)' : 'var(--disabled)' }} />
-                      <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)', marginTop: 5, lineHeight: 1.25 }}>{d.n}</div>
-                      <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 2 }}>{d.ready ? 'Available' : `At ${d.from}`}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <h3 style={sub}>Review Summary</h3>
-                {/* §11 — never all green while a Critical alert is open. */}
-                {[
-                  { l: 'Client', ok: Boolean(client) && govId.trim().length > 0 },
-                  { l: 'Equipment', ok: lines.length > 0 && conflictLines.length === 0 },
-                  { l: 'Crew', ok: true },
-                  { l: 'Pricing', ok: !discountUnapproved && breakdown.rentalTotal > 0 },
-                  { l: 'Payments', ok: breakdown.outstanding <= 0 },
-                  { l: 'Documents', ok: false },
-                ].map((r) => (
-                  <div key={r.l} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', padding: '4px 0', fontSize: 'var(--t-meta)' }}>
-                    <Icon name={r.ok ? 'check' : 'alert_triangle'} size={13} style={{ color: r.ok ? 'var(--success-text)' : 'var(--progress-text)', flexShrink: 0 }} />
-                    <span style={{ flex: 1, color: 'var(--text2)' }}>{r.l}</span>
-                    <span style={{ fontWeight: 600, color: r.ok ? 'var(--text)' : 'var(--progress-text)' }}>{r.ok ? 'Complete' : 'Pending'}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Section>
+          {/* redesign v1 §6 — Section 5 "Documents & Review" is gone from the
+              body entirely. It is now the rail's Review + Documents cards,
+              below, which stay beside Confirm Booking instead of a screen away. */}
 
           {/* §58 — the footer reports the save state and nothing else. The one
               real Save Draft action lives in the header; a second large button
@@ -1801,26 +2956,62 @@ export default function NewRental() {
           </div>
         </div>
 
-        {/* §65 — desktop: main plus a sticky rail. The negative-margin/padding
-            pair keeps the rail's collapse handle (which sits at left:-12)
-            inside the sticky box instead of clipped by it. */}
+        {/*
+          Desktop: main plus a sticky rail, in 01_NEW_RENTAL §1.1's order —
+          SUMMARY, then the blocking notices, then `[ Confirm Booking ]`.
+
+          The cards the wireframe does not draw (Quick Actions, Review,
+          Documents, warnings, Activity Timeline) follow *below* Confirm rather
+          than being deleted: Rulings §1 keeps them, and putting them after the
+          button is the only arrangement that leaves the three drawn blocks
+          adjacent and in order.
+
+          The negative-margin/padding pair keeps the rail's collapse handle
+          (which sits at left:-12) inside the sticky box instead of clipped.
+        */}
         {isDesktop && (
           <div style={{ position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)', overflowY: 'auto', paddingLeft: 14, marginLeft: -14 }}>
-            <Rail width={300}>{railCards}</Rail>
+            <Rail width={300}>
+              {summaryCard}
+              {noticesCard}
+              {confirmBlock}
+              {railCards}
+            </Rail>
           </div>
         )}
       </div>
 
-      {/* §65 — tablet and phone: the rail's cards become a full-width panel
-          below the workspace, and the summary follows as a sticky bottom bar.
-          Width decides this, never orientation and never a platform check. */}
+      {/*
+        Tablet and phone: the rail **reflows**, it does not hide.
+
+        `WIREFRAME_RULINGS_2026-08-12.md` §7 — "Right rails collapse below 1180"
+        means the rail's content moves below the list and stays visible. The
+        collapsed "Review n/n" handle that used to sit here hid the blocking
+        notices behind a tap, which Law 12 forbids outright.
+
+        `CollapsibleAside` is deliberately not used and its defaults are not
+        touched — other pages depend on them.
+      */}
       {!isDesktop && (
         <div style={{ display: 'grid', gridTemplateColumns: viewport === 'tablet' ? 'repeat(2, minmax(0,1fr))' : '1fr', gap: 'var(--sp-md)', alignItems: 'start' }}>
+          {summaryCard}
           {railCards}
         </div>
       )}
 
       <FooterNote extra={['Sections are not a wizard — any order, one Confirm']} />
+
+      {/*
+        01_NEW_RENTAL Notes — "Blocking notices sit inline in the rail and
+        persist — never a toast."
+
+        The tablet and phone bars the spec draws are `Total …… [Confirm]`, with
+        no room for a notice. So below 1180 the notices card **detaches from the
+        rail and renders immediately above the sticky bar**, in full: not
+        truncated into the bar, not a toast, and not behind a disclosure. It is
+        the last thing above the button it is refusing.
+      */}
+      {!isDesktop && <div style={{ marginTop: 'var(--sp-md)' }}>{noticesCard}</div>}
 
       {/* §65 — the sticky bottom summary + primary action for tablet and phone,
           where the rail is no longer beside the work. */}
@@ -1897,6 +3088,52 @@ export default function NewRental() {
           setSelectedClientId(c.id)
           setGovId(c.pan ?? '')
         }}
+      />
+
+      {/* redesign v1 §5 — draft-only, review-before-send. Fired from the
+          Send Quote split button and each rail Documents tile's ✉ action. */}
+      <DraftEmailModal
+        isOpen={emailDraftDoc !== null}
+        onClose={() => setEmailDraftDoc(null)}
+        documentName={emailDraftDoc ?? ''}
+        toEmail={client?.email ?? ''}
+        subject={`${emailDraftDoc ?? 'Document'} — ${client?.name ?? 'New Rental'}`}
+        body={`Dear ${client?.name ?? 'Client'},\n\nPlease find the ${emailDraftDoc ?? 'document'} for your booking attached.\n\nRegards,\nBabin Rentals`}
+        onSend={() => showSuccessToast('Email queued', `${emailDraftDoc} will be sent to ${client?.email ?? 'the client'}.`)}
+      />
+
+      {/*
+        `[Cancel]`, behaviour one — nothing has been persisted, so leaving
+        deletes nothing and no law is engaged. It still asks, because a
+        half-built booking is real work; it takes no reason and dispatches
+        nothing.
+      */}
+      <ConfirmDialog
+        isOpen={cancelIntent === 'discard'}
+        onClose={() => setCancelIntent(null)}
+        onConfirm={discardDraft}
+        title="Discard this booking?"
+        description="Nothing has been saved yet, so there is no draft to cancel — leaving simply discards what is on screen. The client, dates, equipment and crew entered here will be lost."
+        confirmLabel="Discard and leave"
+        cancelLabel="Keep editing"
+        variant="danger"
+      />
+
+      {/*
+        `[Cancel]`, behaviour two — a draft row exists. Law 3: nothing is
+        deleted, so this is the named terminal transition `CANCEL_RENTAL` with
+        a recorded reason, not a discard.
+      */}
+      <ConfirmDialog
+        isOpen={cancelIntent === 'cancel'}
+        onClose={() => setCancelIntent(null)}
+        onConfirm={cancelDraftBooking}
+        title="Cancel this draft booking?"
+        description="The draft has been saved, so it is not discarded — it is moved to Cancelled and stays on the record with the reason below. Nothing is deleted."
+        confirmLabel="Cancel booking"
+        cancelLabel="Keep the draft"
+        variant="danger"
+        requireReason={{ minLength: 10, label: 'Why is this booking being cancelled?' }}
       />
     </div>
   )

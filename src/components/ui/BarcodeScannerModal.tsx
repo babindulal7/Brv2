@@ -52,7 +52,7 @@ export function BarcodeScannerModal({
   isOpen,
   onClose,
   mode,
-  bookingId = 'BK-2026-0710',
+  bookingId = 'B-710',
   items,
   onItemScanned,
 }: BarcodeScannerModalProps) {

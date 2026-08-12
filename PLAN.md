@@ -492,6 +492,10 @@ Foundation §3.3: under Nepali, month names render in Devanagari (`साउन`
 nor Inter as installed ships Devanagari** — those glyphs would render as tofu. A
 Devanagari-capable face is needed.
 
+**→ Answered and superseded by [§4.26](#426-nepali-is-0-translated-and-the-faces-are-not-installed--12-aug-2026)**
+(12 Aug 2026): the faces are **Asar** and **Hind**, neither is installed, and the real blocker
+turned out not to be the font at all — the Nepali catalogue is at 0%. Read §4.26 instead of this.
+
 ## 4.3 ✅ SUPERSEDED 8 Aug 2026 — roles: **eight**, not six
 
 **Re-ruled 8 Aug 2026** (`supabase/migrations/0013_business_8_roles.sql`,
@@ -1078,6 +1082,361 @@ Two concrete sub-items are already known and do not need the ruling: `EmptyState
 distinguish its two required kinds (nothing-yet vs no-results) — today the kind is not even a
 required prop — and `BookingDetail`'s six `alert()` calls must become inline persistent errors
 per Law 12.
+
+## 4.19 "Allow overbooking" toggle scope — global or per-role — 12 Aug 2026
+
+`NEW_RENTAL_REDESIGN_v1.md` §3 adds `Settings ▸ Financial ▸ Booking rules ▸ Allow overbooking`
+(off by default), gating whether a booked/maintenance chip in Add Item opens an override dialog
+(sub-rent preferred, or book-anyway with a required reason ≥10 chars and a named approver — the
+same shape as the existing >10% discount gate). The spec's own text flags this as unresolved:
+
+> should the toggle be global, or per-role? A global switch means a Coordinator can overbook
+> once an Owner turns it on. Per-role (Owner + Admin only) is the safer default but is a new
+> capability string.
+
+**Not assumed either way.** Shipped the global reading of the spec's literal text — the toggle
+lives in Settings, gated only by whoever can already reach Settings (`canManageSettings`, Owner
+only, per `lib/rbac.ts`) — and did **not** add a new `rbac.ts` capability function or RLS mirror
+for a per-role restriction, since Law 6/§0 requires any such gate be enforced by RLS, not the UI,
+and no migration exists for it. **TODO(decision):** if per-role (Owner + Admin only) is ruled the
+safer default, that needs a new `canOverrideBooking(role, isOnline)` in `lib/rbac.ts` mirrored by
+a migration-level function, per the file's own header rule.
+
+A second, smaller gap from the same feature: the toggle itself is **client-only** state
+(`lib/bookingRules.ts`, localStorage), not a Supabase-backed setting — every other Settings.tsx
+toggle is local-state-only today (no settings-persistence layer exists in this build at all), so
+this did not stand up a first settings-backend connection as a side effect of one toggle. Real
+persistence is a separate, larger piece of work than this redesign.
+
+---
+
+## 4.20 The §2.2 record-number rename landed in TypeScript only — 12 Aug 2026
+
+`WIREFRAME_RULINGS_2026-08-12.md` §2 ruled one ID per entity with **no year segment and no zero
+padding** — `B-1`, `C-1`, `INV-1`, not `BK-2026-0715`. That ruling was implemented in
+`src/data/numbering.ts` and `src/lib/seed.ts`, and **not** in the schema. The database still
+enforces the retired shapes:
+
+| Table | Constraint | Live definition | New format |
+|---|---|---|---|
+| `clients` | `clients_client_code_format` | `CHECK (client_code ~ '^CL-[0-9]{4}-[0-9]{4}$')` | rejects `C-34` |
+| `bookings` | `bookings_booking_no_format` | `CHECK (booking_no ~ '^BK-[0-9]{4}-[0-9]{4}$')` | rejects `B-715` |
+
+Exactly two constraints block it. `invoices`, `payments` and `security_deposits` have **no**
+format constraint at all, so `INV-1` and `PAY-2026-0001` would both be accepted — verified
+against the live project, not inferred from the migrations.
+
+This is what stopped `0047_seed_reference_corpus` from applying on 12 Aug: regenerating it
+through `npm run seed:sql` (the sanctioned path — it is a generated file) correctly emits the
+new identifiers, and the first `insert into clients` is then rejected by the old CHECK. The
+ruling's own lines 86-88 predicted this: *"This rename is a single coordinated pass, not eleven
+piecemeal edits."* Half the pass landed.
+
+**TODO(decision).** Completing it needs a `0055` swapping both CHECKs to the §2.2 formats, and
+that carries a real sub-decision: the one surviving client row is `CL-2026-0102` (Himalayan
+Mountain Media, created 11 Aug), which the **new** regex would reject. Migrating it to `C-102`,
+widening the regex to accept both during a transition, or reverting the TypeScript half are
+three different answers with different costs, and the exact regex is itself a call —
+`numbering.ts` uses one `N` token meaning "no padding", which `^C-[0-9]+$` expresses but does
+not constrain. Put to the user 12 Aug 2026 and **not answered**, so nothing was assumed and no
+`0055` was written.
+
+**Consequence while it is open:** the operational tables stay empty, so a converted screen
+renders its empty state rather than rows. The conversions themselves are unaffected — they are
+written against the real schema, which the rename does not touch. What is blocked is
+*verification by driving the app*, which `CLAUDE.md` requires before any of this is called done.
+Not a reason to stop wiring; a reason not to claim it is verified.
+
+Unrelated to the rename but found in the same attempt, and already fixed: the seed inserted each
+invoice as `Sent` and *then* its `invoice_lines`, so `recalculate_invoice_totals()` (0010) fired
+and its `update invoices` was correctly rejected by `reject_invoice_edit_after_issue()` (0006).
+`src/lib/seed.ts` now emits the lawful lifecycle — Draft → lines → restate → issue — which is the
+flow `0006_finance.sql:481-483` always described. The triggers were right; the seed's ordering
+was not.
+
+---
+
+## 4.21 ✅ DISSOLVED 12 Aug 2026 — "what `productions` should be"
+
+§6.27 opened a `TODO(decision)`: *what `productions` should be (its own table? a view over
+`crew_bookings`/`bookings` grouped by client+date-range?)*. It is **dissolved, not answered.**
+
+`../updated mds/04_RENTALS.md` line 3: *"Bookings only. **Productions removed.** Sub-Rental is a
+filter chip."* That is prose, so it is one of the eight genuine removals in
+`WIREFRAME_RULINGS_2026-08-12.md` §1 — the standing rule elsewhere is that a panel survives
+unless a spec removes it in words, and this one does.
+
+There is nothing to design because the entity never existed: §6.27 already recorded that
+`productions` has never been a real table in any of the 54 migrations, and dropped
+`crew_bookings.production_id`'s inline FK for exactly that reason (the column stays a nullable
+`uuid` stub). Nothing was wired to a database, so nothing loses a source.
+
+**Deleted 12 Aug 2026:** the Rentals tab strip, `ProductionsTab` in
+`src/modules/rentals/RentalsList.tsx`, `src/data/productions.ts` and `src/data/productionIntel.ts`.
+`src/data/nav.ts` already carried the ruling (`SPEC_TABS['/rentals'] = []`, asserted by
+`nav.test.ts:222`); the screen now agrees with it.
+
+⚠ **Do not resurrect this from Foundation §5.1**, which still lists three tabs on Rentals
+(Bookings · Productions · Sub-Rental) and is the older document. `src/data/crew.ts`'s
+`production: string` stays free text — that is a label on a crew row, not the entity.
+
+---
+
+## 4.22 Rentals ▸ Export — two product calls, neither answered — 12 Aug 2026
+
+`04_RENTALS.md` §4.1 draws `[＋ New Rental] [Export]` in the page header. The button is built and
+**stays honestly disabled with its reason**, because the spec draws a control, not a pipeline, and
+two things it needs are unruled:
+
+1. **The file format.** CSV, XLSX and a PDF register are different products with different
+   consumers; nothing in the spec library picks one.
+2. **Which columns a role may export.** This is the one that matters. Law 6 keeps money off a
+   Warehouse/Technician/Driver session by *not selecting the column*
+   (`lib/queries/bookings.ts`'s `withDeposit`), and a full-column export would walk straight around
+   that — an export is a read path like any other and needs the same role rule, expressed once,
+   not re-derived per format.
+
+**TODO(decision).** Until both are ruled the button carries the sentence rather than a guess.
+Related and already done in the same pass: the **Import** button beside it is removed — §4.1 draws
+no such control and it too was a disabled placeholder with no pipeline behind it.
+
+---
+
+## 4.21 The offline write path returns success for a write that has not happened — 12 Aug 2026
+
+`lib/dataAccess.ts`'s `idempotentInsert` contains this, and it is reached by every implemented
+action:
+
+```ts
+if (typeof navigator !== 'undefined' && !navigator.onLine) {
+  await enqueueMutation(String(table), 'insert', finalPayload, finalPayload.client_uuid)
+  return { data: finalPayload, error: null }   // Optimistic response
+}
+```
+
+The queued and the written case return **the same shape**. There is no flag, no discriminant,
+nothing a caller can branch on. So an action cannot tell its screen whether the row reached
+Postgres or is sitting in IndexedDB, and the screen therefore cannot tell the operator. That is
+the "success for work it did not do" defect `actions/core.ts` was written to end, re-created one
+layer below the dispatcher.
+
+Four of the five implemented actions already refuse offline rather than trust this:
+`recordPayment`, `confirmRental`, `createClient` and `blockClient` all check `navigator.onLine`.
+`recordPayment`'s header states the reasoning — *"a receipt for money the ledger has not recorded
+is worse than no receipt"*.
+
+**`src/actions/rentals/floorVerb.ts` has no such guard** — zero references to `navigator.onLine` —
+so Pack, Handover, Return and Reset all take the optimistic path. A dead-lettered mutation
+(`offlineQueue.ts`, `MAX_RETRIES = 5`) then leaves an operator believing a booking is packed when
+the server has no record of it.
+
+**TODO(decision)** — and it is genuinely two decisions, not one:
+
+1. **Should the floor verbs queue offline at all, or refuse like the money path?** Queueing is
+   defensible for warehouse work — poor connectivity is the reason the queue exists, and these
+   verbs write no money, so Law 6 is not in play. Refusing is defensible because a mis-stated
+   stage propagates to every other screen through the single booking query. Not assumed either
+   way.
+2. Regardless of (1), the API gap is **not** a product decision and should be closed: give
+   `idempotentInsert` a `queued: true` discriminant so a caller *can* distinguish, and let the
+   screen say "queued — not yet saved" instead of "saved". Until that exists, no floor verb can
+   report the truth even if it wants to.
+
+Related, same file: `offlineQueue.ts:78` constructs its Dexie instance at module scope
+(`export const db = new OfflineQueueDB()`), so importing `dataAccess` reaches IndexedDB. Under
+jsdom there is none, which is why `npx vitest run` currently exits 1 with five
+`MissingAPIError: IndexedDB API missing` unhandled rejections while every test passes.
+
+---
+
+## 4.23 ✅ RULED 12 Aug 2026 — a waiver needs an approver too
+
+Both give money away. The rules are not symmetric, and neither file mentions the other.
+
+| | Reason required | Named approver | Where |
+|---|---|---|---|
+| Discount > 10% | ≥10 chars | **yes** — Manager or Owner | `lib/discount.ts` (Law 10) |
+| Late-fee waiver | ≥10 chars | **no** — any staff | `lib/lateFee.ts` (ruled 12 Aug) |
+
+The waiver rule was ruled deliberately, on the 21 Jul precedent that any staff may release gear
+after an unpaid-advance warning, logged. So this is **not a bug report** — it is a question about
+whether the asymmetry is intended at the same rupee value.
+
+A Rs 6,000 late fee waived by a Warehouse operator and a Rs 6,000 discount that needs an Owner
+are the same money leaving the business.
+
+**Ruled: the asymmetry was not intended.** A waiver now needs a **named Manager or Owner**, and
+the table above becomes symmetric in kind:
+
+| | Reason ≥10 chars | Named approver |
+|---|---|---|
+| Discount > 10% | yes | yes |
+| Late-fee waiver | yes | **yes** |
+
+**No threshold**, deliberately. Law 10's gate is a *percentage* and a waiver has no base to take
+a percentage of, so the only non-arbitrary line is "all of them" — picking a rupee figure would
+have been inventing the decision this section was asked to settle.
+
+Any staff member may still *raise* a waiver; the approver signs it. Both names and the reason go
+to the audit log. `WAIVER_NEEDS_APPROVER` in `lib/lateFee.ts` is the switch, and
+`validateWaiver` refuses without it rather than silently waiving.
+
+---
+
+## 4.24 ✅ RULED 12 Aug 2026 — one day's rate is the whole booking
+
+`LateFeeInput.dayRatePaisa` in `lib/money.ts` has carried this gap since the engine was written;
+its own header says no function anywhere in `src/` aggregates a booking's live
+`booking_lines.rate × qty` into one "one day" figure, and that the scope is unruled.
+
+Building the Return/Booking Detail panel forced the question into the open, because a panel has
+to show *a* number.
+
+**Ruled: the whole booking** — equipment **and** crew **and** transport. A client who keeps the
+kit an extra day keeps the crew, and the vehicle too if the vehicle was billed daily.
+
+The question assumed transport is always flat. It is not: **transport can be billed flat or per
+day, and both are real.** `TransportBilling` in `lib/lateFee.ts` models the two, and a booking
+declares which it used.
+
+That settles the "a per-day share of a flat charge is an invention" objection without
+excluding transport wholesale:
+
+| Transport billed | Contributes to a late day | Why |
+|---|---|---|
+| **per day** | in full, undivided — it is already a daily figure | the vehicle was held, and held one day longer |
+| **flat** | nothing | that is what *flat* means; a delivery run quoted once does not happen again because the return was late |
+
+Equipment and crew are booking **totals**, so they divide by the rental days. `bookingDayRate()`
+is the aggregator `money.ts`'s `LateFeeInput` note said did not exist anywhere in `src/`.
+`DAY_RATE_BASIS` still renders under the figure, so the operator sees the reading before
+approving it.
+
+**Still open, and separate:** nothing writes `bookings.actual_return_at`. The column exists and
+`bookingQuery.ts:435` reads it; which session-close event stamps it — the first partial close, or
+the one that completes the booking's Return job — is unruled.
+
+Related and still true: **nothing writes `bookings.actual_return_at`.** The column exists and
+`bookingQuery.ts:435` reads it; which session-close event should stamp it — the first partial
+close, or the one that finally completes the booking's Return job — is also unruled.
+
+---
+
+## 4.25 ✅ RULED 12 Aug 2026 — Country is optional too
+
+The 12 Aug ruling relaxed Add Client's required set to **name and phone**, enumerating address,
+city, PAN and contact person as newly optional. It did not mention **Country**, which is still
+gated.
+
+The result was incoherent: a client could be saved with a country and no city.
+
+**Ruled: country is optional too.** The whole address block — address, city, district, postal
+code, country — is now fill-in-later, and can be completed when an invoice needs it. The
+incoherence is gone because the last gate went with it.
+
+The required set on Add Client is therefore exactly **name and phone**. Phone is the one that
+earns it: it is the only unique key a client has, so duplicate detection and the merge tool have
+nothing to match on without it.
+
+Format checks are untouched — optional does not mean unvalidated. A phone or an email that is
+*present* still has to be shaped correctly.
+
+---
+
+## 4.26 ✅ RULED 12 Aug 2026 — Nepali is on: catalogue at 100%, faces installed
+
+Supersedes nothing in §4.2 — it **answers half of it and measures the rest.**
+
+§4.2 asked for "a Devanagari-capable face". The 12 Aug spec names the two: **Asar** (headings)
+and **Hind** (body). Neither is in `package.json`. `main.tsx` §4.3.7 already documents the
+loading policy — they must load *on the toggle*, never eagerly, because each Hind weight is
+1,146 glyphs an English-only user must not download.
+
+Two costs are now encoded and tested in `lib/i18n.ts` rather than left to be discovered:
+
+- **Asar ships one weight.** A browser asked for a weight a face lacks **synthesises** it, and a
+  faux-bold smears the conjuncts Devanagari depends on. `safeWeight()` clamps; a test asserts
+  over its whole output space that it never returns a weight that would be synthesised.
+- **The toggle changes body metrics** (Source Sans 3 → Hind), so a table that fits in English
+  may not fit in Nepali. Every table screen needs a Nepali layout pass.
+
+**Ruled 12 Aug: translate it and install the faces.** Done:
+
+- `@fontsource/asar` and `@fontsource/hind` are installed. Checking them corrected a mistake in
+  the first draft: **Asar ships only 400** (the spec's warning was right), but **Hind ships
+  300/400/500/600/700**, so body text needs no clamp at all — only headings do. `safeWeight` was
+  wrong and is fixed.
+- `loadNepaliFonts()` imports the **per-subset** files (`devanagari-400`, `latin-400`, …), not
+  the barrel, so §4.3.7's payload concern is honoured: an English-only user downloads nothing.
+- `applyLanguage()` swaps `--font-display` / `--font-body` to the `--font-ne-*` pair `theme.css`
+  already declared, and sets `<html lang>` — which is what a screen reader switches voice on.
+- The catalogue is at **100%** and `canEnable('ne')` returns true. Settings ▸ Language is a real
+  setting, stored per browser by `settingsStore`.
+
+**Two caveats worth keeping visible.**
+
+1. The catalogue is currently **17 keys** — nav, five statuses, three actions. It covers the
+   machinery, not the app. Every string added from here is a translation decision, and the
+   coverage gate will drop below 100% the moment an English key is added without its Nepali
+   pair, which is the intended behaviour.
+2. **A native speaker should review the wording before this is shown to staff.** The terms
+   chosen lean on standard business Nepali — `मौज्दात` for inventory rather than the literal
+   `सामान सूची`, `पात्रो` for the calendar because the screen's whole point is BS — and those are
+   judgement calls a Nepali-speaking operator may want to overrule.
+
+**Still to do:** the per-table Nepali layout pass. The action labels are ~2.5× their English
+width (`सुरक्षित गर्नुहोस्` vs `Save`), which is the metric problem in miniature.
+
+---
+
+## 4.27 A client's *standing* discount has no way to satisfy Law 10 — 12 Aug 2026
+
+Law 10 gates a discount above 10% on a **reason ≥10 chars** and a **named approver**.
+`lib/discount.ts` implements that, and `validateDiscount(percent, reason, approverId)` takes both.
+
+`ClientRecord` carries neither. The nearest field is `discountSource`, a three-value enum
+(`Type Rule` · `Membership` · `Named Client`) — that is a *category*, not a justification, and
+there is no approver column anywhere on the client.
+
+So a standing discount above 10% is currently unjustifiable by construction: the law demands two
+things the schema cannot hold. Two seed records already sit above the line (`C-2` at 12%), which
+means this is not hypothetical — it is a rule the data predates.
+
+Inline edit on `ClientDetail` therefore **refuses to set** a standing discount above 10%, and
+says why on the field. Existing records above 10% still display; nothing was rewritten.
+
+**TODO(decision):** either
+
+- **the schema grows** `standing_discount_reason` and `standing_discount_approver_id`, and Law
+  10 applies to standing discounts exactly as it does to per-booking ones; or
+- **standing discounts are capped at 10%** and anything larger has to be taken per booking,
+  where the reason and approver already exist; or
+- **standing discounts are outside Law 10** — a deliberate carve-out, on the argument that they
+  are set once by an Owner rather than applied per transaction. If so it should be written down,
+  because the current silence reads as an oversight.
+
+### The counter-argument, since the carve-out is the tempting option
+
+The carve-out looks safe — "an Owner sets it once, so the approver *is* the Owner" — and it is
+the reading that needs no schema change. It is also the weakest of the three, for a reason worth
+stating before it gets picked by default:
+
+**A standing discount is not applied once. It is applied on every future booking, silently.** A
+per-booking discount above 10% is a visible event with a reason attached to that booking; a 12%
+standing discount is invisible from the booking that uses it, and the reason — if one ever
+existed — lives nowhere. Law 10's whole purpose is that money given away carries a name and a
+justification, and the standing case gives away *more* money over time with *less* record.
+
+The precedent also cuts the other way. §4.23 has just ruled that a late-fee waiver gains an
+approver **precisely because** the asymmetry with Law 10 was unintended. Carving standing
+discounts out would re-open the same asymmetry in a third place, days after closing it in the
+second.
+
+**Recommendation: grow the schema** (`standing_discount_reason`, `standing_discount_approver_id`)
+and apply Law 10 unchanged. The cap-at-10% option is a reasonable interim — it needs no
+migration, and the two seed rows above the line keep displaying — but it moves real business
+(a 12% Production Alliance rate) into per-booking discounts that then need approving one at a
+time, which is more friction, not less.
 
 ---
 
@@ -2060,9 +2419,11 @@ to either Supabase project — this sweep only proves the *shape* is consistent,
 `CHECK`, trigger, or `DEFAULT` expression is itself valid Postgres. The real test is still the
 first actual `apply_migration` run, whenever the paused project is available.
 
-**Open TODO(decision), new:** what `productions` should be (its own table? a view over
-`crew_bookings`/`bookings` grouped by client+date-range? out of scope until Crew Booking v3.2's own
-still-open placement question is answered) — flagged, not designed here.
+**~~Open TODO(decision), new:~~ ✅ DISSOLVED 12 Aug 2026 — see §4.21.** What `productions` should be
+(its own table? a view over `crew_bookings`/`bookings` grouped by client+date-range?) no longer
+needs an answer: `04_RENTALS.md` line 3 removes Productions from the product in prose, so there is
+no entity left to design. The nullable `uuid` stub column stays; the UI, the two seed files and the
+tab are deleted.
 
 ## 6.28 FIRST REAL APPLY — the chain's numeric order never matched its dependency order;
      196 forward FKs mechanically deferred — 10 Aug 2026

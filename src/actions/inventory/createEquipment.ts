@@ -1,5 +1,6 @@
 import { createAction, ActionContext } from '../core';
 import { EVENT_TYPES } from '../../events/eventBus';
+import { prefixOf } from '../../data/numbering';
 
 export type CreateEquipmentInput = {
   name: string;
@@ -17,7 +18,14 @@ export const createEquipment = createAction<CreateEquipmentInput, { success: boo
   },
 
   execute: async (input, ctx: ActionContext) => {
-    const generatedId = `EQ-${Date.now().toString().slice(-4)}`;
+    /*
+     * Prefix from `Settings ▸ Numbering` — ruling §2.2. The *shape* is left
+     * alone: Equipment is not in the ruling's table and its three authorities
+     * already contradict each other (`numbering.ts` says `EQ-CAT-NNNNNN`,
+     * `lib/seed.ts` and `products_asset_code_format` say `EQ000234`). Picking
+     * one here would be inventing a product decision. TODO(decision).
+     */
+    const generatedId = `${prefixOf('EQ')}-${Date.now().toString().slice(-4)}`;
     console.log(`[DB TX] Created equipment ${generatedId}: ${input.name} (Draft: ${!!input.isDraft})`);
 
     const events = [

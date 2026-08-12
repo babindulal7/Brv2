@@ -1,12 +1,16 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, FooterNote, SummaryRows } from '../../components/ui/Page'
 import { Modal } from '../../components/ui/Modal'
 import { EmptyState } from '../../components/ui/StateViews'
+import { Unavailable } from '../../components/ui/Unavailable'
 import { useToast } from '../../components/ui/Toast'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useAuth } from '../../lib/auth'
+import { useNetwork } from '../../lib/network'
+import type { ActionContext } from '../../actions/core'
 import { CLIENTS_DATA, findDuplicateGroups, type ClientRecord, type DuplicateGroup, type DuplicateMatchReason } from '../../data/clients'
 
 /**
@@ -24,12 +28,53 @@ import { CLIENTS_DATA, findDuplicateGroups, type ClientRecord, type DuplicateGro
  * the "found a match" path was verified separately, without corrupting the
  * seed data to manufacture a demo case.
  *
- * Merge is real within the session (not persisted — no backend exists yet,
- * same disclosed limit as everything else pre-Phase 1): the surviving record
- * absorbs the closed records' rental counts, lifetime spend and active
- * bookings; the closed records get `mergedIntoId` set — Law 3, a named
- * terminal action, never a delete.
+ * ⛔ **What was removed and why** (`SUCCESS_FABRICATION_REGISTER_2026-08-12.md`,
+ * section D). `confirmMerge` used to rewrite local state **first** — survivor
+ * absorbs the merged record, every other client in the group stamped
+ * `mergedIntoId` + `mergedAt` — then fire `mergeClients` per record inside an
+ * un-caught `.then()`, then toast synchronously, before any dispatch could have
+ * resolved. There was no rollback and no `.catch()`. Three duplicates vanished
+ * from the list, the header read "3 merged this session", the toast confirmed
+ * it — and on reload all three were back, while the operator had moved on
+ * believing the directory was clean and may have quoted the survivor's merged
+ * credit limit.
+ *
+ * **The order is now inverted: dispatch, then commit.** Nothing local changes
+ * until `MERGE_CLIENTS` resolves for that record, and the success toast fires
+ * only on the all-resolved path.
+ *
+ * **A merge is destructive-shaped, so half-applying is stated, never hidden.**
+ * The records are merged one at a time and the loop stops at the first refusal.
+ * Whatever landed is committed locally (so the screen matches what actually
+ * happened); whatever did not is named in a persistent inline line — which of
+ * them merged, which one failed, and that the rest were never attempted. There
+ * is no path where some records merge and the screen implies all of them did.
+ *
+ * `mergeClients` is not marked `implemented`, so `actions/core.ts` refuses it
+ * before `execute` and today the honest outcome is: nothing merges, and the
+ * operator reads why. Restoring the toast is not the fix.
  */
+
+/**
+ * ⛔ **The merge fix's sibling, missed the first time.** `Not a Duplicate` put
+ * the group's key into a local `dismissedKeys` set and the card vanished — no
+ * dispatch, no persistence, and nothing on screen saying so. An operator
+ * triaging false positives cleared them one card at a time, watched the list
+ * empty, and on the next load `findDuplicateGroups` — which re-derives from the
+ * client list on every render and has no memory to consult — raised every one
+ * of them again. The triage was never recorded anywhere. Only the belief that
+ * it had been.
+ *
+ * A dismissal is a stored fact about a *pair* ("these two are different people,
+ * stop asking"), so session state cannot express it: it is precisely the thing
+ * the next render has to read. There is no dismiss/not-duplicate action under
+ * `src/actions/` — a build gap, not an open product question — so the control
+ * states the gap where it stands, the same treatment `crew/CrewBooking.tsx`
+ * gives `Book Crew`. The local set went with it; leaving it would have left a
+ * session-only triage that still evaporates.
+ */
+const NOT_DUPLICATE_UNAVAILABLE =
+  'Not built yet — dismissing a match has to be stored against the pair or the detector raises it again on the next load, and no dismiss action exists'
 
 const REASON_LABEL: Record<DuplicateMatchReason, string> = {
   phone: 'Phone',
@@ -59,12 +104,10 @@ function GroupCard({
   group,
   money,
   onRequestMerge,
-  onDismiss,
 }: {
   group: DuplicateGroup
   money: boolean
   onRequestMerge: (survivorId: string) => void
-  onDismiss: () => void
 }) {
   const defaultSurvivor = group.clients.reduce((best, c) => (c.totalRentalsCount > best.totalRentalsCount ? c : best))
   const [survivorId, setSurvivorId] = useState(defaultSurvivor.id)
@@ -73,9 +116,11 @@ function GroupCard({
     <Card
       title={`Possible duplicate · matched on ${group.reasons.map((r) => REASON_LABEL[r]).join(', ')}`}
       action={
-        <Button variant="ghost" onClick={onDismiss}>
-          Not a Duplicate
-        </Button>
+        <Unavailable reason={NOT_DUPLICATE_UNAVAILABLE}>
+          <Button variant="ghost" disabled>
+            Not a Duplicate
+          </Button>
+        </Unavailable>
       }
     >
       <div
@@ -144,42 +189,129 @@ export default function DuplicateCenter() {
   const navigate = useNavigate()
   const money = useCanViewMoney()
   const { showSuccessToast } = useToast()
+  const { user } = useAuth()
+  const online = useNetwork()
 
   const [clients, setClients] = useState<ClientRecord[]>(CLIENTS_DATA)
-  const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(new Set())
   const [pendingMerge, setPendingMerge] = useState<{ group: DuplicateGroup; survivorId: string } | null>(null)
+  const [merging, setMerging] = useState(false)
+  /**
+   * Law 12 — the one inline, persistent failure line for this screen. Toasts
+   * here are success-only (`useToast()` exposes `showSuccessToast` and nothing
+   * else), and a merge that half-applied or did not apply at all is exactly the
+   * thing that must not disappear after four seconds.
+   */
+  const [mergeError, setMergeError] = useState<string | null>(null)
 
-  const groups = useMemo(
-    () => findDuplicateGroups(clients).filter((g) => !dismissedKeys.has(g.key)),
-    [clients, dismissedKeys],
-  )
+  // Every group the detector finds is shown. Nothing filters this list — a
+  // dismissal it could honour would have to come back from a store, and there
+  // is none (see NOT_DUPLICATE_UNAVAILABLE).
+  const groups = useMemo(() => findDuplicateGroups(clients), [clients])
 
   const checkedCount = clients.filter((c) => !c.mergedIntoId).length
   const mergedCount = clients.filter((c) => c.mergedIntoId).length
 
-  const confirmMerge = () => {
-    if (!pendingMerge) return
+  /**
+   * No session, no dispatch, and never a substituted identity — the same shape
+   * `rentals/NewRental.tsx` and `today/MovementList.tsx` use. `isOnline` is
+   * passed because this screen knows it and `lib/rbac` degrades several
+   * approvals offline; omitting it lets `ActionContext` default to online,
+   * which is the fail-open direction.
+   */
+  const dispatchContext = useCallback((): ActionContext | null => {
+    if (!user) return null
+    return { userId: user.id, role: user.role, isOnline: online }
+  }, [user, online])
+
+  const confirmMerge = useCallback(async () => {
+    if (!pendingMerge || merging) return
     const { group, survivorId } = pendingMerge
     const survivor = group.clients.find((c) => c.id === survivorId)
     if (!survivor) return
     const closed = group.clients.filter((c) => c.id !== survivorId)
-    const merged = mergeInto(survivor, closed)
 
-    setClients((prev) =>
-      prev.map((c) => {
-        if (c.id === survivor.id) return merged
-        const wasClosed = closed.find((x) => x.id === c.id)
-        return wasClosed ? { ...c, mergedIntoId: survivor.id, mergedAt: new Date().toISOString() } : c
-      }),
-    )
-    closed.forEach((c) => {
-      import('../../actions/clients/mergeClients').then((m) =>
-        m.mergeClients({ survivorId: survivor.id, duplicateId: c.id })
+    const ctx = dispatchContext()
+    if (!ctx) {
+      setPendingMerge(null)
+      setMergeError(
+        'Not merged — you are not signed in, so this merge cannot be attributed to anyone. Nothing was changed: ' +
+          `all ${closed.length} record${closed.length === 1 ? ' is' : 's are'} still separate. Sign in and try again.`,
       )
-    })
-    showSuccessToast('Clients merged', `${closed.length} record(s) merged into ${survivor.name}`)
+      return
+    }
+
     setPendingMerge(null)
-  }
+    setMergeError(null)
+    setMerging(true)
+
+    // The module load is inside the guarded region too: if it fails, `merging`
+    // must not be left stuck true with nothing on screen explaining why.
+    let mergeClients: typeof import('../../actions/clients/mergeClients')['mergeClients']
+    try {
+      mergeClients = (await import('../../actions/clients/mergeClients')).mergeClients
+    } catch (err: unknown) {
+      console.error('merge clients module failed to load:', err)
+      setMerging(false)
+      setMergeError(
+        `Not merged — the merge action could not be loaded (${err instanceof Error ? err.message : String(err)}). ` +
+          `Nothing was changed: all ${closed.length} record${closed.length === 1 ? ' is' : 's are'} still separate.`,
+      )
+      return
+    }
+
+    // Sequential on purpose. These are N independent writes with no transaction
+    // around them, so the only way to keep the report truthful is to know
+    // exactly where it stopped — `Promise.all` would leave an unknown number of
+    // them landed behind a single rejection.
+    const landed: ClientRecord[] = []
+    let failure: { client: ClientRecord; message: string } | null = null
+    for (const c of closed) {
+      try {
+        await mergeClients({ survivorId: survivor.id, duplicateId: c.id }, ctx)
+        landed.push(c)
+      } catch (err: unknown) {
+        console.error('merge clients failed:', err)
+        failure = { client: c, message: err instanceof Error ? err.message : String(err) }
+        break
+      }
+    }
+
+    setMerging(false)
+
+    // Commit only what actually landed. The survivor absorbs the merged
+    // records' counts, spend and bookings — never the ones that refused.
+    if (landed.length > 0) {
+      const mergedSurvivor = mergeInto(survivor, landed)
+      const landedIds = new Set(landed.map((c) => c.id))
+      const at = new Date().toISOString()
+      setClients((prev) =>
+        prev.map((c) => {
+          if (c.id === survivor.id) return mergedSurvivor
+          return landedIds.has(c.id) ? { ...c, mergedIntoId: survivor.id, mergedAt: at } : c
+        }),
+      )
+    }
+
+    if (!failure) {
+      showSuccessToast(
+        'Clients merged',
+        `${landed.length} record${landed.length === 1 ? '' : 's'} merged into ${survivor.name}`,
+      )
+      return
+    }
+
+    const notAttempted = closed.length - landed.length - 1
+    setMergeError(
+      landed.length === 0
+        ? `Not merged — ${failure.message} Nothing was changed: all ${closed.length} record${closed.length === 1 ? ' is' : 's are'} still separate.`
+        : `Partially merged — ${landed.length} of ${closed.length} records merged into ${survivor.name} (${landed
+            .map((c) => c.name)
+            .join(', ')}). ${failure.client.name} then failed: ${failure.message}` +
+            (notAttempted > 0
+              ? ` The remaining ${notAttempted} record${notAttempted === 1 ? ' was' : 's were'} not attempted and ${notAttempted === 1 ? 'is' : 'are'} still separate.`
+              : ''),
+    )
+  }, [pendingMerge, merging, dispatchContext, showSuccessToast])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
@@ -194,6 +326,34 @@ export default function DuplicateCenter() {
         }
       />
 
+      {/* Law 12 — the failure path is inline and persistent, in the screen's
+          existing danger-text idiom. It sits above the groups because the thing
+          it reports (what merged, what did not) is a fact about the list below. */}
+      {merging && (
+        <p style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 7, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+          <Icon name="timer" size={14} style={{ flexShrink: 0 }} />
+          Merging… nothing has changed yet.
+        </p>
+      )}
+      {mergeError && (
+        <p
+          role="alert"
+          style={{
+            margin: 0,
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 7,
+            fontSize: 'var(--t-meta)',
+            fontWeight: 600,
+            color: 'var(--danger-text)',
+            lineHeight: 1.45,
+          }}
+        >
+          <Icon name="error" size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+          <span>{mergeError}</span>
+        </p>
+      )}
+
       {groups.length === 0 ? (
         <EmptyState
           title="No duplicates found"
@@ -207,7 +367,6 @@ export default function DuplicateCenter() {
               group={g}
               money={money}
               onRequestMerge={(survivorId) => setPendingMerge({ group: g, survivorId })}
-              onDismiss={() => setDismissedKeys((prev) => new Set(prev).add(g.key))}
             />
           ))}
         </div>
@@ -219,13 +378,19 @@ export default function DuplicateCenter() {
         isOpen={!!pendingMerge}
         onClose={() => setPendingMerge(null)}
         title="Merge these clients?"
-        subtitle="This closes every record except the one you selected. In this build the change is session-only — nothing persists past a reload."
+        subtitle="This closes every record except the one you selected — marked merged, never deleted. Each record is merged one at a time; if one is refused the rest are left alone and this page says exactly which landed."
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, width: '100%' }}>
             <Button variant="secondary" onClick={() => setPendingMerge(null)}>
               Cancel
             </Button>
-            <Button variant="danger" onClick={confirmMerge}>
+            <Button
+              variant="danger"
+              disabled={merging}
+              onClick={() => {
+                void confirmMerge()
+              }}
+            >
               Confirm Merge
             </Button>
           </div>

@@ -341,6 +341,20 @@
 
   --dur: 150ms;
   --dur-theme: 200ms;
+  /* Filter System v1.0 §20 — "slide animation 180–240ms ease-out". The middle of
+     the band. The global prefers-reduced-motion block below kills it outright. */
+  --dur-drawer: 200ms;
+
+  /* The sticky header's own height, so anything that must sit UNDER it stops
+     guessing.
+
+     `CollapsibleAside` and `FilterDrawer` both offset by `var(--header-h)`, and
+     until this existed both fell back to a hardcoded 64px while `Header.tsx`
+     actually measured 59 (10px padding × 2 + a 38px tallest child + its 1px
+     border) — so every sticky rail in the app sat 5px lower than the header it
+     was clearing. `Header.tsx` sets its own `min-height` FROM this token, so the
+     number cannot drift away from the element again. */
+  --header-h: 59px;
 }
 
 /* ---- base ---- */
@@ -628,3 +642,25 @@ td,
 
 /* ── loading-skeleton blocks (StateViews.tsx) ─────────────────────────────── */
 @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.5 } }
+
+/* ── filter drawer (FilterDrawer.tsx) · §20 ───────────────────────────────────
+   Four keyframes rather than one, because the panel arrives from a different
+   edge on each of the three cases it has: the left rail, the right rail, and
+   the phone sheet that comes up from the bottom.
+
+   `transform` only — animating `left`/`right` would lay the page out again on
+   every frame of a 200ms slide, on a screen already re-querying live.
+
+   The prefers-reduced-motion block above sets `animation: none !important`
+   globally, so all four are already opted out for anyone who asked. The panel's
+   unmount is on a TIMER rather than `animationend` for exactly that reason: with
+   the animation suppressed the event never fires, and a drawer waiting for it
+   would never close. */
+@keyframes drawer-in-left { from { transform: translateX(-100%) } to { transform: none } }
+@keyframes drawer-in-right { from { transform: translateX(100%) } to { transform: none } }
+@keyframes drawer-in-up { from { transform: translateY(100%) } to { transform: none } }
+@keyframes drawer-out-left { from { transform: none } to { transform: translateX(-100%) } }
+@keyframes drawer-out-right { from { transform: none } to { transform: translateX(100%) } }
+@keyframes drawer-out-down { from { transform: none } to { transform: translateY(100%) } }
+@keyframes scrim-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes scrim-out { from { opacity: 1 } to { opacity: 0 } }

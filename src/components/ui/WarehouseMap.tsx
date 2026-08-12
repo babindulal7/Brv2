@@ -61,7 +61,9 @@ export default function WarehouseMap({ warehouseId }: { warehouseId: string }) {
         position: 'relative',
         width: '100%',
         height: 600,
-        background: 'var(--app-bg)',
+        /* `--app-bg` is not a token — `theme.css` defines `--app`. Undefined and
+           with no fallback, this painted transparent in both themes. */
+        background: 'var(--app)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--r-sm)',
         overflow: 'hidden',

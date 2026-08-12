@@ -3,27 +3,47 @@ import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Input, Select } from '../../components/ui'
 import { Card, PageHeader, Button } from '../../components/ui/Page'
-import { useToast } from '../../components/ui/Toast'
+import { Unavailable } from '../../components/ui/Unavailable'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { CLIENTS_DATA } from '../../data/clients'
 import { REFERRALS } from './Clients'
 import { parseMoney, formatMoney, type Paisa } from '../../lib/money'
 
 /**
- * Generate Referral Code — issues a new code for an existing client to share.
- * Reached from the Referral tab's "Generate Referral Code" action, which used
- * to be permanently disabled with "Code generation is not built yet."
+ * Generate Referral Code — composes a new code for an existing client, and
+ * **cannot yet issue it**. Reached from the Referral tab's "Generate Referral
+ * Code" action.
  *
  * A code here has no referred account yet — that only exists once someone
  * redeems it, which is a separate, not-yet-built flow. So this screen collects
  * exactly what issuing a code requires: who it's for, the code itself, and
  * (money-gated, Law 5) the reward it carries.
  *
- * Matches `AddClient.tsx`'s established save pattern exactly: validate, a
- * simulated save delay, a success toast, then navigate back — this app has no
- * real data layer yet (Phase 1), and every other "create" screen discloses
- * that the same way rather than pretending to persist.
+ * ⛔ **What was removed and why** (`SUCCESS_FABRICATION_REGISTER_2026-08-12.md`,
+ * section D). `handleCreate` called **no action**: `window.setTimeout(…, 600)`
+ * → `setSaved(true)` → `showSuccessToast('Referral code generated', …)` quoting
+ * the generated code and the referrer's name → `navigate('/clients?tab=referral')`.
+ *
+ * That is a code invented on this screen, confirmed as issued, and then read
+ * out to a client over the phone. Nothing was stored anywhere. When the
+ * referred client quotes "CREATIVE25" at booking there is no such code, the
+ * referral cannot be attributed, and the referrer's commission is unclaimable —
+ * with no error anywhere for anyone to find.
+ *
+ * There is no referral action to wire this to: nothing under `src/actions/`
+ * creates, stores or issues a referral code (`src/actions/clients/` holds
+ * create/update/block/merge only). Inventing one is a build, not a fix. So the
+ * screen composes and validates a *candidate* code, states that issuing is not
+ * connected, and refuses — a visible, disabled affordance carrying its reason
+ * (`components/ui/Unavailable.tsx`) plus a persistent line above the form,
+ * because a `title`-only reason never appears on a touch device. No toast, and
+ * deliberately **no `navigate(...)`**: returning to the referral tab is this
+ * app's "it saved" signal, and nothing saved.
  */
+
+/** Short form — `Unavailable`'s popover is capped at 220px, so the full explanation lives in the form's notice line. */
+const ISSUE_UNAVAILABLE_REASON =
+  'Issuing is not connected in this build — no referral action exists, so this code cannot be stored.'
 
 const inputStyle = {
   width: '100%',
@@ -58,7 +78,6 @@ function Field({ label, children, hint }: { label: string; children: React.React
 
 export default function GenerateReferralCode() {
   const navigate = useNavigate()
-  const { showSuccessToast } = useToast()
   const money = useCanViewMoney()
 
   const clientOptions = useMemo(() => [...CLIENTS_DATA].sort((a, b) => a.name.localeCompare(b.name)), [])
@@ -68,8 +87,6 @@ export default function GenerateReferralCode() {
   const [code, setCode] = useState('')
   const [codeTouched, setCodeTouched] = useState(false)
   const [reward, setReward] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
 
   const referrer = clientOptions.find((c) => c.id === referrerId) ?? null
 
@@ -95,6 +112,12 @@ export default function GenerateReferralCode() {
   const rewardPaisa = money ? parseMoney(reward) : null
   const rewardError = money && reward.trim().length > 0 && (rewardPaisa === null || rewardPaisa <= 0) ? 'Enter a reward amount greater than 0' : null
 
+  /**
+   * Kept, and still the gate — it is what has to come back the moment a real
+   * issue-referral action exists. Today it only chooses *which* reason the
+   * refused button gives, because the build gap is not the operator's fault and
+   * an incomplete form is not the whole story either.
+   */
   const canSubmit =
     Boolean(referrer) &&
     normalizedCode.length > 0 &&
@@ -102,32 +125,28 @@ export default function GenerateReferralCode() {
     !codeDuplicate &&
     (!money || (reward.trim().length > 0 && rewardPaisa !== null && rewardPaisa > 0))
 
-  const handleCancel = () => navigate('/clients?tab=referral')
+  const buttonReason = canSubmit
+    ? ISSUE_UNAVAILABLE_REASON
+    : `This code is not complete yet — a referrer and a valid code${money ? ' and a reward amount' : ''} are required. ` +
+      'Issuing is not connected in this build either.'
 
-  const handleCreate = () => {
-    if (!canSubmit) return
-    setSaving(true)
-    window.setTimeout(() => {
-      setSaving(false)
-      setSaved(true)
-      showSuccessToast('Referral code generated', `${normalizedCode} · ${referrer?.name}`)
-      window.setTimeout(() => navigate('/clients?tab=referral'), 900)
-    }, 600)
-  }
+  const handleCancel = () => navigate('/clients?tab=referral')
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageHeader
         title="Generate Referral Code"
-        description="Issue a new referral code for an existing client to share"
+        description="Compose a referral code for an existing client. Issuing it is not connected yet — nothing here is stored."
         actions={
           <>
-            <Button variant="ghost" onClick={handleCancel} disabled={saving}>
+            <Button variant="ghost" onClick={handleCancel}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={handleCreate} disabled={!canSubmit || saving || saved}>
-              {saved ? 'Code Generated' : saving ? 'Generating…' : 'Create Referral Code'}
-            </Button>
+            <Unavailable reason={buttonReason}>
+              <Button variant="primary" disabled>
+                Create Referral Code
+              </Button>
+            </Unavailable>
           </>
         }
       />
@@ -135,8 +154,35 @@ export default function GenerateReferralCode() {
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,320px)', gap: 'var(--sp-md)', alignItems: 'start' }}>
         <Card title="Code details">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* Law 12 — persistent and inline, in the same danger-text idiom the
+                per-field errors below already use. It is first in the card
+                because an operator about to phone a client must read it before
+                they compose a code, not after. */}
+            {/* No `role="alert"` — this line is always present, and a live region
+                that fires on mount is noise, not information. The dynamic
+                failure lines elsewhere in this module are the ones that need it. */}
+            <p
+              style={{
+                margin: 0,
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 7,
+                fontSize: 'var(--t-meta)',
+                fontWeight: 600,
+                color: 'var(--danger-text)',
+                lineHeight: 1.45,
+              }}
+            >
+              <Icon name="error" size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span>
+                Issuing is not connected — nothing under <code>src/actions/</code> creates or stores a referral code, so
+                this screen cannot issue one. <strong>Do not read a code from here out to a client.</strong> It would
+                exist nowhere: when the referred client quotes it at booking there would be no code to match, and the
+                referrer&rsquo;s commission would be unclaimable.
+              </span>
+            </p>
             <Field label="Referrer" hint="Only existing clients can issue a referral code.">
-              <Select value={referrerId} onChange={(e) => onReferrerChange(e.target.value)} style={inputStyle} disabled={saving || saved}>
+              <Select value={referrerId} onChange={(e) => onReferrerChange(e.target.value)} style={inputStyle}>
                 <option value="">Select a client…</option>
                 {clientOptions.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -155,14 +201,14 @@ export default function GenerateReferralCode() {
                     setCodeTouched(true)
                   }}
                   placeholder={referrer ? 'e.g. ' + suggestCode(referrer.name) : 'Select a referrer first'}
-                  disabled={!referrer || saving || saved}
+                  disabled={!referrer}
                   className="figure"
                   style={{ ...inputStyle, flex: 1, borderColor: codeError ? 'var(--danger)' : 'var(--input-border)' }}
                 />
                 <button
                   type="button"
                   onClick={regenerate}
-                  disabled={!referrer || saving || saved}
+                  disabled={!referrer}
                   aria-label="Regenerate suggested code"
                   title="Regenerate suggested code"
                   style={{
@@ -172,8 +218,8 @@ export default function GenerateReferralCode() {
                     border: '1px solid var(--border)',
                     background: 'var(--card2)',
                     color: 'var(--text2)',
-                    cursor: !referrer || saving || saved ? 'not-allowed' : 'pointer',
-                    opacity: !referrer || saving || saved ? 0.5 : 1,
+                    cursor: !referrer ? 'not-allowed' : 'pointer',
+                    opacity: !referrer ? 0.5 : 1,
                     display: 'grid',
                     placeItems: 'center',
                     flexShrink: 0,
@@ -197,7 +243,6 @@ export default function GenerateReferralCode() {
                   onChange={(e) => setReward(e.target.value)}
                   placeholder="e.g. 5000"
                   inputMode="decimal"
-                  disabled={saving || saved}
                   style={{ ...inputStyle, borderColor: rewardError ? 'var(--danger)' : 'var(--input-border)' }}
                 />
                 {rewardError && (
@@ -244,8 +289,11 @@ export default function GenerateReferralCode() {
                   </div>
                 </div>
               )}
+              {/* Was `[timer] Awaiting first return` — a lifecycle state for a
+                  code that has never been issued, on a screen that cannot issue
+                  one. "Awaiting" implies it is out there working. It is not. */}
               <div>
-                <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Reward Status</div>
+                <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Status</div>
                 <span
                   style={{
                     display: 'inline-flex',
@@ -255,15 +303,19 @@ export default function GenerateReferralCode() {
                     height: 19,
                     padding: '0 7px',
                     borderRadius: 5,
-                    background: 'var(--st-progress-bg)',
-                    color: 'var(--st-progress-fg)',
+                    background: 'var(--st-neutral-bg)',
+                    color: 'var(--st-neutral-fg)',
                     fontSize: 'var(--t-th)',
                     fontWeight: 600,
                   }}
                 >
-                  <Icon name="timer" size={11} />
-                  Awaiting first return
+                  <Icon name="error" size={11} />
+                  Not issued
                 </span>
+                <div style={{ marginTop: 4, fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.4 }}>
+                  This code exists only on this screen. Once issuing is connected it would sit at &ldquo;awaiting first
+                  return&rdquo; until the referral converts.
+                </div>
               </div>
             </div>
           ) : (

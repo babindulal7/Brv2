@@ -1,10 +1,21 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
 import { rupees, formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import { recordPayment } from '../../../actions/finance/recordPayment'
 import { useAuth } from '../../../lib/auth'
+import { useNetwork } from '../../../lib/network'
+import { newClientUuid } from '../../../lib/supabase'
+
+/**
+ * The largest amount `payments.amount` can hold, in paisa.
+ *
+ * `numeric(14,2)` = 14 significant digits with 2 after the point → Rs
+ * 999,999,999,999.99 → 99,999,999,999,999 paisa. Derived from the column
+ * (`0006_finance.sql:184`), not chosen — see the guard in `handleSubmit`.
+ */
+const MAX_PAYMENT_PAISA = 99_999_999_999_999
 
 interface RecordPaymentModalProps {
   isOpen: boolean
@@ -19,11 +30,17 @@ interface RecordPaymentModalProps {
    */
   initialAmount?: number
   /**
-   * `booking` is optional and carried through to the action as its `bookingId`
-   * — `InvoiceRow` (Finance) already has it, and `BookingDetail` supplies its
-   * own booking number. Without it the action receives no linkage at all,
-   * which is still better than receiving the invoice number in a field named
-   * `bookingId`.
+   * The invoices this modal offers.
+   *
+   * ⚠ `id` is the invoice **number** (`invoices.invoice_no`), not a uuid — that
+   * is what `Finance.tsx` and `Payments.tsx` map into it, and it is what the
+   * action resolves the payment's `booking_id`/`client_id`/`branch_id` from.
+   *
+   * `booking` is still accepted so the four calling screens keep compiling
+   * unchanged, but it is no longer sent anywhere: it held a booking NUMBER and
+   * was being passed as the action's `bookingId`, where the schema needs a
+   * uuid. The booking a payment belongs to is now read off the invoice row
+   * itself, which is the only place that fact is authoritative.
    */
   invoices: Array<{ id: string; client: string; amount: string; status: string; booking?: string }>
 }
@@ -37,6 +54,7 @@ export function RecordPaymentModal({
   invoices,
 }: RecordPaymentModalProps) {
   const { user } = useAuth()
+  const isOnline = useNetwork()
   const [invoiceId, setInvoiceId] = useState(initialInvoiceId || (invoices[0]?.id ?? ''))
   /*
    * Was `useState<number>(initialAmount || 50000)`.
@@ -70,6 +88,29 @@ export function RecordPaymentModal({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  /**
+   * Law 8 — the idempotency key is minted ONCE, when the modal opens, and it is
+   * the same key on every retry of that one attempt. Exactly the pattern
+   * `Expenses.tsx:428-441` uses, and for the same reason: a `[Record Payment]`
+   * pressed again after a dropped response must carry the SAME uuid so
+   * `payments_client_uuid_key` rejects the duplicate and the action hands back
+   * the row the first attempt already wrote. A key minted per click charges the
+   * client twice, and `payments` cannot be edited afterwards to fix it (Law 4) —
+   * the correction would be a `payment_reversals` row and a conversation.
+   *
+   * Re-minted after a SUCCESSFUL submit as well as on open, so that a screen
+   * which ever keeps this modal mounted across two payments cannot post the
+   * second one under the first one's key and silently receive the first
+   * payment's row back as a "success".
+   */
+  const [clientUuid, setClientUuid] = useState<string>(() => newClientUuid())
+  useEffect(() => {
+    if (isOpen) {
+      setClientUuid(newClientUuid())
+      setError(null)
+    }
+  }, [isOpen])
+
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
     if (!invoiceId) {
@@ -88,6 +129,89 @@ export function RecordPaymentModal({
       return
     }
     /*
+     * ── The upper bound that IS this screen's to enforce ──────────────────────
+     *
+     * `payments.amount` is `numeric(14,2)` (`0006_finance.sql:184`) — twelve
+     * integer digits and two decimals, so the largest amount the column can
+     * hold is Rs 999,999,999,999.99, i.e. 99,999,999,999,999 paisa.
+     *
+     * This is a representability fact, not a business rule, which is why it can
+     * be decided here while the question below cannot. Without it a fat-fingered
+     * exponent reaches `toRupees()` in the action, passes its
+     * `Number.isFinite`/`Number.isInteger` checks (`Number.isInteger(1e20)` is
+     * `true`), and fails inside Postgres as a raw numeric-overflow message the
+     * operator cannot act on. Anything at or under this bound came out of
+     * `Math.round` and is comfortably inside `Number.MAX_SAFE_INTEGER`
+     * (~9.0e15), so no precision is lost on the way either.
+     */
+    if (rupees(amount) > MAX_PAYMENT_PAISA) {
+      setError(
+        `That amount is larger than the ledger can record — a single payment cannot exceed ${formatMoney(
+          MAX_PAYMENT_PAISA as Paisa,
+        )}. Check the figure; nothing was recorded.`,
+      )
+      return
+    }
+    /*
+     * ── TODO(decision) · may a receipt exceed what the invoice asks for? ──────
+     *
+     * `RefundPaymentModal` bounds a reversal by `invoices.paid_amount` and
+     * refuses when it cannot read one. This form has no equivalent bound, and
+     * the asymmetry was examined rather than mirrored: **the two are not the
+     * same question.** An over-refund is money out of the door that Law 4 can
+     * only correct with another reversal. An over-payment is money already
+     * received — refusing it wrongly turns an operator away from a receipt the
+     * client has genuinely handed over, which is as damaging as accepting one
+     * wrongly.
+     *
+     * Nothing in the product rules it, and the evidence points at "allowed":
+     *
+     *  · `payments` carries exactly one constraint on magnitude —
+     *    `payments_amount_positive check (amount > 0)` (0006:196). There is no
+     *    upper bound and no reference to the invoice.
+     *  · `invoices_amounts_non_negative` (0006:110) floors `paid_amount` at 0
+     *    and bounds it above at nothing, so `paid_amount > total_amount` is a
+     *    state the schema deliberately permits.
+     *  · `sync_payment_to_invoice()` (`0010_triggers_functions.sql:262`) writes
+     *    `greatest(0, v_total_amount - v_total_paid)` — it ABSORBS the excess
+     *    rather than raising, marks the invoice 'Paid', and moves on.
+     *  · every row this action writes is `payment_type: 'Advance Payment'`
+     *    (`recordPayment.ts:330`) — money ahead of the bill is the modelled
+     *    normal case, not an anomaly.
+     *
+     * But "the ledger tolerates it" is not the same as "the desk intends it",
+     * and the representation half is **explicitly open**: `PLAN.md` §4.17 asks,
+     * as decision (1) of three, whether outstanding is *"floored at 0, or may it
+     * go negative to represent an overpayment"* — and the codebase currently
+     * answers both ways, `sync_payment_to_invoice()` clamping while
+     * `lib/workflow.ts`'s `outstanding()` goes negative on purpose, with a test
+     * asserting it (`__tests__/workflow.test.ts:401`). The invoice status set
+     * has no 'Overpaid' either (Payments spec §5.2), so today an over-payment
+     * is indistinguishable from an exact settlement once written.
+     *
+     * The options, so whoever rules it is choosing rather than discovering:
+     *   (a) allow silently — today's behaviour;
+     *   (b) allow with an explicit on-screen acknowledgement of the excess
+     *       ("Rs X more than this invoice asks for — record as an advance?");
+     *   (c) refuse above the outstanding balance, and route the excess to a
+     *       credit/advance the desk applies later.
+     *
+     * ⚠ Note that (b) and (c) are not merely unruled, they are **not buildable
+     * from this modal's props today**, and that is the second reason nothing is
+     * guessed here. `invoices[]` gives this screen `amount` — a pre-formatted
+     * display STRING — and no paid figure at all. Re-deriving paisa from that
+     * string is the exact 100x round trip `CreateInvoiceModal.tsx` ~60-66
+     * records (`Rs 1,39,506.5` parses back as 13,95,065), and the string does
+     * not even mean the same thing to every caller: `Finance.tsx` and
+     * `Payments.tsx` pass the invoice TOTAL, while `UnifiedInbox.tsx` ~1098
+     * passes `Outstanding Rs …`, a client balance. Enforcing either option
+     * needs a real `outstandingPaisa: Paisa` on the prop, from callers that can
+     * genuinely read one — and `BookingDetail`/`UnifiedInbox` cannot, because
+     * they hold a booking and no invoice at all (their own open question).
+     *
+     * Record in `PLAN.md` §4 alongside 4.17; do not close it from this file.
+     */
+    /*
      * No session, no payment. This dispatched as `{ userId: 'USR-001', role:
      * 'Manager' }` — an invented staff id, and a role the business-9 migration
      * retired — so every payment recorded here was attributed to somebody who
@@ -98,38 +222,71 @@ export function RecordPaymentModal({
       setError('You are not signed in, so this payment cannot be attributed to anyone. Sign in and record it again.')
       return
     }
+    /*
+     * Offline, refused here and named for what it is.
+     *
+     * `lib/rbac`'s `canRecordPayment(role, isOnline)` already returns false
+     * offline, and `isOnline` is passed to the dispatcher below so that rule is
+     * honoured — but the dispatcher reports every denial as an
+     * `ActionPermissionError` reading "Your role (Owner) cannot perform
+     * RECORD_PAYMENT", which would tell an Owner their ROLE was the problem
+     * when the problem was the network. This check runs first so the operator
+     * reads the true reason. `recordPayment`'s own offline guard is the
+     * backstop for any caller that skips this one.
+     */
+    if (!isOnline) {
+      setError(
+        'This device is offline. A payment is not queued for later — it is refused, because a receipt for money ' +
+          'the ledger has not recorded is worse than no receipt. Record it once you are back online.',
+      )
+      return
+    }
 
     setIsSubmitting(true)
     setError(null)
 
     try {
       /*
-       * The figures the operator typed now reach the action. This previously
-       * called the duplicate `actions/payments/recordPayment` with
-       * `{ id: invoiceId }` alone, so the amount, method and reference went to
-       * a domain event and the local `onSuccess` and **nowhere else** — the
-       * engine that owns payments never saw the money. That duplicate is
-       * deleted; `actions/finance/recordPayment` is the one implementation.
+       * The figures the operator typed now reach a real INSERT into `payments`.
        *
-       * `bookingId` comes from the selected invoice's own booking, never from
-       * `invoiceId`: an invoice number sitting in a field named `bookingId` is
-       * the same class of fabrication this fix exists to remove.
+       * The previous version sent `bookingId: selectedInvoice?.booking` — the
+       * booking NUMBER, in a field the schema needs a uuid for — and sent no
+       * invoice at all, so *which bill the money settled* reached nothing. The
+       * action now takes the invoice's number (`invoices.invoice_no` is
+       * `text not null unique`) and reads `booking_id`, `client_id` and
+       * `branch_id` off that invoice row itself. Both TODO(decision)s that
+       * stood here — no `invoiceId`, no `notes` — are closed by that change:
+       * the note the operator types for the receipt is now written to
+       * `payments.notes`.
        *
-       * TODO(decision): `RecordPaymentInput` has no `invoiceId` and no `notes`
-       * field, so *which invoice this settles* and the note typed for the
-       * receipt still reach nothing. Widening that input is a schema decision
-       * and is not one to take here.
+       * ⚠ `invoiceId` here holds the value of `invoices[].id`, which every
+       * calling screen populates with the invoice NUMBER (`Finance.tsx` and
+       * `Payments.tsx` both map `id: r.invoiceNo`) — not a uuid. That is what
+       * `invoiceNo` is named for. `BookingDetail` and `UnifiedInbox` pass a
+       * BOOKING number instead, and the action answers those with a named
+       * refusal rather than posting the money against nothing; their own
+       * TODO(decision) (may a payment be taken before an invoice exists?)
+       * is the thing that has to be ruled, and it is not ruled here.
+       *
+       * `clientUuid` is Law 8's key for THIS attempt; `isOnline` is what
+       * `lib/rbac`'s money rules degrade on.
        */
-      const selectedInvoice = invoices.find((inv) => inv.id === invoiceId)
       await recordPayment(
         {
-          bookingId: selectedInvoice?.booking,
+          invoiceNo: invoiceId,
           amountPaisa: rupees(amount),
           paymentMethod: method,
           reference: reference || undefined,
+          notes: notes || undefined,
+          clientUuid,
         },
-        { userId: user.id, role: user.role },
+        { userId: user.id, role: user.role, isOnline },
       )
+
+      // A new key for the next payment. See the `clientUuid` state above: only
+      // a completed write ends an attempt, so this is re-minted here and not in
+      // `finally`, where a failed submit would lose its own retry protection.
+      setClientUuid(newClientUuid())
 
       /*
        * The `PAYMENT_RECORDED` emit that stood here is gone. The dispatcher

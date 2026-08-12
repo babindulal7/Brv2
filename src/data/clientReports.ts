@@ -93,6 +93,21 @@ export interface ClientRow {
   cases: string
 }
 
+/*
+ * TODO(decision) — `CLI-` is a second client prefix, which ruling §2.1 forbids
+ * (the client sequence is `C-`, `data/numbering.ts`). It is left standing on
+ * purpose, and this is the judgement rather than an oversight:
+ *
+ * None of the six names below exists in `data/clients.ts`, whose register runs
+ * `C-1` … `C-45`. Rewriting `CLI-0001` to `C-1` would not collapse a duplicate
+ * identifier — it would point `ClientReports.tsx`'s row link at a *different,
+ * real* client, replacing a dead link with a wrong one. Choosing which real
+ * client each report row means is a data decision this pass does not own
+ * (`CLAUDE.md`: never invent a product decision to unblock yourself).
+ *
+ * The fix is to seed these six rows from `CLIENTS_DATA` — or to accept that
+ * this report is not joinable and drop the link — not to rename the prefix.
+ */
 export const CLIENTS: ClientRow[] = [
   { name: 'Aama Production', id: 'CLI-0001', membership: 'Platinum', membershipKey: 'progress', bookings: '18', days: '96', revenue: '4,85,000', outstanding: '35,000', hasOutstanding: true, lifetime: '12,85,600', lastAd: '2026-05-28', lastBs: '2083-02-15', lateReturns: '4', cases: '2' },
   { name: 'Media Hub Pvt. Ltd.', id: 'CLI-0002', membership: 'Gold', membershipKey: 'progress', bookings: '14', days: '72', revenue: '3,62,500', outstanding: '0', hasOutstanding: false, lifetime: '9,35,200', lastAd: '2026-05-27', lastBs: '2083-02-14', lateReturns: '2', cases: '1' },

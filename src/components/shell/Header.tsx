@@ -63,6 +63,13 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
         alignItems: 'center',
         gap: 'var(--sp-lg)',
         padding: '10px 20px',
+        /* Reads the token rather than setting the height, so `--header-h` and
+           this element cannot disagree. Everything that sticks BELOW the header
+           — the page rails, the filter drawer — offsets by that token, and
+           before it existed they each fell back to a guessed 64px against a
+           real 59. Border-box is global, so this covers the padding and the
+           border below. */
+        minHeight: 'var(--header-h)',
         borderBottom: '1px solid var(--border)',
         background: 'var(--sidebar)',
         transition: 'background-color var(--dur-theme) ease',

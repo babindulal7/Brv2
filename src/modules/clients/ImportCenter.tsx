@@ -5,7 +5,7 @@ import Icon from '../../components/ui/Icon'
 import { Select } from '../../components/ui'
 import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
-import { useToast } from '../../components/ui/Toast'
+import { Unavailable } from '../../components/ui/Unavailable'
 import { parseCsv, csvCell } from '../../lib/csv'
 import {
   IMPORT_TARGET_FIELDS,
@@ -21,11 +21,40 @@ import { CLIENTS_DATA } from '../../data/clients'
 /**
  * Import Center — the last confirmed Clients gap from this session's audit
  * reconciliation (`PLAN.md §6.4`). Upload → map columns → preview & validate
- * → import. Parsing, mapping-guesses, per-row validation and duplicate
- * matching are all real (`lib/csv.ts`, `lib/clientImport.ts`); the commit
- * step simulates, same disclosed pre-Phase-1 limit as every other "New X"
- * screen — nothing here writes to `CLIENTS_DATA`.
+ * → **stop**. Parsing, mapping-guesses, per-row validation and duplicate
+ * matching are all real (`lib/csv.ts`, `lib/clientImport.ts`). The commit step
+ * is not, and no longer pretends to be.
+ *
+ * ⛔ **What was removed and why** (`SUCCESS_FABRICATION_REGISTER_2026-08-12.md`,
+ * section D — this screen was the worst entry in it). `runImport` called **no
+ * action at all**. It was a bare `window.setTimeout(…, 700)` that flipped
+ * `setImported(true)`, fired `showSuccessToast('Import complete', …)` quoting
+ * the *real* parsed counts, and then navigated to `/clients`.
+ *
+ * That is credible precisely because the numbers are the operator's own file:
+ * they map 340 rows, review the preview, press Import, read "312 clients
+ * imported · 19 skipped for errors · 9 flagged as possible duplicates", land on
+ * the client list — and archive or delete the source CSV. Zero clients were
+ * created. The CSV was the only copy of those 312 records.
+ *
+ * There is no import action to wire this to: `src/actions/clients/` holds
+ * `createClient`, `updateClient`, `blockClient` and `mergeClients`, and nothing
+ * that creates clients from a file. Inventing one is a build, not a fix. So the
+ * screen states the gap instead — a visible, disabled affordance with its reason
+ * attached (`components/ui/Unavailable.tsx`, the codebase's existing
+ * "grey it out, but say why" control) plus a persistent line in the commit bar,
+ * because a `title`-only reason is invisible on the touch devices this app runs
+ * on. No toast, no `setImported`, and deliberately **no `navigate('/clients')`**:
+ * landing on the client list is this app's universal "the write landed" signal.
  */
+
+/**
+ * Short form, for the disabled button's tooltip/long-press popover — that
+ * popover is capped at 220px wide, so the full explanation lives in the commit
+ * bar's persistent line instead of here.
+ */
+const IMPORT_UNAVAILABLE_REASON =
+  'Import is not connected in this build — no client-import action exists, so nothing can be created.'
 
 const inputStyle: CSSProperties = {
   height: 34,
@@ -51,7 +80,6 @@ function downloadSampleCsv() {
 
 export default function ImportCenter() {
   const navigate = useNavigate()
-  const { showSuccessToast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [fileName, setFileName] = useState<string | null>(null)
@@ -61,8 +89,6 @@ export default function ImportCenter() {
   const [parseError, setParseError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [skippedRows, setSkippedRows] = useState<Set<number>>(new Set())
-  const [importing, setImporting] = useState(false)
-  const [imported, setImported] = useState(false)
 
   const headers = useMemo(() => {
     if (rawRows.length === 0) return []
@@ -100,7 +126,6 @@ export default function ImportCenter() {
     setParseError(null)
     setMapping({})
     setSkippedRows(new Set())
-    setImported(false)
     file
       .text()
       .then((text) => {
@@ -127,20 +152,6 @@ export default function ImportCenter() {
     setMapping({})
     setParseError(null)
     setSkippedRows(new Set())
-    setImported(false)
-  }
-
-  function runImport() {
-    setImporting(true)
-    window.setTimeout(() => {
-      setImporting(false)
-      setImported(true)
-      showSuccessToast(
-        'Import complete',
-        `${readyRows.length} client${readyRows.length === 1 ? '' : 's'} imported · ${errorRows.length} skipped for errors · ${duplicateRows.length} flagged as possible duplicates`,
-      )
-      window.setTimeout(() => navigate('/clients'), 1100)
-    }, 700)
   }
 
   const kpis: Kpi[] = readyToPreview
@@ -157,7 +168,7 @@ export default function ImportCenter() {
       <PageHeader
         icon="upload"
         title="Import Clients"
-        description="Upload a CSV, map its columns, then review every row before anything is created."
+        description="Upload a CSV, map its columns and validate every row. Committing the import is not connected yet — nothing here creates a client."
         actions={
           <Button icon="external_link" onClick={() => navigate('/clients')}>
             Back to Clients
@@ -393,22 +404,46 @@ export default function ImportCenter() {
                 </div>
               </Card>
 
+              {/* The commit bar. It used to say how many rows "will be imported"
+                  beside a button that imported none of them; it now states the
+                  gap and keeps stating it. Law 12 — errors are inline and
+                  persistent, never a toast (`useToast()` exposes only
+                  `showSuccessToast`, and there is nothing successful here). */}
               <section style={{ ...cardStyle, padding: 'var(--sp-lg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-md)' }}>
-                <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                  {imported
-                    ? 'Imported. Redirecting to Clients…'
-                    : `${readyRows.length} row${readyRows.length === 1 ? '' : 's'} will be imported. Rows with errors are skipped automatically; unchecked rows are skipped too.`}
+                <p
+                  style={{
+                    margin: 0,
+                    maxWidth: 620,
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 7,
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: 600,
+                    color: 'var(--danger-text)',
+                    lineHeight: 1.45,
+                  }}
+                >
+                  <Icon name="error" size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span>
+                    Import is not connected, so this file cannot be committed. {readyRows.length} row
+                    {readyRows.length === 1 ? '' : 's'} passed validation, but no client-import action exists in this
+                    build (nothing under <code>src/actions/clients/</code> creates clients from a file), so pressing
+                    Import could not create anyone. <strong>Nothing has been written and no client has been created.</strong>{' '}
+                    Keep this CSV — it is still the only copy of these rows.
+                  </span>
                 </p>
-                <Button variant="primary" icon="check" onClick={runImport} disabled={importing || imported || readyRows.length === 0}>
-                  {imported ? 'Imported' : importing ? 'Importing…' : `Import ${readyRows.length} Client${readyRows.length === 1 ? '' : 's'}`}
-                </Button>
+                <Unavailable reason={IMPORT_UNAVAILABLE_REASON}>
+                  <Button variant="primary" icon="check" disabled>
+                    Import {readyRows.length} Client{readyRows.length === 1 ? '' : 's'}
+                  </Button>
+                </Unavailable>
               </section>
             </>
           )}
         </>
       )}
 
-      <FooterNote extra={['Imported clients are not persisted yet — no data layer exists (Phase 1)']} />
+      <FooterNote extra={['Import is validation-only — no client-import action exists yet, so no client can be created from this screen']} />
     </div>
   )
 }

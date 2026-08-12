@@ -129,7 +129,7 @@ export const CREW_DATA: CrewAssignment[] = [
     role: 'Director of Photography',
     phone: '+977 980-1739284',
     production: 'Kathmandu Cinema Works - TVC',
-    linkedBooking: 'BK-2026-0715',
+    linkedBooking: 'B-715',
     location: 'Kathmandu',
     startDateBs: '2083/04/10',
     endDateBs: '2083/04/14',
@@ -151,7 +151,7 @@ export const CREW_DATA: CrewAssignment[] = [
     role: '1st AC',
     phone: '+977 981-2938475',
     production: 'Kathmandu Cinema Works - TVC',
-    linkedBooking: 'BK-2026-0715',
+    linkedBooking: 'B-715',
     location: 'Kathmandu',
     startDateBs: '2083/04/10',
     endDateBs: '2083/04/14',
@@ -172,7 +172,7 @@ export const CREW_DATA: CrewAssignment[] = [
     role: 'Gaffer',
     phone: '+977 982-4857392',
     production: 'Himalayan Films - Doc',
-    linkedBooking: 'BK-2026-0708',
+    linkedBooking: 'B-708',
     location: 'Bhaktapur',
     startDateBs: '2083/04/12',
     endDateBs: '2083/04/15',
@@ -193,7 +193,7 @@ export const CREW_DATA: CrewAssignment[] = [
     role: 'Drone Operator',
     phone: '+977 984-3921847',
     production: 'Red Dot Films - Corporate',
-    linkedBooking: 'BK-2026-0695',
+    linkedBooking: 'B-695',
     location: 'Kathmandu',
     startDateBs: '2083/03/25',
     endDateBs: '2083/03/26',
@@ -215,7 +215,7 @@ export const CREW_DATA: CrewAssignment[] = [
     role: 'Sound Recordist',
     phone: '+977 985-7264193',
     production: 'Mandala Film Productions - Feature',
-    linkedBooking: 'BK-2026-0712',
+    linkedBooking: 'B-712',
     location: 'Kathmandu',
     startDateBs: '2083/04/08',
     endDateBs: '2083/04/09',
@@ -236,7 +236,7 @@ export const CREW_DATA: CrewAssignment[] = [
     role: '1st AC',
     phone: '+977 989-3827164',
     production: 'Studio Nine - Music Video',
-    linkedBooking: 'BK-2026-0703',
+    linkedBooking: 'B-703',
     location: 'Lalitpur',
     startDateBs: '2083/04/01',
     endDateBs: '2083/04/02',
@@ -257,7 +257,7 @@ export const CREW_DATA: CrewAssignment[] = [
     role: 'Drone Operator',
     phone: '+977 983-4728193',
     production: 'Sunrise Events - Wedding',
-    linkedBooking: 'BK-2026-0720',
+    linkedBooking: 'B-720',
     location: 'Kathmandu',
     startDateBs: '2083/04/16',
     endDateBs: '2083/04/16',
@@ -278,7 +278,7 @@ export const CREW_DATA: CrewAssignment[] = [
     role: 'Gaffer',
     phone: '+977 981-6293847',
     production: 'Himalayan Films - Doc',
-    linkedBooking: 'BK-2026-0708',
+    linkedBooking: 'B-708',
     location: 'Bhaktapur',
     startDateBs: '2083/04/12',
     endDateBs: '2083/04/15',
@@ -300,7 +300,7 @@ export const CREW_DATA: CrewAssignment[] = [
     role: 'Director of Photography',
     phone: '+977 980-1739284',
     production: 'Vision Production - TVC',
-    linkedBooking: 'BK-2026-0710',
+    linkedBooking: 'B-710',
     location: 'Kathmandu',
     startDateBs: '2083/04/11',
     endDateBs: '2083/04/13',
@@ -322,7 +322,7 @@ export const CREW_DATA: CrewAssignment[] = [
     role: 'Sound Recordist',
     phone: '+977 985-7264193',
     production: 'Feature Film - Pokhara Unit',
-    linkedBooking: 'BK-2026-0713',
+    linkedBooking: 'B-713',
     location: 'Pokhara',
     startDateBs: '2083/04/13',
     endDateBs: '2083/04/14',
@@ -343,7 +343,7 @@ export const CREW_DATA: CrewAssignment[] = [
     role: 'Sound Recordist',
     phone: '+977 985-7264193',
     production: 'Web Series - KTM Unit',
-    linkedBooking: 'BK-2026-0716',
+    linkedBooking: 'B-716',
     location: 'Kathmandu',
     startDateBs: '2083/04/15',
     endDateBs: '2083/04/15',
@@ -370,6 +370,14 @@ export const OPEN_ROLE_REQUESTS: OpenRoleRequest[] = [
  * "Taxes & fiscal year" section, same convention as VAT rate) — never a
  * magic number at the call site. Rs 1,000 is the spec's proposed default
  * (§2.2), not yet a confirmed figure; see PLAN.md §4 for the open decision.
+ *
+ * TODO(decision) — WIREFRAME_RULINGS_2026-08-12.md §9.11, left open on
+ * purpose: `FEE_PER_CREW_DAY_PAISA` is declared **twice** — here at Rs 1,000
+ * (the figure PLAN.md:839 records) and again at `data/settings.ts:8` at
+ * Rs 500, dead but exported under the identical name. Whoever splits Settings
+ * into eight files will otherwise import the wrong one by name and halve a
+ * billed rate. Not resolved here: §9 items are explicitly not for a page
+ * agent to settle, and `data/settings.ts` is another agent's file.
  */
 export const FEE_PER_CREW_DAY_PAISA: Paisa = rupees(1000)
 
@@ -502,6 +510,86 @@ export function rosterSummary(roster: CrewMember[] = CREW_ROSTER) {
   return { available, booked, onLeave, offDuty, total, reconciles }
 }
 
+/* ── the chip row's three states over the model's four ───────────────────
+ * Spec 06 §6.1 draws `(All)(Available)(Booked)(Unavailable)`. The model has
+ * four mutually-exclusive states summing to the roster, and `rosterSummary`'s
+ * reconciliation invariant depends on all four existing separately.
+ *
+ * So `Unavailable` is a **view**, not a state: the union of On Leave and Off
+ * Duty, collapsed in the chip row **only**. The rail still breaks the two out,
+ * and nothing here narrows `RosterState`. Kept in this file rather than in the
+ * screen so the union is defined once (law 1 — pages never implement business
+ * logic) and the chip count can never drift from what the chip selects.
+ */
+
+export type RosterChip = 'All' | 'Available' | 'Booked' | 'Unavailable'
+
+export const ROSTER_CHIPS: readonly RosterChip[] = ['All', 'Available', 'Booked', 'Unavailable'] as const
+
+/** The underlying states a chip selects. `null` means "no constraint" (All). */
+export function rosterStatesFor(chip: RosterChip): RosterState[] | null {
+  if (chip === 'All') return null
+  if (chip === 'Unavailable') return ['On Leave', 'Off Duty']
+  return [chip]
+}
+
+export function matchesRosterChip(member: CrewMember, chip: RosterChip): boolean {
+  const states = rosterStatesFor(chip)
+  return states === null || states.includes(member.state)
+}
+
+/** Counts for the chip row, derived from the same summary the rail renders. */
+export function rosterChipCounts(roster: CrewMember[] = CREW_ROSTER): Record<RosterChip, number> {
+  const s = rosterSummary(roster)
+  return { All: s.total, Available: s.available, Booked: s.booked, Unavailable: s.onLeave + s.offDuty }
+}
+
+/* ── date predicates over an assignment, shared by the screen ────────────
+ * `parseAd` above is private and the screen had its own copy of it. One
+ * parser, exported, so a day-strip box and a conflict check can never
+ * disagree about which days an assignment covers.
+ */
+
+/** `'25 Jul 2026'` → a UTC day number, or `NaN` when the seed string is malformed. */
+export function adDayMs(s: string): number {
+  return parseAd(s)
+}
+
+export function assignmentCoversDay(a: CrewAssignment, dayMs: number): boolean {
+  const s = parseAd(a.startDateAd)
+  const e = parseAd(a.endDateAd)
+  if (Number.isNaN(s) || Number.isNaN(e)) return false
+  return dayMs >= s && dayMs <= e
+}
+
+export function assignmentOverlapsRange(a: CrewAssignment, startMs: number, endMs: number): boolean {
+  const s = parseAd(a.startDateAd)
+  const e = parseAd(a.endDateAd)
+  if (Number.isNaN(s) || Number.isNaN(e)) return false
+  return s <= endMs && startMs <= e
+}
+
+/* ── §5.1 applied to a *prospective* booking ─────────────────────────────
+ * `detectConflicts` compares two assignments that already exist.
+ * `prospectiveConflicts` asks the same rule table about a range someone is
+ * about to book onto a person: a Confirmed overlap is the hard block spec 06's
+ * Notes require ("a conflict blocks inline; it is never a toast"), a Tentative
+ * overlap is the warning. Same rule, same file — the screen states the outcome
+ * and decides nothing.
+ */
+export function prospectiveConflicts(
+  crewId: string,
+  startMs: number,
+  endMs: number,
+  assignments: CrewAssignment[] = CREW_DATA,
+): { blocking: CrewAssignment[]; warning: CrewAssignment[] } {
+  const mine = assignments.filter((a) => a.crewId === crewId && !a.cancelled && assignmentOverlapsRange(a, startMs, endMs))
+  return {
+    blocking: mine.filter((a) => a.status === 'Confirmed'),
+    warning: mine.filter((a) => a.status === 'Tentative'),
+  }
+}
+
 /* ── §5.4 · crew-days and fill rate — replaces utilization entirely ─────── */
 
 export function crewDaysBooked(assignments: CrewAssignment[] = CREW_DATA): number {
@@ -516,6 +604,53 @@ export function fillRate(
   const filled = assignments.filter((a) => !a.cancelled && (a.status === 'Confirmed' || a.status === 'Completed')).length
   const requested = filled + requests.length
   return { filled, requested, pct: requested === 0 ? 0 : Math.round((filled / requested) * 100) }
+}
+
+/* ── §3 · the payout ledger — only the figures that exist ────────────────
+ * Spec 06 §6.1 draws a PAYOUT LEDGER card, money roles only. Two of its
+ * figures are real and two are not:
+ *
+ *  - **Gross** is real: `CrewAssignment.totalCostPaisa` per assignment, and
+ *    the `PayoutStatus` split (Not due · Due · Paid) is a stored field.
+ *  - **TDS and net are not.** PLAN.md §4.12 records the spec declining to
+ *    supply a rate — *"your accountant's call"* — so there is no rate
+ *    anywhere in this repo to withhold at.
+ *
+ * `tdsPaisa` and `netPaisa` are therefore `null`, and the screen renders
+ * "not tracked yet". They are returned as fields rather than omitted so that
+ * a caller cannot quietly compute their own: the shape says the figure is
+ * known to be absent.
+ *
+ * TODO(decision) — PLAN.md §4.12 / rulings §8: the TDS rate and the
+ * registered-vs-unregistered treatment. Until one is ruled, **never** derive a
+ * net from an assumed rate.
+ */
+export interface PayoutLedger {
+  count: number
+  grossPaisa: Paisa
+  byStatus: Array<{ status: PayoutStatus; count: number; grossPaisa: Paisa }>
+  /** No ruled TDS rate exists — `null` means "not tracked yet", never zero. */
+  tdsPaisa: null
+  /** Cannot be derived without a TDS rate. `null`, never a plausible default. */
+  netPaisa: null
+}
+
+export const PAYOUT_STATUSES: readonly PayoutStatus[] = ['Not due', 'Due', 'Paid'] as const
+
+export function payoutLedger(assignments: CrewAssignment[] = CREW_DATA): PayoutLedger {
+  // A cancelled assignment is still on file (law 3) but owes nobody anything.
+  const live = assignments.filter((a) => !a.cancelled)
+  const sum = (rows: CrewAssignment[]) => rows.reduce((t, a) => t + a.totalCostPaisa, 0) as Paisa
+  return {
+    count: live.length,
+    grossPaisa: sum(live),
+    byStatus: PAYOUT_STATUSES.map((status) => {
+      const rows = live.filter((a) => a.payoutStatus === status)
+      return { status, count: rows.length, grossPaisa: sum(rows) }
+    }),
+    tdsPaisa: null,
+    netPaisa: null,
+  }
 }
 
 export function crewBilling({

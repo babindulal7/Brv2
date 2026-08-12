@@ -1,5 +1,6 @@
 import { createAction, ActionContext } from '../core';
 import { EVENT_TYPES } from '../../events/eventBus';
+import { issue } from '../../data/numbering';
 
 export type CreateSubRentalInput = {
   vendorId?: string;
@@ -16,7 +17,8 @@ export const createSubRental = createAction<CreateSubRentalInput, { success: boo
   },
 
   execute: async (input, ctx: ActionContext) => {
-    const generatedId = `SR-${Date.now().toString().slice(-4)}`;
+    /* Prefix from Settings > Numbering, never a literal - ruling 2.2. */
+    const generatedId = issue('SR', Number(Date.now().toString().slice(-4)));
     console.log(`[DB TX] Created Sub-Rental ${generatedId}: ${input.itemDescription}`);
 
     const events = [

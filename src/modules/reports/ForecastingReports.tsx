@@ -1,4 +1,7 @@
 import { PageHeader, Card, Rail, cardStyle } from '../../components/ui/Page'
+import { PageBody } from '../../components/ui/PageBody'
+import { ReportToolbar } from '../../components/ui/ReportToolbar'
+import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { FORECAST_METRICS, PURCHASE_FORECAST, MAINTENANCE_FORECAST, SEASONAL_DEMAND } from '../../data/forecastingReports'
 import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
@@ -14,16 +17,51 @@ function ForecastKpiCard({ label, value, accent, note }: any) {
   )
 }
 
+/** The export body — the headline block and all three forecast tables. */
+function forecastCsv(): ReportCsvRow[] {
+  return [
+    ['Figure', 'Value'],
+    ['Forecast revenue', formatMoney(FORECAST_METRICS.forecastRevenue as Paisa)],
+    ['Expected bookings', FORECAST_METRICS.expectedBookings],
+    ['Predicted shortages', FORECAST_METRICS.predictedShortages],
+    ['Forecast accuracy', `${FORECAST_METRICS.forecastAccuracy}%`],
+    [],
+    ['Inventory purchase forecast'],
+    ['Category', 'Recommended item', 'Reason / formula', 'Confidence'],
+    ...PURCHASE_FORECAST.map((p): ReportCsvRow => [p.category, p.item, p.reason, p.confidence]),
+    [],
+    ['Maintenance forecast'],
+    ['Asset ID', 'Item', 'Predicted service date', 'Trigger', 'Priority'],
+    ...MAINTENANCE_FORECAST.map((m): ReportCsvRow => [m.id, m.item, m.nextService, m.trigger, m.priority]),
+    [],
+    ['Seasonal demand outlook'],
+    ['Event / period', 'Dates', 'Expected lift', 'Top categories'],
+    ...SEASONAL_DEMAND.map((s): ReportCsvRow => [s.event, s.dates, s.expectedLift, s.topCategories]),
+  ]
+}
+
 export default function ForecastingReports() {
   const money = useCanViewMoney()
 
+  /*
+   * The whole page is gated on money because its lead figure is Forecast
+   * Revenue. That is broader than Law 6 strictly requires — expected bookings,
+   * predicted shortages and the maintenance table carry no rupees — but
+   * narrowing the gate is a product decision about what a warehouse role should
+   * be able to forecast, not a refactor.
+   * TODO(decision): whether Forecasting has a money-free half worth showing.
+   */
   if (!money) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
         <PageHeader icon="activity" title="Forecasting & AI" description="Predictive models for revenue, purchases, and maintenance." />
-        <Card style={{ padding: 'var(--sp-xl)', textAlign: 'center', color: 'var(--text2)' }}>
-          Forecasting data is restricted for your role.
-        </Card>
+        <PageBody
+          restricted
+          restrictedReason="Forecasting leads on projected revenue, so the whole report is gated with the money it reports."
+          restrictedRequiredRole="Owner, Admin, Coordinator or Accounts"
+        >
+          {null}
+        </PageBody>
       </div>
     )
   }
@@ -35,6 +73,13 @@ export default function ForecastingReports() {
         title="Forecasting & AI"
         description="Predictive models for revenue, purchases, and maintenance."
       />
+
+      {/*
+        Export only. A forecast looks forward from a fixed model run; there is
+        no `from`/`to` on any row in `data/forecastingReports` for a date range
+        to constrain.
+      */}
+      <ReportToolbar title="Forecasting & AI" csv={{ filename: 'forecasting', build: forecastCsv }} />
 
       <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
         <ForecastKpiCard

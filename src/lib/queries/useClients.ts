@@ -1,54 +1,125 @@
-import { useCallback, useEffect, useState } from 'react'
-import { listClientRecords } from './clients'
+import { listClientRecords, listMembershipPlans, getClientRecordByCode } from './clients'
+import type { ClientProfile, MembershipPlanRow } from './clients'
+import type { ListFilters } from './listQuery'
+import { useList, type ListQueryResult, type ListResult } from './useList'
 import type { ClientRecord } from '../../data/clients'
 
 /**
- * The clients directory, from the database.
+ * The clients hooks.
  *
- * Deliberately exposes `loading` and `error` as first-class state rather than
- * collapsing a failure into an empty array. An empty list and a failed query
- * look identical on screen otherwise, and "no clients" is a very different
- * statement from "we could not reach the database" — Foundation's five page
- * states exist precisely so those two are never conflated.
+ * ## Why these are wrappers over `useList` and not their own fetch loops
  *
- * `refresh` lets a surface re-read after it writes, so a newly created client
- * appears without a page reload.
+ * `useClients` used to hold its own `useState`/`useEffect`/cancelled-flag
+ * machine — written before `useList` existed, and `useList`'s own header names
+ * it as the thing it generalises ("`useClients` was written by hand for one
+ * screen. Writing 33 more of those is how the four states end up drawn 33
+ * different ways"). Two more screens now need the same machine, so the choice
+ * was to copy it twice more or to delete it once. It is deleted: every hook
+ * below is a thin adapter over `useList`, and the fetch, the cancellation, the
+ * mid-flight-supersede guard and the "a failed refresh must not blank rows
+ * someone is reading" behaviour exist exactly once, in `useList`.
+ *
+ * The `{ clients, loading, error, refresh }` surface is kept because it is what
+ * `Clients.tsx` already consumes, and because a screen reading *the clients*
+ * should not have to know that a list hook is underneath. `isEmpty` is added —
+ * `PageBody` needs it and the old hook could not answer it without the caller
+ * re-deriving `!loading && !error && rows.length === 0`, which is precisely the
+ * re-derivation that produces four different empty states.
  */
-export function useClients(): {
+
+/**
+ * The whole directory, unfiltered.
+ *
+ * ⚠ **The directory's search, chips, sort and paging are still client-side**,
+ * inside `ClientsDirectory.tsx`, over the 500 rows this returns. Moving them
+ * server-side means giving that component a `ListFilters` and letting
+ * `applyListFilters` narrow the query — it is the natural next step and this
+ * hook is already shaped for it (pass the filters through instead of `{}`), but
+ * the filter state lives in a component outside this change's scope. Stated so
+ * the 500-row ceiling is understood as a known bound, not an accident: client
+ * 501 is invisible to the search box today.
+ */
+const NO_FILTERS: ListFilters = {}
+
+async function fetchClients(): Promise<ListQueryResult<ClientRecord>> {
+  const rows = await listClientRecords({ limit: 500 })
+  // `total` stays null rather than `rows.length`: the query asked for no count,
+  // and reporting a page size as a total is how a list claims 500 is all there
+  // is. `useList` documents null as "the query did not ask".
+  return { rows, total: null }
+}
+
+export interface UseClientsResult {
   clients: ClientRecord[]
   loading: boolean
+  /** The bare REASON, not a sentence — `PageBody` writes "Could not load clients". */
   error: string | null
+  /** True only once a successful query returned nothing. Never true while loading or errored. */
+  isEmpty: boolean
+  /** Re-read after a write, so a newly created client appears without a page reload. */
   refresh: () => void
-} {
-  const [clients, setClients] = useState<ClientRecord[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [tick, setTick] = useState(0)
+}
 
-  const refresh = useCallback(() => setTick((t) => t + 1), [])
+export function useClients(): UseClientsResult {
+  // No baseline and no override: this list has no structural predicate and no
+  // operator filters at this level, so `isFiltered` is false and stays false —
+  // which is the right answer for `PageBody`, whose "clear filters" empty state
+  // would offer a button that clears nothing.
+  const list = useList<ClientRecord>(fetchClients, NO_FILTERS)
 
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setError(null)
+  return {
+    clients: list.rows,
+    loading: list.loading,
+    error: list.error,
+    isEmpty: list.isEmpty,
+    refresh: list.refetch,
+  }
+}
 
-    listClientRecords({ limit: 500 })
-      .then((rows) => {
-        if (cancelled) return
-        setClients(rows)
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return
-        setError(e instanceof Error ? e.message : String(e))
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+/**
+ * One client, by the code in the URL.
+ *
+ * Modelled as a one-row list rather than as a bespoke hook so the four states
+ * come from the same place as every other screen's. "Not found" then arrives as
+ * `isEmpty` — a successful query that matched nothing — which is exactly what a
+ * bad `/clients/:id` link is, and is a different fact from `error` (the read
+ * failed) that the old `CLIENTS_DATA.find(...) ?? null` could not distinguish.
+ *
+ * The code travels in `chips` so `useList` re-queries when the route param
+ * changes: the fetcher is held in a ref and only the filter VALUE retriggers.
+ * An absent code short-circuits to zero rows without touching the network —
+ * `in(client_code, [])` would return every row, not none.
+ */
+async function fetchClientProfile(filters: ListFilters): Promise<ListQueryResult<ClientProfile>> {
+  const code = filters.chips?.['client_code']?.[0]
+  if (!code) return { rows: [], total: 0 }
+  const profile = await getClientRecordByCode(code)
+  return { rows: profile ? [profile] : [], total: profile ? 1 : 0 }
+}
 
-    return () => {
-      cancelled = true
-    }
-  }, [tick])
+export function useClientProfile(clientCode: string | undefined): ListResult<ClientProfile> {
+  return useList<ClientProfile>(
+    fetchClientProfile,
+    { chips: { client_code: clientCode ? [clientCode] : [] } },
+    // A profile is addressed, not filtered. Without this the empty state would
+    // offer "Clear filters" for a client that does not exist.
+    { isFilteredOverride: false },
+  )
+}
 
-  return { clients, loading, error, refresh }
+/**
+ * The membership plans — the Credit tab's policy table.
+ *
+ * Money columns arrive `null` for a money-blind session (`membership_plans_v`
+ * masks column-wise), and the view is `where auth_is_staff()`, so a Client
+ * session gets zero rows. The Credit tab is money-only and absent for those
+ * roles anyway, but the null is still load-bearing: it means withheld, not zero.
+ */
+async function fetchMembershipPlans(): Promise<ListQueryResult<MembershipPlanRow>> {
+  const rows = await listMembershipPlans()
+  return { rows, total: rows.length }
+}
+
+export function useMembershipPlans(): ListResult<MembershipPlanRow> {
+  return useList<MembershipPlanRow>(fetchMembershipPlans, NO_FILTERS)
 }

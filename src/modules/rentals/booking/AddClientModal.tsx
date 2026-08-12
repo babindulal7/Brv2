@@ -7,6 +7,10 @@ import { useCanViewMoney } from '../../../lib/moneyVisibility'
 import { formatMoney, parseMoney, rupees } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import { createClient } from '../../../actions/clients/createClient'
+import type { ActionContext } from '../../../actions/core'
+import { useAuth } from '../../../lib/auth'
+import { useNetwork } from '../../../lib/network'
+import { newClientUuid } from '../../../lib/supabase'
 import {
   CLIENTS_DATA,
   PAYMENT_TERMS_OPTIONS,
@@ -333,6 +337,8 @@ export function AddClientModal({
 }: AddClientModalProps) {
   const { showSuccessToast } = useToast()
   const canSeeMoney = useCanViewMoney()
+  const { user } = useAuth()
+  const online = useNetwork()
   const uid = useId()
 
   const headingId = `${uid}-heading`
@@ -369,6 +375,13 @@ export function AddClientModal({
   const phoneRef = useRef<HTMLInputElement>(null)
   const keepEditingRef = useRef<HTMLButtonElement>(null)
   const restoreFocusTo = useRef<HTMLElement | null>(null)
+  /**
+   * **Law 8.** One key per Save press, reused by every retry of that press, so a
+   * double submit conflicts on `clients_client_uuid_key` instead of creating a
+   * second client. `createClient`'s `validate` refuses an input without it —
+   * see the note on `CreateClientInput.clientUuid`, which names this file.
+   */
+  const saveKey = useRef<string | null>(null)
 
   const localDigits = phoneLocalDigits(phone)
   const phoneWillSave = phone.trim() ? canonicalPhone(phone) : ''
@@ -421,6 +434,10 @@ export function AddClientModal({
     setCreated(null)
     setDismissedDuplicate(false)
     setShowDiscard(false)
+    // A reopened dialog is a new client and therefore a new Law 8 press-key.
+    // Carrying the old one over would make the second client a duplicate of the
+    // first and be rejected on `clients_client_uuid_key`.
+    saveKey.current = null
   }, [isOpen])
 
   useEffect(() => {
@@ -561,15 +578,52 @@ export function AddClientModal({
     setSubmitError(null)
     if (!validate()) return
 
+    /*
+     * ⛔ **What this replaced.** `createClient({ … })` was dispatched with NO
+     * second argument — no `ActionContext` at all. It was the last such call in
+     * `src/`: every other action call in the app passes `{ userId, role }` off
+     * the signed-in session (see `modules/clients/AddClient.tsx`, the full-page
+     * sibling of this dialog, and `NewRental.tsx`'s `dispatchContext()`).
+     *
+     * `actions/core.ts` refuses a contextless dispatch outright — "was called
+     * without a session context. Pass the signed-in user's id and role" — so the
+     * defect was not a silent bad write; it was a create that could never
+     * succeed, reporting a dispatcher-internal message to an operator who has no
+     * idea what a session context is. And `createClient` is one of the few
+     * actions with `implemented: true`, writing a real `clients` row stamped
+     * `created_by` — which is exactly why it must name a real actor and why
+     * there is nothing here to fall back to.
+     *
+     * So: the session or nothing. No `?? 'Admin'`, and no `?? 'Unknown'` either
+     * — a client record saying it was created by Unknown still asserts that
+     * someone created it.
+     */
+    const ctx: ActionContext | null = user ? { userId: user.id, role: user.role, isOnline: online } : null
+    if (!ctx) {
+      // Law 12 — inline, persistent, in the `role="alert"` banner this dialog
+      // already renders above the form. Everything typed stays put.
+      setSubmitError(
+        'You are not signed in, so this client cannot be created — a client record has to name who created it. ' +
+          'Sign in and save again. Nothing was sent.',
+      )
+      return
+    }
+
     setSaving(true)
+    // Minted at the press, not per attempt: a retry of THIS save reuses it.
+    if (!saveKey.current) saveKey.current = newClientUuid()
     try {
       const savedPhone = canonicalPhone(phone)
-      const res = await createClient({
-        name: name.trim(),
-        phone: savedPhone,
-        email: email.trim(),
-        isDraft: false,
-      })
+      const res = await createClient(
+        {
+          name: name.trim(),
+          phone: savedPhone,
+          email: email.trim(),
+          isDraft: false,
+          clientUuid: saveKey.current,
+        },
+        ctx,
+      )
 
       const record: ClientRecord = {
         id: res.clientId,
@@ -606,11 +660,26 @@ export function AddClientModal({
          exist and §18's "never have to search for it" would not hold. Replace
          with the real insert + refetch when the query layer lands.
 
-         ⚠ `actions/clients/createClient.ts` mints ids as
-         `CL-${Date.now().toString().slice(-4)}`, which both drifts from the
-         seed convention (`CL-2026-0001`) and repeats every 10 seconds. A
-         collision is stated rather than swallowed: silently skipping the push
-         would leave the booking pointing at somebody else's record. */
+         ⚠ THIS COMMENT WAS STALE and is corrected here, not rewritten from
+         guesswork. It described `createClient` minting ids as
+         `issue('CL', Number(Date.now().toString().slice(-4)))` off the clock.
+         That implementation is gone: the action now takes `client_code` from
+         the database's `next_document_number('client')` allocator and returns
+         BOTH `clientId` (the `clients.id` uuid Postgres generated) and
+         `clientCode` (`CL-2026-NNNN`).
+
+         ⚠ TODO — `record.id` below is set from `res.clientId`, the uuid, while
+         every other `ClientRecord.id` in this app is the client CODE (see
+         `data/clients.ts`, and `AddClient.tsx`, which reports
+         `created.clientCode`). So a landed create would hand the booking a
+         record keyed differently from every other client on screen. Left as
+         found: nothing reaches this line today — `actions/core.ts` maps no rule
+         for the `client.create` capability, so the dispatch is denied for every
+         role before `execute` — and switching a record's identifier is a
+         change to what downstream screens match on, not a dispatch fix.
+         The collision check is kept for the same reason it existed: silently
+         skipping the push would leave the booking pointing at somebody else's
+         record. */
       const collision = CLIENTS_DATA.find((c) => c.id === record.id)
       if (collision && collision !== record) {
         setSubmitError(

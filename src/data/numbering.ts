@@ -21,41 +21,60 @@ import type { BrandKey } from '../lib/status'
  *  3. Where the render contradicts itself, the reasoning is written down beside
  *     the correction rather than left for the next reader to rediscover.
  *
- * ── Corrections applied to the render ─────────────────────────────────────
+ * ── The 12 Aug 2026 identifier ruling ──────────────────────────────────────
  *
- * **CASE is four digits, not five.** The render draws `CASE-YYYY-NNNNN`, but
- * `04 Operations/Cases.md`'s ID registry and `src/data/cases.ts` both use the
- * four-digit form and `cases.ts` asserts `/^CASE-\d{4}-\d{4}$/` at load. Two
- * authorities against one stale render: the format here is `CASE-YYYY-NNNN`.
+ * `WIREFRAME_RULINGS_2026-08-12.md` §2 closes `PLAN.md` §4.4 and supersedes
+ * spec 10 §10.6's own wireframe (which draws `BR-2026-0715`, padding 4/5 —
+ * that drawing is now wrong). Six entities are ruled:
  *
- * **Five formats disagreed with their own counters.** A format's run of `N`s is
- * its padding length, so `BK-YYYY-NNNNN` (five) cannot produce the counter
- * `004861` (six) that the same render prints in the table, in the "Last
- * Sequence Used" KPI and as "Padding Length 6" in the configuration panel. The
- * counter is corroborated three ways and the format string once, so the format
- * strings for BK, INV, CL, PAY and EXP were widened/narrowed to match their
- * counters. `assertFormatMatchesCounter` in `SEED_ERRORS` now makes that class
- * of mistake impossible to reintroduce silently.
+ *     Booking `B-`  ·  Client `C-`  ·  Membership `M-`
+ *     Invoice `INV-`  ·  Quote `Q-`  ·  Bundle `BND-`
  *
- * ── TODO(decision) — counters disagree with the modules they number ────────
+ * **No year segment. No zero padding.** `B-1`, never `B-0001`, never
+ * `B-2026-0715`. Booking 715 is `B-715`; counter 1 is `B-1`.
  *
- * Separately from the digit-form fix above, the counters this render supplies
- * are far ahead of the highest ID actually seeded in the module each sequence
- * numbers, and several use a padding width no other file uses:
+ * Three consequences carried here:
  *
- *     BK    here 004861 (6)  ·  booking.ts / calendar.ts max BK-2026-0753 (4)
- *     INV   here 00492  (5)  ·  documents.ts / pulse.ts  max INV-2026-0162 (4)
- *     CL    here 002481 (6)  ·  clients.ts               max CL-2026-0045  (4)
- *     MT    here 00054  (5)  ·  maintenance.ts / cases.ts max MT-2026-0043 (4)
- *     CASE  here 0182   (4)  ·  cases.ts                 max CASE-2026-0041
- *     PAY   here 006103 (6)  ·  documents.ts             max PAY-2026-0745 (4)
- *     EXP   here 00276  (5)  ·  expenseReports.ts        max EXP-2026-0724 (4)
+ *  · The six ruled sequences take a two-token `PREFIX-N` format. One `N` is a
+ *    padding width of 1, and `padTo` uses `padStart`, which never truncates —
+ *    so `padTo(715, 1) === '715'`. No-padding is expressible; no engine change
+ *    was needed for it.
+ *  · Their counters lose their leading zeros in the same edit, because
+ *    `SEED_ERRORS` reconciles counter against format (see the bottom of this
+ *    file) and `advance()` re-pads from the counter string it is given.
+ *  · **Quote had no row at all.** A ruled entity that Settings ▸ Numbering
+ *    cannot reach is not configuration, so `QT` is added below. That makes
+ *    nineteen sequences where the render printed eighteen; every count on the
+ *    screen is derived from `SEQUENCES`, so nothing had to be re-typed.
  *
- * Every one of those modules uses **four** digits. Changing the padding here
- * would move the "Last Sequence Used" KPI, the live preview and the total
- * length — headline figures the render supplies — so it is not done unasked.
- * The ruling needed is: does the app standardise on four-digit counters
- * (making this render stale in seven more places), or do the modules re-pad?
+ * `BR` stays reserved as the BRANCH token (`FORMAT_TOKENS` and `kindOf`
+ * below). What changes is that the seeded INV format no longer *uses* it —
+ * see the note on the INV row.
+ *
+ * ── TODO(decision) — counters are still ahead of the modules they number ───
+ *
+ * The de-padded counters below are the render's figures with their zeros
+ * stripped, and they remain far ahead of the highest ID actually seeded in
+ * each module. That gap is a data question, not a format question, and the
+ * ruling did not touch it:
+ *
+ *     BK    here 4861  ·  booking.ts / calendar.ts max B-753
+ *     INV   here 492   ·  documents.ts / pulse.ts  max INV-492
+ *     CL    here 2481  ·  clients.ts               max C-45
+ *     MT    here 00054 ·  maintenance.ts / cases.ts max MT-2026-0043
+ *     CASE  here 0182  ·  cases.ts                 max CASE-2026-0041
+ *     PAY   here 006103·  documents.ts             max PAY-2026-0745
+ *     EXP   here 00276 ·  expenseReports.ts        max EXP-2026-0724
+ *
+ * MEM, QT and BND are the exception: the ruling created their rows, so their
+ * counters are set to the highest identifier those modules actually carry
+ * (`M-14`, `Q-88`, `BND-23`) rather than to a figure no render supplies.
+ *
+ * **Unruled sequences keep their old shape.** EQ, MT, CASE, PAY, EXP, PUR and
+ * TRF are not in the ruling's table and are left exactly as they were —
+ * renaming them would be inventing a product decision, and three of them are
+ * additionally pinned by a database CHECK constraint this pass may not
+ * migrate. See the report accompanying this change.
  */
 
 /* ── vocabulary ────────────────────────────────────────────────────────────
@@ -111,9 +130,27 @@ export interface SequenceRow {
 }
 
 export const SEQUENCES: SequenceRow[] = [
-  { code: 'BK', name: 'Booking', prefix: 'BK', module: 'Rental', description: 'Rental booking references', format: 'BK-YYYY-NNNNNN', counter: '004861', resetRule: 'Calendar Year', scope: 'Per Branch', status: 'Active' },
-  { code: 'INV', name: 'Invoice', prefix: 'INV', module: 'Finance', description: null, format: 'INV-BR-YYYY-NNNNN', counter: '00492', resetRule: 'Calendar Year', scope: 'Per Branch', status: 'Active' },
-  { code: 'CL', name: 'Client', prefix: 'CL', module: 'Administration', description: null, format: 'CL-YYYY-NNNNNN', counter: '002481', resetRule: 'Never', scope: 'Global', status: 'Active' },
+  /* ── the six ruled by WIREFRAME_RULINGS_2026-08-12 §2 ──────────────────
+     Prefix, no separator-borne year, one `N` (= no padding). The counters
+     are the render's figures de-padded in the same edit; leaving a padded
+     counter beside a `PREFIX-N` format is exactly what SEED_ERRORS catches. */
+  { code: 'BK', name: 'Booking', prefix: 'B', module: 'Rental', description: 'Rental booking references', format: 'B-N', counter: '4861', resetRule: 'Never', scope: 'Global', status: 'Active' },
+  /*
+   * INV loses the `BR` segment. `INV-BR-YYYY-NNNNN` cannot survive a ruling
+   * that fixes invoices as `INV-` + counter, so the branch code leaves the
+   * *string*. `BR` itself stays reserved as a token (FORMAT_TOKENS, kindOf)
+   * for any format a user authors in the Format tab, and `BR-` stays the
+   * branch **code** prefix in the database — neither is touched.
+   *
+   * Consequence taken deliberately: scope selects the COUNTER, not the
+   * string (§ Branch Rules above), so a Per Branch invoice sequence with no
+   * BR token would mint `INV-1` in Kathmandu *and* in Pokhara. INV therefore
+   * moves to Global scope, which is the only reading under which the ruled
+   * format yields unique invoice numbers. BK carried the same latent defect
+   * (Per Branch, no BR token) and moves for the same reason.
+   */
+  { code: 'INV', name: 'Invoice', prefix: 'INV', module: 'Finance', description: null, format: 'INV-N', counter: '492', resetRule: 'Never', scope: 'Global', status: 'Active' },
+  { code: 'CL', name: 'Client', prefix: 'C', module: 'Administration', description: null, format: 'C-N', counter: '2481', resetRule: 'Never', scope: 'Global', status: 'Active' },
   { code: 'EQ', name: 'Equipment', prefix: 'EQ', module: 'Inventory', description: null, format: 'EQ-CAT-NNNNNN', counter: '000824', resetRule: 'Never', scope: 'Global', status: 'Active' },
   { code: 'MT', name: 'Maintenance', prefix: 'MT', module: 'Operations', description: null, format: 'MT-YYYY-NNNNN', counter: '00054', resetRule: 'Nepali Fiscal Year', scope: 'Per Branch', status: 'Active' },
   { code: 'CASE', name: 'Incident Case', prefix: 'CASE', module: 'Operations', description: null, format: 'CASE-YYYY-NNNN', counter: '0182', resetRule: 'Calendar Year', scope: 'Per Branch', status: 'Active' },
@@ -123,19 +160,58 @@ export const SEQUENCES: SequenceRow[] = [
   { code: 'TRF', name: 'Transfer', prefix: 'TRF', module: 'Inventory', description: null, format: 'TRF-YYYY-NNNNN', counter: '00092', resetRule: 'Calendar Year', scope: 'Per Branch', status: 'Active' },
 
   /*
+   * `QT` — Quote. The render draws no Quote row and the spec's eighteen
+   * default sequences do not name one, but the 12 Aug ruling puts Quote in
+   * its table as `Q-1`. A ruled entity that Settings ▸ Numbering cannot
+   * reach is not configuration, so the row is added rather than the prefix
+   * being hardcoded in `data/documents.ts`. Counter is the highest quote the
+   * app actually carries (`QT-2026-0088` → `Q-88`), not an invented figure.
+   */
+  { code: 'QT', name: 'Quote', prefix: 'Q', module: 'Rental', description: null, format: 'Q-N', counter: '88', resetRule: 'Never', scope: 'Global', status: 'Active' },
+
+  /*
    * The render stops at ten but claims eighteen — "Showing 1 to 10 of 18", the
    * "Active Sequences 18" KPI and the rail summary all agree on eighteen, and
    * the spec's § Default System Sequences names exactly eighteen. The eight
    * below complete that set so the counts reconcile against real rows instead
-   * of a hardcoded total.
+   * of a hardcoded total. (With `QT` added above the app now carries
+   * nineteen; every count on the screen is derived from this array, so no
+   * figure had to be re-typed.)
    *
    * Their identity (code, name, module) is specified; their format, counter,
    * reset rule and scope are not, anywhere. Those stay `null` and render as a
-   * stated "Not configured" rather than as a made-up figure.
+   * stated "Not configured" rather than as a made-up figure — except `BND`
+   * and `MEM`, which the ruling names (`BND-1`, `M-1`) and which therefore
+   * gain a format here. Their counters are the highest identifier those
+   * modules actually carry: `data/bundles.ts` tops out at `BND-00023` → 23,
+   * `data/membership.ts` at `MB-2083-014` → 14.
+   *
+   * Note `MEM`'s code and prefix now diverge for the first time — the code
+   * stays `MEM` (it is the registry key the render prints and the analytics
+   * join on) while the ruled prefix is `M`. `prefixOf()` below is the only
+   * thing any module should read.
+   *
+   * ⚠ `M-` is a **shared opening token**. `data/addBundle.ts` keys equipment
+   * models `M-FX3-BODY`, `M-FZ100`, `M-USBC`, `M-SR-CAGE` … and
+   * `inventory/AddBundle.tsx` selects on `M-FX3-BODY`. Those are model keys,
+   * not issued identifiers, and renaming them is a product decision this pass
+   * may not take. The collision is defused in `isIssuedBy` instead, which
+   * matches the whole `M-N` format and so cannot claim a model key for a
+   * membership — see the note there before adding any new `M-`-prefixed
+   * namespace.
    */
+  /*
+   * `DEP` — Deposit. Like `QT` above, a sequence the app really mints that the
+   * render never drew: `0012_seed_data.sql` seeds a `deposit` row in
+   * `number_sequences` with prefix `DEP-`, and `lib/seed.ts` issues against it.
+   * Its prefix is transcribed from that migration, not invented; its format,
+   * counter, reset rule and scope are supplied nowhere, so they stay null.
+   * Deposits are not in the ruling's table, so nothing here renames it.
+   */
+  { code: 'DEP', name: 'Deposit', prefix: 'DEP', module: 'Finance', description: null, format: null, counter: null, resetRule: null, scope: null, status: 'Active' },
   { code: 'DOC', name: 'Document', prefix: 'DOC', module: 'Administration', description: null, format: null, counter: null, resetRule: null, scope: null, status: 'Active' },
-  { code: 'BND', name: 'Bundle', prefix: 'BND', module: 'Rental', description: null, format: null, counter: null, resetRule: null, scope: null, status: 'Active' },
-  { code: 'MEM', name: 'Membership', prefix: 'MEM', module: 'Rental', description: null, format: null, counter: null, resetRule: null, scope: null, status: 'Active' },
+  { code: 'BND', name: 'Bundle', prefix: 'BND', module: 'Rental', description: null, format: 'BND-N', counter: '23', resetRule: 'Never', scope: 'Global', status: 'Active' },
+  { code: 'MEM', name: 'Membership', prefix: 'M', module: 'Rental', description: null, format: 'M-N', counter: '14', resetRule: 'Never', scope: 'Global', status: 'Active' },
   { code: 'SR', name: 'Sub Rental', prefix: 'SR', module: 'Rental', description: null, format: null, counter: null, resetRule: null, scope: null, status: 'Active' },
   { code: 'COUP', name: 'Coupon', prefix: 'COUP', module: 'Finance', description: null, format: null, counter: null, resetRule: null, scope: null, status: 'Active' },
   { code: 'DISC', name: 'Discount', prefix: 'DISC', module: 'Finance', description: null, format: null, counter: null, resetRule: null, scope: null, status: 'Active' },
@@ -143,8 +219,9 @@ export const SEQUENCES: SequenceRow[] = [
   { code: 'LOG', name: 'Activity Log', prefix: 'LOG', module: 'Administration', description: null, format: null, counter: null, resetRule: null, scope: null, status: 'Active' },
 ]
 
-/** The eight above, so the page can explain the "Not configured" rows once
- *  rather than repeating a tooltip on every cell. */
+/** The still-unspecified rows, so the page can explain them once rather than
+ *  repeating a tooltip on every cell. Derived, so adding a format to one of
+ *  them removes it from the footnote automatically. */
 export const UNCONFIGURED_CODES = SEQUENCES.filter((s) => s.format === null).map((s) => s.code)
 
 /* ── number building ───────────────────────────────────────────────────────
@@ -154,10 +231,19 @@ export const UNCONFIGURED_CODES = SEQUENCES.filter((s) => s.format === null).map
    rather than from a fixed five-chip string — is what keeps the Preview
    Generator from contradicting the Format column directly above it.
 
-   It also reproduces the spec's own worked examples exactly:
-     INV-BR-YYYY-NNNNN  + KTM → INV-KTM-2026-00492   (spec § Number Format)
-     EQ-CAT-NNNNNN            → EQ-CAM-000824        (spec § Number Format)
-     BK-YYYY-NNNNNN           → BK-2026-004861       (render's "Last Used" KPI)
+   It reproduces the ruled forms and the spec's remaining worked example:
+     B-N          + counter 4861 → B-4861     (§2, the ruled Booking form)
+     INV-N        + counter 492  → INV-492    (§2, no branch segment)
+     EQ-CAT-NNNNNN               → EQ-CAM-000824   (spec § Number Format)
+
+   A two-token `PREFIX-N` format is the structural case the ruling depends on:
+   `'B-N'.split('-')` is `['B','N']`, index 0 is the PREFIX and `/^N+$/` makes
+   index 1 the COUNTER, so `paddingOf` is 1 and `padTo(715, 1)` is `'715'`.
+   Nothing had to change here for it. What is *not* representable is a
+   separator-less format — `'EQ000234'.split('-')` is one part, labelled
+   PREFIX, leaving no COUNTER token at all. Equipment is not in the ruling's
+   table, so that contradiction (numbering.ts says `EQ-CAT-NNNNNN`, the
+   database CHECK says `^EQ[0-9]{6}$`) is left standing and reported.
 */
 
 export type TokenKind = 'PREFIX' | 'YEAR' | 'MONTH' | 'DAY' | 'BRANCH' | 'WAREHOUSE' | 'CATEGORY' | 'COUNTER'
@@ -237,6 +323,18 @@ export function segmentsOf(format: string, ctx: BuildContext): Segment[] {
   })
 }
 
+/**
+ * Does this format carry a token of the given kind?
+ *
+ * `kindOf` above is the single place that reserves `BR` for BRANCH and `WH`
+ * for WAREHOUSE. Asking through it — rather than
+ * `format.split('-').includes('BR')` at the call site — is what keeps the
+ * reservation to one line. Requirement 3 of the 12 Aug ruling.
+ */
+export function formatHas(format: string, kind: TokenKind): boolean {
+  return format.split('-').some((part, i) => kindOf(part, i) === kind)
+}
+
 export function buildNumber(format: string, ctx: BuildContext): string {
   return segmentsOf(format, ctx)
     .map((s) => s.value)
@@ -254,9 +352,169 @@ export function padTo(value: number, width: number): string {
   return String(value).padStart(width, '0')
 }
 
-/** Counters are append-only; `step` never goes negative. */
+/** Counters are append-only; `step` never goes negative.
+ *
+ *  Note this re-pads to the width of the counter string it is *given*, not to
+ *  the format's. Callers that hold a row's stored counter must normalise it
+ *  first — `advance(padTo(Number(row.counter), paddingOf(row.format)), 1)` —
+ *  or a stale six-digit counter keeps printing six digits after the format
+ *  has been narrowed to one. */
 export function advance(counter: string, step: number): string {
   return padTo(Number(counter) + Math.max(0, step), counter.length)
+}
+
+/* ── the registry as configuration ─────────────────────────────────────────
+
+   `WIREFRAME_RULINGS_2026-08-12.md` §2.2: *"The prefixes are configuration,
+   not constants. No module may hardcode a prefix"* — the same rule `PLAN.md`
+   §5 already applies to the VAT rate.
+
+   Everything below exists so that a module which needs to build, recognise or
+   read an identifier can do it without typing a prefix. If a module needs a
+   formatter that is not here, add it here rather than inlining a template
+   literal at the call site. */
+
+/** The registry row for a sequence code, or `undefined` if it has none. */
+export function sequence(code: string): SequenceRow | undefined {
+  return SEQUENCES.find((s) => s.code === code)
+}
+
+/**
+ * The literal prefix a sequence issues.
+ *
+ * Read from the row's **format** where it has one, so that editing the format
+ * in Settings ▸ Numbering moves the prefix too and the two can never disagree;
+ * falls back to the row's own `prefix` field for the rows that are still
+ * unconfigured. Returns `''` for an unknown code rather than guessing.
+ */
+export function prefixOf(code: string): string {
+  const row = sequence(code)
+  if (!row) return ''
+  return row.format ? (row.format.split('-')[0] ?? row.prefix) : row.prefix
+}
+
+/**
+ * The separator the ruled scheme joins with. One place, so `B-1` and the
+ * `startsWith` tests below cannot drift apart.
+ */
+export const SEPARATOR = '-'
+
+/** `'B-'` — the prefix plus separator, for the places that must recognise an
+ *  identifier by its opening rather than parse it. */
+export function prefixTokenOf(code: string): string {
+  const p = prefixOf(code)
+  return p ? p + SEPARATOR : ''
+}
+
+/**
+ * Renders a counter value in a sequence's registered format.
+ *
+ * `issue('BK', 715)` → `'B-715'`. A row with no format yet takes the ruled
+ * default shape — prefix, separator, counter, **no year and no padding**,
+ * which is what §2 fixes for every sequence — so an unconfigured row still
+ * cannot force a caller to type a prefix.
+ */
+export function issue(code: string, value: number | string, ctx?: Partial<BuildContext>): string {
+  const row = sequence(code)
+  if (!row) return String(value)
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!row.format) return prefixOf(code) + SEPARATOR + (Number.isFinite(n) ? String(n) : String(value))
+  const now = new Date()
+  return buildNumber(row.format, {
+    year: ctx?.year ?? String(now.getUTCFullYear()),
+    month: ctx?.month ?? padTo(now.getUTCMonth() + 1, 2),
+    day: ctx?.day ?? padTo(now.getUTCDate(), 2),
+    branchCode: ctx?.branchCode ?? '',
+    warehouseCode: ctx?.warehouseCode ?? '',
+    counter: ctx?.counter ?? padTo(Number.isFinite(n) ? n : 0, paddingOf(row.format)),
+  })
+}
+
+/** Literal segments are alphanumeric today; escaped anyway so a prefix edited
+ *  in Settings ▸ Numbering can never be read as regex syntax. */
+function escapeLiteral(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * A pattern matching exactly what `format` can produce.
+ *
+ * Built by walking the same `kindOf` table the builder walks, so a string the
+ * engine can render is a string the recogniser can read — the two cannot drift.
+ * The counter token matches `\d{width,}` rather than `\d{width}` because
+ * `padTo` uses `padStart`, which pads but never truncates: `CASE-YYYY-NNNN` has
+ * to keep matching once the counter passes four digits.
+ */
+function patternOf(format: string): RegExp {
+  const body = format
+    .split('-')
+    .map((part, i) => {
+      switch (kindOf(part, i)) {
+        case 'PREFIX':
+          return escapeLiteral(part)
+        case 'COUNTER':
+          return `\\d{${part.length},}`
+        case 'YEAR':
+          return '\\d{4}'
+        case 'MONTH':
+        case 'DAY':
+          return '\\d{2}'
+        default:
+          return '[A-Za-z0-9]+'
+      }
+    })
+    .join('-')
+  return new RegExp(`^${body}$`)
+}
+
+/**
+ * True when `id` was issued by `code`'s sequence.
+ *
+ * This replaces every `value.startsWith('BK-')` in the app. Prefix sniffing is
+ * the highest-risk class of hardcode because it fails **silently** — a
+ * calendar bar whose prefix no longer matches simply stops being openable,
+ * with no error anywhere.
+ *
+ * Matched against the row's whole **format**, not just its opening token. The
+ * ruling shortened three prefixes to a single letter, and a one-letter token is
+ * cheap to collide with: `data/addBundle.ts` keys equipment models `M-FX3-BODY`,
+ * `M-USBC`, `M-SR-CAGE`, so a `startsWith('M-')` test would have claimed every
+ * one of them for the Membership sequence. `M-N` can only produce digits after
+ * the separator, so asking the format settles it. Rows that have no format yet
+ * keep the opening-token test — there is nothing stricter to ask them.
+ */
+export function isIssuedBy(code: string, id: string | null | undefined): boolean {
+  const row = sequence(code)
+  if (!row || !id) return false
+  if (!row.format) {
+    const token = prefixTokenOf(code)
+    return Boolean(token && id.startsWith(token))
+  }
+  return patternOf(row.format).test(id)
+}
+
+/**
+ * True when `id` merely **opens with** `code`'s prefix token, whatever follows.
+ *
+ * A different question from `isIssuedBy`, and the two must not be confused.
+ * `isIssuedBy` asks "did this sequence mint this?"; this asks "is this string
+ * squatting on that sequence's namespace?" — which is what a collision check
+ * wants. `expenseReports.ts` needs the second: a vendor bill numbered
+ * `INV-WHATEVER` is not a well-formed sales invoice, and that is precisely why
+ * it must still be reported.
+ */
+export function wearsPrefixOf(code: string, id: string | null | undefined): boolean {
+  const token = prefixTokenOf(code)
+  return Boolean(token && id && id.startsWith(token))
+}
+
+/** The numeric counter inside an issued identifier, or `null` if `id` did not
+ *  come from that sequence. `counterIn('BK', 'B-715')` → `715`. */
+export function counterIn(code: string, id: string | null | undefined): number | null {
+  if (!isIssuedBy(code, id)) return null
+  const tail = (id as string).slice(prefixTokenOf(code).length)
+  const n = Number(tail)
+  return Number.isFinite(n) && tail !== '' ? n : null
 }
 
 /* ── preview generator inputs ──────────────────────────────────────────────
@@ -418,6 +676,13 @@ export const ANALYTICS = {
     { name: 'EQ – Equipment', value: '1,102', pct: 19 },
     { name: 'CASE – Case', value: '682', pct: 12 },
   ],
+  /*
+   * History, not configuration — these resets happened under the reset rules
+   * in force at the time. BK and INV read "Calendar Year" here and "Never" in
+   * the table above because the 12 Aug ruling changed their rule: a Calendar
+   * Year reset on a year-less format (`B-N`) would re-issue `B-1` every
+   * January, which is a duplicate identifier, not a new one.
+   */
   resetHistory: {
     total: '17',
     rows: [
@@ -503,16 +768,23 @@ export const SEED_ERRORS: string[] = (() => {
     if (seenPrefix.has(p)) errs.push(`§ Validation Rules: duplicate prefix "${s.prefix}".`)
     seenPrefix.add(p)
 
-    // A format's run of Ns *is* its padding, so a counter of a different width
-    // could never have been produced by it. This is the check that catches the
-    // CASE five-vs-four-digit class of mistake.
+    // A format's run of Ns is its padding width, and `padTo` uses `padStart`,
+    // which pads but never truncates. The counter a format could have produced
+    // is therefore exactly `padTo(Number(counter), width)` — its canonical
+    // rendering at that width. Comparing against that instead of against the
+    // width alone is what makes the no-padding scheme expressible: `B-N` pads
+    // to 1 and `'4861'` renders as `'4861'`, so it reconciles, while the
+    // half-done rename that leaves `'004861'` beside `B-N` still does not.
+    // It also still catches the CASE five-vs-four-digit class of mistake.
     if (s.format !== null && s.counter !== null) {
       const width = paddingOf(s.format)
       if (width === 0) {
         errs.push(`"${s.code}" format "${s.format}" has no counter token.`)
-      } else if (width !== s.counter.length) {
+      } else if (!/^\d+$/.test(s.counter)) {
+        errs.push(`"${s.code}" counter "${s.counter}" is not a number.`)
+      } else if (padTo(Number(s.counter), width) !== s.counter) {
         errs.push(
-          `"${s.code}" format "${s.format}" pads to ${width} digits but its counter "${s.counter}" is ${s.counter.length}.`,
+          `"${s.code}" format "${s.format}" pads to ${width} digit${width === 1 ? '' : 's'} but its counter "${s.counter}" reads as "${padTo(Number(s.counter), width)}".`,
         )
       }
     }

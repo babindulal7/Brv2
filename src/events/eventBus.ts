@@ -86,6 +86,7 @@ export const EVENT_TYPES = {
   EQUIPMENT_CREATED: 'inventory.equipment_created',
   BUNDLE_CREATED: 'inventory.bundle_created',
   CLIENT_CREATED: 'client.created',
+  CLIENT_UPDATED: 'client.updated',
   CLIENT_STATUS_UPDATED: 'client.status_updated',
   CLIENT_MERGED: 'client.merged',
   CASE_RESOLVED: 'case.resolved',

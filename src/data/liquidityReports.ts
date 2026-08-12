@@ -99,52 +99,144 @@ export const collectionUpside = (targetPct: number): Paisa =>
 
 // ── Working capital position ─────────────────────────────────────────────────
 
+/**
+ * A balance-sheet line.
+ *
+ * `amount: null` means **not tracked yet** — there is no table behind the line,
+ * so no figure may be printed for it and no derivation may include it. It is
+ * NOT zero: zero is a claim that the business owes nothing, which is a
+ * different and unevidenced statement.
+ *
+ * See `POSITION` below for the one line that carries it and why.
+ */
 export interface PositionLine {
   label: string
   nature: string
-  amount: Paisa
+  amount: Paisa | null
   side: 'asset' | 'liability'
 }
 
+/**
+ * ⚠ **Trade payables was a hand-typed Rs 42,200 and is now `null`.**
+ *
+ * `WIREFRAME_RULINGS_2026-08-12.md` §8 names this line specifically, and
+ * `09_FINANCE.md` §9.6 rules the Payables report *"renders the honest 'not
+ * tracked yet' empty state, never a fabricated figure"*. There is no
+ * supplier-invoice table anywhere in `supabase/migrations/` — no `bills`, no
+ * `supplier_invoices`, no `accounts_payable` — so nothing in this repository
+ * knows what Babin owes its suppliers or its sub-rental partners.
+ *
+ * The figure was not merely displayed. It flowed into `currentLiabilities()`,
+ * and from there into `workingCapital()`, `currentRatio()` and `freeCash()` —
+ * four figures on `WorkingCapitalReport.tsx`, every one of them stated as fact.
+ * Had the Payables report been built beside it, the app would have said "not
+ * tracked yet" on one screen and Rs 42,200 of the same liability on another.
+ *
+ * **What replaces it, and why not simply delete the line.** Deleting it would
+ * make the liability side *look* complete, and the current ratio would read as
+ * a finished figure computed over a set that is missing a whole class of
+ * obligation. The line stays, states that it is untracked, and every derivation
+ * below either excludes it and says so (`LIABILITIES_ARE_COMPLETE` is `false`)
+ * or refuses to answer. A reader of the report is told what is missing rather
+ * than shown a total that quietly is not one.
+ */
 export const POSITION: PositionLine[] = [
   { label: 'Cash at bank', nature: 'Operating account', amount: rupees(398_000), side: 'asset' },
   { label: 'Cash in hand', nature: 'Petty cash', amount: rupees(25_000), side: 'asset' },
   { label: 'Trade receivables', nature: '4 clients owing', amount: rupees(155_000), side: 'asset' },
-  { label: 'Trade payables', nature: 'Suppliers, sub-rental partners', amount: rupees(42_200), side: 'liability' },
+  {
+    label: 'Trade payables',
+    nature: 'Not tracked yet — no supplier-invoice table exists',
+    amount: null,
+    side: 'liability',
+  },
   { label: 'Deposits refundable', nature: 'Client funds held in trust', amount: rupees(25_000), side: 'liability' },
 ]
+
+/** The lines that have no source. Rendered by name so the gap is visible, not implied. */
+export const untrackedLines = (side: PositionLine['side']): PositionLine[] =>
+  POSITION.filter((l) => l.side === side && l.amount === null)
+
+/**
+ * `false` while any liability line is untracked.
+ *
+ * Every consumer of `currentLiabilities()` must branch on this: the sum below
+ * is the total of what is *known*, which is a floor, not the figure. Exported
+ * as a derived constant rather than a comment so a caller cannot forget it —
+ * `WorkingCapitalReport.tsx` reads it to decide between a number and "not
+ * tracked yet".
+ */
+export const LIABILITIES_ARE_COMPLETE: boolean = untrackedLines('liability').length === 0
+export const ASSETS_ARE_COMPLETE: boolean = untrackedLines('asset').length === 0
 
 /** Days between invoicing and collection. Rentals are pre-agreed, so this is all receivables. */
 export const CASH_CONVERSION_DAYS = 28
 export const CASH_CONVERSION_DAYS_PRIOR = 25
 
-export const currentAssets = (): Paisa =>
-  POSITION.filter((l) => l.side === 'asset').reduce((t, l) => t + (l.amount as number), 0) as Paisa
+/** Sum of the lines on one side that HAVE a figure. An untracked line contributes nothing. */
+const sumSide = (side: PositionLine['side']): Paisa =>
+  POSITION.filter((l) => l.side === side && l.amount !== null).reduce(
+    (t, l) => t + (l.amount as number),
+    0,
+  ) as Paisa
 
-export const currentLiabilities = (): Paisa =>
-  POSITION.filter((l) => l.side === 'liability').reduce((t, l) => t + (l.amount as number), 0) as Paisa
+export const currentAssets = (): Paisa => sumSide('asset')
 
-export const workingCapital = (): Paisa =>
+/**
+ * The liabilities that are tracked. **A floor, not a total** — check
+ * `LIABILITIES_ARE_COMPLETE` before rendering it as one.
+ */
+export const currentLiabilities = (): Paisa => sumSide('liability')
+
+export const receivables = (): Paisa =>
+  POSITION.find((l) => l.label === 'Trade receivables')?.amount ?? (rupees(0) as Paisa)
+
+/**
+ * Assets less liabilities — `null` while either side is incomplete.
+ *
+ * With payables untracked, assets-less-KNOWN-liabilities is an upper bound, and
+ * an upper bound printed as a figure is a fabricated figure. Callers render
+ * "not tracked yet". `workingCapitalCeiling()` exists for a caller that wants
+ * to state the bound *as* a bound, in words.
+ */
+export const workingCapital = (): Paisa | null =>
+  LIABILITIES_ARE_COMPLETE && ASSETS_ARE_COMPLETE
+    ? (((currentAssets() as number) - (currentLiabilities() as number)) as Paisa)
+    : null
+
+/** The bound, labelled as one. Never render this without the words "at most". */
+export const workingCapitalCeiling = (): Paisa =>
   ((currentAssets() as number) - (currentLiabilities() as number)) as Paisa
 
-/** One decimal. No inventory for resale, so the quick ratio equals this. */
-export const currentRatio = (): number =>
-  Math.round(((currentAssets() as number) / (currentLiabilities() as number)) * 10) / 10
+/**
+ * One decimal. No inventory for resale, so the quick ratio equals this.
+ *
+ * `null` while liabilities are incomplete: a denominator missing a whole class
+ * of obligation *overstates* liquidity, which is the direction that gets a
+ * business into trouble.
+ */
+export const currentRatio = (): number | null =>
+  LIABILITIES_ARE_COMPLETE
+    ? Math.round(((currentAssets() as number) / (currentLiabilities() as number)) * 10) / 10
+    : null
 
 /**
  * Cash genuinely available once obligations are met. Deposits come out here too:
  * they sit in the operating account but belong to the client.
+ *
+ * `null` for the same reason as `currentRatio()`, and it is the most important
+ * of the four: "free" cash computed against an incomplete obligation list is
+ * the one figure somebody would go and spend.
  */
-export const freeCash = (): Paisa =>
-  ((currentAssets() as number) -
-    (POSITION.find((l) => l.label === 'Trade receivables')?.amount as number) -
-    (currentLiabilities() as number)) as Paisa
+export const freeCash = (): Paisa | null =>
+  LIABILITIES_ARE_COMPLETE
+    ? (((currentAssets() as number) - (receivables() as number) - (currentLiabilities() as number)) as Paisa)
+    : null
 
-export const freeCashMonths = (): number =>
-  Math.round(((freeCash() as number) / Math.abs(OPERATING_BURN as number)) * 100) / 100
-
-export const receivables = (): Paisa =>
-  POSITION.find((l) => l.label === 'Trade receivables')?.amount ?? (rupees(0) as Paisa)
+export const freeCashMonths = (): number | null => {
+  const free = freeCash()
+  return free === null ? null : Math.round(((free as number) / Math.abs(OPERATING_BURN as number)) * 100) / 100
+}
 
 export const receivableShare = (): number =>
   Math.round(((receivables() as number) / (currentAssets() as number)) * 100)

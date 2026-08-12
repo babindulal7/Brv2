@@ -1,15 +1,21 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, Button, cardStyle, Rail } from '../../components/ui/Page'
+import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { FloorAside } from '../operations/FloorAside'
+import { useViewport } from '../../lib/device'
 import { thStyle as th } from '../../components/ui/TableHeaderCell'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
 import type { BookingStatus, JobState, ItemState } from '../../lib/workflow'
 import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
+import { Unavailable } from '../../components/ui/Unavailable'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
-import { BOOKING } from '../../data/booking'
+/* `lateBand` and its two formatters return no monetary value — that is the
+   whole reason they exist. `lib/money.ts` stays unimported here (§8.3). */
+import { lateBand, formatOverage, bandConsequence } from '../../lib/lateFee'
+import { BOOKING, RETURN_AT, ACTUAL_RETURN_AT } from '../../data/booking'
 import {
   UNITS as SEED_UNITS,
   SESSIONS as SEED_SESSIONS,
@@ -74,6 +80,26 @@ import type {
 /** §13 sibling convention — the workspace primary is `--blue-600` in both themes, never green. */
 const BLUE_PRIMARY = { background: 'var(--cat-1)', color: '#fff', border: '1px solid transparent' } as const
 
+/**
+ * ⭐ 12 Aug 2026 — spec 03's closing notes: *"Exactly one primary button per
+ * workspace, and it is the completion gate."*
+ *
+ * This page shipped three filled blue buttons: `Scan Barcode`, `Save
+ * Inspection` and `Complete Session`. Only the last is the gate, so the other
+ * two take this treatment instead — the accent kept as an outline, so the
+ * scan-first workflow stays as findable as it was on a warehouse tablet
+ * without a second button claiming to be *the* action.
+ */
+const ACCENT_OUTLINE = { background: 'transparent', color: 'var(--cat-1)', border: '1px solid var(--cat-1)' } as const
+
+/**
+ * The reason the Witness row cannot be signed — see `captureSignature`. Stated
+ * on the control rather than solved with a name, because the name would be
+ * invented.
+ */
+const WITNESS_UNAVAILABLE =
+  'No witness identity is captured on this screen, so a witness signature cannot be attested here. §9 makes the witness optional — this return is recorded with no witness rather than with an invented one.'
+
 const ITEM_TONE: Record<ItemState, StatusKey> = {
   Ready: 'neutral',
   'Picked Up': 'out', // §4.2 — solid green, "still out" with the client.
@@ -119,6 +145,11 @@ export default function ReturnWorkspace() {
   const navigate = useNavigate()
   const { bookingNo } = useParams()
   const id = bookingNo ?? BOOKING.no
+  /* Law 13/14 — width decides. §3.4's tablet layout is "scan column + triage
+     buttons; compare strip drops below", which is the right column REFLOWING
+     beneath the list — not collapsing to a handle (Rulings §7). */
+  const viewport = useViewport()
+  const desktop = viewport === 'desktop'
 
   const [units, setUnits] = useState<Record<string, ReturnUnit>>(() =>
     Object.fromEntries(SEED_UNITS.map((u) => [u.id, cloneUnit(u)])),
@@ -130,6 +161,10 @@ export default function ReturnWorkspace() {
   const [expandedId, setExpandedId] = useState<string | null>('r11')
   const [showScanner, setShowScanner] = useState(false)
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('All')
+
+  /* Money-free by construction — `lateBand` returns minutes and a band name,
+     never a Paisa. See the import note and §8.3. */
+  const overrun = lateBand(RETURN_AT, ACTUAL_RETURN_AT)
   const [query, setQuery] = useState('')
   const [scanLog, setScanLog] = useState<string[]>([])
 
@@ -204,9 +239,28 @@ export default function ReturnWorkspace() {
     setExpandedId(null)
   }
 
-  const captureSignature = (role: 'returningPerson' | 'warehouseStaff' | 'witness') => {
-    const names = { returningPerson: active.returningPerson, warehouseStaff: active.receivingStaff, witness: 'Bikash Thapa' }
-    const roleLabel = { returningPerson: 'Client Representative', warehouseStaff: 'Warehouse', witness: 'Witness' }
+  /**
+   * ⭐ 12 Aug 2026 — the witness is gone from here, and cannot come back by accident.
+   *
+   * `names.witness` was the literal `'Bikash Thapa'`. Pressing Capture on the
+   * Witness row therefore wrote a **named individual** onto the return
+   * attestation without that person being present, asked, or identified. A
+   * signature block is evidence: if a damage or missing-unit dispute ever turns
+   * on this return, that name is a fabricated witness sitting on it.
+   *
+   * This screen captures no witness identity anywhere — no field, no picker, and
+   * `ReturnSession` names only `returningPerson` and `receivingStaff` — so there
+   * is nothing true to put in the field. §9 already makes the witness OPTIONAL,
+   * so absent is the honest state ("no witness recorded"); a name, or a
+   * placeholder, is a claim. The role union below no longer admits `witness`, and
+   * the Witness row's Capture control is `Unavailable` with its reason attached.
+   *
+   * The two remaining names are NOT literals typed here: they are read off the
+   * session record this signature belongs to.
+   */
+  const captureSignature = (role: 'returningPerson' | 'warehouseStaff') => {
+    const names = { returningPerson: active.returningPerson, warehouseStaff: active.receivingStaff }
+    const roleLabel = { returningPerson: 'Client Representative', warehouseStaff: 'Warehouse' }
     setSessions((p) => ({
       ...p,
       [activeId]: {
@@ -374,16 +428,28 @@ export default function ReturnWorkspace() {
           </div>
         ))}
       </div>
-      {/* §4 — overrun as informational text, never a fabricated "Late Return" flag (see file header). */}
-      <p style={{ margin: '-6px 2px 0', fontSize: 'var(--t-meta)', color: 'var(--danger-text)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
-        <Icon name="timer" size={12} />
-        {RETURN_TIMING.overrunText}
-      </p>
+      {/* §4 — overrun as informational text, never a fabricated "Late Return" flag (see file header).
+       *
+       * §4.2 — the overage and the band are now **computed** by `lib/lateFee`'s
+       * `lateBand`, not the hand-written string this used to print, so the floor
+       * and Finance can never disagree about how late a return was.
+       *
+       * `lateBand` returns no monetary value at all, which is why it exists:
+       * §8.3 keeps every Rs figure off this screen, and the rupees and the
+       * apply/waive decision live on Booking Detail behind `canBookingMoney`.
+       * "A full rental day is chargeable" is a unit of rental time, not a price. */}
+      {overrun.band !== 'None' && (
+        <p style={{ margin: '-6px 2px 0', fontSize: 'var(--t-meta)', color: 'var(--danger-text)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+          <Icon name="timer" size={12} />
+          {formatOverage(overrun.overageMinutes)} past expected return
+          <span style={{ fontWeight: 500, color: 'var(--text2)' }}>· {bandConsequence(overrun)}</span>
+        </p>
+      )}
 
       {/* ── §5 scan bar ────────────────────────────────────────────────── */}
       <Card>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <button type="button" onClick={() => setShowScanner(true)} style={{ ...bigScanBtn, ...BLUE_PRIMARY }}>
+          <button type="button" onClick={() => setShowScanner(true)} style={{ ...bigScanBtn, ...ACCENT_OUTLINE }}>
             <Icon name="queues" size={16} /> Scan Barcode
           </button>
           <button type="button" onClick={() => setShowScanner(true)} style={{ ...bigScanBtn, background: 'var(--btn-secondary-bg)', color: 'var(--text)', border: '1px solid var(--btn-secondary-border)' }}>
@@ -402,7 +468,14 @@ export default function ReturnWorkspace() {
         <p style={{ margin: '9px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Scan any item to mark as returned and start inspection</p>
       </Card>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: desktop ? 'minmax(0,1fr) auto' : '1fr',
+          gap: 'var(--sp-md)',
+          alignItems: 'start',
+        }}
+      >
         {/* ── centre column ────────────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <Card title="1 · Equipment Table" bodyStyle={{ padding: 0 }}>
@@ -439,7 +512,7 @@ export default function ReturnWorkspace() {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)' }}>
-                    {['#', 'Equipment', 'Serial', 'Expected', 'Returned', 'Condition', 'Inspection', 'Session', ''].map((h, i) => (
+                    {['#', 'Equipment', 'Serial', 'Expected', 'Returned', 'Condition', 'Inspection', 'Session #', ''].map((h, i) => (
                       <th key={h || i} style={th}>{h}</th>
                     ))}
                   </tr>
@@ -536,7 +609,42 @@ export default function ReturnWorkspace() {
         </div>
 
         {/* ── right rail ────────────────────────────────────────────────── */}
-        <Rail width={300} label="Return summary">
+        <FloorAside collapsible={desktop} side="right" width={300} label="Return summary">
+          {/*
+            §3.4's BEFORE / AFTER compare strip. Both figures are REAL: every
+            unit carries `pickup.photos` (what Packing captured) and
+            `ret.photos` (what this session captured), and the expanded row
+            panel already links to each set. Nothing is invented here — a stage
+            with no photos reads `0 photos`, and the link goes to the Evidence
+            viewer, which is where the images actually live (spec 03 line 4 —
+            "Evidence is a viewer, not a verb").
+          */}
+          <Card title="Before / After">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-sm)' }}>
+              {([
+                ['Packing', list.reduce((n, u) => n + u.pickup.photos, 0)],
+                ['Return', list.reduce((n, u) => n + (u.ret?.photos ?? 0), 0)],
+              ] as const).map(([stage, n]) => (
+                <div key={stage} style={{ padding: 10, borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                    <Icon name="eye" size={12} />
+                    {stage}
+                  </div>
+                  <div className="figure" style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: n > 0 ? 'var(--text)' : 'var(--muted)', marginTop: 3 }}>
+                    {n} {n === 1 ? 'photo' : 'photos'}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <Link
+              to={`/rentals/${id}/evidence`}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44, marginTop: 9, fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' }}
+            >
+              <Icon name="external_link" size={14} />
+              Compare in Evidence
+            </Link>
+          </Card>
+
           <Card title="Sessions">
             {(['S1', 'S2'] as SessionId[]).map((sid) => {
               const s = sessions[sid]
@@ -565,7 +673,8 @@ export default function ReturnWorkspace() {
             {/* §9 — captured at session close, never before. */}
             <SigRow label="Returning person" sig={active.signatures.returningPerson} onCapture={() => captureSignature('returningPerson')} required disabled={active.state === 'Complete'} />
             <SigRow label="Warehouse staff" sig={active.signatures.warehouseStaff} onCapture={() => captureSignature('warehouseStaff')} required disabled={active.state === 'Complete'} />
-            <SigRow label="Witness" sig={active.signatures.witness} onCapture={() => captureSignature('witness')} required={false} disabled={active.state === 'Complete'} />
+            {/* §9 — optional, and uncapturable: there is no witness identity on this screen to sign as. */}
+            <SigRow label="Witness" sig={active.signatures.witness} required={false} disabled={active.state === 'Complete'} unavailable={WITNESS_UNAVAILABLE} />
           </Card>
 
           <Card title="Items Not Returned">
@@ -623,7 +732,7 @@ export default function ReturnWorkspace() {
               </div>
             </div>
           )}
-        </Rail>
+        </FloorAside>
       </div>
 
       {/* ── §11 footer — two buttons, primary blue, autosave, no Save Draft ── */}
@@ -683,7 +792,15 @@ export default function ReturnWorkspace() {
 
 const bigScanBtn = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--sp-sm)', height: 44, padding: '0 18px', borderRadius: 'var(--r-btn)', fontSize: 'var(--t-ui)', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer' } as const
 
-function SigRow({ label, sig, onCapture, required, disabled }: { label: string; sig: Sig | undefined; onCapture: () => void; required: boolean; disabled: boolean }) {
+/**
+ * `unavailable` is the reason a row can never be signed on this screen (today:
+ * Witness, which has no identity to capture). It takes precedence over
+ * `onCapture`, which such a row is not given at all — the Capture control
+ * renders through `Unavailable` so the reason is attached to it on hover AND on
+ * a warehouse tablet's long-press, rather than the row silently signing someone.
+ */
+function SigRow({ label, sig, onCapture, required, disabled, unavailable }: { label: string; sig: Sig | undefined; onCapture?: () => void; required: boolean; disabled: boolean; unavailable?: string }) {
+  const capture = { height: 26, padding: '0 9px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'var(--card2)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', whiteSpace: 'nowrap' } as const
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
       <div style={{ minWidth: 0, flex: 1 }}>
@@ -692,19 +809,28 @@ function SigRow({ label, sig, onCapture, required, disabled }: { label: string; 
           <div style={{ fontSize: 'var(--t-meta)', color: 'var(--success-text)' }}>Signed · {sig.at}</div>
         ) : (
           // §9 — witness renders as "Optional", never as "Pending".
-          <div style={{ fontSize: 'var(--t-meta)', color: required ? 'var(--progress-text)' : 'var(--muted)' }}>{required ? 'Required' : 'Optional'}</div>
+          <div style={{ fontSize: 'var(--t-meta)', color: required ? 'var(--progress-text)' : 'var(--muted)' }}>
+            {required ? 'Required' : unavailable ? 'Optional — no witness recorded' : 'Optional'}
+          </div>
         )}
       </div>
-      {!sig && (
-        <button
-          type="button"
-          onClick={onCapture}
-          disabled={disabled}
-          style={{ height: 26, padding: '0 9px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
-        >
-          Capture
-        </button>
-      )}
+      {!sig &&
+        (unavailable ? (
+          <Unavailable reason={unavailable}>
+            <button type="button" disabled style={{ ...capture, color: 'var(--muted)', cursor: 'not-allowed' }}>
+              Capture
+            </button>
+          </Unavailable>
+        ) : (
+          <button
+            type="button"
+            onClick={onCapture}
+            disabled={disabled}
+            style={{ ...capture, color: 'var(--text2)', cursor: disabled ? 'not-allowed' : 'pointer' }}
+          >
+            Capture
+          </button>
+        ))}
     </div>
   )
 }
@@ -785,7 +911,11 @@ function UnitRow({
             <span style={{ color: 'var(--muted)' }}>—</span>
           )}
         </td>
-        <td className="identifier" style={{ ...td, color: 'var(--muted)' }}>{u.sessionId ?? '—'}</td>
+        {/* An internal ordinal, not a record number — ruling §2.1 leaves the
+            session model alone (it has its own gates, signatures and close) but
+            it must not read as an identifier. Was a raw `S1` in an `identifier`
+            cell; labelled now. */}
+        <td style={{ ...td, color: 'var(--muted)' }}>{u.sessionId ? `Session ${u.sessionId.slice(1)}` : '—'}</td>
         <td style={{ ...td, width: 150 }}>
           <span style={{ display: 'flex', gap: 'var(--sp-xs)', justifyContent: 'flex-end', alignItems: 'center' }}>
             {u.state === 'Picked Up' && <RowAction label="Mark Returned" onClick={onScan} />}
@@ -941,7 +1071,7 @@ function UnitRow({
                           fontWeight: 600,
                           fontFamily: 'inherit',
                           cursor: u.condition ? 'pointer' : 'not-allowed',
-                          ...(u.condition ? BLUE_PRIMARY : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
+                          ...(u.condition ? ACCENT_OUTLINE : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
                         }}
                       >
                         Save Inspection

@@ -61,6 +61,17 @@ export interface ClientListItem {
   totalPaid: Paisa | null
   activeBookingsCount: number
   totalBookingsCount: number
+  /**
+   * The tier the client actually holds, or `null` when they hold none.
+   *
+   * The null is load-bearing in the same way the money nulls above are: the
+   * view's `membership_level` comes from a LEFT JOIN, so `null` means "no
+   * membership row exists for this client", never "Academy". `ClientRecord`
+   * cannot express that and substitutes a placeholder tier — see
+   * `UNJOINED_MEMBERSHIP_PLACEHOLDER`. This field is the honest reading; prefer
+   * it anywhere the answer decides pricing, a discount or a badge.
+   */
+  membershipLevel: MembershipTier | null
   /** AD, ISO. Law 7 — BS is rendered from this, never stored. */
   lastPickupAtAd: string | null
 }
@@ -103,6 +114,21 @@ interface DirectoryRow {
   membership_level: MembershipTier | null
   kyc_docs_count: number | null
   kyc_verified_count: number | null
+  /**
+   * Law 3 — a closed account is retained and marked, never deleted. Already in
+   * `DIRECTORY_COLUMNS` because `listClients` filters on it; declared here so a
+   * single-record read can RENDER the fact rather than silently show a closed
+   * account as an ordinary one.
+   */
+  deactivated_at: string | null
+  /**
+   * Migration 0054, appended as the view's 31st column. Derived from a live
+   * `client_flags` row of type 'Blocked' — NOT from `clients.status`, which has
+   * no Blocked member (0001:832). `null` is not "not blocked": the view's
+   * `exists(...)` returns a real boolean for every row, so a null here would
+   * mean the column was not selected.
+   */
+  is_blocked: boolean | null
 }
 
 /** numeric (rupees) -> Paisa, preserving null rather than collapsing it to 0. */
@@ -125,6 +151,9 @@ function toListItem(row: DirectoryRow): ClientListItem {
     totalPaid: toPaisa(row.total_paid_amount),
     activeBookingsCount: row.active_bookings_count ?? 0,
     totalBookingsCount: row.total_bookings_count ?? 0,
+    // Passed through, null and all. This row is the one that does not lie about
+    // a client who has never joined a tier.
+    membershipLevel: row.membership_level,
     lastPickupAtAd: row.last_pickup_at,
   }
 }
@@ -135,7 +164,7 @@ const DIRECTORY_COLUMNS =
   'outstanding_amount, deposit_held_amount, total_paid_amount, ' +
   'active_bookings_count, total_bookings_count, last_pickup_at, ' +
   'contact_name, contact_designation, contact_phone, membership_level, ' +
-  'kyc_docs_count, kyc_verified_count, deactivated_at, created_at'
+  'kyc_docs_count, kyc_verified_count, is_blocked, deactivated_at, created_at'
 
 /**
  * Directory row -> the `ClientRecord` every clients surface already consumes.
@@ -146,6 +175,19 @@ const DIRECTORY_COLUMNS =
  * a plausible-looking default. A fabricated membership tier or KYC status on a
  * real client record is worse than an unwired screen, because someone will act
  * on it.
+ *
+ * **Two fields still fall short of that standard, and both are named where they
+ * happen rather than left for a reader to discover:**
+ *
+ *  - `membership` — a client with no membership row gets
+ *    `UNJOINED_MEMBERSHIP_PLACEHOLDER`, because `MembershipTier` is a closed
+ *    union with no "none". Blocked on a ruling; the truthful readings are
+ *    `ClientListItem.membershipLevel` and `ClientProfile.membershipKnown`.
+ *  - `creditUsedPaisa` — 0, because the type demands a number and no source
+ *    exists. Nothing reads it any more; the credit-limit check now reports
+ *    itself unavailable instead of dividing by it.
+ *
+ * Neither is a value to build on. Both are `TODO(decision)`.
  */
 export function toClientRecord(row: DirectoryRow): ClientRecord {
   const money = toPaisa(row.outstanding_amount)
@@ -157,7 +199,13 @@ export function toClientRecord(row: DirectoryRow): ClientRecord {
     id: row.client_code,
     name: row.name,
     clientType: (row.type_parent as ClientRecord['clientType']) ?? 'Unassigned',
-    membership: row.membership_level ?? DEFAULT_MEMBERSHIP,
+    // ⚠ A `null` here means the client has NO membership row — see
+    // `UNJOINED_MEMBERSHIP_PLACEHOLDER`. The placeholder is a type obligation,
+    // not a fact about this client, and it is the one field in this mapper that
+    // still renders a fabricated value. It stays only because removing it needs
+    // a ruling on `MembershipTier`; the truthful reading is
+    // `ClientListItem.membershipLevel` / `ClientProfile.membershipKnown`.
+    membership: row.membership_level ?? UNJOINED_MEMBERSHIP_PLACEHOLDER,
     phone: row.phone,
     email: row.email ?? '',
     ...(row.pan_vat ? { pan: row.pan_vat } : {}),
@@ -174,9 +222,27 @@ export function toClientRecord(row: DirectoryRow): ClientRecord {
     outstandingPaisa: money ?? (0 as Paisa),
     depositHeldPaisa: deposit ?? (0 as Paisa),
     creditLimitPaisa: limit ?? (0 as Paisa),
-    // TODO(decision): "credit used" has no column and no agreed formula.
+    // ⚠ TODO(decision): "credit used" has no column and no agreed formula.
     // Outstanding is the closest true figure, but calling it credit-used would
     // assert an equivalence nothing has ruled. Left at 0 rather than guessed.
+    //
+    // **This 0 is a type obligation, not a measurement.** `ClientRecord`
+    // requires a `Paisa` and has no way to spell "unknown", so a placeholder is
+    // unavoidable *here* — but nothing may read it as a figure, and the two
+    // places that did have been changed:
+    //
+    //  - `modules/rentals/booking/clientHealth.ts` no longer divides by it. Its
+    //    credit-limit blocker takes credit-used from
+    //    `ClientHealthSignals.creditUsedPaisa` — which nothing supplies — and
+    //    reports the check as `unavailable`, a CRITICAL. Before that change,
+    //    the first screen to swap `CLIENTS_DATA` for `listClientRecords` would
+    //    have made every utilisation `0 / limit = 0` and silently retired
+    //    "Credit limit exceeded" for every client in the business.
+    //  - `ClientQuickView` / `ClientHistoryDrawer` render the em-dash and the
+    //    reason instead of "Rs 0 of Rs 500,000".
+    //
+    // Do not reconnect a reader to this field. The way to make credit-used
+    // compute again is a ruled formula plus a real column.
     creditUsedPaisa: 0 as Paisa,
     lastRentalAd: row.last_pickup_at ? formatAd(new Date(row.last_pickup_at)) : '—',
     // Law 7: BS is rendered from the AD instant, never stored. '—' when there
@@ -196,36 +262,56 @@ export function toClientRecord(row: DirectoryRow): ClientRecord {
     totalRentalsCount: row.total_bookings_count ?? 0,
     totalSpentPaisa: paid ?? (0 as Paisa),
     ...(row.client_since ? { clientSinceAd: row.client_since } : {}),
-    // `isBlocked` is deliberately NOT set here. There is no 'Blocked' client
-    // status — `clients.status` is Active | Deactivated (0001:832 says so
-    // outright: "Blocked is NOT a member of this enum, it is a flag on
-    // client_flags"). A block is a row in `client_flags` with the 'Blocked'
-    // flag value (0038 restricts who may set it), which this view does not
-    // join yet. Reporting every client as un-blocked would be a false negative
-    // on a credit-control signal, so the field is left absent instead.
+    // A block is a live row in `client_flags` with flag_type 'Blocked', NOT a
+    // client status — `clients.status` is Active | Deactivated and 0001:832
+    // says so outright ("Blocked is NOT a member of this enum, it is a flag on
+    // client_flags"). Migration 0054 does that join inside the view and
+    // publishes the result as `is_blocked`; this reads it.
     //
-    // Consequence until the view carries it: a blacklisted client renders in
-    // the directory as an ordinary one, and the "Blocked Balance" KPI on
-    // Clients.tsx counts nothing.
-    //
-    // TODO(persistence): migration 0054 adds `is_blocked` to
-    // `client_directory_v`. The follow-up here is two lines — add `is_blocked`
-    // to DIRECTORY_COLUMNS and to DirectoryRow, then spread
-    // `...(row.is_blocked ? { isBlocked: true } : {})` back in — and is
-    // deliberately NOT applied ahead of that migration: a `select` naming a
-    // column the deployed view lacks 400s the whole request and takes the
-    // directory down.
+    // Spread rather than assigned because `isBlocked` is optional on
+    // `ClientRecord` and `exactOptionalPropertyTypes` is on: an un-blocked
+    // client has the key ABSENT, not present-and-false, which is the same
+    // shape the seed records use.
+    ...(row.is_blocked ? { isBlocked: true } : {}),
+    // `blockReason` is deliberately still absent. `client_flags.reason` exists
+    // (0005:236) but the view publishes only the boolean, and 0005's own
+    // comment records that a mandatory reason is unruled. Inventing a sentence
+    // for a block someone else recorded would be worse than the em dash the
+    // screens already render.
   }
 }
 
 /**
- * A client with no membership row genuinely has no tier. `MembershipTier` has
- * no "none" member, so the lowest real tier is used and flagged here rather
- * than silently promoting anyone to a paid tier.
- * TODO(decision): whether `MembershipTier` needs a 'None' member for clients
- * who have never joined — today the type cannot express that state.
+ * ⚠ **BLOCKED — this is not a tier any client holds.**
+ *
+ * `client_directory_v` builds `membership_level` from `mem.level` over a LEFT
+ * JOIN (verified against the live view definition, 12 Aug 2026), so `null` is
+ * reachable and means exactly one thing: **this client has no membership row**.
+ * They have not joined anything.
+ *
+ * `MembershipTier` is a closed union of five real, purchasable tiers and cannot
+ * spell that state, so `toClientRecord` — whose `membership` field is required
+ * and non-nullable — has to put *something* there. It puts this, and every
+ * screen then renders "Academy" as a per-account badge on a client who is not
+ * an Academy member. That is a fabricated fact on a real record.
+ *
+ * **TODO(decision) — `MembershipTier` needs a 'None' member.** It is a product
+ * ruling, not a refactor, which is why it is not made here: adding the member
+ * forces answers to "what does the tier pill say?" and "what colour is it?",
+ * and `TIER_TONE`'s own comment already records that Foundation §4.2 assigns no
+ * hue to any tier yet. When it is ruled, the change is small and mechanical —
+ * add `'None'` to `MembershipTier` and a key to `TIER_TONE` in
+ * `src/data/clients.ts` (NOT to `MEMBERSHIP_TIERS`, which is the list of real
+ * tiers a client can be given), then return it from here instead of this
+ * constant and delete the constant.
+ *
+ * Until then the absence is carried honestly on the two shapes this module
+ * owns — `ClientListItem.membershipLevel` (`MembershipTier | null`) and
+ * `ClientProfile.membershipKnown` — so a screen that needs the truth can read
+ * it without believing the badge. Exported so that anything comparing against
+ * it does so by name and a search for the fabrication finds every site.
  */
-const DEFAULT_MEMBERSHIP: MembershipTier = 'Academy'
+export const UNJOINED_MEMBERSHIP_PLACEHOLDER: MembershipTier = 'Academy'
 
 /**
  * Derived, not stored. `client_document_status` only has Pending | Verified, so
@@ -312,6 +398,123 @@ export async function getClient(id: string): Promise<ClientListItem | null> {
 
   if (error) throw new Error(`getClient failed: ${error.message}`)
   return data ? toListItem(data as unknown as DirectoryRow) : null
+}
+
+/**
+ * One client, addressed the way the app links to it.
+ *
+ * Every `/clients/:id` link in the app is built from `ClientRecord.id`, which
+ * `toClientRecord` sets to `client_code` — so the detail page is handed a CODE
+ * ('CL-0042'), never the uuid. `getClient` above takes the uuid and is therefore
+ * unusable from that route.
+ *
+ * The uuid is returned ALONGSIDE the record rather than folded into it, because
+ * every per-client query in the app keys on it: `invoicesForClient`,
+ * `paymentsForClient` (`queries/finance.ts`) and the `bookings.client_id` FK all
+ * take `clients.id`, and each of their doc comments warns that passing the code
+ * returns zero rows silently rather than erroring. Losing the uuid at this
+ * boundary is what would make those calls quietly wrong.
+ */
+export interface ClientProfile {
+  /** `clients.id` — the uuid every other table's `client_id` FK points at. */
+  id: string
+  record: ClientRecord
+  /** Law 3 — set on a closed account, which is retained and readable. AD/UTC. */
+  deactivatedAtAd: string | null
+  /**
+   * `false` when the client has no membership row at all.
+   *
+   * `record.membership` is NOT trustworthy on its own: it is required and
+   * non-nullable, so a client who has never joined still carries
+   * `UNJOINED_MEMBERSHIP_PLACEHOLDER` there. Read this before rendering the
+   * tier as a badge, quoting a tier discount, or claiming a credit default —
+   * `false` means the answer is "none", not "Academy".
+   */
+  membershipKnown: boolean
+}
+
+export async function getClientRecordByCode(clientCode: string): Promise<ClientProfile | null> {
+  // Deliberately NOT filtered on `deactivated_at`: a link to a closed account
+  // must still open it (Law 3 — retained and marked). The flag is returned so
+  // the screen can mark it.
+  const { data, error } = await supabase
+    .from('client_directory_v')
+    .select(DIRECTORY_COLUMNS)
+    .eq('client_code', clientCode)
+    .maybeSingle()
+
+  if (error) throw new Error(`getClientRecordByCode failed: ${error.message}`)
+  if (!data) return null
+
+  const row = data as unknown as DirectoryRow
+  return {
+    id: row.id,
+    record: toClientRecord(row),
+    deactivatedAtAd: row.deactivated_at,
+    membershipKnown: row.membership_level !== null,
+  }
+}
+
+/**
+ * The membership plans, from `membership_plans_v`.
+ *
+ * 0005_clients.sql states the rule this exists to satisfy, in the table's own
+ * comment: **"no plan value may be hardcoded in application code — every read
+ * comes from this table."** The Credit tab used to carry a five-row
+ * `CREDIT_POLICY` constant that did exactly that.
+ *
+ * Money is masked column-wise, not row-wise: `membership_plans_v` (0048:522)
+ * NULLs `annual_fee`, `individual_discount_pct`, `bundle_discount_pct` and
+ * `default_credit_limit` for a money-blind session and returns the row anyway,
+ * so `null` here means WITHHELD, never zero. The view is also `where
+ * auth_is_staff()`, so a Client session gets no rows at all.
+ */
+export interface MembershipPlanRow {
+  level: MembershipTier
+  /** `membership_label` — the plan's own words. Levels are distinguished by label, never hue (0005). */
+  label: string
+  /** `default_credit_limit`. `null` = this session may not see money. */
+  defaultCreditLimit: Paisa | null
+  /** A PERCENTAGE, not an amount — stays numeric (lib/money §2.3). `null` for Elite ("Negotiated") AND for a money-blind session; the two are indistinguishable here by design. */
+  individualDiscountPct: number | null
+  displayOrder: number
+}
+
+interface MembershipPlanViewRow {
+  level: MembershipTier | null
+  label: string | null
+  default_credit_limit: number | null
+  individual_discount_pct: number | null
+  display_order: number | null
+  status: string | null
+}
+
+export async function listMembershipPlans(): Promise<MembershipPlanRow[]> {
+  const { data, error } = await supabase
+    .from('membership_plans_v')
+    .select('level, label, default_credit_limit, individual_discount_pct, display_order, status')
+    // Retire is terminal and a plan with historic members can never be deleted
+    // (0005), so retired plans must be excluded here rather than shown as live
+    // policy.
+    .eq('status', 'Active')
+    .order('display_order', { ascending: true })
+
+  if (error) throw new Error(`listMembershipPlans failed: ${error.message}`)
+
+  return (data ?? [])
+    .map((r) => r as unknown as MembershipPlanViewRow)
+    // `level` and `label` are `not null` on the base table; the generated view
+    // type widens every column to nullable. A row that somehow arrives without
+    // a level cannot be labelled, so it is dropped rather than rendered as an
+    // unnamed tier.
+    .filter((r): r is MembershipPlanViewRow & { level: MembershipTier } => r.level !== null)
+    .map((r) => ({
+      level: r.level,
+      label: r.label ?? r.level,
+      defaultCreditLimit: toPaisa(r.default_credit_limit),
+      individualDiscountPct: r.individual_discount_pct,
+      displayOrder: r.display_order ?? 0,
+    }))
 }
 
 export interface NewClientInput {

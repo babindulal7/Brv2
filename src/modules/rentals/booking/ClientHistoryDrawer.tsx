@@ -16,8 +16,8 @@
  * - `data/rentals.ts`' `ROWS` is the Rentals list's own seed. Its `client`
  *   field is a *display string* (`'ABC Films'`, `'Creative Studio'`) and those
  *   strings do not exist in `data/clients.ts` at all. Worse, the two layers
- *   contradict each other on ownership: `CL-2026-0001` (Kathmandu Cinema Works)
- *   claims `BK-2026-0715`, and `ROWS` attributes that exact booking number to
+ *   contradict each other on ownership: `C-1` (Kathmandu Cinema Works)
+ *   claims `B-715`, and `ROWS` attributes that exact booking number to
  *   "ABC Films". Joining them would print one client's project, dates and money
  *   under another client's name on a booking screen. So this component **does
  *   not join**. It shows the booking *numbers* the client record itself
@@ -37,6 +37,8 @@ import Icon from '../../../components/ui/Icon'
 import { Button } from '../../../components/ui/Page'
 import type { ClientRecord } from '../../../data/clients'
 import { TOUCH } from './ClientHealthChip'
+import { creditCheck } from './clientHealth'
+import type { ClientHealthSignals } from './clientHealth'
 import { Drawer, DrawerRow, DrawerSection, DrawerUnavailable } from './Drawer'
 
 /**
@@ -70,6 +72,13 @@ export interface ClientHistoryDrawerProps {
   onViewClient?: (client: ClientRecord) => void
   /** Pass the page's `canViewMoneyField(gctx, 'client-balance')`. */
   showMoney?: boolean
+  /**
+   * The same seam `ClientQuickView` takes. Only `creditUsedPaisa` is read here,
+   * and only to decide whether the credit line can be stated at all — see
+   * `creditCheck`. Absent (the case today) means the credit-limit check cannot
+   * be run, and this drawer says so instead of printing a figure.
+   */
+  signals?: ClientHealthSignals
   id?: string
 }
 
@@ -81,6 +90,7 @@ export function ClientHistoryDrawer({
   onOpenBooking,
   onViewClient,
   showMoney = true,
+  signals,
   id = 'client-history-drawer',
 }: ClientHistoryDrawerProps) {
   const rows: ClientBookingSummary[] =
@@ -90,6 +100,7 @@ export function ClientHistoryDrawer({
 
   const reliability = client.reliability
   const depositPending = null // Deposit *pending* is a per-booking figure; the client record only holds deposit held.
+  const credit = creditCheck(client, signals)
 
   return (
     <Drawer
@@ -132,16 +143,38 @@ export function ClientHistoryDrawer({
             }
           />
         )}
-        {showMoney && (
+        {/*
+          This row used to print `creditUsedPaisa` as a fact. It is not one —
+          the field has no column and no ruled formula behind it, so a real
+          client's "credit used" is Rs 0 by construction. Printing "Rs 0 of
+          Rs 500,000" beside an outstanding balance states that the client has
+          committed nothing against their facility, which nothing in the system
+          knows. `creditCheck` reports that as `unavailable` and the row becomes
+          the honest em-dash.
+        */}
+        {showMoney && credit.state === 'computed' && (
           <DrawerRow
             label="Credit used of limit"
-            value={
-              client.creditLimitPaisa > 0
-                ? `${formatMoney(client.creditUsedPaisa)} of ${formatMoney(client.creditLimitPaisa)}`
-                : 'No credit limit configured'
-            }
-            figure={client.creditLimitPaisa > 0}
+            value={`${formatMoney(credit.usedPaisa)} of ${formatMoney(credit.limitPaisa)}`}
+            figure
           />
+        )}
+        {showMoney && credit.state === 'unavailable' && (
+          <>
+            <DrawerRow
+              label="Credit used of limit"
+              value={null}
+              unavailableNote="Not computed anywhere in the system — there is no credit-used column and no ruled formula, so how much of this limit is committed is unknown."
+            />
+            <DrawerUnavailable>
+              A credit limit of {formatMoney(credit.limitPaisa)} is approved, but nothing computes how much
+              of it is used — so the credit-limit check cannot be run and this client is{' '}
+              <strong>unverified</strong>, not confirmed within limit.
+            </DrawerUnavailable>
+          </>
+        )}
+        {showMoney && credit.state === 'not-applicable' && (
+          <DrawerRow label="Credit used of limit" value="No credit limit configured" />
         )}
       </DrawerSection>
 

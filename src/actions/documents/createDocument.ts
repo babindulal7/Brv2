@@ -1,5 +1,6 @@
 import { createAction, ActionContext } from '../core';
 import { EVENT_TYPES } from '../../events/eventBus';
+import { issue } from '../../data/numbering';
 
 export type CreateDocumentInput = {
   title: string;
@@ -16,7 +17,8 @@ export const createDocument = createAction<CreateDocumentInput, { success: boole
   },
 
   execute: async (input, ctx: ActionContext) => {
-    const documentId = `DOC-${Date.now().toString().slice(-4)}`;
+    /* Prefix from Settings > Numbering, never a literal - ruling 2.2. */
+    const documentId = issue('DOC', Number(Date.now().toString().slice(-4)));
     console.log(`[DB TX] Created document ${documentId}: ${input.title}`);
 
     const events = [

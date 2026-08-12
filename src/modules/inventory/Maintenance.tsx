@@ -11,6 +11,7 @@ import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { formatMoney, rupees, type Paisa } from '../../lib/money'
 import { toBs, formatBs, formatAd, TODAY } from '../../lib/bs'
+import { DamageTab } from './DamageTab'
 import {
   MAINTENANCE_REGISTRY_FLAGS,
   MAINTENANCE_REGISTRY_FLAG_ICON,
@@ -77,11 +78,20 @@ const MAINTENANCE_STATUSES: MaintenanceStatus[] = [
  *    `data/cases.ts` shares equipment or a serial with any of the three
  *    seeded jobs here, and the one case that already models this exact
  *    link — CASE-2026-0039, which carries `linked.maintenanceJobId:
- *    'MT-2026-0043'` — points at an ID scheme this file doesn't use
- *    (`MT-YYYY-NNNN` vs this file's `MNT-NNNN`) and at equipment (a NISI
- *    35mm lens) that isn't one of the three jobs seeded below. Drawing a
- *    link would mean inventing a row on one side or the other, so the field
- *    is left honestly absent instead. See the report for this gap.
+ *    'MT-2026-0043'` — points at equipment (a NISI 35mm lens) that isn't one
+ *    of the three jobs seeded below. Drawing a link would mean inventing a
+ *    row on one side or the other, so the field is left honestly absent
+ *    instead. See the report for this gap.
+ *
+ *    The *other* half of that mismatch is now fixed. This file used to number
+ *    its jobs `MNT-1042` while `data/cases.ts`, `data/documents.ts` and
+ *    `numbering.ts`'s registry row all use `MT-` — two prefixes for one
+ *    entity, which `WIREFRAME_RULINGS_2026-08-12.md` §2.1 rules out. Collapsed
+ *    onto the registered `MT` sequence, numeric part unchanged
+ *    (`MNT-1042` → `MT-2026-1042`); the 1042–1045 range does not collide with
+ *    the seeded MT-2026-0012 / 0018 / 0043. Maintenance is not in the ruling's
+ *    prefix table, so the *shape* (`MT-YYYY-NNNN`, as cases.ts and documents.ts
+ *    write it) is left exactly as it was rather than de-padded.
  *  - `parts` / `downtimeDays` are seeded on two of the three rows below,
  *    from figures consistent with each row's own `costEstPaisa` /
  *    `costActualPaisa` — never a new invented job.
@@ -116,7 +126,7 @@ const ad = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d))
 
 const MAINTENANCE_DATA: MaintenanceRecord[] = [
   {
-    id: 'MNT-1042',
+    id: 'MT-2026-1042',
     equipmentName: 'RED Komodo X Brain',
     serialNumber: 'SN-RKX-001',
     type: 'Repair',
@@ -127,14 +137,14 @@ const MAINTENANCE_DATA: MaintenanceRecord[] = [
     technician: 'Ramesh Dulal',
     estCompletion: ad(2026, 7, 25),
     costEstPaisa: rupees(0),
-    bookingImpact: 'BK-2026-0715',
+    bookingImpact: 'B-715',
     // Critical, In Progress, already past its 25 Jul ETA against `TODAY`
     // (31 Jul) — a plausible in-flight downtime count for a job holding a
     // booking. No case matches this equipment; see the interface doc comment.
     downtimeDays: 9,
   },
   {
-    id: 'MNT-1043',
+    id: 'MT-2026-1043',
     equipmentName: 'ARRI Signature Prime 35mm',
     serialNumber: 'SN-ASP-35',
     type: 'Calibration',
@@ -151,7 +161,7 @@ const MAINTENANCE_DATA: MaintenanceRecord[] = [
     parts: [{ name: 'Full sensor recalibration (vendor service bundle)' }],
   },
   {
-    id: 'MNT-1045',
+    id: 'MT-2026-1045',
     equipmentName: 'Core SWX NANO Micro 98',
     serialNumber: 'SN-NX-012',
     type: 'Inspection',
@@ -371,6 +381,7 @@ export function Maintenance() {
   const gctx = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
 
   const [searchQuery, setSearchQuery] = useState('')
+  const [tab, setTab] = useState<'Maintenance' | 'Damage'>('Maintenance')
   const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
 
@@ -474,6 +485,43 @@ export function Maintenance() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       {CHIP_ERROR && <SeedDefectBanner message={CHIP_ERROR} />}
+      {/* §4.1 — the Damage tab the 12 Aug spec asks for. Damage is a different
+          question from a repair job (who approves it, what it does to the
+          deposit), so it is a tab rather than another status chip on the
+          maintenance list. */}
+      <div style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)' }}>
+        {(['Maintenance', 'Damage'] as const).map((t) => {
+          const on = tab === t
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              aria-current={on ? 'page' : undefined}
+              style={{
+                height: 34,
+                padding: '0 12px',
+                border: 'none',
+                borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
+                background: 'transparent',
+                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: on ? 700 : 500,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                marginBottom: -1,
+              }}
+            >
+              {t}
+            </button>
+          )
+        })}
+      </div>
+
+      {tab === 'Damage' ? (
+        <DamageTab />
+      ) : (
+        <>
       <KpiStrip items={kpis} columns={money ? 5 : 4} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
@@ -743,6 +791,8 @@ export function Maintenance() {
         <Icon name="info" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
         A job holds its equipment out of stock for its whole life. Dates are stored AD and rendered BS · AD.
       </p>
+        </>
+      )}
     </div>
   )
 }

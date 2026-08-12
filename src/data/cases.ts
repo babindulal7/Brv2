@@ -390,7 +390,7 @@ export const CASES: Case[] = [
     owner: 'Sunil',
     ownerRole: 'Warehouse',
     flags: ['Under Investigation'],
-    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'BK-2026-0715', clientName: 'Himalayan Films' },
+    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'B-715', clientName: 'Himalayan Films' },
     evidence: {
       pickup: [{ id: 'ev-0041-p1', file: 'IMG_3301.JPG', at: '16 Jul 2026, 06:10 AM' }],
       return: [{ id: 'ev-0041-r1', file: 'IMG_3402.JPG', at: '19 Jul 2026, 05:40 PM' }],
@@ -423,7 +423,7 @@ export const CASES: Case[] = [
     owner: 'Nabin',
     ownerRole: 'Warehouse',
     flags: [],
-    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'BK-2026-0714', clientName: 'Classic Media', invoiceId: 'INV-KTM-2026-0493' },
+    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'B-714', clientName: 'Classic Media', invoiceId: 'INV-493' },
     evidence: { general: [{ id: 'ev-0040-g1', file: 'IMG_4110.JPG', at: '28 Jul 2026, 11:05 AM' }] },
   },
   {
@@ -476,7 +476,7 @@ export const CASES: Case[] = [
     owner: 'Sunil',
     ownerRole: 'Warehouse',
     flags: [],
-    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'BK-2026-0710', clientName: 'Maya Production', invoiceId: 'INV-KTM-2026-0481' },
+    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'B-710', clientName: 'Maya Production', invoiceId: 'INV-481' },
     evidence: {},
   },
   {
@@ -528,7 +528,7 @@ export const CASES: Case[] = [
     owner: 'Rajan',
     ownerRole: 'Manager',
     flags: [],
-    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'BK-2026-0709', clientName: 'Studio Frames' },
+    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'B-709', clientName: 'Studio Frames' },
     evidence: {},
   },
   {
@@ -554,7 +554,7 @@ export const CASES: Case[] = [
     owner: 'Sunil',
     ownerRole: 'Warehouse',
     flags: ['Police Report', 'Insurance Notified'],
-    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'BK-2026-0706', clientName: 'Nepal Docs Lab', insuranceClaim: 'Filed with carrier — settlement pending' },
+    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'B-706', clientName: 'Nepal Docs Lab', insuranceClaim: 'Filed with carrier — settlement pending' },
     evidence: { general: [{ id: 'ev-0035-g1', file: 'Police_Report_Scan.PDF', at: '23 Jul 2026, 04:20 PM' }] },
     timelineExtra: [
       { actor: 'Sunil', at: new Date(Date.UTC(2026, 6, 23, 16, 20)), text: 'Case opened — light not returned, client reports break-in at venue' },
@@ -586,7 +586,7 @@ export const CASES: Case[] = [
     owner: 'Rajan',
     ownerRole: 'Manager',
     flags: [],
-    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'BK-2026-0705', clientName: 'Pixel Studio' },
+    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'B-705', clientName: 'Pixel Studio' },
     evidence: {
       pickup: [{ id: 'ev-0034-p1', file: 'IMG_6011.JPG', at: '18 Jul 2026, 08:30 AM' }],
       return: [{ id: 'ev-0034-r1', file: 'IMG_6098.JPG', at: '22 Jul 2026, 03:10 PM' }],
@@ -619,7 +619,7 @@ export const CASES: Case[] = [
     owner: 'Sunil',
     ownerRole: 'Warehouse',
     flags: [],
-    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'BK-2026-0703', clientName: 'Anmol Productions' },
+    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'B-703', clientName: 'Anmol Productions' },
     evidence: {},
   },
   {
@@ -644,7 +644,7 @@ export const CASES: Case[] = [
     owner: 'Nabin',
     ownerRole: 'Warehouse',
     flags: ['Under Investigation'],
-    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'BK-2026-0701', clientName: 'Skyline Films' },
+    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'B-701', clientName: 'Skyline Films' },
     evidence: {
       pickup: [{ id: 'ev-0032-p1', file: 'IMG_7210.JPG', at: '24 Jul 2026, 07:45 AM' }],
       return: [{ id: 'ev-0032-r1', file: 'IMG_7288.JPG', at: '28 Jul 2026, 06:30 PM' }],
@@ -697,7 +697,7 @@ export const CASES: Case[] = [
     owner: 'Sunil',
     ownerRole: 'Warehouse',
     flags: ['Legal'],
-    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'BK-2026-0698', clientName: 'Everest Weddings', invoiceId: 'INV-KTM-2026-0470' },
+    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'B-698', clientName: 'Everest Weddings', invoiceId: 'INV-470' },
     evidence: {},
   },
   {
@@ -722,7 +722,7 @@ export const CASES: Case[] = [
     owner: 'Nabin',
     ownerRole: 'Warehouse',
     flags: ['Under Investigation'],
-    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'BK-2026-0695', clientName: 'River Bend Media' },
+    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'B-695', clientName: 'River Bend Media' },
     evidence: {},
     // Opened 25 Jul, five days after `data/stockCheck.ts`'s real SC-2083-003
     // full-warehouse audit closed (20 Jul) — the audit last verified this kit
@@ -782,7 +782,7 @@ export const CASES: Case[] = [
     owner: 'Sunil',
     ownerRole: 'Warehouse',
     flags: [],
-    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'BK-2026-0691', clientName: 'Mountain Stories' },
+    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'B-691', clientName: 'Mountain Stories' },
     evidence: {},
   },
   {
@@ -834,7 +834,7 @@ export const CASES: Case[] = [
     owner: 'Sunil',
     ownerRole: 'Warehouse',
     flags: [],
-    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'BK-2026-0680', clientName: 'ABC Films' },
+    linked: { linkedRecordKind: 'Booking', linkedRecordId: 'B-680', clientName: 'ABC Films' },
     evidence: {
       pickup: [{ id: 'ev-0025-p1', file: 'IMG_9010.JPG', at: '9 Jul 2026, 10:00 AM' }],
       return: [{ id: 'ev-0025-r1', file: 'IMG_9088.JPG', at: '17 Jul 2026, 04:45 PM' }],

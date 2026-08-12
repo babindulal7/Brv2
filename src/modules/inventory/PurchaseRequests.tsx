@@ -4,6 +4,7 @@ import Icon from '../../components/ui/Icon'
 import { Card, PageHeader } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/StateViews'
+import { Unavailable } from '../../components/ui/Unavailable'
 import {
   PURCHASE_REQUESTS,
   PURCHASE_REQUEST_KPIS,
@@ -11,11 +12,86 @@ import {
   type PRPriority,
 } from '../../data/purchaseRequests'
 import { formatMoney } from '../../lib/money'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useAuth } from '../../lib/auth'
+import { useNetwork } from '../../lib/network'
+import type { ActionContext } from '../../actions/core'
+
+/**
+ * The three decisions this screen can take on a purchase request.
+ *
+ * Deliberately narrower than `PRStatus`: the handler used to accept the whole
+ * status union and cast it (`newStatus as 'Approved' | 'Rejected' | 'Ordered'`)
+ * at the dispatch, so any status could reach an action that accepts only these
+ * three. The cast is gone and the type carries the constraint instead.
+ */
+type PRDecision = 'Approved' | 'Rejected' | 'Ordered'
+
+/**
+ * Law 12 — **the** inline error line for this screen. Toasts in this codebase
+ * are success-only (`useToast()` exposes `showSuccessToast` and nothing else),
+ * so a refused or failed decision has exactly one honest place to be reported,
+ * and it is beside the buttons that raised it. Same shape as
+ * `rentals/NewRental.tsx`'s `inlineErrorStyle`.
+ */
+const inlineErrorStyle = {
+  margin: 0,
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: 7,
+  fontSize: 'var(--t-meta)',
+  fontWeight: 600,
+  color: 'var(--danger-text)',
+  lineHeight: 1.4,
+} as const
+
+/**
+ * ⛔ Law 6 — **this screen had no money gate at all.** It imported `formatMoney`
+ * and printed six separate rupee figures (the KPI strip, the Total Cost column,
+ * Est Unit Cost, Total Cost, the sub-rental total and every sub-rental's cost)
+ * while importing neither `useCanViewMoney` nor `canViewMoney`. A Warehouse,
+ * Technician or Driver session opening Purchase Requests read what the fleet
+ * costs to buy and what we pay competitors to sub-rent from — the exact figures
+ * the database masks at column level for those roles, handed over by the UI.
+ *
+ * The screen is **not** hidden wholesale from the floor. A purchase request
+ * carries real non-money content — what was asked for, how much of it, who
+ * raised it, why (refused bookings, sub-rental events), and where it is in the
+ * approval chain — and a warehouse keeper is a legitimate reader of all of that.
+ * So each figure is **omitted**, never blurred or zeroed, in the established
+ * pattern (`today/MovementList.tsx`, `clients/DuplicateCenter.tsx`), and where a
+ * column or tile is nothing but money it is dropped rather than left empty.
+ *
+ * `RestrictedState` was considered and rejected for that reason: locking the
+ * floor out of a request list would remove more than Law 6 asks for.
+ */
+
+/**
+ * Which KPI tiles carry rupees.
+ *
+ * `PURCHASE_REQUEST_KPIS` keeps its figures as free text — `value: 'NPR 320,000'`,
+ * `change: 'NPR 845,000 total'` — with no typed amount and no `money` flag to
+ * read, and `data/purchaseRequests.ts` is not this screen's to change. So the
+ * tile's own text is scanned for a currency token: the whole tile is dropped
+ * when its headline figure is money, and the sub-line alone is dropped when only
+ * the sub-line is.
+ *
+ * A scan rather than a hardcoded list of tile labels on purpose — a list stops
+ * matching the moment the seed is reworded, and it fails in the direction of
+ * putting rupees back in front of the floor. The real fix is a typed
+ * `amount: Paisa` + flag on the KPI record, which belongs to the data module.
+ */
+const CURRENCY_TOKEN = /\bNPR\b|\bRs\.?\b|₹/i
+const isMoneyText = (text: string) => CURRENCY_TOKEN.test(text)
 
 export default function PurchaseRequests() {
+  const { user } = useAuth()
+  const money = useCanViewMoney()
+  const online = useNetwork()
   const [activeTab, setActiveTab] = useState<'All' | 'Draft' | 'Submitted' | 'Approved' | 'Ordered' | 'Received'>('All')
   const [selectedPrId, setSelectedPrId] = useState<string | null>(null)
   const [requestsList, setRequestsList] = useState(PURCHASE_REQUESTS)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const activePR = useMemo(() => {
     return requestsList.find((pr) => pr.id === selectedPrId) ?? null
@@ -26,13 +102,69 @@ export default function PurchaseRequests() {
     return requestsList.filter((pr) => pr.status === activeTab)
   }, [activeTab, requestsList])
 
-  const handleStatusChange = (id: string, newStatus: PRStatus) => {
-    setRequestsList((prev) =>
-      prev.map((pr) => (pr.id === id ? { ...pr, status: newStatus } : pr))
-    )
-    import('../../actions/inventory/approvePurchaseRequest').then((m) =>
-      m.approvePurchaseRequest({ prId: id, status: newStatus as 'Approved' | 'Rejected' | 'Ordered' })
-    )
+  /** Selecting another request (or closing the panel) drops the error the last
+   *  decision left behind — it belongs to the PR it was raised on, not the next one. */
+  const selectPr = (id: string | null) => {
+    setSelectedPrId(id)
+    setActionError(null)
+  }
+
+  /**
+   * No session, no dispatch — and never a substituted identity. Same shape as
+   * `rentals/NewRental.tsx`'s `dispatchContext()` and `today/MovementList.tsx`'s
+   * `runMovementAction`.
+   *
+   * `isOnline` is passed because this screen knows it and `lib/rbac` degrades
+   * several approvals offline; omitting it lets `ActionContext` default to
+   * online in `actions/core.ts`, which is the fail-OPEN direction. Same as
+   * `clients/DuplicateCenter.tsx`.
+   */
+  const dispatchContext = (): ActionContext | null =>
+    user ? { userId: user.id, role: user.role, isOnline: online } : null
+
+  /**
+   * ⛔ This used to write `newStatus` into `requestsList` **first**, then fire
+   * `approvePurchaseRequest` with no `ActionContext`, no `.catch()` and no
+   * rollback. A manager approving a Rs 1,200,000 request watched the row turn
+   * green and read "Approved" while nothing was written anywhere: procurement
+   * never saw the decision, the manager considered it made and communicated,
+   * and there was no error left behind to find later.
+   *
+   * The row now moves **only** on the resolved path, and a failure lands in the
+   * inline error line beside the buttons. `approvePurchaseRequest` does not set
+   * `implemented: true`, so `actions/core.ts` refuses it before `execute` and
+   * the operator reads why instead of a green row. That refusal is the correct
+   * outcome today, not a regression to be papered over with a toast.
+   *
+   * TODO(decision) — **the permission**. The action declares
+   * `permissions: ['purchase.approve']` and `lib/rbac` has no rule for it:
+   * `canApproveDiscount`, `canOverrideCreditLimit`, `canVoidInvoice` and
+   * `canRecordPayment` each carry a different authority, and mapping one of
+   * them onto purchase approval here would be inventing the rule. `core.ts`
+   * denies an unknown capability by name, so the dispatch already fails closed;
+   * the buttons are deliberately not gated on a rule that does not exist yet.
+   * Which roles may approve a purchase request — and above what value a second
+   * approval is required — is still unruled.
+   */
+  const handleStatusChange = (id: string, newStatus: PRDecision) => {
+    const verb = newStatus.toLowerCase()
+    const ctx = dispatchContext()
+    if (!ctx) {
+      setActionError(
+        `Not ${verb} — you are not signed in, so this decision cannot be attributed to anyone. Sign in and try again.`,
+      )
+      return
+    }
+    setActionError(null)
+    void import('../../actions/inventory/approvePurchaseRequest')
+      .then((m) => m.approvePurchaseRequest({ prId: id, status: newStatus }, ctx))
+      .then(() => {
+        setRequestsList((prev) => prev.map((pr) => (pr.id === id ? { ...pr, status: newStatus } : pr)))
+      })
+      .catch((err: unknown) => {
+        console.error('purchase request decision failed:', err)
+        setActionError(`Not ${verb} — ${err instanceof Error ? err.message : String(err)}`)
+      })
   }
 
   const PRIORITY_COLORS: Record<PRPriority, { bg: string; text: string }> = {
@@ -58,20 +190,39 @@ export default function PurchaseRequests() {
         title="Purchase Requests"
         description="Data-driven equipment acquisition workflows based on turnaways and sub-rental evidence."
         actions={
+          /*
+           * Both of these had no `onClick`, no destination and nothing behind
+           * them — a primary button with a plus icon that did nothing when
+           * pressed. Kept and stated as unavailable, in the same
+           * `Unavailable`-with-a-reason idiom `inventory/Warehouses.tsx` uses
+           * for Add Warehouse / Print Labels / Refresh, rather than removed:
+           * the reason is the useful part (there is no PR intake route in
+           * `App.tsx`, and the status tabs below are the filtering this screen
+           * actually has), and a silently missing control teaches nothing.
+           */
           <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
-            <Button variant="secondary" icon={<Icon name="file" size={14} />}>
-              Filter
-            </Button>
-            <Button variant="primary" icon={<Icon name="plus" size={14} />}>
-              New Draft PR
-            </Button>
+            <Unavailable reason="Filter is not built — the status tabs below are the only filter on this screen.">
+              <Button variant="secondary" icon={<Icon name="file" size={14} />} disabled>
+                Filter
+              </Button>
+            </Unavailable>
+            <Unavailable reason="New Draft PR is not built — there is no purchase-request intake screen or route in this release, and no action that raises one.">
+              <Button variant="primary" icon={<Icon name="plus" size={14} />} disabled>
+                New Draft PR
+              </Button>
+            </Unavailable>
           </div>
         }
       />
 
+      {/* Law 6 — a tile whose headline figure is money is dropped outright for a
+          money-blind session (Sub-Rent Cost Avoidance is nothing but rupees);
+          one whose sub-line alone carries money keeps its count and loses the
+          sub-line (Pending Approval stays "2", without "NPR 845,000 total").
+          The grid is auto-fit, so the row closes up rather than leaving a hole. */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
-        {PURCHASE_REQUEST_KPIS.map((kpi, idx) => (
-          <div key={idx} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-lg)' }}>
+        {PURCHASE_REQUEST_KPIS.filter((kpi) => money || !isMoneyText(kpi.value)).map((kpi) => (
+          <div key={kpi.label} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
               <span
                 style={{
@@ -91,7 +242,9 @@ export default function PurchaseRequests() {
             <div className="figure" style={{ fontSize: '1.45rem', fontWeight: 700, color: 'var(--text)', marginTop: 'var(--sp-sm)' }}>
               {kpi.value}
             </div>
-            <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 2 }}>{kpi.change}</div>
+            {(money || !isMoneyText(kpi.change)) && (
+              <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 2 }}>{kpi.change}</div>
+            )}
           </div>
         ))}
       </div>
@@ -137,7 +290,10 @@ export default function PurchaseRequests() {
                   <th style={{ padding: '8px' }}>Equipment Item</th>
                   <th style={{ padding: '8px' }}>Qty</th>
                   <th style={{ padding: '8px' }}>Priority</th>
-                  <th style={{ padding: '8px' }}>Total Cost (Est)</th>
+                  {/* Law 6 — the column is nothing but money, so it is dropped
+                      entirely for a money-blind session rather than left as an
+                      empty or masked column. */}
+                  {money && <th style={{ padding: '8px' }}>Total Cost (Est)</th>}
                   <th style={{ padding: '8px' }}>Status</th>
                   <th style={{ padding: '8px' }}>Requested By</th>
                 </tr>
@@ -148,7 +304,7 @@ export default function PurchaseRequests() {
                   return (
                     <tr
                       key={pr.id}
-                      onClick={() => setSelectedPrId(pr.id)}
+                      onClick={() => selectPr(pr.id)}
                       style={{
                         borderBottom: '1px solid var(--border)',
                         background: isSel ? 'var(--hover)' : 'transparent',
@@ -182,11 +338,13 @@ export default function PurchaseRequests() {
                           {pr.priority}
                         </span>
                       </td>
-                      <td style={{ padding: '10px 8px' }}>
-                        <span className="figure" style={{ fontWeight: 600 }}>
-                          {formatMoney(pr.totalEstimatedCost)}
-                        </span>
-                      </td>
+                      {money && (
+                        <td style={{ padding: '10px 8px' }}>
+                          <span className="figure" style={{ fontWeight: 600 }}>
+                            {formatMoney(pr.totalEstimatedCost)}
+                          </span>
+                        </td>
+                      )}
                       <td style={{ padding: '10px 8px' }}>
                         <span
                           style={{
@@ -220,7 +378,7 @@ export default function PurchaseRequests() {
             <Card
               title={`PR Overview — ${activePR.prNo}`}
               action={
-                <button onClick={() => setSelectedPrId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)' }}>
+                <button onClick={() => selectPr(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)' }}>
                   <Icon name="close" size={14} />
                 </button>
               }
@@ -235,14 +393,22 @@ export default function PurchaseRequests() {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)' }}>
-                  <div>
-                    <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Est Unit Cost</div>
-                    <div className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>{formatMoney(activePR.estimatedUnitCost)}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Total Cost</div>
-                    <div className="figure" style={{ fontWeight: 700, color: 'var(--nav-active-accent)' }}>{formatMoney(activePR.totalEstimatedCost)}</div>
-                  </div>
+                  {/* Law 6 — both cells are pure money and are omitted for a
+                      money-blind session. The grid keeps Preferred Supplier and
+                      Priority Score, which are the two facts on this panel a
+                      warehouse keeper legitimately needs. */}
+                  {money && (
+                    <>
+                      <div>
+                        <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Est Unit Cost</div>
+                        <div className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>{formatMoney(activePR.estimatedUnitCost)}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Total Cost</div>
+                        <div className="figure" style={{ fontWeight: 700, color: 'var(--nav-active-accent)' }}>{formatMoney(activePR.totalEstimatedCost)}</div>
+                      </div>
+                    </>
+                  )}
                   <div>
                     <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Preferred Supplier</div>
                     <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text)' }}>{activePR.suggestedSupplier || 'TBD'}</div>
@@ -255,6 +421,20 @@ export default function PurchaseRequests() {
                   </div>
                 </div>
 
+                {/*
+                  * TODO(decision) — justification notes are free text a person
+                  * types, so nothing stops one reading "Rs 1,20,000 quoted" and
+                  * being handed to a money-blind session by this block. None of
+                  * the three seeded notes carries a figure today, so this is a
+                  * latent channel, not a live leak.
+                  *
+                  * Left rendered rather than scrubbed: whether a note counts as
+                  * money — hide the whole note, strip the amount, or restrict
+                  * who may write one — is a product ruling, and the same
+                  * question applies to every free-text field in the system
+                  * (transfer notes, decision reasons). Guessing an answer here
+                  * would set a precedent by accident.
+                  */}
                 {activePR.notes && (
                   <div style={{ padding: 10, background: 'var(--hover)', borderRadius: 'var(--r-xs)', fontSize: 'var(--t-meta)', color: 'var(--text)' }}>
                     <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginBottom: 'var(--sp-xs)' }}>Justification Notes:</div>
@@ -298,9 +478,21 @@ export default function PurchaseRequests() {
                 </div>
 
                 <div>
+                  {/* Law 6 — the money-blind reading of this block is "which
+                      supplier we hired this kit from, and how many times",
+                      which is real acquisition evidence. What it costs us is
+                      omitted: the total here, and the Cost column below. The
+                      count is `subRentals.length` — the rows actually listed
+                      underneath — not a second figure from elsewhere. */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-sm)' }}>
-                    <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Sub-Rental Expenses</div>
-                    <div className="figure" style={{ color: 'var(--orange-text)', fontWeight: 700 }}>{formatMoney(activePR.totalSubRentPaid)}</div>
+                    <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+                      {money ? 'Sub-Rental Expenses' : 'Sub-Rentals Used'}
+                    </div>
+                    <div className="figure" style={{ color: 'var(--orange-text)', fontWeight: 700 }}>
+                      {money
+                        ? formatMoney(activePR.totalSubRentPaid)
+                        : `${activePR.subRentals.length} ${activePR.subRentals.length === 1 ? 'Event' : 'Events'}`}
+                    </div>
                   </div>
                   <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-th)' }}>
@@ -308,7 +500,7 @@ export default function PurchaseRequests() {
                         <tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
                           <th style={{ padding: '6px 8px' }}>Sub-Rent Ref</th>
                           <th style={{ padding: '6px 8px' }}>Supplier</th>
-                          <th style={{ padding: '6px 8px', textAlign: 'right' }}>Cost</th>
+                          {money && <th style={{ padding: '6px 8px', textAlign: 'right' }}>Cost</th>}
                         </tr>
                       </thead>
                       <tbody>
@@ -316,7 +508,9 @@ export default function PurchaseRequests() {
                           <tr key={sr.subRentalId} style={{ borderTop: '1px solid var(--border)' }}>
                             <td style={{ padding: '6px 8px' }} className="identifier">{sr.subRentalRef}</td>
                             <td style={{ padding: '6px 8px', color: 'var(--text2)' }}>{sr.supplier}</td>
-                            <td style={{ padding: '6px 8px', textAlign: 'right' }} className="figure">{formatMoney(sr.costPaid)}</td>
+                            {money && (
+                              <td style={{ padding: '6px 8px', textAlign: 'right' }} className="figure">{formatMoney(sr.costPaid)}</td>
+                            )}
                           </tr>
                         ))}
                       </tbody>
@@ -325,6 +519,16 @@ export default function PurchaseRequests() {
                 </div>
               </div>
             </Card>
+
+            {/* Law 12 — errors are inline and persistent, never a toast. A decision
+                that did not land says so here, next to the button that raised it,
+                and the row keeps its real status. */}
+            {actionError && (
+              <p role="alert" style={inlineErrorStyle}>
+                <Icon name="error" size={13} style={{ flexShrink: 0, marginTop: 2 }} />
+                {actionError}
+              </p>
+            )}
 
             {/* Approvals Block */}
             {activePR.status === 'Submitted' && (

@@ -1,35 +1,53 @@
-import { useEffect, useLayoutEffect, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
+import type { IconName } from '../../components/ui/Icon'
 import { Unavailable } from '../../components/ui/Unavailable'
-import { useViewport } from '../../lib/device'
 import { JOBS, JOB_ORDER, type BookingStatus, type JobName } from '../../lib/workflow'
-import { stepDotState, stepWriteGate } from '../../data/operationsShell'
-import PackingWorkspace from '../rentals/PackingWorkspace'
-import HandoverWorkspace from '../rentals/HandoverWorkspace'
-import ReturnWorkspace from '../rentals/ReturnWorkspace'
-import ResetWorkspace from '../rentals/ResetWorkspace'
+import { stepDotState, stepWriteGate, type StepDotState } from '../../data/operationsShell'
+import { jobRoute } from '../../data/operations'
 
 /**
- * Operations popup shell — a container only. It mounts one of the four
- * existing, already-built operation workspace pages unchanged (each now
- * accepts `embedded` to suppress its own duplicate header) and adds nothing
- * of its own beyond a step rail and a close control. No item tables, gates,
- * evidence grids, signatures or checklists live here — those already live
- * inside the pages this mounts.
+ * **Operations launcher.**
  *
- * Evidence is deliberately not a rail step: it stays reachable the way it
- * already is today, via the link each workspace page renders internally to
- * `/rentals/:id/evidence`, which is a real standalone route — clicking it
- * navigates away and closes this shell like any other route change.
+ * ⭐ RULED 12 Aug 2026 (`WIREFRAME_RULINGS_2026-08-12.md` §3, from spec 03
+ * §3.2–§3.5): *operations are ROUTES, not a modal.* `/rentals/:br/packing`,
+ * `…/handover`, `…/return`, `…/reset` are canonical — which is what
+ * `App.tsx`'s own route-block comment has said since it was written ("§4.3 —
+ * operations are full-screen routes, never modals") while this file did the
+ * opposite.
  *
- * Each mounted page still gets its booking id the same way it always has —
- * `useParams()` inside the page itself — because this shell renders inline
- * inside `BookingDetail`'s own subtree of the already-matched
- * `/rentals/:bookingNo` route, so the param is already in scope. No id is
- * passed down, and no query is added here (Single Query Rule) — booking
- * status comes in as a prop, read from the query the Booking page already
- * made.
+ * So this is no longer a container that mounts four workspace pages inside a
+ * `role="dialog"`. It is a **launcher**: four rows that navigate to the four
+ * routes, and nothing else. What it keeps is the part that was genuinely its
+ * own — the step gating ported in on 11 Aug (`stepWriteGate` /
+ * `stepDotState`), so a step that is not open yet is visible-but-unclickable
+ * with the reason attached, rather than hidden or silently dead.
+ *
+ * ## What went with the modal
+ *
+ * - The `embedded` prop on `PackingWorkspace` / `HandoverWorkspace` /
+ *   `ResetWorkspace`. It existed only so a page could suppress its own header
+ *   when this shell drew one above it. There is no shell above them any more,
+ *   so the prop is gone from all three rather than left as a parameter no
+ *   caller passes.
+ * - `ResetWorkspace`'s `readOnly` prop, for the same reason. The Closed-booking
+ *   case it served is not lost: `ResetWorkspace` now asks `stepWriteGate`
+ *   itself, which is the same canonical answer this file used to pass down.
+ * - The `<main>` bounds measurement, the scrim, and the body scroll lock —
+ *   all of which existed to position a full-height panel over the content
+ *   region.
+ *
+ * ## Why a dialog at all, rather than a menu on the button
+ *
+ * Booking Workflow §4.2 requires disabled entries to stay **visible** with
+ * their reason reachable by hover, focus *and* long-press. That is the
+ * `Unavailable` pattern, which needs room for a reason line per row. A native
+ * menu cannot carry it. The launcher is small, centred, and closes on Escape,
+ * on backdrop click and on navigation.
+ *
+ * No query is added here (Law 2): booking status arrives as a prop, read from
+ * the query `BookingDetail` already made.
  */
 
 const STEP_LABEL: Record<JobName, string> = {
@@ -39,33 +57,34 @@ const STEP_LABEL: Record<JobName, string> = {
   Reset: 'Reset',
 }
 
-const STEP_ICON: Record<JobName, 'box' | 'truck' | 'return_arrow' | 'refresh'> = {
+const STEP_ICON: Record<JobName, IconName> = {
   Pack: 'box',
   Handover: 'truck',
   Return: 'return_arrow',
   Reset: 'refresh',
 }
 
-// `readOnly` is only meaningful to `ResetWorkspace` today (the Closed-booking
-// case below) — the other three pages simply ignore an extra optional prop
-// they don't declare, same as they already ignore any other prop absent from
-// their own signature.
-const STEP_COMPONENT: Record<JobName, (props: { embedded?: boolean; readOnly?: boolean }) => ReactNode> = {
-  Pack: PackingWorkspace,
-  Handover: HandoverWorkspace,
-  Return: ReturnWorkspace,
-  Reset: ResetWorkspace,
+/**
+ * Law 11 — never colour alone. Each dot state carries an icon and a word as
+ * well as a tone, so the rail reads the same to a screen reader and in
+ * greyscale.
+ */
+const DOT_META: Record<StepDotState, { icon: IconName; label: string; tone: string }> = {
+  'not-started': { icon: 'dot', label: 'Not started', tone: 'var(--muted)' },
+  'in-progress': { icon: 'refresh', label: 'In progress', tone: 'var(--progress-text)' },
+  done: { icon: 'checklist', label: 'Done', tone: 'var(--success-text)' },
+  blocked: { icon: 'lock', label: 'Not open yet', tone: 'var(--muted)' },
 }
 
-/** Entry step from booking status — a lookup against the existing `JOBS` table, not a new rule. */
+/**
+ * The step a booking at this status is *at*. A lookup against the existing
+ * `JOBS` table, not a new rule. `Closed` has no job of its own; Reset is the
+ * last one that ran, so it is the sensible landing row — and `stepWriteGate`
+ * independently reports it as read-only, which is what the row shows.
+ */
 function entryStepFor(status: BookingStatus): JobName {
   const found = JOB_ORDER.find((j) => JOBS[j].runsAt === status)
   if (found) return found
-  // Closed has no job of its own; Reset opens read-only. Backed for real now:
-  // `stepWriteGate('Reset', bookingStatus)` is false once the booking is
-  // Closed (Reset's own `runsAt` is Returned, and Closed sorts after it), and
-  // that result is what gets passed down as `ResetWorkspace`'s `readOnly`
-  // prop below — not a promise left to the page's own (nonexistent) gates.
   if (status === 'Closed') return 'Reset'
   return 'Pack'
 }
@@ -78,42 +97,7 @@ export interface OperationsShellProps {
 }
 
 export default function OperationsShell({ bookingNo, bookingStatus, isOpen, onClose }: OperationsShellProps) {
-  const viewport = useViewport()
-  const fullScreen = viewport !== 'desktop' // Law 14 — width decides 768/1180, never orientation.
-
-  const [step, setStep] = useState<JobName>(() => entryStepFor(bookingStatus))
-  // §3's "anchored to the content region" needs the content column's own
-  // live left-edge/width — the sidebar is collapsible, so no fixed number
-  // stays correct. `<main>` is the one page-content landmark `Shell` (in
-  // App.tsx) always renders, so it's measured directly rather than adding a
-  // prop just to carry a number down from a layout component two levels up.
-  const [contentBounds, setContentBounds] = useState<{ left: number; width: number } | null>(null)
-
-  useLayoutEffect(() => {
-    if (!isOpen || fullScreen) return
-    const main = document.querySelector('main')
-    if (!main) return
-    const measure = () => {
-      const r = main.getBoundingClientRect()
-      setContentBounds({ left: r.left, width: r.width })
-    }
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(main)
-    return () => ro.disconnect()
-  }, [isOpen, fullScreen])
-
-  useEffect(() => {
-    if (isOpen) setStep(entryStepFor(bookingStatus))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen])
-
-  useEffect(() => {
-    document.body.style.overflow = isOpen ? 'hidden' : ''
-    return () => {
-      document.body.style.overflow = ''
-    }
-  }, [isOpen])
+  const navigate = useNavigate()
 
   useEffect(() => {
     if (!isOpen) return
@@ -126,167 +110,168 @@ export default function OperationsShell({ bookingNo, bookingStatus, isOpen, onCl
 
   if (!isOpen) return null
 
-  const StepComponent = STEP_COMPONENT[step]
-  // Same canonical gate the tab rail already reads below — "always viewable,
-  // write actions gate on status" (spec §4.1). A step can be the *current*
-  // one (so its tab isn't `blocked`) and still have `allowed: false`, which
-  // is exactly the Closed-booking/Reset case: `entryStepFor` opens Reset on
-  // Closed, but Reset's own `runsAt` is Returned, so the gate reads false.
-  const currentStepGate = stepWriteGate(step, bookingStatus)
+  const entryStep = entryStepFor(bookingStatus)
 
-  const shellChrome: ReactNode = (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Operations — ${bookingNo}`}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        width: '100%',
-        height: '100%',
-        background: 'var(--card)',
-        border: fullScreen ? 'none' : '1px solid var(--border)',
-        borderRadius: fullScreen ? 0 : 'var(--r-card)',
-        boxShadow: fullScreen ? 'none' : 'var(--shadow-modal)',
-        overflow: 'hidden',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        {fullScreen && (
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close operations"
-            style={{ border: 'none', background: 'transparent', color: 'var(--text)', cursor: 'pointer', display: 'grid', placeItems: 'center', width: 44, height: 44, marginLeft: -8 }}
-          >
-            <Icon name="chevron_left" size={22} />
-          </button>
-        )}
-        <h2 style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
-          Operations <span style={{ color: 'var(--muted)', fontWeight: 500 }}>· {bookingNo}</span>
-        </h2>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close operations"
-          style={{
-            border: 'none',
-            background: 'transparent',
-            color: 'var(--muted)',
-            cursor: 'pointer',
-            width: 44,
-            height: 44,
-            borderRadius: 'var(--r-sm)',
-            display: fullScreen ? 'none' : 'grid',
-            placeItems: 'center',
-          }}
-        >
-          <Icon name="close" size={18} />
-        </button>
-      </div>
-
-      <div
-        role="tablist"
-        aria-label="Operations steps"
-        style={{
-          display: 'flex',
-          gap: 6,
-          padding: fullScreen ? '8px 10px' : '10px 16px',
-          borderBottom: '1px solid var(--border)',
-          overflowX: 'auto',
-          flexShrink: 0,
-        }}
-      >
-        {JOB_ORDER.map((job) => {
-          const active = step === job
-          // Canonical gate — `stepWriteGate`/`stepDotState` (data/operationsShell.ts)
-          // both read `JOBS`/`BOOKING_STATUS` from lib/workflow.ts, not a new rule
-          // invented here. Progress is irrelevant to the blocked/not-blocked call
-          // (it only shades the *current* step's dot between not-started/in-progress/
-          // done, which this container-only shell doesn't track item state for), so
-          // a placeholder is passed — `stepDotState` never reads it on the branch
-          // that decides `blocked`.
-          const gate = stepWriteGate(job, bookingStatus)
-          const blocked = stepDotState(job, bookingStatus, { done: 0, total: 1 }) === 'blocked'
-          const tab = (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={active}
-              aria-current={active ? 'step' : undefined}
-              disabled={blocked}
-              onClick={() => setStep(job)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 'var(--sp-sm)',
-                height: 44,
-                padding: '0 14px',
-                borderRadius: 'var(--r-btn)',
-                border: `1px solid ${active ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                background: active ? 'var(--nav-active-bg)' : 'transparent',
-                color: active ? 'var(--nav-active-accent)' : blocked ? 'var(--muted)' : 'var(--text)',
-                fontWeight: active ? 700 : 500,
-                fontSize: 'var(--t-meta)',
-                fontFamily: 'inherit',
-                cursor: blocked ? 'not-allowed' : 'pointer',
-                opacity: blocked ? 0.55 : 1,
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-              }}
-            >
-              <Icon name={STEP_ICON[job]} size={15} />
-              {STEP_LABEL[job]}
-            </button>
-          )
-          // Genuinely unclickable (native `disabled`), not just dimmed — matching
-          // the `Unavailable` reason-on-hover/focus/long-press pattern this codebase
-          // already uses for gated-but-visible controls (see `OperationsLauncher`
-          // in BookingDetail.tsx). Reason text comes straight from `stepWriteGate`.
-          return (
-            <div key={job} style={{ display: 'contents' }}>
-              {blocked ? <Unavailable reason={gate.reason ?? `${STEP_LABEL[job]} isn't open yet.`}>{tab}</Unavailable> : tab}
-            </div>
-          )
-        })}
-      </div>
-
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-        <StepComponent embedded readOnly={!currentStepGate.allowed} />
-      </div>
-    </div>
-  )
-
-  if (fullScreen) {
-    return <div style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'var(--card)' }}>{shellChrome}</div>
+  const open = (job: JobName) => {
+    onClose()
+    navigate(jobRoute(bookingNo, job))
   }
 
-  // §3 — anchored to the content region, not viewport-centered. `position:
-  // fixed` + `<main>`'s measured left/width (not `position: absolute` inside
-  // the page's own flow) — BookingDetail's wrapper is exactly as tall as its
-  // content, not the viewport, so `inset: 0` inside it stretched this panel
-  // to the page's full scroll height instead of the visible screen. Fixed
-  // positioning, sized from `<main>`'s own box, is viewport-correct
-  // regardless of scroll position while still excluding the sidebar. Left
-  // nav is outside `<main>`, so it stays visible and clickable; the scrim
-  // below dims only this wrapper's own bounds.
   return (
     <div
       style={{
         position: 'fixed',
-        top: 0,
-        bottom: 0,
-        left: contentBounds?.left ?? 0,
-        width: contentBounds?.width ?? '100%',
-        zIndex: 40,
+        inset: 0,
+        zIndex: 70,
         display: 'flex',
-        alignItems: 'flex-start',
+        alignItems: 'center',
         justifyContent: 'center',
-        padding: '24px 0',
+        padding: 'var(--sp-md)',
       }}
     >
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.6)', borderRadius: 'var(--r-card)' }} onClick={onClose} aria-hidden="true" />
-      <div style={{ position: 'relative', width: '90%', maxWidth: 1200, height: '100%', minHeight: 520 }}>{shellChrome}</div>
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.6)' }} onClick={onClose} aria-hidden="true" />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Operations — ${bookingNo}`}
+        style={{
+          position: 'relative',
+          width: '100%',
+          maxWidth: 460,
+          maxHeight: '100%',
+          overflowY: 'auto',
+          background: 'var(--card)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--r-card)',
+          boxShadow: 'var(--shadow-modal)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
+          <h2 style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+            Operations <span className="identifier" style={{ color: 'var(--muted)', fontWeight: 500 }}>· {bookingNo}</span>
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close operations"
+            style={{
+              border: 'none',
+              background: 'transparent',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+              width: 44,
+              height: 44,
+              borderRadius: 'var(--r-sm)',
+              display: 'grid',
+              placeItems: 'center',
+            }}
+          >
+            <Icon name="close" size={18} />
+          </button>
+        </div>
+
+        <p style={{ margin: 0, padding: '10px 16px 0', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>
+          Each step is its own full-screen workspace. Opening one leaves this booking page.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', padding: 'var(--sp-md)' }}>
+          {JOB_ORDER.map((job) => {
+            /*
+             * The canonical gate. `stepDotState` only reads `progress` on the
+             * branch that distinguishes not-started / in-progress / done for a
+             * step whose writes are ALLOWED — this launcher tracks no item
+             * state, so a placeholder goes in and the blocked/done answer,
+             * which does not read it, is what gets used.
+             */
+            const gate = stepWriteGate(job, bookingStatus)
+            const dot = stepDotState(job, bookingStatus, { done: 0, total: 1 })
+            const meta = DOT_META[dot]
+            const blocked = dot === 'blocked'
+            const isEntry = job === entryStep
+
+            const row = (
+              <button
+                type="button"
+                disabled={blocked}
+                onClick={() => open(job)}
+                aria-current={isEntry ? 'step' : undefined}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--sp-md)',
+                  width: '100%',
+                  minHeight: 44,
+                  padding: '10px 12px',
+                  textAlign: 'left',
+                  borderRadius: 'var(--r-btn)',
+                  border: `1px solid ${isEntry && !blocked ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+                  background: isEntry && !blocked ? 'var(--nav-active-bg)' : 'var(--card2)',
+                  color: blocked ? 'var(--muted)' : 'var(--text)',
+                  fontFamily: 'inherit',
+                  fontSize: 'var(--t-ui)',
+                  fontWeight: 600,
+                  cursor: blocked ? 'not-allowed' : 'pointer',
+                  opacity: blocked ? 0.62 : 1,
+                }}
+              >
+                <Icon name={STEP_ICON[job]} size={17} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  {STEP_LABEL[job]}
+                  {!gate.allowed && gate.reason && (
+                    <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 500, color: 'var(--muted)', lineHeight: 1.4, marginTop: 2 }}>
+                      {gate.reason}
+                    </span>
+                  )}
+                </span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', color: meta.tone, fontSize: 'var(--t-meta)', fontWeight: 600, flexShrink: 0 }}>
+                  <Icon name={meta.icon} size={13} />
+                  {meta.label}
+                </span>
+              </button>
+            )
+
+            return (
+              <div key={job}>
+                {blocked ? <Unavailable reason={gate.reason ?? `${STEP_LABEL[job]} isn't open yet.`}>{row}</Unavailable> : row}
+              </div>
+            )
+          })}
+        </div>
+
+        {/*
+          Evidence is deliberately not one of the four rows — spec 03 line 4,
+          "Evidence is a viewer, not a verb". It is still reachable, from here
+          and from inside Packing and Return, because a photo review belongs
+          next to the step that took the photos.
+        */}
+        <div style={{ padding: '0 var(--sp-md) var(--sp-md)' }}>
+          <button
+            type="button"
+            onClick={() => {
+              onClose()
+              navigate(`/rentals/${bookingNo}/evidence`)
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 'var(--sp-sm)',
+              minHeight: 44,
+              padding: '0 12px',
+              borderRadius: 'var(--r-btn)',
+              border: '1px solid var(--btn-secondary-border)',
+              background: 'var(--btn-secondary-bg)',
+              color: 'var(--text)',
+              fontFamily: 'inherit',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            <Icon name="eye" size={15} />
+            Evidence — viewer, not a step
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -1,4 +1,7 @@
 import { PageHeader, Card, Rail, cardStyle } from '../../components/ui/Page'
+import { PageBody } from '../../components/ui/PageBody'
+import { ReportToolbar } from '../../components/ui/ReportToolbar'
+import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { EQUIPMENT_METRICS, TOP_PERFORMERS, WORST_PERFORMERS } from '../../data/equipmentPerformance'
 import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
@@ -14,16 +17,64 @@ function PerfKpiCard({ label, value, accent, note }: any) {
   )
 }
 
+/**
+ * The export body — the same four headline figures and the same two tables the
+ * page draws, in the order it draws them.
+ *
+ * Only ever reached from a session that passed the money gate: the toolbar is
+ * not rendered at all on the restricted branch above, so there is no path from
+ * a money-blind role to this function.
+ */
+function equipmentCsv(): ReportCsvRow[] {
+  const performer = (p: (typeof TOP_PERFORMERS)[number]): ReportCsvRow => [
+    p.id,
+    p.name,
+    p.category,
+    formatMoney(p.revenue as Paisa),
+    `${p.roi}x`,
+    `${p.utilization}%`,
+  ]
+  const columns: ReportCsvRow = ['ID', 'Name', 'Category', 'Revenue', 'ROI', 'Utilization']
+
+  return [
+    ['Figure', 'Value'],
+    ['Equipment revenue', formatMoney(EQUIPMENT_METRICS.revenue as Paisa)],
+    ['Average ROI', `${EQUIPMENT_METRICS.roi}x`],
+    ['Average payback period', EQUIPMENT_METRICS.payback],
+    ['Idle cost', formatMoney(EQUIPMENT_METRICS.idleCost as Paisa)],
+    [],
+    ['Top performing equipment'],
+    columns,
+    ...TOP_PERFORMERS.map(performer),
+    [],
+    ['Equipment needing attention'],
+    columns,
+    ...WORST_PERFORMERS.map(performer),
+  ]
+}
+
 export default function EquipmentPerformance() {
   const money = useCanViewMoney()
 
+  /*
+   * Law 6. Every figure on this page is money or a ratio derived from it, so
+   * there is no money-free version to show. The page used to say so in a plain
+   * `<Card>`; it now renders the shared RESTRICTED state, which names the roles
+   * to ask instead of leaving the reader to guess — and no toolbar is drawn
+   * above it, because an Export button over data the role may not read would be
+   * a route around the gate.
+   */
   if (!money) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
         <PageHeader icon="activity" title="Equipment Performance" description="Analyze revenue, ROI, and payback periods of the fleet." />
-        <Card style={{ padding: 'var(--sp-xl)', textAlign: 'center', color: 'var(--text2)' }}>
-          Equipment financial performance data is restricted for your role.
-        </Card>
+        <PageBody
+          restricted
+          restrictedReason="Equipment performance is reported entirely in money — revenue, ROI, payback and idle cost — so there is no version of this page your role can see."
+          restrictedRequiredRole="Owner, Admin, Coordinator or Accounts"
+        >
+          {null}
+        </PageBody>
       </div>
     )
   }
@@ -35,6 +86,14 @@ export default function EquipmentPerformance() {
         title="Equipment Performance"
         description="Analyze revenue, ROI, and payback periods of the fleet."
       />
+
+      {/*
+        No date range and no branch: `data/equipmentPerformance` is three
+        pre-aggregated constants with neither a date nor a branch column on any
+        row, so either control would move the label and not one figure. They
+        arrive by passing two more props the day this report reads Postgres.
+      */}
+      <ReportToolbar title="Equipment Performance" csv={{ filename: 'equipment-performance', build: equipmentCsv }} />
 
       <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
         <PerfKpiCard

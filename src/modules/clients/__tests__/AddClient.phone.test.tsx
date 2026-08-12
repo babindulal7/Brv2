@@ -22,12 +22,25 @@ import { PHONE_REJECTION, PHONE_STORED_RE } from '../../../lib/phone'
 // infers a ZERO-argument mock, which makes both `createClientSpy(input)` below and
 // `.mock.calls[0][0]` (the whole point of this spy — asserting the phone that was
 // actually submitted) type errors. Typing the arg keeps the assertion intact.
-const createClientSpy = vi.fn(async (_input: unknown) => ({ success: true, clientId: 'CL-0001' }))
+const createClientSpy = vi.fn(async (_input: unknown) => ({
+  clientId: '00000000-0000-0000-0000-0000000000c1',
+  clientCode: 'CL-2026-0001',
+  name: 'Himalayan Films Pvt. Ltd.',
+  phone: '+9779801234567',
+}))
 
 vi.mock('../../../actions/clients/createClient', () => ({
   createClient: (input: unknown) => createClientSpy(input as never),
 }))
 vi.mock('../../../lib/moneyVisibility', () => ({ useCanViewMoney: () => true }))
+/* `AddClient` now builds a real `ActionContext` from the session — the dispatcher
+   substitutes no default identity (`actions/core.ts:136-141`), so a screen that
+   dispatches has to know who is signed in. `useAuth` throws outside an
+   `AuthProvider`, so it is mocked here the same way fifteen other screen tests in
+   this repo already mock it. */
+vi.mock('../../../lib/auth', () => ({
+  useAuth: () => ({ user: { id: 'usr-owner', name: 'Owner', role: 'Owner', isSharedDevice: false } }),
+}))
 
 // jsdom ships no matchMedia; lib/device asks for it on mount.
 window.matchMedia = ((q: string) => ({

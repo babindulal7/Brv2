@@ -33,15 +33,18 @@ import {
   ALERTS,
   QUICK_ACTIONS,
   ACTIVITY,
-  INSIGHTS,
+  /* `INSIGHTS` is deliberately not imported — see the Law 16 note at the rail. */
   SEED_ERRORS,
   countFor,
   segmentsOf,
   paddingOf,
   padTo,
   advance,
+  formatHas,
+  issue,
 } from '../../data/numbering'
 import type { ConfigTab, ResetRule, SequenceModule, SequenceRow, SequenceScope } from '../../data/numbering'
+import { useViewport } from '../../lib/device'
 
 /**
  * Administration → **Numbering Sequences**, built against render `CD132C04`
@@ -55,18 +58,40 @@ import type { ConfigTab, ResetRule, SequenceModule, SequenceRow, SequenceScope }
  * move together — that is the spec's "live preview updates instantly", and it
  * is also the only way this page can be trusted about what it claims.
  *
+ * ## This screen is the source of truth for prefixes
+ *
+ * `WIREFRAME_RULINGS_2026-08-12.md` §2.2 — *"The prefixes are configuration,
+ * not constants. Settings ▸ Numbering is the source of truth and the sequences
+ * are editable there. No module may hardcode a prefix."* The six ruled
+ * sequences (`B-` `C-` `M-` `INV-` `Q-` `BND-`) are rows in `data/numbering.ts`
+ * like any other, edited by the panels below, and every module that builds or
+ * recognises an identifier reads them back through `prefixOf` / `issue` /
+ * `isIssuedBy`. The Prefix and Padding Length fields already reach the ruled
+ * values — `withPrefix` accepts a single letter and `withPadding` clamps to a
+ * minimum of 1, which *is* "no padding".
+ *
+ * §10.6's own warning still stands and is still honoured: editing a live
+ * sequence is gated and written to audit, so Save Changes remains a stated
+ * `Unavailable` until that path exists. A wrong counter mints duplicate IDs
+ * product-wide.
+ *
  * **Deviations from the render — each one deliberate, do not copy back:**
  *
+ *  · **The wireframe's own example is superseded.** Spec 10 §10.6 draws
+ *    `BR-2026-0715` with padding 4/5; the 12 Aug ruling replaces it with
+ *    `B-715` — no year segment, no zero padding — and additionally settles
+ *    that `BR-` was never a booking prefix at all (it is the branch code).
  *  · **The preview is built from the format, not from a fixed five-chip
- *    string.** The render's preview prints `BK-2026-05-KTM-004862` while the
- *    Format column two panels above says `BK-YYYY-NNNNN`, and its "Total
- *    Length 19" counts neither (that string is 21). A preview that contradicts
- *    the format it is previewing is the worst defect this screen could carry,
- *    so segments come from the format string. BK therefore shows three chips
- *    where the render shows five. Scope selects which *counter* is used, per
- *    spec § Branch Rules — a branch code only appears when the format has a
- *    `BR` token, which is exactly how the spec's own `INV-KTM-2026-00492`
- *    example is built.
+ *    string.** The render's preview prints a five-chip
+ *    `PREFIX-YEAR-MONTH-BRANCH-COUNTER` string while the Format column two
+ *    panels above says something else, and its "Total Length 19" counts
+ *    neither. A preview that contradicts the format it is previewing is the
+ *    worst defect this screen could carry, so segments come from the format
+ *    string. Under the ruling a Booking preview is **two** chips — `B` and the
+ *    counter — and the Live Preview reads `B-4862`, the number the app would
+ *    really issue next. Scope selects which *counter* is used, per spec
+ *    § Branch Rules; a branch code only appears when the format carries a `BR`
+ *    token, and no ruled format does.
  *  · **The render's fourth chip is labelled SEPARATOR and holds `KTM`.** A
  *    branch code is not a separator, and the same panel's Separator field
  *    holds `-`. It is labelled BRANCH here.
@@ -236,7 +261,131 @@ function withPadding(format: string, width: number): string {
     .join('-')
 }
 
+/**
+ * §10.6's phone layout — *"one sequence per card, preview under the fields."*
+ *
+ * The preview is passed in rather than recomputed here, so the card and the
+ * table row can only ever print the same string.
+ */
+function SequenceCard({
+  row,
+  preview,
+  selected,
+  onSelect,
+}: {
+  row: SequenceRow
+  preview: string
+  selected: boolean
+  onSelect: () => void
+}) {
+  const gap = row.format === null
+  return (
+    <div
+      style={{
+        borderTop: '1px solid var(--border)',
+        padding: 14,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 9,
+        background: selected ? 'var(--nav-active-bg)' : 'transparent',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span className="identifier" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+          {row.name}
+        </span>
+        <span className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+          {row.code}
+        </span>
+        <span
+          style={{
+            marginLeft: 'auto',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            height: 19,
+            padding: '0 7px',
+            borderRadius: 5,
+            background: row.status === 'Active' ? STATUS.in.bg : STATUS.neutral.bg,
+            color: row.status === 'Active' ? STATUS.in.fg : STATUS.neutral.fg,
+            fontSize: 'var(--t-th)',
+            fontWeight: 700,
+          }}
+        >
+          <Icon name={row.status === 'Active' ? 'check' : 'eye'} size={10} />
+          {row.status}
+        </span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '6px 10px' }}>
+        <CardField label="Prefix" value={row.prefix} />
+        <CardField label="Padding" value={row.format ? String(paddingOf(row.format)) : '—'} />
+        <CardField label="Current" value={row.counter ?? '—'} />
+      </div>
+
+      {/* "preview under the fields" — literally. */}
+      <div
+        style={{
+          padding: '9px 11px',
+          borderRadius: 'var(--r-btn)',
+          border: '1px solid var(--border)',
+          background: 'var(--card2)',
+        }}
+      >
+        <span style={{ display: 'block', fontSize: 'var(--t-th)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--muted)' }}>
+          Preview
+        </span>
+        <span
+          className="identifier"
+          style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: gap ? 'var(--muted)' : 'var(--text)' }}
+        >
+          {preview}
+        </span>
+      </div>
+
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-label={`Configure ${row.code} – ${row.name}`}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
+          /* Law 15 — 44×44. */
+          minHeight: 44,
+          borderRadius: 'var(--r-btn)',
+          border: '1px solid var(--border)',
+          background: 'transparent',
+          color: 'var(--text2)',
+          fontSize: 'var(--t-meta)',
+          fontWeight: 700,
+          fontFamily: 'inherit',
+          cursor: 'pointer',
+        }}
+      >
+        <Icon name="tool" size={13} />
+        Configure
+      </button>
+    </div>
+  )
+}
+
+function CardField({ label, value }: { label: string; value: string }) {
+  return (
+    <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <span style={{ fontSize: 'var(--t-th)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--muted)' }}>
+        {label}
+      </span>
+      <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600 }}>
+        {value}
+      </span>
+    </span>
+  )
+}
+
 export default function NumberingSequences() {
+  const viewport = useViewport()
   const [moduleFilter, setModuleFilter] = useState<SequenceModule | typeof ALL_MODULES>(ALL_MODULES)
   const [statusFilter, setStatusFilter] = useState<string>(ALL_STATUS)
   const [query, setQuery] = useState('')
@@ -325,8 +474,42 @@ export default function NumberingSequences() {
         )
       : []
 
-  const branchApplies = draft.scope === 'Per Branch' || draft.format.split('-').includes('BR')
-  const warehouseApplies = draft.scope === 'Per Warehouse' || draft.format.split('-').includes('WH')
+  /**
+   * §10.6's `preview` column.
+   *
+   * **This is `issue()`, not a re-render of the format.** The spec's own
+   * warning — *"editing a live sequence is gated and written to audit"* — only
+   * means anything if the column an operator reads before editing agrees with
+   * the generator the rest of the product mints from. A preview that disagrees
+   * with `issue()` is worse than no preview: it invites an edit made against a
+   * string nothing will ever produce.
+   *
+   * So the column calls the generator with the row's own stored counter and
+   * lets it normalise the padding, exactly as `data/numbering.ts` does for
+   * every module. Under the 12 Aug ruling that reads `B-4861`, `INV-492`,
+   * `C-2481` — never `BR-2026-0715`, which §10.6's wireframe still draws and
+   * which Rulings §2 supersedes.
+   *
+   * The preview dates itself to `PREVIEW_YEAR/MONTH/DAY` rather than to the
+   * clock so the four unruled formats that still carry a `YYYY` token (MT,
+   * CASE, PAY, EXP) render deterministically beside the panel below, which uses
+   * the same three constants.
+   */
+  function previewOf(s: SequenceRow): string {
+    if (!s.format || s.counter === null) return 'Not configured'
+    return issue(s.code, Number(s.counter), {
+      year: PREVIEW_YEAR,
+      month: PREVIEW_MONTH,
+      day: PREVIEW_DAY,
+      branchCode,
+      warehouseCode,
+    })
+  }
+
+  /* Asked through the engine, not by matching the literal 'BR' here — the
+     reservation lives in `kindOf()` and nowhere else. Requirement 3. */
+  const branchApplies = draft.scope === 'Per Branch' || formatHas(draft.format, 'BRANCH')
+  const warehouseApplies = draft.scope === 'Per Warehouse' || formatHas(draft.format, 'WAREHOUSE')
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
@@ -474,11 +657,53 @@ export default function NumberingSequences() {
               }
               bodyStyle={{ padding: 0 }}
             >
+              {/* PHONE — §10.6: "one sequence per card, preview under the
+                  fields." A nine-column table below 768 is a horizontal
+                  scrollbar hiding the column that matters, which is the
+                  preview. */}
+              {viewport === 'phone' ? (
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {visible.map((s) => (
+                    <SequenceCard
+                      key={s.code}
+                      row={s}
+                      preview={previewOf(s)}
+                      selected={s.code === selectedCode}
+                      onSelect={() => select(s.code)}
+                    />
+                  ))}
+                  {visible.length === 0 && (
+                    <div style={{ padding: 18 }}>
+                      <EmptyState
+                        icon={<Icon name="search" size={22} />}
+                        title="No sequence matches this filter"
+                        description="Clear the search or pick another category."
+                        actionLabel="Clear filters"
+                        onAction={() => {
+                          setModule(ALL_MODULES)
+                          setStatusFilter(ALL_STATUS)
+                          setQuery('')
+                          setPage(1)
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : (
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
-                      {['Code', 'Sequence Name', 'Prefix', 'Format', 'Current Counter', 'Reset Rule', 'Scope', 'Status', 'Actions'].map((h) => (
+                      {/*
+                        §10.6's own column set is `sequence │ prefix │ padding │
+                        current │ preview`. Padding and Preview were missing
+                        here; they are the two the spec's warning is about, so
+                        they are added rather than left to the panel below.
+                        Code, Format, Reset Rule, Scope and Status survive —
+                        Rulings §1, a panel is not removed because a narrower
+                        drawing omits it.
+                      */}
+                      {['Code', 'Sequence Name', 'Prefix', 'Format', 'Padding', 'Current Counter', 'Preview', 'Reset Rule', 'Scope', 'Status', 'Actions'].map((h) => (
                         <th key={h} style={th}>
                           {h}
                         </th>
@@ -526,8 +751,18 @@ export default function NumberingSequences() {
                           >
                             {s.format ?? 'Not configured'}
                           </td>
+                          {/* Padding is the length of the format's `N` run —
+                              `paddingOf`, the one place that decides it. Under
+                              the 12 Aug ruling every ruled sequence reads `1`,
+                              which is what "no zero padding" looks like. */}
+                          <td className="figure" style={{ ...td, color: gap ? 'var(--muted)' : 'var(--text2)' }}>
+                            {s.format ? paddingOf(s.format) : '—'}
+                          </td>
                           <td className="figure" style={{ ...td, fontWeight: 600, color: gap ? 'var(--muted)' : 'var(--text)' }}>
                             {s.counter ?? '—'}
+                          </td>
+                          <td className="identifier" style={{ ...td, fontWeight: 700, color: gap ? 'var(--muted)' : 'var(--text)' }}>
+                            {previewOf(s)}
                           </td>
                           <td style={{ ...td, color: 'var(--text2)' }}>{s.resetRule ?? '—'}</td>
                           <td style={{ ...td, color: 'var(--text2)' }}>{s.scope ?? '—'}</td>
@@ -601,7 +836,7 @@ export default function NumberingSequences() {
                     })}
                     {visible.length === 0 && (
                       <tr>
-                        <td colSpan={9} style={{ ...td, padding: 22, textAlign: 'center', color: 'var(--text2)', whiteSpace: 'normal' }}>
+                        <td colSpan={11} style={{ ...td, padding: 22, textAlign: 'center', color: 'var(--text2)', whiteSpace: 'normal' }}>
                           <EmptyState
                             icon={<Icon name="search" size={22} />}
                             title="No sequence matches this filter"
@@ -620,6 +855,7 @@ export default function NumberingSequences() {
                   </tbody>
                 </table>
               </div>
+              )}
 
               <div
                 style={{
@@ -667,8 +903,9 @@ export default function NumberingSequences() {
 
               {UNCONFIGURED_CODES.length > 0 && (
                 <p style={{ margin: 0, padding: '0 12px 11px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                  {UNCONFIGURED_CODES.join(' · ')} are named in the spec's default system sequences but neither the render nor the
-                  spec supplies a format, counter, reset rule or scope for them. Nothing is invented in their place.
+                  {UNCONFIGURED_CODES.join(' · ')} are registered sequences for which no format, counter, reset rule or scope is
+                  supplied anywhere — not by the render, not by the spec, and not by the 12 Aug identifier ruling, which covers
+                  Booking, Client, Membership, Invoice, Quote and Bundle only. Nothing is invented in their place.
                 </p>
               )}
             </Card>
@@ -1400,47 +1637,26 @@ export default function NumberingSequences() {
             </div>
           </Card>
 
-          <Card
-            title="AI Numbering Insights"
-            action={
-              <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
-                View Insights →
-              </span>
-            }
-          >
-            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
-              {INSIGHTS.map((t) => (
-                <li key={t} style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', alignItems: 'flex-start' }}>
-                  <span
-                    aria-hidden
-                    style={{
-                      width: 15,
-                      height: 15,
-                      borderRadius: 'var(--r-badge)',
-                      display: 'grid',
-                      placeItems: 'center',
-                      border: '1px solid var(--success)',
-                      color: 'var(--success-text)',
-                      flexShrink: 0,
-                      marginTop: 1,
-                    }}
-                  >
-                    <Icon name="check" size={9} />
-                  </span>
-                  <span style={{ color: 'var(--text2)' }}>{t}</span>
-                </li>
-              ))}
-            </ul>
-            <div style={{ marginTop: 11 }}>
-              <Unavailable style={{ display: 'grid', minWidth: 0 }} reason="AI analysis is specified but no model is wired up in this build.">
-                {/* The wrapper is a grid, so the button stretches to the card's
-                    full width the way the render draws it. */}
-                <Button icon="sparkles" disabled>
-                  Run AI Analysis
-                </Button>
-              </Unavailable>
-            </div>
-          </Card>
+          {/*
+            The render's "AI Numbering Insights" card was here. Deleted under
+            Law 16 — "No AI panel renders until backed by a validated
+            computation" — not under a wireframe. Its five bullets
+            (`data/numbering.ts`'s INSIGHTS) were hand-written strings sitting
+            under a heading that claims a model produced them, above a "Run AI
+            Analysis" button wired to nothing. `WIREFRAME_RULINGS_2026-08-12.md`
+            §7 applies exactly this law to Settings' "AI Branch Insights" card
+            by name; this is the same card on a different page, and
+            `Warehouses.tsx` already records the general rule — "labelling
+            deterministic arithmetic as a model output would be a false claim."
+
+            Two of the five bullets are real, checkable facts rather than
+            insights, and both are already stated elsewhere on this page without
+            an AI label: "no duplicates" is the Duplicate IDs KPI, computed from
+            `SEQUENCES`, and the MT reset is the Reset Rule column. Nothing was
+            lost. INSIGHTS stays exported from `data/numbering.ts` — the alert
+            and reset panels around it are unaffected, and a half-removal across
+            two files would be worse than an unused export.
+          */}
         </Rail>
       </div>
 

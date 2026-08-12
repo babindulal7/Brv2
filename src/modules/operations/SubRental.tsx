@@ -4,7 +4,7 @@ import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { EmptyState } from '../../components/ui/StateViews'
-import { useToast } from '../../components/ui/Toast'
+import { Unavailable } from '../../components/ui/Unavailable'
 import Icon from '../../components/ui/Icon'
 import { formatMoney, rupees, type Paisa } from '../../lib/money'
 import { useAuth } from '../../lib/auth'
@@ -45,7 +45,7 @@ const SUB_RENTAL_DATA: SubRentalRecord[] = [
   {
     id: 'SR-2026-0032',
     counterparty: 'GearHouse KTM',
-    linkedBooking: 'BK-2026-0715',
+    linkedBooking: 'B-715',
     direction: 'Borrowing',
     equipment: 'RED V-Raptor 8K VV',
     quantity: 1,
@@ -78,7 +78,7 @@ const SUB_RENTAL_DATA: SubRentalRecord[] = [
   {
     id: 'SR-2026-0034',
     counterparty: 'Freelance - Bikram',
-    linkedBooking: 'BK-2026-0718',
+    linkedBooking: 'B-718',
     direction: 'Borrowing',
     equipment: 'DJI Inspire 3 Drone',
     quantity: 1,
@@ -118,6 +118,49 @@ const SUB_RENTAL_DATA: SubRentalRecord[] = [
 const SUPPLIER_GROUPS = groupByCounterparty(SUB_RENTAL_DATA)
 
 type FilterKey = SubRentalStatus | 'All' | 'Overdue'
+
+/*
+ * ── The header actions state what they cannot do ───────────────────────────
+ *
+ * **New Sub-Rental.** What stood here dispatched, from a header button with no
+ * gate of any kind:
+ *
+ *   createSubRental({ itemDescription: 'Sub-Rental Item', costPaisa: 500000 })
+ *
+ * — a Rs 5,000 vendor cost and a placeholder description that no vendor quoted
+ * and no operator typed, reaching a dispatch payload on a single click, followed
+ * by `showSuccessToast('New Record', 'Opening Sub-Rental wizard')`. No wizard
+ * opens. Nothing on this page creates a sub-rental.
+ *
+ * The real creation flow exists and is `modals/CreateSubRentalModal.tsx`, which
+ * `BookingDetail` mounts — it takes a `bookingId` and is titled for it, because
+ * a sub-rental is gear sourced *for a booking*. This index has no booking in
+ * hand, and picking one would be the same fabrication one level up. So the
+ * button points at the flow instead of imitating it.
+ *
+ * Two further facts, so the refusal is not merely cosmetic:
+ *  · `createSubRental` has no `implemented: true` (`actions/subrentals/
+ *    createSubRental.ts`), so `createAction` refuses it before validate/execute
+ *    — the dispatch that stood here could never have written anything, while the
+ *    toast said it had.
+ *  · `TODO(decision)` — its capability is `subrental.create`, and
+ *    `actions/core.ts:109-125` maps no rule for that string. An unmapped
+ *    capability is denied fail-closed, so *no role* may create a sub-rental
+ *    today. Who may is unruled; record it in `PLAN.md` §4 rather than choosing
+ *    one here.
+ *
+ * **Export.** `showSuccessToast('Exporting', 'Generating sub-rental report...')`
+ * with nothing behind it — no report is generated, no file is written. Same
+ * defect class, same treatment: the control says why instead of claiming work.
+ *
+ * `Unavailable` is this codebase's "grey it out, but say why" control, and it
+ * carries the reason on touch as well as on hover.
+ */
+const NEW_SUB_RENTAL_REASON =
+  'A sub-rental belongs to the booking it supplies. Open that booking and use Create Sub-Rental there — there is no booking-less path, and no rule yet for who may create one.'
+
+const EXPORT_REASON =
+  'Export is not built — there is no sub-rental report generator in this release, so nothing would be produced.'
 
 /**
  * **Suppliers directory** — promotes `SUPPLIER_GROUPS` (already grouped by
@@ -330,7 +373,6 @@ function SupplierDirectoryTable({
 }
 
 export function SubRental() {
-  const { showSuccessToast } = useToast()
   const navigate = useNavigate()
 
   const { user } = useAuth()
@@ -573,25 +615,25 @@ export function SubRental() {
               icon={<IconSearch size={16} />}
             />
           </div>
-          <Button
-            variant="secondary"
-            onClick={() => showSuccessToast('Exporting', 'Generating sub-rental report...')}
-            icon={<IconDownload size={16} />}
-          >
-            Export
-          </Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-              import('../../actions/subrentals/createSubRental').then((m) =>
-                m.createSubRental({ itemDescription: 'Sub-Rental Item', costPaisa: 500000 })
-              )
-              showSuccessToast('New Record', 'Opening Sub-Rental wizard')
-            }}
-            icon={<IconPlus size={16} />}
-          >
-            New Sub-Rental
-          </Button>
+          <Unavailable reason={EXPORT_REASON}>
+            <Button variant="secondary" disabled icon={<IconDownload size={16} />}>
+              Export
+            </Button>
+          </Unavailable>
+          {/* Law 6 / §4.1 — the gate this button never had. A sub-rental is a
+              vendor cost against a client charge, so it is `asset-finance`
+              work, and the same flag that omits the ₨ tiles and the Revenue &
+              Cost column omits the control that would create one: forbidden
+              items are absent, not disabled (rbac.ts's header rule). Roles
+              that MAY see finance get the control with its reason attached,
+              because for them the gap is a build gap, not a permission. */}
+          {canSeeFinance && (
+            <Unavailable reason={NEW_SUB_RENTAL_REASON}>
+              <Button variant="primary" disabled icon={<IconPlus size={16} />}>
+                New Sub-Rental
+              </Button>
+            </Unavailable>
+          )}
         </div>
       </div>
 

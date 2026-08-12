@@ -99,7 +99,8 @@ export interface BundleLine {
 }
 
 export interface BundleBooking {
-  /** `BK-` prefix, Foundation numbering. Links to `/rentals/:bookingNo`. */
+  /** Issued by the `BK` sequence — `prefixOf('BK')`, i.e. `B-` under the 12 Aug
+   *  ruling. Links to `/rentals/:bookingNo`. */
   id: string
   client: string
   /** AD, UTC. `lib/bs` renders the BS line above it. */
@@ -171,7 +172,7 @@ const ad = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d))
  */
 export const BUNDLES: BundleRecord[] = [
   {
-    id: 'BND-00023',
+    id: 'BND-23',
     name: 'Sony FX3 Documentary Kit',
     category: 'Camera',
     tags: ['Documentary', 'Travel', 'Corporate'],
@@ -198,14 +199,14 @@ export const BUNDLES: BundleRecord[] = [
     ],
   },
   {
-    id: 'BND-00019',
+    id: 'BND-19',
     name: 'RED Komodo X Basic Package',
     category: 'Camera',
     tags: ['Feature', 'Corporate'],
     lockMode: 'Physical',
     bundleRatePaisa: rupees(24000),
     booking: {
-      id: 'BK-2026-0712',
+      id: 'B-712',
       client: 'Himalayan Films',
       startAd: ad(2026, 7, 27),
       endAd: ad(2026, 8, 3),
@@ -231,13 +232,13 @@ export const BUNDLES: BundleRecord[] = [
     ],
   },
   {
-    id: 'BND-00017',
+    id: 'BND-17',
     name: 'Wedding Filmmaking Kit',
     category: 'Camera',
     tags: ['Wedding', 'Event'],
     bundleRatePaisa: rupees(20000),
     booking: {
-      id: 'BK-2026-0719',
+      id: 'B-719',
       client: 'DreamWeavers Studio',
       startAd: ad(2026, 8, 3),
       endAd: ad(2026, 8, 7),
@@ -263,7 +264,7 @@ export const BUNDLES: BundleRecord[] = [
     ],
   },
   {
-    id: 'BND-00014',
+    id: 'BND-14',
     name: 'Aputure 600D Pro Lighting Kit',
     category: 'Lighting',
     tags: ['Corporate', 'Studio'],
@@ -281,7 +282,7 @@ export const BUNDLES: BundleRecord[] = [
     ],
   },
   {
-    id: 'BND-00011',
+    id: 'BND-11',
     name: 'DJI Inspire 3 Combo Kit',
     category: 'Drone',
     tags: ['Aerial', 'Feature'],
@@ -299,7 +300,7 @@ export const BUNDLES: BundleRecord[] = [
     ],
   },
   {
-    id: 'BND-00008',
+    id: 'BND-8',
     name: 'Podcast Studio Kit',
     category: 'Audio',
     tags: ['Studio', 'Corporate'],
@@ -316,7 +317,7 @@ export const BUNDLES: BundleRecord[] = [
     ],
   },
   {
-    id: 'BND-00007',
+    id: 'BND-7',
     name: 'Grip & Support Kit',
     category: 'Grip',
     tags: ['Studio', 'Feature'],
@@ -333,7 +334,7 @@ export const BUNDLES: BundleRecord[] = [
 
   /* Archived — counted separately, outside the chip sum (§2). */
   {
-    id: 'BND-00003',
+    id: 'BND-3',
     name: 'Canon C300 Mk II Legacy Kit',
     category: 'Camera',
     tags: ['Legacy'],
@@ -346,7 +347,7 @@ export const BUNDLES: BundleRecord[] = [
     ],
   },
   {
-    id: 'BND-00002',
+    id: 'BND-2',
     name: 'GoPro Hero 9 Action Pack',
     category: 'Camera',
     tags: ['Legacy', 'Travel'],

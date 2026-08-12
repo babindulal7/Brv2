@@ -18,6 +18,10 @@ import { useViewport } from '../../lib/device'
    unconditional, this field is fixed at +977, and gating it meant an address
    outside Nepal reopened the identical hole. */
 import { PHONE_LOCAL_RE, PHONE_REJECTION, canonicalPhone, phoneLocalDigits } from '../../lib/phone'
+import { useAuth } from '../../lib/auth'
+import { useNetwork } from '../../lib/network'
+import { newClientUuid } from '../../lib/supabase'
+import type { ActionContext } from '../../actions/core'
 import {
   CLIENTS_DATA,
   CLIENT_SOURCES,
@@ -166,15 +170,43 @@ function SectionCard({ n, title, children }: { n: number; title: string; childre
 
 const fieldRow: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 'var(--sp-lg)' }
 
-/** The client code the record would get. Derived from the seed count, same
- *  reasoning `clientMetrics` uses elsewhere — a number this screen can defend. */
-const NEXT_CLIENT_CODE = `CL-2026-${String(CLIENTS_DATA.length + 1).padStart(4, '0')}`
+/**
+ * Everything this form collects that the `clients` table has nowhere to put.
+ *
+ * Stated on the page, next to Save, rather than dropped in silence. A form that
+ * accepts a credit limit and discards it is the same class of untruth as a
+ * success toast for a write that did not happen — the operator typed a fact and
+ * has no way to learn it was not kept.
+ *
+ * Each line names the reason, and none of them is "not built yet":
+ *  - credit limit / payment terms — `0005_clients.sql:162-164`: writable ONLY by
+ *    an Approved `client_commercial_overrides` row, "no direct UPDATE path, for
+ *    any role including Owner". This screen is not that path and must not be.
+ *  - membership tier — a `client_memberships` row, not a column on `clients`.
+ *  - preferred contact — the `preferred_contact_channel` enum is
+ *    Email | SMS | WhatsApp | Push; this form offers Phone, which is not a
+ *    member. The column keeps its `{WhatsApp}` default rather than having the
+ *    operator's answer mapped onto a channel they did not pick.
+ *  - documents — KYC files need a storage bucket and a `client_documents` row;
+ *    neither is wired.
+ *  - professions / segments / source / referred by — enum arrays and a uuid FK
+ *    that this form collects as free text.
+ */
+const NOT_SAVED_YET: string[] = [
+  'Credit limit and payment terms — these are set by an approved commercial override, never typed on a client form',
+  'Membership tier — held on a separate membership record',
+  'Preferred contact methods — the stored list has no “Phone” option, so the default (WhatsApp) is kept',
+  'Uploaded documents — KYC file storage is not wired',
+  'Professions, segments, source and “referred by”',
+]
 
 export default function AddClient() {
   const navigate = useNavigate()
   const { showSuccessToast } = useToast()
   const money = useCanViewMoney()
   const viewport = useViewport()
+  const { user } = useAuth()
+  const online = useNetwork()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [clientType, setClientType] = useState<ClientType>('Organisation')
@@ -216,6 +248,25 @@ export default function AddClient() {
   const [showDiscard, setShowDiscard] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  /**
+   * The one place a failed save is reported. Law 12 — errors are inline and
+   * persistent; the toast channel carries successes only, and `useToast`
+   * exposes nothing else.
+   */
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  /**
+   * **Law 8 — one key per user action, not one per attempt.**
+   *
+   * Minted the first time Save is pressed and reused by every retry of that
+   * same press, so a double-click or a "try again" after a network wobble
+   * conflicts on `clients_client_uuid_key` and returns the client that already
+   * exists, instead of creating a second one that then collides on the phone
+   * unique constraint. Cleared only when the form is edited into a genuinely
+   * different client — which it is not, on this screen, because a successful
+   * save navigates away.
+   */
+  const saveKey = useRef<string | null>(null)
 
   const clearError = (key: string) => setErrors((prev) => (prev[key] ? { ...prev, [key]: null } : prev))
 
@@ -281,41 +332,112 @@ export default function AddClient() {
     return rows
   }, [contactName, phone, email, city, membership, money, paymentTerms, creditLimit, clientSince])
 
+  /**
+   * The required set (ruling, 12 Aug 2026): **name and phone**.
+   *
+   * Phone is the one that earns it — it is the only unique key a client has, so
+   * duplicate detection and the merge tool have nothing to match on without it.
+   * Contact person, address and city used to gate Save and no longer do: they
+   * are information someone fills in later, and gating on them meant a
+   * correction had to be a re-creation.
+   *
+   * Format checks are untouched. Optional does not mean unvalidated — a phone
+   * or an email that is *present* still has to be shaped correctly.
+   *
+   * **Ruled 12 Aug 2026 (PLAN.md §4.25): country is optional too.** The whole
+   * address block — address, city, district, postal code, country — is now
+   * fillable later. The incoherence this comment used to flag (a client with a
+   * country and no city) is gone because the last gate went with it.
+   */
   function validate(): boolean {
     const e: Record<string, string | null> = {}
     if (!name.trim()) e.name = clientType === 'Organisation' ? 'Organisation Name is required.' : 'Full Name is required.'
-    if (clientType === 'Organisation' && !contactName.trim()) {
-      e.contactName = 'Contact Person is required for an organisation.'
-    }
     if (!phone.trim()) {
-      e.phone = 'Phone Number is required.'
+      e.phone = 'Phone Number is required — duplicate detection and the merge tool match on it.'
     } else if (!PHONE_LOCAL_RE.test(phoneLocal)) {
       e.phone = PHONE_REJECTION
     }
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       e.email = 'Enter a valid email address.'
     }
-    if (!address.trim()) e.address = 'Address is required.'
-    if (!city.trim()) e.city = 'City is required.'
-    if (!country.trim()) e.country = 'Country is required.'
     setErrors(e)
     return Object.keys(e).length === 0
   }
 
-  function handleSave() {
+  /** `ActionContext` — the signed-in identity, or null. The dispatcher substitutes no default. */
+  const dispatchContext = (): ActionContext | null =>
+    user ? { userId: user.id, role: user.role, isOnline: online } : null
+
+  /**
+   * Save — awaited, and reported from its own outcome.
+   *
+   * ⛔ **What this replaced.** The previous version fired the action into a
+   * floating promise with no `.catch()`, then set a 700 ms timer that flipped
+   * the button to "Client Saved", raised
+   * `showSuccessToast('Client created successfully', 'CL-2026-0025 · …')`, and
+   * navigated to `/clients` 900 ms later. Every one of those was unconditional:
+   * the action rejected (it was a stub, and `core.ts` throws
+   * `ActionNotImplementedError` before `execute`), the rejection was never
+   * observed, and the client code in the toast was `issue('CL',
+   * CLIENTS_DATA.length + 1)` — derived from the length of a seed array, not
+   * from any registry. So the operator was shown a reference number for a
+   * client that did not exist, on a screen that then navigated away from the
+   * form holding the only copy of what they had typed.
+   *
+   * Success reporting now lives on the resolved path and nowhere else, and the
+   * code in the toast is the one the database allocated.
+   */
+  async function handleSave() {
     if (!validate()) return
+
+    const ctx = dispatchContext()
+    if (!ctx) {
+      setSaveError(
+        'You are not signed in, so this client cannot be saved — a client record has to name who created it. ' +
+          'Sign in and try again.',
+      )
+      return
+    }
+
+    setSaveError(null)
     setSaving(true)
-    import('../../actions/clients/createClient').then((m) =>
-      // Saved with the country code the CHECK requires, and only ever the digits
-      // the operator actually typed — `validate()` has already run.
-      m.createClient({ name: name.trim(), phone: canonicalPhone(phone), email: email.trim(), isDraft: false })
-    )
-    window.setTimeout(() => {
-      setSaving(false)
+    // Law 8: one key for this press, reused by every retry of it.
+    if (!saveKey.current) saveKey.current = newClientUuid()
+
+    try {
+      const { createClient } = await import('../../actions/clients/createClient')
+      const created = await createClient(
+        {
+          name: name.trim(),
+          // Saved with the country code the CHECK requires, and only ever the
+          // digits the operator actually typed — `validate()` has already run.
+          phone: canonicalPhone(phone),
+          email: email.trim(),
+          /* `ClientType` carries a third member, 'Unassigned', which the two
+             cards on this screen cannot produce and which `clients.type_parent`
+             has no enum member for. Sent only when it is one of the two real
+             ones; omitted otherwise, which lands the client in the Unassigned
+             bucket as an absent value rather than a fabricated enum. */
+          ...(clientType === 'Organisation' || clientType === 'Individual' ? { clientType } : {}),
+          ...(clientType === 'Organisation' ? { orgSubtype: orgType } : {}),
+          addressLine: address.trim(),
+          city: city.trim(),
+          district: district.trim(),
+          postalCode: postalCode.trim(),
+          country: country.trim(),
+          panVat: pan.trim(),
+          notes: notes.trim(),
+          clientUuid: saveKey.current,
+        },
+        ctx,
+      )
       setSaved(true)
-      showSuccessToast('Client created successfully', `${NEXT_CLIENT_CODE} · ${name.trim()}`)
-      window.setTimeout(() => navigate('/clients'), 900)
-    }, 700)
+      showSuccessToast('Client created', `${created.clientCode} · ${created.name}`)
+      navigate('/clients')
+    } catch (err) {
+      setSaving(false)
+      setSaveError(`Not saved — ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   function handleCancel() {
@@ -446,6 +568,10 @@ export default function AddClient() {
         }
       />
 
+      {/* Law 12 — inline and persistent, never a toast, and never cleared by a
+          timer. It stays until the next Save attempt replaces it. */}
+      {saveError && <ErrorBanner title="This client was not saved" message={saveError} />}
+
       {duplicateMatch && (
         <ErrorBanner
           title="Possible existing client"
@@ -529,7 +655,7 @@ export default function AddClient() {
 
             {clientType === 'Organisation' && (
               <div style={fieldRow}>
-                <Field label="Contact Person" required error={errors.contactName}>
+                <Field label="Contact Person" error={errors.contactName}>
                   <Input
                     value={contactName}
                     onChange={(e) => {
@@ -617,7 +743,7 @@ export default function AddClient() {
 
           <SectionCard n={2} title="Contact & Address">
             <div style={fieldRow}>
-              <Field label="Address" required error={errors.address}>
+              <Field label="Address" error={errors.address}>
                 <Input
                   value={address}
                   onChange={(e) => {
@@ -628,7 +754,7 @@ export default function AddClient() {
                   style={inputStyle(!!errors.address)}
                 />
               </Field>
-              <Field label="City" required error={errors.city}>
+              <Field label="City" error={errors.city}>
                 <Input
                   value={city}
                   onChange={(e) => {
@@ -655,7 +781,7 @@ export default function AddClient() {
               <Field label="Postal Code">
                 <Input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} placeholder="e.g. 44600" style={inputStyle()} />
               </Field>
-              <Field label="Country" required error={errors.country}>
+              <Field label="Country" error={errors.country}>
                 <Select
                   value={country}
                   onChange={(e) => {
@@ -946,7 +1072,26 @@ export default function AddClient() {
         )}
       </div>
 
+      {/* What Save does NOT keep. On the page, above the fold of the footer, and
+          permanent — see NOT_SAVED_YET for why each line is there. */}
       <FooterNote />
+      <div
+        style={{
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--r-sm)',
+          background: 'var(--card2)',
+          padding: 'var(--sp-md)',
+          fontSize: 'var(--t-meta)',
+          color: 'var(--text2)',
+        }}
+      >
+        <strong style={{ color: 'var(--text)' }}>Not saved with this client yet</strong>
+        <ul style={{ margin: '8px 0 0', paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {NOT_SAVED_YET.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      </div>
 
       <Modal
         isOpen={showDiscard}

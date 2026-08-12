@@ -64,6 +64,7 @@ import { validateRentalDates } from './validation.ts'
 import { assertItemCounts, canAdvance, closeGates, BOOKING_STATUS, STATUS_ORDER } from './workflow.ts'
 import type { BookingStatus } from './workflow.ts'
 import { toBs, formatBs } from './bs.ts'
+import { prefixOf } from '../data/numbering.ts'
 
 /* ── 0 · the corpus, declared ──────────────────────────────────────────────
  *
@@ -79,29 +80,66 @@ import { toBs, formatBs } from './bs.ts'
  * `invoices.vat_rate`'s schema default (0.1300, `0006_finance.sql`) and
  * `Sample Data.md`'s worked example.
  */
-const VAT_PERCENT = 13
+export const VAT_PERCENT = 13
 
-/** `0012_seed_data.sql` section 1's rows. Record numbers are formatted from these, never typed. */
+/**
+ * The status every seeded invoice is **issued** at.
+ *
+ * It is reached by an UPDATE once the lines are in, never by inserting the
+ * invoice already issued — see the lifecycle comment in {@link emitSql}. The
+ * reference invoice ends at `Partially Paid` rather than here, and that is not
+ * written down either: `sync_payment_to_invoice()` (0010) sets it when the
+ * payment row lands.
+ */
+export const INVOICE_ISSUED_STATUS = 'Sent'
+
+/**
+ * `0012_seed_data.sql` section 1's rows. Record numbers are formatted from
+ * these, never typed.
+ *
+ * `prefix` is **not** written down here. `WIREFRAME_RULINGS_2026-08-12.md` §2.2
+ * makes prefixes configuration, and `data/numbering.ts` is the registry of
+ * record, so each spec names the registry `code` it draws from and `prefixOf()`
+ * supplies the string. Typing `'BK-'` here is exactly the second source of
+ * truth the ruling exists to remove.
+ *
+ * `year` and `padding` survive only for the three sequences the ruling does
+ * **not** cover. Booking, Client and Invoice set both to their ruled values —
+ * no year, no padding — which is what `year: null, padding: 1` means.
+ */
 interface SequenceSpec {
   key: string
-  prefix: string
+  /** The `SEQUENCES` row in `data/numbering.ts` this draws its prefix from. */
+  code: string
   padding: number
-  /** `null` on `equipment` — `EQ000234` carries no year segment. */
+  /** `null` = no year segment. Ruled sequences and `equipment` carry none. */
   year: number | null
 }
 
-const SEQUENCES = {
-  booking: { key: 'booking', prefix: 'BK-', padding: 4, year: 2026 },
-  client: { key: 'client', prefix: 'CL-', padding: 4, year: 2026 },
-  invoice: { key: 'invoice', prefix: 'INV-', padding: 4, year: 2026 },
-  payment: { key: 'payment', prefix: 'PAY-', padding: 4, year: 2026 },
-  deposit: { key: 'deposit', prefix: 'DEP-', padding: 4, year: 2026 },
-  equipment: { key: 'equipment', prefix: 'EQ', padding: 6, year: null },
+export const SEQUENCES = {
+  booking: { key: 'booking', code: 'BK', padding: 1, year: null },
+  client: { key: 'client', code: 'CL', padding: 1, year: null },
+  invoice: { key: 'invoice', code: 'INV', padding: 1, year: null },
+  /* Unruled — left exactly as they were. `DEP` has no registry row at all,
+     which is reported rather than papered over with an invented one. */
+  payment: { key: 'payment', code: 'PAY', padding: 4, year: 2026 },
+  deposit: { key: 'deposit', code: 'DEP', padding: 4, year: 2026 },
+  equipment: { key: 'equipment', code: 'EQ', padding: 6, year: null },
 } as const satisfies Record<string, SequenceSpec>
 
-function recordNo(spec: SequenceSpec, value: number): string {
+/**
+ * `EQ000234` and `DEP-2026-0001` are separator-less / year-bearing shapes the
+ * registry's format engine cannot express, so the join stays here rather than
+ * being faked into `numbering.ts`. Only the **prefix** comes from the registry.
+ */
+export function recordNo(spec: SequenceSpec, value: number): string {
+  const prefix = prefixOf(spec.code)
   const counter = String(value).padStart(spec.padding, '0')
-  return spec.year === null ? `${spec.prefix}${counter}` : `${spec.prefix}${spec.year}-${counter}`
+  if (spec.year !== null) return `${prefix}-${spec.year}-${counter}`
+  /* `EQ` is the one sequence whose stored form carries no separator at all —
+     `products_asset_code_format` in `0004_inventory.sql` enforces
+     `^EQ[0-9]{6}$`. Every other sequence joins on the ruled separator. */
+  return spec.code === 'EQ' ? `${prefix}${counter}` : `${prefix}-${counter}`
 }
 
 interface ProductSpec {
@@ -126,7 +164,7 @@ interface ProductSpec {
 
 /**
  * Six products, eighteen units — `Sample Data.md`'s "18 items × 3 days" for
- * `BK-2026-0715`, and the daily rates that make the spec's Rs 60,750 equipment
+ * `B-715`, and the daily rates that make the spec's Rs 60,750 equipment
  * subtotal come out of the arithmetic rather than being asserted on top of it.
  * `assertEquals` at the bottom of {@link buildCorpus} is what actually checks
  * that; if a rate here is edited, the generator stops rather than emitting a
@@ -135,7 +173,7 @@ interface ProductSpec {
  * `EQ000234` and `SN-LEN-0035` are the identifiers `Sample Data.md` fixes by
  * name; the rest follow from the sequences.
  */
-const PRODUCTS: readonly ProductSpec[] = [
+const REFERENCE_PRODUCTS: readonly ProductSpec[] = [
   {
     seq: 234,
     name: 'Sony FX9 Cinema Camera',
@@ -216,6 +254,97 @@ const PRODUCTS: readonly ProductSpec[] = [
   },
 ]
 
+/**
+ * The rest of the catalogue.
+ *
+ * Only the six categories and three storage zones `0012_seed_data.sql` actually
+ * seeds are used — a product pointing at a category code that does not exist
+ * would fail its FK on apply, and inventing one here would be seeding reference
+ * data from the wrong file.
+ *
+ * Serial ranges start at 100 so no generated unit can collide with a reference
+ * product's `SN-LEN-0035`, which `Sample Data.md` fixes by name.
+ */
+const CATALOGUE: ReadonlyArray<{
+  name: string
+  brand: string
+  model: string
+  categoryCode: string
+  zoneCode: string
+  dailyRateRupees: number
+  replacementValueRupees: number
+  units: number
+  serialTag: string
+}> = [
+  { name: 'Sony FX3 Full-Frame Camera', brand: 'Sony', model: 'ILME-FX3', categoryCode: 'camera', zoneCode: 'ZONE-CAM-A', dailyRateRupees: 3500, replacementValueRupees: 560000, units: 3, serialTag: 'CAM' },
+  { name: 'Sony A7S III', brand: 'Sony', model: 'ILCE-7SM3', categoryCode: 'camera', zoneCode: 'ZONE-CAM-A', dailyRateRupees: 2800, replacementValueRupees: 420000, units: 3, serialTag: 'CAM' },
+  { name: 'Canon C70 Cinema Camera', brand: 'Canon', model: 'EOS C70', categoryCode: 'camera', zoneCode: 'ZONE-CAM-A', dailyRateRupees: 4000, replacementValueRupees: 720000, units: 2, serialTag: 'CAM' },
+  { name: 'Canon R5 C', brand: 'Canon', model: 'EOS R5 C', categoryCode: 'camera', zoneCode: 'ZONE-CAM-A', dailyRateRupees: 3800, replacementValueRupees: 640000, units: 2, serialTag: 'CAM' },
+  { name: 'Blackmagic URSA Mini Pro 12K', brand: 'Blackmagic', model: 'URSA Mini Pro 12K', categoryCode: 'camera', zoneCode: 'ZONE-CAM-A', dailyRateRupees: 5500, replacementValueRupees: 980000, units: 1, serialTag: 'CAM' },
+  { name: 'Blackmagic Pocket 6K Pro', brand: 'Blackmagic', model: 'BMPCC 6K Pro', categoryCode: 'camera', zoneCode: 'ZONE-CAM-A', dailyRateRupees: 2200, replacementValueRupees: 310000, units: 4, serialTag: 'CAM' },
+  { name: 'RED Komodo 6K', brand: 'RED', model: 'Komodo 6K', categoryCode: 'camera', zoneCode: 'ZONE-CAM-A', dailyRateRupees: 6000, replacementValueRupees: 1180000, units: 1, serialTag: 'CAM' },
+  { name: 'DJI Ronin 4D-6K', brand: 'DJI', model: 'Ronin 4D', categoryCode: 'camera', zoneCode: 'ZONE-CAM-A', dailyRateRupees: 7000, replacementValueRupees: 1320000, units: 1, serialTag: 'CAM' },
+  { name: 'Panasonic Lumix S5 II', brand: 'Panasonic', model: 'DC-S5M2', categoryCode: 'camera', zoneCode: 'ZONE-CAM-A', dailyRateRupees: 1800, replacementValueRupees: 260000, units: 3, serialTag: 'CAM' },
+  { name: 'Sony FX30', brand: 'Sony', model: 'ILME-FX30', categoryCode: 'camera', zoneCode: 'ZONE-CAM-A', dailyRateRupees: 2000, replacementValueRupees: 280000, units: 3, serialTag: 'CAM' },
+
+  { name: 'NISI Athena 25mm', brand: 'NISI', model: 'Athena Prime 25mm T1.9', categoryCode: 'lens', zoneCode: 'ZONE-LENS-B', dailyRateRupees: 1000, replacementValueRupees: 260000, units: 3, serialTag: 'LEN' },
+  { name: 'NISI Athena 50mm', brand: 'NISI', model: 'Athena Prime 50mm T1.9', categoryCode: 'lens', zoneCode: 'ZONE-LENS-B', dailyRateRupees: 1000, replacementValueRupees: 260000, units: 3, serialTag: 'LEN' },
+  { name: 'NISI Athena 85mm', brand: 'NISI', model: 'Athena Prime 85mm T1.9', categoryCode: 'lens', zoneCode: 'ZONE-LENS-B', dailyRateRupees: 1000, replacementValueRupees: 260000, units: 3, serialTag: 'LEN' },
+  { name: 'Sigma 18-35mm Art', brand: 'Sigma', model: '18-35mm F1.8 DC HSM', categoryCode: 'lens', zoneCode: 'ZONE-LENS-B', dailyRateRupees: 600, replacementValueRupees: 96000, units: 4, serialTag: 'LEN' },
+  { name: 'Sigma 24-70mm Art', brand: 'Sigma', model: '24-70mm F2.8 DG DN', categoryCode: 'lens', zoneCode: 'ZONE-LENS-B', dailyRateRupees: 700, replacementValueRupees: 128000, units: 4, serialTag: 'LEN' },
+  { name: 'Canon CN-E 24mm', brand: 'Canon', model: 'CN-E 24mm T1.5 L F', categoryCode: 'lens', zoneCode: 'ZONE-LENS-B', dailyRateRupees: 1400, replacementValueRupees: 480000, units: 2, serialTag: 'LEN' },
+  { name: 'Canon CN-E 50mm', brand: 'Canon', model: 'CN-E 50mm T1.3 L F', categoryCode: 'lens', zoneCode: 'ZONE-LENS-B', dailyRateRupees: 1400, replacementValueRupees: 480000, units: 2, serialTag: 'LEN' },
+  { name: 'Sony 70-200mm GM II', brand: 'Sony', model: 'FE 70-200mm F2.8 GM OSS II', categoryCode: 'lens', zoneCode: 'ZONE-LENS-B', dailyRateRupees: 900, replacementValueRupees: 210000, units: 3, serialTag: 'LEN' },
+  { name: 'Laowa 12mm Zero-D', brand: 'Laowa', model: '12mm f/2.8 Zero-D', categoryCode: 'lens', zoneCode: 'ZONE-LENS-B', dailyRateRupees: 550, replacementValueRupees: 88000, units: 2, serialTag: 'LEN' },
+  { name: 'DZOFilm Vespid 35mm', brand: 'DZOFilm', model: 'Vespid Prime 35mm T2.1', categoryCode: 'lens', zoneCode: 'ZONE-LENS-B', dailyRateRupees: 850, replacementValueRupees: 175000, units: 3, serialTag: 'LEN' },
+
+  { name: 'Aputure LS 300x', brand: 'Aputure', model: 'LS 300x Bi-Colour', categoryCode: 'lighting', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 900, replacementValueRupees: 145000, units: 4, serialTag: 'LIT' },
+  { name: 'Aputure Nova P300c', brand: 'Aputure', model: 'Nova P300c RGBWW', categoryCode: 'lighting', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 1600, replacementValueRupees: 320000, units: 2, serialTag: 'LIT' },
+  { name: 'Aputure MC Pro 4-Light Kit', brand: 'Aputure', model: 'MC Pro', categoryCode: 'lighting', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 400, replacementValueRupees: 62000, units: 5, serialTag: 'LIT' },
+  { name: 'Nanlite Forza 500B II', brand: 'Nanlite', model: 'Forza 500B II', categoryCode: 'lighting', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 1300, replacementValueRupees: 265000, units: 2, serialTag: 'LIT' },
+  { name: 'Nanlux Evoke 1200B', brand: 'Nanlux', model: 'Evoke 1200B', categoryCode: 'lighting', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 2400, replacementValueRupees: 590000, units: 1, serialTag: 'LIT' },
+  { name: 'Astera Titan Tube 8-Pack', brand: 'Astera', model: 'Titan Tube', categoryCode: 'lighting', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 2000, replacementValueRupees: 480000, units: 2, serialTag: 'LIT' },
+  { name: 'Godox SL200 III', brand: 'Godox', model: 'SL200 III Bi', categoryCode: 'lighting', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 500, replacementValueRupees: 74000, units: 5, serialTag: 'LIT' },
+  { name: 'Aputure Amaran 200x', brand: 'Aputure', model: 'Amaran 200x S', categoryCode: 'lighting', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 450, replacementValueRupees: 58000, units: 6, serialTag: 'LIT' },
+
+  { name: 'Manfrotto Super Clamp', brand: 'Manfrotto', model: '035', categoryCode: 'grip', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 60, replacementValueRupees: 7500, units: 12, serialTag: 'GRP' },
+  { name: 'Avenger Wind-Up Stand', brand: 'Avenger', model: 'A4050', categoryCode: 'grip', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 350, replacementValueRupees: 68000, units: 4, serialTag: 'GRP' },
+  { name: 'Matthews Floppy Flag 24x36', brand: 'Matthews', model: 'Floppy Cutter', categoryCode: 'grip', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 200, replacementValueRupees: 24000, units: 6, serialTag: 'GRP' },
+  { name: 'Sandbag 15lb', brand: 'Matthews', model: 'Sandbag', categoryCode: 'grip', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 50, replacementValueRupees: 4200, units: 12, serialTag: 'GRP' },
+  { name: 'Dana Dolly Kit', brand: 'Dana Dolly', model: 'Portable Dolly', categoryCode: 'grip', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 1500, replacementValueRupees: 280000, units: 1, serialTag: 'GRP' },
+  { name: 'Kupo Grip Head 4in', brand: 'Kupo', model: 'KG series', categoryCode: 'grip', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 70, replacementValueRupees: 8800, units: 10, serialTag: 'GRP' },
+  { name: 'Butterfly Frame 6x6', brand: 'Matthews', model: '6x6 Frame + Silk', categoryCode: 'grip', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 800, replacementValueRupees: 96000, units: 2, serialTag: 'GRP' },
+
+  { name: 'Sachtler Flowtech 75', brand: 'Sachtler', model: 'Flowtech 75 MS', categoryCode: 'support', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 900, replacementValueRupees: 235000, units: 3, serialTag: 'SUP' },
+  { name: 'DJI RS 3 Pro Gimbal', brand: 'DJI', model: 'RS 3 Pro', categoryCode: 'support', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 1200, replacementValueRupees: 128000, units: 3, serialTag: 'SUP' },
+  { name: 'DJI RS 4 Gimbal', brand: 'DJI', model: 'RS 4', categoryCode: 'support', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 1100, replacementValueRupees: 112000, units: 2, serialTag: 'SUP' },
+  { name: 'Easyrig Vario 5', brand: 'Easyrig', model: 'Vario 5 + Flowcine', categoryCode: 'support', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 1400, replacementValueRupees: 320000, units: 1, serialTag: 'SUP' },
+  { name: 'Tilta Shoulder Rig', brand: 'Tilta', model: 'Advanced Shoulder Kit', categoryCode: 'support', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 500, replacementValueRupees: 64000, units: 3, serialTag: 'SUP' },
+  { name: 'Slider 120cm Motorised', brand: 'Zeapon', model: 'Micro 2 Plus', categoryCode: 'support', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 700, replacementValueRupees: 92000, units: 2, serialTag: 'SUP' },
+  { name: 'Jib Arm 3m', brand: 'Proaim', model: 'Wave-2 Jib', categoryCode: 'support', zoneCode: 'ZONE-GRIP-C', dailyRateRupees: 1800, replacementValueRupees: 240000, units: 1, serialTag: 'SUP' },
+
+  { name: 'Sennheiser MKH 416', brand: 'Sennheiser', model: 'MKH 416-P48U3', categoryCode: 'audio', zoneCode: 'ZONE-CAM-A', dailyRateRupees: 700, replacementValueRupees: 135000, units: 4, serialTag: 'AUD' },
+  { name: 'Rode NTG5 Kit', brand: 'Rode', model: 'NTG5', categoryCode: 'audio', zoneCode: 'ZONE-CAM-A', dailyRateRupees: 550, replacementValueRupees: 78000, units: 3, serialTag: 'AUD' },
+  { name: 'Sound Devices MixPre-6 II', brand: 'Sound Devices', model: 'MixPre-6 II', categoryCode: 'audio', zoneCode: 'ZONE-CAM-A', dailyRateRupees: 1200, replacementValueRupees: 195000, units: 2, serialTag: 'AUD' },
+  { name: 'Zoom F6 Field Recorder', brand: 'Zoom', model: 'F6', categoryCode: 'audio', zoneCode: 'ZONE-CAM-A', dailyRateRupees: 800, replacementValueRupees: 108000, units: 2, serialTag: 'AUD' },
+  { name: 'Rode Wireless PRO Kit', brand: 'Rode', model: 'Wireless PRO', categoryCode: 'audio', zoneCode: 'ZONE-CAM-A', dailyRateRupees: 600, replacementValueRupees: 62000, units: 5, serialTag: 'AUD' },
+  { name: 'Sennheiser EW 112P G4', brand: 'Sennheiser', model: 'EW 112P G4', categoryCode: 'audio', zoneCode: 'ZONE-CAM-A', dailyRateRupees: 650, replacementValueRupees: 82000, units: 4, serialTag: 'AUD' },
+  { name: 'Boom Pole Carbon 3m', brand: 'Rode', model: 'Boompole Pro', categoryCode: 'audio', zoneCode: 'ZONE-CAM-A', dailyRateRupees: 150, replacementValueRupees: 22000, units: 5, serialTag: 'AUD' },
+  { name: 'Sony MDR-7506 Headphones', brand: 'Sony', model: 'MDR-7506', categoryCode: 'audio', zoneCode: 'ZONE-CAM-A', dailyRateRupees: 100, replacementValueRupees: 14000, units: 8, serialTag: 'AUD' },
+]
+
+/**
+ * The catalogue, numbered. Sequences run on from the reference products, so
+ * `EQ000234`–`EQ000239` keep their meaning and the rest follow.
+ *
+ * `serialFrom` is spaced 100 apart per product rather than per tag, so no two
+ * products of the same tag can ever mint the same `SN-CAM-0003`.
+ */
+const PRODUCTS: readonly ProductSpec[] = [
+  ...REFERENCE_PRODUCTS,
+  ...CATALOGUE.map((p, i): ProductSpec => ({ ...p, seq: 240 + i, serialFrom: 100 + i * 100 })),
+]
+
 interface LineSpec {
   /** `ProductSpec.seq`. */
   product: number
@@ -232,6 +361,8 @@ interface CrewSpec {
 interface BookingSpec {
   /** Feeds `booking` sequence → `booking_no`. */
   seq: number
+  /** `ClientSpec.seq` — who booked it. */
+  clientSeq: number
   project: string
   /** AD, UTC. Law 7 — BS is rendered from this, never stored. */
   pickupAt: Date
@@ -245,7 +376,20 @@ interface BookingSpec {
   discountReason: string | null
   /** `users.email` of the approver. Law 10 — required above 10%, Owner included. */
   discountApproverEmail: string | null
+  /**
+   * A fixed rupee figure — used by the reference bookings, whose amounts
+   * `Sample Data.md` states.
+   *
+   * Ignored when {@link BookingSpec.paymentShare} is set, which is how every
+   * generated booking pays: a *fraction of what the Financial Engine computed*,
+   * resolved after `price()` has run. Declaring a rupee figure for a booking
+   * whose total this file does not know would be asserting a number the engine
+   * is supposed to produce — and getting it wrong by a rupee makes `outstanding`
+   * negative and stops the build.
+   */
   paymentRupees: number
+  /** 0–1. `1` pays the rental total exactly, which is the only way to reach Closed. */
+  paymentShare?: number
   depositRequiredRupees: number
   depositReceivedRupees: number
   /** Whether the packed units are recorded on `booking_line_units`. */
@@ -264,11 +408,12 @@ function kathmandu(year: number, monthIndex: number, day: number, hour: number, 
   return new Date(Date.UTC(year, monthIndex, day, hour, minute) - NPT_OFFSET_MIN * 60_000)
 }
 
-const BOOKINGS: readonly BookingSpec[] = [
+const REFERENCE_BOOKINGS: readonly BookingSpec[] = [
   {
     // `Sample Data.md`'s reference booking. Its figures are the single
     // assertion that catches most financial defects.
     seq: 715,
+    clientSeq: 34,
     project: 'Annapurna Circuit — documentary shoot',
     pickupAt: kathmandu(2026, 6, 16, 6),
     returnAt: kathmandu(2026, 6, 19, 6),
@@ -307,6 +452,7 @@ const BOOKINGS: readonly BookingSpec[] = [
     // `enforce_booking_discount_stacking()` (0044) all accept a *legal*
     // over-threshold discount, not merely that they reject an illegal one.
     seq: 716,
+    clientSeq: 34,
     project: 'Kathmandu Valley — brand film',
     pickupAt: kathmandu(2026, 7, 1, 8),
     returnAt: kathmandu(2026, 7, 3, 8),
@@ -326,8 +472,28 @@ const BOOKINGS: readonly BookingSpec[] = [
   },
 ]
 
-/** `CL-2026-0034` — the client id `Sample Data.md` fixes by name. */
-const CLIENT = {
+interface ClientSpec {
+  /** Feeds the `client` sequence → `client_code`. */
+  seq: number
+  name: string
+  typeParent: 'Organisation' | 'Individual'
+  /** `client_organisation_subtype`. Null on an Individual — the schema forbids it there. */
+  orgSubtype: string | null
+  phone: string
+  email: string
+  addressLine: string
+  city: string
+  district: string
+  /** `client_segment[]`. */
+  segments: readonly string[]
+  /** `payment_terms`. */
+  paymentTerms: string
+  /** `client_since`, an AD date. */
+  since: string
+}
+
+/** `C-34` — the client id `Sample Data.md` fixes by name. Always first. */
+const REFERENCE_CLIENT: ClientSpec = {
   seq: 34,
   name: 'Sagarmatha Pictures Pvt. Ltd.',
   typeParent: 'Organisation',
@@ -338,31 +504,281 @@ const CLIENT = {
   city: 'Lalitpur',
   district: 'Lalitpur',
   segments: ['Documentary', 'Commercial'],
-} as const
+  paymentTerms: 'Immediate',
+  since: '2024-03-11',
+}
 
-/* ── 1 · deterministic identity ────────────────────────────────────────────*/
+/* ── 0b · the demo corpus ──────────────────────────────────────────────────
+ *
+ * Everything below exists so the screens have something to draw. The reference
+ * corpus above is two bookings — enough to prove the engines, and nowhere near
+ * enough to tell whether a list, a pager, a KPI or a filter works.
+ *
+ * ## It is generated, not typed
+ *
+ * `PLAN.md` Phase 1: *"Seed data generated through the engines, never
+ * hand-typed."* That rule is not about volume, it is about which component
+ * decides a figure — and it binds here exactly as it binds above. Nothing below
+ * states a subtotal, a VAT amount, an outstanding balance, a day count or a
+ * stage path. Each of those still comes out of `buildCorpus`, which runs
+ * `money.ts`, `validation.ts`, `discount.ts` and `workflow.ts` over every one of
+ * these rows and refuses to emit on the first disagreement. What is declared
+ * here is only what a human would have chosen anyway: names, rates, dates, who
+ * booked what.
+ *
+ * ## Deterministic, never random
+ *
+ * No `Math.random`. Every value is an index arithmetic over a fixed pool, so
+ * `npm run seed:sql` is byte-identical run to run — the property `seedUuid`
+ * already gives the identifiers, extended to the corpus itself. A random corpus
+ * would make the emitted migration a diff every time it was regenerated and
+ * would make a failure impossible to reproduce.
+ */
 
-const FNV_OFFSET = 0xcbf29ce484222325n
-const FNV_PRIME = 0x100000001b3n
-const MASK_64 = 0xffffffffffffffffn
+/** `readonly T[]` indexing is `T | undefined` under `noUncheckedIndexedAccess`; the modulo makes it total. */
+function cycle<T>(pool: readonly T[], index: number): T {
+  const value = pool[((index % pool.length) + pool.length) % pool.length]
+  if (value === undefined) fail('cycle() over an empty pool')
+  return value
+}
+
+const ORG_STEMS = [
+  'Himalaya', 'Annapurna', 'Machhapuchhre', 'Gandaki', 'Bagmati', 'Langtang', 'Manaslu', 'Dhaulagiri',
+  'Rara', 'Phewa', 'Gosaikunda', 'Chitwan', 'Lumbini', 'Janaki', 'Newa', 'Kirat', 'Tamang', 'Sherpa',
+  'Everest', 'Kailash',
+] as const
+
+const ORG_KINDS: ReadonlyArray<{ word: string; subtype: string; segments: readonly string[] }> = [
+  { word: 'Films', subtype: 'Production House', segments: ['Feature', 'Documentary'] },
+  { word: 'Media', subtype: 'Broadcaster', segments: ['Corporate'] },
+  { word: 'Studios', subtype: 'Production House', segments: ['Commercial', 'Music Video'] },
+  { word: 'Creatives', subtype: 'Corporate / Agency', segments: ['Corporate', 'Commercial'] },
+  { word: 'Rentals', subtype: 'Rental House', segments: ['Commercial'] },
+  { word: 'College of Media', subtype: 'College / Institution', segments: ['Documentary'] },
+  { word: 'Foundation', subtype: 'Government / NGO', segments: ['Documentary'] },
+  { word: 'Weddings', subtype: 'Corporate / Agency', segments: ['Wedding / Event'] },
+] as const
+
+const PLACES: ReadonlyArray<{ area: string; city: string; district: string }> = [
+  { area: 'Jhamsikhel', city: 'Lalitpur', district: 'Lalitpur' },
+  { area: 'Thamel', city: 'Kathmandu', district: 'Kathmandu' },
+  { area: 'Baluwatar', city: 'Kathmandu', district: 'Kathmandu' },
+  { area: 'Lakeside', city: 'Pokhara', district: 'Kaski' },
+  { area: 'Bharatpur', city: 'Chitwan', district: 'Chitwan' },
+  { area: 'Durbar Square', city: 'Bhaktapur', district: 'Bhaktapur' },
+  { area: 'Traffic Chowk', city: 'Butwal', district: 'Rupandehi' },
+  { area: 'Dharan Road', city: 'Biratnagar', district: 'Morang' },
+] as const
+
+const INDIVIDUALS = [
+  'Rupesh Karki', 'Sunita Gurung', 'Bikash Shrestha', 'Anjali Thapa', 'Prakash Rai',
+  'Nisha Maharjan', 'Deepak Lama', 'Sarita Bhandari',
+] as const
+
+const PAYMENT_TERMS = ['Immediate', '7 days', '15 days', '30 days'] as const
+
+function slug(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
 
 /**
- * FNV-1a, then splitmix64's finalizer. FNV alone avalanches badly on keys that
- * differ only in their last character — `product:EQ000234` and
- * `product:EQ000235` came out sharing their first four hex digits, which looks
- * like a near-collision even though it is not one. The finalizer mixes the
- * whole word so neighbouring keys produce unrelated UUIDs.
+ * 40 clients: the reference one, 31 organisations, 8 individuals.
+ *
+ * Individuals carry `orgSubtype: null` because `0005_clients.sql` constrains
+ * the subtype to organisations — a demo that set one on a person would seed a
+ * row the schema is entitled to reject.
  */
-function fnv1a64(input: string): bigint {
-  let hash = FNV_OFFSET
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= BigInt(input.charCodeAt(i))
-    hash = (hash * FNV_PRIME) & MASK_64
-  }
-  hash = ((hash ^ (hash >> 30n)) * 0xbf58476d1ce4e5b9n) & MASK_64
-  hash = ((hash ^ (hash >> 27n)) * 0x94d049bb133111ebn) & MASK_64
-  return hash ^ (hash >> 31n)
+const CLIENTS: readonly ClientSpec[] = [
+  REFERENCE_CLIENT,
+  ...Array.from({ length: 31 }, (_, i): ClientSpec => {
+    const stem = cycle(ORG_STEMS, i)
+    const kind = cycle(ORG_KINDS, i)
+    const place = cycle(PLACES, i)
+    const name = `${stem} ${kind.word}${kind.subtype === 'College / Institution' ? '' : ' Pvt. Ltd.'}`
+    const seq = 35 + i
+    return {
+      seq,
+      name,
+      typeParent: 'Organisation',
+      orgSubtype: kind.subtype,
+      phone: `+97798${String(11200000 + seq * 137).slice(0, 8)}`,
+      email: `bookings@${slug(stem + kind.word)}.com.np`,
+      addressLine: `${place.area}, ${place.city}`,
+      city: place.city,
+      district: place.district,
+      segments: kind.segments,
+      paymentTerms: cycle(PAYMENT_TERMS, i),
+      since: `202${3 + (i % 3)}-0${1 + (i % 9)}-1${i % 10}`,
+    }
+  }),
+  ...INDIVIDUALS.map((person, i): ClientSpec => {
+    const place = cycle(PLACES, i + 3)
+    const seq = 66 + i
+    return {
+      seq,
+      name: person,
+      typeParent: 'Individual',
+      orgSubtype: null,
+      phone: `+97798${String(41200000 + seq * 211).slice(0, 8)}`,
+      email: `${slug(person)}@gmail.com`,
+      addressLine: `${place.area}, ${place.city}`,
+      city: place.city,
+      district: place.district,
+      segments: [cycle(['Wedding / Event', 'Music Video', 'Documentary'] as const, i)],
+      paymentTerms: 'Immediate',
+      since: `2025-0${1 + (i % 9)}-2${i % 8}`,
+    }
+  }),
+]
+
+/**
+ * The day the app treats as *now* — `bs.ts`'s `TODAY`, 31 Jul 2026.
+ *
+ * Every generated booking is placed relative to this rather than to a real
+ * clock, for the same reason the corpus has no `Math.random`: a seed whose
+ * meaning drifts with the calendar shows an empty Today screen a week after it
+ * was written, and "is Today broken or is the data just old" is not a question
+ * anyone should have to ask. The rental day runs 06:00→06:00, so that is the
+ * hour these land on.
+ */
+const ANCHOR = kathmandu(2026, 6, 31, 6, 0)
+const DAY_MS = 24 * 60 * 60_000
+
+/**
+ * How many bookings sit at each stage, and where their pickup falls relative to
+ * {@link ANCHOR}.
+ *
+ * The windows are what make the screens mean something. `On Rent` reaching back
+ * twelve days against runs of 2–7 days is what puts real rows behind the
+ * **Overdue** chip — bookings out now whose return time has passed — rather
+ * than leaving it an empty state nobody can tell from a broken query. `Packed`
+ * sitting on 0–2 days is what gives Today's outgoing queue and the packing
+ * floor something to show.
+ */
+const STAGE_PLAN: ReadonlyArray<{ stage: BookingStatus; count: number; from: number; to: number }> = [
+  { stage: 'Quote', count: 18, from: 3, to: 30 },
+  { stage: 'Booked', count: 30, from: 1, to: 24 },
+  { stage: 'Packed', count: 16, from: 0, to: 2 },
+  { stage: 'On Rent', count: 24, from: -12, to: -1 },
+  { stage: 'Returned', count: 14, from: -30, to: -8 },
+  { stage: 'Closed', count: 16, from: -60, to: -20 },
+]
+
+const PROJECTS = [
+  'Everest Base Camp Documentary', 'Nepal Tourism Board TVC', 'Kathmandu Street Food Series',
+  'Himalayan Airlines Safety Film', 'Ncell Brand Campaign', 'Chitwan Wildlife Feature',
+  'Wedding — Shrestha / Rai', 'Pathao Nepal Launch Spot', 'Sagarmatha Music Video',
+  'Lumbini Heritage Short', 'Nepal Investment Bank AGM', 'Pokhara Paragliding Promo',
+  'Dashain Family Campaign', 'Annapurna Trek Series', 'Kathmandu Jazz Festival',
+  'Daraz 11.11 Campaign', 'Nepal Cricket Highlights', 'Rara Lake Travel Film',
+  'F1Soft Corporate Profile', 'Thamel After Dark',
+] as const
+
+const CREW_POOL: readonly CrewSpec[] = [
+  { name: 'Anish Tamang', role: 'DoP', dayRateRupees: 8000 },
+  { name: 'Sabina Rai', role: 'Focus Puller', dayRateRupees: 4500 },
+  { name: 'Kiran Magar', role: 'Gaffer', dayRateRupees: 5000 },
+  { name: 'Prabin Shrestha', role: 'Grip', dayRateRupees: 3500 },
+  { name: 'Melina Thapa', role: 'Sound Recordist', dayRateRupees: 5500 },
+  { name: 'Roshan Karki', role: 'Drone Pilot', dayRateRupees: 7000 },
+  { name: 'Dipesh Gurung', role: 'Camera Assistant', dayRateRupees: 3000 },
+  { name: 'Sujata Basnet', role: 'Rental Coordinator', dayRateRupees: 3200 },
+]
+
+/**
+ * `A % n` where the spread is coprime with `n`, so consecutive bookings do not
+ * all land on the same client or the same product. A plain `i % n` would give
+ * client 1 every eighth booking and nothing to the rest.
+ */
+function spread(i: number, size: number, step: number): number {
+  return (i * step) % size
 }
+
+/**
+ * The demo bookings.
+ *
+ * Read what is NOT here: no subtotal, no VAT, no total, no outstanding, no day
+ * count, no stage path. `buildCorpus` derives every one of those by running the
+ * engines over what this returns, and refuses to emit if any disagrees. This
+ * function chooses only what a coordinator would have chosen — who, what, when,
+ * how long, how much was paid.
+ */
+function demoBookings(): readonly BookingSpec[] {
+  const out: BookingSpec[] = []
+  let i = 0
+
+  for (const plan of STAGE_PLAN) {
+    for (let n = 0; n < plan.count; n += 1, i += 1) {
+      const span = plan.to - plan.from
+      const dayOffset = plan.from + (span === 0 ? 0 : spread(n, span + 1, 7))
+      const durationDays = 2 + (n % 6)
+      const pickupAt = new Date(ANCHOR.getTime() + dayOffset * DAY_MS)
+      const returnAt = new Date(pickupAt.getTime() + durationDays * DAY_MS)
+
+      /* 2–5 lines, each a different product, each within its own unit count —
+         `buildCorpus` fails the build on `qty > product.units`, which is the
+         generator's half of §1.6. */
+      const lineCount = 2 + (i % 4)
+      const lines: LineSpec[] = []
+      for (let k = 0; k < lineCount; k += 1) {
+        const product = PRODUCTS[spread(i * 5 + k, PRODUCTS.length, 13)]
+        if (product === undefined) fail('demoBookings: product pool exhausted')
+        if (lines.some((l) => l.product === product.seq)) continue
+        lines.push({ product: product.seq, qty: 1 + ((i + k) % Math.min(3, product.units)) })
+      }
+
+      const crewCount = i % 3
+      const crew = Array.from({ length: crewCount }, (_, c) => cycle(CREW_POOL, i + c))
+
+      /* Law 10. A discount over 10% carries a reason and a named approver, or
+         `validateDiscount` refuses it and nothing is emitted. */
+      const bigDiscount = i % 17 === 0
+      const discountPercent = bigDiscount ? 15 : i % 5 === 0 ? 10 : i % 3 === 0 ? 5 : 0
+
+      /* Closed is not a label here — `closeGates` decides it. A booking may only
+         be Closed with nothing outstanding and its deposit resolved, so these
+         two lines are what make the stage above legal rather than asserted. */
+      const closed = plan.stage === 'Closed'
+      const paymentShare = closed ? 1 : cycle([0, 0.25, 0.5, 0.4], i)
+      const depositRequiredRupees = i % 4 === 0 ? 0 : 5000 * (1 + (i % 4))
+      const depositReceivedRupees = closed ? depositRequiredRupees : i % 3 === 0 ? 0 : depositRequiredRupees / 2
+
+      out.push({
+        seq: 800 + i,
+        clientSeq: cycle(CLIENTS, spread(i, CLIENTS.length, 11)).seq,
+        project: cycle(PROJECTS, i),
+        pickupAt,
+        returnAt,
+        stage: plan.stage,
+        lines,
+        crew,
+        discountPercent,
+        discountReason: bigDiscount ? 'Repeat client, multi-week booking negotiated with the owner' : null,
+        discountApproverEmail: bigDiscount ? 'owner@babinrentals.com' : null,
+        paymentRupees: 0,
+        paymentShare,
+        depositRequiredRupees,
+        depositReceivedRupees,
+        /* ⚠ Deliberately false on every generated booking.
+         *
+         * `booking_line_units` names a specific physical unit, and this
+         * generator does not model which unit is free on which day. Assigning
+         * them by index would put the same `EQ000241-U01` on two bookings whose
+         * dates overlap — a lie the floor screens would render as fact, and
+         * exactly the class of defect `Sample Data.md` says hand-typed demo data
+         * produced. The reference booking keeps its units because its dates are
+         * fixed and its units are named by the spec. */
+        unitsAssigned: false,
+      })
+    }
+  }
+
+  return out
+}
+
+const BOOKINGS: readonly BookingSpec[] = [...REFERENCE_BOOKINGS, ...demoBookings()]
+
+/* ── 1 · deterministic identity ────────────────────────────────────────────*/
 
 /**
  * Law 8 — *"Every write carries a client UUID. Duplicates rejected."* Every
@@ -379,13 +795,132 @@ function fnv1a64(input: string): bigint {
  * the key, which is what an idempotency key is supposed to be.
  */
 export function seedUuid(key: string): string {
-  const high = fnv1a64(`babin-rentals-os/seed/${key}`)
-  const low = fnv1a64(`${key}/babin-rentals-os/seed`)
-  const nibbles = (high.toString(16).padStart(16, '0') + low.toString(16).padStart(16, '0')).split('')
-  nibbles[12] = '4'
-  nibbles[16] = '8'
-  const hex = nibbles.join('')
+  return SEED_UUID_HEX(key)
+}
+
+/**
+ * MD5, in about sixty lines, because **Postgres has the same function**.
+ *
+ * The identity above used to be FNV-1a with a splitmix finaliser — a fine hash
+ * with one disqualifying property: nothing on the database side can reproduce
+ * it. That forced every derivable row to be shipped as a literal, because a
+ * `product_unit` invented by a `generate_series` could not be given the same
+ * `client_uuid` the TypeScript would have given it, and Law 8's idempotency key
+ * would differ between two renderings of one corpus.
+ *
+ * `md5(text)` is in core Postgres and returns the same 32 hex characters this
+ * does, so `md5('product_unit:' || tag)::uuid` in SQL and `seedUuid()` here
+ * agree exactly. That is what lets {@link compactSeedSql} derive units, invoice
+ * lines and stage transitions server-side while staying byte-identical to the
+ * reviewable migration — and it is why this is MD5 rather than a better hash.
+ * Nothing here is a security decision; it is an identity decision, and the
+ * requirement is agreement, not strength.
+ *
+ * ⚠ The version-4 nibble the old scheme forced is gone. These were never random
+ * and stamping a `4` on them said they were. A `uuid` column stores 128 bits;
+ * Postgres does not read the version nibble, and neither does anything here.
+ *
+ * Verified against the live database's own `md5()` on apply — see PROGRESS.md.
+ */
+function SEED_UUID_HEX(key: string): string {
+  const hex = md5Hex(`babin-rentals-os/seed/${key}`)
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`
+}
+
+/** The string Postgres must be handed to reproduce {@link seedUuid} for a key. */
+export function seedUuidSqlKey(keyExpression: string): string {
+  return `md5('babin-rentals-os/seed/' || ${keyExpression})::uuid`
+}
+
+const MD5_S = [
+  7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+  5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+  4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+  6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+]
+
+/** `floor(abs(sin(i + 1)) * 2^32)`, the constants RFC 1321 defines. */
+const MD5_K = Array.from({ length: 64 }, (_, i) => Math.floor(Math.abs(Math.sin(i + 1)) * 4294967296))
+
+function utf8Bytes(input: string): number[] {
+  const out: number[] = []
+  for (const ch of input) {
+    let cp = ch.codePointAt(0) ?? 0
+    if (cp < 0x80) out.push(cp)
+    else if (cp < 0x800) out.push(0xc0 | (cp >> 6), 0x80 | (cp & 0x3f))
+    else if (cp < 0x10000) out.push(0xe0 | (cp >> 12), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f))
+    else {
+      out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f))
+      cp = 0
+    }
+  }
+  return out
+}
+
+function md5Hex(input: string): string {
+  const bytes = utf8Bytes(input)
+  const bitLength = bytes.length * 8
+
+  bytes.push(0x80)
+  while (bytes.length % 64 !== 56) bytes.push(0)
+  // Length appended little-endian, low 32 bits then high 32.
+  for (let i = 0; i < 4; i += 1) bytes.push((bitLength >>> (8 * i)) & 0xff)
+  for (let i = 0; i < 4; i += 1) bytes.push(Math.floor(bitLength / 4294967296) >>> (8 * i) & 0xff)
+
+  let a0 = 0x67452301
+  let b0 = 0xefcdab89
+  let c0 = 0x98badcfe
+  let d0 = 0x10325476
+
+  const rotl = (x: number, c: number): number => (x << c) | (x >>> (32 - c))
+
+  for (let chunk = 0; chunk < bytes.length; chunk += 64) {
+    const m: number[] = []
+    for (let j = 0; j < 16; j += 1) {
+      const o = chunk + j * 4
+      m.push(
+        ((bytes[o] ?? 0) | ((bytes[o + 1] ?? 0) << 8) | ((bytes[o + 2] ?? 0) << 16) | ((bytes[o + 3] ?? 0) << 24)) >>> 0,
+      )
+    }
+
+    let a = a0
+    let b = b0
+    let c = c0
+    let d = d0
+
+    for (let i = 0; i < 64; i += 1) {
+      let f: number
+      let g: number
+      if (i < 16) {
+        f = (b & c) | (~b & d)
+        g = i
+      } else if (i < 32) {
+        f = (d & b) | (~d & c)
+        g = (5 * i + 1) % 16
+      } else if (i < 48) {
+        f = b ^ c ^ d
+        g = (3 * i + 5) % 16
+      } else {
+        f = c ^ (b | ~d)
+        g = (7 * i) % 16
+      }
+      const tmp = d
+      d = c
+      c = b
+      const sum = (a + f + (MD5_K[i] ?? 0) + (m[g] ?? 0)) >>> 0
+      b = (b + rotl(sum, MD5_S[i] ?? 0)) >>> 0
+      a = tmp
+    }
+
+    a0 = (a0 + a) >>> 0
+    b0 = (b0 + b) >>> 0
+    c0 = (c0 + c) >>> 0
+    d0 = (d0 + d) >>> 0
+  }
+
+  const le = (n: number): string =>
+    Array.from({ length: 4 }, (_, i) => (((n >>> (8 * i)) & 0xff).toString(16).padStart(2, '0'))).join('')
+  return le(a0) + le(b0) + le(c0) + le(d0)
 }
 
 /* ── 2 · the corpus, computed ──────────────────────────────────────────────*/
@@ -430,6 +965,8 @@ export interface SeedTransition {
 export interface SeedBooking {
   spec: BookingSpec
   bookingNo: string
+  /** The ruled `C-<n>` of whoever booked it. */
+  clientCode: string
   invoiceNo: string
   paymentNo: string | null
   depositNo: string | null
@@ -451,6 +988,8 @@ export interface SeedBooking {
 export interface SeedCorpus {
   bookings: readonly SeedBooking[]
   products: readonly ProductSpec[]
+  clients: readonly ClientSpec[]
+  /** The reference client, `C-34`. Kept named because `Sample Data.md` names it. */
   clientCode: string
   /** `sequence_key` → the highest counter the corpus consumes. */
   sequenceHighWater: ReadonlyMap<string, number>
@@ -485,8 +1024,10 @@ export function buildCorpus(): SeedCorpus {
   const raise = (key: string, value: number): void => {
     highWater.set(key, Math.max(highWater.get(key) ?? 0, value))
   }
-  raise(SEQUENCES.client.key, CLIENT.seq)
+  for (const c of CLIENTS) raise(SEQUENCES.client.key, c.seq)
   for (const product of PRODUCTS) raise(SEQUENCES.equipment.key, product.seq)
+
+  const clientBySeq = new Map(CLIENTS.map((c) => [c.seq, c]))
 
   const bookings: SeedBooking[] = []
   let invoiceSeq = 0
@@ -496,6 +1037,10 @@ export function buildCorpus(): SeedCorpus {
   for (const spec of BOOKINGS) {
     const bookingNo = recordNo(SEQUENCES.booking, spec.seq)
     raise(SEQUENCES.booking.key, spec.seq)
+
+    const clientSpec = clientBySeq.get(spec.clientSeq)
+    if (!clientSpec) fail(`${bookingNo}: no client with sequence ${spec.clientSeq} in CLIENTS`)
+    const clientCode = recordNo(SEQUENCES.client, clientSpec.seq)
 
     /* Validation Engine — causal order, and the day count itself. Law 9 says
      * days is mandatory on every priced line and explicit; taking it from the
@@ -567,15 +1112,33 @@ export function buildCorpus(): SeedCorpus {
      * the emitted SQL comes out of this one call. */
     const equipment = sumPaisa(lines.map((l) => l.lineTotal))
     const crewTotal = sumPaisa(crew.map((c) => c.lineTotal))
-    const breakdown = price({
+    const priced = {
       equipment,
       crew: crewTotal,
       // §2.1 — "Rs 0 on client pickup". Explicit, not omitted.
       transport: rupees(0),
       discountPercent: spec.discountPercent,
       vatPercent: VAT_PERCENT,
-      payments: rupees(spec.paymentRupees),
-    })
+    }
+
+    /**
+     * A share is resolved against what the engine computed, not against a
+     * figure this file guessed.
+     *
+     * `price()` is called twice on purpose: once to learn the rental total with
+     * nothing paid, then again with the payment that total implies. The
+     * alternative — declaring rupees per booking — means the corpus asserting a
+     * number the Financial Engine is supposed to produce, and a rupee of drift
+     * makes `outstanding` negative and stops the build. `Math.round` keeps it a
+     * whole paisa; `Paisa` is an integer brand.
+     */
+    const unpaid = price({ ...priced, payments: rupees(0) })
+    const payments: Paisa =
+      spec.paymentShare === undefined
+        ? rupees(spec.paymentRupees)
+        : (Math.round(unpaid.rentalTotal * spec.paymentShare) as Paisa)
+
+    const breakdown = price({ ...priced, payments })
 
     if (breakdown.outstanding < 0) fail(`${bookingNo}: payments exceed the rental total`)
 
@@ -634,7 +1197,8 @@ export function buildCorpus(): SeedCorpus {
     invoiceSeq += 1
     raise(SEQUENCES.invoice.key, invoiceSeq)
     let paymentNo: string | null = null
-    if (spec.paymentRupees > 0) {
+    // The engine's figure, not the spec's — a share of zero writes no payment row.
+    if (breakdown.payments > 0) {
       paymentSeq += 1
       raise(SEQUENCES.payment.key, paymentSeq)
       paymentNo = recordNo(SEQUENCES.payment, paymentSeq)
@@ -654,6 +1218,7 @@ export function buildCorpus(): SeedCorpus {
     bookings.push({
       spec,
       bookingNo,
+      clientCode,
       invoiceNo: recordNo(SEQUENCES.invoice, invoiceSeq),
       paymentNo,
       depositNo,
@@ -674,22 +1239,23 @@ export function buildCorpus(): SeedCorpus {
   /* The one figure the specs state independently of this generator. If the
    * reference booking's composition ever stops reproducing §2.8, the seed
    * stops being emitted rather than silently becoming the new truth. */
-  const reference = bookings.find((b) => b.bookingNo === 'BK-2026-0715')
-  if (!reference) fail('BK-2026-0715 is missing from the corpus — Sample Data.md names it as the reference booking')
+  const reference = bookings.find((b) => b.bookingNo === 'B-715')
+  if (!reference) fail('B-715 is missing from the corpus — Sample Data.md names it as the reference booking')
   const mismatches = (Object.keys(REFERENCE_CASE) as Array<keyof PriceBreakdown>)
     .filter((k) => reference.breakdown[k] !== REFERENCE_CASE[k])
     .map((k) => `${k}: corpus Rs ${toRupees(reference.breakdown[k])}, §2.8 Rs ${toRupees(REFERENCE_CASE[k])}`)
-  if (mismatches.length > 0) fail(`BK-2026-0715 does not reproduce Foundation §2.8 — ${mismatches.join('; ')}`)
-  if (reference.itemCount !== 18) fail(`BK-2026-0715 must carry 18 items (Sample Data.md), corpus has ${reference.itemCount}`)
-  if (reference.days !== 3) fail(`BK-2026-0715 must run 3 days (Sample Data.md), corpus has ${reference.days}`)
+  if (mismatches.length > 0) fail(`B-715 does not reproduce Foundation §2.8 — ${mismatches.join('; ')}`)
+  if (reference.itemCount !== 18) fail(`B-715 must carry 18 items (Sample Data.md), corpus has ${reference.itemCount}`)
+  if (reference.days !== 3) fail(`B-715 must run 3 days (Sample Data.md), corpus has ${reference.days}`)
   if (reference.bsPickup !== '1 Shrawan 2083 BS') {
-    fail(`BK-2026-0715 pickup must render as 1 Shrawan 2083 BS (Sample Data.md), bs.ts renders ${reference.bsPickup ?? 'null'}`)
+    fail(`B-715 pickup must render as 1 Shrawan 2083 BS (Sample Data.md), bs.ts renders ${reference.bsPickup ?? 'null'}`)
   }
 
   return {
     bookings,
     products: PRODUCTS,
-    clientCode: recordNo(SEQUENCES.client, CLIENT.seq),
+    clients: CLIENTS,
+    clientCode: recordNo(SEQUENCES.client, REFERENCE_CLIENT.seq),
     sequenceHighWater: highWater,
   }
 }
@@ -776,7 +1342,7 @@ function section(title: string): string {
  */
 export function emitSql(corpus: SeedCorpus): string {
   const out: string[] = []
-  const reference = corpus.bookings.find((b) => b.bookingNo === 'BK-2026-0715')
+  const reference = corpus.bookings.find((b) => b.bookingNo === 'B-715')
   if (!reference) fail('emitSql called without the reference booking')
 
   out.push(`-- =============================================================================
@@ -812,32 +1378,35 @@ begin;
 `)
 
   /* clients */
-  out.push(section('1 · Client'))
-  out.push(`insert into clients (
+  out.push(section(`1 · Clients — ${corpus.clients.length}`))
+  for (const c of corpus.clients) {
+    const code = recordNo(SEQUENCES.client, c.seq)
+    out.push(`insert into clients (
   client_uuid, client_code, type_parent, org_subtype, name, phone, email,
   address_line, city, district, country, payment_terms, client_since,
   segments, preferred_contact_channels, status, created_by
 ) values (
-  ${uuid(seedUuid(`client:${corpus.clientCode}`))},
-  ${txt(corpus.clientCode)},
-  ${txt(CLIENT.typeParent)}::client_type_parent,
-  ${txt(CLIENT.orgSubtype)}::client_organisation_subtype,
-  ${txt(CLIENT.name)},
-  ${txt(CLIENT.phone)},
-  ${txt(CLIENT.email)},
-  ${txt(CLIENT.addressLine)},
-  ${txt(CLIENT.city)},
-  ${txt(CLIENT.district)},
+  ${uuid(seedUuid(`client:${code}`))},
+  ${txt(code)},
+  ${txt(c.typeParent)}::client_type_parent,
+  ${c.orgSubtype === null ? 'null' : `${txt(c.orgSubtype)}::client_organisation_subtype`},
+  ${txt(c.name)},
+  ${txt(c.phone)},
+  ${txt(c.email)},
+  ${txt(c.addressLine)},
+  ${txt(c.city)},
+  ${txt(c.district)},
   'Nepal',
-  'Immediate'::payment_terms,
-  date '2024-03-11',
-  ${textArray(CLIENT.segments)}::client_segment[],
+  ${txt(c.paymentTerms)}::payment_terms,
+  date '${c.since}',
+  ${textArray(c.segments)}::client_segment[],
   array['Email', 'WhatsApp']::preferred_contact_channel[],
   'Active'::client_status,
   ${BILLING}
 )
 on conflict (client_code) do nothing;
 `)
+  }
 
   /* products */
   out.push(section('2 · Products — the catalogue the booking lines price against'))
@@ -868,24 +1437,42 @@ on conflict (asset_code) do nothing;
   }
 
   /* product_units */
-  out.push(section('3 · Product units — one row per physical item'))
-  for (const b of corpus.bookings) {
-    for (const u of b.units) {
+  /*
+   * One row per physical item in the CATALOGUE, not per booked item.
+   *
+   * These used to be emitted from the booking's own units, which meant a
+   * product nobody had booked owned no units at all — and Inventory counts
+   * units, so two thirds of the catalogue would have rendered as a name with
+   * nothing behind it. The unit is a property of the product; being on a
+   * booking is a property of the booking.
+   *
+   * A unit the reference booking packed is `Packed`; everything else is
+   * `In Stock`. That set is read from the corpus rather than assumed, so a unit
+   * cannot be marked Packed by this file while the booking that packed it moved
+   * on.
+   */
+  const packedTags = new Set(corpus.bookings.flatMap((b) => b.units.map((u) => u.assetTag)))
+  const totalUnits = corpus.products.reduce((n, p) => n + p.units, 0)
+  out.push(section(`3 · Product units — ${totalUnits} physical items`))
+  for (const p of corpus.products) {
+    const assetCode = recordNo(SEQUENCES.equipment, p.seq)
+    for (let n = 0; n < p.units; n += 1) {
+      const assetTag = `${assetCode}-U${String(n + 1).padStart(2, '0')}`
+      const serialNo = `SN-${p.serialTag}-${String(p.serialFrom + n).padStart(4, '0')}`
       out.push(`insert into product_units (
   client_uuid, product_id, serial_no, asset_tag, status, condition,
   branch_id, warehouse_id, storage_zone_id, replacement_value, created_by
 ) values (
-  ${uuid(seedUuid(`product_unit:${u.assetTag}`))},
-  ${product(u.assetCode)},
-  ${txt(u.serialNo)},
-  ${txt(u.assetTag)},
-  -- The reference booking is at Packed, so its units are Packed too.
-  'Packed'::inventory_state,
+  ${uuid(seedUuid(`product_unit:${assetTag}`))},
+  ${product(assetCode)},
+  ${txt(serialNo)},
+  ${txt(assetTag)},
+  ${packedTags.has(assetTag) ? `'Packed'` : `'In Stock'`}::inventory_state,
   'Good'::unit_condition,
   ${BRANCH},
   ${WAREHOUSE},
-  ${zone(u.zoneCode)},
-  ${u.replacementValueRupees.toFixed(2)},
+  ${zone(p.zoneCode)},
+  ${p.replacementValueRupees.toFixed(2)},
   ${WAREHOUSE_STAFF}
 )
 on conflict (asset_tag) do nothing;
@@ -910,7 +1497,7 @@ insert into bookings (
   ${uuid(seedUuid(`booking:${b.bookingNo}`))},
   ${txt(b.bookingNo)},
   ${BRANCH},
-  ${client(corpus.clientCode)},
+  ${client(b.clientCode)},
   ${txt(s.project)},
   ${ts(s.pickupAt)},
   ${ts(s.returnAt)},
@@ -1041,8 +1628,26 @@ insert into booking_discounts (
 on conflict (client_uuid) do nothing;
 `)
 
-    /* Invoice. Inserted with the engine's figures; the invoice_lines trigger
-     * then recomputes them with its own arithmetic, which is why the restate
+    /* Invoice — inserted at **Draft**, issued further down. That order is the
+     * whole point, not a stylistic choice.
+     *
+     * This generator used to emit the invoice already `'Sent'` and *then* its
+     * `invoice_lines`, which made the file unappliable. Every `invoice_lines`
+     * insert fires `recalculate_invoice_totals()` (0010), whose internal
+     * `update invoices` is then rejected by `reject_invoice_edit_after_issue()`
+     * (0006):
+     *
+     *   Law 4/finance: invoice INV-… is issued (status Sent) — its figures are
+     *   immutable. Corrections take Void + Credit Note, never a direct edit.
+     *
+     * Both triggers are correct. 0006's own header states the contract the seed
+     * was breaking: the recalc "only fires while status is still 'Draft' in the
+     * intended flow; if lines are ever edited after issue, this trigger
+     * correctly blocks the resulting invoices UPDATE, which is the point."
+     *
+     * So the seed now follows the intended flow — Draft → lines → the engine
+     * restate → issue. The figures are still written on this insert; the
+     * trigger overwrites them with its own arithmetic, which is why the restate
      * block below exists. */
     const dueDate = new Date(s.returnAt.getTime() + 7 * 24 * 60 * 60_000)
     out.push(`insert into invoices (
@@ -1054,9 +1659,11 @@ on conflict (client_uuid) do nothing;
   ${uuid(seedUuid(`invoice:${b.invoiceNo}`))},
   ${txt(b.invoiceNo)},
   ${booking(b.bookingNo)},
-  ${client(corpus.clientCode)},
+  ${client(b.clientCode)},
   ${BRANCH},
-  'Sent'::invoice_status,
+  -- Draft, deliberately. The lines below cannot be added to an issued invoice;
+  -- the issuing UPDATE comes after them and after the restate.
+  'Draft'::invoice_status,
   ${`date '${s.pickupAt.toISOString().slice(0, 10)}'`},
   ${`date '${dueDate.toISOString().slice(0, 10)}'`},
   ${money(b.breakdown.subtotal)},
@@ -1148,6 +1755,22 @@ update invoices set
 where invoice_no = ${txt(b.invoiceNo)};
 `)
 
+    /* …and only now is it issued. Everything above — the lines, the recalc
+     * trigger they fire, the restate — is lawful precisely because the invoice
+     * was still Draft while it happened. */
+    out.push(`-- The figures are final, so the invoice is issued. Draft was never a fiction:
+-- it is the only window in which recalculate_invoice_totals() and the restate
+-- above may touch these columns at all. reject_invoice_edit_after_issue()
+-- (0006) lets this statement through because OLD.status is still 'Draft' — and
+-- 'status' is not one of the columns it protects once issued.${
+      b.paymentNo === null
+        ? ''
+        : `\n-- ${b.invoiceNo} moves on to Partially Paid when the payment below lands;\n-- sync_payment_to_invoice() (0010) owns that status, not this seed.`
+    }
+update invoices set status = ${txt(INVOICE_ISSUED_STATUS)}::invoice_status
+where invoice_no = ${txt(b.invoiceNo)};
+`)
+
     /* Law 5 — the deposit, in its own liability account. */
     if (b.depositNo !== null) {
       out.push(`-- Law 5: deposits are liabilities. security_deposits is a separate account
@@ -1159,7 +1782,7 @@ insert into security_deposits (
   ${uuid(seedUuid(`security_deposit:${b.depositNo}`))},
   ${txt(b.depositNo)},
   ${booking(b.bookingNo)},
-  ${client(corpus.clientCode)},
+  ${client(b.clientCode)},
   ${BRANCH},
   ${money(rupees(s.depositRequiredRupees))},
   ${BILLING},
@@ -1195,7 +1818,7 @@ on conflict (movement_no) do nothing;
   ${txt(b.paymentNo)},
   ${booking(b.bookingNo)},
   ${invoice(b.invoiceNo)},
-  ${client(corpus.clientCode)},
+  ${client(b.clientCode)},
   ${BRANCH},
   ${money(b.breakdown.payments)},
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.

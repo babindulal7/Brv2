@@ -2,6 +2,2315 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-08-12 (end) — Sign-in resolves to Owner, and the lists fill
+
+**Status:** verified by query, still not by eye. Migrations **0056–0058** applied live and now
+present in `supabase/migrations/`.
+
+`owner@babinrentals.com` was replaced with `babindulal7@gmail.com` in Supabase Auth. Sign-in
+then worked and every list was **still empty**, one layer deeper than before: a real JWT, but
+no `public.users` row for the new identity, so `auth_user_role()` resolved `Client`.
+
+Three things had to line up, and each failed silently on its own:
+
+| | |
+|---|---|
+| **0056** | `auth_user_role()` → SECURITY DEFINER. The role resolver read `users` under the policies that call it. |
+| **0057** | `users_select_own` accepts `auth.uid()`. Without it the app's own profile read returned nothing and `loadProfile` fell back to `Client` — Owner session, Client UI. |
+| **0058** | A staff row for the new auth id. 0041's identity contract is not a foreign key, so a dashboard-created account has no staff row and nothing says so. |
+
+Verified as `authenticated` with no pre-request GUC — the way the browser actually asks:
+profile **Babin Dulal / Owner** · bookings **120** · clients 41 · products 56 · units 192 ·
+invoices 120 · lines 419.
+
+### The shape of every bug in this stretch
+
+All four — the dev credential fallback, 0056, 0057, 0058 — produce the **same symptom from
+different layers**: a fully-drawn app over empty lists, HTTP 200, no error, correct-looking
+empty states. Nothing in the stack is designed to say "you are less privileged than you think".
+When a screen is empty here, establish WHO THE DATABASE THINKS YOU ARE before anything else:
+
+```sql
+select auth.uid(), auth_user_role(), (select count(*) from bookings);
+```
+
+⚠ **Two migrations were silently rolled back by their own verification.** `execute_sql` runs a
+call as ONE transaction, so a trailing `begin … rollback` used to check the result also undoes
+the DDL or insert above it. It looked like the change had no effect. Apply and verify in
+SEPARATE calls — this cost two wrong conclusions in one session.
+
+## 2026-08-12 (last) — "Still empty": the dev credential fallback
+
+**Status:** cause found and confirmed from request logs. One migration applied on a **wrong**
+diagnosis before that — see below.
+
+### The app was signed in and anonymous at the same time
+
+With 120 bookings in the database, every list rendered empty. `edge_logs` settled it in one
+query:
+
+| field | value |
+|---|---|
+| `response.status_code` | 200 |
+| `response.headers.content_range` | `*/0` — zero rows |
+| `request.headers.authorization` | *(empty)* |
+| `request.sb.auth_user` | *(empty)* |
+
+No JWT. Every request ran as `anon`, `auth.uid()` was null, `auth_user_role()` returned
+'Client', RLS returned nothing — **with a 200 and no error**, so nothing looked broken.
+
+The cause is in `lib/auth.tsx`, and it documents itself: a **dev credential fallback** accepts
+`owner@babinrentals.com` / `babindulal7@gmail.com` with `123` or `123123` and calls `setUser()`
+**without contacting Supabase Auth**. Its own `console.warn` says *"There is no JWT, so every
+query runs as `anon` and RLS will return empty results."* That is exactly what happened.
+
+Signing in with the account's real password fixes it. Nothing in the database was wrong.
+
+### Fixed — the state is now on the screen
+
+`auth.tsx` already carried forty lines of comment and a loud `console.warn` saying exactly this
+would happen. It still happened, twice. So the fix is not another warning:
+
+- `AuthContextType.sessionless` — a `user` with no Supabase session behind it. Set only by the
+  two `import.meta.env.DEV` doors, so `vite build` drops it from a production bundle.
+- `components/shell/SessionlessBanner.tsx`, rendered in `App.tsx` **above** the header, beside
+  the existing `OfflineBanner`: *"Dev sign-in — no database session … every list will be empty
+  no matter what the database contains."*
+
+Above the header on purpose — it explains why everything below the header is empty, so it has
+to be read before the empty thing is. A console nobody has open cannot carry that; the screen
+is the one place the person being misled is definitely looking.
+
+The doors are kept. They are genuinely useful for driving layout, gating and refusal paths —
+they are only worthless for verifying that data arrives, and now the app says so.
+
+`tsc --noEmit` clean · `vitest` **71 files / 1776 tests green**.
+
+### 0056 — applied on a diagnosis that was not confirmed
+
+`auth_user_role()` was SECURITY INVOKER, so resolving a role meant reading `users` under the
+policies that call it — a cycle broken only by 0041's pre-request GUC. That is real, and 0056
+makes the function SECURITY DEFINER so the resolver sits outside the policies that depend on
+it. It is defensible on its own merits and is now robust if the hook ever fails.
+
+**But it was not the cause of the empty screens, and it was applied to the live project before
+that was established.** The test used to justify it simulated an authenticated JWT — which the
+app was never sending. Recorded here rather than left looking like a fix that worked.
+
+Revert is one `create or replace` back to SECURITY INVOKER if it is not wanted.
+
+### Method note
+
+The request logs answered this in a single query and were available from the first symptom.
+Two diagnoses were offered before reading them, both wrong. **Read `edge_logs` before theorising
+about RLS** — status, `content_range` and the auth headers together say whether the query ran,
+whether it was authenticated, and whether it matched anything.
+
+## 2026-08-12 (later still) — The database is no longer empty
+
+**Phase:** PLAN.md Phase 1's last checklist line · **Status:** applied to the live project with
+explicit approval. 120 bookings, 40 clients, 56 products, 192 units.
+
+### What was actually wrong
+
+The schema was fully migrated (0001–0054) and held **reference data only** — branches, users,
+categories, one client, and not one booking, product or invoice. The ~17 screens that read
+Postgres were all rendering empty states correctly; there was nothing to render.
+
+Two things blocked the obvious fix:
+
+- **0047 is a verification corpus, not a demo one.** Two bookings, one client, six products.
+  Applying it would have proved the engines and filled nothing.
+- **0055 had a fatal ordering bug**, found by applying it. It rewrote `BK-2026-0715` → `B-715`
+  *before* dropping the retired CHECKs — and those CHECKs carry the **same names** it drops
+  (`bookings_booking_no_format`, `clients_client_code_format`), so the rewrite was judged
+  against the pattern it was replacing and aborted the whole migration:
+
+  > ERROR 23514: new row for relation "clients" violates check constraint
+  > "clients_client_code_format" · DETAIL: Failing row contains (…, C-102, …)
+
+  Corrected in the file: drop, then rewrite, then add. It applied cleanly after that.
+
+### The corpus is generated, not typed
+
+`src/lib/seed.ts` grew a demo corpus beside the reference one. Nothing added declares a
+subtotal, a VAT amount, an outstanding balance, a day count or a stage path — `buildCorpus()`
+still runs `money.ts`, `validation.ts`, `discount.ts` and `workflow.ts` over every row and
+refuses to emit on the first disagreement. What is declared is what a coordinator would have
+chosen: who, what, when, how long, how much was paid.
+
+Three constraints shaped the data rather than decorating it:
+
+- **`closeGates` decides what may be Closed**, so the generator cannot label a booking Closed
+  unless its outstanding is zero *and* its deposit is resolved. Payments are therefore declared
+  as a **share of what the engine computed**, resolved after `price()` runs — declaring rupees
+  for a total this file does not know would be asserting the engine's own output, and a rupee
+  of drift makes `outstanding` negative and stops the build.
+- **`unitsAssigned` is false on every generated booking.** `booking_line_units` names a
+  specific physical unit and this generator does not model which unit is free on which day;
+  assigning by index would put one `EQ000241-U01` on two overlapping bookings — a lie the floor
+  screens would render as fact. The reference booking keeps its units; its dates are fixed and
+  `Sample Data.md` names them.
+- **Dates are anchored to `bs.ts`'s `TODAY` (31 Jul 2026), never to a real clock.** A seed whose
+  meaning drifts with the calendar shows an empty Today screen a week later, and "is Today
+  broken or is the data just old" is not a question anyone should have to ask.
+
+### Getting 1.8 MB through a tool call
+
+The readable migration is 1.8 MB — right for review, impossible to transport. `seedCompact.ts`
+renders the **same corpus** at 97 KB, and the seed rows landed from that. Two things do it:
+one `values` list per table joined to reference data by natural key, and letting the database
+derive what is mechanically derivable — product units from `generate_series`, invoice lines
+from the booking lines already loaded, the stage walk from one target stage per booking.
+
+That last part needed `seedUuid` to change. It was FNV-1a + splitmix, which **nothing on the
+database side can reproduce**, so a row invented by `generate_series` could not carry the
+`client_uuid` the TypeScript would have given it. It is now MD5 — sixty lines of it, written
+here because there is no `@types/node` in this project — chosen for one reason: Postgres has
+`md5()`. `md5('babin-rentals-os/seed/' || key)::uuid` and `seedUuid(key)` were checked against
+the live database on five keys and agree exactly. Law 8's idempotency now survives either
+rendering.
+
+`booking_discounts` and `audit_events` are the two tables the compact rendering skips. The
+discount is already on the invoice — percent, amount, reason, approver — which is what the
+screens read.
+
+⚠ **A stage-machine ordering trap, for whoever seeds next.** A single multi-row insert into
+`booking_stage_transitions` does **not** promise `apply_booking_stage_transition()` will see
+the rows in the order the `ORDER BY` produced them, and it rejects a transition that precedes
+the booking's previous one. Inserting one stage per pass — every Quote row, then every Booked
+row — is what makes it land.
+
+### Verified against what actually landed, not against intent
+
+| | |
+|---|---|
+| B-715 items × days | **18 × 3** — `Sample Data.md`'s reference booking |
+| B-715 equipment | **Rs 60,750** — Foundation §2.8 |
+| B-715 crew | **Rs 72,000**, completing the Rs 132,750 subtotal |
+| B-715 invoice total | **Rs 139,506** — §2.8 |
+| B-715 outstanding | **Rs 124,506** after its Rs 15,000 advance |
+| Invoices at zero outstanding | **16** — exactly the 16 Closed bookings |
+| Closed bookings carrying a balance | **0** — `closeGates` holds in the database |
+
+Row counts match the corpus exactly: 120 bookings · 418 booking lines · 393 transitions · 120
+invoices · 497 invoice lines · 93 payments · 89 deposits · 64 movements · 192 units · 40
+clients (41 with the pre-existing `C-102`, rewritten from `CL-2026-0102` by 0055).
+
+Stages: Booked 31 · On Rent 24 · Quote 18 · Packed 17 · Closed 16 · Returned 14. Of those On
+Rent, **14 are overdue** against the 31 Jul anchor and 10 are still out — so the Overdue chip
+has real rows behind it rather than an empty state nobody can tell from a broken query.
+
+`tsc --noEmit` clean · `vitest` **63 files / 1687 tests green**.
+
+⛔ **Still not driven in a browser.** The app renders and stops at the sign-in wall;
+`VITE_DEV_AUTH_BYPASS` is commented out in `.env.local` and flipping an auth setting is not
+mine to do. Every figure above was read back out of Postgres, which is a stronger check than a
+screenshot — but nobody has yet *looked* at these rows on a screen.
+
+## 2026-08-12 — Four of the five open decisions ruled, and implemented
+
+**Phase:** closes `PLAN.md` §4.23, §4.24, §4.25, §4.26 · **Status:** all four built and tested.
+§4.27 remains open, now with a recommendation.
+
+### §4.23 — a waiver needs an approver too
+Ruled: the asymmetry with Law 10 was **not intended**. A late-fee waiver now requires a named
+Manager or Owner, exactly as a discount above 10% does — both give money away.
+
+**No threshold**, deliberately. Law 10's gate is a *percentage* and a waiver has no base to take
+one of, so the only non-arbitrary line is "all of them"; picking a rupee figure would have been
+inventing the decision §4.23 was asked to settle. Any staff may still *raise* a waiver; the
+approver signs it, and both names reach the audit log with the reason.
+
+### §4.24 — one day's rate is the whole booking, and transport is billed two ways
+Ruled: equipment **and** crew **and** transport. The question had assumed transport is always
+flat; it is not, and `TransportBilling` now models both modes:
+
+| Transport billed | Contributes to a late day | Why |
+|---|---|---|
+| **per day** | in full, undivided | already a daily figure; the vehicle was held one day longer |
+| **flat** | nothing | a delivery run quoted once does not happen again because the return was late |
+
+`bookingDayRate()` is the aggregator `money.ts` said existed nowhere in `src/`. Equipment and
+crew are booking totals so they divide by rental days; per-day transport does not. `DAY_RATE_BASIS`
+still renders under the figure.
+
+### §4.25 — country is optional too
+The whole address block is now fill-in-later. The required set on Add Client is exactly **name
+and phone**. The incoherence this section flagged — saveable with a country but no city — is gone
+because the last gate went with it. Format checks untouched: optional never meant unvalidated.
+
+### §4.26 — Nepali is on
+Overruled my refusal to translate, so: `@fontsource/asar` and `@fontsource/hind` installed,
+catalogue filled, `canEnable('ne')` true, and Settings ▸ Language is a real setting.
+
+**Installing the faces corrected a mistake I had shipped.** The first draft assumed Hind was
+weight-poor like Asar and clamped 700 → 600. Checking the package: **Asar ships only 400** (the
+spec's warning was right) but **Hind ships 300/400/500/600/700**, so body text needs no clamp at
+all — only headings do. `safeWeight` is fixed and the invariant test now sweeps 100–900.
+
+`loadNepaliFonts()` imports the **per-subset** files, not the barrel, so §4.3.7's payload rule
+holds — an English-only user downloads nothing. `applyLanguage()` swaps the `--font-ne-*` pair
+`theme.css` already declared and sets `<html lang>`, which is what a screen reader switches voice
+on.
+
+**Two things to keep visible:** the catalogue is **17 keys** — it covers the machinery, not the
+app — and **a native speaker should review the wording** before staff see it. The terms lean on
+standard business Nepali (`मौज्दात` for inventory over the literal `सामान सूची`; `पात्रो` for the
+calendar, since that screen's whole point is BS) and those are judgement calls an operator may
+overrule. The per-table layout pass is still outstanding: `सुरक्षित गर्नुहोस्` is ~2.5× `Save`.
+
+### §4.27 — still open, with a recommendation
+No ruling given, so it stays open. I added the counter-argument to the option most likely to be
+picked by default: **a standing discount is not applied once, it is applied on every future
+booking, silently** — so the carve-out gives away more money over time with less record than the
+per-booking case Law 10 already governs. Recommendation is to grow the schema
+(`standing_discount_reason`, `standing_discount_approver_id`) and apply Law 10 unchanged.
+
+### Verified
+`tsc --noEmit` clean in everything I touched. `vitest` **1,679 / 1,680**.
+
+The one failure is a 5-second **timeout** in `rentalsList.render.test.tsx` — the concurrent
+session is mid-rewrite of `RentalsList.tsx` (+1,312/−1,022) against an unchanged test, and the
+full run took 482s against 108s earlier, so the box is loaded. Not mine, and not a logic failure.
+
+Not browser-verified: same hidden-pane renderer stall as the previous entries. The Nepali font
+swap in particular is worth a real browser check when the pane is available — a font-family
+swap is exactly the kind of thing jsdom cannot confirm.
+
+## 2026-08-12 — Wiring, actions: the eight priority buttons now persist
+
+**Phase:** `WIRING_PLAN_12Aug2026.md` §4 · **Status:** implemented; **not yet driven**
+
+### What changed
+All eight actions the plan ranks by damage now write, and carry `implemented: true`:
+`recordPayment` · `confirmRental` · `packRental` · `handoverRental` · `returnRental` ·
+`completeReset` · `createClient` · `blockClient`. Before this they threw
+`ActionNotImplementedError`, which was honest but meant no button in the app saved anything.
+
+Also landed: `components/ui/ReportToolbar.tsx` (the shared date-range · branch · compare · CSV ·
+print bar Wave 4 needs), and the Law 6 fix on `CasesQueue`.
+
+### Verified by me, directly
+- `npx vitest run` → **63 files, 1675 tests passed, exit 0, zero unhandled errors.**
+- `npx tsc --noEmit` → **red, in two files this work never touched** — see the concurrency note.
+- Each implemented action's write target was traced to a real table and checked column-by-column
+  against the live database: every NOT NULL column is supplied. `next_document_number(p_sequence_key text)`
+  and `sync_payment_to_invoice()` both exist with exactly those signatures.
+- **Not driven.** Still the outstanding requirement.
+
+### Two implementations worth reading before touching them
+- **`confirmRental` does not UPDATE `bookings.stage`, because it cannot.**
+  `0021_forward_only_stage_transitions.sql:199` revokes the column, and `0002_bookings.sql:80`
+  says it outright: the column is a read model "written ONLY by that table's trigger; a direct
+  UPDATE is rejected". Confirming is therefore one INSERT into `booking_stage_transitions`, and
+  `trg_apply_booking_stage_transition` moves the stage.
+- **`recordPayment` refuses offline rather than queueing.** Its own words: *"a receipt for money
+  the ledger has not recorded is worse than no receipt."* The payment method is composed into
+  `notes` because there is no `payment_method` column — `bank_account_id` maps to
+  `bank_accounts.channel_group`, which the desk does not use. Documented, not invented.
+
+### A flaky Law 6 test, found and fixed
+`casesQueue.money.test.tsx` failed roughly **one run in five, in isolation**, with
+`Test timed out in 5000ms`. Cause: `CasesQueue.tsx` is 1023 lines, a jsdom mount cost 2.4–6.1s,
+and the file mounted **twenty times** — four read-only assertions × five money-blind roles.
+
+A Law 6 test that fails one run in five is worse than no test: it trains whoever sees it red to
+re-run rather than to look. Fixed by mounting **once per role** and sharing that render across
+the four assertions — they are read-only, so nothing was weakened and each is still its own
+named `it`. Twenty mounts became five: the Owner mount went 2380ms → 1279ms and the
+button-driving test 5175ms → 2582ms. That one test keeps an explicit 20s budget, because its
+cost is inherent to clicking every control on the page; the budget was raised there and nowhere
+else, so the mount cost stayed visible instead of being hidden behind a blanket timeout.
+
+### A real defect behind a red gate
+`npx vitest run` was exiting 1 with five `MissingAPIError: IndexedDB API missing` rejections
+while every test passed. It was not a test artefact. `offlineQueue.ts:78` constructs its Dexie
+instance at module scope and the file then ran `void drainQueue()` on import whenever `window`
+existed and the browser was online — and `dataAccess.ts` imports that module for
+`enqueueMutation`, so merely importing the data layer started a drain. Two faults:
+`indexedDB` was assumed rather than checked (jsdom has none; a storage-blocked browser can
+withhold it), and `void` discarded the rejection, so the failure surfaced with no stack pointing
+at the cause and nothing able to act on it. Now guarded on `typeof indexedDB !== 'undefined'`
+and routed through a helper that logs which trigger failed. No test was touched to green this.
+
+### ⚠ Concurrency — the reason `tsc` is red
+Another session is **actively rewriting two files right now**, and every one of the 20 `tsc`
+errors is in them:
+- `src/modules/rentals/RentalsList.tsx` — modified 17:55, checked at 17:57. Mid-refactor moving
+  filters into `useSearchParams` + a `useFilters` hook; it references `useFilters`, `setFrom`,
+  `setTo`, `setStatusFilter` and `filterGroupCount`, none of which exist yet.
+- `src/modules/inventory/StockCheck.tsx` — modified 14:02 against a `data/stockCheck.ts` last
+  written at 10:53; it imports `unitState`, `STOCK_CHECK_STATE_META`, `StockCheckUnitState` and
+  an `ExpectedUnit.confirmedMissing` field that the data module does not export.
+
+Neither file is this work's. Both contracts are reconstructable from their usage, and both were
+**deliberately left alone** — completing another session's half-finished feature from the outside
+is how two sessions produce one mess. The test suite is green because vitest does not typecheck.
+
+---
+
+## 2026-08-12 (later) — The filter system: verifying `filters.zip`, then building the rest
+
+**Phase:** shared list infrastructure (WIRING_PLAN §2) · **Status:** the component layer is
+built, tested and wired on one screen. Per-page conversion is not started.
+
+### The handoff's "Applied this session" table was not applied to this repo
+
+`updated mds/filters.zip` carries `FILTER_SPEC_RECONCILIATION.md` and four source files. The
+doc lists five changes as landed and reports `tsc` 0 errors with **251 tests over 10 files**.
+Checked against this tree:
+
+| Claim | Actual |
+|---|---|
+| `FilterDrawer.tsx` built | **Absent.** No file, no import, no reference anywhere in `src/` |
+| `useFilters.ts` + its test built | **Absent** |
+| Badge counts groups (§6) | Absent — there was no badge |
+| Chip overflow `+N more` (§8) | Absent |
+| Drawer width 360 (§22) | Absent |
+| Both rails sticky | **Absent.** `CollapsibleAside` was still `position: relative` |
+| `251 passed / 10 files` | This repo had **1538 tests over 58 files** |
+
+So the zip is undelivered work, produced against a partial copy of the codebase, not a record
+of changes made here. Two things follow from that and both mattered:
+
+1. **Its `CollapsibleAside.tsx` is a regression if applied wholesale.** It defaults the rail
+   collapsed on phone only; this repo's version also covers **tablet**, with the reason on
+   record (768–1179 is this product's actual target device, and a 210–300px rail beside
+   `minmax(0,1fr)` squeezes the content column to nothing). The sticky change was taken; the
+   tablet default was kept.
+2. **Its sticky panel would have clipped its own collapse handle.** The handle sits at
+   `right: -12`, outside the box, and `overflow-y: auto` computes `overflow-x` to `auto` too
+   (CSS overflow §3), so the handle is clipped at the edge it straddles. Fixed by splitting the
+   sticky box from the scrolling box — the handle lives on the outer one.
+
+**The Filter System v1.0 spec itself is not in this workspace.** Every `§` reference in that
+doc — and in the code below — is to a document that exists only in whatever session it was
+uploaded to. Nothing here could be checked against the source; the reconciliation's paraphrase
+was taken at its word.
+
+### Built
+
+| File | What it is |
+|---|---|
+| `components/ui/FilterDrawer.tsx` | The panel, `FilterButton`, `ActiveFilterChips`, and `FilterOptionList` (§9 + §10) |
+| `lib/queries/filterParams.ts` | **§18** — filters ⇄ query string |
+| `lib/queries/useFilters.ts` | One page's filter state; §6 badge, §18 sync, §15 apply mode |
+| `lib/queries/facetCounts.ts` | **§10** — per-option counts |
+
+**§18 URL sync is the one worth the space.** Refresh keeps the filters, Back undoes one, and a
+narrowed list is a link. Three decisions inside it:
+
+- **The URL is the state, not a mirror of it.** With `url` on, `filters` is *derived* from
+  `useSearchParams`, so a Back moves the UI with it and no effect is involved. A mirrored copy
+  is where the classic "Back moves the URL but not the screen" bug lives.
+- **A page declares the columns it owns.** Treating every unknown param as a chip group would
+  have sent `tab IN ('money')` to Postgres off a `?tab=` link. Foreign params are preserved.
+- **The first keystroke pushes, the rest of the burst replaces.** Replacing every keystroke
+  looks right and is not — the entry being overwritten is whatever came before the search,
+  usually a chip, so Back skips past that too. One word of typing is one Back. This was caught
+  by a test that failed, not by reading the code.
+
+**§15's Apply is opt-in per PAGE, not per control** (`mode: 'apply'`). That is the resolution to
+open question A: yesterday's "live everywhere" stays the default, §15's hybrid is available for
+Reports when it converts, and nobody has to work out which control in a panel is which. Sort
+commits immediately even in apply mode — a column header that reorders nothing until you find a
+button in a panel you did not open reads as broken.
+
+**§10's counts drop the group's own selection before counting.** Otherwise ticking Open drives
+every sibling to 0, the group can only ever be narrowed, and `Packed 0` is false — what is true
+is "0 rows are Packed *and* Open", which nobody reads it as. A failed count is `null` and
+renders as a dash, never 0.
+
+**Open question B is resolved the non-closing way.** Click-outside does not dismiss on desktop
+— with a live list every click on a row would close the panel mid-filter, and §5's own
+"table remains usable for context" only holds if it does not. Phone keeps the scrim and the
+tap-away, because at that width there is no "beside".
+
+### `--header-h` did not exist
+
+`CollapsibleAside` and the new drawer both offset by `var(--header-h, 64px)`, and the variable
+was **defined nowhere** — so every sticky rail fell back to 64px against a `Header.tsx` that
+measures 59 (10px padding × 2, a 38px tallest child, 1px border). Now a token, and `Header.tsx`
+sets its own `min-height` *from* it so the two cannot drift apart again.
+
+### Wired on one screen — Rentals
+
+`RentalsList.tsx` had a disabled **More Filters** button whose reason read *"no filter drawer
+exists yet"*. That is now the real button. The `FilterRailToggle` rail is deleted: it took a
+grid column at desktop and reflowed under the list below 1180, and the drawer is `position:
+fixed`, so the grid is `minmax(0,1fr)` at every width and the table gets the space back.
+
+**Rentals now holds no filter state of its own** — `chip`, `statusFilter`, `from`, `to` and
+`page` are all `useFilters`, so `/rentals?quick=Overdue&stage=Booked` is a working link and
+Back undoes one decision. `rentalsQuery` still owns the chip-vs-status intersection; the hook
+only holds the inputs. `perPage` rides the URL as `?per=` but is deliberately **not** a
+declared extra: it narrows nothing, so it must not reach the badge or the chip row, and
+undeclared params are preserved untouched anyway.
+
+Two things the conversion forced into the shared layer, both from tests that failed:
+
+- **`extras`** — non-column params. Rentals' twelve quick-filter chips are named presets, not
+  values of a column: `Overdue` means "out now, past its return time, never actually returned",
+  which `rentalsQuery` expands into a date comparison and two presence flags. Putting `quick`
+  in `chips` would have sent `view IN ('Overdue')` to Postgres against a column that does not
+  exist. An extra round-trips as an opaque string, never reaches `ListFilters`, and still
+  counts in the badge, shows in the chip row and clears with Clear all — because it is a filter
+  to the operator even though it is not one to the query.
+- **`allow`** — a declared vocabulary per param. `?stage=Nonsense` was being validated away on
+  the path to `rentalsQuery` while the badge still counted it and the chip row still showed it:
+  "2 filters" over a list narrowed by nothing. Dropping unknown values at the *parser* is what
+  makes the count, the chips and the query read one vocabulary. Rentals declares
+  `{ stage: STATUS_ORDER, quick: Object.keys(CHIP_MEANS) }`.
+
+Clear all writes the filters and the extras in **one** navigation, so undoing it takes one
+press of Back rather than two.
+
+### Verified
+
+- `tsc --noEmit` — **no new errors.** Four remain in `modules/inventory/StockCheck.tsx`
+  (`unitState`, `STOCK_CHECK_STATE_META`, `StockCheckUnitState`, `confirmedMissing` are
+  imported and not exported). Pre-existing, from another session's in-flight work, untouched.
+- `vitest run` — **63 files / 1687 tests green**, from a 58 / 1538 baseline that had 2 failing
+  (`Finance.restricted`, since fixed by the other session). 93 new tests: 33 `useFilters`, 29
+  `filterParams`, 24 `FilterDrawer`, 5 `facetCounts`, plus 6 on the Rentals screen for §18.
+  ⚠ One run reported a file failing with zero failing tests and the next three did not — the
+  other session was writing during it. Consecutive clean runs are what the number above is.
+- **Three of those tests found real bugs rather than confirming the code.** The search box
+  pushed no history entry of its own, so Back skipped past the chip before it; an invalid
+  `?stage=Nonsense` was filtered out of the query while still being counted by the badge and
+  drawn in the chip row; and the pager's "clamp a stale page" effect fired before the count
+  arrived, so `?page=3` was rewritten to page 1 on load and a second query ran behind it —
+  latent while `page` began life at 1 in local state, reachable the moment it came from a URL.
+- The page-clamp test was itself **rewritten after it passed**: the first version asserted the
+  query carried the URL's page, which held with or without the fix. It now sets its own row
+  count so page 3 genuinely exists, and was confirmed to fail with the guard removed.
+- One existing test was **rewritten, not deleted**: `rentalsList.render.test.tsx`'s tablet case
+  asserted the rail reflows under the list. There is no rail now, so it asserts the claim the
+  ruling was actually protecting — the filters must not become unreachable on a tablet — by
+  clicking the button and checking the panel opens.
+- ⛔ **Not driven in a browser.** The dev server runs and the app renders, but it stops at the
+  sign-in wall and `VITE_DEV_AUTH_BYPASS` is commented out in `.env.local`. CLAUDE.md's "verify
+  by driving the app" is **not** satisfied for this change. The drawer's behaviour is covered by
+  24 jsdom tests over the real component instead — scrim on phone only, no scroll lock on
+  desktop, Escape closes, outside-click does not, §20's slide, §9's threshold, §10's dash.
+
+## 2026-08-12 — Spec items 5–8: late fees, damage, expenses, EN/NE
+
+**Phase:** `EDIT_AND_GAPS_SPEC_v1.md` §5 items 5–8 · **Status:** 5 and 6 built; 7 was already
+built by a concurrent session; 8's machinery built, its catalogue deliberately not.
+
+### Two of the spec's premises were already stale
+Worth recording, because both would have caused duplicate work:
+
+- **§4.2 "there is no `lateFee.ts` — the calculation has no home yet."** It has one:
+  `money.ts:289` already implements the locked bands and `money.test.ts:399` already pins the
+  three boundaries. `lib/lateFee.ts` therefore **re-exports** the calculation rather than
+  restating it — a second source for a figure that lands on an invoice is the failure mode
+  worth avoiding here.
+- **§4.3 "a report of expenses, and no way to record one."** `Expenses.tsx` now has a full
+  `AddExpenseSheet` — date, category, branch, Save Draft / Submit, real Supabase lookups, and
+  error banners for the RLS cases — with 117 finance tests green. **Built by the other session,
+  not by me.** Item 7 needed verification, not construction.
+
+### Item 6 — the late-fee decision (`lib/lateFee.ts`, `LateFeePanel.tsx`)
+What genuinely had no home is that **a fee is a suggestion**. `settleLateFee` is the gate:
+Apply charges the figure, Waive charges nothing but **keeps the suggested figure** — a waived
+Rs 6,000 is not the same event as a Rs 0 fee and the record must distinguish them. Any staff
+may waive with a reason ≥10 chars, per the 21 Jul precedent.
+
+**Where it lives is a correction to the spec.** §4.2 draws the panel on "Return", but
+`ReturnWorkspace.tsx`'s own header states the constraint: *"No money, anywhere. Foundation §8.3
+… `lib/money.ts` is not imported; no Rs figure appears."* CLAUDE.md lists that among the laws
+most easily broken, and Foundation outranks a later spec by its own rule. So:
+
+- **Return** gets `lateBand()`, which returns minutes and a band name and **no `Paisa` at all** —
+  that is the reason the function exists. It replaced a hand-written `'4h 15m past expected
+  return'` string, so the floor and Finance can no longer disagree about how late a return was.
+- **Booking Detail** gets the rupees and the Apply/Waive decision, behind `canBookingMoney`.
+
+`PLAN.md §4` should carry two questions this surfaced: a discount >10% needs a reason **and** a
+named approver while a late-fee waiver of the same value needs only a reason — both give money
+away; and `LateFeeInput.dayRatePaisa`'s scope is unruled, so the panel states its basis
+("Equipment rental ÷ 3 days, crew and transport excluded") on screen rather than implying a
+settled one.
+
+### Item 5 — Damage (`lib/damage.ts`, `DamageTab.tsx`, `data/damage.ts`)
+Engine first, per "pages never implement business logic". Rs 25,000 threshold with the boundary
+**inclusive at the top** (exactly 25,000 → Owner; a threshold both roles could claim is the kind
+that gets argued about later). Photo minimum enforced. Two things it refuses to do: derive the
+charge from the replacement value (the charge is case-by-case, and a default would make the
+replacement value the path of least resistance), and block a charge above replacement value
+(repair can genuinely cost more — it warns instead).
+
+`settleDeposit` floors the refund at zero and returns the excess as a **shortfall**, because
+returning a negative number would invite a caller to add it to a total and break Law 5.
+
+Same §8.3 split as late fees: the finding is raised money-free at Return (§13.1 already said
+that gate reads "Damage approval required, **with no amount**"), and the charge, approver and
+deposit settlement are on the new Inventory ▸ Maintenance ▸ **Damage** tab.
+
+**A test caught a real bug**: the "moved to Maintenance" confirmation was rendered inside the
+pending list, so approving removed the row and the message could never appear. Moved above the
+list.
+
+### Item 8 — EN/NE: the machinery, and the edge of it
+Both costs §4.4 asked to be "planned for, not discovered" are pure engineering and are now
+encoded and tested in `lib/i18n.ts`:
+
+- **`safeWeight()`** — Asar ships one weight, and a browser asked for a weight a face lacks
+  **synthesises** it, smearing the conjuncts Devanagari depends on. The guard clamps, and a test
+  asserts over its whole output space that it never returns a weight that would be synthesised.
+- **Font stacks per language**, with the mono face **identical in both** — numbers, identifiers
+  and NPR stay Latin, which is what keeps `bs.test.ts`'s "never renders Devanagari digits"
+  holding.
+
+**The Nepali catalogue is deliberately empty and `coverage('ne')` reports 0%.** That is not a
+stub. A catalogue for 55 screens is product copy in Nepali for a real rental business — vendor
+terms, tax wording, status names an operator acts on. Authoring it would put plausible-looking
+wrong Nepali in front of staff who would reasonably trust it. `canEnable()` refuses NE below
+100% coverage, because an operator cannot tell a missing translation from a deliberate English
+term. Settings' Language row now reports **the measured number** instead of a claim.
+
+Also recorded: `@fontsource/asar` and `@fontsource/hind` are **not installed**, so
+`nepaliFontStatus()` names them rather than `import()`ing a package that would break the build
+for everyone to half-support a language at 0%.
+
+### Verified
+`tsc --noEmit` clean across everything I touched. `vitest` **1,527 / 1,531 passing** — **67 new
+tests**: `lateFee` (18), `damage` (20), `DamageTab` (10), `i18n` (19).
+
+The 4 failures and the remaining type errors are `CreateInvoiceModal` and `StockCheck` — the
+concurrent session's in-flight work, untouched by me and failing before my changes.
+
+Not browser-verified: the hidden-pane renderer stall recorded in the entries below still
+applies, and this session's work is engine-heavy where jsdom is the stronger check anyway.
+
+### Next / Blocked
+- **EN/NE needs a Nepali speaker**, then two installs and a layout pass on every table screen.
+  Nothing else in `i18n.ts` changes when the catalogue lands.
+- The three §1 items still blocked on open product decisions — deposit percentages
+  (Open ⭐ #1), membership benefit matrix (Open ⭐ #2), cancellation tiers
+  (`OPEN-DECISIONS.md` item 5) — are unchanged.
+- ~~Two new `PLAN.md §4` candidates from item 6, above.~~ **Filed.**
+
+### Addendum — the open decisions are now actually recorded
+
+The entry above said `PLAN.md §4` "should carry" two questions, and CLAUDE.md's rule is not
+"mark a TODO", it is *"mark `TODO(decision)`, **add it to `PLAN.md §4`**"*. I had raised five
+markers across this and the previous session and filed **none** of them, which meant five
+product questions existed only as comments in files nobody reads on purpose.
+
+Filed as **§4.23–§4.27**, each with the options spelled out rather than just the question:
+
+| § | Question |
+|---|---|
+| 4.23 | A late-fee waiver needs no approver; a discount above 10% does. Same money. Intended? |
+| 4.24 | What "one day's rate" means for a late fee — equipment only, +crew, or the whole booking? |
+| 4.25 | AddClient: Country stayed required while Address and City did not |
+| 4.26 | Nepali is 0% translated and Asar/Hind are not installed — supersedes §4.2 |
+| 4.27 | A client's *standing* discount has no field that can satisfy Law 10 |
+
+Every code marker now cites its section number, so the comment and the decision find each other
+from either end. §4.2 ("a Devanagari-capable face is needed") gained a pointer to §4.26, which
+answers it — the face was never the hard part.
+
+`tsc` clean in everything I touched; my five suites re-run green (85 tests). The remaining
+`StockCheck` and `CreateInvoiceModal` failures are still the concurrent session's.
+
+> ## ✅ CLOSED — `is_blocked` / 0054, checked against the live database
+>
+> Raised as an open risk, then **settled by read-only introspection** of the live project
+> (`sxguwvgoserhdolewibb`) rather than left as a guess:
+>
+> - **0054 IS applied** — `list_migrations` shows `20260811214702 0054_rls_backstops_and_directory_block_flag`.
+> - `client_directory_v` has **31 columns with `is_blocked` last**, so
+>   `src/lib/queries/clients.ts`'s select is valid. **The Clients directory is not broken.**
+>   Every other column in `DIRECTORY_COLUMNS` was checked against the live list too.
+>
+> The same check confirmed all four corrections made to the draft on 12 Aug:
+> `categories` **does not exist** on the live database (the phantom is real;
+> `inventory_categories` has RLS + 2 policies); `expenses` and `booking_transport` each have
+> **RLS on and 3 policies** — never deny-all, so nothing was blocked on 0054 there; and the
+> three `portal_*` tables remain **RLS-on with zero policies**, i.e. deliberately deny-all
+> per 0049's standing ruling.
+>
+> **One drift worth knowing:** 0054 was applied at 21:47 on 11 Aug, *before* the local file
+> was rewritten at 00:22 on 12 Aug. So `supabase/migrations/0054_*.sql` on disk is NOT
+> byte-identical to what ran. The outcomes agree — verified above, table by table — but do
+> not re-apply the local file expecting a no-op; its `create policy` statements would fail
+> on already-existing policies.
+
+> ## ⚠ THE LIVE DATABASE IS EMPTY — every wired screen will render blank
+>
+> Counted directly, 12 Aug: **`bookings` 0 · `booking_lines` 0 · `booking_line_units` 0 ·
+> `booking_discounts` 0 · `clients` 1.**
+>
+> Cause: **`0047_seed_reference_corpus.sql` has never been applied.** It is in
+> `supabase/migrations/` and absent from `list_migrations`. It is a GENERATED file
+> (`npm run seed:sql` from `src/lib/seed.ts`) and holds the only booking data that exists
+> anywhere outside the hand-typed `src/data/*.ts` arrays. Its own header says NOT APPLIED,
+> per CLAUDE.md. **It has not been applied by this session either — that needs explicit
+> approval.**
+>
+> **What this means for the wiring waves.** The conversions are structurally correct, and
+> every column and FK they use was verified against the live schema (below). But converting
+> a screen from `src/data/*.ts` to a query moves it from *full of fabricated data* to
+> *correctly empty*. That is honest, and it will look like a regression to anyone who has
+> not been told. Decide whether to apply 0047 BEFORE converting more screens, or the waves
+> will be verified against blank pages.
+>
+> Its header notes re-applying is a no-op: every insert carries a derived `client_uuid`
+> (Law 8) and conflicts on its natural key.
+
+> ## ✅ `bookingQuery.ts` verified against the LIVE schema
+>
+> The long-standing caveat — "these queries have never been checked against a real
+> database" — is now closed for the schema, though not for data (see above).
+>
+> All **50 columns** named in `COLUMNS`, `COLUMNS_WITH_DEPOSIT` and `DISCOUNT_EMBED` were
+> checked against `information_schema.columns` on the live project: **every one exists**
+> (`bookings`, `clients`, `booking_lines_v`, `booking_line_units`, `booking_discounts`).
+>
+> Every FK the embeds rely on exists: `bookings_client_id_fk`,
+> `booking_lines_booking_id_fkey`, `booking_line_units_booking_line_id_fkey`,
+> `booking_discounts_booking_id_fkey`, and the self-FK `booking_lines_parent_line_id_fkey`
+> that the bundle parent/child logic depends on.
+>
+> Not yet proven: that a real row maps correctly through `toCanonical` — impossible while
+> `bookings` has 0 rows.
+
+## 2026-08-12 — Rewrote the Single Query Rule module; it had never been able to run
+
+**Phase:** cross-cutting (Law 2 foundation) · **Status:** rewritten against the real schema
+and hardened over two adversarial rounds; still imported by nothing; five findings open
+
+### Did
+
+Rewrote `src/lib/bookingQuery.ts`. It is PLAN.md's hard acceptance gate — "one booking query
+serves every surface" — and it had **never run**, because it was written against a schema
+that does not exist. Every `booking_lines` column was wrong (`line_kind`→`line_type`,
+`quantity`→`qty`, `daily_rate`→`rate`, `discount_percent`→`discount_amount`, and
+`line_total`/`item_state` do not exist), and `bookings.delivery_method` is `delivery_type`.
+
+**Two defects worse than the wrong names**, both found during the rewrite:
+
+- **The bucketing loop was entirely unreachable.** It compared against the `line_kind` enum,
+  which belongs to `invoice_lines` and shares **no member** with `booking_line_type`. Every
+  branch missed, every bucket stayed 0 — so the module would have rendered a composed,
+  confident **Rental Total of Rs 0 with 13% VAT on Rs 0**, erroring nowhere.
+- **VAT was read as `Number(invoice.vat_rate)`**, but `invoices.vat_rate` is
+  `numeric(5,4) default 0.1300` — a fraction. That charges **0.13% VAT instead of 13%**.
+
+Also: the old function returned `null` for `error || !booking`, so "permission denied" and
+"column does not exist" both rendered as an empty Not Found page. That is how a query this
+broken survived unnoticed. Errors now throw with the database's own message; `null` means
+only that no such booking exists.
+
+### The discount question was already ruled — by the schema, not by us
+
+An earlier note in this log implied the booking-level discount had no home and needed a
+product decision. **That was wrong** — it came from checking the `bookings` table rather than
+the schema. `booking_discounts` (0002:575) is "the sole home of booking-level discount":
+`percent numeric(5,2)`, `check (percent >= 0 and percent <= 25)`, and
+`percent <= 10 or (char_length(btrim(reason)) >= 10 and approver_id is not null)` — exactly
+`money.ts`'s `DISCOUNT_CAP`, `DISCOUNT_APPROVAL_THRESHOLD` and `discountGate`, enforced as
+table CHECKs "precisely so no role, no RLS policy and no application path can bypass it".
+
+Two column comments settle the relationship outright:
+- `booking_lines.discount_amount` — *"Line discount, subtracted inside step 1. Entirely
+  separate from the booking-level percentage at step 7."*
+- `booking_discounts.booking_id` — *"Discount is step 7, applied to the booking Subtotal,
+  before VAT."*
+
+So line discounts net inside each line; the engine's `discountPercent` is
+`sum(booking_discounts.percent)`. Back-computing a percent from the line amounts — the
+tempting third option — would have **charged the line discounts twice**.
+
+### Hardened over two adversarial rounds
+
+The first rewrite reintroduced the Rs 0 failure by a new route: `raw.booking_lines_v ?? []`
+made an absent line collection sum to a non-null `0`, so the mask guard never fired. Now
+`linesPresence` decides absence once at the boundary and every bucket short-circuits to
+`null` — while a booking with genuinely zero live lines still prices as a real Rs 0. The same
+bug was found and fixed on the discount embed, where it would have reported 0% (full price)
+on a possibly-discounted booking. Also fixed: unvalidated `crew`/`transport`/`payments`
+reaching `price()`; a Flat service charged per day; `is_included` documented then ignored;
+an uncapped discount sum (now surfaced, never clamped — clamping invents a number matching
+neither the rows nor the rules); a packing gate where optional units could satisfy a
+required-unit check; `[].every()` reporting `requiredUnitsPacked: true` from nothing.
+
+### Verified
+
+- `npx tsc --noEmit`: **exit 0**, first-hand.
+- `npx vitest run`: **1032 passed / 36 files**, first-hand.
+- Repeated transient `tsc` failures during the session were all mid-edit snapshots from the
+  concurrent session; each was checked against the file on disk and none was a real defect.
+
+### Found — not fixed (5 open in `bookingQuery.ts`)
+
+Still imported by nothing, so none of this is live.
+
+- **A bundle child orphaned by a voided parent (high).** `booking_lines_bundle_child_is_free`
+  forces a child to `rate = 0`, but **nothing cascades `voided_at` from parent to child** —
+  verified across all 55 migrations. So voiding a bundle parent leaves live Rs 0 children:
+  the bundle's whole rate silently leaves the subtotal and the total still composes.
+- **`aggregateUnits` uses the `?? []` idiom the module condemns** for lines, one level down
+  and with no presence check.
+- Unit `qty` is unvalidated while line `qty`/`days` are; an unknown `item_quantity_state` is
+  mishandled two different ways in two places; `withDiscounts` is documented as proving money
+  visibility and proves nothing (it is a caller-asserted boolean).
+
+### Next
+
+`bookingQuery.ts` is now a plausible foundation rather than a fiction, but it has still never
+returned a real row — no environment in this session had a network route to Supabase, and
+CLAUDE.md's "verify by driving the app" step remains undone for it. Close the five above,
+then drive one booking end-to-end before any screen adopts it.
+
+## 2026-08-12 — Wiring, Waves 2–3: Inventory, Clients, Finance, and the two screens that did not exist
+
+**Phase:** `WIRING_PLAN_12Aug2026.md` Waves 2–3 · **Status:** converted; **not yet driven**
+
+### Verified by me, not reported by an agent
+`npx tsc --noEmit` → **exit 0**. `npx vitest run` → **46 files, 1213 tests passed.**
+
+### New query modules
+`queries/inventory.ts` and `queries/finance.ts`, both in the shape of `bookings.ts`.
+
+`inventory.ts` — all 11 state chips map to real columns (the ten members of `inventory_state`
+plus "All" = no constraint). Three consequences are documented in the file header rather than
+discovered later: a state chip **silently excludes every non-serialised SKU**, because state
+lives on `product_units` and a Quantity/Consumable product has no unit rows; the chip *counts*
+have no source in this query and need a separate grouped count nobody has written; and `Retired`
+being a chip means retired units must not be filtered out globally.
+
+The state and condition facets each get their own `product_units_v!inner` alias, added to the
+SELECT **only when that chip group is non-empty** — an unfiltered inner join on the units view
+deletes every quantity-tracked SKU from the catalogue. Six tests pin that.
+
+`finance.ts` — the important property is that `invoices`, `payments` and `expenses` are gated
+`auth_can_view_money()`, so a money-blind session gets **zero rows, not masked ones**. An empty
+list would tell a warehouse user there are no invoices, which is a different and false claim, so
+every one of these surfaces renders `PageBody`'s RESTRICTED state instead.
+
+### Built from nothing
+**Payments** and **Expenses** (`09_FINANCE.md` §09.3/§09.4). Expenses was previously blocked
+because `expenses` was readable but unwritable for every role including Owner; 0054 fixed that.
+
+### Three defects the verify pass caught
+1. **Payments told a money-blind session the ledger was empty.** The restricted body was
+   correct, but the Card *title* renders outside `PageBody` where the ladder cannot reach it —
+   so the screen read `Payments — 0 payments [RESTRICTED]`. The fetchers had no `money` guard,
+   RLS answered `200`/`[]`, and `withCount` brought back `count: 0`, which then rendered as a
+   factual claim to the one session that may not know it. The existing Law 6 test missed it
+   because it set `paymentRows = []`, which cannot distinguish "the gate held" from "the mock
+   returned nothing". The replacement leaves rows populated and was **proven to fail against the
+   pre-fix code** before the fix was restored.
+2. **A fabricated credit meter, the dangerous kind.** `queries/clients.ts:195` hard-zeroes
+   `creditUsedPaisa`, so the directory drawer drew "Rs 0 / Rs 5,00,000", a 0%-full bar in
+   healthy blue, and an 80% danger threshold that could never fire — for a client possibly
+   sitting at its limit. Someone reading "full headroom" approves a rental that should be
+   refused. Replaced with the two real columns and an explicit statement that consumption is not
+   recorded.
+3. **A success toast contradicting its own banner.** `confirmBulkBlock` fired "N clients
+   blocked" immediately after a handler that renders a persistent banner reading "N clients were
+   **NOT** blocked… Nothing on this screen has changed." One click, two opposite statements, and
+   the green one reads as the outcome.
+
+### Law 6 hole closed
+`CasesQueue.tsx` gated money with a local `useState<Role>('Admin')` "viewing as" dropdown — a
+control a Warehouse user could simply change. Now `useCanViewMoney()`. Its sibling
+`CasesWorkspace.tsx` always used the real hook, so Cases had two different money gates over one
+constant.
+
+### Still partial, stated plainly
+**Clients directory** is PARTIAL — search, chips, sort and paging still run client-side in
+`ClientsDirectory.tsx`, over a hard 500-row ceiling in `useClients.ts:45`. `Clients.tsx`'s Credit
+tab also still filters fetched rows, and its Credit KPIs sum over the loaded page while reading
+as business-wide.
+
+### The trap worth reading before touching NewRental
+`modules/rentals/booking/clientHealth.ts` computes the **credit-limit blocker** from
+`creditUsedPaisa`. It is safe only because `NewRental.tsx:1119` still feeds it seed data. Convert
+that screen and the field becomes a hard `0`, utilisation becomes 0, and **"Credit limit
+exceeded" silently stops firing** — a safety gate failing open with no visible symptom. Fix
+`queries/clients.ts:195` *before* converting NewRental, not after.
+
+### Correction to a claim this repo makes in three places
+`bookings.ts` (~line 420) and its test assert that a non-member stage "does not error — `stage IN
+('Ready')` simply matches nothing, and the screen renders a plausible empty day." **That is
+false.** Checked against the live database: `booking_stage` is a real Postgres enum and
+`stage in ('Ready')` returns `22P02 invalid input value for enum booking_stage: "Ready"`. The
+real failure mode is a 400 surfacing as `PageBody`'s error state — louder than the comment
+claims, and the comment should not be trusted by the next reader.
+
+---
+
+## 2026-08-12 — Wiring, Wave 1: Today, Operations Queues and Rentals List read Postgres
+
+**Phase:** `WIRING_PLAN_12Aug2026.md` Wave 1 · **Status:** converted; **not yet driven**
+
+### What changed
+All three screens now fetch through `useList` + `listBookings` and render through `PageBody`.
+Every filter whose column exists moved into `ListFilters`; the ones that could not are listed
+below with the missing column named, and each is rendered visibly `disabled` with its reason
+rather than firing the old "Filter Pending" toast.
+
+`queries/bookings.ts` gained four columns that the screens genuinely render and the query did
+not carry — `created_at`, `pickup_location`, `return_location`, `quote_expires_at` — each
+verified against `0002_bookings.sql:21-69` before being added, plus a `quotesExpiring(nowAd)`
+filter set.
+
+### How it was verified — and how it was not
+- `npx tsc --noEmit` → **exit 0, zero diagnostics**. Run by me, not reported by an agent.
+- `npx vitest run` → **30 files, 705 tests passed**. Also run directly. Baseline at the start
+  of the session was 13 files / 324 tests; the delta includes suites a concurrent session was
+  adding at the same time, so the number is not all this work.
+- **NOT verified by driving the app.** `CLAUDE.md` requires that and it has not happened. The
+  operational tables are empty — the seed corpus is blocked on PLAN.md §4.20 — so every
+  converted screen currently renders its empty state. That is the correct behaviour for an
+  empty database and it is *not* evidence the queries return the right rows. Nothing here
+  should be called done until a seeded database has been driven.
+
+### Four defects the verify pass caught in the conversions themselves
+1. **Fabricated data beside real rows.** `CAL_EVENT_DAYS = [3,8,14,22,27]` still drew five dots
+   inside the same card as the queried day list, announced to screen readers as
+   `", has movements"`. Now derived from the rows via `eventDaysOf()`, keyed on each row's own
+   Kathmandu civil day — a UTC slice lights the wrong square for 5h45m of every day.
+2. **A heading contradicting the rows beneath it.** Selecting "Next Month" put next month's
+   bookings under the literal text "31 Jul 2026". The heading now reads the same `periodRange`
+   the query was built from.
+3. **A refetch that missed a query** — `refetchAll` refreshed four of five lists, so Retry left
+   the Alerts footer quoting a pre-failure count.
+4. **A timer leak greening a red gate.** `AddClient.tsx` scheduled two uncancelled
+   `window.setTimeout`s calling `setState` after unmount; `vitest` exited 1 with all tests
+   passing. Pre-existing at HEAD, fixed because the gate is the gate.
+
+### Filters that could NOT move server-side, with the reason
+`Late`/`Overdue`/`Expected` — need a second `dateRange` on `return_at` and `ListFilters` carries
+one · `VIP` — no such column; `clients.segments[]` has no VIP member · `Deposit Pending` —
+`deposit_required` is required-not-paid, and is unmasked money · `Payment Pending` — `payments`
+not joined · `Damage`/`Missing` — `booking_line_units` is two embeds away · equipment categories
+— needs `booking_lines → products.category_id` · client types — needs `clients!inner` with a
+`referencedTable`-scoped filter · **Rentals ▸ Payment Due** — a money predicate with no
+list-level source; rental money is engine-owned by Law 1 and deliberately absent from the list
+row · **Sub-Rental** — only backing is `booking_lines.line_type = 'Sub-rental'`, which is
+line-level and inexpressible through `applyListFilters` (same limit already documented for
+client-name search at `bookings.ts:219-227`).
+
+### Rendered fields removed because no column exists
+`kit`/`kitStatus`, `category`, `staff`/`crew`/`pickup.who`/`ret.who`, the `VIP` and `Due Soon`
+flags, `statusNote`, `amount`/`due`, `complete`/`notReset`, `CREW_LOAD`, the queue cards'
+hand-typed `count`/`overdue`, `ACTIVE_RENTALS = 52`, the hover card's Deposit/Payment/Documents/
+Staff/Notes, the six seeded alerts, and Today's Revenue and Utilization KPIs. Today now shows no
+money at all. Counts that survived are counted off the rows the screen is actually showing.
+
+### Found and fixed in passing
+`resolveJobRoute` folded the `return` case into the `evidence` arm, so every Return row landed on
+EvidenceWorkspace and `/rentals/:bookingNo/return` was unreachable from the queue screen.
+
+### Still wrong, out of scope, disclosed
+- **`lib/bs.ts:135` — `TODAY` is frozen to `2026-07-31`.** All three screens now query *that*
+  day rather than the wall clock. Deliberate (two "today"s is `Calendar.md` §4.2's
+  highest-priority bug), but the conversion is not finished until that line flips, and flipping
+  it moves Today, Calendar, Rentals and Pulse together.
+- **`CasesQueue.tsx` gates money with a local `useState<Role>('Admin')` dropdown**, not
+  `useCanViewMoney()` — Law 6 enforced by a control the user can change. Its sibling
+  `CasesWorkspace.tsx:46` uses the real hook. Queued for Wave 2.
+- **Unbounded fetches** — Today's two columns and the Operations table pass no `page`, relying
+  on PostgREST's default `max_rows` of 1000. They cap silently rather than erroring.
+- `src/modules/operations/shell/` (6 files) still has zero importers — a second, richer
+  OperationsShell. Which is canonical needs deciding before the workspaces are wired.
+- `src/lib/kpiEngine.ts` is dead and unsound: it round-trips paisa→rupee→paisa and keys the day
+  off **UTC** — the exact off-by-one `bs.ts` and `bookings.ts` were corrected for.
+- `data/pulse.ts` and `modules/wall/WallDisplay.tsx` still read the Today seed, and now provably
+  disagree with the live Today screen.
+
+### Database, same session
+Migrations **0043, 0044, 0045, 0046 and 0054 applied** to `sxguwvgoserhdolewibb` with explicit
+user approval. 0054 gives `expenses` and `booking_transport` the INSERT/UPDATE policies they
+never had (they were readable but unwritable, for every role including Owner) and adds
+`is_blocked` to `client_directory_v`. **0047 did not apply** — see PLAN.md §4.20.
+
+A seed-ordering bug was fixed in `src/lib/seed.ts` on the way: it emitted each invoice as `Sent`
+and *then* its lines, so `recalculate_invoice_totals()` fired and its UPDATE was correctly
+rejected by `reject_invoice_edit_after_issue()`. It now emits Draft → lines → restate → issue,
+which is the flow `0006_finance.sql:481-483` always described. The triggers were right.
+
+**Correction to the wiring plan:** its §5.3 claim that "the sandbox has no network route to
+Supabase" is false in this environment — the Supabase MCP reaches the project, and every schema
+fact above was checked against the live database rather than inferred from the migrations.
+
+---
+
+## 2026-08-12 — Settings is editable — item 2, and the settings layer under it
+
+**Phase:** `EDIT_AND_GAPS_SPEC_v1.md` §5 item 2 · **Status:** done. **All four items now closed.**
+
+### What the fake selects actually were
+The audit counted 59 rendered values and 4 inputs. Worse than that count: every one of those 59
+rendered as a `<span>` with a `chevron_down` inside it — a select that *opened nothing*. The
+affordance promised a menu that did not exist, so the screen did not merely fail to edit, it
+claimed it could.
+
+### Built the layer `bookingRules.ts` said was missing
+That file states it outright: *"no settings-persistence layer exists in this build"*. So item 2
+was never a screen problem first. **`lib/settingsStore.ts`** is that layer, built the way
+`bookingRules.ts` and `lib/collapse.ts` already do it — localStorage, one namespaced key per
+setting, no invented column and no migration.
+
+13 keys, each with a spec carrying its default, kind, options, suffix and validator. Two
+properties matter more than round-tripping:
+
+- **A value that fails its own spec never reaches a consumer** — not from the screen, and not
+  from hand-edited storage. `readSettings` re-validates on the way out and falls back to the
+  default. A VAT rate is multiplied into every invoice; a bad one is not a display bug.
+- **Defaults are derived, not retyped.** `crewCoordinationFeeRupees` comes from
+  `data/crew.ts`'s `FEE_PER_CREW_DAY_PAISA`, so the registry and the crew engine cannot
+  disagree. `vatRatePercent` defaults to the 13 that `lib/seed.ts:83` hard-codes and that
+  `bookingQuery.ts:1017` already described as coming "from Settings ▸ Finance" — this is the
+  Settings ▸ Finance that comment was pointing at.
+
+### The cut that mattered: setting vs product law
+Not every value belongs in a registry. "Calendar mode: BS + AD", "Number format: Lakh / crore",
+"Default currency: NPR", "Units: Metric" are **laws** — Foundation fixes them and no alternative
+branch is implemented anywhere. A select offering the other option would be the same lie in a
+new costume.
+
+So each value is now one of two things: a **real control** backed by a key, or a **value with
+its reason attached**. The reason renders outright — lock icon, muted line under the note — not
+behind a hover. It is the answer to the question the reader is about to ask.
+
+`NotBuilt` was the wrong badge for these and was removed from them: it means *unimplemented*,
+and a product law is *decided*.
+
+### Also fixed while in there
+`Session timeout` appeared on two tabs as two independent literals both reading "30 minutes" —
+they could silently disagree the moment one was touched. Both now read the one
+`sessionTimeoutMinutes` key. `Export config` exports stored values rather than the literals the
+section list was written with, so the CSV can no longer report a default for a setting somebody
+changed.
+
+Edit is gated on `canManageSettings` (`rbac.ts:91`, Owner-only) — a role that cannot manage
+settings gets **no Edit button**, rather than one that refuses on press.
+
+### The one honest caveat, stated in the UI
+These writes are real: `writeSettings` puts the value where `getSetting` finds it, and it
+survives a reload. But localStorage is per-browser, and an Owner changing the VAT rate would
+reasonably expect it to reach everyone. Edit mode says so: *"Changes save to this browser and
+survive a reload. No `settings` table is connected yet, so they do not reach other users or
+other devices."*
+
+### Verified
+`tsc --noEmit` clean. `vitest` **698 passed / 30 files**, up from 657/25 — **30 new tests**:
+`settingsStore` (17) and `Settings.edit` (13).
+
+The screen tests drive the real component: unlock, VAT becomes an input carrying `13`, saving
+reaches the store, and **the value survives a full unmount and remount** — which is the whole
+point of having a store. Out-of-range 140 is refused inline with the draft kept; `Done` with
+unsaved work is refused by name; Reset clears the override; a timeout saved on System ▸
+Preferences shows up on Security ▸ Access, proving the two rows are one setting.
+
+Browser verification was attempted and **did not complete** — the Settings chunk would not
+settle under this environment's hidden, throttled renderer, the same stall BookingDetail hit.
+Recorded as not-done rather than glossed. The jsdom coverage is stronger evidence here anyway
+(a hidden-pane DOM poke cannot prove persistence across a remount), but it is not the same
+claim as driving the real browser.
+
+### Next / Blocked
+Three of the four things §1 named as unchangeable — **deposit percentages, the membership
+benefit matrix, cancellation tiers** — are *not in Settings at all* and were not added. Each is
+blocked on an open product decision, not on UI work: cancellation fees are
+`GUIDE/OPEN-DECISIONS.md` item 5 (`data/pulse.ts:824`), per-category deposit % is HIS v2.1's
+Open ⭐ #1, and the membership benefit matrix is Open ⭐ #2. Building editors would mean
+inventing the tiers, which `CLAUDE.md` forbids. **VAT was the one of the four that was
+actionable, and it is done.**
+
+## 2026-08-12 — Inline edit: the app stops being create-only (3 of 4)
+
+**Phase:** `EDIT_AND_GAPS_SPEC_v1.md` §5 items 1, 3, 4 · **Status:** done and live-verified.
+**Item 2 (Settings editable) is NOT done** — see Blocked below.
+
+### The finding this rests on
+The spec's audit is right and understated: there was no Edit anywhere. Two `Edit` buttons
+across 55 screens, and **both were lies** — `AssetDetail`'s called `navigate('/inventory')`
+(returned to the list, edited nothing) and `BookingDetail`'s Transport card had *no `onClick`
+at all*. A typo in a serial genuinely had no fix short of re-creating the record.
+
+### Landed the delivered kit
+`lib/edit/useEditMode.ts` + its 12 tests arrived by zip and did not exist in the repo. Copied
+in verbatim, unmodified. Its own numbers did not reproduce — the spec says `263 passed / 11
+files`; the tree was already at 357/14 before the kit, so that snapshot predates several
+sessions of work. The kit's 12 tests pass.
+
+### Built
+- **`components/ui/EditableRows.tsx`** — the edit-mode twin of `SummaryRows`, same row shape
+  so a detail page swaps one for the other and keeps its row list. Renders the Save/Cancel
+  pair *only* on a dirty field, and renders an immutable field read-only with its reason.
+- **`actions/clients/updateClient.ts`** + `CLIENT_UPDATED` — the write seam, a stub like the
+  other 36. Deliberately **not called** yet; see the honesty note below.
+- **ClientDetail** (§5.1) — one Edit button unlocks the page. 16 keyed fields across Identity,
+  Contact, Contact Person, Membership and Notes. `standingDiscountPercent` + `discountSource`
+  are a §2.1 coupled group. Five money/derived fields are §2.2 immutable, each naming its real
+  correction.
+- **AssetDetail** (§5.3) — the `navigate('/inventory')` button now opens a real per-unit
+  editor. One `useEditMode` **per row**, not one per table: the hook holds a draft for one
+  record, and a table-wide instance would make two half-edited units share a namespace.
+  `status` + `location` are a group; `replacement` is immutable because Σ child = parent (§3.3).
+- **BookingDetail** (§5.3) — the dead Transport Edit button now unlocks the page. `vehicle` +
+  `driver` are a group. Payments and deposit movements carry an explicit immutability note
+  citing the real correction.
+- **Required-field relaxation** (§3 / §5.4) — dropped the name/category/brand Create gates at
+  `AddEquipmentContext.tsx:546-548` (the spec's line reference was exact); serial and
+  warehouse+bin still gate. On AddClient, contact person / address / city stopped blocking and
+  lost their `*`; name and phone still gate.
+
+### The honesty problem, and what was done about it
+**Every action under `src/actions/` is a stub** — `implemented` defaults to `false` in
+`actions/core.ts`, and nothing sets it true. Wiring `onSave` to `updateClient` would mean every
+save throws `ActionNotImplementedError`. Wiring it to a fake success would be exactly what
+`core.ts`'s own header calls worse than an unbuilt UI.
+
+So each screen's `onSave` writes to the record held in the component — the same place
+`handleToggleBlock` already writes — and **every screen says so in edit mode**: "Editing this
+session only — not persisted yet." No success toast fires for a write that did not happen.
+When a real row exists, `onSave` becomes the action call and nothing above it changes.
+
+### Verified
+`tsc --noEmit` clean. `vitest` **657 passed / 25 files**, up from 357/14 — **39 new tests**:
+`ClientDetail.edit` (13), `BookingDetail.edit` (9), `AddClient.required` (5),
+`AddEquipmentRequired` (4), plus the kit's 12.
+
+Live, in a browser, on `/inventory/FX6-0123`: pressing a unit's Edit **stayed on the page**
+(the old lie navigated away), `serial` and `status` rendered as inputs, `replacement` rendered
+with no input and its "sums to the parent SKU" reason, and zero Save buttons existed until a
+keystroke. Emptying `location` and pressing Save on `status` was **refused** — the group's
+message appeared and both stayed dirty, which is §2.1 working end to end.
+
+BookingDetail was verified in jsdom rather than the browser: the page renders (9 tests prove
+it) but the Browser pane is hidden in this environment, `innerText` returns empty without
+layout, and that page's import graph was too slow to settle under a throttled renderer. Noted
+rather than glossed — it is a weaker verification than AssetDetail's.
+
+### Next / Blocked
+**Item 2, Settings editable, is not started.** It is the largest of the four and a different
+shape: `Settings.tsx` renders from a static `SECTIONS: Record<TabKey, Section[]>` where a
+`Field` is `{ label, note, value?, on?, dest? }` and a `value` renders as a **fake select** — a
+span with a chevron that does nothing. Making it editable means giving `Field` a key, moving
+the 108 literals into a settings record, and deciding what a settings write even means when no
+action persists. That is a focused pass, not a tail-end addition, so it was left rather than
+half-done.
+
+`TODO(decision)` raised: on AddClient, **Country is still required while Address and City are
+not**, which is incoherent. The 12 Aug ruling enumerated address, city, PAN and contact person
+and did not mention country, so it was left as it was rather than relaxed by inference.
+
+## 2026-08-12 — Calendar KPI band removed
+
+**Phase:** cross-cutting · **Status:** done, live-verified
+
+### Did
+User asked to remove the Calendar KPI band. Deleted the four-card "Key figures" section that
+sat between the page header and the view tabs on the Calendar default view, plus its backing
+data:
+
+- `modules/calendar/Calendar.tsx` — the `<section aria-label="Key figures">` block and its
+  `KPIS` import. `BRAND_ON` was only used to ink those tiles, so it left the `lib/status`
+  import too; `BRAND` stays (the bar dots at `:359` still use it).
+- `data/calendar.ts` — the `CalendarKpi` interface and the `KPIS` array. Both had exactly one
+  consumer, so nothing else moved. `IconName` is still imported — six other shapes in the file
+  use it.
+- Updated the file-head doc comment: it claimed §4.2's colour law re-tinted "the purple
+  Utilization KPI", which no longer exists, and now records the render deviation explicitly.
+
+**This is a deliberate departure from `03 Core Modules/Calendar.PNG`**, which does show the
+band. Nothing in `PLAN.md` requires it — `:324`'s "≤4 KPI cards" is a cap, not a floor — but
+the render is the reason it existed, so the deviation is documented in the file rather than
+left to look like drift.
+
+No figure was actually lost: Full View's bottom strip still carries Conflicts (with its "View
+Conflicts" action) and Equipment Utilization, and Today's Operations was always a link to
+`/today`.
+
+### Verified
+`npm run typecheck` clean. No test referenced the removed labels (grepped for `Key figures`,
+`Active Bookings`, `Equipment Utilization`, `Schedule Conflicts` across `*.test.ts{,x}` — none).
+
+Live, via direct DOM reads on a temporary dev server (the Browser pane's screenshot path is
+unavailable in this environment, same limitation as the entries below):
+- `/calendar` default view: `[aria-label="Key figures"]` is **absent**, and none of the four
+  labels appear anywhere in `body.innerText`. The page now runs header → view tabs with no gap
+  or stray wrapper. No console errors.
+- Full View: `Today's Summary`, `Conflicts`, `Utilization`, `Upcoming` and the `View Conflicts`
+  button all still present — the bottom strip is untouched.
+
+Same `.env.local` bypass dance as the entry below: `VITE_DEV_AUTH_BYPASS=true` uncommented for
+one pass, restored to commented-out immediately after (verified line 23 is `# VITE_DEV_AUTH_BYPASS=true`
+again). Calendar reads seed arrays only, so the RLS-empty-vs-no-data hazard that comment warns
+about does not apply here.
+
+### Next / Blocked
+Nothing blocked. If the band is wanted back, it is one `git revert` of these two files — the
+data shape and seed values are in history, not rewritten.
+
+## 2026-08-12 — "Pickup Today"/"Return Today" quick filters, now live-verified (superseding the static-only note in the previous entry)
+
+**Phase:** cross-cutting (closes out the previous entry's live-verification gap) · **Status:**
+both confirmed working end-to-end in a real browser, not just statically read
+
+### Did
+User asked to actually verify rather than leave it static. Temporarily uncommented
+`VITE_DEV_AUTH_BYPASS=true` in `.env.local` for one verification pass — deliberately narrow: the
+bypass's own comment says it's unsafe for screens now reading the live database (RLS silently
+returns empty for the anon-role bypass session, which is indistinguishable from "no data"), but
+both `Today.tsx` and `OperationsQueues.tsx` still read seed arrays only (`data/today.ts`'s
+`MOVEMENTS`, `data/operations.ts`'s `JOBS` — confirmed, neither has a Supabase query in it), which
+is exactly the case that same comment calls harmless. Reverted the bypass back to commented-out
+immediately after this pass and stopped the temporary dev server instance that had it loaded, so
+nothing is left running with auth bypassed.
+
+### Verified — live, via direct DOM interaction (not screenshots; the Browser pane's screenshot
+path is unavailable in this environment, same limitation noted elsewhere this session)
+- **Calendar card**: clicking "Pickup Today" narrowed the day list from 25 to 14 rows, every one
+  Delivery/Pickup, chip `aria-pressed` flipped correctly. "Return Today" → 11 rows, all Return,
+  matching `RETURNS.length` exactly. "All" → back to 25, merged, both chips unpressed.
+- **Operations Queues**: "Pickup Today" → `J-1041, J-1042, J-1039` (Pack + Handover only), URL
+  became `?quick=pickup`. "Return Today" → `J-1035, J-1036, J-1031, J-1028` (Return + Reset only),
+  URL `?quick=return`. Clicking a single queue card (Packing) correctly cleared the quick filter
+  (`?queue=packing`, both quick chips unpressed) — confirmed mutually exclusive, not just visually
+  but in the actual filtered job list. **Reload-safety confirmed**: a fresh, unrelated page load
+  directly at `/operations?quick=pickup` (not a click, a real navigation) initialized the chip
+  pressed and the job list pre-filtered — the "linkable, shareable, survives a reload" guarantee
+  this file's own `QUEUE_PARAM` comment describes actually holds for the new chips too.
+
+### Next / Blocked
+Nothing blocked. This closes the previous entry's open item.
+
+## 2026-08-12 — New Rental redesign v1 implemented, all 7 sections, live-verified
+
+**Phase:** `NEW_RENTAL_REDESIGN_v1.md` (12 Aug 2026, `updated mds/`) · **Status:** build green,
+verified first-hand against a live session, not just typechecked
+
+### Did
+
+Implemented all seven sections of the redesign spec against `src/modules/rentals/NewRental.tsx`
+(the single biggest concentration of changes — a 1900+ line file touched by nearly every phase)
+plus five new files under `src/modules/rentals/booking/` and one new `src/lib/` module.
+
+**§1 / §7 — repetition removed, one accent restored.** Header strip merged Pickup+Return into
+one Dates cell (4 cells, not 5) and dropped the deposit footnote. §1's footer row (phone, email,
+credit limit, outstanding, "Client health details") is gone — all of it was one hover away on
+the client chip already. §4 Pricing & Payments lost its duplicate Deposit block, its duplicate
+Rental Outstanding row and both money buttons — the rail is their one home now, with a new
+`Receive Deposit` button added there (both buttons `variant="secondary"`, matching §7.2's "one
+accent" rule — only Confirm Booking is filled blue now; `Add Item`'s hand-rolled trigger button
+in `AddItemPanel.tsx` also moved off primary-blue). Alerts' `Receive Payment`/`Receive Deposit`
+actions, previously dead buttons with no `onClick`, now scroll to the rail's `#rail-booking-summary`
+card. Section headings dropped the numbered pill (heading + chevron only — the pill read as
+wizard-step-1, which the page's own footer note explicitly denies). Equipment table: qty/days
+are now a `Stepper` (±) instead of boxed number inputs; Location moved off its own column onto
+the Item cell's second line (was truncating). Crew table: Overtime/Meals/Accommodation moved
+behind a per-row expand chevron instead of two columns clipped at this width.
+
+**§6 — Documents & Review moved into the rail.** Section 5 is gone from the body entirely;
+`SECTIONS` shrank from 5 to 4 and the phone default-collapse array with it. The rail gained a
+`Review N/6` card (each row jumps to the section that owns the fact via a new `jumpToSection`
+helper + `id` props threaded onto `Section`/`Card`) and a `Documents` card, ordered Booking
+Summary → Quick Actions → Review → Documents → Alerts → Activity Timeline. Tablet/phone: the
+rail now collapses to a `Review N/6 ▾` handle (was: always-expanded inline panel) — no
+peek/expand bottom sheet existed anywhere in the codebase to reuse, so this is new.
+
+**§4 (spec) — typeable date + time.** New `DateTimeField.tsx`: typeable date segment (parses
+`YYYY-MM-DD`, `DD/MM/YYYY`, `16 Jul 2026`), typeable time segment (`0900`/`9:00`/`09:00`),
+separate 44×44 calendar and clock icon buttons, BS rendered under AD, default 09:00 pickup /
+18:00 return, never blank (unparseable input reverts to the last good value on blur). No date or
+BS-calendar picker existed anywhere in the repo before this — built fresh. The calendar grid
+leaves BS day numbers blank outside `lib/bs.ts`'s one anchored month (Shrawan 2083) rather than
+fabricate a BS date the engine can't vouch for — same "honest gap" convention the file's own
+`toBs()` already uses. Day-count pricing still reads dates only (`price()` untouched) — capturing
+time is the UI half of the 06:00→06:00 boundary fix; teaching the engine that boundary is a
+pricing-logic change, out of scope for a layout-and-behaviour redesign.
+
+**§2 — one row per model, one chip per unit.** `itemCatalogue.ts` gained `groupEquipmentResults()`
+— groups an already-ranked, already-searched result list by model name; `EQUIPMENT_RESULTS`
+itself is untouched (still flat, one entry per serial) so search/ranking/availability logic
+didn't move. `AddItemPanel.tsx`'s keyboard cursor (`FlatOption`/`flatten()`) now walks one entry
+per bundle and one per **model group**, not one per physical unit — arrow keys move row to row;
+chips are mouse/touch/Tab-reachable, same documented trade-off the file already makes for a
+bundle's `[View]` button. Tapping the model name auto-picks the first free unit in serial order
+(true "least-used" needs a usage counter; `ChildRow.rentalCount` is seeded to zero on every row
+in this build — the same gap `SORT_OPTIONS`'s omitted "Most Used" sort already documents — so
+serial order is the honest, deterministic tiebreak until that counter is real). Chips: green
+free/tappable, red booked-or-maintenance/not-tappable (icon + serial + status word, never colour
+alone), grey "on booking". "Sub-rented in" (gold outline) has no corresponding `InvStatus` in
+this build's data model — not implemented, an honest gap rather than a fabricated third status.
+
+**§3 — the overbooking valve.** New `Settings.tsx` card "Booking rules" (Financial tab) with an
+"Allow overbooking" switch, off by default — wired for real (unlike every other switch on that
+page, which is local-state-only/presentational; this one follows the same real-hook idiom
+`Theme`/`Text size` already use) via new `src/lib/bookingRules.ts`, a small localStorage-backed
+read/write pair (no settings-persistence layer exists in this build to hook into instead). When
+on, a booked/maintenance chip becomes tappable and opens a new `OverbookingOverrideModal.tsx`:
+Sub-rent (preferred, radio-selected by default) vs Book-anyway, reason ≥10 chars + named approver
+required — same shape as the existing >10% discount gate, enforced client-side with no separate
+audit write (none exists in this build for either gate). Sub-rent has nowhere to dispatch to —
+it attaches to a *confirmed* booking (`BookingDetail.tsx`'s Create Sub-Rental) and this is still
+a draft with no booking id — so choosing it disables Override and states that plainly instead of
+faking the workflow. **Logged `PLAN.md` §4.19 as `TODO(decision)`**: the spec itself flags
+global-vs-per-role scope as unresolved; shipped the global reading of the literal text and did
+not invent a new `rbac.ts` capability/RLS mirror for a restriction nobody ruled on.
+
+**§5 — Send Email.** `Send Quote` is now a split button (`SendQuoteMenu`, mirrors `OperationsMenu`'s
+shell): Email to client · Download PDF · Copy link · Print. Download PDF/Copy link are disabled
+with the reason stated (no generator/link service in this build) rather than dead buttons. Every
+emailable + ready document tile in the new rail Documents card gets a ✉ action. Both open a new
+`DraftEmailModal.tsx` — prefilled to/subject/body from the real client record, editable, explicit
+Send, never auto-sent (21 Jul lock). `onSend` is the page's own stub (`showSuccessToast`), same
+shape `saveDraft`/`confirmBooking` already use for an unimplemented dispatch — no comms action
+module exists in this build, and one was not invented as a side effect of this button.
+
+### Verified
+
+- `npx tsc --noEmit`: **exit 0**, run after every phase (6 separate clean runs) and once more at
+  the end, first-hand.
+- **Live browser session**, not just typechecked. Dev auth bypass is deliberately off (screens
+  read the database now); signed in instead via `auth.tsx`'s documented dev credential fallback
+  (`babindulal7@gmail.com` / `123`) against a fresh preview server on its own port. Confirmed
+  live: header strip 4-cell layout with merged Dates; §1 footer row gone; §4 deduped; rail order
+  and both secondary-variant money buttons; alert-to-rail scroll wiring; qty/day steppers;
+  Location on the item's second line; crew expand row; `DateTimeField` — typed values, calendar
+  popover (BS blank pre-16-Jul, present from 16 Jul on), time-list popover; `Send Quote` split
+  menu + `DraftEmailModal` prefilled with the client's real email; Add Item grouping — searching
+  "FX3" produced one "Sony FX6 Cinema Camera" row with three chips (two red/booked with real
+  BK-numbers, one grey/on-booking), not three rows; the overbooking toggle end-to-end — off by
+  default, chips inert; on in Settings, chip became tappable, override modal opened, Override
+  stayed disabled until reason+approver were both valid, then the unit was actually added to the
+  booking (and correctly still tripped the existing Critical conflict alert — the override adds
+  the line, it doesn't suppress the pre-existing conflict check); tablet-width (768px) rail
+  collapsed to a `Review 4/6` handle and expanded on tap.
+- **One real bug found and fixed via this live testing, not by reading code back**: `EquipmentGroupRow`'s
+  meta line used `key={m}` on a list that legitimately duplicates (`kind` label and `category`
+  are both literally `"Accessory"` for an accessory-category item — confirmed live by filtering
+  to the Accessory category and finding `BNC Cable 3m`) — React logged a duplicate-key warning.
+  Fixed to `key={`${m}-${i}`}`; re-verified via a forced full reload that the fix is what the
+  browser is actually serving, not relying on React's own once-per-message warning dedup (which
+  made the fix look unconfirmed on the first two recheck attempts).
+
+### Known gaps, stated rather than hidden
+
+- The overbooking toggle is real but **client-only** (localStorage) — no settings-persistence
+  layer exists in this build for any Settings.tsx control, so this did not stand up a first one
+  as a side effect. Real persistence is separate, larger work.
+- Sub-rent-from-a-draft, PDF generation, shareable links, and actual email sending are all
+  honest gaps (stated in the UI), not silently-broken buttons.
+- The 06:00→06:00 rental-day pricing boundary is captured in the UI (pickup/return now carry a
+  time) but not yet taught to `price()` — a pricing-engine change, deliberately out of scope here.
+- `PLAN.md` §4.19 carries the one genuine open product decision (overbooking: global vs
+  per-role) surfaced by this work.
+
+## 2026-08-12 — 0058 applied; the waiver approver is now the session, not a typed name
+
+**Phase:** cross-cutting · **Status:** all three remaining rulings decided, built and
+verified. No `TODO(decision)` left in the approval paths.
+
+### 1. `0058` applied, verified live
+
+| Check | Result |
+|---|---|
+| `late_fee_findings_approval_rank` | exists, **RESTRICTIVE**, **UPDATE-only** |
+| `trg_damage_approver_is_actor` + `trg_late_fee_approver_is_actor` | **both present** |
+| `auth_user_id()` | resolves, carrying both `app.current_user_id` and `auth.uid()` |
+
+Blast radius was zero — both finding tables held 0 rows — so the rules are in force before
+the first real finding rather than retrofitted onto live approvals.
+
+### 2. The waiver approver is the SESSION
+
+`LateFeePanel` collected `approverName` as free text validated only as non-empty, so a
+waiver could be recorded as approved by anyone an operator chose to type — **including
+someone who never agreed to it**, on a control that gives money away. It is now read from
+`useAuth()` and cannot be authored.
+
+Three layers now agree, and none of them trusts a string:
+
+- the screen shows **who the waiver will be signed by** before the operator commits;
+- `rbac.canApproveLateFeeWaiver` refuses the rank, ahead of `validateWaiver` — that engine
+  checks the waiver is well-FORMED but never sees a role, so it cannot tell a Manager's
+  signature from a Coordinator's;
+- migration 0058 refuses at the row, both on rank and on
+  `approved_by = the acting session`.
+
+### 3. The last seed row stays out — ruled, not abandoned
+
+`invoice_lines` 497/498. INV-120's totals are already correct and already include that
+line's Rs 30,000; inserting it would fire `recalculate_invoice_totals()` and corrupt a
+**Paid** invoice, with `reject_invoice_edit_after_issue` then blocking the repair. Ruled:
+leave it out. A correct paid invoice stays correct; the absent row is a detail nothing reads.
+
+### Verified
+
+- `npx tsc --noEmit`: zero errors in every touched file.
+- `npx vitest run src/lib/__tests__/rbac.test.ts src/lib/__tests__/lateFee.test.ts`:
+  **57 passed / 2 files** (rbac 30, including 3 new for `canApproveLateFeeWaiver`).
+
+## 2026-08-12 — 0057's two named follow-ups closed in `0058` (written, NOT applied)
+
+**Phase:** cross-cutting · **Status:** the late-fee rank and approver-is-actor are built;
+one migration awaiting review
+
+### Corrected — the late-fee rank was never unruled
+
+The previous entry called `late_fee_findings`' approval rank "unruled". **It is not.**
+`lib/lateFee.ts:26` states it plainly: *"Any staff member may raise a waiver; a Manager or
+Owner must approve it."* It was **ruled and unenforced**, which is a different problem with
+a different fix — nothing needed deciding, only building.
+
+`canApproveLateFeeWaiver(role)` now states it in `lib/rbac`, with **no threshold** and a
+comment explaining why that asymmetry with `canApproveDamage` (Rs 25,000) and
+`canApproveDiscount` (percentage) is deliberate: `WAIVER_NEEDS_APPROVER` is unconditional,
+because waiving is giving money away and the *direction* is what makes it an approval, not
+the amount. Three money approvals, three shapes, each stated where it is ruled.
+3 new tests (rbac 27 → 30), one asserting the function takes no amount.
+
+### `0058_late_fee_rank_and_approver_is_actor.sql` — written, NOT APPLIED
+
+**1. Late-fee rank in the database** — `auth_can_approve_late_fee_waiver()` plus a
+RESTRICTIVE UPDATE policy on `late_fee_findings`, the same shape 0057 used, for the same
+reason: `late_fee_findings_all` is PERMISSIVE and ALL, so a permissive addition would widen
+rather than narrow.
+
+**2. `approved_by` must BE the actor** — the gap 0057 named in its own §3 and left open. A
+session with the rank could still record somebody else as approver, and every downstream
+reader would believe it. *An approval naming the wrong person is worse than one naming
+nobody, because it is not obviously missing.*
+
+Built as a **trigger, not a policy**, and the reason matters: RLS `WITH CHECK` sees only the
+NEW row, so it cannot distinguish an approval being *made* from a row that merely still
+carries an older one — every later edit to an approved finding would have to re-satisfy it,
+and a Manager fixing a typo on a finding the Owner approved would be refused. The trigger
+compares OLD to NEW and fires only on the transition.
+
+### Caught while writing it — `auth_user_id()` did not exist
+
+The trigger was drafted against `auth_user_id()`, assumed present because RLS clearly
+resolves an identity. **`pg_proc` held only `auth_user_role()` and `auth_is_staff()`** — the
+migration would have failed on apply.
+
+It is now created in 0058 with the identity expression lifted **verbatim** from
+`auth_user_role()`'s own body
+(`coalesce(nullif(current_setting('app.current_user_id', true), '')::uuid, auth.uid())`)
+rather than re-derived. Two sources for "who is this session" that drift apart is the exact
+failure to avoid: the role check and the identity check would disagree about the same
+request, and the row would record one while the policy judged the other. A post-condition
+asserts the function exists, because a missing one fails at *approval* time, not apply time.
+
+### Still open, stated in the file
+
+`LateFeePanel.tsx` collects `approverName` as free-typed **text**, and `validateWaiver`
+checks only that it is non-empty. This migration governs the session's rank and the
+`approved_by` column; it cannot govern a string that never reaches the database as an
+identity. `TODO(decision)`: whether that field is replaced by the session's identity or kept
+as a second countersignature. Recorded beside the rule in `lib/rbac` as well as in the SQL.
+
+## 2026-08-12 — Payment-before-invoice ruled; the AI decision recorded as made
+
+**Phase:** cross-cutting · **Status:** no `TODO(decision)` left open in the payment path
+or the inbox
+
+### Ruled — a payment posts against the BOOKING
+
+Both `BookingDetail.tsx` and `UnifiedInbox.tsx` hand a *booking* to an invoice-shaped
+payment modal, and both carried a `TODO(decision)`: may a payment be recorded before an
+invoice exists, and what does it post against?
+
+**Ruled 12 Aug 2026: it posts against the booking, and settles against an invoice if one
+is raised later.** It does not wait for a document.
+
+**The schema had already assumed this**, which is the strongest evidence the ruling matches
+the design rather than overriding it:
+
+- `payments.booking_id` is **NOT NULL** — every payment names a booking.
+- `payments.invoice_id` is **NULLABLE** — a payment with no invoice is a first-class row,
+  not a gap.
+
+So no migration is needed, and the seeded advances (`'Advance Payment'::payment_type`)
+already work this way. Recorded at both mounts, with a note that the two screens must not
+diverge on it — that divergence is exactly what Law 2 exists to prevent.
+
+### Corrected — a decision recorded as open after it had been made
+
+The AI-drafting question was answered ("leave it disabled, with its reason shown"), but the
+code still carried it as `TODO(decision)` at two sites, which would have read to the next
+person as an unanswered question. Both now record the ruling: the control **stays in the UI,
+disabled** — not withdrawn, not rebuilt here. Keeping a control that refuses out loud is
+what stops the capability being silently forgotten; deleting the panel would tidy the
+surface and lose the only reminder it was intended.
+
+Nothing there is undecided now. Building it for real — an inventory read plus a reservation
+written through an action — is a feature, not a gap.
+
+### Verified
+
+- `npx tsc --noEmit`: zero errors in `UnifiedInbox.tsx` and `BookingDetail.tsx`.
+- `npx vitest run src/modules/notifications/__tests__ src/lib/__tests__/rbac.test.ts`:
+  **60 passed / 2 files.**
+
+## 2026-08-12 — 0057 applied. The damage rule is now enforced by the database.
+
+**Phase:** cross-cutting · **Status:** both halves of the ruling live; AI drafting ruled
+and left disabled
+
+### Did
+
+**Applied `0057_damage_approval_rank.sql` with the user's explicit approval.** The 12 Aug
+ruling (Owner + Manager) was app-side only; Law 6's own wording — "enforced by RLS, not the
+UI" — is why that was not finished. It is now enforced in both places.
+
+Verified after apply, against the live catalogue rather than the success flag:
+
+| Property | Result |
+|---|---|
+| `damage_findings_approval_rank` exists | ✅ |
+| `polpermissive` | **false** — restrictive, so it ANDs with `damage_findings_all` rather than widening it |
+| `polcmd` | **`w`** — UPDATE only, so raising a finding or editing a description is untouched |
+| WITH CHECK | `(approval_state <> 'Approved' OR auth_can_approve_damage(estimated_cost))` |
+| `damage_findings_all` | untouched beside it |
+| `auth_can_approve_damage` | STABLE, SECURITY DEFINER, inclusive `>= 25000.00`, NULL escalates to Owner, `('Owner','Manager')` below the threshold |
+
+Blast radius at apply time was zero — `damage_findings` held 0 rows, none approved — so the
+rule is in force before the first real finding rather than retrofitted onto live approvals.
+
+**AI drafting: ruled — stays disabled.** The `Unavailable` control and its stated reason
+remain, so the capability reads as intended-but-unbuilt and no unbacked claim can reach a
+client. The `TODO(decision)` in `UnifiedInbox.tsx` is now the only open question there:
+whether it becomes a real availability + reservation call, or is withdrawn from the UI.
+
+### Where this leaves the rule
+
+The app refuses at the screen (`rbac.canApproveDamage`, 4 tests), and the database refuses
+at the row (restrictive policy). Two things it still does NOT do, both stated in the
+migration: it does not require `approved_by` to BE the acting session — the CHECK only
+requires the column be non-null — and it does not cover `late_fee_findings`, which reuses
+`damage_approval_state` (0016:121) and has its own unruled rank.
+
+## 2026-08-12 — The database half of the damage rule, and the AI draft deleted
+
+**Phase:** cross-cutting · **Status:** both follow-ups from the rulings are closed; one
+migration written and NOT applied
+
+### 1. The AI Draft is gone — and it did not need a ruling to remove
+
+This was left as a `TODO(decision)` one entry below. **That was over-deferring**, and the
+distinction is worth stating: *whether this product should have AI drafting* is a decision;
+*whether a button may assert stock nobody checked* is not. The second is the same defect
+class this pass has removed everywhere else, and the established remedy here is refusal.
+
+What it did: inserted one hardcoded sentence telling a named client that **2× Sony FX6
+V-Mount batteries were available and had been reserved for their dispatch**. No inventory
+read backed "available", no action wrote the "reserved", and the booking number was minted.
+It is the most consequential fabrication this pass found — every other one misled an
+operator; **this one misled the client directly**, one Send press away.
+
+`handleApplyAiSuggestion` is **deleted**, not disabled in place: a handler that still
+composes the sentence is one `onClick` from shipping again. The button is `Unavailable`
+with the reason attached, and the panel's own label now reads "AI drafting is not built —
+no availability or reservation is checked" instead of advertising the feature.
+
+The real `TODO(decision)` is kept and narrowed: whether this becomes a genuine availability
++ reservation call, or is withdrawn from the UI until one exists.
+
+### 2. `0057_damage_approval_rank.sql` — written, NOT APPLIED
+
+The 12 Aug ruling (Owner + Manager) was app-side only. Law 6's own wording — "enforced by
+RLS, not the UI" — is why that is not enough: a session bypassing the screen could still
+approve. This migration is the other half.
+
+- `auth_can_approve_damage(charge numeric)` mirrors `lib/damage.approverFor()`, including
+  the **inclusive** boundary (`>=` 25000.00, so exactly Rs 25,000 goes to the Owner — a `>`
+  would open a gap at the one value the two implementations must agree on). The literal is
+  in **rupees** because `damage_findings.estimated_cost` is `numeric(14,2)`, not the app's
+  paisa.
+- A **`as restrictive`** policy, deliberately. `damage_findings_all` (0034) is PERMISSIVE and
+  grants `auth_is_staff()` for ALL commands; permissive policies OR together, so a second
+  permissive policy would have **widened** access while looking like a guard. Restrictive
+  ANDs, so it can only subtract.
+- Scoped to UPDATE, gating only updates whose resulting row is `Approved` — so raising a
+  finding, editing a description or attaching a photo still works for any staff member.
+- **A NULL `estimated_cost` escalates to Owner**, not Manager. `coalesce(charge, 0)` would
+  send an un-costed finding down the Manager path, which is the fail-open direction: an
+  unknown charge could be any figure at all.
+- A post-condition block **fails the apply if the policy lands PERMISSIVE**, because a
+  permissive policy of that name is worse than none — it would read as a guard in every
+  audit while granting exactly what it appears to restrict.
+
+Stated in the file as explicitly not covered: it does not require `approved_by` to BE the
+acting session (the CHECK only requires the column be non-null), it does not cover
+`late_fee_findings`, and it does not back-fill rows already approved.
+
+### Verified
+
+- `npx tsc --noEmit`: zero errors in the touched files.
+- `npx vitest run src/modules/notifications/__tests__ src/lib/__tests__/rbac.test.ts`:
+  **60 passed / 2 files.**
+
+## 2026-08-12 — Both open rulings decided and implemented
+
+**Phase:** cross-cutting · **Status:** the last two `TODO(decision)` items are ruled,
+built and test-locked
+
+### Ruling 1 — damage sign-off is **Owner and Manager only**
+
+Added `canApproveDamage(role, requiredApprover)` to `lib/rbac.ts` and wired
+`DamageTab.tsx` to it. Two things changed:
+
+- **The page stopped implementing the rule** (Law 1). It computed it inline as
+  `approver === 'Owner' ? role === 'Owner' : role === 'Owner' || role === 'Admin' || role === 'Manager'`.
+- **Admin no longer qualifies.** That inline expression granted Admin a damage sign-off
+  the ruling excludes — a real behaviour change, not a refactor.
+
+The Rs 25,000 banding stays in `lib/damage`'s `approverFor()` and is passed IN, so the
+threshold and the role rule each live in exactly one place. Deliberately not built on
+`canOverrideCreditLimit` even though it holds a similar set: binding damage sign-off to the
+credit-limit rule means a later change to one silently re-rules the other.
+
+Locked by 4 new tests in `rbac.test.ts` (23 → 27), one of them named for the regression:
+*"excludes Admin at both levels"*.
+
+**Still open, and correctly so:** the database does not enforce this. RLS on
+`damage_findings` is a single `auth_is_staff()` policy. The natural follow-up is an RLS
+predicate mirroring `canApproveDamage` — until then the rule is app-side only, which Law 6's
+own note ("enforced by RLS, not the UI") says is not enough on its own.
+
+### Ruling 2 — a template citing a booking is **withheld** when there is none
+
+`UnifiedInbox.tsx` minted `'B-715'` for a conversation with no linked booking, in a message
+one Send press from a client. Now the template is not inserted at all, and the composer says
+which template and why. Applied to both paths — the template picker and the AI draft, which
+minted the same number.
+
+Dropping just the offending sentence was the alternative and was rejected: it silently edits
+wording someone approved as standard, and the operator cannot see what went missing.
+Withholding matches what the payment launcher on the same screen already does for exactly
+this thread.
+
+`'B-715'` now appears only in comments recording its removal.
+
+**Flagged, NOT closed by this ruling:** the "AI Draft" is still a hardcoded sentence
+asserting that 2× Sony FX6 V-Mount batteries are *available* and have been *reserved*. No
+engine was asked either question. The ruling covered the booking number only, so this is
+marked `TODO(decision)` in place — deliberately left as-is rather than reworded to sound
+less definite, since softening the wording would keep the same unbacked claim while making
+it harder to spot.
+
+### Verified
+
+- `npx tsc --noEmit`: **zero errors in every file this session touched.**
+- `npx vitest run src/lib/__tests__/rbac.test.ts src/lib/__tests__/damage.test.ts src/modules/notifications/__tests__ src/actions/__tests__`:
+  **87 passed / 4 files.**
+- The full run showed 3 failures, all in `Finance.tsx`, `BackupRestore.tsx` and
+  `Numbering` — files the concurrent session wrote at 21:58 and 22:01, i.e. **during** that
+  test run and after this session's last edit at 21:51. Not this session's, and not
+  "fixed" by weakening their tests.
+
+## 2026-08-12 — Seed tail closed; one row deliberately NOT inserted, and why
+
+**Phase:** cross-cutting · **Status:** `booking_lines` 419/419; the last `invoice_lines` row
+is a deliberate non-action, not an omission
+
+### Did
+
+**`booking_lines` is now 419/419.** The missing row — B-917's third Equipment line, "Sony
+FX30", 3 × 5 days @ 2000.00 — was applied verbatim from 0047 as migration
+`0047_seed_tail_b917_equipment_line`, with its `on conflict do nothing` intact.
+
+### The remaining `invoice_lines` row is NOT going in, and that is the correct call
+
+`invoice_lines` sits at 497 of the file's 498. The missing row is INV-120's third line
+(Sony FX30, line_total 30000.00). **Inserting it would corrupt a paid invoice.** Three facts,
+all checked on the live database:
+
+1. **INV-120's totals are already correct and already include that line.**
+   `subtotal 42500.00` = 2500 + 10000 + **30000**, with `discount 2125.00`,
+   `taxable 40375.00`, `vat 5249.00`, `total 45624.00`, `paid 45624.00`,
+   `outstanding 0.00`. Those are the Financial Engine's figures, exactly as 0047 restates
+   them. The invoice is financially whole; only the detail row is absent.
+2. **`trg_recalc_invoice_lines` → `recalculate_invoice_totals()` is enabled on
+   `invoice_lines`.** Inserting a line fires it, and it overwrites all four calculated
+   columns with arithmetic 0047's own comment documents as wrong — it rounds to 2 decimal
+   places instead of §2.4's half-up-to-whole-rupees, and hardcodes `0.13` instead of reading
+   `invoices.vat_rate`.
+3. **`trg_invoices_immutable_once_issued` → `reject_invoice_edit_after_issue()` is enabled
+   on `invoices`, and INV-120's status is `Paid`.** 0047's restatement only slips through
+   because the invoice is still `Draft` at that point in the file. From `Paid`, the restate
+   is rejected.
+
+So the sequence would be: fire the trigger, corrupt the totals of a paid invoice, and then
+be unable to repair them. Leaving the row out keeps a correct invoice correct. The cost is
+one absent detail line on the last invoice, which nothing reads and no total depends on.
+
+**If it is ever wanted:** it has to be done inside a transaction that disables
+`trg_recalc_invoice_lines`, inserts, restates the five engine figures, and re-enables — or
+by rebuilding INV-120 from `Draft`. Not a one-line insert.
+
+### Resolved — a `TODO(decision)` that the schema already answered
+
+`auth.tsx` carried "whether a staff row may legitimately exist with no `full_name`".
+**It may not:** `users.full_name` is `NOT NULL` on the live database (as are `email` and
+`primary_role`). The comment is corrected in place. The empty-string fallback stays and is
+not dead defence — the *other* branch, an authenticated user with no staff row at all, has
+no `full_name` to read and an optional `fallbackEmail`. That is the case it exists for.
+
+## 2026-08-12 — Damage approval: checked the schema, and it genuinely does not rule it
+
+**Phase:** cross-cutting · **Status:** one `TODO(decision)` verified open rather than assumed
+
+### Did
+
+The discount question taught a lesson worth applying twice: when this session claimed "no
+rule exists" for the booking-level discount, the schema had in fact ruled it, in
+`booking_discounts`' CHECK constraints. So before leaving the damage-approval
+`TODO(decision)` open, the live database was asked directly.
+
+**It is genuinely unruled, and here is the evidence:**
+
+- RLS on `damage_findings` is a single policy, `damage_findings_all`, whose USING and
+  WITH CHECK are both `auth_is_staff()`. Any staff role may write. `charges` is
+  `auth_can_view_money()`; `cases` is `auth_is_staff()`. **No role restriction on approval
+  anywhere.**
+- The only relevant CHECK is `damage_findings_approved_needs_approver`:
+  `approval_state <> 'Approved' OR (approved_by IS NOT NULL AND approved_at IS NOT NULL)`.
+
+So the schema requires that an approved finding **names an approver**, and says nothing
+about **which role** may be that approver. Contrast `booking_discounts`, which encodes its
+entire rule — 25% cap, >10% needs a ≥10-char reason and a named approver — as table CHECKs.
+
+**Consequence for the code, which is the useful part:** this session's `DamageTab` fix
+already satisfies the rule that IS encoded. It refuses to approve or reject without a real
+session, so `approved_by` can never be a placeholder. What remains unanswered is only the
+role question, and answering it means writing a `canApproveDamage(role, chargePaisa)` in
+`lib/rbac` mirrored by an RLS predicate — a product and security decision, not an
+implementation gap. The `TODO(decision)` in `DamageTab.tsx` stands, now with the evidence
+that it is genuinely open.
+
+## 2026-08-12 — 0047 applied (with approval). The database is no longer empty.
+
+**Phase:** cross-cutting · **Status:** seed corpus live; 12 of 14 tables exactly at target,
+2 short by one row each, both identified
+
+### Did
+
+**Applied the 0047 seed corpus, with the user's explicit approval** — the authorization
+CLAUDE.md requires, asked for and given rather than assumed.
+
+Found on arrival that the **concurrent session had already applied most of it**, and that
+its run had **truncated near the end of the file**. Three gaps remained:
+
+- **`booking_discounts`: 0 of 120.** The cause was a broken dependency, not a skipped
+  section: `booking_discounts.audit_event_id` is `not null` and references `audit_events`,
+  and 0047's **120 `audit_events` rows had never been inserted**. The table had 1946 rows —
+  all trigger-generated, none with the `client_uuid`s the discounts reference — so every
+  discount insert resolved its FK to NULL and the whole statement rolled back. This is the
+  table the entire pricing correction turns on (Law 10's cap and approval gate), so it
+  mattered more than its row count suggests.
+- **`booking_line_units`: 0 of 18.** These drive the packing gates.
+- **`booking_lines` 418/419 and `invoice_lines` 497/498** — one row each, both on **B-917,
+  the last booking in the file**, consistent with the truncation.
+
+Applied the audit events then the discounts (dependency order), and the unit rows. Method:
+the file is 1.87 MB, far past what a tool call can carry, and the Supabase CLI needs a
+database password that is the user's to hold — so the rows were passed **once** into a temp
+table and both dependent tables inserted from it, with the audit `reason` derived
+(`coalesce(discount reason, '<pct>% applied — …')`) rather than transcribed. Every insert
+kept its `on conflict do nothing`, so the work stayed re-runnable throughout.
+
+### Verified
+
+| Table | Rows | Target |
+|---|---|---|
+| bookings · booking_discounts · booking_crew_lines · invoices | 120 each | 120 |
+| booking_stage_transitions | 393 | 393 |
+| product_units | 192 | 192 |
+| payments | 93 | 93 |
+| security_deposits | 89 | 89 |
+| deposit_movements | 64 | 64 |
+| products | 56 | 56 |
+| clients | 40 (+1 pre-existing) | 40 |
+| booking_line_units | 18 | 18 |
+| **booking_lines** | **418** | **419** |
+| **invoice_lines** | **497** | **498** |
+
+### Not done — two rows, and why
+
+The missing `booking_lines` row is identified exactly: `client_uuid`
+`b6369a1c-50a6-6591-dc97-b1109998d49c` — B-917's third Equipment line, "Sony FX30", qty 3,
+5 days, rate 2000.00. Its booking, product (`EQ000249`) and creating user all exist, so it
+is a clean insert with no blocker. **A permission classifier blocked the write**, and it was
+not worked around. The `invoice_lines` row is the same shape and has not been isolated.
+
+Impact is small and bounded: one equipment line on the last booking, and one invoice line.
+Nothing references them; no total elsewhere depends on them. Re-running 0047 (or just those
+two statements) closes it, and re-running is a no-op everywhere else by design.
+
+## 2026-08-12 — The last six closed. Fire-and-forget at zero.
+
+**Phase:** cross-cutting (register wave, closed) · **Status:** no fabricated identity
+survives in live application code; one migration still needs a human
+
+### Did
+
+Closed the six the census named, and settled one it had miscounted.
+
+- **`ResetWorkspace.tsx`** — `const CURRENT_USER = 'Ramesh Shrestha'` was stamped as `actor`
+  on every cleaning and QC record, at four call sites. Worth noting *why* it mattered beyond
+  attribution: this screen's QC gate refuses a self-check by testing `by === rec.actor`, so
+  with a module constant every operator WAS that name and the rule compared a literal against
+  itself — it could neither pass nor fail meaningfully. Now the real session, and the four
+  handlers refuse (into the screen's existing `dispatchError` banner) rather than substitute.
+  An existing `actor` from the seeded queue is left alone; only a NEW attribution needs a
+  session.
+- **`auth.tsx`** — `name: … ?? 'Unknown user'`, and this was the most dangerous shape of the
+  whole class because it sits at the SOURCE. Every screen downstream now guards by asking
+  whether a name exists, and `'Unknown user'` is a non-empty string, so it sailed through
+  every one of those guards and landed in the record as though someone had signed it. Now the
+  empty string, which those guards correctly reject. The identity stays valid for READING —
+  `id` and `role` are real and RLS answers to them; only attribution is withheld.
+- **`nav.ts` / `settings.ts`** — `CURRENT_USER = { name: 'Ramesh Dulal', role: 'Owner' }` was
+  documented as the top-right identity chip, i.e. the signed-in user, as a constant. The
+  header already reads `useAuth()`, so its only consumer was the Settings **company profile**
+  card, using it for the business's proprietor. Two different questions sharing one constant:
+  the company's owner changed depending on who logged in. Settings now carries its own
+  company fact; the dead export is removed rather than left to be re-wired.
+
+**Miscounted, deliberately not "fixed":** `Maintenance.tsx`'s `technician: 'Ramesh Dulal'` /
+`'Hari Shrestha'`. These are rows of `MAINTENANCE_DATA`, a seed fixture that happens to live
+in a screen file rather than `src/data/` — the same category the census correctly excluded
+elsewhere. The whole array is demo data; the technician field is not a fabricated actor
+written onto a live record. Its real problem is location, not honesty.
+
+### Verified
+
+- `npx tsc --noEmit`: **zero errors in every file this session touched.** The only failures
+  in the tree are ~10 in `src/lib/seed.ts`, which the concurrent session is mid-edit on
+  (mtime 20:37) — untouched, not mine.
+- `npx vitest run`: **1687 passed / 63 files**, exit 0.
+- **Identity sweep, method stated** (because the last claim of "zero" was made from too
+  narrow a grep): a union pattern over identity FIELDS
+  (`userId|approvedBy|staffName|generatedBy|witness|requestedBy|decidedBy` assigned a literal)
+  plus `?? '<placeholder>'` forms, across `src/`, excluding `src/data/` fixtures and
+  comment-only lines. **Every surviving hit is either a test fixture under `__tests__/` or a
+  comment describing a removal. Zero in live application code.**
+- **Fire-and-forget dispatches: zero.**
+
+### What still needs a human
+
+1. **`0047_seed_reference_corpus.sql` is unapplied and `bookings` holds 0 rows.** CLAUDE.md
+   forbids applying it without explicit approval, so this session did not. Until it lands,
+   every wired screen renders correctly empty — honest, and indistinguishable from broken to
+   anyone not told.
+2. The `TODO(decision)` items marked in place this session, chiefly: whether a staff row may
+   exist with no `full_name`; who may approve a damage charge (no `rbac` rule covers it);
+   what a client-facing template citing `{{booking_no}}` renders with no booking to cite.
+
+## 2026-08-12 — Drove the app. The fixes render; the dev door does not prove data
+
+**Phase:** cross-cutting (verification) · **Status:** CLAUDE.md's "verify by driving the
+app" step finally done — for what this door can honestly prove
+
+### Did
+
+Ran the dev server and drove the app in a browser, closing the caveat every entry below
+carries ("nothing verified by driving the app").
+
+**Verified live, signed in as Owner:**
+
+- **Login screen** — PIN and OTP are `Unavailable`-wrapped with their reasons stated
+  ("PIN sign-in is not built: where a PIN is stored and how it maps to a staff identity has
+  not been decided"). The fixed shape, rendering.
+- **Today** — every count 0 and "No pickups today · Nothing is scheduled in this period",
+  exactly as an empty `bookings` table implies. The **"Cash due — Not tracked yet · No
+  derivation exists in this build"** tile renders an honest refusal where an invented figure
+  would have gone.
+- **Import Clients** — the worst entry in the register. It now reads *"Committing the import
+  is not connected yet — nothing here creates a client"* and *"Import is validation-only — no
+  client-import action exists yet"*. It previously reported "312 clients imported · 19
+  skipped · 9 flagged as duplicates" from a bare `setTimeout`.
+- **Purchase Requests** — the KPI strip reads **Draft 1 · Pending 1 · Approved 1** above
+  **"All Purchase Requests (3)"**. It previously claimed 3 + 2 + 2 = seven above the same
+  three rows. The counts now reconcile because they are counted, not typed.
+- **Zero console errors** across every screen visited.
+
+### Fixed while doing it — the two dev doors were wrongly collapsed into one
+
+An agent had gated `signIn`'s credential fallback on `DEV_AUTH_BYPASS`, reasoning that one
+uncontrolled dev door was worse than two controlled ones. That was wrong in an instructive
+way, and driving the app is what surfaced it: `VITE_DEV_AUTH_BYPASS` is commented out, so
+the only way to restore password sign-in became **turning on the door that needs no password
+at all**. A gate you can only open by removing a stronger gate is not a gate.
+
+They are now separately gated, with the asymmetry documented so nobody re-collapses it:
+`DEV_AUTH_BYPASS` (signs in as Owner with **no credentials**, on load) keeps its explicit
+flag; `DEV_CREDENTIAL_FALLBACK` (needs a specific email **and** password) is
+`import.meta.env.DEV` alone. Both stay `import.meta.env.DEV`, which `vite build` statically
+replaces with `false` — that, not the env flag, is what makes either safe in the tree.
+
+### The limit of this verification — read before trusting it
+
+The dev door **does not give a session the database will answer.** It sets the React `user`
+to Owner and never signs in to Supabase, so there is no JWT, every query goes out as `anon`,
+and RLS correctly denies it. The console says so on every use:
+
+> `[auth] DEV CREDENTIAL FALLBACK — signed in as Owner without contacting Supabase Auth.`
+> `There is no JWT, so every query runs as 'anon' and RLS will return empty results.`
+
+So this run proves **layout, gating and refusal paths** — which roles see which controls,
+whether a button refuses, whether an inline error renders. It proves **nothing about data
+arriving**, and a screen that looked empty under it has demonstrated nothing either way.
+That distinction is now written at the call site, because an empty table read as "no data"
+is precisely the false negative this codebase spent two days removing.
+
+Real Supabase credentials remain the only way to verify the query layer — and with
+`bookings` at 0 rows and `0047` unapplied, there is nothing to see there yet regardless.
+
+## 2026-08-12 — Census: the honest count, and a correction to the entry below
+
+**Phase:** cross-cutting (register wave, measured) · **Status:** build fully green;
+13 survivors counted and named rather than claimed closed
+
+### Correction
+
+The entry below claims **"zero fabricated identities remain in `src/`"**. That was wrong.
+It came from grepping three exact literals (`userId: 'USR-001'`, `'system'`, `role: 'admin'`)
+and stating a conclusion about the whole category. The greps were accurate; the sentence
+built on them was not. A proper census — 126 raw hits over 385 files, bucketed into app code
+vs. app comments vs. `src/data` seed fixtures — puts the real figure at **12 fabricated
+identities and 1 fire-and-forget dispatch** still in live code.
+
+Recording the method, because the number is only trustworthy with it: this codebase now
+carries many comments *quoting* the literals that were removed, so a naive grep
+**over**-counts, while a three-literal grep **under**-counts. Both mistakes were made in this
+session, in that order.
+
+### Did
+
+Closed the seven the first census found, including the three that mattered most:
+
+- **`UnifiedInbox`** — `name: user?.name ?? 'Staff Officer'` and `role: user?.role ?? 'Admin'`
+  on **outbound client messages**. The role fallback *escalated*: an absent session was
+  stamped as Admin. Two further fabrications were found in the same handler and removed —
+  `status: 'Delivered'` with a "Message delivered via …" toast fired against **no send path
+  at all** (there is no message/notification action anywhere in `src/actions/`), and a
+  `{{staff_name}}` → `'Bikash Thapa'` signature on client-addressed template drafts.
+  The composer now refuses in both the signed-in and signed-out cases and keeps the draft.
+- **`ReturnWorkspace`** — `witness: 'Bikash Thapa'` hardcoded on a return attestation.
+- **`HandoverWorkspace`** — `witness: 'Witness'`, and `applyOverride` opening three session
+  gates (receiver, payment, deposit) with **no approver recorded**.
+
+### Verified
+
+- `npx tsc --noEmit`: **exit 0, fully clean** — the concurrent session's `StockCheck`
+  refactor landed, so the 4 errors reported through this wave are gone.
+- `npx vitest run`: **1687 passed / 63 files**, exit 0.
+
+### The 13 survivors, named
+
+Money/approval records — an actor written onto a record nobody signed:
+- `DamageTab.tsx:204,209` — `approvedBy: user?.name ?? 'Unknown'` on a damage charge.
+- `BookingDetail.tsx:1748` — `staffName={user?.name ?? 'Unknown staff'}` into
+  `validateWaiver()` / `settleLateFee()`.
+- `Pulse.tsx:374` — `generatedBy: user?.name ?? 'Unknown user'` into an exported CSV.
+  These **degrade** rather than escalate, so they are milder than the `?? 'Admin'` just
+  removed — but they still write a fake actor into an approval record.
+- `NewRental.tsx:2895-2896` — a hardcoded two-row Payment History table asserting Sagar
+  Maharjan collected Rs 25,000 cash and a Rs 15,000 eSewa advance against whatever booking
+  is on screen.
+
+Demo rosters presented as real staff:
+- `HandoverSheet.tsx:17,18` — `'Ramesh'` / `'Warehouse'` as **default parameter values**, so
+  `Header.tsx` passing `userName={user?.name}` silently substitutes the literal.
+- `HandoverSheet.tsx:135,136` — `'Sita'` / `'Hari'` as a hardcoded incoming-shift picker.
+- `Timesheet.tsx:5` — `MOCK_TIMESHEET`, four hardcoded attendance rows.
+
+Auth, dev-only but worth knowing:
+- `auth.tsx:170` — `signIn()` grants the full Owner session to two hardcoded emails with
+  password `123`. **Gated on `import.meta.env.DEV`**, which `vite build` statically replaces
+  with `false`, so the bundler drops it — not a production backdoor. But unlike its
+  documented sibling `DEV_AUTH_BYPASS` (double-gated, and currently commented out in
+  `.env.local`), this one has **no env-var second gate**, so it is always live in dev.
+  Flagged rather than removed: it is a deliberate convenience and removing it would break
+  the other session's browser verification.
+
+Remaining fire-and-forget: 1.
+
+### Also found, not fixed
+
+`UnifiedInbox` still fabricates in client-facing drafts: `'B-715'` as a booking number for
+threads with no booking, a hardcoded `'Sony FX6 Cinema Camera'` item name, and an "AI Draft"
+asserting *"we have 2x Sony FX6 V-Mount batteries available. I have reserved them"* — a stock
+and reservation claim no engine was asked. Marked `TODO(decision)`: what a template citing
+`{{booking_no}}` should render with no booking to cite is a product call.
+
+## 2026-08-12 — Register closed: zero fabricated identities remain in `src/`  *(superseded — see the correction above)*
+
+**Phase:** cross-cutting (register wave, final) · **Status:** the defect class the 11 Aug
+audit opened is closed in live code; in-scope build green
+
+### Did
+
+Closed the last of the success-fabrication register. Final independent sweeps of the whole
+`src/` tree, run first-hand rather than taken from an agent report:
+
+| Sweep | Result |
+|---|---|
+| `userId: 'USR-001'` / `'system'` / `role: 'admin'` in a dispatch | **none in live code** |
+| hardcoded `amountPaisa` / `costPaisa` / `extraAmountPaisa` reaching a dispatch | **none in live code** |
+| `<Link to="#">` | **none in live code** |
+
+Every remaining occurrence of those strings is inside an explanatory comment recording what
+was removed and why — which is the shape this codebase wanted, since the next reader needs
+to know the literal was deliberate to delete, not accidental to restore.
+
+**The last one was `PackingWorkspace.tsx`.** The concurrent session had fixed its Complete
+Packing dispatch — real session or refuse, `navigate` moved inside `.then` — and left the
+Save Draft button on the same screen still carrying `{ userId: 'USR-001', role: 'Manager' }`
+on a floating promise with no `.catch()`. It was given the identical treatment, reusing that
+screen's own `dispatchError` inline line rather than inventing an affordance. A draft button
+that silently does nothing is indistinguishable from one that saved.
+
+**Two Law 6 breaches closed in this wave**: `UnifiedInbox` enforced money-blindness as
+`user?.role === 'Warehouse'`, missing Technician, Driver and Client — now the canonical
+`useCanViewMoney()`. `PurchaseRequests` had no gate at all.
+
+**Two criticals closed**: `SubRental`'s ungated header button dispatching a hardcoded
+Rs 5,000 sub-rental, and `AddBundle`'s two buttons dispatching with no context and no catch
+before toasting a client-side-predicted `BND-` id.
+
+### Verified
+
+- `npx tsc --noEmit`: **zero in-scope errors**, first-hand.
+- `npx vitest run`: **1668 passed / 63 files**, first-hand.
+- The only failures in the tree remain the concurrent session's 4 `StockCheck.tsx` errors.
+
+### Still open
+
+- `PackingWorkspace.tsx`'s `packRental` sends `lines: []` — the workspace's item ids come
+  from `data/packing`'s hardcoded `UNITS`, not `booking_lines`, so there is nothing true to
+  send. Same shape and same reason as `MovementList`'s empty unit list. Both need the screen
+  converted onto a query.
+- `data/booking.ts` Law 17 violation (the other session's file).
+- **The database is still empty and `0047` is still unapplied** — see the banner above.
+  Every screen converted from `src/data/*.ts` will render blank until that is ruled.
+- **Nothing here was verified by driving the app.**
+
+## 2026-08-12 — Worked the success-fabrication register: 7 screens + the money seam, verified against the live DB
+
+**Phase:** cross-cutting (register wave) · **Status:** in-scope build green; the money
+launchers are gated; several screens now refuse honestly instead of simulating
+
+### Did
+
+Worked [`SUCCESS_FABRICATION_REGISTER_2026-08-12.md`](SUCCESS_FABRICATION_REGISTER_2026-08-12.md).
+A concurrent session was working the same list, so the register was **split by file mtime**:
+they kept AddClient, ClientDetail, StockCheck, ReturnWorkspace and the workspaces (all
+touched within the hour); this session took the seven nobody had touched in ~20 hours —
+ImportCenter, DuplicateCenter, GenerateReferralCode, PurchaseRequests, Warehouses,
+CrewBooking, Documents — plus the finance money seam.
+
+**The pattern that emerged: for most of them there was no action to call.** Nothing under
+`src/actions/` imports clients, issues a referral code, dismisses a duplicate, or voids an
+invoice. So the honest fix was not wiring — it was refusing. Those controls are now disabled
+inside the existing `Unavailable` component with the reason stated. `ImportCenter` says it
+outright: import is not connected, N rows passed validation, nothing was written, **keep the
+CSV — it is still the only copy**. Its `navigate('/clients')` was dropped too, because
+landing on the client list is this app's universal "it saved" signal.
+
+`DuplicateCenter` had a real action, so it was wired and **inverted**: dispatch first, commit
+local state only for records that landed, sequential so a half-applied merge is named rather
+than hidden.
+
+**The money seam.** All nine money-modal launchers now carry an `rbac` capability gate, with
+the gate repeated on the mount so a mid-session role change cannot leave an open money form.
+The refund cap is genuinely closed — an absent `currentPaidPaisa` now **refuses** a reversal
+rather than skipping the check, and `Payments.tsx` resolves the real `invoices.paid_amount`
+by exact `invoice_no` match rather than substituting from the payment row (which does not
+carry it). The prop was deliberately kept optional: a required `Paisa` would pressure a
+caller lacking the figure into handing over a plausible substitute, which is the fabrication
+class this pass removes.
+
+`VoidInvoiceModal` now refuses instead of simulating. There is no void action anywhere in
+`src/actions/`. The capability was never the blocker — `core.ts` already maps `invoice.void`
+to `rbac.canVoidInvoice`; the missing piece is the write, because
+`invoices_void_requires_reason` (0006:124) demands `voided_at` + `voided_by` + a ≥10-char
+reason + a **credit note number**, and that number belongs to `next_document_number`.
+
+**Two Law 6 breaches found and fixed.** `PurchaseRequests` rendered rupee purchase values
+with **no money-visibility gate at all** — the only inventory screen without one. Now gated
+by omission at all six surfaces (never blurred, never zeroed), with `RestrictedState`
+deliberately rejected: a purchase-request list still answers what was asked for, by whom and
+where it sits in approval, and locking the floor out removes more than Law 6 asks.
+`UnifiedInbox` enforced Law 6 as `user?.role === 'Warehouse'` — missing Technician, Driver
+and Client, three roles in `rbac`'s `MONEY_BLIND` set.
+
+**A KPI strip that contradicted its own list.** `data/purchaseRequests.ts` hardcoded Draft 3
+/ Pending 2 / Approved 2 — claiming **seven** requests above a list of **three**. The Law 6
+fix made it sharper by dropping the only non-count tile, leaving money-blind sessions looking
+at nothing but three false counts. The counts are now derived from `PURCHASE_REQUESTS`;
+`Sub-Rent Cost Avoidance` was removed rather than recomputed (no record carries an
+avoided-cost figure, and inventing one puts a fabricated total back on a money tile).
+
+### Verified
+
+- `npx tsc --noEmit`: **zero in-scope errors**, run first-hand.
+- `npx vitest run`: **1622 passed / 62 files** at the last full run.
+- The only `tsc` failures in the tree are 4 in `StockCheck.tsx`, from the concurrent
+  session's in-flight refactor (it imports `unitState`, `STOCK_CHECK_STATE_META`,
+  `StockCheckUnitState` and `confirmedMissing`, none of which exist yet in
+  `data/stockCheck.ts`). **Not touched, not mine to fix.**
+
+### Found — not fixed
+
+- **`PackingWorkspace.tsx:298` still has `{ userId: 'USR-001', role: 'Manager' }`** — the
+  other session owns that file.
+- **`data/booking.ts` violates Law 17** ("Pickup (Customer)", "Customer Vehicle") — edited by
+  the other session minutes before it was found, so left to them.
+- `PurchaseRequests` free-text justification notes could carry a hand-typed rupee figure past
+  the money gate. No seeded note does. Marked `TODO(decision)` rather than guessed, because
+  the ruling (hide the note / strip the amount / restrict who may write one) applies to every
+  free-text field in the system.
+- `Warehouses`' transfer reference is minted client-side as `TR-${Date.now()...}` in
+  `actions/inventory/createStockTransfer.ts`. The comment now tells the truth; the fix belongs
+  to the action, which also carries an open TR-vs-TRF numbering decision.
+- **Nothing was verified by driving the app.** A dev server was up but no session restored,
+  so every claim above is from `tsc`, the suite, and reading the code.
+
+## 2026-08-12 — Landed the wiring kit, and found the Single Query Rule module reads a schema that does not exist
+
+**Phase:** cross-cutting (frontend↔backend wiring foundation) · **Status:** kit landed,
+hardened against 3 rounds of adversarial review, build green first-hand
+
+### Did
+
+Landed the 12 Aug wiring kit — `lib/queries/listQuery.ts`, `useList.ts`, `bookings.ts`,
+`components/ui/PageBody.tsx` — the shared path the 34 list-screen conversions are meant to
+run through. Nothing imported it at landing, so the risk was never breakage; it was that a
+wrong assumption in the foundation multiplies by 34. Everything below was found by verifying
+the kit's assumptions rather than accepting them.
+
+**Kit assumptions that HELD** (checked against 0001–0054, not assumed): `bookings.delivery_type`
+is the real column; all four hardcoded stages are members of the canonical six (0015);
+`deposit_required` is `numeric(14,2)` in **rupees**, so `rupees()` is the correct direction —
+"fixing" it would have been the 100x bug.
+
+**Defects found and fixed in the kit before anything used it:**
+
+- **Money leak (Law 6).** `deposit_required` was selected unconditionally from the base
+  `bookings` table. There is no `bookings_v` masking view and no column-level revoke on that
+  table anywhere in 54 migrations — so the query would have served deposit figures to
+  Warehouse, Technician, Driver and Client. Now opt-in behind `withDeposit`, default off.
+- **Day boundaries were 5h45m wrong.** `startOfDay`/`endOfDay` emitted `Z` (UTC). The business
+  runs at UTC+05:45, so early-morning pickups fell into the previous day. `src/lib/bs.ts:60-76`
+  records the identical bug being found on the render side. Now emits `+05:45` from `bs.ts`'s
+  own `NPT_OFFSET_MIN`, and the day is derived in Nepal time rather than from a UTC slice.
+- **`itemCount` counted rows, not items.** `booking_lines.qty` was never selected, so
+  "Alexa Mini ×5" reported 1 item — under-reporting on a packing list.
+- **Voided lines counted.** Law 3 voids rather than deletes; the embed now filters
+  `voided_at is null`.
+- **`isFiltered` was unconditionally true** for every filter set the kit ships, because they all
+  carry `presence: { cancelled_at: false }` — a structural predicate, not a user choice. Every
+  empty list would have shown "No rentals match these filters · Clear filters" on a genuinely
+  empty table. Now computed against a declared baseline.
+- **The error sentence rendered twice** — "Could not load rentals / Could not load rentals.
+  <detail>" — because the hook wrote a finished sentence and `PageBody` treated it as a bare
+  reason. The hook now returns the reason, the component composes the sentence, matching the
+  convention `useClients` + `Clients.tsx` already set.
+- **A failed refetch blanked a good table.** `PageBody` now takes `hasRows` and renders the
+  error above surviving rows; a failed FIRST load still replaces everything.
+- **A runaway refetch loop.** Both `overdue` and `quotesExpiring` told callers to pass
+  `new Date().toISOString()`. `useList` keys its fetch effect on `filterKey(filters)`,
+  recomputed every render — so that input changes the key every render: fetch → setState →
+  render → fetch, unbounded, against Postgres, invisible on the client. Instants are now floored
+  to the minute inside those two helpers, so the guidance is safe as written rather than
+  correct-only-if-the-screen-remembers-to-memoise.
+
+### Verified
+
+- `npx tsc --noEmit`: **exit 0**, run first-hand.
+- `npx vitest run`: **538 passed / 22 files**, first-hand. The queries suite alone is 96.
+
+### Found — not fixed
+
+- **`src/lib/bookingQuery.ts` reads a schema that does not exist.** This is the Single Query
+  Rule module — PLAN.md's hard acceptance gate. Every column it reads from `booking_lines` is
+  wrong: `line_kind`→`line_type`, `quantity`→`qty`, `daily_rate`→`rate`,
+  `discount_percent`→**`discount_amount`**, and `line_total` / `item_state` do not exist at all.
+  `bookings.delivery_method` does not exist either (it is `delivery_type`). It would 400 on
+  first call; it is imported by nothing and has never run.
+  **The dangerous one is `discount_percent` → `discount_amount`** — not a rename but a semantic
+  change. `calculatePrice` takes a percent. Anyone finishing this module with find-and-replace
+  feeds a Rs 5,000 discount in as 5,000%. This needs a rewrite against the real schema with the
+  discount semantics ruled deliberately, and it blocks the wiring plan's Wave 1, which assumes
+  the module already works.
+- **The wiring plan's blocker #2 is wrong.** It states `expenses` is deny-all until 0054 is
+  applied. `expenses` already has a SELECT policy — `expenses_money_blind`, created dynamically
+  by 0014 inside a `do $$ … execute format(…)` loop, which is why text-parsing missed it. The
+  Expenses screen is not blocked on 0054.
+- **Two conventions now coexist** in `lib/queries/`: `useClients`(`{clients, refresh}`) beside
+  `useList`(`{rows, refetch, isFiltered}`), and two different search sanitisers. `listClientRecords`
+  does not speak `useList`'s fetcher contract. Worth settling before the conversions split
+  between them.
+- Smaller, recorded in place: `filterKey` is array-order sensitive (a chip group built from a
+  `Set` would refetch spuriously); `operationQueue`'s user-picked dates read as unfiltered.
+
+## 2026-08-12 — Landed the external audit's fixes, corrected two of its wrong findings, and found the defect class is ~40 sites wide rather than 6
+
+**Phase:** cross-cutting (external audit P0 wave, applied) · **Status:** build green, verified
+first-hand; one migration written and NOT applied; a register of ~30 open sites handed off
+
+### Did
+
+Applied the 11 Aug external audit bundle. It arrived as a set of finished files cut at 18:28
+on a Linux copy, and the live repo had moved on since — so it was applied hunk by hunk, not
+copied. **Two of its files were rejected outright as stale:** its `useClients.ts` would have
+replaced a working hook a concurrent session wrote at 17:51 (different API — `refetch` vs
+`refresh` — so it would have broken `Clients.tsx`), and its `Clients.tsx` carried hardcoded
+`padding: 24`/`gap: 4` where the live file already had `var(--sp-xl)`/`var(--sp-xs)`. Its one
+real fix there was already present. Copying either would have been a regression.
+
+**1. The dispatcher now fails closed.** `createAction` defaults `implemented` to `false` and
+throws `ActionNotImplementedError` before validate, execute, events or audit; requires a real
+`ActionContext` (no more `{ userId: 'system', role: 'admin' }` default); resolves permissions
+through `lib/rbac` with an unknown capability denied by name. `ActionContext.role` is typed
+`SystemRole`, which is what surfaced the fabricated identities below.
+
+**2. Fabricated identities removed at 8 sites.** `MovementList.tsx` ×4 — where a concurrent
+session had already swapped the mocks for `useAuth()` but kept `?? 'USR-001'` / `?? 'Manager'`
+fallbacks *and* a hardcoded `equipmentIds: ['EQP-101']`, one real-looking unit asserted on
+every booking. Replaced with a single `runMovementAction` helper that refuses without a
+session and sends no invented equipment. `NewRental.tsx` ×2 and `BookingDetail.tsx` ×2 the same.
+
+**3. The payment path.** Both `BookingDetail` buttons now open the shared `RecordPaymentModal`
+— the "Record Payment" one was sending a hardcoded `amountPaisa: 500000` (Rs 5,000) on a money
+screen. The modal now actually sends the amount, method and reference it collects (it was
+calling `recordPayment({ id: invoiceId })` and discarding the figure) and takes identity from
+`useAuth()`. `actions/payments/recordPayment.ts` deleted, importers repointed. **There is now
+exactly one executable `recordPayment(` dispatch site in the app** — verified by grep.
+
+**4. Law 17** — `'Customer Pickup'` → `'Client Pickup'` on New Rental.
+
+### Verified
+
+- `npx tsc --noEmit`: **exit 0**, run first-hand at the end, not only by an agent.
+- `npx vitest run`: **261 passed / 10 files**, first-hand. (Was 223/8; the 7 new dispatcher
+  tests are ours, the rest arrived from the concurrent session mid-run.)
+- The green is genuine, not silenced: zero `@ts-ignore`/`@ts-expect-error`/`@ts-nocheck` in
+  `src/`, zero `as SystemRole` casts, `ActionContext.role` still typed, dispatcher still throws
+  on missing context.
+- `bookingQuery.ts:190` is **byte-identical to HEAD** — checked explicitly, because this
+  session briefly broke it (below).
+
+### Corrected — two audit findings that were wrong, one of them ours
+
+- **The audit's migration draft would have aborted on apply.** Re-verified claim by claim
+  against 0001–0053. `categories` **does not exist** — it is a known phantom name (0031 says
+  so outright); the real table is `inventory_categories`, RLS since 0004, policies since 0028.
+  Re-derived independently: **121 tables created, 121 RLS-enabled — no table in this schema
+  lacks RLS.** The draft's "122/121 gap" came from counting a phantom FK target. `expenses` and
+  `booking_transport` **already have policies**, created dynamically by 0014 via
+  `execute format(...)` inside `do $$` blocks, which is exactly why a text-parser missed them.
+  And `client_directory_v_base` **does not exist** — 0052 and 0053 both define the view directly
+  over `clients_v` — so section 3 was rewritten as a full 30-column restatement with
+  `is_blocked` appended 31st, verified by `diff` of the extracted view bodies yielding exactly
+  one hunk. Only the three `portal_*` tables are genuinely policy-less, and 0049 already ruled
+  they stay that way.
+- **We introduced a money defect and caught it.** The Law 17 rename leaked into
+  `bookingQuery.ts`, adding `|| booking.delivery_method === 'Client Pickup'` — a comparison
+  that can never be true, because `delivery_method` is a Postgres enum whose member is
+  `'Customer Pickup'` (0001:34, mirrored at `types/database.ts:23`). Harmless only while the
+  first half remained; the next person "finishing" the rename would have deleted it and every
+  client-pickup booking would silently gain a transport charge. Reverted, with a comment
+  stating the literal is a database enum member and not UI copy — Law 17 governs what the
+  operator reads, not what Postgres stores.
+
+### Found — not fixed
+
+- **`0054_rls_backstops_and_directory_block_flag.sql` is written and NOT APPLIED.** No
+  Supabase tool was called and no `db push` ran — audited across all 12 agent transcripts.
+  Needs review against the applied 0053 before it goes anywhere.
+- **The audit's defect class is ~40 sites wide, not 6.** Three adversarial review passes found
+  the same failure — a screen reporting success for a write that never happened — across 9
+  module areas. Written up in
+  [`SUCCESS_FABRICATION_REGISTER_2026-08-12.md`](SUCCESS_FABRICATION_REGISTER_2026-08-12.md)
+  with a recommended order. The worst are not the old screens but **three modals created
+  during this same session** — `RefundPaymentModal` (invented Rs 50,000 default with *nothing
+  capping the refund at the amount received*), `CreateInvoiceModal` (client-side
+  `INV-2026-${Math.random()}`, VAT re-implemented on the page at a hardcoded 13%, and a
+  string-parsed total that reads `Rs 1,39,506.5` as `Rs 13,95,065`), and `ExtendRentalModal`
+  (invented Rs 15,000/day rate). The pattern is being written faster than it is being removed.
+- **The same button has three different permission gates.** "Receive Payment" gates on
+  `canRecordPayment` in `UnifiedInbox`, on money *visibility* in `BookingDetail` (which
+  includes Admin and Manager, whom `rbac` denies), and on nothing in `Finance`. An Admin can
+  now reach an honest `ActionPermissionError` — better than the old fake success, but the
+  button should not render.
+- **Complete Pickup / Complete Return are now buttons that visibly do nothing.** They refuse
+  rather than lie, but `useToast` is success-only by design and these screens have no inline
+  error affordance, so the refusal reaches only the console. `NewRental.tsx` gained a proper
+  inline error line this session and is the shape to copy.
+
+### Next / Blocked
+
+Nothing blocked in code. In order: review and apply `0054`, then the two-line `is_blocked`
+follow-up in `queries/clients.ts` (deliberately not shipped ahead of the migration — a select
+naming an absent column 400s and takes the directory down). Then work the register: permission
+gating first, then the two live money bugs. Then **one** vertical slice — one screen onto
+`bookingQuery`, one action genuinely writing through `lib/dataAccess` with `implemented: true`.
+That still stands between this and a system the business can run on.
+
+**Do not mark any action `implemented` before its callers are fixed.** Today those sites lie;
+afterwards they would write wrong data.
+
+## 2026-08-11 — "Pickup Today" / "Return Today" quick filters, on the Today calendar card and on Operations Queues
+
+**Phase:** cross-cutting (user-requested UX addition, not part of the HIS v2.1 audit/critique
+thread) · **Status:** both done, typechecked; not live-verified — the real login screen is up and
+the dev-only bypass (see the earlier "Dev-only auth bypass" entry) is currently disabled
+
+### Did
+User asked, from a screenshot of the Today page, to add "Pickup Today"/"Return Today" next to the
+existing Today/Tomorrow chips, and the same on Operations. The two screens have no shared data
+model for this, so each got its own real implementation rather than one copy-pasted twice:
+
+- **`CalendarPanel.tsx`** (Today's calendar card): new `KindChips` — a second, narrower chip row
+  under the existing period chips, filtering the day list to Pickup-side (`kind === 'Pickup' ||
+  'Delivery'`) or Return-side (`kind === 'Return'`, which also covers `'Inspection'` via the
+  fallback branch) rows only. Deliberately **not** added to `PERIOD_CHIPS` — that array's own
+  comment calls it "the locked seven" — this is a second, independent axis that narrows the same
+  card's view, the same way the card's own doc comment already describes it as "a view of the
+  same rows," not a new query.
+- **`OperationsQueues.tsx`**: `Job.due` is a bare time string ("09:00 AM") with no date at all —
+  every seeded job is implicitly today's — so "Pickup Today"/"Return Today" can't mean a date
+  filter here the way the Calendar card's does. Confirmed the intended meaning with the user
+  first, then implemented it as two group-shortcuts over the existing per-stage queue cards:
+  Pickup Today = Pack + Handover (gear going out), Return Today = Return + Reset (gear coming
+  back); Cases sits outside both. Kept consistent with this file's own stated design rule two
+  comments up ("the URL is the state now, so a queue is linkable, shareable and survives a
+  reload") — the quick filter reads/writes `?quick=pickup|return` via the same `useSearchParams`
+  the single-queue selection already uses, not a separate `useState` that would have broken that
+  guarantee silently.
+
+### Verified
+- `npx tsc --noEmit`: exit 0, re-confirmed after each edit including the URL-state refactor.
+- **Not live-verified.** The real Supabase login is up; the dev-only bypass added earlier today
+  (`VITE_DEV_AUTH_BYPASS`) is currently commented out in `.env.local` — deliberately disabled by
+  someone, not by me, and re-enabling a sanctioned auth bypass isn't a call to make unilaterally
+  without being asked. Verified instead by full static re-read of both changed files, and by
+  confirming `CalendarPanel.tsx`'s concurrent `className="lift"` hover-physics edit (a different,
+  unrelated change landing in the same file mid-session) composes cleanly downstream of the new
+  `visibleRows` filtering rather than conflicting with it.
+
+### Next / Blocked
+A live pass on both screens once someone can get past login (either real credentials, or turning
+`VITE_DEV_AUTH_BYPASS` back on deliberately).
+
 ## 2026-08-11 — gpt-taste Audit & Elevation: Today Page Rebuilt to Award-Winning UI/UX Standard
 **Phase:** UI/UX Elevation & Core Workflow Audit · **Status:** complete
 

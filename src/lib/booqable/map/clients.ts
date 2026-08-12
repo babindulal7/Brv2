@@ -255,7 +255,8 @@
  * ## client_code — minted, never taken from Booqable
  *
  * `clients.client_code` is `NOT NULL UNIQUE`, format-locked to
- * `^CL-[0-9]{4}-[0-9]{4}$` (AD year only), and is normally minted via
+ * `^CL-[0-9]{4}-[0-9]{4}$` (AD year only) — the retired form; the app now
+ * issues `C-1` per the 12 Aug ruling and the CHECK has not been migrated. It is normally minted via
  * `next_document_number('CL')` (`number_sequences` — `0007_admin_security.sql`
  * confirms a `CL` prefix is registered). Exactly the same shape of gap
  * `products.ts` already documents for `asset_code`/`EQ######`: this file
@@ -335,7 +336,7 @@ export interface ClientSyncContext {
   existingPayloadHashes: ReadonlyMap<BooqableId, string>
   /** Normalised phones already claimed locally by a DIFFERENT external_id — see the file-header duplicate-phone note. */
   knownPhones: ReadonlySet<string>
-  /** external client id -> a freshly minted `CL-YYYY-####` code from `next_document_number('CL')`, one entry per NEW (not-yet-synced) client in this batch. See file header. */
+  /** external client id -> a freshly minted client code (`C-N`) from `next_document_number('CL')`, one entry per NEW (not-yet-synced) client in this batch. See file header. */
   mintedClientCodes: ReadonlyMap<BooqableId, string>
   /**
    * Sideloaded Property resources for this batch, keyed by the OWNING

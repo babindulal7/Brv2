@@ -2,8 +2,12 @@ import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Card, Button, cardStyle, Rail, SideRail } from '../../components/ui/Page'
-import { EmptyState } from '../../components/ui/StateViews'
+import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { FloorAside, floorPlacements } from '../operations/FloorAside'
+import { useViewport } from '../../lib/device'
+import { useAuth } from '../../lib/auth'
+import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
+import { Unavailable } from '../../components/ui/Unavailable'
 import { Donut, Legend } from '../../components/ui/Charts'
 import { STATUS } from '../../lib/status'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
@@ -51,9 +55,66 @@ const TONE: Record<MatchState, { bg: string; fg: string }> = {
   Unmatched: { bg: 'var(--st-danger-bg)', fg: 'var(--st-danger-fg)' },
 }
 
+/**
+ * §3.6's three layouts — desktop rails, tablet 3-up grid, phone 2-up. The
+ * lightbox is the selected-photo rail, which reflows beneath the grid below
+ * 1180 rather than collapsing to a handle (Rulings §7).
+ */
+const GRID_COLUMNS = { desktop: 'repeat(auto-fill, minmax(150px, 1fr))', tablet: 'repeat(3, minmax(0,1fr))', phone: 'repeat(2, minmax(0,1fr))' } as const
+
+/**
+ * §3.6's header filter — `[Packing][Return][Damage]`.
+ *
+ * These three are a SUBSET of `CATEGORY_NAMES`' eleven, not a replacement for
+ * them: the rail still lists all eleven (Rulings §1 — a panel survives unless
+ * prose removes it), and both controls drive the same `category` state, so
+ * they cannot disagree about what the gallery is showing.
+ */
+const STAGE_FILTERS = ['Packing', 'Return', 'Damage'] as const
+
+/**
+ * ⭐ 12 Aug 2026 — **Unmatch no longer dispatches**, and this says why.
+ *
+ * What stood on the button:
+ *
+ *   onClick={() => import('../../actions/rentals').then(m =>
+ *     m.reviewEvidence({ evidenceId: current.id, action: 'remove', reason: 'Unmatched by user' }))}
+ *
+ * Three separate untruths in one line:
+ *
+ *  · **No session.** `actions/core.ts` refuses any dispatch without a real
+ *    `ActionContext`, so this rejected on every press — into a floating promise
+ *    with no `.catch()`. The operator pressed Unmatch, saw the card keep its
+ *    product and serial, and had nothing to read.
+ *  · **A fabricated reason.** §10 requires a reason for a soft delete and the
+ *    adjacent Remove button collects one; `'Unmatched by user'` is a sentence
+ *    nobody typed, recorded as though somebody had.
+ *  · **The wrong verb.** `ReviewEvidenceInput.action` is `'review' | 'remove'`
+ *    (`src/actions/rentals/reviewEvidence.ts`). `'remove'` is the SOFT DELETE
+ *    §10 gives the Remove button — hiding the photo. Detaching a wrong *match*
+ *    is a different operation and the action vocabulary has no verb for it.
+ *    Sending `'remove'` is harmless only while REVIEW_EVIDENCE is a stub; the
+ *    day it writes, Unmatch would archive the photo instead of clearing its
+ *    product.
+ *
+ * Widening that input belongs to whoever owns `src/actions/` — inventing a verb
+ * here would be inventing the decision. So the control states the gap and acts
+ * on nothing, which is what `Unavailable` is for. `Mark as Review` beside it
+ * sends the verb that *does* exist and is wired properly.
+ */
+const UNMATCH_UNAVAILABLE_REASON =
+  'Unmatch cannot act yet. REVIEW_EVIDENCE accepts only "review" or "remove", and "remove" is the soft-delete §10 gives the Remove button — it would hide the photo, not detach its match. Detaching a wrong match needs its own verb. Nothing is written and this photo keeps its match.'
+
 export default function EvidenceWorkspace() {
   const { bookingNo } = useParams()
   const id = bookingNo ?? BOOKING.no
+  /* Law 13/14 — width decides, at Foundation's locked 768 / 1180. */
+  const viewport = useViewport()
+  const desktop = viewport === 'desktop'
+  const phone = viewport === 'phone'
+  const place = floorPlacements(desktop, phone)
+  /** The one identity a dispatch on this screen may act as. No fallback. */
+  const { user } = useAuth()
 
   const [selected, setSelected] = useState<string[]>([])
   const [active, setActive] = useState<string>('p1')
@@ -62,6 +123,15 @@ export default function EvidenceWorkspace() {
   const [removed, setRemoved] = useState<Record<string, string>>({})
   const [removing, setRemoving] = useState<string | null>(null)
   const [reason, setReason] = useState('')
+  /**
+   * The last dispatch failure, rendered inline in the Selected Photo card and
+   * left there until the next attempt. Law 12 — errors are inline and
+   * persistent; `useToast()` carries successes only and no error toast is
+   * invented here. This screen had no dispatch-failure line at all, so it
+   * reuses `ErrorBanner` (`components/ui/StateViews`), the same component
+   * `PackingWorkspace` renders its `dispatchError` through.
+   */
+  const [dispatchError, setDispatchError] = useState<string | null>(null)
 
   const live = PHOTOS.filter((p) => !removed[p.id])
 
@@ -74,7 +144,13 @@ export default function EvidenceWorkspace() {
   /** §6 invariant — Matched + Review + Unmatched = Total. */
   const reconciles = counts.Matched + counts.Review + counts.Unmatched === total
 
-  const visible = live.filter((p) => filter === 'All' || matchState(p) === filter)
+  /*
+   * ⭐ FIXED 12 Aug 2026 — `category` was set by the Categories rail and by
+   * nothing else read it, so picking a category changed the highlight and not
+   * the gallery. §3.6 is explicit that the grid is filtered by stage, so the
+   * category now actually narrows `visible`, alongside the match filter.
+   */
+  const visible = live.filter((p) => (filter === 'All' || matchState(p) === filter) && p.category === category)
   const current = live.find((p) => p.id === active) ?? live[0]
   const pct = (n: number) => (total ? `${((n / total) * 100).toFixed(1)}%` : '0%')
 
@@ -135,6 +211,48 @@ export default function EvidenceWorkspace() {
         </div>
       </div>
 
+      {/* §3.6 header — `[Packing][Return][Damage]`, the stage the grid is
+          filtered by. Same state as the Categories rail's eleven. */}
+      <div role="group" aria-label="Filter evidence by stage" style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+        {STAGE_FILTERS.map((s) => {
+          const on = category === s
+          const n = live.filter((p) => p.category === s).length
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setCategory(s)}
+              aria-pressed={on}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 'var(--sp-sm)',
+                minHeight: 44,
+                padding: '0 14px',
+                borderRadius: 'var(--r-btn)',
+                border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+                background: on ? 'var(--nav-active-bg)' : 'var(--card)',
+                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: 600,
+                fontFamily: 'inherit',
+                cursor: 'pointer',
+              }}
+            >
+              {s}
+              <span className="figure" style={{ color: 'var(--muted)' }}>{n}</span>
+            </button>
+          )
+        })}
+        {/* Every other category the rail carries stays reachable; this says so
+            rather than leaving the three chips looking like the whole set. */}
+        {!STAGE_FILTERS.includes(category as (typeof STAGE_FILTERS)[number]) && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
+            Showing {category} — chosen from the Categories rail
+          </span>
+        )}
+      </div>
+
       {/* §3 — read-only booking strip. BS leads AD. */}
       <div style={{ ...cardStyle, display: 'flex', flexWrap: 'wrap' }}>
         {[
@@ -179,9 +297,16 @@ export default function EvidenceWorkspace() {
         })}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: desktop ? 'auto minmax(0,1fr) auto' : phone ? '1fr' : 'minmax(0,1fr) 300px',
+          gap: 'var(--sp-md)',
+          alignItems: 'start',
+        }}
+      >
         {/* ── §5 left ─────────────────────────────────────────────────── */}
-        <SideRail width={210} label="Categories">
+        <FloorAside collapsible={desktop} side="left" width={210} label="Categories" style={place.tree}>
           <Card title="Upload Sources">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {UPLOAD_SOURCES.map((u) => (
@@ -243,12 +368,12 @@ export default function EvidenceWorkspace() {
               )
             })}
           </Card>
-        </SideRail>
+        </FloorAside>
 
         {/* ── §6 / §8 centre ──────────────────────────────────────────── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0, ...place.list }}>
           <Card title="Processing">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 9 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: phone ? 'repeat(2, minmax(0,1fr))' : 'repeat(4, minmax(0,1fr))', gap: 9 }}>
               {[
                 { l: 'Total Photos', v: total, tone: 'var(--text)' },
                 { l: 'Matched', v: counts.Matched, tone: 'var(--success-text)', p: pct(counts.Matched) },
@@ -309,7 +434,8 @@ export default function EvidenceWorkspace() {
               </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10, padding: 'var(--sp-md)' }}>
+            {/* §3.6 — desktop fills, tablet is 3-up, phone is 2-up. */}
+            <div style={{ display: 'grid', gridTemplateColumns: GRID_COLUMNS[viewport], gap: 10, padding: 'var(--sp-md)' }}>
               {visible.map((p) => {
                 const st = matchState(p)
                 const on = selected.includes(p.id)
@@ -396,8 +522,10 @@ export default function EvidenceWorkspace() {
           </Card>
         </div>
 
-        {/* ── §8 right — selected photo ───────────────────────────────── */}
-        <Rail width={290} label="Selected photo">
+        {/* ── §8 right — selected photo. §3.6's "click → lightbox with serial
+             and timestamp"; below 1180 it reflows beneath the grid so the
+             lightbox is still on screen (Rulings §7). ─────────────────── */}
+        <FloorAside collapsible={desktop} side="right" width={290} label="Selected photo" style={place.rail}>
           <Card title="Selected Photo">
             {current ? (
               <>
@@ -449,12 +577,61 @@ export default function EvidenceWorkspace() {
                 {/* §10 — Remove is a soft delete with a reason. There is no hard delete. */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, marginTop: 11 }}>
                   <Button icon="refresh">Change Product</Button>
-                  <Button icon="eye" onClick={() => import('../../actions/rentals').then(m => m.reviewEvidence({ evidenceId: current.id, action: 'review' }))}>Mark as Review</Button>
-                  <Button icon="close" onClick={() => import('../../actions/rentals').then(m => m.reviewEvidence({ evidenceId: current.id, action: 'remove', reason: 'Unmatched by user' }))}>Unmatch</Button>
+                  {/*
+                    The identity is the signed-in operator or there is no
+                    dispatch — this file had no `useAuth` at all, so the call
+                    went out with no `ActionContext` and `actions/core.ts`
+                    rejected it before `execute`. With no `.catch()` the
+                    rejection was an unhandled promise nobody saw: the operator
+                    pressed Mark as Review and the flag was never recorded.
+
+                    Nothing is committed locally on the resolved path either,
+                    because there is nothing true to commit — the gallery reads
+                    `data/evidence`'s seeded `PHOTOS`, not local state, so a
+                    badge flipped here would be this screen agreeing with
+                    itself about a write that has not happened. REVIEW_EVIDENCE
+                    is still a stub (`implemented` is not set), so today every
+                    press lands on the `.catch()` and says so.
+                  */}
+                  <Button
+                    icon="eye"
+                    onClick={() => {
+                      if (!user) {
+                        setDispatchError(
+                          'You are not signed in, so this photo cannot be flagged for review against anyone. Nothing was written.',
+                        )
+                        return
+                      }
+                      setDispatchError(null)
+                      void import('../../actions/rentals')
+                        .then((m) =>
+                          m.reviewEvidence({ evidenceId: current.id, action: 'review' }, { userId: user.id, role: user.role }),
+                        )
+                        .catch((err: unknown) => {
+                          console.error('reviewEvidence failed:', err)
+                          setDispatchError(err instanceof Error ? err.message : String(err))
+                        })
+                    }}
+                  >
+                    Mark as Review
+                  </Button>
+                  {/* See UNMATCH_UNAVAILABLE_REASON — the verb this needs does not exist. */}
+                  <Unavailable reason={UNMATCH_UNAVAILABLE_REASON} style={{ width: '100%' }}>
+                    <Button icon="close" disabled>
+                      Unmatch
+                    </Button>
+                  </Unavailable>
                   <Button icon="alert_triangle" onClick={() => { setRemoving(current.id); setReason('') }}>
                     Remove
                   </Button>
                 </div>
+
+                {/* Law 12 — inline, persistent, never a toast. */}
+                {dispatchError && (
+                  <div style={{ marginTop: 9 }}>
+                    <ErrorBanner title="Nothing was recorded" message={dispatchError} />
+                  </div>
+                )}
 
                 {removing === current.id && (
                   <div style={{ marginTop: 9, padding: 10, borderRadius: 'var(--r-btn)', background: 'var(--st-danger-bg)' }}>
@@ -519,7 +696,7 @@ export default function EvidenceWorkspace() {
             One file, many references — a photo is stored once and referenced by booking, item, serial, bundle and
             stage. Evidence locks at status Closed.
           </div>
-        </Rail>
+        </FloorAside>
       </div>
     </div>
   )

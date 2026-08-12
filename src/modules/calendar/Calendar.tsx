@@ -1,23 +1,27 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Input, Select } from '../../components/ui'
+import { Input, Select, EmptyState } from '../../components/ui'
 import { Card, PageHeader, Button, FooterNote, cardStyle, Rail } from '../../components/ui/Page'
-import { BRAND, BRAND_ON } from '../../lib/status'
+import { BRAND } from '../../lib/status'
 import { TODAY, toBs, formatBs, formatAd, eachDay, isWeekend, BS_MONTHS } from '../../lib/bs'
 import { canViewMoney } from '../../lib/rbac'
+import { isIssuedBy } from '../../data/numbering'
 import type { Role as SystemRole } from '../../lib/rbac'
 import { useAuth } from '../../lib/auth'
+import { useViewport } from '../../lib/device'
+import type { Viewport } from '../../lib/device'
 import {
-  VIEWS,
+  VIEWS_BY_WIDTH,
+  DEFAULT_VIEW,
   ROW_TYPES,
   ROWS,
   BAR_STYLE,
   BAR_KINDS,
   CLIENTS,
   SAVED_VIEWS,
-  KPIS,
   HOLIDAYS,
   holidayOn,
   TODAY_SUMMARY,
@@ -29,32 +33,55 @@ import {
   EVENT_ACTIONS,
   ZOOM_STEPS,
   DEFAULT_ZOOM,
+  LAYERS,
+  layerOf,
   adDay,
   dayDiff,
 } from '../../data/calendar'
-import type { Bar, BarKind, ResourceRow, RowType, ViewName } from '../../data/calendar'
+import type { Bar, BarKind, LayerName, ResourceRow, RowType, ViewName } from '../../data/calendar'
 
 /**
  * **Calendar Workspace** — built against `03 Core Modules/Calendar.PNG` and
- * `Calendar - Full View.PNG`.
+ * `Calendar - Full View.PNG`, then re-arranged to `05_CALENDAR.md`'s three
+ * responsive layouts (12 Aug 2026).
  *
  * The two renders are two *modes of one screen*, not two routes: Full View
  * drops the app chrome, opens the filter rail and the Selected Event panel, and
  * moves the summary cards to a bottom strip. `full` below is that toggle — the
  * `⤢` button in the header and the `F` key both drive it, and `Esc` leaves.
  *
+ * ## What §5.1 arranges
+ *
+ * | Width | Grid | A day click opens |
+ * |---|---|---|
+ * | Desktop ≥1180 | 7 columns, BS big / AD small, booking **chips** | a right **side-peek** |
+ * | Tablet 768–1179 | 7 columns, chips truncate to a **dot** | a **bottom sheet** |
+ * | Phone <768 | dots only | the **agenda list below the grid** |
+ *
+ * Per `WIREFRAME_RULINGS_2026-08-12.md` §1 the wireframe is a **layout** spec,
+ * not a content inventory: the right rail, the Full View mode and the filter
+ * panel survive because no prose removes them. Below 1180 the rail **reflows**
+ * beneath the grid (§7: *"collapse means reflow, not hide"*) — it is not
+ * wrapped in `CollapsibleAside`, whose defaults other pages depend on.
+ *
  * Structural rules that outrank the renders:
  *  · §4.1 columns are **generated** from a range, never hand-listed — which is
- *    what makes `‹ ›`, the zoom steps and the mini-calendar real controls
- *    rather than decoration.
+ *    what makes the zoom steps and the mini-calendar real controls rather than
+ *    decoration.
  *  · §4.2 every BS date comes from the **one** Date Engine (`lib/bs.ts`), and
  *    every date shows **both** calendars. The renders label this week
  *    "10–16 Shrawan"; the engine's anchor makes it 11–17 and the engine wins.
  *  · §4.3 one `today` per render — marker, summary and mini-calendar agree.
  *  · §4.2's five-colour law — the renders' purple Sub-Rental bars become the
- *    gold outline §4.2 reserves for sub-rental, and the purple Utilization KPI
- *    becomes `progress`.
+ *    gold outline §4.2 reserves for sub-rental.
  *  · §8.3 — Warehouse sees no money. `Payment Due` is omitted, not masked.
+ *  · Law 11 — never colour alone. A grid dot is never the only carrier of a
+ *    status: every cell states its jobs in its accessible name and every dot
+ *    carries the kind and the booking in its title.
+ *
+ * Deviation from the render: the four-card KPI band that sat under the header
+ * has been removed. Its figures were not lost — Full View's bottom strip still
+ * carries Conflicts and Utilization, and Today's Operations lives on `/today`.
  */
 
 /**
@@ -67,6 +94,24 @@ import type { Bar, BarKind, ResourceRow, RowType, ViewName } from '../../data/ca
  */
 
 const LABEL_W = 212
+
+/** Law 15 — 44×44 at every width, desktop included. */
+const TOUCH = 44
+
+/**
+ * The one reason the month arrows do not move, stated once and rendered on the
+ * page face rather than hidden in a `title`.
+ *
+ * `lib/bs.ts` vouches for **Shrawan 2083 only** (`SHRAWAN_2083_DAYS = 32`), so
+ * stepping a month needs the lengths of Ashadh and Bhadra 2083. Those are
+ * calendar *data*: `PLAN.md` §4.4 says in terms that they are "not something to
+ * infer", and inferring them would put a wrong Nepali date in front of a client
+ * — the defect `Calendar.md` §4.2 calls the highest-priority correctness bug in
+ * the product. The arrows therefore ship disabled with the reason visible until
+ * the 2000–2100 BS table is loaded.
+ */
+const MONTH_STEP_BLOCKED =
+  'The Date Engine vouches for Shrawan 2083 only. Stepping a month needs the neighbouring BS month lengths, which are calendar data and are never inferred here (PLAN.md §4.4).'
 
 /**
  * Row order. The renders group by resource type — Equipment, then Vehicles,
@@ -115,10 +160,9 @@ function requestedDay(raw: string | null): Date | null {
 }
 
 /** Where the window starts so `day` is visible — one column in, as the render shows. */
-function anchorFor(day: Date | null, view: ViewName): Date {
-  const offset = view === 'Day' ? 0 : -1
-  if (!day) return adDay(offset)
-  return adDay(dayDiff(day, TODAY) + offset)
+function anchorFor(day: Date | null): Date {
+  if (!day) return adDay(-1)
+  return adDay(dayDiff(day, TODAY) - 1)
 }
 
 /** Every AD day the engine can still name inside that BS month. */
@@ -156,6 +200,27 @@ function adRangeLabel(days: Date[]): string {
   return `${formatAd(first)} – ${formatAd(last)} AD`
 }
 
+/** "Shrawan 2083" — the BS month a window sits in, with no day numbers. */
+function bsMonthLabel(days: Date[]): string {
+  const bs = toBs(days[0] ?? TODAY)
+  return bs ? `${BS_MONTHS[bs.month - 1] ?? ''} ${bs.year}` : 'Calendar'
+}
+
+/**
+ * "Jul–Aug 2026" — the AD months a BS month straddles, which is the second half
+ * of §5.1's header stepper (`‹ Shrawan 2083 / Jul–Aug 2026 ›`).
+ */
+function adMonthSpanLabel(days: Date[]): string {
+  const first = days[0]
+  const last = days[days.length - 1]
+  if (!first || !last) return '—'
+  const mon = (d: Date) => d.toLocaleDateString('en-GB', { month: 'short', timeZone: 'Asia/Kathmandu' })
+  const yr = (d: Date) => d.toLocaleDateString('en-GB', { year: 'numeric', timeZone: 'Asia/Kathmandu' })
+  if (yr(first) !== yr(last)) return `${mon(first)} ${yr(first)}–${mon(last)} ${yr(last)}`
+  if (mon(first) === mon(last)) return `${mon(first)} ${yr(last)}`
+  return `${mon(first)}–${mon(last)} ${yr(last)}`
+}
+
 /** "20 Shrawan" — the short BS form used inside bars, from the engine only. */
 function bsShort(d: Date): string {
   const bs = toBs(d)
@@ -174,9 +239,18 @@ function isToday(d: Date): boolean {
   return d.getTime() === TODAY.getTime()
 }
 
+function sameDay(a: Date | null, b: Date | null): boolean {
+  return Boolean(a && b && a.getTime() === b.getTime())
+}
+
 /** A day is "off" when Nepal's weekend (Saturday) or a festival lands on it. */
 function isOffDay(d: Date): boolean {
   return isWeekend(d) || holidayOn(d) !== null
+}
+
+/** Whether a bar's inclusive window covers this AD day. */
+function coversDay(bar: Bar, d: Date): boolean {
+  return d.getTime() >= bar.from.getTime() && d.getTime() <= bar.to.getTime()
 }
 
 /** Placement of a bar inside the rendered window, clipped at both ends. */
@@ -190,6 +264,27 @@ function place(bar: Bar, days: Date[]): { start: number; span: number; clipL: bo
   const start = Math.max(0, rawStart)
   const end = Math.min(days.length - 1, rawEnd)
   return { start, span: end - start + 1, clipL: rawStart < 0, clipR: rawEnd > days.length - 1 }
+}
+
+/** One job on one day — the unit the peek, the sheet and the phone agenda all list. */
+interface DayJob {
+  row: ResourceRow
+  bar: Bar
+}
+
+/**
+ * The time §5.1's agenda row draws (`▪ time BR# client`) exists on a *booking*,
+ * not on a bar: a bar carries an inclusive day window and nothing finer. So a
+ * time is rendered **only** where the booking detail actually records one for
+ * this day, and every other row shows the window instead. A plausible default
+ * here would be a fabricated figure.
+ */
+function timeOn(bar: Bar, day: Date): { time: string; what: string } | null {
+  const detail = EVENT_DETAIL[bar.label]
+  if (!detail) return null
+  if (detail.pickup.at.getTime() === day.getTime()) return { time: detail.pickup.time, what: 'Pickup' }
+  if (detail.return.at.getTime() === day.getTime()) return { time: detail.return.time, what: 'Return' }
+  return null
 }
 
 /* ── small shared bits ─────────────────────────────────────────────────── */
@@ -276,6 +371,24 @@ function Unavailable({ label, reason, icon }: { label: string; reason: string; i
   )
 }
 
+/**
+ * A figure the product does not compute. §8 of the rulings register:
+ * *"A number with no real source renders 'not tracked yet', never a plausible
+ * default and never zero."*
+ */
+function NotTracked({ what, reason }: { what: string; reason: string }) {
+  return (
+    <div>
+      <div className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--muted)' }}>
+        not tracked yet
+      </div>
+      <p style={{ margin: '4px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.45 }}>
+        {what} {reason}
+      </p>
+    </div>
+  )
+}
+
 /* ── timeline bar ──────────────────────────────────────────────────────── */
 
 function BarView({
@@ -330,7 +443,7 @@ function BarView({
       {s.icon && <Icon name={s.icon} size={compact ? 11 : 14} style={{ flexShrink: 0 }} />}
       <span style={{ minWidth: 0, lineHeight: 1.25 }}>
         <span
-          className={bar.label.startsWith('BK-') || bar.label.startsWith('QT-') || bar.label.startsWith('CASE-') ? 'booking-id' : undefined}
+          className={isIssuedBy('BK', bar.label) || isIssuedBy('QT', bar.label) || isIssuedBy('CASE', bar.label) ? 'booking-id' : undefined}
           style={{ display: 'block', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
         >
           {bar.label}
@@ -556,106 +669,391 @@ function Timeline({
 
 /* ── month grid ────────────────────────────────────────────────────────── */
 
+/**
+ * One marker in a narrow cell. Law 11 — the shape and colour are decoration
+ * (`aria-hidden` on the row); the meaning is carried by the cell's accessible
+ * name and by each dot's `title`.
+ */
+function DayDot({ job }: { job: DayJob }) {
+  const s = BAR_STYLE[job.bar.kind]
+  return (
+    <span
+      title={`${job.bar.kind} · ${job.bar.label}${job.bar.sub ? ` · ${job.bar.sub}` : ''}`}
+      style={{
+        width: 7,
+        height: 7,
+        borderRadius: 'var(--r-badge)',
+        flexShrink: 0,
+        background: s.dash ? 'transparent' : s.line,
+        border: `1.5px ${s.dash ? 'dashed' : 'solid'} ${s.line}`,
+      }}
+    />
+  )
+}
+
+/**
+ * §5.1's grid at all three widths.
+ *
+ * ⚠ **The spec contradicts itself on the phone cell** and this is the reading
+ * taken. The Notes require *"BS leads AD in every cell"*; the phone box draws
+ * `· · ▪ · ▪ · ·` with no digit anywhere. "Dots only" is read as **no booking
+ * chips, only markers** — the BS day number (and the small AD day) stay, because
+ * a dot grid with no day numbers gives the reader no way to tell which day a dot
+ * sits on, and dropping the digits would also break the Notes' own BS-leads-AD
+ * rule two lines above. Flagged for the spec owner rather than silently chosen.
+ */
 function MonthGrid({
   anchor,
-  rows,
+  jobsOn,
+  viewport,
+  selectedDay,
   onPickDay,
 }: {
   anchor: Date
-  rows: ResourceRow[]
+  jobsOn: (d: Date) => DayJob[]
+  viewport: Viewport
+  selectedDay: Date | null
   onPickDay: (d: Date) => void
 }) {
   const days = bsMonthDays(anchor)
   const first = days[0]
   const lead = first ? first.getUTCDay() : 0
   const head = toBs(first ?? anchor)
-
-  const barsOn = (d: Date): Bar[] =>
-    rows.flatMap((r) => r.bars.filter((b) => d.getTime() >= b.from.getTime() && d.getTime() <= b.to.getTime()))
+  const desktop = viewport === 'desktop'
+  const phone = viewport === 'phone'
+  const cellMin = desktop ? 92 : phone ? 56 : 72
+  const maxDots = desktop ? 0 : phone ? 4 : 6
 
   return (
-    <div style={{ padding: 'var(--sp-md)' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0,1fr))', gap: 6, marginBottom: 6 }}>
+    <div style={{ padding: phone ? 'var(--sp-sm)' : 'var(--sp-md)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0,1fr))', gap: phone ? 3 : 6, marginBottom: 6 }}>
         {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((w, i) => (
           <div key={w} style={{ textAlign: 'center', fontSize: 'var(--t-th)', fontWeight: 600, color: i === 6 ? 'var(--danger-text)' : 'var(--muted)' }}>
-            {w}
+            {phone ? w.slice(0, 1) : w}
           </div>
         ))}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0,1fr))', gap: 6 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0,1fr))', gap: phone ? 3 : 6 }}>
         {Array.from({ length: lead }, (_, i) => (
-          <div key={`lead-${i}`} aria-hidden style={{ minHeight: 92, borderRadius: 'var(--r-sm)', background: 'var(--card2)', opacity: 0.4 }} />
+          <div key={`lead-${i}`} aria-hidden style={{ minHeight: cellMin, borderRadius: 'var(--r-sm)', background: 'var(--card2)', opacity: 0.4 }} />
         ))}
         {days.map((d) => {
           const bs = toBs(d)
           const today = isToday(d)
+          const picked = sameDay(d, selectedDay)
           const hol = holidayOn(d)
-          const list = barsOn(d)
+          const list = jobsOn(d)
+          const dateName = `${bs ? formatBs(bs) : '—'}, ${formatAd(d)}`
+          const jobNames = list.map((j) => `${j.bar.kind} ${j.bar.label}`).join(', ')
           return (
             <button
               key={d.getTime()}
               type="button"
               onClick={() => onPickDay(d)}
-              title={`Open ${bs ? formatBs(bs) : ''} · ${formatAd(d)}`}
+              aria-current={today ? 'date' : undefined}
+              aria-pressed={picked}
+              aria-label={`${dateName}${hol ? ` · ${hol.name}` : ''} — ${list.length === 0 ? 'no jobs' : `${list.length} job${list.length === 1 ? '' : 's'}: ${jobNames}`}`}
+              title={`Open ${dateName}`}
               style={{
-                minHeight: 92,
+                minHeight: cellMin,
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 3,
-                padding: 6,
+                padding: phone ? 4 : 6,
                 borderRadius: 'var(--r-sm)',
                 textAlign: 'left',
                 fontFamily: 'inherit',
                 cursor: 'pointer',
                 background: today ? 'var(--nav-active-bg)' : 'var(--card)',
                 border: today ? '1px solid var(--nav-active-accent)' : '1px solid var(--border)',
+                boxShadow: picked ? '0 0 0 2px var(--nav-active-accent)' : 'none',
               }}
             >
-              <span style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-                <span className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: today ? 'var(--nav-active-accent)' : isOffDay(d) ? 'var(--danger-text)' : 'var(--text)' }}>
+              {/* §5.1 Notes — BS leads AD in every cell, at every width. */}
+              <span
+                style={{
+                  display: 'flex',
+                  flexDirection: phone ? 'column' : 'row',
+                  alignItems: phone ? 'flex-start' : 'baseline',
+                  gap: phone ? 0 : 5,
+                  minWidth: 0,
+                }}
+              >
+                <span
+                  className="figure"
+                  style={{
+                    fontSize: 'var(--t-ui)',
+                    fontWeight: 700,
+                    lineHeight: 1.1,
+                    color: today ? 'var(--nav-active-accent)' : isOffDay(d) ? 'var(--danger-text)' : 'var(--text)',
+                  }}
+                >
                   {bs ? bs.day : '—'}
                 </span>
-                <span className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{adShort(d)}</span>
+                <span
+                  className="figure"
+                  style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}
+                >
+                  {adShort(d)}
+                </span>
               </span>
-              {hol && (
-                <span style={{ fontSize: 'var(--t-th)', color: 'var(--danger-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+
+              {hol && !phone && (
+                <span style={{ fontSize: 'var(--t-th)', color: 'var(--danger-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
                   {hol.name}
                 </span>
               )}
-              {list.slice(0, 2).map((b) => {
-                const s = BAR_STYLE[b.kind]
-                return (
-                  <span
-                    key={b.id}
-                    style={{
-                      display: 'block',
-                      padding: '1px 5px',
-                      borderRadius: 5,
-                      background: s.bg,
-                      border: `1px ${s.dash ? 'dashed' : 'solid'} ${s.line}`,
-                      color: s.fg,
-                      fontSize: 'var(--t-th)',
-                      fontWeight: 600,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {b.label}
-                  </span>
-                )
-              })}
-              {list.length > 2 && (
-                <span className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>+{list.length - 2} more</span>
+
+              {desktop ? (
+                <>
+                  {/* Desktop keeps the booking chip — the widest cell is the only
+                      one where the identifier is legible. */}
+                  {list.slice(0, 2).map((j) => {
+                    const s = BAR_STYLE[j.bar.kind]
+                    return (
+                      <span
+                        key={j.bar.id}
+                        style={{
+                          display: 'block',
+                          padding: '1px 5px',
+                          borderRadius: 5,
+                          background: s.bg,
+                          border: `1px ${s.dash ? 'dashed' : 'solid'} ${s.line}`,
+                          color: s.fg,
+                          fontSize: 'var(--t-th)',
+                          fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {j.bar.label}
+                      </span>
+                    )
+                  })}
+                  {list.length > 2 && (
+                    <span className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>+{list.length - 2} more</span>
+                  )}
+                </>
+              ) : (
+                /* Tablet and phone: the chip truncates to a dot. */
+                <span aria-hidden style={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap', marginTop: 'auto' }}>
+                  {list.slice(0, maxDots).map((j) => (
+                    <DayDot key={j.bar.id} job={j} />
+                  ))}
+                  {list.length > maxDots && (
+                    <span className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>+{list.length - maxDots}</span>
+                  )}
+                </span>
               )}
             </button>
           )
         })}
       </div>
       <p style={{ margin: '10px 2px 0', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-        {head ? `${BS_MONTHS[head.month - 1]} ${head.year} BS` : ''} · {days.length} days the Date Engine can name. Pick a day to open it.
+        {head ? `${BS_MONTHS[head.month - 1]} ${head.year} BS` : ''} · {days.length} days the Date Engine can name.{' '}
+        {desktop ? 'Pick a day to peek at its jobs.' : phone ? 'Pick a day to load the agenda below.' : 'Pick a day to open its sheet.'}
       </p>
     </div>
+  )
+}
+
+/* ── the day's jobs — peek (desktop) · sheet (tablet) · agenda (phone) ─── */
+
+function DayJobRow({ job, day, onOpen }: { job: DayJob; day: Date; onOpen: (bookingNo: string) => void }) {
+  const s = BAR_STYLE[job.bar.kind]
+  const at = timeOn(job.bar, day)
+  const openable = isIssuedBy('BK', job.bar.label)
+  const body = (
+    <>
+      <span
+        aria-hidden
+        style={{
+          width: 10,
+          height: 10,
+          marginTop: 4,
+          flexShrink: 0,
+          borderRadius: 'var(--r-badge)',
+          background: s.dash ? 'transparent' : s.line,
+          border: `1.5px ${s.dash ? 'dashed' : 'solid'} ${s.line}`,
+        }}
+      />
+      <span style={{ minWidth: 0, flex: 1, lineHeight: 1.35 }}>
+        <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+          {/* A time only where the booking records one for this day. */}
+          <span className="figure" style={{ fontSize: 'var(--t-th)', fontWeight: 700, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+            {at ? `${at.time} ${at.what}` : `${bsShort(job.bar.from)} – ${bsShort(job.bar.to)}`}
+          </span>
+          <span
+            className={openable ? 'booking-id' : undefined}
+            style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}
+          >
+            {job.bar.label}
+          </span>
+        </span>
+        <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {job.bar.client ?? job.bar.sub ?? job.row.name}
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: s.fg }}>
+          {s.icon && <Icon name={s.icon} size={12} />}
+          {job.bar.kind} · {job.row.name}
+        </span>
+      </span>
+      {openable && <Icon name="chevron_right" size={15} style={{ color: 'var(--muted)', flexShrink: 0, marginTop: 4 }} />}
+    </>
+  )
+
+  const frame = {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 'var(--sp-sm)',
+    width: '100%',
+    minHeight: TOUCH,
+    padding: '9px 10px',
+    borderRadius: 'var(--r-sm)',
+    border: '1px solid var(--border)',
+    background: 'var(--card2)',
+    textAlign: 'left' as const,
+    fontFamily: 'inherit',
+  }
+
+  if (!openable) return <div style={frame}>{body}</div>
+  return (
+    <button type="button" onClick={() => onOpen(job.bar.label)} title={`Open ${job.bar.label}`} style={{ ...frame, cursor: 'pointer' }}>
+      {body}
+    </button>
+  )
+}
+
+function DayJobList({
+  day,
+  jobs,
+  overlayNote,
+  onOpen,
+}: {
+  day: Date
+  jobs: DayJob[]
+  overlayNote: boolean
+  onOpen: (bookingNo: string) => void
+}) {
+  const bs = toBs(day)
+  const hol = holidayOn(day)
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
+      <div>
+        <div style={{ fontSize: 'var(--t-th)', fontWeight: 700, color: 'var(--text2)', letterSpacing: '0.04em' }}>SELECTED DAY</div>
+        {/* §4.2 — BS above AD, both from the one Date Engine. */}
+        <div className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+          {bs ? formatBs(bs) : '—'}
+        </div>
+        <div className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+          {formatAd(day)} · {weekdayShort(day)}
+        </div>
+        {hol && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 5, fontSize: 'var(--t-th)', color: 'var(--danger-text)' }}>
+            <Icon name="flag" size={12} />
+            {hol.name}
+          </div>
+        )}
+      </div>
+
+      {jobs.length === 0 ? (
+        <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+          No jobs on this day under the current filters.
+        </p>
+      ) : (
+        jobs.map((j) => <DayJobRow key={j.bar.id} job={j} day={day} onOpen={onOpen} />)
+      )}
+
+      <p style={{ margin: 0, fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.45 }}>
+        Session times are recorded on the booking; a calendar bar carries only its day window, so a row
+        without a recorded time shows that window instead.
+      </p>
+
+      {overlayNote && (
+        <p style={{ margin: 0, fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.45 }}>
+          Crew, maintenance and transport layers are desktop-only (§5.1 Notes), so this list shows the booking
+          layer only.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * §5.1 — *"day click → right side-peek"* on desktop, *"day tap → bottom sheet,
+ * not side-peek"* on tablet. One panel, two edges.
+ *
+ * This is deliberately not `CollapsibleAside`: that component's job is the
+ * persistent page rail and other pages depend on its defaults. A peek is
+ * transient and dismissable, so it gets its own shell here.
+ */
+function DaySheet({ side, onClose, children }: { side: 'right' | 'bottom'; onClose: () => void; children: ReactNode }) {
+  const bottom = side === 'bottom'
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 90, display: 'flex', alignItems: bottom ? 'flex-end' : 'stretch', justifyContent: bottom ? 'center' : 'flex-end' }}>
+      <div aria-hidden style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.40)' }} onClick={onClose} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Jobs on the selected day"
+        style={{
+          position: 'relative',
+          zIndex: 1,
+          width: bottom ? '100%' : 'min(360px, 100vw)',
+          maxHeight: bottom ? '80vh' : '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          background: 'var(--card)',
+          borderLeft: bottom ? 'none' : '1px solid var(--border)',
+          borderTop: bottom ? '1px solid var(--border)' : 'none',
+          borderRadius: bottom ? '16px 16px 0 0' : 0,
+          boxShadow: 'var(--shadow-modal)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-sm)', padding: '10px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+          <span style={{ fontSize: 'var(--t-ui)', fontWeight: 700 }}>Day</span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            title="Close (Esc)"
+            style={{ minWidth: TOUCH, minHeight: TOUCH, display: 'grid', placeItems: 'center', border: '1px solid transparent', background: 'transparent', color: 'var(--muted)', borderRadius: 'var(--r-btn)', cursor: 'pointer' }}
+          >
+            <Icon name="close" size={18} />
+          </button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--sp-md)' }}>{children}</div>
+      </div>
+    </div>
+  )
+}
+
+/* ── availability ──────────────────────────────────────────────────────── */
+
+/**
+ * §5.1 draws an `[Availability]` tab and subtitles the page "availability-first".
+ *
+ * Nothing in `src/lib/` computes availability — `PLAN.md` Phase 3 names it as an
+ * open gap ("no stock/availability validator"). Deriving free/busy from `ROWS`
+ * inside this component is exactly the Law 1 violation ("pages never implement
+ * business logic") the plan says never comes back out of a component, and a
+ * derived-here answer would disagree with the GiST constraint the moment real
+ * data arrived. So the tab states the gap instead of inventing an answer.
+ */
+function AvailabilityPanel() {
+  return (
+    <Card bodyStyle={{ padding: 'var(--sp-md)' }}>
+      <EmptyState
+        icon={<Icon name="calendar_event" size={22} />}
+        title="Availability is not computed yet"
+        description="No engine answers “what is free between these two dates”, and this page may not work it out for itself — business logic lives in the engines, never in a screen (PLAN.md §0, law 1). The availability validator is a named open gap in PLAN.md Phase 3; this tab renders real free/busy the day it exists."
+      />
+      <p style={{ margin: '12px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.5 }}>
+        Until then the Month and Timeline views show what is <em>booked</em>, which is a record, not a
+        computed availability answer.
+      </p>
+    </Card>
   )
 }
 
@@ -680,7 +1078,7 @@ function MiniMonth({ anchor, onPickDay, busy }: { anchor: Date; onPickDay: (d: D
           type="button"
           onClick={() => step(-1)}
           disabled={!prevOk}
-          title={prevOk ? 'Previous month' : 'The Date Engine only vouches for Shrawan 2083'}
+          title={prevOk ? 'Previous month' : MONTH_STEP_BLOCKED}
           style={{ background: 'none', border: 'none', color: prevOk ? 'var(--text2)' : 'var(--disabled)', cursor: prevOk ? 'pointer' : 'not-allowed', display: 'flex', padding: 2 }}
         >
           <Icon name="chevron_left" size={16} />
@@ -692,7 +1090,7 @@ function MiniMonth({ anchor, onPickDay, busy }: { anchor: Date; onPickDay: (d: D
           type="button"
           onClick={() => step(1)}
           disabled={!nextOk}
-          title={nextOk ? 'Next month' : 'The Date Engine only vouches for Shrawan 2083'}
+          title={nextOk ? 'Next month' : MONTH_STEP_BLOCKED}
           style={{ background: 'none', border: 'none', color: nextOk ? 'var(--text2)' : 'var(--disabled)', cursor: nextOk ? 'pointer' : 'not-allowed', display: 'flex', padding: 2 }}
         >
           <Icon name="chevron_right" size={16} />
@@ -910,7 +1308,7 @@ function SelectedEventPanel({ bar, row, onClose }: { bar: Bar; row: ResourceRow;
         </div>
       )}
 
-      {bar.label.startsWith('BK-') && (
+      {isIssuedBy('BK', bar.label) && (
         <Button icon="file" onClick={() => navigate(`/rentals/${bar.label}`)}>
           Open Booking
         </Button>
@@ -927,12 +1325,17 @@ export default function Calendar() {
   const role: SystemRole = user ? user.role : 'Client'
   const money = canViewMoney(role)
 
+  /* Law 13/14 — width decides, and it is measured once here. No component
+     below this line asks what kind of device it is running on. */
+  const viewport = useViewport()
+  const desktop = viewport === 'desktop'
+  const phone = viewport === 'phone'
+
   const [params] = useSearchParams()
   const dParam = params.get('d')
-  const view0: ViewName = 'Resource Timeline'
 
-  const [view, setView] = useState<ViewName>(view0)
-  const [full, setFull] = useState(false)
+  const [viewChoice, setViewChoice] = useState<ViewName>(DEFAULT_VIEW)
+  const [fullChoice, setFullChoice] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [zoom, setZoom] = useState<number>(DEFAULT_ZOOM)
   /**
@@ -944,7 +1347,9 @@ export default function Calendar() {
    * controls navigated and scoped nothing. Anchoring the window on `d` is what
    * makes them mean what they say, and it makes a date linkable and shareable.
    */
-  const [start, setStart] = useState<Date>(() => anchorFor(requestedDay(dParam), view0))
+  const [start, setStart] = useState<Date>(() => anchorFor(requestedDay(dParam)))
+  /** The day the peek / sheet / phone agenda is showing. */
+  const [dayChoice, setDayChoice] = useState<Date | null>(() => requestedDay(dParam))
   const [rowType, setRowType] = useState<'All' | RowType>('All')
   const [client, setClient] = useState('All')
   const [kinds, setKinds] = useState<Set<BarKind>>(new Set())
@@ -954,9 +1359,22 @@ export default function Calendar() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [sort, setSort] = useState<SortMode>('group')
   const [showShortcuts, setShowShortcuts] = useState(false)
+  /** §5.1 Notes — desktop-only overlays, all on by default so nothing is lost. */
+  const [overlays, setOverlays] = useState<Set<LayerName>>(() => new Set<LayerName>(['Crew', 'Maintenance', 'Transport']))
 
-  const dayCount = view === 'Day' ? 1 : view === 'Week' ? 7 : zoom
+  /* The tab row this width may show, and the view that survives it. Derived
+     rather than synced through an effect, so a resize can never leave the page
+     on a tab that is no longer rendered. */
+  const allowedViews = VIEWS_BY_WIDTH[viewport]
+  const view: ViewName = allowedViews.includes(viewChoice) ? viewChoice : DEFAULT_VIEW
+  /* Full View is a desktop mode: it drops the app chrome for a wall display. */
+  const full = fullChoice && desktop
+  /* The phone layout always shows an agenda, so it falls back to today. */
+  const day: Date | null = dayChoice ?? (phone ? TODAY : null)
+
+  const dayCount = view === 'Week' ? 7 : zoom
   const days = useMemo(() => eachDay(start, dayCount), [start, dayCount])
+  const monthDays = useMemo(() => bsMonthDays(start), [start])
 
   /** Walks `ZOOM_STEPS`; +1 widens the window, −1 narrows it. */
   const stepZoom = (dir: 1 | -1) => {
@@ -968,8 +1386,9 @@ export default function Calendar() {
   }
 
   const goToday = useCallback(() => {
-    setStart(adDay(view === 'Day' ? 0 : -1))
-  }, [view])
+    setStart(adDay(-1))
+    setDayChoice(TODAY)
+  }, [])
 
   const shift = useCallback(
     (dir: -1 | 1) => {
@@ -985,30 +1404,32 @@ export default function Calendar() {
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) return
       if (e.key === 'Escape') {
         if (showShortcuts) setShowShortcuts(false)
+        else if (dayChoice && !phone) setDayChoice(null)
         else if (selectedId) setSelectedId(null)
-        else if (full) setFull(false)
+        else if (full) setFullChoice(false)
         return
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return
       const k = e.key.toLowerCase()
-      if (k === 'f') setFull((v) => !v)
+      if (k === 'f' && desktop) setFullChoice((v) => !v)
       else if (k === 't') goToday()
-      else if (k === 'r') setView('Resource Timeline')
+      else if (k === 'r' && desktop) setViewChoice('Timeline')
       else if (e.key === '?') setShowShortcuts((v) => !v)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [full, selectedId, showShortcuts, goToday])
+  }, [full, selectedId, showShortcuts, goToday, dayChoice, phone, desktop])
 
-  /* ── body scroll lock while the overlay is up ───────────────────────── */
+  /* ── body scroll lock while an overlay is up ────────────────────────── */
+  const dayOverlayOpen = Boolean(day) && !phone
   useEffect(() => {
-    if (!full) return
+    if (!full && !dayOverlayOpen) return
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
       document.body.style.overflow = prev
     }
-  }, [full])
+  }, [full, dayOverlayOpen])
 
   /* ── filtering ──────────────────────────────────────────────────────── */
   const q = query.trim().toLowerCase()
@@ -1039,6 +1460,28 @@ export default function Calendar() {
     return out
   }, [rowType, resource, kinds, client, q, filterActive, sort])
 
+  /**
+   * §5.1 Notes — the crew, maintenance and transport overlays are desktop-only,
+   * so below 1180 the grid and the day list carry the booking layer alone and
+   * say so in words rather than dropping rows silently.
+   */
+  const layerVisible = useCallback(
+    (row: ResourceRow, bar: Bar): boolean => {
+      const layer = layerOf(row, bar)
+      if (!layer) return true
+      return desktop && overlays.has(layer)
+    },
+    [desktop, overlays],
+  )
+
+  const jobsOn = useCallback(
+    (d: Date): DayJob[] =>
+      rows.flatMap((r) => r.bars.filter((b) => coversDay(b, d) && layerVisible(r, b)).map((bar) => ({ row: r, bar }))),
+    [rows, layerVisible],
+  )
+
+  const dayJobs = useMemo(() => (day ? jobsOn(day) : []), [day, jobsOn])
+
   const selected = useMemo(() => {
     if (!selectedId) return null
     for (const r of rows) {
@@ -1055,6 +1498,16 @@ export default function Calendar() {
     }
     return set
   }, [])
+
+  /**
+   * The Full View strip's Conflicts figure, **counted from the rows on screen**
+   * rather than typed. It read a hardcoded `4` while the seed carries two
+   * conflict-class bars, so the card and the timeline it sits under disagreed.
+   */
+  const conflictCount = useMemo(
+    () => ROWS.reduce((n, r) => n + r.bars.filter((b) => b.kind === 'Conflict' || b.kind === 'Case Escalation').length, 0),
+    [],
+  )
 
   const clearAll = () => {
     setRowType('All')
@@ -1085,6 +1538,15 @@ export default function Calendar() {
     })
   }
 
+  const toggleLayer = (l: LayerName) => {
+    setOverlays((prev) => {
+      const next = new Set(prev)
+      if (next.has(l)) next.delete(l)
+      else next.add(l)
+      return next
+    })
+  }
+
   const showConflicts = () => {
     setSavedView('Conflict View')
     setRowType('All')
@@ -1095,6 +1557,11 @@ export default function Calendar() {
   const runQuickAction = (a: (typeof QUICK_ACTIONS)[number]) => {
     if (a.action === 'conflicts') showConflicts()
     else if (a.to) navigate(a.to)
+  }
+
+  const pickDay = (d: Date) => {
+    setStart(anchorFor(d))
+    setDayChoice(d)
   }
 
   /* ── shared fragments ───────────────────────────────────────────────── */
@@ -1124,31 +1591,87 @@ export default function Calendar() {
     </span>
   )
 
+  /**
+   * §5.1's header stepper — `‹ Shrawan 2083 / Jul–Aug 2026 ›`.
+   *
+   * Both arrows are permanently disabled and the reason is printed under them.
+   * See `MONTH_STEP_BLOCKED`: making them move needs real BS calendar data, and
+   * inventing that data is the one failure this screen is most likely to ship.
+   */
+  const monthStepper = (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
+      <button type="button" disabled aria-disabled title={MONTH_STEP_BLOCKED} aria-label="Previous month (unavailable)" style={iconBtnOff}>
+        <Icon name="chevron_left" size={15} />
+      </button>
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          height: 34,
+          padding: '0 11px',
+          borderRadius: 'var(--r-btn)',
+          border: '1px solid var(--border)',
+          background: 'var(--card)',
+          lineHeight: 1.2,
+        }}
+      >
+        <span style={{ textAlign: 'left' }}>
+          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+            {bsMonthLabel(monthDays)}
+          </span>
+          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+            {adMonthSpanLabel(monthDays)}
+          </span>
+        </span>
+      </span>
+      <button type="button" disabled aria-disabled title={MONTH_STEP_BLOCKED} aria-label="Next month (unavailable)" style={iconBtnOff}>
+        <Icon name="chevron_right" size={15} />
+      </button>
+    </span>
+  )
+
+  const monthOnly = view === 'Month' || view === 'Availability'
+
   const navButtons = (
     <>
       <Button onClick={goToday}>Today</Button>
-      <span style={{ display: 'inline-flex', gap: 'var(--sp-xs)' }}>
-        <button type="button" onClick={() => shift(-1)} title="Previous range" style={iconBtn}>
-          <Icon name="chevron_left" size={15} />
-        </button>
-        <button type="button" onClick={() => shift(1)} title="Next range" style={iconBtn}>
-          <Icon name="chevron_right" size={15} />
-        </button>
-      </span>
-      {rangePill}
+      {monthOnly ? (
+        monthStepper
+      ) : (
+        <>
+          <span style={{ display: 'inline-flex', gap: 'var(--sp-xs)' }}>
+            <button type="button" onClick={() => shift(-1)} title="Previous range" aria-label="Previous range" style={iconBtn}>
+              <Icon name="chevron_left" size={15} />
+            </button>
+            <button type="button" onClick={() => shift(1)} title="Next range" aria-label="Next range" style={iconBtn}>
+              <Icon name="chevron_right" size={15} />
+            </button>
+          </span>
+          {rangePill}
+        </>
+      )}
     </>
   )
 
-  const viewTabs = (
-    <span style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 10, background: 'var(--card2)', border: '1px solid var(--border)' }}>
-      {VIEWS.map((v) => {
+  const monthStepNote = monthOnly && (
+    <p role="note" style={{ margin: 0, fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.5, maxWidth: 760 }}>
+      <Icon name="info" size={12} style={{ verticalAlign: '-1px', marginRight: 5 }} />
+      {MONTH_STEP_BLOCKED}
+    </p>
+  )
+
+  /* §5.1 draws four tabs at desktop, two at tablet and none at phone. */
+  const viewTabs = allowedViews.length > 1 && (
+    <span role="tablist" aria-label="Calendar view" style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 10, background: 'var(--card2)', border: '1px solid var(--border)' }}>
+      {allowedViews.map((v) => {
         const on = view === v
         return (
           <button
             key={v}
             type="button"
-            onClick={() => setView(v)}
-            aria-pressed={on}
+            role="tab"
+            onClick={() => setViewChoice(v)}
+            aria-selected={on}
             style={{
               height: 28,
               padding: '0 11px',
@@ -1163,6 +1686,35 @@ export default function Calendar() {
             }}
           >
             {v}
+          </button>
+        )
+      })}
+    </span>
+  )
+
+  /** §5.1 Notes — desktop only. Below 1180 the note in the grid says why. */
+  const layerToggles = desktop && view === 'Month' && (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>Layers</span>
+      {LAYERS.map((l) => {
+        const on = overlays.has(l.name)
+        return (
+          <button
+            key={l.name}
+            type="button"
+            onClick={() => toggleLayer(l.name)}
+            aria-pressed={on}
+            title={on ? `Hide the ${l.label.toLowerCase()} layer` : `Show the ${l.label.toLowerCase()} layer`}
+            style={{
+              ...chipBase,
+              border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+              background: on ? 'var(--nav-active-bg)' : 'transparent',
+              color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
+            }}
+          >
+            <Icon name={l.icon} size={12} />
+            {l.label}
+            <Icon name={on ? 'check' : 'close'} size={11} />
           </button>
         )
       })}
@@ -1359,7 +1911,7 @@ export default function Calendar() {
           <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>{bsRangeLabel(days)}</span>
           <span className="figure" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{adRangeLabel(days)}</span>
         </span>
-        <span style={{ marginLeft: 'auto' }}>{view === 'Resource Timeline' ? zoomControl : <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{view} view · fixed window</span>}</span>
+        <span style={{ marginLeft: 'auto' }}>{view === 'Timeline' ? zoomControl : <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{view} view · fixed window</span>}</span>
       </div>
       <Timeline
         rows={rows}
@@ -1378,15 +1930,21 @@ export default function Calendar() {
   const monthCard = (
     <Card bodyStyle={{ padding: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderBottom: '1px solid var(--border)' }}>
-        <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700 }}>{bsRangeLabel(bsMonthDays(start))}</span>
-        <span className="figure" style={{ marginLeft: 'auto', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{adRangeLabel(bsMonthDays(start))}</span>
+        <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700 }}>{bsRangeLabel(monthDays)}</span>
+        <span className="figure" style={{ marginLeft: 'auto', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{adRangeLabel(monthDays)}</span>
       </div>
-      <MonthGrid anchor={start} rows={rows} onPickDay={(d) => { setStart(d); setView('Day') }} />
+      <MonthGrid anchor={start} jobsOn={jobsOn} viewport={viewport} selectedDay={day} onPickDay={pickDay} />
+      {!desktop && (
+        <p style={{ margin: 0, padding: '0 var(--sp-md) var(--sp-sm)', fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.5 }}>
+          Chips truncate to a dot below 1180, and the crew, maintenance and transport layers are desktop-only
+          (§5.1 Notes) — this grid shows the booking layer.
+        </p>
+      )}
       {markerLegend}
     </Card>
   )
 
-  const centre = view === 'Month' ? monthCard : timelineCard
+  const centre = view === 'Availability' ? <AvailabilityPanel /> : view === 'Month' ? monthCard : timelineCard
 
   const shortcutsCard = (
     <Card bodyStyle={{ padding: 14 }}>
@@ -1418,7 +1976,7 @@ export default function Calendar() {
 
   const railDefault = (
     <>
-      <MiniMonth anchor={start} onPickDay={(d) => setStart(d)} busy={busyDays} />
+      <MiniMonth anchor={start} onPickDay={pickDay} busy={busyDays} />
       <FestivalCard />
       <Card bodyStyle={{ padding: 14 }}>
         <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700 }}>Today&apos;s Summary</div>
@@ -1453,6 +2011,7 @@ export default function Calendar() {
                   flexDirection: 'column',
                   alignItems: 'flex-start',
                   gap: 6,
+                  minHeight: TOUCH,
                   padding: '10px 9px',
                   borderRadius: 'var(--r-btn)',
                   border: '1px solid var(--border)',
@@ -1473,6 +2032,17 @@ export default function Calendar() {
         </div>
       </Card>
     </>
+  )
+
+  /** The day peek, in whichever shell this width calls for. */
+  const dayJobList = day && (
+    <DayJobList day={day} jobs={dayJobs} overlayNote={!desktop} onOpen={(no) => navigate(`/rentals/${no}`)} />
+  )
+
+  const dayOverlay = day && !phone && (
+    <DaySheet side={desktop ? 'right' : 'bottom'} onClose={() => setDayChoice(null)}>
+      {dayJobList}
+    </DaySheet>
   )
 
   /* ── full view overlay ──────────────────────────────────────────────── */
@@ -1497,11 +2067,14 @@ export default function Calendar() {
             />
           </span>
           <Button icon="settings" onClick={() => setShowFilters((v) => !v)}>{showFilters ? 'Hide Filters' : 'Filters'}</Button>
-          <Button icon="close" onClick={() => setFull(false)}>Exit Full View</Button>
+          <Button icon="close" onClick={() => setFullChoice(false)}>Exit Full View</Button>
         </div>
+
+        {monthStepNote}
 
         <div style={{ display: 'flex', gap: 'var(--sp-md)', alignItems: 'center', flexWrap: 'wrap' }}>
           {viewTabs}
+          {layerToggles}
           <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             {rowTypeControl}
             {clientControl}
@@ -1533,7 +2106,7 @@ export default function Calendar() {
                 {EVENT_ACTIONS.map((a) => {
                   if (a.unavailable) return <Unavailable key={a.label} label={a.label} reason={a.unavailable} icon={a.icon} />
                   const bookingNo = selected?.bar.label
-                  const openable = Boolean(bookingNo && bookingNo.startsWith('BK-'))
+                  const openable = isIssuedBy('BK', bookingNo)
                   if (!openable) {
                     return <Unavailable key={a.label} label={a.label} reason="Select a booking bar first" icon={a.icon} />
                   }
@@ -1562,19 +2135,25 @@ export default function Calendar() {
           </Card>
           <Card bodyStyle={{ padding: 14 }}>
             <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 'var(--sp-sm)' }}>Conflicts</div>
-            <div className="kpi-value" style={{ fontSize: 'var(--t-kpi)', color: 'var(--danger-text)' }}>4</div>
-            <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', margin: '4px 0 10px' }}>Requires attention</div>
+            <div className="kpi-value" style={{ fontSize: 'var(--t-kpi)', color: conflictCount > 0 ? 'var(--danger-text)' : 'var(--text)' }}>
+              {conflictCount}
+            </div>
+            <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', margin: '4px 0 10px' }}>
+              {conflictCount > 0 ? 'Requires attention' : 'Nothing double-booked or escalated'}
+            </div>
             <Button icon="alert_triangle" onClick={showConflicts}>View Conflicts</Button>
           </Card>
           <Card bodyStyle={{ padding: 14 }}>
             <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 'var(--sp-sm)' }}>
               Utilization <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 'var(--t-th)' }}>(This Month)</span>
             </div>
-            <div className="kpi-value" style={{ fontSize: 'var(--t-kpi)', color: 'var(--text)' }}>84%</div>
-            <div style={{ height: 6, borderRadius: 'var(--r-badge)', background: 'var(--card2)', border: '1px solid var(--border)', marginTop: 10, overflow: 'hidden' }}>
-              <span aria-hidden style={{ display: 'block', width: '84%', height: '100%', background: 'var(--progress)' }} />
-            </div>
-            <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 6 }}>Matches Today &amp; Inventory</div>
+            {/* Was a hand-typed 84% with a bar drawn to match and a caption
+                claiming it agreed with Today and Inventory. Nothing computes
+                utilization anywhere in the repo, so it states that instead. */}
+            <NotTracked
+              what="Utilization"
+              reason="has no source: no engine computes utilised days against available days, and this screen may not derive one (law 1)."
+            />
           </Card>
           <Card bodyStyle={{ padding: 14 }}>
             <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 10 }}>
@@ -1597,6 +2176,8 @@ export default function Calendar() {
             </div>
           </div>
         )}
+
+        {dayOverlay}
       </div>
     )
   }
@@ -1613,7 +2194,8 @@ export default function Calendar() {
           <>
             {navButtons}
             <Button icon="settings" onClick={() => setShowFilters((v) => !v)}>{showFilters ? 'Hide Filters' : 'Filters'}</Button>
-            <Button icon="eye" onClick={() => setFull(true)}>Full View</Button>
+            {/* Full View drops the app chrome for a wall display — a desktop mode. */}
+            {desktop && <Button icon="eye" onClick={() => setFullChoice(true)}>Full View</Button>}
             <Button icon="plus" variant="primary" onClick={() => navigate('/rentals/new')}>
               New Rental
             </Button>
@@ -1621,93 +2203,72 @@ export default function Calendar() {
         }
       />
 
-      {/* KPI band — the render's four cards, with their footer links wired. */}
-      <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
-        {KPIS.map((k) => (
-          <article key={k.label} className="lift" style={{ ...cardStyle, padding: '13px 14px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              {/* `--on-brand`/`--on-progress` are the theme-invariant inks this
-                  used to say did not exist. They do now: white on four of the
-                  five fills, dark amber on `--progress`, which is #fbbf24 in
-                  dark theme where white measured ~1.7:1. `KpiStrip` in
-                  `components/ui/Page.tsx` paints its tile the same way. */}
-              <span style={{ width: 30, height: 30, borderRadius: 'var(--r-sm)', background: BRAND[k.accent], color: BRAND_ON[k.accent], display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                <Icon name={k.icon} size={16} fill />
-              </span>
-              <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {k.label}
-              </div>
-            </div>
-            <div className="kpi-value" style={{ marginTop: 9, fontSize: 'clamp(16px, 1.5vw, 22px)', color: 'var(--text)', lineHeight: 1.15, letterSpacing: '-0.02em' }}>
-              {k.value}
-            </div>
-            <div style={{ marginTop: 7, fontSize: 'var(--t-th)', display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-              {k.delta && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontWeight: 700, color: k.delta.good ? 'var(--success-text)' : 'var(--danger-text)' }}>
-                  <Icon name={k.delta.direction === 'up' ? 'arrow_up' : 'arrow_down'} size={11} fill />
-                  {k.delta.text}
-                </span>
-              )}
-              <span style={{ color: 'var(--muted)' }}>{k.note}</span>
-            </div>
-            {k.hint && (
-              <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                <Icon name="info" size={12} />
-                {k.hint}
-              </div>
-            )}
-            {k.link && (
-              <button
-                type="button"
-                onClick={() => k.link && navigate(k.link.to)}
-                style={{ marginTop: 'auto', paddingTop: 'var(--sp-sm)', background: 'none', border: 'none', color: 'var(--link)', fontSize: 'var(--t-th)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', alignSelf: 'flex-start' }}
-              >
-                {k.link.label}
-                <Icon name="arrow_right" size={12} />
-              </button>
-            )}
-            {k.label === 'Schedule Conflicts' && (
-              <button
-                type="button"
-                onClick={showConflicts}
-                style={{ marginTop: 'auto', paddingTop: 'var(--sp-sm)', background: 'none', border: 'none', color: 'var(--link)', fontSize: 'var(--t-th)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', alignSelf: 'flex-start' }}
-              >
-                View Conflicts
-                <Icon name="arrow_right" size={12} />
-              </button>
-            )}
-          </article>
-        ))}
-      </section>
+      {monthStepNote}
 
-      <div style={{ display: 'flex', gap: 'var(--sp-md)', alignItems: 'center', flexWrap: 'wrap' }}>
-        {viewTabs}
-        <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          {rowTypeControl}
-          {clientControl}
-        </span>
-      </div>
+      {(viewTabs || layerToggles || desktop) && (
+        <div style={{ display: 'flex', gap: 'var(--sp-md)', alignItems: 'center', flexWrap: 'wrap' }}>
+          {viewTabs}
+          {layerToggles}
+          {/* Below 1180 these two live in the Filters panel instead of doubling
+              in the header — the same controls, one place. */}
+          {desktop && (
+            <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              {rowTypeControl}
+              {clientControl}
+            </span>
+          )}
+        </div>
+      )}
 
-      <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', flexWrap: 'wrap' }}>{kindChips}</div>
+      {/* The event-type chip row is a desktop affordance; §5.1 puts filters
+          behind `[filters ▾]`, and twelve chips ahead of the grid on a phone is
+          a scroll, not a filter. Below 1180 they render inside Filters. */}
+      {desktop && <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', flexWrap: 'wrap' }}>{kindChips}</div>}
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: showFilters ? '230px minmax(0,1fr) auto' : 'minmax(0,1fr) auto',
-          gap: 'var(--sp-md)',
-          alignItems: 'start',
-        }}
-      >
-        {showFilters && filtersPanel}
-        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+      {desktop ? (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: showFilters ? '230px minmax(0,1fr) auto' : 'minmax(0,1fr) auto',
+            gap: 'var(--sp-md)',
+            alignItems: 'start',
+          }}
+        >
+          {showFilters && filtersPanel}
+          <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+            {centre}
+            {selected && <SelectedEventPanel bar={selected.bar} row={selected.row} onClose={() => setSelectedId(null)} />}
+          </div>
+          <Rail width={300} label="Event detail">
+            {railDefault}
+            {shortcutsCard}
+          </Rail>
+        </div>
+      ) : (
+        /* Tablet and phone: the rail **reflows** beneath the grid rather than
+           hiding behind a handle (rulings §7). `CollapsibleAside` is deliberately
+           not used here and its defaults are untouched. */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
+          {showFilters && filtersPanel}
           {centre}
           {selected && <SelectedEventPanel bar={selected.bar} row={selected.row} onClose={() => setSelectedId(null)} />}
+
+          {/* §5.1 phone — the selected-day agenda sits under the grid, not in a sheet. */}
+          {phone && day && <Card bodyStyle={{ padding: 'var(--sp-md)' }}>{dayJobList}</Card>}
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: phone ? 'minmax(0,1fr)' : 'repeat(2, minmax(0,1fr))',
+              gap: 'var(--sp-md)',
+              alignItems: 'start',
+            }}
+          >
+            {railDefault}
+            {shortcutsCard}
+          </div>
         </div>
-        <Rail width={300} label="Event detail">
-          {railDefault}
-          {shortcutsCard}
-        </Rail>
-      </div>
+      )}
 
       {showShortcuts && (
         <div style={{ ...cardStyle, padding: 14 }}>
@@ -1724,6 +2285,8 @@ export default function Calendar() {
       )}
 
       <FooterNote extra={['Bookings are cancelled, never deleted']} />
+
+      {dayOverlay}
     </div>
   )
 }
@@ -1739,4 +2302,12 @@ const iconBtn = {
   color: 'var(--text)',
   cursor: 'pointer',
   fontFamily: 'inherit',
+} as const
+
+/** The same control, permanently unavailable and saying so. */
+const iconBtnOff = {
+  ...iconBtn,
+  color: 'var(--disabled)',
+  borderStyle: 'dashed',
+  cursor: 'not-allowed',
 } as const

@@ -4,7 +4,10 @@ import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
 import { Donut, Legend } from '../../components/ui/Charts'
-import { EmptyState, ErrorBanner, RestrictedState } from '../../components/ui/StateViews'
+import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
+import { PageBody } from '../../components/ui/PageBody'
+import { ReportToolbar, reportDateRange, withinReportRange } from '../../components/ui/ReportToolbar'
+import type { ReportCsvRow, ReportFilters } from '../../components/ui/ReportToolbar'
 import { BRAND, BRAND_ON, STATUS } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
 import { formatMoney } from '../../lib/money'
@@ -92,6 +95,16 @@ const METHOD_ICON: Record<string, IconName> = {
 
 const ROWS_PER_PAGE = [10, 25, 50] as const
 
+/**
+ * The ledger's own range, as `ReportToolbar` would emit it.
+ *
+ * This is the screen's BASELINE in `useList`'s sense — a structural predicate,
+ * not something the operator chose — so "did anyone narrow this list" compares
+ * against it rather than against no range at all. Without that, the empty state
+ * would offer Clear filters on an untouched page.
+ */
+const SEEDED_RANGE = reportDateRange('expense_date', PERIOD.from, PERIOD.to)
+
 /** A KPI tile with the render's drill-down link. `KpiStrip` has no link slot. */
 function KpiCard({
   label,
@@ -167,21 +180,48 @@ export default function ExpenseReports() {
   const [status, setStatus] = useState<string>('All')
   const [method, setMethod] = useState<string>('All')
   const [vendor, setVendor] = useState<string>('All')
-  const [branch, setBranch] = useState<string>('All')
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState<number>(10)
 
+  /*
+   * The shared toolbar's half of the filter set — `ListFilters`-shaped, so when
+   * this ledger moves off `data/expenseReports` onto Postgres it is handed
+   * straight to `useList` as `{ ...base, ...report }` with no reshaping.
+   *
+   * It STARTS on the seeded ledger's own range rather than on All dates,
+   * because that range is what the page used to print as a fixed label. Built
+   * through `reportDateRange` so the opening window is the identical
+   * Nepal-day-boundary window the control produces — a hand-written
+   * `PERIOD.from.toISOString()` would be a bare UTC instant and would shift by
+   * 5h45m the first time anyone touched the picker.
+   */
+  const [report, setReport] = useState<ReportFilters>({ dateRange: SEEDED_RANGE })
+  const branch = report.chips?.branch?.[0] ?? ''
+
   const vendors = useMemo(() => [...new Set(EXPENSES.map((r) => r.vendor))].sort(), [])
 
-  const rows = useMemo(() => {
+  /*
+   * Every predicate EXCEPT the category chips.
+   *
+   * The split matters because the chip row carries a count on each chip, and
+   * this page's rule for it is that "a chip can never advertise rows that are
+   * not there". Counting over the whole ledger broke that rule the moment the
+   * toolbar could narrow the date range or the branch — Office would say 4 over
+   * a window holding 2. Counting over the fully-filtered rows would break it the
+   * other way, since every chip but the selected one would read 0.
+   *
+   * So the chips count over exactly this: everything the operator has chosen
+   * apart from the category they are about to choose.
+   */
+  const scoped = useMemo(() => {
     const q = query.trim().toLowerCase()
     return EXPENSES.filter((r) => {
-      if (category !== 'All' && r.category !== category) return false
       if (status !== 'All' && r.status !== status) return false
       if (method !== 'All' && r.method !== method) return false
       if (vendor !== 'All' && r.vendor !== vendor) return false
-      if (branch !== 'All' && r.branch !== branch) return false
+      if (branch && r.branch !== branch) return false
+      if (!withinReportRange(r.date, report.dateRange)) return false
       if (!q) return true
       return (
         r.id.toLowerCase().includes(q) ||
@@ -191,7 +231,12 @@ export default function ExpenseReports() {
         (r.billNo ?? '').toLowerCase().includes(q)
       )
     })
-  }, [category, status, method, vendor, branch, query])
+  }, [status, method, vendor, branch, query, report.dateRange])
+
+  const rows = useMemo(
+    () => (category === 'All' ? scoped : scoped.filter((r) => r.category === category)),
+    [scoped, category],
+  )
 
   const totals = useMemo(() => totalsOf(rows), [rows])
   const budget = useMemo(() => budgetOf(rows), [rows])
@@ -205,14 +250,17 @@ export default function ExpenseReports() {
   const current = Math.min(page, pageCount)
   const shown = rows.slice((current - 1) * perPage, current * perPage)
 
-  const filtered = category !== 'All' || status !== 'All' || method !== 'All' || vendor !== 'All' || branch !== 'All' || query !== ''
+  const rangeNarrowed =
+    report.dateRange?.fromAd !== SEEDED_RANGE?.fromAd || report.dateRange?.toAd !== SEEDED_RANGE?.toAd
+  const filtered =
+    category !== 'All' || status !== 'All' || method !== 'All' || vendor !== 'All' || branch !== '' || query !== '' || rangeNarrowed
   const clearAll = () => {
     setCategory('All')
     setStatus('All')
     setMethod('All')
     setVendor('All')
-    setBranch('All')
     setQuery('')
+    setReport({ dateRange: SEEDED_RANGE })
     setPage(1)
   }
 
@@ -226,10 +274,17 @@ export default function ExpenseReports() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
         <PageHeader icon="card" title="Expenses" description="Track operating costs, control spending, and monitor company expenses." />
-        <RestrictedState
-          reason="Expenses is not available for your role. Every figure on this page is a monetary amount, so there is no version of it your role can see. Ask an Owner, Admin, Coordinator or Accounts user if you need an expense recorded."
-          requiredRole="Owner, Admin, Coordinator or Accounts"
-        />
+        {/* This screen hand-wrote the restricted → error → empty ladder, and
+            `PageBody` was written to generalise exactly that. Same
+            `RestrictedState` underneath — the ladder is now the shared one, and
+            no toolbar is drawn above it either. */}
+        <PageBody
+          restricted
+          restrictedReason="Expenses is not available for your role. Every figure on this page is a monetary amount, so there is no version of it your role can see. Ask an Owner, Admin, Coordinator or Accounts user if you need an expense recorded."
+          restrictedRequiredRole="Owner, Admin, Coordinator or Accounts"
+        >
+          {null}
+        </PageBody>
         <FooterNote />
       </div>
     )
@@ -243,8 +298,10 @@ export default function ExpenseReports() {
         description="Track operating costs, control spending, and monitor company expenses."
         actions={
           <>
+            {/* The Export button that used to sit here had no handler. The
+                toolbar below owns CSV now, and it exports the rows currently
+                on screen rather than a fixed dump. */}
             <Button icon="upload">Import</Button>
-            <Button icon="download">Export</Button>
             <Button icon="plus" variant="primary">
               New Expense
             </Button>
@@ -311,12 +368,12 @@ export default function ExpenseReports() {
       </section>
 
       {/* Category chips. Each carries its own count, derived from the same
-          array the table reads, so a chip can never advertise rows that are
-          not there. */}
+          array the table reads — every other filter applied, this one not — so
+          a chip can never advertise rows that are not there. */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {['All', ...CATEGORIES].map((c) => {
           const on = category === c
-          const count = c === 'All' ? EXPENSES.length : EXPENSES.filter((r) => r.category === c).length
+          const count = c === 'All' ? scoped.length : scoped.filter((r) => r.category === c).length
           return (
             <button
               key={c}
@@ -355,18 +412,27 @@ export default function ExpenseReports() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
-          {/* Filter bar. The period is the seeded ledger's own range, rendered
-              BS above AD from the Date Engine — never a stored BS string. */}
-          <div style={{ ...cardStyle, padding: 11, display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 10px', borderRadius: 'var(--r-input)', border: '1px solid var(--border)', background: 'var(--card2)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-              <Icon name="calendar" size={13} />
-              {formatAd(PERIOD.from)} – {formatAd(PERIOD.to)}
-            </span>
-
+          {/*
+            The shared toolbar owns the date range, the branch and the export;
+            the four selects and the search box below are this ledger's own and
+            ride along as its children. The period pill it draws is the same
+            BS-above-AD pair this bar used to print as fixed text — except it is
+            now a control, so the range it names is the range the rows obey.
+          */}
+          <ReportToolbar
+            title="Expenses"
+            value={report}
+            onChange={(next) => {
+              setReport(next)
+              setPage(1)
+            }}
+            dateColumn="expense_date"
+            branches={BRANCHES}
+            csv={{ filename: 'expenses', build: () => expensesCsv(rows) }}
+          >
             <Sel value={status} onChange={setStatus} all="All Status" options={EXPENSE_STATUSES as readonly string[]} onPick={() => setPage(1)} />
             <Sel value={method} onChange={setMethod} all="All Payment Method" options={PAYMENT_METHODS as readonly string[]} onPick={() => setPage(1)} />
             <Sel value={vendor} onChange={setVendor} all="All Vendors" options={vendors} onPick={() => setPage(1)} />
-            <Sel value={branch} onChange={setBranch} all="All Branches" options={BRANCHES as readonly string[]} onPick={() => setPage(1)} />
 
             <input
               value={query}
@@ -391,16 +457,20 @@ export default function ExpenseReports() {
             />
 
             {filtered && <Button onClick={clearAll}>Clear</Button>}
-          </div>
+          </ReportToolbar>
 
           <Card title={`${rows.length} ${rows.length === 1 ? 'expense' : 'expenses'}`} bodyStyle={{ padding: 0 }}>
-            {rows.length === 0 ? (
-              <EmptyState
-                icon={<Icon name="search" size={26} />}
-                title="No expenses match these filters"
-                description="Clear a filter or widen the search to see records again."
-              />
-            ) : (
+            {/* The empty state used to offer the words "Clear a filter" and no
+                button to do it with. `PageBody` asks the filtered and unfiltered
+                questions separately and wires the one that has an answer. */}
+            <PageBody
+              noun="expenses"
+              empty={rows.length === 0}
+              emptyIsFiltered={filtered}
+              onClearFilters={clearAll}
+              emptyTitle={filtered ? 'No expenses match these filters' : 'No expenses recorded'}
+              emptyMessage={filtered ? 'Clear a filter or widen the range to see records again.' : 'Nothing has been booked to this ledger yet.'}
+            >
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
                   <thead>
@@ -419,7 +489,7 @@ export default function ExpenseReports() {
                   </tbody>
                 </table>
               </div>
-            )}
+            </PageBody>
 
             {rows.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
@@ -697,6 +767,69 @@ function Row({ r }: { r: ExpenseRow }) {
       </td>
     </tr>
   )
+}
+
+/**
+ * The CSV body — the rows the filters currently select, not the whole ledger.
+ *
+ * Exporting everything regardless of the filter bar is the version of this
+ * button people quietly assume they got; it is also the version that makes an
+ * export disagree with the total printed above it. `ReportToolbar` writes the
+ * period and branch into the file's header, so the file says which rows these
+ * are.
+ *
+ * Money is written the way the screen shows it, through `formatMoney` — same
+ * figure in the file as on the page. Note the cost: `Rs 85,000` is text to a
+ * spreadsheet, not a number to sum. `Pulse`'s export made the same trade; a
+ * second raw-paisa column is the fix and it is a decision about what these
+ * files are for, so it is not made here.
+ */
+function expensesCsv(rows: ExpenseRow[]): ReportCsvRow[] {
+  const header: ReportCsvRow = [
+    'Expense ID',
+    'Bill No',
+    'Date (AD)',
+    'Date (BS)',
+    'Category',
+    'Sub-category',
+    'Vendor',
+    'Description',
+    'Amount',
+    'Reclaimable VAT',
+    'Payment Method',
+    'Status',
+    'Paid By',
+    'Submitted By',
+    'Branch',
+    'Recurring',
+    'Linked to',
+  ]
+  return [
+    header,
+    ...rows.map((r): ReportCsvRow => {
+      const bs = toBs(r.date)
+      return [
+        r.id,
+        r.billNo ?? '',
+        formatAd(r.date),
+        bs ? formatBs(bs) : '',
+        r.category,
+        r.subCategory,
+        r.vendor,
+        r.description,
+        formatMoney(r.amount),
+        // §4.3 — null is "no tax invoice", which is not the same as zero credit.
+        r.vat === null ? '' : formatMoney(r.vat),
+        r.method,
+        r.status,
+        r.paidBy ?? '',
+        r.submittedBy,
+        r.branch,
+        r.recurring ? 'Yes' : 'No',
+        r.link ? `${r.link.kind} ${r.link.id}` : '',
+      ]
+    }),
+  ]
 }
 
 const quickStyle = {

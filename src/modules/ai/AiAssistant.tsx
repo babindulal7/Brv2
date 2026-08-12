@@ -25,8 +25,8 @@ const CAPABILITIES: Array<{ title: string; note: string; icon: 'search' | 'chart
 
 const SUGGESTIONS: Array<{ text: string; record: string; action: string; weight: 'High' | 'Medium' | 'Low' }> = [
   { text: '4 returns are overdue and none has been chased today', record: 'Operations Queues', action: 'Open Returns', weight: 'High' },
-  { text: 'Invoice INV-2026-0492 is due 2 Aug with no reminder scheduled yet', record: 'INV-2026-0492', action: 'Open Invoice', weight: 'High' },
-  { text: 'NISI Athena Set is double-booked on 14 Shrawan', record: 'BK-2026-0713', action: 'Open Calendar', weight: 'High' },
+  { text: 'Invoice INV-492 is due 2 Aug with no reminder scheduled yet', record: 'INV-492', action: 'Open Invoice', weight: 'High' },
+  { text: 'NISI Athena Set is double-booked on 14 Shrawan', record: 'B-713', action: 'Open Calendar', weight: 'High' },
   { text: 'Aputure 600D has been in maintenance 9 days — above its average', record: 'AP6-0204', action: 'Open Item', weight: 'Medium' },
   { text: 'Two clients are at 100% of their monthly booking limit', record: 'Memberships', action: 'Open Memberships', weight: 'Medium' },
   { text: 'Sub-rental from Lumen House returns tomorrow', record: 'Calendar', action: 'Open Calendar', weight: 'Low' },

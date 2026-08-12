@@ -4,7 +4,8 @@ import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
-import { Card, PageHeader, Button, KpiStrip, Rail, SideRail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, Button, KpiStrip, Rail, SideRail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { ScreenHeader } from '../finance/TabHeader'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { Donut, Legend, catColor } from '../../components/ui/Charts'
 import { EmptyState } from '../../components/ui/StateViews'
@@ -344,6 +345,37 @@ function PageBtn({ label, active, disabled, onClick }: { label: string; active?:
 }
 
 /**
+ * **Create Document** — the one control on this screen that claimed to work.
+ *
+ * `SUCCESS_FABRICATION_REGISTER_2026-08-12.md` §D lists it. The primary
+ * dispatched
+ * `createDocument({ title: 'New Agreement Document', docType: 'Agreement' })` —
+ * hardcoded placeholder content — with no `ActionContext`, no `.catch()`, and
+ * **no feedback of any kind**, on success or on failure. So the operator
+ * clicked, saw nothing move, and clicked again, and again. Today each of those
+ * clicks is a separately rejected dispatch (`actions/core.ts` refuses anything
+ * without `implemented: true`) whose rejection nobody handles; the moment
+ * `CREATE_DOCUMENT` is wired, the same three clicks become three real documents
+ * all called "New Agreement Document" — which is worse than the silence.
+ *
+ * The title was never the operator's. A document is named for what it is, and
+ * nothing on this screen asks. `Upload Document`, `Import`, all seven row-menu
+ * entries, the three bulk actions and every Quick Action tile already say the
+ * same thing in the same words (`NOT_BUILT`), and the Quick Actions card's own
+ * footnote states it outright: creating and uploading documents needs storage,
+ * which is unwired. This button was the single hole in an otherwise honest
+ * screen; it now says what its neighbours say. `Export` is untouched and still
+ * works — it builds its CSV here, needing nothing that is missing.
+ *
+ * TODO(decision): the create flow itself — which document types an operator may
+ * raise by hand, what each needs beyond a title, and which record it attaches
+ * to. `CreateDocumentInput` already takes `relatedBookingId`, and nothing in
+ * this repo rules who chooses it. A page may not answer that (CLAUDE.md).
+ */
+const CREATE_UNAVAILABLE =
+  'Not built yet — document storage is unwired, and no form asks what the document should be called'
+
+/**
  * **Documents** — built against `03 Core Modules/Documents.PNG` with the
  * `Documents.md` v2.1 corrections applied where the render and the lock
  * disagree on meaning rather than on layout:
@@ -360,7 +392,26 @@ function PageBtn({ label, active, disabled, onClick }: { label: string; active?:
  *    the rows, the tab, the category, the donut slice and the finance quick
  *    actions are removed from the arrays before render, not masked.
  */
-export default function Documents() {
+/**
+ * **`embedded`** — hosted as Finance's Documents TAB (`09_FINANCE.md` §9.5)
+ * rather than reached at `/documents`.
+ *
+ * Two things are stripped when it is, and both are named in `CONFLICTS.md`
+ * §09.2 (*"stripping the duplicate PageHeader and search box … not just
+ * importing them"*):
+ *
+ *  1. **The `<h1>`** — `ScreenHeader` demotes it to a subtitle. The four header
+ *     actions, `[Create Document]` among them, are kept.
+ *  2. **The search box** — the app Shell already renders one for `/finance`
+ *     (`App.tsx`'s `search="…"` prop), so hosting this screen unchanged puts two
+ *     search fields on one page, filtering different things, neither labelled to
+ *     say which. The rail's own `[🔍 filter documents]` stays: it filters the
+ *     rail's category list, which is a different control with a different job.
+ *
+ * `/documents` and `/finance/documents` both render `embedded={false}` and keep
+ * both, because a deep link arrives with no tab strip above it.
+ */
+export default function Documents({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth()
   const role: SystemRole = user ? user.role : 'Client'
   const money = canViewMoney(role)
@@ -529,7 +580,8 @@ export default function Documents() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }} onClick={() => setMenuFor(null)}>
-      <PageHeader
+      <ScreenHeader
+        embedded={embedded}
         icon="file"
         title="Documents"
         description="Every rental and finance document in one place. Create, manage, send and track — a document exists once."
@@ -548,17 +600,11 @@ export default function Documents() {
             <Button icon="download" onClick={exportCsv}>
               Export
             </Button>
-            <Button
-              icon="plus"
-              variant="primary"
-              onClick={() =>
-                import('../../actions/documents/createDocument').then((m) =>
-                  m.createDocument({ title: 'New Agreement Document', docType: 'Agreement' })
-                )
-              }
-            >
-              Create Document
-            </Button>
+            <Unavailable reason={CREATE_UNAVAILABLE}>
+              <Button icon="plus" variant="primary" disabled>
+                Create Document
+              </Button>
+            </Unavailable>
           </>
         }
       />
@@ -795,20 +841,29 @@ export default function Documents() {
               flexWrap: 'wrap',
             }}
           >
-            <span style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1, minWidth: 190 }}>
-              <Icon name="search" size={14} style={{ position: 'absolute', left: 10, color: 'var(--muted)' }} />
-              <Input
-                type="search"
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value)
-                  setPage(1)
-                }}
-                placeholder="Search in documents…"
-                aria-label="Search documents by name, ID, type, record or client"
-                style={{ ...fieldStyle, height: 34, paddingLeft: 30 }}
-              />
-            </span>
+            {/* Stripped when hosted as Finance's Documents tab: the Shell already
+                renders a search field for `/finance`, and two search boxes on one
+                page filtering different sets is the duplication `CONFLICTS.md`
+                §09.2 named. `query` itself stays wired — the state, the filter
+                and the empty state's "clear the search" affordance are unchanged,
+                so nothing downstream has to know which mount it is in. */}
+            {!embedded && (
+              <span style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1, minWidth: 190 }}>
+                <Icon name="search" size={14} style={{ position: 'absolute', left: 10, color: 'var(--muted)' }} />
+                <Input
+                  type="search"
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value)
+                    setPage(1)
+                  }}
+                  placeholder="Search in documents…"
+                  aria-label="Search documents by name, ID, type, record or client"
+                  style={{ ...fieldStyle, height: 34, paddingLeft: 30 }}
+                />
+              </span>
+            )}
+            {embedded && <span style={{ flex: 1, minWidth: 0 }} />}
 
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               Sort by
@@ -872,6 +927,30 @@ export default function Documents() {
               <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--nav-active-accent)' }}>
                 {selected.size} selected
               </span>
+              {/*
+                §9.5 — *"Merge: pick several → [Consolidate] (on demand, not
+                monthly)."* Consolidate joins the bulk bar because that is what
+                the wireframe describes: a selection verb, not a scheduled job.
+                "On demand, not monthly" is a real instruction — it rules out
+                the batch/statement-run reading — and the control being here
+                rather than in a settings screen is what encodes it.
+
+                Drawn disabled with its own reason, not the shared one: merging
+                is not merely unbuilt, it is undecided. Nothing rules whether the
+                consolidated PDF is a NEW document in the register (and if so,
+                under which type and whose number from `numbering.ts`) or a
+                one-off download that is never stored. Law 3 makes that a
+                consequential difference — a new document has a terminal action
+                and an audit trail; a download has neither. TODO(decision).
+
+                Archive keeps its place beside it: §9.5's *"Terminal action is
+                Archive"*, and there is no Delete anywhere on this screen.
+              */}
+              <Unavailable reason="Consolidating several documents into one is not built, and the shape is not ruled: whether the result is a new document in the register — with its own type, its own number from numbering.ts and its own terminal action — or a one-off download that is never stored. TODO(decision) — PLAN.md §4.">
+                <Button icon="file" disabled>
+                  Consolidate
+                </Button>
+              </Unavailable>
               {['Download', 'Email', 'Archive'].map((b) => (
                 <Unavailable key={b} reason={NOT_BUILT}>
                   <Button disabled>{b}</Button>

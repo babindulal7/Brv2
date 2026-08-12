@@ -1,74 +1,81 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../ui/Icon'
 import { useTheme } from '../../lib/theme'
-import { SETTINGS_NAV, BRANCH, permittedNav } from '../../data/nav'
+import { BRANCH, permittedNav, activeNavTo } from '../../data/nav'
 import type { NavSection } from '../../data/nav'
 import { useAuth } from '../../lib/auth'
 import { useCollapsed } from '../../lib/collapse'
+import { useViewport } from '../../lib/device'
 
-const EXPANDED_W = 220
-const COLLAPSED_W = 68
+/**
+ * Widths are the wireframe's, not ours. "Shell — identical on every page":
+ * desktop rail **219**, tablet icon rail **72**. 219 rather than the 220 this
+ * file carried since the Generation C transcription — the spec draws `│219│`.
+ */
+const SIDEBAR_W = 219
+const RAIL_W = 72
+
+/** Law 15 — 44×44 at every width, desktop included. Applies to the rows too. */
+const ROW_H = 44
+
+/** How long a press must be held before the icon rail speaks its label. */
+const LONG_PRESS_MS = 450
 
 interface SidebarProps {
-  /** Current pathname — decides both the active row and which section opens. */
+  /** Current pathname (with query) — decides which single row is active. */
   active: string
 }
 
 /**
- * A section owns the current route if it or any child matches.
+ * **Sidebar — the fixed 11, in three width states.**
  *
- * `path` carries the query string, because Operations' five queues are
- * distinguished only by `?queue=`. The *section* is matched on the bare path —
- * `/operations?queue=reset` is still inside Operations — while a *child* is
- * matched on the whole thing, which is the only way one queue can highlight
- * without all five lighting up.
- */
-function owns(section: NavSection, path: string): boolean {
-  const base = path.split('?')[0] ?? path
-  if (base === section.to || base.startsWith(section.to + '/')) return true
-  return Boolean(section.children?.some((c) => c.to === path))
-}
-
-/**
- * Sidebar — Foundation v2.0 §5.1: eight sections plus Settings, no numbering.
+ * The wireframe shell block, identical in all eleven specs:
  *
- * Transcribed from renders `12402A27` and `09168AC3`. The active accent is
- * theme-dependent (blue in light, gold in dark); both resolve through
- * `--nav-active-accent`, so this component never branches on theme.
+ * > DESKTOP ≥1180 `│nav│219│` · TABLET 768–1179 `│▮│72│`, "labels on
+ * > hover/long-press" · PHONE <768 — no sidebar, a bottom bar instead.
+ *
+ * Law 13 — width decides, never platform. `useViewport()` is the only source of
+ * the band; this component adds no breakpoint of its own. Phone renders
+ * nothing at all: `App.tsx`'s Shell swaps in `BottomBar` below 768 and never
+ * mounts this, and the early return here means a stale mount cannot leak a rail
+ * onto a phone either.
+ *
+ * The manual collapse toggle (`useCollapsed('sidebar:main')`) predates the
+ * width-driven rail and would otherwise fight it — a user who expanded the rail
+ * on a desktop would drag the window to 900px and get a 219px sidebar in a band
+ * the spec says is 72px. So collapse is now a **desktop-only affordance**: at
+ * tablet the rail is forced by width, the toggle is not rendered, and the
+ * persisted preference is ignored until the viewport is wide enough to honour
+ * it again. The preference is kept, not cleared — it is the user's desktop
+ * choice, and a resize is not a decision to discard it.
+ *
+ * The active accent is theme-dependent (blue in light, gold in dark); both
+ * resolve through `--nav-active-accent`, so this component never branches on
+ * theme either.
  */
 export default function Sidebar({ active }: SidebarProps) {
   const { theme, setMode } = useTheme()
   const { user } = useAuth()
+  const viewport = useViewport()
   /* Persisted independently of any one rail — this is the app shell, not a
      page panel, so it gets its own fixed key rather than a route-derived one. */
   const [collapsed, toggleCollapsed] = useCollapsed('sidebar:main', false)
 
+  /* Tablet is always a rail. Desktop is a rail only if the user asked for one. */
+  const rail = viewport === 'tablet' || (viewport === 'desktop' && collapsed)
+
   const allowedNav = permittedNav(user?.role)
+  /* `data/nav.ts` — most specific match wins, so exactly one row can be
+     `aria-current="page"`. The phone bar reads the same function. */
+  const activeTo = activeNavTo(allowedNav, active)
 
-  const owner = allowedNav.find((s) => owns(s, active))?.to ?? null
-
-  // Only the section owning the current route is open — the renders never show
-  // two expanded at once.
-  const [open, setOpen] = useState<string | null>(owner)
-
-  /*
-   * Re-open the owning section whenever the route changes. Without this the
-   * open state is set once on mount, so navigating to a child of a *collapsed*
-   * section lands you on the right screen with nothing highlighted — the nav
-   * silently loses your place. `lastRoute` keeps a manual collapse from being
-   * undone on the next render.
-   */
-  const [lastRoute, setLastRoute] = useState(active)
-  if (lastRoute !== active) {
-    setLastRoute(active)
-    if (owner !== null && owner !== open) setOpen(owner)
-  }
+  if (viewport === 'phone') return null
 
   return (
     <aside
       style={{
-        width: collapsed ? COLLAPSED_W : EXPANDED_W,
+        width: rail ? RAIL_W : SIDEBAR_W,
         flexShrink: 0,
         background: 'var(--sidebar)',
         borderRight: '1px solid var(--border)',
@@ -85,243 +92,41 @@ export default function Sidebar({ active }: SidebarProps) {
           display: 'flex',
           alignItems: 'center',
           gap: 10,
-          padding: collapsed ? '18px 10px 16px' : '18px 16px 16px',
+          padding: rail ? '18px 10px 16px' : '18px 16px 16px',
           flexShrink: 0,
-          justifyContent: collapsed ? 'center' : 'flex-start',
+          justifyContent: rail ? 'center' : 'flex-start',
         }}
       >
         {/* The wordmark is brand voice, not a figure — §4.3.2 gives it Outfit. */}
-        <span className="title" style={{ fontWeight: 700, fontSize: 'var(--t-kpi)', color: 'var(--brand-mark)', lineHeight: 1, flexShrink: 0 }}>
+        <span
+          className="title"
+          style={{ fontWeight: 700, fontSize: 'var(--t-kpi)', color: 'var(--brand-mark)', lineHeight: 1, flexShrink: 0 }}
+        >
           BR
         </span>
-        {!collapsed && (
+        {!rail && (
           <span style={{ lineHeight: 1.15, minWidth: 0, flex: 1 }}>
             <span style={{ display: 'block', fontWeight: 700, fontSize: 'var(--t-ui)', color: 'var(--text)' }}>Babin</span>
-            <span style={{ display: 'block', fontWeight: 700, fontSize: 'var(--t-ui)', color: 'var(--text)' }}>Rentals OS</span>
+            <span style={{ display: 'block', fontWeight: 700, fontSize: 'var(--t-ui)', color: 'var(--text)' }}>
+              Rentals OS
+            </span>
           </span>
         )}
-        {!collapsed && (
-          <button
-            type="button"
-            onClick={toggleCollapsed}
-            aria-label="Collapse navigation"
-            title="Collapse navigation"
-            style={{
-              width: 26,
-              height: 26,
-              borderRadius: 7,
-              border: '1px solid var(--border)',
-              background: 'var(--card)',
-              color: 'var(--text2)',
-              display: 'grid',
-              placeItems: 'center',
-              cursor: 'pointer',
-              flexShrink: 0,
-            }}
-          >
-            <Icon name="chevron_left" size={13} />
-          </button>
+        {/* Desktop only. At tablet the 72px rail is the spec, not a preference. */}
+        {viewport === 'desktop' && !collapsed && (
+          <CollapseButton onClick={toggleCollapsed} direction="collapse" />
         )}
       </div>
-      {collapsed && (
+      {viewport === 'desktop' && collapsed && (
         <div style={{ display: 'flex', justifyContent: 'center', paddingBottom: 'var(--sp-sm)', flexShrink: 0 }}>
-          <button
-            type="button"
-            onClick={toggleCollapsed}
-            aria-label="Expand navigation"
-            title="Expand navigation"
-            style={{
-              width: 26,
-              height: 26,
-              borderRadius: 7,
-              border: '1px solid var(--border)',
-              background: 'var(--card)',
-              color: 'var(--text2)',
-              display: 'grid',
-              placeItems: 'center',
-              cursor: 'pointer',
-            }}
-          >
-            <Icon name="chevron_right" size={13} />
-          </button>
+          <CollapseButton onClick={toggleCollapsed} direction="expand" />
         </div>
       )}
 
-      <nav
-        aria-label="Main"
-        style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px', display: 'flex', flexDirection: 'column', gap: 1 }}
-      >
-        {allowedNav.map((s) => {
-          const isOpen = open === s.to
-          const owned = owns(s, active)
-          const selfActive = s.to === active
-          return (
-            <div key={s.to}>
-              {/*
-                A real router Link, not an <a> with preventDefault. A section
-                with children both navigates *and* expands: expanding without
-                navigating leaves the main pane showing whatever was there
-                before, which reads as a broken click.
-              */}
-              <Link
-                to={s.to}
-                aria-current={selfActive ? 'page' : undefined}
-                aria-expanded={s.children ? isOpen : undefined}
-                title={collapsed ? s.label : undefined}
-                onClick={() => {
-                  if (s.children) setOpen(s.to)
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: collapsed ? 'center' : 'flex-start',
-                  gap: 10,
-                  height: 38,
-                  padding: collapsed ? '0' : '0 10px',
-                  borderRadius: 9,
-                  textDecoration: 'none',
-                  fontSize: 'var(--t-ui)',
-                  fontWeight: owned ? 600 : 500,
-                  color: owned ? 'var(--text)' : 'var(--text2)',
-                  background: owned ? 'var(--nav-active-bg)' : 'transparent',
-                  position: 'relative',
-                  cursor: 'pointer',
-                  transition: 'background-color var(--dur) ease, color var(--dur) ease',
-                }}
-                onMouseEnter={(e) => {
-                  if (!owned) e.currentTarget.style.background = 'var(--hover-sidebar)'
-                }}
-                onMouseLeave={(e) => {
-                  if (!owned) e.currentTarget.style.background = 'transparent'
-                }}
-              >
-                {owned && (
-                  <span
-                    aria-hidden
-                    style={{
-                      position: 'absolute',
-                      left: 0,
-                      top: 7,
-                      bottom: 7,
-                      width: 3,
-                      borderRadius: '0 3px 3px 0',
-                      background: 'var(--nav-active-accent)',
-                    }}
-                  />
-                )}
-                <Icon
-                  name={s.icon}
-                  size={16}
-                  style={{ color: owned ? 'var(--nav-active-accent)' : 'var(--nav-icon)', flexShrink: 0 }}
-                />
-                {!collapsed && (
-                  <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {s.label}
-                  </span>
-                )}
-                {!collapsed && s.children && (
-                  <Icon
-                    name={isOpen ? 'chevron_up' : 'chevron_right'}
-                    size={14}
-                    style={{ color: 'var(--muted)', flexShrink: 0 }}
-                  />
-                )}
-              </Link>
-
-              {!collapsed && s.children && isOpen && (
-                <div style={{ padding: '2px 0 4px' }}>
-                  {s.children.map((c) => {
-                    const on = c.to === active
-                    return (
-                      <Link
-                        key={c.to + c.label}
-                        to={c.to}
-                        aria-current={on ? 'page' : undefined}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 9,
-                          height: 30,
-                          padding: '0 10px 0 22px',
-                          borderRadius: 'var(--r-sm)',
-                          textDecoration: 'none',
-                          fontSize: 'var(--t-meta)',
-                          fontWeight: on ? 600 : 500,
-                          color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                          background: on ? 'var(--nav-active-bg)' : 'transparent',
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!on) e.currentTarget.style.background = 'var(--hover-sidebar)'
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!on) e.currentTarget.style.background = 'transparent'
-                        }}
-                      >
-                        <span
-                          aria-hidden
-                          style={{
-                            width: 5,
-                            height: 5,
-                            borderRadius: 'var(--r-badge)',
-                            flexShrink: 0,
-                            background: on ? 'var(--nav-active-accent)' : 'var(--disabled)',
-                          }}
-                        />
-                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {c.label}
-                        </span>
-                      </Link>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )
-        })}
-
-        {/*
-          §5.1 — "Settings" is pinned below the divider, outside the eight. The
-          rule is a hard ceiling on the *sections*, so Settings is rendered
-          separately rather than as a ninth entry in NAV; that way the ceiling
-          cannot be raised by appending to the array.
-        */}
-        <span aria-hidden style={{ height: 1, background: 'var(--border)', margin: '10px 10px 8px' }} />
-        <Link
-          to={SETTINGS_NAV.to}
-          aria-current={active === SETTINGS_NAV.to ? 'page' : undefined}
-          title={collapsed ? SETTINGS_NAV.label : undefined}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: collapsed ? 'center' : 'flex-start',
-            gap: 10,
-            height: 36,
-            padding: collapsed ? '0' : '0 10px',
-            borderRadius: 'var(--r-sm)',
-            textDecoration: 'none',
-            fontSize: 'var(--t-ui)',
-            fontWeight: active === SETTINGS_NAV.to ? 600 : 500,
-            color: active === SETTINGS_NAV.to ? 'var(--nav-active-accent)' : 'var(--text2)',
-            background: active === SETTINGS_NAV.to ? 'var(--nav-active-bg)' : 'transparent',
-          }}
-          onMouseEnter={(e) => {
-            if (active !== SETTINGS_NAV.to) e.currentTarget.style.background = 'var(--hover-sidebar)'
-          }}
-          onMouseLeave={(e) => {
-            if (active !== SETTINGS_NAV.to) e.currentTarget.style.background = 'transparent'
-          }}
-        >
-          <Icon
-            name={SETTINGS_NAV.icon}
-            size={16}
-            style={{ color: active === SETTINGS_NAV.to ? 'var(--nav-active-accent)' : 'var(--nav-icon)', flexShrink: 0 }}
-          />
-          {!collapsed && <span style={{ flex: 1 }}>{SETTINGS_NAV.label}</span>}
-        </Link>
-      </nav>
+      <NavList sections={allowedNav} activeTo={activeTo} rail={rail} />
 
       <div style={{ flexShrink: 0, borderTop: '1px solid var(--border)', padding: 10 }}>
-        {!collapsed && (
+        {!rail && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '4px 4px 10px' }}>
             <span
               className="title"
@@ -364,9 +169,9 @@ export default function Sidebar({ active }: SidebarProps) {
         )}
 
         {/* Two labelled halves, not an icon button — the renders always show both
-            options with the current one filled. Collapsed to one icon toggle when
-            the rail itself is collapsed, since there is no room for either label. */}
-        {collapsed ? (
+            options with the current one filled. Collapsed to one icon toggle in
+            the rail, since there is no room for either label. */}
+        {rail ? (
           <button
             type="button"
             onClick={() => setMode(theme === 'dark' ? 'light' : 'dark')}
@@ -377,7 +182,7 @@ export default function Sidebar({ active }: SidebarProps) {
               alignItems: 'center',
               justifyContent: 'center',
               width: '100%',
-              height: 34,
+              minHeight: 44,
               borderRadius: 'var(--r-btn)',
               border: '1px solid var(--border)',
               background: 'transparent',
@@ -402,7 +207,7 @@ export default function Sidebar({ active }: SidebarProps) {
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: 6,
-                    height: 34,
+                    minHeight: 44,
                     borderRadius: 'var(--r-btn)',
                     border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
                     background: on ? 'var(--nav-active-bg)' : 'transparent',
@@ -423,5 +228,215 @@ export default function Sidebar({ active }: SidebarProps) {
         )}
       </div>
     </aside>
+  )
+}
+
+/* ── rows ──────────────────────────────────────────────────────────────── */
+
+/**
+ * The eleven rows.
+ *
+ * In the rail there is no label to read, so one is produced on demand: `title`
+ * for a mouse that stops moving, a rendered tooltip on hover for one that has
+ * not, and the same tooltip after a {@link LONG_PRESS_MS} press for a finger —
+ * the wireframe's "labels on hover/long-press". The tooltip is positioned
+ * `fixed` from the row's own rect because the scroll container has
+ * `overflow-y: auto`, which clips a sibling positioned at `left: 100%`.
+ */
+function NavList({
+  sections,
+  activeTo,
+  rail,
+}: {
+  sections: NavSection[]
+  activeTo: string | null
+  rail: boolean
+}) {
+  const [hint, setHint] = useState<{ label: string; top: number } | null>(null)
+  const pressTimer = useRef<number | null>(null)
+
+  const clearPress = () => {
+    if (pressTimer.current !== null) {
+      window.clearTimeout(pressTimer.current)
+      pressTimer.current = null
+    }
+  }
+
+  useEffect(() => clearPress, [])
+  /* A rail that expands mid-hover must not leave its tooltip behind. */
+  useEffect(() => {
+    if (!rail) setHint(null)
+  }, [rail])
+
+  const show = (el: HTMLElement, label: string) => {
+    const r = el.getBoundingClientRect()
+    setHint({ label, top: r.top + r.height / 2 })
+  }
+
+  return (
+    <>
+      <nav
+        aria-label="Main"
+        style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px', display: 'flex', flexDirection: 'column', gap: 1 }}
+      >
+        {sections.map((s) => {
+          const on = s.to === activeTo
+          return (
+            <Link
+              key={s.to}
+              to={s.to}
+              aria-current={on ? 'page' : undefined}
+              title={rail ? s.label : undefined}
+              onMouseEnter={(e) => {
+                if (rail) show(e.currentTarget, s.label)
+                else if (!on) e.currentTarget.style.background = 'var(--hover-sidebar)'
+              }}
+              onMouseLeave={(e) => {
+                setHint(null)
+                if (!rail && !on) e.currentTarget.style.background = 'transparent'
+              }}
+              onPointerDown={(e) => {
+                if (!rail || e.pointerType === 'mouse') return
+                const el = e.currentTarget
+                clearPress()
+                pressTimer.current = window.setTimeout(() => show(el, s.label), LONG_PRESS_MS)
+              }}
+              /* Lifting the finger must dismiss the label as well as cancel the
+                 timer. Clearing only the timer left a long-press tooltip pinned
+                 on screen after the press ended: no `mouseleave`, `blur` or
+                 `pointercancel` follows a touch release, `NavList` is not
+                 unmounted by navigation, and the rail does not change, so
+                 nothing else in this component ever cleared it — the label
+                 survived the route change the same tap triggered. */
+              onPointerUp={() => {
+                clearPress()
+                setHint(null)
+              }}
+              onPointerCancel={() => {
+                clearPress()
+                setHint(null)
+              }}
+              onBlur={() => setHint(null)}
+              onFocus={(e) => {
+                if (rail) show(e.currentTarget, s.label)
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: rail ? 'center' : 'flex-start',
+                gap: 10,
+                /* Law 15 — 44×44 minimum hit area per row, every width. */
+                minHeight: ROW_H,
+                minWidth: rail ? ROW_H : undefined,
+                padding: rail ? 0 : '0 10px',
+                borderRadius: 9,
+                textDecoration: 'none',
+                fontSize: 'var(--t-ui)',
+                fontWeight: on ? 600 : 500,
+                color: on ? 'var(--text)' : 'var(--text2)',
+                background: on ? 'var(--nav-active-bg)' : 'transparent',
+                position: 'relative',
+                cursor: 'pointer',
+                transition: 'background-color var(--dur) ease, color var(--dur) ease',
+              }}
+            >
+              {on && (
+                <span
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 8,
+                    bottom: 8,
+                    width: 3,
+                    borderRadius: '0 3px 3px 0',
+                    background: 'var(--nav-active-accent)',
+                  }}
+                />
+              )}
+              <Icon
+                name={s.icon}
+                size={rail ? 20 : 16}
+                style={{ color: on ? 'var(--nav-active-accent)' : 'var(--nav-icon)', flexShrink: 0 }}
+              />
+              {!rail && (
+                <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {s.label}
+                </span>
+              )}
+            </Link>
+          )
+        })}
+      </nav>
+
+      {rail && hint && (
+        <span
+          role="tooltip"
+          style={{
+            position: 'fixed',
+            left: RAIL_W + 6,
+            top: hint.top,
+            transform: 'translateY(-50%)',
+            padding: '6px 10px',
+            borderRadius: 'var(--r-sm)',
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            boxShadow: 'var(--shadow-modal)',
+            color: 'var(--text)',
+            fontSize: 'var(--t-meta)',
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+            zIndex: 70,
+          }}
+        >
+          {hint.label}
+        </span>
+      )}
+    </>
+  )
+}
+
+function CollapseButton({ onClick, direction }: { onClick: () => void; direction: 'collapse' | 'expand' }) {
+  const label = direction === 'collapse' ? 'Collapse navigation' : 'Expand navigation'
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      style={{
+        /* Law 15 — the box is 26px for the renders' proportions, the hit area
+           is 44px via padding, which is what the law actually measures. */
+        width: 26,
+        height: 26,
+        boxSizing: 'content-box',
+        padding: 9,
+        margin: -9,
+        borderRadius: 7,
+        border: 'none',
+        background: 'transparent',
+        color: 'var(--text2)',
+        display: 'grid',
+        placeItems: 'center',
+        cursor: 'pointer',
+        flexShrink: 0,
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          width: 26,
+          height: 26,
+          borderRadius: 7,
+          border: '1px solid var(--border)',
+          background: 'var(--card)',
+          display: 'grid',
+          placeItems: 'center',
+        }}
+      >
+        <Icon name={direction === 'collapse' ? 'chevron_left' : 'chevron_right'} size={13} />
+      </span>
+    </button>
   )
 }

@@ -1,5 +1,7 @@
 import type { IconName } from '../components/ui/Icon'
 import type { BrandKey } from '../lib/status'
+import { roundHalfUp } from '../lib/money'
+import type { Paisa } from '../lib/money'
 
 /**
  * **Tools** — registry and formulas, built against `03 Core Modules/Tools.md`
@@ -260,6 +262,113 @@ export function batteriesNeeded(shootHours: number, runtimeHours: number): numbe
   return Math.ceil(shootHours / runtimeHours) + 1
 }
 
+/* ══ 1b · depreciation — `10_TOOLS.md` §10.2 ═════════════════════════════
+ *
+ * Same placement argument as the optics block above: this is engine code, not
+ * seed data, and belongs in `lib/depreciation.ts` the moment adding to `lib/`
+ * is sanctioned for this pass. It is here so that `DepreciationCalculator.tsx`
+ * obeys Law 1 — *"Pages never implement business logic"* — today rather than
+ * carrying a schedule loop inside a component.
+ *
+ * ## What this deliberately does NOT know
+ *
+ * **Asset life and salvage are inputs, never defaults.** §10.2's closing note
+ * says *"Defaults come from Settings; per-asset values override"* — and there
+ * is no such setting. `11_SETTINGS.md` §11.2 gives Financial *tax & fiscal
+ * year, currency & terms, deposit % per category, membership matrix,
+ * cancellation fee tiers*, and none of the eight sections carries a
+ * depreciation default; `lib/settingsStore.ts` has no key for one either.
+ * `data/addEquipment.ts`'s `DEPRECIATION_UNAVAILABLE_REASON` already records
+ * why: *"depreciation groups are undefined … none may be invented here."*
+ * So this module exposes no default life, no default salvage, and no
+ * asset-class table. A caller that has not been given a life gets nothing —
+ * never a plausible five years.
+ *
+ * The **method** is a different kind of fact. Straight line is arithmetic
+ * stated by its own name, not a ruling about Babin's accounts, so the formula
+ * is safe to write down. Which method his accountant applies to which asset
+ * class is the unruled part, and that is exactly the IRD pool question the
+ * screen refuses to answer.
+ */
+
+/** Everything the schedule needs. No field is optional — see the note above. */
+export interface DepreciationInput {
+  /** Acquisition cost. */
+  costPaisa: Paisa
+  /** Residual value at the end of the useful life. May be zero, never assumed. */
+  salvagePaisa: Paisa
+  /** Useful life in whole years. Supplied by the user; never seeded. */
+  lifeYears: number
+}
+
+export interface DepreciationYear {
+  /** 1-based year of the asset's life. */
+  year: number
+  openingPaisa: Paisa
+  depreciationPaisa: Paisa
+  /** Written-down value at the year's close. */
+  closingPaisa: Paisa
+}
+
+/**
+ * Straight-line schedule: `annual = (cost − salvage) ÷ life`, applied whole.
+ *
+ * Two properties the table below depends on, both deliberate:
+ *
+ *  · **Every step is a whole rupee**, following `lib/money.ts` §2.4's "Half Up,
+ *    applied at each displayed step". A schedule whose printed rows do not sum
+ *    to the printed total is the same defect §2.8 exists to prevent.
+ *  · **The final year absorbs the rounding remainder**, so the last closing WDV
+ *    is exactly the salvage value the user typed. Spreading the remainder
+ *    instead would leave the asset ending at Rs 1 above or below its own stated
+ *    residual, which no accountant would accept and no reader could explain.
+ *
+ * Returns `[]` for input the method cannot describe — a life below one year, a
+ * salvage above cost, a non-finite figure. An empty schedule renders as a
+ * stated reason, never as a table of zeros.
+ */
+export function straightLineSchedule(i: DepreciationInput): DepreciationYear[] {
+  const life = Math.floor(i.lifeYears)
+  if (!Number.isFinite(life) || life < 1) return []
+  if (!Number.isFinite(i.costPaisa) || !Number.isFinite(i.salvagePaisa)) return []
+  if (i.costPaisa <= 0 || i.salvagePaisa < 0 || i.salvagePaisa > i.costPaisa) return []
+
+  const depreciable = i.costPaisa - i.salvagePaisa
+  const perYear = (roundHalfUp(depreciable / life / 100) * 100) as Paisa
+
+  const rows: DepreciationYear[] = []
+  let opening = i.costPaisa
+  for (let year = 1; year <= life; year += 1) {
+    const last = year === life
+    const charge = (last ? opening - i.salvagePaisa : Math.min(perYear, opening - i.salvagePaisa)) as Paisa
+    const closing = (opening - charge) as Paisa
+    rows.push({ year, openingPaisa: opening, depreciationPaisa: charge, closingPaisa: closing })
+    opening = closing
+  }
+  return rows
+}
+
+/**
+ * §10.2's "Defaults come from Settings" affordance, rendered as unavailable.
+ *
+ * Stated once here so the screen and any future Settings section quote the same
+ * sentence rather than drifting into two half-explanations.
+ */
+export const DEPRECIATION_DEFAULTS_UNAVAILABLE_REASON =
+  'TODO(decision) — §10.2 says "Defaults come from Settings", but no Settings section carries depreciation defaults: 11_SETTINGS.md §11.2 lists tax & fiscal year, currency & terms, deposit % per category, membership matrix and cancellation tiers, and none of the eight sections is one. Life and salvage are required input here until an accountant supplies the asset lives (data/addEquipment.ts DEPRECIATION_UNAVAILABLE_REASON asks the same question).'
+
+/**
+ * §10.2's second tab. Blocked, not unbuilt — the distinction matters.
+ *
+ * Nothing in this repository names an IRD depreciation pool, and no spec in
+ * `updated mds/` supplies pool classes or their statutory rates. Building the
+ * tab from generally-known Nepal IRD rates would be inventing the one product
+ * decision the tab is about, which `CLAUDE.md` forbids outright. The tab
+ * therefore renders this sentence rather than a pool table nobody authorised.
+ */
+export const IRD_POOL_BLOCKED_REASON =
+  'TODO(decision) — the IRD pool method needs its pool classes and their statutory rates. Nothing in this build names an IRD depreciation pool (the only IRD reference in src/ is Settings’ "Tax office" row, whose own note reads "IRD registration details were never supplied for this build"), and no spec in updated mds/ supplies a rate. Typing in generally-known rates would be inventing a tax position on Babin’s behalf.'
+
 /* ══ 2 · the registry ════════════════════════════════════════════════════ */
 
 export type CalcKey =
@@ -427,11 +536,16 @@ export const TOOLS: readonly Tool[] = [
     blurb: 'Written-down value of an asset over its life.',
     icon: 'chart',
     group: 'finance',
-    action: {
-      kind: 'blocked',
-      reason:
-        'The item master holds no purchase price or purchase date — data/inventory.ts states purchase records are not part of the equipment seed. §8 also makes this a margin tool, needing finance.view_margin, which no permission store issues yet.',
-    },
+    /*
+     * Was `blocked`. `10_TOOLS.md` §10.2 gives Depreciation its own Tools card
+     * and route, so §1's rule now applies to it — *"anything with a module is
+     * deep-linked, never reimplemented"* — and a second implementation inside
+     * this suite is exactly what §1 exists to prevent. The blocked reason it
+     * used to carry (no purchase price, no purchase date) has not gone away;
+     * it moved onto the screen that owns the question, where cost and date are
+     * required input rather than a missing seed field.
+     */
+    action: { kind: 'link', to: '/tools/depreciation', owner: 'Tools ▸ Depreciation' },
     money: true,
   },
   {
@@ -537,7 +651,10 @@ export const TOOLS: readonly Tool[] = [
     blurb: 'Scheduled backups and restore points.',
     icon: 'refresh',
     group: 'deeplink',
-    action: { kind: 'link', to: '/admin/backup', owner: 'Administration ▸ Backup' },
+    /* `/admin/backup` still resolves (App.tsx keeps every shipped URL alive as
+       a redirect, Law 3) but the screen's home is nav item 10 now — a deep link
+       that lands on a redirect is one hop of nothing. */
+    action: { kind: 'link', to: '/tools/backup', owner: 'Tools ▸ Backup & Restore' },
   },
   {
     id: 'diagnostics',

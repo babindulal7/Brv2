@@ -54,8 +54,14 @@ const DAY = 86400000
 /**
  * Nepal Time is **UTC+05:45** — Foundation §3.1: "stored UTC, rendered in user
  * timezone (Asia/Kathmandu, UTC+05:45)".
+ *
+ * Exported because the QUERY side needs the same number: `queries/bookings.ts`
+ * builds `+05:45` day boundaries so the day a screen filters by is the day it
+ * labels. A second hand-written copy of this offset is precisely the defect
+ * `Calendar.md` §4.2 calls the highest-priority correctness bug in the product
+ * — the system held three at once — so there is one, here.
  */
-const NPT_OFFSET_MIN = 345
+export const NPT_OFFSET_MIN = 345
 
 /**
  * An instant → the civil date it falls on **in Kathmandu**.
@@ -70,8 +76,15 @@ const NPT_OFFSET_MIN = 345
  *
  * Shifting by the offset before truncating is correct for Nepal specifically,
  * because NPT has no daylight saving and has not changed since 1986.
+ *
+ * Returns midnight UTC of that civil date, so `new Date(kathmanduCivil(d))
+ * .toISOString().slice(0, 10)` is the Kathmandu calendar date and nothing else.
+ * Exported for `queries/bookings.ts`, which needs exactly that string to stamp a
+ * day boundary onto the right day — the render side and the query side must
+ * agree on which day an instant belongs to, and they only do that by sharing
+ * this function rather than each truncating their own way.
  */
-function kathmanduCivil(ad: Date): number {
+export function kathmanduCivil(ad: Date): number {
   const shifted = new Date(ad.getTime() + NPT_OFFSET_MIN * 60_000)
   return Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate())
 }

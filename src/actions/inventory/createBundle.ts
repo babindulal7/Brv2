@@ -1,6 +1,7 @@
 import { createAction, ActionContext } from '../core';
 import { EVENT_TYPES } from '../../events/eventBus';
 import { validateDiscount } from '../../lib/discount';
+import { issue } from '../../data/numbering';
 
 export type CreateBundleItemInput = {
   modelId: string;
@@ -37,7 +38,10 @@ export const createBundle = createAction<CreateBundleInput, { success: boolean; 
   },
 
   execute: async (input, ctx: ActionContext) => {
-    const generatedId = `PKG-${Date.now().toString().slice(-4)}`;
+    /* Was `PKG-`, a fourth bundle prefix (against `BND-` in `data/bundles.ts`,
+       `BND` in the registry and the ruling's `BND-`). Prefix now comes from
+       `Settings ▸ Numbering` — ruling §2.2 — so there is one. */
+    const generatedId = issue('BND', Number(Date.now().toString().slice(-4)));
     console.log(`[DB TX] Created bundle ${generatedId}: ${input.name} (Draft: ${!!input.isDraft}, Items: ${input.items?.length ?? 0})`);
 
     const events = [

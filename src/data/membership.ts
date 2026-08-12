@@ -75,7 +75,7 @@ export interface MemberRow {
 
 export const MEMBERS: MemberRow[] = [
   {
-    id: 'MB-2083-001',
+    id: 'M-1',
     name: 'ABC Films Pvt. Ltd.', kind: 'Production Company', initials: 'AB', avatarTone: 'neutral',
     level: 'Production Alliance', bucket: 'Expiring', statusNote: 'Expiring in 23d',
     joinAd: '15 Jan 2025', joinBs: '2081-10-02 BS', renewAd: '05 Jan 2027', renewBs: '2083-09-21 BS',
@@ -84,7 +84,7 @@ export const MEMBERS: MemberRow[] = [
     creditPaisa: rupees(200000), creditDefaultPaisa: rupees(250000),
   },
   {
-    id: 'MB-2083-002',
+    id: 'M-2',
     name: 'Hari KC', kind: 'Filmmaker', initials: 'HK', avatarTone: 'primary',
     level: 'Cinematographer', bucket: 'Expiring', statusNote: 'Expiring in 23d',
     joinAd: '10 Feb 2026', joinBs: '2083-10-28 BS', renewAd: '05 Jan 2027', renewBs: '2083-09-21 BS',
@@ -93,7 +93,7 @@ export const MEMBERS: MemberRow[] = [
     creditPaisa: rupees(50000), creditDefaultPaisa: rupees(100000),
   },
   {
-    id: 'MB-2083-003',
+    id: 'M-3',
     name: 'Mountain Stories', kind: 'Production Company', initials: 'MS', avatarTone: 'in',
     level: 'Creator', bucket: 'Expiring', statusNote: 'Expiring in 19d',
     joinAd: '18 Mar 2026', joinBs: '2083-12-05 BS', renewAd: '18 Mar 2027', renewBs: '2083-12-04 BS',
@@ -102,7 +102,7 @@ export const MEMBERS: MemberRow[] = [
     creditPaisa: rupees(0),
   },
   {
-    id: 'MB-2083-004',
+    id: 'M-4',
     name: 'Oscar College', kind: 'Educational Institution', initials: 'OC', avatarTone: 'neutral',
     level: 'Academy', bucket: 'Active', statusNote: 'Renews in 157d',
     joinAd: '05 Jan 2026', joinBs: '2082-09-21 BS', renewAd: '05 Jan 2027', renewBs: '2083-09-21 BS',
@@ -111,7 +111,7 @@ export const MEMBERS: MemberRow[] = [
     creditPaisa: rupees(0),
   },
   {
-    id: 'MB-2083-005',
+    id: 'M-5',
     name: 'Vision Production House', kind: 'Production Company', initials: 'VP', avatarTone: 'danger',
     level: 'Production Alliance', bucket: 'Lapsed', statusNote: '181 days overdue',
     joinAd: '01 Feb 2025', joinBs: '2081-10-19 BS', renewAd: '01 Feb 2026', renewBs: '2082-10-19 BS',
@@ -120,7 +120,7 @@ export const MEMBERS: MemberRow[] = [
     creditPaisa: rupees(0), creditDefaultPaisa: rupees(200000), creditWithdrawn: true,
   },
   {
-    id: 'MB-2083-006',
+    id: 'M-6',
     name: 'Kathmandu Cinema Works', kind: 'Production Company', initials: 'KC', avatarTone: 'progress',
     level: 'Production Alliance', bucket: 'Active', statusNote: 'Renews in 211d',
     joinAd: '02 Sep 2026', joinBs: '2083-05-17 BS', renewAd: '26 Feb 2027', renewBs: '2083-11-14 BS',
@@ -129,7 +129,7 @@ export const MEMBERS: MemberRow[] = [
     creditPaisa: rupees(500000), creditDefaultPaisa: rupees(250000),
   },
   {
-    id: 'MB-2083-007',
+    id: 'M-7',
     name: 'Himalayan Mountain Media', kind: 'Broadcaster', initials: 'HM', avatarTone: 'out',
     level: 'Elite', bucket: 'Active', statusNote: 'Renews in 289d',
     joinAd: '14 May 2023', joinBs: '2080-01-31 BS', renewAd: '15 May 2027', renewBs: '2084-02-01 BS',
@@ -138,7 +138,7 @@ export const MEMBERS: MemberRow[] = [
     creditPaisa: rupees(1000000), creditDefaultPaisa: rupees(500000),
   },
   {
-    id: 'MB-2083-008',
+    id: 'M-8',
     name: 'Red Dot Films', kind: 'Production Company', initials: 'RD', avatarTone: 'out',
     level: 'Elite', bucket: 'Active', statusNote: 'Renews in 96d',
     joinAd: '04 Nov 2023', joinBs: '2080-07-18 BS', renewAd: '04 Nov 2026', renewBs: '2083-07-18 BS',
@@ -147,7 +147,7 @@ export const MEMBERS: MemberRow[] = [
     creditPaisa: rupees(800000), creditDefaultPaisa: rupees(500000),
   },
   {
-    id: 'MB-2083-009',
+    id: 'M-9',
     name: 'ICIMOD Communications', kind: 'NGO', initials: 'IC', avatarTone: 'primary',
     level: 'Production Alliance', bucket: 'Grace', statusNote: 'In grace — 12d left',
     joinAd: '20 Jul 2022', joinBs: '2079-04-04 BS', renewAd: '08 Jul 2026', renewBs: '2083-03-24 BS',
@@ -156,7 +156,7 @@ export const MEMBERS: MemberRow[] = [
     creditPaisa: rupees(250000),
   },
   {
-    id: 'MB-2083-010',
+    id: 'M-10',
     name: 'Nepal Tourism Board', kind: 'Government', initials: 'NT', avatarTone: 'progress',
     level: 'Production Alliance', bucket: 'Active', statusNote: 'Renews in 134d',
     joinAd: '12 Dec 2026', joinBs: '2083-08-27 BS', renewAd: '12 Dec 2026', renewBs: '2083-08-27 BS',
@@ -165,7 +165,7 @@ export const MEMBERS: MemberRow[] = [
     creditPaisa: rupees(800000), creditDefaultPaisa: rupees(250000),
   },
   {
-    id: 'MB-2083-011',
+    id: 'M-11',
     name: 'Bikram Rai', kind: 'Freelance DoP', initials: 'BR', avatarTone: 'primary',
     level: 'Cinematographer', bucket: 'Active', statusNote: 'Renews in 178d',
     joinAd: '25 Jan 2026', joinBs: '2083-10-11 BS', renewAd: '25 Jan 2027', renewBs: '2083-10-11 BS',
@@ -174,7 +174,7 @@ export const MEMBERS: MemberRow[] = [
     creditPaisa: rupees(150000), creditDefaultPaisa: rupees(100000),
   },
   {
-    id: 'MB-2083-012',
+    id: 'M-12',
     name: 'Sushil Lama Visuals', kind: 'Freelancer', initials: 'SL', avatarTone: 'in',
     level: 'Creator', bucket: 'Grace', statusNote: 'In grace — 4d left',
     joinAd: '16 Jun 2023', joinBs: '2080-03-01 BS', renewAd: '16 Jun 2026', renewBs: '2083-03-01 BS',
@@ -183,7 +183,7 @@ export const MEMBERS: MemberRow[] = [
     creditPaisa: rupees(0),
   },
   {
-    id: 'MB-2083-013',
+    id: 'M-13',
     name: 'Apex College Media Club', kind: 'Educational Institution', initials: 'AC', avatarTone: 'neutral',
     level: 'Academy', bucket: 'Active', statusNote: 'Renews in 243d',
     joinAd: '01 Apr 2026', joinBs: '2082-12-19 BS', renewAd: '01 Apr 2027', renewBs: '2083-12-18 BS',
@@ -192,7 +192,7 @@ export const MEMBERS: MemberRow[] = [
     creditPaisa: rupees(0),
   },
   {
-    id: 'MB-2083-014',
+    id: 'M-14',
     name: 'Kathmandu University', kind: 'Educational Institution', initials: 'KU', avatarTone: 'neutral',
     level: 'Academy', bucket: 'Active', statusNote: 'Renews in 61d',
     joinAd: '30 Sep 2025', joinBs: '2082-06-14 BS', renewAd: '30 Sep 2026', renewBs: '2083-06-14 BS',

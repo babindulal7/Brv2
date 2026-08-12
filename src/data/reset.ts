@@ -73,7 +73,7 @@ export interface Unit {
   /**
    * §4's priority table is forward-looking — "needed for a booking today",
    * "VIP booking" — about the *next* booking this physical unit is needed
-   * for, not `BK-2026-0715`, the booking it is returning from. There is no
+   * for, not `B-715`, the booking it is returning from. There is no
    * next-booking schedule in the seed yet, so these three are held directly
    * per unit rather than derived from `BOOKING.vip`, which would be a
    * category error (this booking's VIP-ness says nothing about who needs the
@@ -160,7 +160,7 @@ export function queueTimeTone(minutes: number): 'danger' | 'progress' | 'neutral
   return 'neutral'
 }
 
-/* ── the 18 units on BK-2026-0715 — same booking, same package as packing.ts ─
+/* ── the 18 units on B-715 — same booking, same package as packing.ts ─
  * Reuses no import from packing.ts on purpose: this file needs its own shape
  * (category, needsClean/needsReset, queue timing) that packing's `Unit` does
  * not carry, exactly as `returnInspection.ts` keeps its own `ReturnUnit`

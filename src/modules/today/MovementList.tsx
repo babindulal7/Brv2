@@ -3,25 +3,72 @@ import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
-import type { Movement } from '../../types/today'
-import { ROWS_PER_COLUMN, ROW_MENU, HOVER, HOVER_FALLBACK, timeOf, statusKeyOf, has } from '../../data/today'
+import { ROWS_PER_COLUMN, ROW_MENU, timeOf, statusKeyOf, has, type MovementRow } from '../../data/today'
 import { cardStyle } from '../../components/ui/Page'
-import { EmptyState } from '../../components/ui/StateViews'
+import { PageBody } from '../../components/ui/PageBody'
+import type { ListResult } from '../../lib/queries/useList'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { canRecordPayment } from '../../lib/rbac'
 import { shouldFlipUp } from '../../lib/menuFlip'
 import { useToast } from '../../components/ui/Toast'
 import { useAuth } from '../../lib/auth'
+import { useViewport } from '../../lib/device'
 import type { SystemRole } from '../../types/database'
 
 interface MovementListProps {
   title: string
   badge: string
   badgeStatus: StatusKey
-  rows: Movement[]
-  moreNoun: string
+  /** Straight from `useList` — the four states are `PageBody`'s to choose between. */
+  list: ListResult<MovementRow>
+  /**
+   * Which of the two named queries filled this list. It decides the row's ONE
+   * primary action (spec 02 §2.1 draws `[Pack]` / `[Hand]` on outgoing rows and
+   * `[Ret.]` on incoming ones), and it is passed rather than sniffed off
+   * `MovementRow.kind`, for the same reason `toMovementRow` takes it: Return-ness
+   * is which query asked, not something the booking row says.
+   */
+  side: 'outgoing' | 'incoming'
+  /** `PageBody`'s noun and the "+ N more" noun: "pickups" / "returns". */
+  noun: string
+  /** "today", "this week" — completes the unfiltered empty state's sentence. */
+  periodLabel: string
   viewAll: string
-  /** What to say when the filters leave nothing — never a blank panel. */
-  emptyNote: string
+  /** Restores the page's default view. Reached from the empty state's one action. */
+  onClearFilters: () => void
+}
+
+/**
+ * **The row's one primary action** — spec 02 Notes: *"One primary button per
+ * row; everything else behind ⋮."*
+ *
+ * Each of these is a **navigation** to the parameterised workspace route
+ * (`App.tsx:180-211`, rulings §3 — "operations are routes; the shell becomes a
+ * launcher"). None of them writes: rulings §8 and
+ * `SUCCESS_FABRICATION_REGISTER_2026-08-12.md` forbid a page telling the floor a
+ * write landed when nothing was written, and no action here is marked
+ * `implemented`. Completing a pickup or a return stays in the ⋮ menu, where
+ * `actions/core.ts` refuses it out loud.
+ *
+ * The label follows the stage, so the button always names the next real step:
+ * `todaysOutgoing` selects Booked and Packed only, so a Booked booking is packed
+ * and a Packed one is handed over. Anything else — reachable only if the stage
+ * set ever widens — falls back to opening the booking rather than guessing.
+ */
+export function primaryFor(
+  r: Pick<MovementRow, 'bookingNo' | 'status'>,
+  side: 'outgoing' | 'incoming',
+): { label: string; to: string; hint: string } {
+  if (side === 'incoming') {
+    return { label: 'Return', to: `/rentals/${r.bookingNo}/return`, hint: 'Open the Return workspace' }
+  }
+  if (r.status === 'Packed') {
+    return { label: 'Handover', to: `/rentals/${r.bookingNo}/handover`, hint: 'Open the Handover workspace' }
+  }
+  if (r.status === 'Booked') {
+    return { label: 'Pack', to: `/rentals/${r.bookingNo}/packing`, hint: 'Open the Packing workspace' }
+  }
+  return { label: 'Open', to: `/rentals/${r.bookingNo}`, hint: 'Open the booking' }
 }
 
 function Pill({ text, status }: { text: string; status: StatusKey }) {
@@ -57,14 +104,17 @@ function Pill({ text, status }: { text: string; status: StatusKey }) {
  *    'Manager'` pair stamped a made-up operator on a movement record whenever no
  *    one was signed in. There is no fallback now — no session, no dispatch.
  * 2. **The equipment.** `equipmentIds` was `['EQP-101']`, one real-looking unit
- *    asserted on every booking. A `Movement` row carries no equipment ids
- *    (`types/today.ts`), so there is nothing true to send; the empty array is
- *    passed and the action's own `validate` rejects it. That refusal is correct
- *    — the unit selection has to come from a screen that actually knows it.
+ *    asserted on every booking. A row here carries an item COUNT and no unit
+ *    ids (`bookings.ts` embeds `booking_lines(id, qty)`, not units), so there is
+ *    nothing true to send; the empty array is passed and the action's own
+ *    `validate` rejects it. That refusal is correct — the unit selection has to
+ *    come from a screen that actually knows it.
  *
- * Both actions are still stubs, so `createAction` rejects them before `execute`
- * either way. The success toast now fires only on a resolved promise, which for
- * these two means: not until they persist something.
+ * `completePickup` is still a stub, so `createAction` rejects it before
+ * `execute`. `completeReturn` is not: it writes a Return session, its
+ * `return_lines` and its movements, and refuses in `validate` when — as here —
+ * it is handed no lines. Either way the success toast fires only on a resolved
+ * promise, so neither can report a write it did not make.
  */
 function runMovementAction(
   kind: 'pickup' | 'return',
@@ -80,41 +130,84 @@ function runMovementAction(
   }
 
   const ctx = { userId: user.id, role: user.role }
-  const input = { rentalId: bookingNo, equipmentIds: [] as string[] }
 
-  const load =
+  // The two actions no longer take the same input. `completeReturn` now writes
+  // `session_line_movements`, whose `booking_line_id` is NOT NULL, so a flat
+  // list of equipment ids with no line to hang them on is not something the
+  // schema can accept — units travel inside their booking line instead
+  // (`FloorLineInput`). The empty list and the refusal that follows are
+  // unchanged in spirit: a `Movement` row carries an item COUNT and no ids, so
+  // there is still nothing true to send from here.
+  const run =
     kind === 'pickup'
-      ? import('../../actions/rentals/completePickup').then((mod) => mod.completePickup)
-      : import('../../actions/rentals/returnRental').then((mod) => mod.completeReturn)
+      ? import('../../actions/rentals/completePickup').then((mod) =>
+          mod.completePickup({ rentalId: bookingNo, equipmentIds: [] as string[] }, ctx),
+        )
+      : import('../../actions/rentals/returnRental').then((mod) =>
+          mod.completeReturn({ rentalId: bookingNo, lines: [] }, ctx),
+        )
 
-  load
-    .then((action) => action(input, ctx))
-    .then(onDone)
-    .catch((err) => console.error(`complete ${kind} failed:`, err))
+  run.then(onDone).catch((err) => console.error(`complete ${kind} failed:`, err))
 }
+
+/** An explicit non-value. Never an empty string, which reads as "recorded blank". */
+const NONE = '—'
 
 /**
  * §12 — the 520px hover card. "Hover-only intel does not ship", so the same
  * card opens on long-press and on keyboard focus.
+ *
+ * ## What this card used to say, and why it no longer says it
+ *
+ * It rendered `HOVER[m.bookingNo] ?? HOVER_FALLBACK` — eight hand-typed strings
+ * per booking, seeded for 2 of the 25 rows, including two rupee figures
+ * ("Rs 50,000 held", "Rs 1,24,506 outstanding") on a screen Warehouse,
+ * Technician and Driver can all open. Every fact below now comes off the
+ * booking row itself.
+ *
+ * Five facts are GONE rather than dashed, because this query never asks the
+ * questions and "Not recorded" would claim it did:
+ *
+ *  - **Deposit** — `bookings.deposit_required` exists but is unmasked money on
+ *    a base table (Law 6; `bookings.ts` DEPOSIT block). It would need
+ *    `withDeposit` behind `useCanViewMoney()`, and it is the figure REQUIRED,
+ *    not the figure held.
+ *  - **Payment** — `payments` (0006:176) is not joined here, and a paid-vs-due
+ *    total is the Financial Engine's to compute, never a list row's.
+ *  - **Documents** — `booking_documents` is not embedded.
+ *  - **Staff** — `crew_bookings` (0003:1126) is the assignment table; not joined.
+ *  - **Notes** — no notes column is selected by `listBookings`.
  */
-function HoverCard({ m }: { m: Movement }) {
+function HoverCard({ m }: { m: MovementRow }) {
   const { showSuccessToast } = useToast()
   const { user } = useAuth()
-  const f = HOVER[m.bookingNo] ?? HOVER_FALLBACK
   const money = useCanViewMoney()
   const facts: Array<[string, string]> = [
-    ['Project', f.project],
-    ['Duration', f.duration],
-    ...(money ? ([['Deposit', f.deposit], ['Payment', f.payment]] as Array<[string, string]>) : []),
-    ['Equipment', f.equipment],
-    ['Documents', f.documents],
-    ['Staff', f.staff],
-    ['Notes', f.notes],
+    ['Project', m.project ?? NONE],
+    ['Duration', m.duration],
+    // Units across the booking's live lines — "Alexa Mini ×5" counts 5.
+    ['Equipment', `${m.itemCount} ${m.itemCount === 1 ? 'item' : 'items'}`],
+    // `delivery_type`'s enum members are data, not UI copy (Law 17 note).
+    ['Delivery mode', m.deliveryType],
+    ['Collect from', m.pickupLocation ?? NONE],
+    ['Return to', m.returnLocation ?? NONE],
   ]
   const actions: Array<{ label: string, to?: string, onClick?: () => void }> = [
     { label: 'Open Booking', to: `/rentals/${m.bookingNo}` },
-    ...(money ? ([{ label: 'Receive Payment', to: '/finance' }]) : []),
-    ...(m.kind === 'Pickup' ? [{
+    /*
+     * This entry does not open `RecordPaymentModal` — it routes to `/finance`,
+     * where the real launcher lives. It still takes the launcher's permission:
+     * `rbac.canRecordPayment` is Owner / Coordinator / Accounts, so for an
+     * Admin or a Manager this said "Receive Payment" and landed them on a page
+     * that (as of the same change) no longer offers the button. A verb that
+     * cannot be carried out at its destination is a broken promise, not a
+     * permission check.
+     *
+     * `money` stays alongside it: both questions are asked, and the narrower
+     * one does not replace the other anywhere else in this file.
+     */
+    ...(money && user && canRecordPayment(user.role) ? ([{ label: 'Receive Payment', to: '/finance' }]) : []),
+    ...(m.kind === 'Pickup' || m.kind === 'Delivery' ? [{
       label: 'Complete Pickup',
       onClick: () => runMovementAction('pickup', m.bookingNo, user, () =>
         showSuccessToast('Pickup Completed', `Booking ${m.bookingNo} handed over.`),
@@ -137,7 +230,12 @@ function HoverCard({ m }: { m: Movement }) {
         top: 'calc(100% - 4px)',
         left: 10,
         zIndex: 45,
-        width: 'min(520px, calc(100vw - 340px))',
+        /* 340px was the desktop nav rail plus the page gutter. Below 768 the
+           nav is a bottom bar, so subtracting it left the long-press card 35px
+           wide on a 375px phone — a card that only exists for touch, unreadable
+           on the only devices that can open it. `max()` keeps the desktop
+           measurement while giving the phone a real width. */
+        width: 'min(520px, max(260px, calc(100vw - 340px)))',
         padding: 16,
         borderRadius: 'var(--r-card)',
         background: 'var(--card)',
@@ -149,7 +247,6 @@ function HoverCard({ m }: { m: Movement }) {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginBottom: 10 }}>
         <span style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{m.client}</span>
-        {has(m, 'VIP') && <VipBadge />}
         <span className="identifier" style={{ fontSize: 'var(--t-meta)', color: 'var(--link)', fontWeight: 600 }}>{m.bookingNo}</span>
         <span style={{ marginLeft: 'auto' }}>
           <Pill text={m.status} status={statusKeyOf(m)} />
@@ -200,29 +297,6 @@ function HoverCard({ m }: { m: Movement }) {
   )
 }
 
-/** §6 — "VIP badge, never a star." */
-function VipBadge() {
-  return (
-    <span
-      style={{
-        flexShrink: 0,
-        height: 17,
-        padding: '0 6px',
-        borderRadius: 4,
-        background: 'var(--st-progress-bg)',
-        color: 'var(--st-progress-fg)',
-        fontSize: 'var(--t-meta)',
-        fontWeight: 700,
-        letterSpacing: '0.03em',
-        display: 'inline-flex',
-        alignItems: 'center',
-      }}
-    >
-      VIP
-    </span>
-  )
-}
-
 /** Tallest the menu gets — all 14 `ROW_MENU` entries, one per row, plus padding. */
 const ROW_MENU_H = 460
 
@@ -232,11 +306,11 @@ const ROW_MENU_H = 460
  * Entries that can act, act. The rest are **explicitly** unavailable with a
  * reason rather than silently doing nothing — a menu item that looks live and
  * moves nothing is the same defect as a nav link that does not navigate.
- * `WhatsApp`, `Call` and `Email` are disabled because the movements query does
- * not carry a client contact yet; inventing one would put a fake number behind
- * a `tel:` link.
+ * `WhatsApp`, `Call` and `Email` are disabled because `listBookings` joins
+ * `clients(name)` and nothing else; inventing a number would put a fake one
+ * behind a `tel:` link.
  */
-function RowMenu({ onClose, m, up }: { onClose: () => void; m: Movement; up: boolean }) {
+function RowMenu({ onClose, m, up }: { onClose: () => void; m: MovementRow; up: boolean }) {
   const navigate = useNavigate()
   const money = useCanViewMoney()
   const { user } = useAuth()
@@ -266,9 +340,9 @@ function RowMenu({ onClose, m, up }: { onClose: () => void; m: Movement; up: boo
   }
   const why: Partial<Record<(typeof ROW_MENU)[number], string>> = {
     QR: 'QR rendering lands with the Evidence matcher',
-    WhatsApp: 'No client contact on the movements query yet',
-    Call: 'No client contact on the movements query yet',
-    Email: 'No client contact on the movements query yet',
+    WhatsApp: 'listBookings joins clients(name) only — no contact number',
+    Call: 'listBookings joins clients(name) only — no contact number',
+    Email: 'listBookings joins clients(name) only — no contact address',
     Duplicate: 'Needs the booking engine',
     Cancel: 'Cancelling is a confirmed, audited action — not a menu click',
   }
@@ -332,23 +406,58 @@ function RowMenu({ onClose, m, up }: { onClose: () => void; m: Movement; up: boo
 /**
  * Dashboard.md §6–§7 — the Pickups and Returns columns.
  *
- * §6: time on one line (not stacked), VIP as a badge (never a star), and the
- * row's primary action is **Open Booking** — stated, not implied.
+ * §6: time on one line (not stacked), and the row's primary action is
+ * **Open Booking** — stated, not implied.
  * §7: an overdue row carries a left border in `--bad`. Nothing else does, so
  * the border discriminates rather than decorates.
  * §6 again: "Minimum 6 rows visible per column before '+ N more'." The count in
  * the more-link is derived from the same list, so it can never say "5 more"
  * over a list of fourteen the way the reference render did.
+ *
+ * ## Fields the render lost when the seed did
+ *
+ * The seeded `Movement` carried six things `bookings` does not have a column
+ * for, and none of them is faked here:
+ *
+ *  - **the package name** ("RED Komodo X Package") — the chip now shows
+ *    `itemCount`, which is `sum(booking_lines.qty)` over live lines. A real
+ *    number in place of an invented name, and labelled as what it is.
+ *  - **`kitStatus`** — that chip's tint was a second status with no source. It
+ *    is `neutral` for every row now: a tone, carrying no claim.
+ *  - **`category`** ("Commercial Shoot") — replaced by `bookings.project`, the
+ *    booking's own title, which is a different and real field. Null renders "—".
+ *  - **`staff`** ("Pickup: Ramesh") — removed outright. `crew_bookings`
+ *    (0003:1126) holds assignments and is not joined; a name here would be
+ *    invented. The line now carries the due stamp alone.
+ *  - **the VIP badge** — removed. `clients` carries `segments[]` and `tags[]`
+ *    (0005:66,70) but no VIP member, so no row can honestly wear it.
+ *  - **the "Due Soon" amber border** — removed. It needs a "how soon" window no
+ *    spec in this repo states. Overdue (red) and outgoing (blue) survive
+ *    because both are predicates the query itself already encodes.
  */
-export default function MovementList({ title, badge, badgeStatus, rows, moreNoun, viewAll, emptyNote }: MovementListProps) {
+export default function MovementList({
+  title,
+  badge,
+  badgeStatus,
+  list,
+  side,
+  noun,
+  periodLabel,
+  viewAll,
+  onClearFilters,
+}: MovementListProps) {
   const navigate = useNavigate()
+  /* Law 14 — width decides. Below 768 the row is a card, not a table row; the
+     `.movement-row` grid in `styles/theme.css` has no phone breakpoint and this
+     file may not add one, so the arrangement branches here instead. */
+  const phone = useViewport() === 'phone'
   const [hover, setHover] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ id: string; up: boolean } | null>(null)
   const press = useRef<number | null>(null)
   const suppress = useRef(false)
 
-  const shown = rows.slice(0, ROWS_PER_COLUMN)
-  const rest = rows.length - shown.length
+  const shown = list.rows.slice(0, ROWS_PER_COLUMN)
+  const rest = list.rows.length - shown.length
 
   /**
    * §12 — long-press is the touch equivalent of hover.
@@ -392,6 +501,14 @@ export default function MovementList({ title, badge, badgeStatus, rows, moreNoun
     }
   }, [hover, menu])
 
+  /*
+   * `PageBody` draws the rows full-bleed and every other state inset, so the
+   * padding is on the wrapper and conditional. `hasRows` is what keeps a failed
+   * REFRESH from blanking a list someone is reading — the banner joins the rows
+   * rather than replacing them (see `PageBody`'s header).
+   */
+  const stateful = list.loading || list.error !== null || list.isEmpty
+
   return (
     <section style={{ ...cardStyle, display: 'flex', flexDirection: 'column', minWidth: 0, height: '100%' }}>
       <div
@@ -413,163 +530,56 @@ export default function MovementList({ title, badge, badgeStatus, rows, moreNoun
         </Link>
       </div>
 
-      <div style={{ flex: 1 }}>
-        {shown.length === 0 && (
-          <div style={{ padding: '20px 16px' }}>
-            <EmptyState title="No movements to show" description={emptyNote} />
-          </div>
-        )}
-        {shown.map((r, i) => (
-          <div
-            key={r.id}
-            className="movement-row"
-            onClick={() => {
-              // The click a completed long-press emits must not navigate away
-              // from the card it just opened.
-              if (suppress.current) {
-                suppress.current = false
-                return
-              }
-              navigate(`/rentals/${r.bookingNo}`)
-            }}
-            onMouseEnter={() => setHover(r.id)}
-            onMouseLeave={() => setHover((h) => (h === r.id ? null : h))}
-            onTouchStart={() => holdStart(r.id)}
-            onTouchMove={holdEnd}
-            onTouchEnd={holdEnd}
-            onTouchCancel={holdEnd}
-            /* The grid itself is in theme.css so the 1560px breakpoint can win. */
-            style={{
-              position: 'relative',
-              gap: 10,
-              padding: '10px 12px 10px 10px',
-              borderBottom: i < shown.length - 1 ? '1px solid var(--border)' : 'none',
-              borderLeft: has(r, 'Overdue') ? '2px solid var(--danger)' : r.kind === 'Pickup' || r.kind === 'Delivery' ? '2px solid var(--primary)' : has(r, 'Due Soon') ? '2px solid var(--warn)' : '2px solid transparent',
-              background: 'transparent',
-              alignItems: 'start',
-              cursor: 'pointer',
-            }}
-          >
-            <div
-              className="figure"
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', paddingTop: 2 }}
-            >
-              <span>{timeOf(r).split(' ')[0]}</span>
-              <span style={{ fontSize: 11, color: 'var(--muted)', marginTop: -2 }}>{timeOf(r).split(' ')[1]}</span>
-            </div>
+      <div style={{ flex: 1, ...(stateful ? { padding: '14px 15px' } : {}) }}>
+        <PageBody
+          loading={list.loading}
+          error={list.error}
+          hasRows={list.rows.length > 0}
+          onRetry={list.refetch}
+          empty={list.isEmpty}
+          emptyIsFiltered={list.isFiltered}
+          onClearFilters={onClearFilters}
+          noun={noun}
+          skeleton="table"
+          skeletonRows={ROWS_PER_COLUMN}
+          {...(list.isFiltered
+            ? {}
+            : {
+                emptyTitle: `No ${noun} ${periodLabel}`,
+                emptyMessage: 'Nothing is scheduled in this period.',
+              })}
+        >
+          {shown.map((r, i) => {
+            /* Spec 02 Notes — one primary button per row. `primaryFor` picks the
+               single next step and nothing else on the row is a filled button. */
+            const primary = primaryFor(r, side)
+            const clock = timeOf(r).split(' ')
 
-            {/*
-              §4.2 — the tint is a token pair, resolved here exactly as
-              `RentalsList`'s `Avatar` resolves it, so the same client cannot be
-              one colour on Today and another on Rentals. This carried a raw hex
-              fill with `color: '#fff'` on top; both are forbidden, and the
-              white also had to be right in two themes by luck rather than by
-              the token layer.
-            */}
-            <div
-              aria-hidden
-              className="row-avatar"
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: 'var(--r-badge)',
-                background: STATUS[r.avatarTone].bg,
-                color: STATUS[r.avatarTone].fg,
-                border: STATUS[r.avatarTone].border ? `1px solid ${STATUS[r.avatarTone].border}` : undefined,
-                placeItems: 'center',
-                textAlign: 'center',
-                lineHeight: 1.05,
-                fontSize: 'var(--t-meta)',
-                fontWeight: 700,
-                letterSpacing: '0.02em',
-                flexShrink: 0,
-              }}
-            >
-              {/*
-                One token, not two stacked. §4.3.6 puts the floor at 12px, and
-                two 12px lines do not fit a 34px circle — the second clipped.
-                The full client name is on the row beside it, so the monogram
-                only has to be a recognisable mark, not a readable abbreviation.
-              */}
-              <span>{r.avatar[0]}</span>
-            </div>
-
-            <div style={{ minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <span
-                  style={{
-                    fontSize: 'var(--t-ui)',
-                    fontWeight: 700,
-                    color: 'var(--text)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {r.client}
-                </span>
-                {has(r, 'VIP') && <VipBadge />}
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 3, minWidth: 0 }}>
-                <Link
-                  to={`/rentals/${r.bookingNo}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="identifier"
-                  style={{
-                    flexShrink: 0,
-                    fontSize: 'var(--t-meta)',
-                    fontWeight: 600,
-                    color: 'var(--st-primary-fg)',
-                    background: 'var(--st-primary-bg)',
-                    borderRadius: 5,
-                    padding: '1px 6px',
-                    textDecoration: 'none',
-                  }}
-                >
-                  {r.bookingNo}
-                </Link>
-                <span
-                  style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                >
-                  {r.category}
-                </span>
-              </div>
-
-              {/* The package gets its own line — sharing one with the staff note
-                  clipped "RED Komodo X Package" at 1920px, and a truncated
-                  package name is the one thing a warehouse row cannot afford. */}
-              <div style={{ marginTop: 5, minWidth: 0 }}>
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    height: 21,
-                    padding: '0 7px',
-                    borderRadius: 'var(--r-xs)',
-                    background: STATUS[r.kitStatus].bg,
-                    color: STATUS[r.kitStatus].fg,
-                    fontSize: 'var(--t-meta)',
-                    fontWeight: 600,
-                    maxWidth: '100%',
-                    minWidth: 0,
-                  }}
-                >
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.kit}</span>
-                </span>
-              </div>
-
-              <div
-                style={{ marginTop: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            const bookingChip = (
+              <Link
+                to={`/rentals/${r.bookingNo}`}
+                onClick={(e) => e.stopPropagation()}
+                className="identifier"
+                style={{
+                  flexShrink: 0,
+                  fontSize: 'var(--t-meta)',
+                  fontWeight: 600,
+                  color: 'var(--st-primary-fg)',
+                  background: 'var(--st-primary-bg)',
+                  borderRadius: 5,
+                  padding: '1px 6px',
+                  textDecoration: 'none',
+                }}
               >
-                {r.staff}
-                {r.due ? ` · ${r.due}` : ''}
-              </div>
-            </div>
+                {r.bookingNo}
+              </Link>
+            )
 
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0, position: 'relative' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
-                <Pill text={r.status} status={statusKeyOf(r)} />
+            /* The ⋮ carries everything that is not the primary. The menu is
+               anchored to this wrapper rather than to the row's right column,
+               so the same markup works in both arrangements. */
+            const kebab = (
+              <span style={{ position: 'relative', display: 'inline-flex' }}>
                 <button
                   type="button"
                   aria-label={`More actions for ${r.client}`}
@@ -588,36 +598,246 @@ export default function MovementList({ title, badge, badgeStatus, rows, moreNoun
                     background: 'transparent',
                     color: 'var(--muted)',
                     cursor: 'pointer',
-                    width: 22,
-                    height: 22,
+                    /* Law 15 — the phone layout is only ever touched, so its
+                       target is a full 44. Bringing the pointer widths to 44
+                       as well is the app-wide sweep, not this page's call. */
+                    width: phone ? 44 : 26,
+                    height: phone ? 44 : 26,
                     borderRadius: 'var(--r-xs)',
                     display: 'grid',
                     placeItems: 'center',
+                    flexShrink: 0,
                   }}
                 >
                   <Icon name="more_vert" size={15} />
                 </button>
-              </div>
+                {menu?.id === r.id && <RowMenu m={r} onClose={() => setMenu(null)} up={menu.up} />}
+              </span>
+            )
 
-              {/* --st-danger-fg, not --danger: measured 5.98:1 against --card,
-                  --danger measures 4.40:1 — under the 4.5:1 floor for this text
-                  size. The row itself stays the plain card surface; only the
-                  border-left and this note carry the overdue signal. */}
-              {r.statusNote && (
-                <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: has(r, 'Overdue') ? 'var(--st-danger-fg)' : 'var(--muted)' }}>
-                  {r.statusNote}
+            const primaryButton = (
+              <Link
+                to={primary.to}
+                onClick={(e) => e.stopPropagation()}
+                aria-label={`${primary.hint} for ${r.client}, booking ${r.bookingNo}`}
+                className="press"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: phone ? 44 : 30,
+                  minWidth: phone ? 128 : 78,
+                  padding: '0 14px',
+                  borderRadius: 'var(--r-btn)',
+                  background: 'var(--btn-primary-bg)',
+                  color: 'var(--btn-primary-fg)',
+                  border: '1px solid transparent',
+                  fontSize: 'var(--t-meta)',
+                  fontWeight: 700,
+                  textDecoration: 'none',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                }}
+              >
+                {primary.label}
+              </Link>
+            )
+
+            /* --st-danger-fg, not --danger: measured 5.98:1 against --card,
+               --danger measures 4.40:1 — under the 4.5:1 floor for this text
+               size. The row itself stays the plain card surface; only the
+               border-left and this note carry the overdue signal. */
+            const lateNote = r.statusNote ? (
+              <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--st-danger-fg)' }}>
+                {r.statusNote}
+              </span>
+            ) : null
+
+            /*
+             * `withBookingNo` is false only on the phone card, where spec 02
+             * puts the booking number on the first line beside the time. It is
+             * never dropped — one of the two places always renders it.
+             */
+            const main = (withBookingNo: boolean) => (
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span
+                    style={{
+                      fontSize: 'var(--t-ui)',
+                      fontWeight: 700,
+                      color: 'var(--text)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {r.client}
+                  </span>
                 </div>
-              )}
 
-              {menu?.id === r.id && <RowMenu m={r} onClose={() => setMenu(null)} up={menu.up} />}
-            </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 3, minWidth: 0 }}>
+                  {withBookingNo && bookingChip}
+                  {/* `bookings.project` is nullable and a null is an ordinary
+                      state, so it renders the non-value rather than nothing. */}
+                  <span
+                    style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  >
+                    {r.project ?? NONE}
+                  </span>
+                </div>
 
-            {/* `menu` is `{ id, up } | null`, so the old `menu !== r.id` compared an
-                object to a string and was always true — the 520px hover card rendered
-                straight through the open row menu. Compare the id, not the object. */}
-            {hover === r.id && menu?.id !== r.id && <HoverCard m={r} />}
-          </div>
-        ))}
+                {/* Where the package name used to sit. `itemCount` is
+                    `sum(booking_lines.qty)` over live lines — units to pull, not
+                    rows — and it is labelled so it cannot be read as anything
+                    else. `neutral` because no column tints this chip. */}
+                <div style={{ marginTop: 5, minWidth: 0 }}>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      height: 21,
+                      padding: '0 7px',
+                      borderRadius: 'var(--r-xs)',
+                      background: STATUS['neutral'].bg,
+                      color: STATUS['neutral'].fg,
+                      fontSize: 'var(--t-meta)',
+                      fontWeight: 600,
+                      maxWidth: '100%',
+                      minWidth: 0,
+                    }}
+                  >
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {r.itemCount} {r.itemCount === 1 ? 'item' : 'items'}
+                    </span>
+                  </span>
+                </div>
+
+                <div
+                  style={{ marginTop: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >
+                  {r.due}
+                </div>
+              </div>
+            )
+
+            return (
+              <div
+                key={r.id}
+                {...(phone ? {} : { className: 'movement-row' })}
+                onClick={() => {
+                  // The click a completed long-press emits must not navigate away
+                  // from the card it just opened.
+                  if (suppress.current) {
+                    suppress.current = false
+                    return
+                  }
+                  navigate(`/rentals/${r.bookingNo}`)
+                }}
+                onMouseEnter={() => setHover(r.id)}
+                onMouseLeave={() => setHover((h) => (h === r.id ? null : h))}
+                onTouchStart={() => holdStart(r.id)}
+                onTouchMove={holdEnd}
+                onTouchEnd={holdEnd}
+                onTouchCancel={holdEnd}
+                /* At ≥768 the grid itself is in theme.css so the 1560px
+                   breakpoint can win. Below it, the row is a stacked card and
+                   the inline `display` deliberately overrides that grid. */
+                style={{
+                  position: 'relative',
+                  ...(phone ? { display: 'flex', flexDirection: 'column', gap: 8 } : { gap: 10, alignItems: 'start' }),
+                  padding: '10px 12px 10px 10px',
+                  borderBottom: i < shown.length - 1 ? '1px solid var(--border)' : 'none',
+                  borderLeft: has(r, 'Overdue')
+                    ? '2px solid var(--danger)'
+                    : r.kind === 'Pickup' || r.kind === 'Delivery'
+                      ? '2px solid var(--primary)'
+                      : '2px solid transparent',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                }}
+              >
+                {phone ? (
+                  <>
+                    {/* Spec 02 phone card — `time BR#`, then the client block,
+                        then the one primary on its own line. */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                      <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>
+                        {clock[0]} <span style={{ color: 'var(--muted)' }}>{clock[1]}</span>
+                      </span>
+                      {bookingChip}
+                      <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
+                        <Pill text={r.status} status={statusKeyOf(r)} />
+                        {kebab}
+                      </span>
+                    </div>
+
+                    {main(false)}
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
+                      {lateNote}
+                      <span style={{ marginLeft: 'auto', display: 'inline-flex' }}>{primaryButton}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div
+                      className="figure"
+                      style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', paddingTop: 2 }}
+                    >
+                      <span>{clock[0]}</span>
+                      <span style={{ fontSize: 11, color: 'var(--muted)', marginTop: -2 }}>{clock[1]}</span>
+                    </div>
+
+                    {/*
+                      §4.2 — the tint is a token pair, resolved here exactly as
+                      `RentalsList`'s `Avatar` resolves it. The tone is a pure
+                      function of `clients.id` (`avatarToneFor`), so one client
+                      cannot be two colours across the two lists the way the
+                      seed once was.
+                    */}
+                    <div
+                      aria-hidden
+                      className="row-avatar"
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 'var(--r-badge)',
+                        background: STATUS[r.avatarTone].bg,
+                        color: STATUS[r.avatarTone].fg,
+                        border: STATUS[r.avatarTone].border ? `1px solid ${STATUS[r.avatarTone].border}` : undefined,
+                        placeItems: 'center',
+                        textAlign: 'center',
+                        lineHeight: 1.05,
+                        fontSize: 'var(--t-meta)',
+                        fontWeight: 700,
+                        letterSpacing: '0.02em',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <span>{r.monogram}</span>
+                    </div>
+
+                    {main(true)}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
+                        <Pill text={r.status} status={statusKeyOf(r)} />
+                        {kebab}
+                      </div>
+                      {primaryButton}
+                      {lateNote}
+                    </div>
+                  </>
+                )}
+
+                {/* `menu` is `{ id, up } | null`, so the old `menu !== r.id` compared an
+                    object to a string and was always true — the 520px hover card rendered
+                    straight through the open row menu. Compare the id, not the object. */}
+                {hover === r.id && menu?.id !== r.id && <HoverCard m={r} />}
+              </div>
+            )
+          })}
+        </PageBody>
       </div>
 
       {rest > 0 && (
@@ -636,7 +856,7 @@ export default function MovementList({ title, badge, badgeStatus, rows, moreNoun
           }}
         >
           <Icon name="plus" size={13} />
-          {rest} more {moreNoun}
+          {rest} more {noun}
         </Link>
       )}
     </section>

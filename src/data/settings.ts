@@ -3,9 +3,21 @@ import type { Slice } from '../components/ui/Charts'
 import type { StatusKey } from '../lib/status'
 import { rupees, formatMoney, roundHalfUp, grouped } from '../lib/money'
 import type { Paisa } from '../lib/money'
-import { BRANCH, CURRENT_USER, FOOTER_NOTE } from './nav'
+import { BRANCH, FOOTER_NOTE } from './nav'
+import { prefixTokenOf } from './numbering'
+import { WAREHOUSES } from './warehouse'
+import type { Warehouse } from './warehouse'
+import { PLANS } from './membership'
 
-export const FEE_PER_CREW_DAY_PAISA: Paisa = rupees(500)
+/*
+ * `FEE_PER_CREW_DAY_PAISA` used to be declared here too, at rupees(500), dead
+ * but exported under the same name as `data/crew.ts:382`'s rupees(1000) — the
+ * figure `PLAN.md:839` actually records. Rulings §9.11 ordered it deleted
+ * before this file was split, because the split would otherwise have imported
+ * the Rs 500 one **by name** and halved a billed rate. `data/crew.ts` is the
+ * one definition; `lib/settingsStore.ts` derives the Financial section's
+ * default from it and this file no longer has an opinion.
+ */
 
 /**
  * **Settings** seed — `03 Core Modules/Settings/Organization.md` and
@@ -53,17 +65,27 @@ export type Dest =
   | { kind: 'tab'; tab: TabKey }
   | { kind: 'none'; why: string }
 
+/**
+ * `11_SETTINGS.md` §11.2 — **the eight sections.** Automation, Channels /
+ * Communication and AI are "removed and parked" in prose, so those two keys
+ * (`communication`, `ai`) are gone rather than hidden.
+ *
+ * The surviving keys keep their old spelling on purpose: `?tab=organization`,
+ * `?tab=financial`, `?tab=system`, `?tab=security` and `?tab=integrations` are
+ * live deep links, and a rename would break every one of them for a label
+ * change. The *labels* follow the spec; the *keys* are the URL contract.
+ * A `?tab=ai` or `?tab=communication` link still resolves — `isTabKey` now
+ * rejects it and the page falls back to Overview rather than 404ing (Law 3).
+ */
 export type TabKey =
   | 'overview'
   | 'organization'
   | 'branches'
   | 'users'
-  | 'system'
   | 'financial'
+  | 'system'
   | 'integrations'
-  | 'communication'
   | 'security'
-  | 'ai'
 
 export interface TabDef {
   key: TabKey
@@ -73,26 +95,76 @@ export interface TabDef {
 }
 
 /**
- * `Organization.md` §Navigation Tabs lists nine. **Branches** is the tenth, and
- * it is not a liberty: §5.1 removed the sidebar's Administration section, which
- * is the only place either render offers Branch Management. A built screen with
- * no way to it is the same defect as a link with nowhere to go.
+ * §11.2's table, in its order and with its wording — including the British
+ * "Organisation" and "Apps & API" for what the code calls `integrations`.
+ *
+ * **Branches & Warehouses** is the new home for Warehouse Management
+ * (`07_INVENTORY.md` line 4, `11_SETTINGS.md` §11.3). Nothing else moved.
  */
 export const TABS: TabDef[] = [
   { key: 'overview', label: 'Overview', money: false },
-  { key: 'organization', label: 'Organization', money: false },
-  { key: 'branches', label: 'Branches', money: false },
+  { key: 'organization', label: 'Organisation', money: false },
+  { key: 'branches', label: 'Branches & Warehouses', money: false },
   { key: 'users', label: 'Users & Roles', money: false },
-  { key: 'system', label: 'System', money: false },
+  /* Law 6 — money end to end. Filtered OUT of the strip for a money-blind
+     session, never rendered disabled inside it. §11.1's phone wireframe draws
+     seven rows unconditionally; Rulings §7 says build the phone list from the
+     filtered set, so a Warehouse session gets six. */
   { key: 'financial', label: 'Financial', money: true },
-  { key: 'integrations', label: 'Integrations', money: false },
-  { key: 'communication', label: 'Communication', money: false },
+  { key: 'system', label: 'System', money: false },
+  { key: 'integrations', label: 'Apps & API', money: false },
   { key: 'security', label: 'Security', money: false },
-  { key: 'ai', label: 'AI & Automation', money: false },
 ]
+
+/** Short label for the phone list and the tablet strip, where width is scarce. */
+export const TAB_SHORT_LABEL: Record<TabKey, string> = {
+  overview: 'Overview',
+  organization: 'Organisation',
+  branches: 'Branches',
+  users: 'Users',
+  financial: 'Financial',
+  system: 'System',
+  integrations: 'Apps & API',
+  security: 'Security',
+}
+
+export const TAB_ICON: Record<TabKey, IconName> = {
+  overview: 'home',
+  organization: 'briefcase',
+  branches: 'box',
+  users: 'users',
+  financial: 'card',
+  system: 'settings',
+  integrations: 'plug',
+  security: 'lock',
+}
+
+/** One line under each row of the phone section list, so a tap is not a guess. */
+export const TAB_SUMMARY: Record<TabKey, string> = {
+  overview: 'Who you are, this branch, the build, and every administration module.',
+  organization: 'Name, VAT, description · languages, calendar, timezone, number format, units.',
+  branches: 'Branch list, and the warehouses, racks and zones under each one.',
+  users: 'User list, role assignment, and the nine-role permissions matrix.',
+  financial: 'Tax & fiscal year, currency & terms, deposits, memberships, cancellation tiers.',
+  system: 'Appearance, notifications and system preferences.',
+  integrations: 'Integrations, keys and payment gateways.',
+  security: 'Access, controls & logs, session lock.',
+}
 
 export function isTabKey(v: string | null): v is TabKey {
   return TABS.some((t) => t.key === v)
+}
+
+/**
+ * Whether a destination can be reached by *this* session.
+ *
+ * A `tab` destination pointing at a tab Law 6 removed is a dead control — the
+ * page would render "Taxes (VAT) →" for a Warehouse operator and land them
+ * back on Overview. Rows that fail this are dropped from their list entirely,
+ * which is the same treatment the tab itself gets: removed, not disabled.
+ */
+export function isDestVisible(dest: Dest, visible: readonly TabDef[]): boolean {
+  return dest.kind !== 'tab' || visible.some((t) => t.key === dest.tab)
 }
 
 /* ── organization profile ──────────────────────────────────────────────── */
@@ -124,7 +196,20 @@ export const ORG_FIELDS: OrgField[] = [
   { label: 'Email', value: 'info@babinrentals.com', icon: 'mail' },
   { label: 'Website', value: 'www.babinrentals.com', icon: 'external_link' },
   { label: 'Company type', value: 'Private Limited Company', icon: 'briefcase' },
-  { label: 'Owner', value: `${CURRENT_USER.name} · ${CURRENT_USER.role}`, icon: 'crew' },
+  /*
+   * The COMPANY's proprietor — a registration fact, sitting with the company's
+   * phone, email and website above. It was built from `nav.ts`'s `CURRENT_USER`,
+   * which that file documents as "Top-right identity chip", i.e. the SIGNED-IN
+   * user. Two different questions were sharing one constant: whoever was at the
+   * keyboard was rendered as the business owner, and the row changed meaning
+   * depending on who logged in.
+   *
+   * TODO(decision): the real proprietor is not recorded anywhere in the schema —
+   * there is no business-profile table — so this stays a literal alongside the
+   * other company facts on this card rather than being derived from a session
+   * that cannot answer it.
+   */
+  { label: 'Owner', value: 'Babin Shrestha · Proprietor', icon: 'crew' },
 ]
 
 /* ── branches ──────────────────────────────────────────────────────────── */
@@ -258,6 +343,70 @@ export function totalsOf(rows: Branch[]): BranchTotals {
   }
 }
 
+/* ── branch ▸ warehouse join (§11.3) ───────────────────────────────────── */
+
+/**
+ * **The FK §11.3 forces.**
+ *
+ * `data/warehouse.ts` keys each warehouse to its branch by a **free-text name**
+ * — `'Kathmandu (HQ)'`, `'Lalitpur'`, `'Pokhara Lakeside'`, `'Bhaktapur'` —
+ * none of which is a `Branch.name` in `BRANCHES` (`'Head Office — Boudha'`,
+ * `'Lalitpur Branch'`, `'Pokhara Branch'`). Matching on that string gives Head
+ * Office **one** warehouse where it declares two, and invents a fourth branch
+ * that does not exist. The old guard only asserted the group total (4), which
+ * passed by coincidence, so §11.3's nested row would have drawn a branch with
+ * an empty child list and no error anywhere.
+ *
+ * This map is the join, keyed on the warehouse **id** — a stable identifier,
+ * not a label somebody may re-word. `SEED_ERRORS` now asserts it per branch.
+ *
+ * TODO(decision) — Rulings §9.12: is `wh-04` "Bhaktapur Heavy Grip & Rigging"
+ * a fourth BRANCH or a fourth WAREHOUSE of an existing one? It is joined to
+ * `br-001` here because that is the only assignment under which BRANCHES' own
+ * declared warehouse counts (2 / 1 / 1) reconcile, and nothing else in the
+ * repo settles it. If it is really a fourth branch then BRANCHES gains a row
+ * and every render-asserted group total moves with it — 3 branches, 28 staff,
+ * 2,507 items, Rs 24,86,500 revenue, 86% mean utilisation.
+ *
+ * TODO(decision) — this map lives in `data/settings.ts` because
+ * `data/warehouse.ts` belongs to the Inventory pass and this one may not edit
+ * it. The field belongs on the `Warehouse` record itself as `branchId`,
+ * replacing the free-text `branch` string that `Warehouses.tsx` still filters
+ * on. Until it moves, two sources describe one relationship.
+ */
+export const WAREHOUSE_BRANCH_ID: Record<string, string> = {
+  'wh-01': 'br-001',
+  'wh-02': 'br-002',
+  'wh-03': 'br-003',
+  'wh-04': 'br-001',
+}
+
+/** The warehouses under one branch. Empty is a real answer for a new branch. */
+export function warehousesOfBranch(branchId: string): Warehouse[] {
+  return WAREHOUSES.filter((w) => WAREHOUSE_BRANCH_ID[w.id] === branchId)
+}
+
+/**
+ * §11.3 draws a `racks` column. `data/warehouse.ts` carries `zonesCount` but no
+ * rack count, and its own comment at `STORAGE_LOCATIONS` says the 9 seeded bins
+ * cover only part of the 20 declared zones — so counting distinct racks there
+ * would produce a number that is both wrong and confident. Never a figure
+ * without a source.
+ */
+export const RACKS_NOT_TRACKED =
+  'not tracked yet — no rack count exists on a warehouse record, and the 9 seeded bin rows cover only part of the 20 declared zones'
+
+/**
+ * TODO(decision) — §11.3: *"Rack / shelf / case is structured, never free
+ * text."* Today `data/warehouse.ts` types `zone`, `rack` and `shelf` as plain
+ * `string` and names the fourth level **`bin`**, not `case` — and a flight case
+ * is not obviously the same object as a storage bin. Settle the vocabulary and
+ * the number of levels before any of them is given a typed identifier;
+ * structuring the wrong four levels is more expensive than structuring none.
+ */
+export const STORAGE_VOCABULARY_TODO =
+  'TODO(decision) — §11.3 asks for "rack / shelf / case, structured, never free text". This build stores zone, rack and shelf as free text and calls the fourth level a bin, not a case. The vocabulary and the level count are unsettled, so no level has a typed identifier yet.'
+
 /* ── equipment mix ─────────────────────────────────────────────────────── */
 
 /**
@@ -354,12 +503,14 @@ const ALERTS_SEED: SystemAlert[] = [
     dest: { kind: 'route', to: '/admin/numbering' },
   },
   { text: 'VAT return due in 15 days', priority: 'Medium', icon: 'receipt', dest: { kind: 'tab', tab: 'financial' } },
-  {
-    text: 'WhatsApp token expires in 7 days',
-    priority: 'Low',
-    icon: 'phone',
-    dest: { kind: 'tab', tab: 'communication' },
-  },
+  /*
+   * "WhatsApp token expires in 7 days" → tab `communication` used to be the
+   * fourth row. §11.2 parks Channels / Communication, which takes its only
+   * destination with it. It is **deleted, not re-pointed**: an expiring
+   * WhatsApp token filed under Security or System is worse than no alert,
+   * because the operator who clicks it finds no token and no way to renew one.
+   * The alert comes back with the section that owns it.
+   */
 ]
 
 /** §Important Alerts — Critical ↓ High ↓ Medium ↓ Low. Copied, not sorted in place. */
@@ -406,21 +557,88 @@ export const BRANCH_ACTIVITY: ActivityEntry[] = [
   entry('System', 'Branch backup completed', 'Today, 02:15 AM', true),
 ]
 
-/* ── AI branch insights ────────────────────────────────────────────────── */
+/*
+ * ── AI branch insights — DELETED ───────────────────────────────────────────
+ *
+ * `BRANCH_INSIGHTS` was four hand-written strings ("Head Office — Boudha is
+ * the top performing branch."), rendered under a card titled **AI Branch
+ * Insights** with an "Ask the assistant" link. Nothing computed them and no
+ * model produced them.
+ *
+ * PLAN.md §0 Law 16 — *no AI panel renders until backed by a validated
+ * computation* — and Rulings §7 order the card deleted with the AI tab. This
+ * codebase had already ruled the same way once, on the sibling screen:
+ * `Warehouses.tsx` retitled its own version **Warehouse Insights** because
+ * "labelling deterministic arithmetic as a model output would be a false
+ * claim". Four typed sentences are not even arithmetic.
+ *
+ * If branch observations are wanted back, `data/warehouse.ts:insightsOf()` is
+ * the shape to copy: rules over the rows, re-runnable by hand, titled as what
+ * they are.
+ */
 
-export interface Insight {
-  text: string
-  icon: IconName
-  /** Reads out a revenue ranking, so it is omitted for a money-blind session. */
-  money: boolean
+/* ── §11.4 Financial ───────────────────────────────────────────────────── */
+
+/**
+ * **Membership matrix — level │ discount % │ credit │ priority.**
+ *
+ * Rulings §5: the plan matrix appears in Settings ▸ Financial *in addition to*
+ * the Memberships tab on Clients, which a user ruling keeps. So this is a
+ * **projection of `data/membership.ts:PLANS`**, never a second transcription —
+ * two hand-typed copies of one price list is exactly how a client gets quoted
+ * a discount the invoice does not give.
+ *
+ * The `priority` column reads the plan's own priority feature back verbatim,
+ * including whether the plan marks it included, not included, or merely
+ * listed. It is not re-scored into a "high / medium / low" ranking: no such
+ * ranking exists in the seed, and inventing one here would put a number on a
+ * screen that no other screen agrees with.
+ */
+export interface MembershipMatrixRow {
+  level: string
+  badge: string
+  /** The individual discount, as the plan states it. */
+  discount: string
+  /** Default credit limit — a rupee figure, so the whole matrix is money-gated. */
+  credit: string
+  priority: string
 }
 
-export const BRANCH_INSIGHTS: Insight[] = [
-  { text: 'Head Office — Boudha is the top performing branch.', icon: 'chart', money: true },
-  { text: 'Pokhara Branch utilization is low. Consider marketing.', icon: 'activity', money: false },
-  { text: 'Transfer more lighting equipment to Lalitpur Branch.', icon: 'truck', money: false },
-  { text: 'Staff level in Pokhara Branch may need to increase.', icon: 'users', money: false },
-]
+export const MEMBERSHIP_MATRIX: MembershipMatrixRow[] = PLANS.map((p) => {
+  const priority = p.features.find((f) => /priority|vip/i.test(f.text))
+  return {
+    level: p.name,
+    badge: p.badge,
+    discount: p.discounts[0]?.split(' Individual')[0] ?? '—',
+    credit: p.limits.find((l) => l.label === 'Default Credit Limit')?.value ?? '—',
+    priority: priority
+      ? `${priority.text} · ${priority.kind === 'on' ? 'included' : priority.kind === 'off' ? 'not included' : 'listed'}`
+      : '—',
+  }
+})
+
+/**
+ * §11.4 draws a `category │ % of repl. val` table. **Nothing in this build
+ * holds one.** `data/clientIntel.ts:196` already renders the same gap as
+ * *"Not set (Open ⭐ #1 — per-category deposit % table)"*, and
+ * `GUIDE/OPEN-DECISIONS.md` item 5 names it among "the last things standing
+ * between the build and real use".
+ *
+ * TODO(decision) — the deposit percentage per gear category. Rendered as "not
+ * tracked yet". A plausible default here would be charged to a real client.
+ */
+export const DEPOSIT_BY_CATEGORY_UNAVAILABLE =
+  'No deposit-percentage table exists in this build — not a column, not a constant, not a seed row. Deposits are taken per booking today. Seeding a percentage per category would put a figure nobody supplied onto a client’s invoice, so this reads "not tracked yet" until an owner sets one.'
+
+/**
+ * §11.4 draws `notice period │ fee %`. Same story: `data/pulse.ts:824` names
+ * *"cancellation fee tiers"* as one of the outstanding decisions, and no tier
+ * table, enum or constant exists anywhere in `src/`.
+ *
+ * TODO(decision) — the cancellation fee tiers. Rendered as "not tracked yet".
+ */
+export const CANCELLATION_TIERS_UNAVAILABLE =
+  'No cancellation fee tiers exist in this build. A booking is cancelled as a named terminal transition (Law 3) and no fee is computed. The notice periods and their percentages are an owner decision that has not been taken, so this reads "not tracked yet" rather than showing a schedule the business never agreed.'
 
 /* ── system summary ────────────────────────────────────────────────────── */
 
@@ -457,10 +675,18 @@ export interface QuickAccessCard {
   dest: Dest
 }
 
-/** §Quick Access — twelve shortcut cards, in the render's order. */
+/**
+ * §Quick Access — twelve shortcut cards in the render's order, now **ten**:
+ * "Email & SMS Settings" and "WhatsApp Integration" both pointed at the
+ * `communication` tab §11.2 parks, and are deleted rather than re-pointed at
+ * an unrelated section. The Notification, SMS and Inbox *screens* keep their
+ * door — System ▸ System still links every one of them by route.
+ */
 export const QUICK_ACCESS: QuickAccessCard[] = [
   { label: 'Branch Management', icon: 'home', dest: { kind: 'tab', tab: 'branches' } },
-  { label: 'Warehouse Management', icon: 'box', dest: { kind: 'route', to: '/inventory/warehouses' } },
+  /* §11.3 — Warehouses moved out of Inventory and into this tab. The route
+     still resolves (Law 3); the tab is now where it is administered. */
+  { label: 'Warehouse Management', icon: 'box', dest: { kind: 'tab', tab: 'branches' } },
   { label: 'Staff & Roles', icon: 'users', dest: { kind: 'tab', tab: 'users' } },
   { label: 'Permissions Matrix', icon: 'crew', dest: { kind: 'tab', tab: 'users' } },
   {
@@ -476,8 +702,6 @@ export const QUICK_ACCESS: QuickAccessCard[] = [
   },
   { label: 'Taxes (VAT)', icon: 'receipt', dest: { kind: 'tab', tab: 'financial' } },
   { label: 'Payment Gateways', icon: 'card', dest: { kind: 'tab', tab: 'integrations' } },
-  { label: 'Email & SMS Settings', icon: 'mail', dest: { kind: 'tab', tab: 'communication' } },
-  { label: 'WhatsApp Integration', icon: 'phone', dest: { kind: 'tab', tab: 'communication' } },
   { label: 'Backup & Restore', icon: 'download', dest: { kind: 'route', to: '/admin/backup' } },
 ]
 
@@ -586,11 +810,14 @@ export const MODULE_GROUPS: ModuleGroup[] = [
     title: 'Numbering Sequences',
     icon: 'invoice',
     rows: [
-      { label: 'Booking Numbers (BK-)', dest: TO('/admin/numbering') },
-      { label: 'Equipment Codes (EQ-)', dest: TO('/admin/numbering') },
-      { label: 'Maintenance (MT-)', dest: TO('/admin/numbering') },
-      { label: 'Cases (CASE-)', dest: TO('/admin/numbering') },
-      { label: 'Invoices (INV-)', dest: TO('/admin/numbering') },
+      /* Prefixes read from the registry, never typed here — ruling §2.2. This
+         row list used to say "(BK-)" and "(EQ-)", which is a second place a
+         reader would have to update after editing Settings ▸ Numbering. */
+      { label: `Booking Numbers (${prefixTokenOf('BK')})`, dest: TO('/admin/numbering') },
+      { label: `Equipment Codes (${prefixTokenOf('EQ')})`, dest: TO('/admin/numbering') },
+      { label: `Maintenance (${prefixTokenOf('MT')})`, dest: TO('/admin/numbering') },
+      { label: `Cases (${prefixTokenOf('CASE')})`, dest: TO('/admin/numbering') },
+      { label: `Invoices (${prefixTokenOf('INV')})`, dest: TO('/admin/numbering') },
     ],
   },
   {
@@ -615,17 +842,16 @@ export const MODULE_GROUPS: ModuleGroup[] = [
       { label: 'Late Payment Penalties', dest: TAB('financial') },
     ],
   },
-  {
-    title: 'Communication Settings',
-    icon: 'mail',
-    rows: [
-      { label: 'Email Settings', dest: TAB('communication') },
-      { label: 'SMS Settings', dest: TO('/notifications/sms') },
-      { label: 'WhatsApp Settings', dest: TAB('communication') },
-      { label: 'Notification Templates', dest: TO('/notifications') },
-      { label: 'Communication Preferences', dest: TAB('communication') },
-    ],
-  },
+  /*
+   * The `Communication Settings` group used to sit here. Three of its five rows
+   * pointed at the `communication` tab §11.2 parks; the other two duplicated
+   * `System ▸ System`'s Notification Center and SMS Center route links, which
+   * survive. The group is deleted rather than re-pointed — §11.2 removes the
+   * section, and a "WhatsApp Settings" row that lands on Security is a worse
+   * answer than no row. Same reasoning removed the `AI & Automation` group
+   * below `Localization`: its `/automation` and `/ai` routes are still reachable
+   * from System ▸ System, so nothing routed was orphaned by the deletion.
+   */
   {
     title: 'Backup & Restore',
     icon: 'download',
@@ -668,17 +894,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
       { label: 'Nepali (BS) Calendar', dest: TAB('organization') },
       { label: 'Regional Settings', dest: TAB('organization') },
       { label: 'Units & Measurements', dest: TAB('organization') },
-    ],
-  },
-  {
-    title: 'AI & Automation',
-    icon: 'sparkles',
-    rows: [
-      { label: 'AI Settings', dest: TAB('ai') },
-      { label: 'AI Models', dest: TAB('ai') },
-      { label: 'Automation Settings', dest: TO('/automation') },
-      { label: 'AI Data Training', dest: NO('Model training happens off-platform; there is no screen for it.') },
-      { label: 'AI Usage Logs', dest: TO('/ai') },
     ],
   },
 ]
@@ -785,6 +1000,33 @@ export const SEED_ERRORS: string[] = (() => {
   for (const b of BRANCHES) {
     if (!/^BR\d{3}$/.test(b.code)) errs.push(`${b.name} carries "${b.code}"; the branch prefix is BR followed by three digits.`)
     if (b.utilization < 0 || b.utilization > 100) errs.push(`${b.name} has a utilization of ${b.utilization}%.`)
+  }
+
+  /*
+   * §11.3's nested row is a JOIN, so the join is what gets asserted — per
+   * branch, not as a group total. The old check ("Warehouses: 4") passed while
+   * Head Office held one warehouse against a declared two, which is precisely
+   * the row that would have drawn empty.
+   */
+  const branchIds = new Set(BRANCHES.map((b) => b.id))
+  for (const w of WAREHOUSES) {
+    const owner = WAREHOUSE_BRANCH_ID[w.id]
+    if (owner === undefined) {
+      errs.push(`Warehouse ${w.code} is under no branch — every warehouse belongs to exactly one.`)
+    } else if (!branchIds.has(owner)) {
+      errs.push(`Warehouse ${w.code} is joined to branch "${owner}", which is not in BRANCHES.`)
+    }
+  }
+  for (const id of Object.keys(WAREHOUSE_BRANCH_ID)) {
+    if (!WAREHOUSES.some((w) => w.id === id)) {
+      errs.push(`The branch join names warehouse "${id}", which does not exist.`)
+    }
+  }
+  for (const b of BRANCHES) {
+    const joined = warehousesOfBranch(b.id).length
+    if (joined !== b.warehouses) {
+      errs.push(`${b.name} declares ${b.warehouses} warehouse${b.warehouses === 1 ? '' : 's'} but ${joined} join${joined === 1 ? 's' : ''} to it.`)
+    }
   }
 
   return errs

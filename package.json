@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource/asar": "^5.3.0",
+    "@fontsource/hind": "^5.3.0",
     "@fontsource/outfit": "^5.3.0",
     "@fontsource/source-sans-3": "^5.3.0",
     "@gsap/react": "^2.1.2",

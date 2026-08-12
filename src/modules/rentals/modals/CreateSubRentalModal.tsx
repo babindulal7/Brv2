@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
-import { DomainEvents } from '../../../events/eventBus'
 import { rupees, formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
+import { createSubRental } from '../../../actions/subrentals/createSubRental'
+import { useAuth } from '../../../lib/auth'
 
 interface CreateSubRentalModalProps {
   isOpen: boolean
@@ -24,14 +25,31 @@ export function CreateSubRentalModal({
   onSuccess,
   bookingId,
 }: CreateSubRentalModalProps) {
-  const [vendor, setVendor] = useState('Cine Gear Nepal')
-  const [itemName, setItemName] = useState('ARRI Alexa Mini Body')
-  const [vendorCost, setVendorCost] = useState<number>(35000)
-  const [clientCharge, setClientCharge] = useState<number>(45000)
+  const { user } = useAuth()
+
+  /*
+   * ⛔ Every one of these four opened pre-filled: vendor "Cine Gear Nepal",
+   * item "ARRI Alexa Mini Body", Rs 35,000 cost against a Rs 45,000 client
+   * charge — a whole sub-rental, vendor and margin included, that no vendor
+   * quoted and no operator entered. And NOTHING was dispatched: `handleSubmit`
+   * emitted `DomainEvents.emit('subrental.created', …)` — an in-memory bus
+   * whose only subscriber is a console logger — then called `onSuccess()`
+   * unconditionally, firing BookingDetail's "Sub-Rental Created" toast. No
+   * vendor PO existed, the charge never reached the client's invoice, and the
+   * payable was invisible to Finance.
+   *
+   * All four open empty now. The operator states the deal; the screen states
+   * nothing.
+   */
+  const [vendor, setVendor] = useState('')
+  const [itemName, setItemName] = useState('')
+  const [vendorCost, setVendorCost] = useState<number>(0)
+  const [clientCharge, setClientCharge] = useState<number>(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const margin = clientCharge - vendorCost
+  const figuresEntered = vendorCost > 0 && clientCharge > 0
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
@@ -39,8 +57,18 @@ export function CreateSubRentalModal({
       setError('Vendor and Item Name are required.')
       return
     }
-    if (vendorCost <= 0 || clientCharge <= 0) {
+    if (!Number.isFinite(vendorCost) || vendorCost <= 0 || !Number.isFinite(clientCharge) || clientCharge <= 0) {
       setError('Cost and charge amounts must be greater than 0.')
+      return
+    }
+    /*
+     * No session, no sub-rental. `createAction` refuses a call with no context
+     * rather than acting as somebody, but the operator has to read the reason
+     * here — inline and persistent, because `useToast()` exposes successes
+     * only (Law 12).
+     */
+    if (!user) {
+      setError('You are not signed in, so this sub-rental cannot be attributed to anyone. Sign in and try again.')
       return
     }
 
@@ -48,24 +76,47 @@ export function CreateSubRentalModal({
     setError(null)
 
     try {
-      const subRentalData = {
+      /*
+       * The real dispatch, replacing the screen-level `DomainEvents.emit`.
+       * `createSubRental` is still a stub (`implemented` unset in
+       * `actions/subrentals/createSubRental.ts`), so `createAction` refuses it
+       * before validate/execute/events and the operator reads "CREATE_SUBRENTAL
+       * is not connected to the database yet, so nothing was saved."
+       * `onSuccess` — and therefore the "Sub-Rental Created" toast — is
+       * unreachable on that path.
+       *
+       * The emit is NOT repeated here: `createAction` emits `SUBRENTAL_CREATED`
+       * itself after `execute` returns. Events follow the write; a screen-level
+       * emit would double-count the moment the action lands.
+       *
+       * `vendorId` is deliberately not sent. `CreateSubRentalInput.vendorId` is
+       * an id, this field is a typed vendor NAME, and there is no vendor master
+       * in this build to resolve one against — passing the name as an id would
+       * be exactly the fabricated-identity defect this pass removes. Omitted,
+       * not guessed.
+       *
+       * ⚠ `CreateSubRentalInput` has no client-charge field, so the charge and
+       * the margin below reach nothing — the figure that is supposed to land on
+       * the client's invoice stops at this screen. Harmless while the action
+       * refuses; whoever sets `implemented: true` must widen the input FIRST,
+       * or this modal will report a sub-rental whose client charge was never
+       * billed. Left un-widened because `src/actions/` is not this pass's file.
+       */
+      await createSubRental(
+        { itemDescription: itemName.trim(), costPaisa: rupees(vendorCost) },
+        { userId: user.id, role: user.role },
+      )
+
+      onSuccess({
         vendor: vendor.trim(),
         itemName: itemName.trim(),
         vendorCostPaisa: rupees(vendorCost),
         clientChargePaisa: rupees(clientCharge),
         marginPaisa: rupees(margin),
-      }
-
-      await DomainEvents.emit('subrental.created', {
-        bookingId,
-        ...subRentalData,
-        timestamp: new Date().toISOString(),
       })
-
-      onSuccess(subRentalData)
       onClose()
-    } catch (err: any) {
-      setError(err.message || 'Failed to create sub-rental')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create sub-rental')
     } finally {
       setIsSubmitting(false)
     }
@@ -91,12 +142,28 @@ export function CreateSubRentalModal({
     >
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
         {error && (
+          /*
+            ⛔ Was `var(--danger-bg, #fee2e2)` / `var(--danger-text, #991b1b)`.
+            Neither token exists — `styles/theme.css` declares `--st-danger-bg`
+            and `--st-danger-fg` — so BOTH fell through to the raw hex, which
+            is a §5 Conventions violation ("never a hex value in a component")
+            AND a real theming bug: the light-theme pink stayed pink in dark
+            mode, where the token resolves to `#4b1515`.
+
+            Law 12 — errors are inline and persistent, so this also carries
+            `role="alert"` rather than relying on the operator noticing it.
+          */
           <div
+            role="alert"
             style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 'var(--sp-sm)',
               padding: '10px 14px',
               borderRadius: 'var(--r-btn)',
-              background: 'var(--danger-bg, #fee2e2)',
-              color: 'var(--danger-text, #991b1b)',
+              border: '1px solid var(--danger)',
+              background: 'var(--st-danger-bg)',
+              color: 'var(--st-danger-fg)',
               fontSize: 'var(--t-meta)',
             }}
           >
@@ -153,11 +220,17 @@ export function CreateSubRentalModal({
             <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
               Vendor Sub-Rental Cost (Rs) <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
+            {/* 0 renders as an empty box, never a typed-looking "0": the state
+                must be a number for the guards and `rupees()`, but the operator
+                has to see a field they are required to fill. */}
             <input
               type="number"
               min={1}
-              value={vendorCost}
-              onChange={(e) => setVendorCost(Number(e.target.value))}
+              value={vendorCost === 0 ? '' : vendorCost}
+              onChange={(e) => {
+                const next = Number(e.target.value)
+                setVendorCost(Number.isFinite(next) ? next : 0)
+              }}
               style={{
                 height: 36,
                 padding: '0 12px',
@@ -177,8 +250,11 @@ export function CreateSubRentalModal({
             <input
               type="number"
               min={1}
-              value={clientCharge}
-              onChange={(e) => setClientCharge(Number(e.target.value))}
+              value={clientCharge === 0 ? '' : clientCharge}
+              onChange={(e) => {
+                const next = Number(e.target.value)
+                setClientCharge(Number.isFinite(next) ? next : 0)
+              }}
               style={{
                 height: 36,
                 padding: '0 12px',
@@ -204,13 +280,15 @@ export function CreateSubRentalModal({
             fontSize: 'var(--t-meta)',
           }}
         >
+          {/* Em dashes until BOTH figures are entered — a rendered "Rs 0", and
+              worse a "Rs 0 margin", reads as a deal the form is holding. */}
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>Vendor Cost:</span>
-            <span>{formatMoney(rupees(vendorCost))}</span>
+            <span>{vendorCost > 0 ? formatMoney(rupees(vendorCost)) : '—'}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>Client Charge:</span>
-            <span>{formatMoney(rupees(clientCharge))}</span>
+            <span>{clientCharge > 0 ? formatMoney(rupees(clientCharge)) : '—'}</span>
           </div>
           <div
             style={{
@@ -222,8 +300,10 @@ export function CreateSubRentalModal({
             }}
           >
             <span>Sub-Rental Net Margin:</span>
-            <span style={{ color: margin >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-              {formatMoney(rupees(margin))}
+            {/* Never colour alone (Law 14) — the sign is in the text, so a
+                negative margin does not depend on red being perceived. */}
+            <span style={{ color: !figuresEntered ? 'var(--text2)' : margin >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+              {figuresEntered ? `${margin < 0 ? '−' : ''}${formatMoney(rupees(Math.abs(margin)))}` : '—'}
             </span>
           </div>
         </div>

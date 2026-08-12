@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, KpiStrip, cardStyle, Rail, SideRail } from '../../components/ui/Page'
@@ -10,8 +10,12 @@ import { useToast } from '../../components/ui/Toast'
 import { STATUS } from '../../lib/status'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { canRecordPayment } from '../../lib/rbac'
 import { useTabularLayout } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+import { useNetwork } from '../../lib/network'
+import { newClientUuid } from '../../lib/supabase'
+import type { ActionContext } from '../../actions/core'
 import { gateContext, canViewPII } from '../../lib/fieldGating'
 import { shouldFlipUp } from '../../lib/menuFlip'
 import { IntelCard } from '../../components/ui/IntelCard'
@@ -166,15 +170,27 @@ function csvCell(v: string | number): string {
 export function ClientsDirectory({
   clients,
   onRequestAdd,
-  onBulkBlock,
+  onBlockChanged,
 }: {
   clients: ClientRecord[]
   onRequestAdd: () => void
-  onBulkBlock: (ids: string[], reason: string) => void
+  /**
+   * Re-read the directory from the database after a block or an unblock landed.
+   *
+   * ⛔ **Replaces `onBulkBlock(ids, reason)`**, which handed the ids up to
+   * `Clients.tsx` so it could render a banner saying nothing had been blocked.
+   * `isBlocked` is a database fact (`client_directory_v.is_blocked`, migration
+   * 0054, derived from a live `client_flags` row), so the only honest way to
+   * show a block is to write it and read it back — never to flip a local copy.
+   * This callback is the "read it back" half; `Clients.tsx` wires it to
+   * `useClients().refresh`.
+   */
+  onBlockChanged: () => void
 }) {
   const navigate = useNavigate()
   const money = useCanViewMoney()
   const { user } = useAuth()
+  const online = useNetwork()
   // `gateContext` builds a fresh object every call — memoized on the one
   // primitive it actually derives from so `pageRowsWithIntel` below (and any
   // other memo keyed on `gctx`) doesn't invalidate on every unrelated render.
@@ -210,6 +226,22 @@ export function ClientsDirectory({
   const [activeSavedView, setActiveSavedView] = useState<string | null>(null)
   const [showBulkBlock, setShowBulkBlock] = useState(false)
   const [bulkBlockReason, setBulkBlockReason] = useState('')
+  /** Which direction the open dialog is going. Law 3 — a block is lifted, never deleted. */
+  const [blockMode, setBlockMode] = useState<'block' | 'unblock'>('block')
+  /** The exact clients the dialog will act on — a bulk selection, or one from the rail. */
+  const [blockTargets, setBlockTargets] = useState<ClientRecord[]>([])
+  const [blockBusy, setBlockBusy] = useState(false)
+  /** Law 12 — persistent and inline, inside the dialog that caused it. */
+  const [blockError, setBlockError] = useState<string | null>(null)
+  /**
+   * **Law 8 — one key per client per press of the dialog's button.**
+   *
+   * Minted when the dialog opens, not when the request is sent, so pressing
+   * Block again after a partial failure replays the SAME key for each client
+   * and conflicts on `client_flags_client_uuid_key` instead of writing a second
+   * flag row for a client that was already done.
+   */
+  const blockKeys = useRef<Record<string, string>>({})
   const td = tdFor(density)
 
   const metrics = useMemo(() => clientMetrics(clients), [clients])
@@ -377,26 +409,127 @@ export function ClientsDirectory({
     showSuccessToast('Export ready', `${selectedClients.length} client rows written to selected-clients.csv`)
   }
 
-  const confirmBulkBlock = () => {
-    if (bulkBlockReason.trim().length < 10) return
-    const blockedCount = selectedClients.length
-    onBulkBlock(selectedClients.map((c) => c.id), bulkBlockReason.trim())
+  /** `ActionContext` — the signed-in identity, or null. The dispatcher substitutes no default. */
+  const dispatchContext = (): ActionContext | null =>
+    user ? { userId: user.id, role: user.role, isOnline: online } : null
+
+  /** Opens the dialog for a set of clients in one direction, minting this press's Law 8 keys. */
+  const openBlockDialog = (mode: 'block' | 'unblock', targets: ClientRecord[]) => {
+    if (targets.length === 0) return
+    setBlockMode(mode)
+    setBlockTargets(targets)
+    setBulkBlockReason('')
+    setBlockError(null)
+    blockKeys.current = Object.fromEntries(targets.map((c) => [c.id, newClientUuid()]))
+    setShowBulkBlock(true)
+  }
+
+  /**
+   * Block or unblock, one dispatch per client, awaited.
+   *
+   * ⛔ **What this replaced.** It used to call `onBulkBlock(ids, reason)` and
+   * immediately close, and before 12 Aug it also fired
+   * `showSuccessToast('Clients blocked', …)` unconditionally — a green "5
+   * clients blocked" toast for a write that never left the browser, because
+   * `blockClient` was a stub and the parent only rendered a red banner saying
+   * so. Now the action writes a `client_flags` row and this function reports
+   * from its outcome: successes on the resolved path only, failures inline and
+   * persistent (Law 12), and the directory is re-read from the database rather
+   * than patched locally.
+   *
+   * Per-client rather than one call, because `client_flags` is one row per
+   * client and a partial failure has to be reportable per client — "3 of 5
+   * blocked, these 2 were not, and here is why" is a true statement; "blocked"
+   * is not.
+   */
+  const confirmBlockChange = async () => {
+    const blocking = blockMode === 'block'
+    if (blocking && bulkBlockReason.trim().length < 10) return
+
+    const ctx = dispatchContext()
+    if (!ctx) {
+      setBlockError(
+        'You are not signed in, so this cannot be recorded — a block has to name who applied it. Sign in and try again.',
+      )
+      return
+    }
+
+    setBlockBusy(true)
+    setBlockError(null)
+
+    const { blockClient } = await import('../../actions/clients/blockClient')
+    const failures: string[] = []
+    let landed = 0
+
+    for (const client of blockTargets) {
+      try {
+        await blockClient(
+          {
+            // `ClientRecord.id` is the CLIENT CODE — `queries/clients.ts`
+            // sets it from `client_code`. `blockClient` takes the code and
+            // resolves the uuid itself, which is why this is not a mismatch.
+            clientCode: client.id,
+            blocked: blocking,
+            ...(bulkBlockReason.trim() ? { reason: bulkBlockReason.trim() } : {}),
+            ...(blockKeys.current[client.id] ? { clientUuid: blockKeys.current[client.id] } : {}),
+          },
+          ctx,
+        )
+        landed += 1
+      } catch (err) {
+        failures.push(`${client.name} (${client.id}) — ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
+    setBlockBusy(false)
+
+    if (landed > 0) {
+      // The directory row's `isBlocked` comes from the view, so the only way to
+      // show the change is to re-read it.
+      onBlockChanged()
+      showSuccessToast(
+        blocking ? 'Clients blocked' : 'Blocks lifted',
+        `${landed} client${landed === 1 ? '' : 's'} ${blocking ? 'blocked' : 'unblocked'}`,
+      )
+    }
+
+    if (failures.length > 0) {
+      // The dialog stays open holding the reason, so a retry does not retype it.
+      setBlockError(
+        `${failures.length} of ${blockTargets.length} could not be ${blocking ? 'blocked' : 'unblocked'}:\n` +
+          failures.join('\n'),
+      )
+      return
+    }
+
     setSelectedRowIds(new Set())
     setShowBulkBlock(false)
     setBulkBlockReason('')
-    showSuccessToast('Clients blocked', `${blockedCount} client${blockedCount === 1 ? '' : 's'} blocked`)
+    setBlockTargets([])
   }
 
   /**
    * The row's one primary verb. Receive Payment only exists for a role that may
    * see the balance in the first place — offering it to Warehouse would name a
    * figure that role is not allowed to know.
+   *
+   * It now also requires the capability to record one. This verb routes to
+   * `/finance` rather than opening `RecordPaymentModal`, but it is the same
+   * action by name, and `rbac.canRecordPayment` (Owner / Coordinator /
+   * Accounts) is what the dispatcher will actually apply — so an Admin or a
+   * Manager was being offered "Receive Payment" as their primary verb and sent
+   * to a page where the button is absent. Money visibility and permission to
+   * act are different questions: a Manager keeps the Outstanding COLUMN and
+   * falls through to the next verb in this chain ("Open Rental" / "New
+   * Rental"), which is this function's own existing fallback, not a new rule.
    */
+  const canTakePayment = user ? canRecordPayment(user.role) : false
+
   const primaryAction = (client: ClientRecord) => {
     if (client.isBlocked) {
       return { label: 'Review Block', variant: 'secondary' as const, run: () => setSelectedClientId(client.id) }
     }
-    if (money && client.outstandingPaisa > 0) {
+    if (money && canTakePayment && client.outstandingPaisa > 0) {
       return { label: 'Receive Payment', variant: 'primary' as const, run: () => navigate('/finance') }
     }
     if (client.currentRentalsCount > 0) {
@@ -712,9 +845,28 @@ export function ClientsDirectory({
                   <Button icon="download" onClick={exportSelected}>
                     Export Selected
                   </Button>
-                  <Button variant="danger" icon="alert_triangle" onClick={() => setShowBulkBlock(true)}>
-                    Block Selected
-                  </Button>
+                  {/* Only the un-blocked ones — asking to block a client that is
+                      already blocked has no write to make, and the action says so
+                      rather than silently succeeding. */}
+                  {selectedClients.some((c) => !c.isBlocked) && (
+                    <Button
+                      variant="danger"
+                      icon="alert_triangle"
+                      onClick={() => openBlockDialog('block', selectedClients.filter((c) => !c.isBlocked))}
+                    >
+                      Block Selected
+                    </Button>
+                  )}
+                  {/* Law 3 — a block is lifted, never deleted, so the lift needs a
+                      control of its own wherever the block has one. */}
+                  {selectedClients.some((c) => c.isBlocked) && (
+                    <Button
+                      icon="checklist"
+                      onClick={() => openBlockDialog('unblock', selectedClients.filter((c) => c.isBlocked))}
+                    >
+                      Unblock Selected
+                    </Button>
+                  )}
                 </>
               )}
               <button
@@ -1306,33 +1458,50 @@ export function ClientsDirectory({
                     block is absent for Warehouse rather than blanked out. */}
                 {money && (
                   <>
+                    {/*
+                      ⛔ The "Credit used" METER was removed here on 12 Aug 2026.
+                      Law 1 — it was a fabricated financial figure, and it was
+                      the dangerous kind: one an operator acts on.
+
+                      It read `selectedClient.creditUsedPaisa`, which
+                      `lib/queries/clients.ts:195` sets to a literal `0` on every
+                      database-backed record — there is no credit-used column and
+                      no ruled formula for one (`ClientDetail.tsx:194` calls it
+                      "derived from open bookings, not stored", and nothing
+                      derives it). So against a real client the bar rendered
+                      "Rs 0 / Rs 5,00,000", a 0%-full track and a healthy blue
+                      fill for an account that may be sitting AT its limit, and
+                      the 80% danger threshold could never fire. Someone reading
+                      "full headroom" approves a rental that should have been
+                      refused.
+
+                      `Clients.tsx` (Credit tab: the Utilised KPI, the Used and
+                      Headroom columns, the "Near limit" status) and
+                      `ClientDetail.tsx` (its own meter and Credit Used row)
+                      already dropped this field for exactly this reason; this
+                      drawer was the last surface still drawing it, and it was
+                      missed because it sits outside `modules/clients/Clients*`.
+
+                      The approved limit IS a real column, so it stays — stated
+                      as the fact it is, with no consumption claimed against it.
+                    */}
                     <div style={{ padding: '11px 12px', background: 'var(--card2)', borderRadius: 'var(--r-sm)', border: '1px solid var(--border)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', marginBottom: 6 }}>
-                        <span style={{ color: 'var(--text2)' }}>Credit used</span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
+                        <span style={{ color: 'var(--text2)' }}>Approved credit limit</span>
                         <span className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>
-                          {formatMoney(selectedClient.creditUsedPaisa)} / {formatMoney(selectedClient.creditLimitPaisa)}
+                          {formatMoney(selectedClient.creditLimitPaisa)}
                         </span>
                       </div>
-                      <span
-                        aria-hidden
-                        style={{ display: 'block', width: '100%', height: 6, borderRadius: 'var(--r-badge)', background: 'var(--border)', overflow: 'hidden' }}
-                      >
-                        <span
-                          style={{
-                            display: 'block',
-                            height: '100%',
-                            width: `${
-                              selectedClient.creditLimitPaisa > 0
-                                ? Math.min(100, Math.round((selectedClient.creditUsedPaisa / selectedClient.creditLimitPaisa) * 100))
-                                : 0
-                            }%`,
-                            background:
-                              selectedClient.creditUsedPaisa > selectedClient.creditLimitPaisa * 0.8
-                                ? 'var(--danger)'
-                                : 'var(--primary)',
-                          }}
-                        />
-                      </span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', marginTop: 6 }}>
+                        <span style={{ color: 'var(--text2)' }}>Outstanding on invoices</span>
+                        <span className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>
+                          {formatMoney(selectedClient.outstandingPaisa)}
+                        </span>
+                      </div>
+                      <p style={{ margin: '8px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
+                        How much of the limit is consumed is not recorded — there is no credit-used column, and outstanding
+                        invoices are a different question. Neither figure is a headroom.
+                      </p>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -1389,6 +1558,23 @@ export function ClientsDirectory({
                   <Button icon="external_link" onClick={() => navigate(`/clients/${selectedClient.id}`)}>
                     View Full Profile
                   </Button>
+                  {/* One client, both directions. Law 3: unblocking must be
+                      possible, and this is the surface that has it — the Block
+                      control on `ClientDetail` is still disabled behind an
+                      `Unavailable` reason that this change makes stale (reported). */}
+                  {selectedClient.isBlocked ? (
+                    <Button icon="checklist" onClick={() => openBlockDialog('unblock', [selectedClient])}>
+                      Unblock Client
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="danger"
+                      icon="alert_triangle"
+                      onClick={() => openBlockDialog('block', [selectedClient])}
+                    >
+                      Block Client
+                    </Button>
+                  )}
                 </div>
               </div>
             </Card>
@@ -1400,32 +1586,63 @@ export function ClientsDirectory({
       <Modal
         isOpen={showBulkBlock}
         onClose={() => setShowBulkBlock(false)}
-        title={`Block ${selectedClients.length} client${selectedClients.length === 1 ? '' : 's'}?`}
-        subtitle="Blocked clients cannot start a new rental until unblocked. State a reason — it appears on each profile."
+        title={
+          blockMode === 'block'
+            ? `Block ${blockTargets.length} client${blockTargets.length === 1 ? '' : 's'}?`
+            : `Lift the block on ${blockTargets.length} client${blockTargets.length === 1 ? '' : 's'}?`
+        }
+        subtitle={
+          blockMode === 'block'
+            ? 'A blocked client cannot start a new rental — the database refuses it, for every role including Owner. Existing bookings, invoices and history are untouched. State a reason; it is kept on the block.'
+            : 'The block is lifted, not deleted: the record of who applied it, why, and who lifted it is kept.'
+        }
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, width: '100%' }}>
-            <Button variant="secondary" onClick={() => setShowBulkBlock(false)}>
+            <Button variant="secondary" onClick={() => setShowBulkBlock(false)} disabled={blockBusy}>
               Cancel
             </Button>
-            <Button variant="danger" onClick={confirmBulkBlock} disabled={bulkBlockReason.trim().length < 10}>
-              Block {selectedClients.length} Client{selectedClients.length === 1 ? '' : 's'}
+            <Button
+              variant={blockMode === 'block' ? 'danger' : 'primary'}
+              onClick={confirmBlockChange}
+              disabled={blockBusy || (blockMode === 'block' && bulkBlockReason.trim().length < 10)}
+            >
+              {blockBusy
+                ? 'Saving…'
+                : blockMode === 'block'
+                  ? `Block ${blockTargets.length} Client${blockTargets.length === 1 ? '' : 's'}`
+                  : `Unblock ${blockTargets.length} Client${blockTargets.length === 1 ? '' : 's'}`}
             </Button>
           </div>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+          {/* Law 12 — the failure stays on screen, beside the button that caused
+              it, and names every client it applies to. `white-space: pre-line`
+              keeps the one-per-line list the handler builds. */}
+          {blockError && (
+            <ErrorBanner
+              title={blockMode === 'block' ? 'Some clients were not blocked' : 'Some blocks were not lifted'}
+              message={<span style={{ whiteSpace: 'pre-line' }}>{blockError}</span>}
+            />
+          )}
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 'var(--t-meta)', color: 'var(--text2)', maxHeight: 140, overflowY: 'auto' }}>
-            {selectedClients.map((c) => (
+            {blockTargets.map((c) => (
               <li key={c.id}>{c.name}</li>
             ))}
           </ul>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--t-meta)' }}>
-            <span style={{ fontWeight: 600, color: 'var(--text2)' }}>Reason (minimum 10 characters)</span>
+            <span style={{ fontWeight: 600, color: 'var(--text2)' }}>
+              {blockMode === 'block' ? 'Reason (minimum 10 characters)' : 'Reason for lifting it (optional)'}
+            </span>
             <textarea
               value={bulkBlockReason}
               onChange={(e) => setBulkBlockReason(e.target.value)}
               rows={3}
-              placeholder="e.g. Duplicate accounts consolidated, blocking the closed ones"
+              placeholder={
+                blockMode === 'block'
+                  ? 'e.g. Duplicate accounts consolidated, blocking the closed ones'
+                  : 'e.g. Outstanding balance settled in full on 2026-08-12'
+              }
               style={{
                 padding: 10,
                 borderRadius: 'var(--r-input)',

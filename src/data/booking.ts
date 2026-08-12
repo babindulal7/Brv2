@@ -1,4 +1,6 @@
 import { price, rupees, formatMoney, grouped, toRupees } from '../lib/money'
+import { bookingDayRate } from '../lib/lateFee'
+import type { TransportBilling } from '../lib/lateFee'
 import type { Paisa } from '../lib/money'
 import type { BookingStatus, Flag } from '../lib/workflow'
 import { toBs, formatBs, formatAd } from '../lib/bs'
@@ -20,7 +22,7 @@ import { toBs, formatBs, formatAd } from '../lib/bs'
  * The assertions below recompute the chain so it cannot drift again.
  *
  * The render labels this booking `BR-2613`. That contradicts the ID registry
- * (`BK-YYYY-NNNN`; `BR-` is the branch prefix) and Dashboard.md §16 flags the
+ * (`B-N` since the 12 Aug ruling; `BR-` is the branch prefix) and Dashboard.md §16 flags the
  * clash as open. The registry wins here because `BR-` is load-bearing
  * elsewhere — the branch card in the sidebar uses it — so reusing it as a
  * booking prefix would make IDs ambiguous. Everything else is verbatim.
@@ -70,8 +72,47 @@ const DEPOSIT_PENDING = (DEPOSIT.required - DEPOSIT.received) as ReturnType<type
 const PICKUP_AD = new Date(Date.UTC(2026, 6, 16))
 const RETURN_AD = new Date(Date.UTC(2026, 6, 19))
 
+/* ── late fee inputs ───────────────────────────────────────────────────────
+ *
+ * `lib/money.ts`'s `lateFee()` takes **instants**, not the display strings the
+ * rest of this file carries — an overage of 4h 15m cannot be computed from
+ * `'19 Jul 2026'`. These three are the seed layer's answer to the gap that
+ * function's own header names.
+ *
+ * `bookings.return_at` / `actual_return_at` are the real columns
+ * (`bookingQuery.ts:431-435` reads both); this stands in for one booking until
+ * this screen reads them.
+ */
+export const RETURN_AT = new Date(Date.UTC(2026, 6, 19, 0, 15)) // 06:00 NPT
+/** 10:15 AM NPT — 4h 15m past. Nothing writes `actual_return_at` yet; see `money.ts`'s TODO(decision). */
+export const ACTUAL_RETURN_AT = new Date(Date.UTC(2026, 6, 19, 4, 30))
+
+/**
+ * One day's rate — **the whole booking**, ruled 12 Aug 2026 (PLAN.md §4.24).
+ *
+ * Equipment, crew and transport, aggregated by `lib/lateFee.ts`'s
+ * `bookingDayRate()` rather than by a division written here: it is the function
+ * `money.ts` said did not exist, and the arithmetic belongs in the engine.
+ *
+ * This booking's transport is billed **flat** (Rs 0 as it happens), so it
+ * contributes nothing to an extra day — a delivery run quoted once does not
+ * happen again because the return was late. `TRANSPORT_BILLING` is what a
+ * booking with a daily vehicle would set instead.
+ */
+export const TRANSPORT_BILLING: TransportBilling = { kind: 'flat', amountPaisa: TRANSPORT_PAISA }
+
+const DAY_RATE = bookingDayRate({
+  equipmentPaisa: EQUIPMENT_PAISA,
+  crewPaisa: CREW_PAISA,
+  transport: TRANSPORT_BILLING,
+  rentalDays: 3,
+})
+
+export const DAY_RATE_PAISA = DAY_RATE.dayRatePaisa
+export const DAY_RATE_BASIS = DAY_RATE.basis
+
 export const BOOKING = {
-  no: 'BK-2026-0715',
+  no: 'B-715',
   /*
    * §1.2 **Booked**, not Quote+Draft. §1.5 runs Packing at status Booked, so a
    * Draft booking with a fully packed bundle — as the render shows — cannot

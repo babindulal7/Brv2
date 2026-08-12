@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
+import { PageBody } from '../../components/ui/PageBody'
+import { ErrorBanner } from '../../components/ui/StateViews'
 import { Donut, Legend } from '../../components/ui/Charts'
 import type { Slice } from '../../components/ui/Charts'
 import { STATUS } from '../../lib/status'
@@ -10,190 +12,460 @@ import { TODAY, toBs, formatBs, formatAd } from '../../lib/bs'
 import { rupees, formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { useAuth } from '../../lib/auth'
-import { gateContext, canViewMoneyField } from '../../lib/fieldGating'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { canRecordPayment, canVoidInvoice } from '../../lib/rbac'
+import { gateContext } from '../../lib/fieldGating'
 import { useViewport, useTabularLayout } from '../../lib/device'
 import { IntelCard } from '../../components/ui/IntelCard'
-import { invoiceGlance, invoiceDetailGroups, INVOICE_STATUSES, INVOICE_TOKEN } from '../../data/invoiceIntel'
+import { invoiceGlance, invoiceDetailGroups, INVOICE_TOKEN } from '../../data/invoiceIntel'
 import type { InvoiceRow } from '../../data/invoiceIntel'
+import {
+  listInvoices,
+  listPayments,
+  liveInvoices,
+  voidedInvoices,
+  outstandingInvoices,
+  overdueInvoices,
+  paymentsInPeriod,
+  financeRestriction,
+  STORED_INVOICE_STATUSES,
+  type InvoiceListRow,
+  type PaymentListRow,
+} from '../../lib/queries/finance'
+import { useList, type ListQueryResult, type ListResult } from '../../lib/queries/useList'
+import type { ListFilters } from '../../lib/queries/listQuery'
+import { NOW_AD, TODAY_DAY_AD } from '../../data/today'
+import { SPEC_TABS } from '../../data/nav'
 import { RecordPaymentModal } from './modals/RecordPaymentModal'
 import { CreateInvoiceModal } from './modals/CreateInvoiceModal'
 import { RefundPaymentModal } from './modals/RefundPaymentModal'
 import { VoidInvoiceModal } from './modals/VoidInvoiceModal'
+import Payments from './Payments'
+import Expenses from './Expenses'
+import Documents from '../documents/Documents'
+import { ReportCatalog } from '../reports/ReportCatalog'
 
 /**
- * **Finance dashboard** — spec-derived (`03 Core Modules/Payments.md` v2.1,
- * Build Locked). No render covers this screen.
+ * **Finance dashboard and Invoices** — now read from Postgres through
+ * `lib/queries/finance.ts`, not from an array in this file.
  *
- * The spec's §0 correction table is mostly about arithmetic that did not add
- * up, so the numbers here are computed rather than typed:
- *  · #1 `Rs 2,80,000` with South Asian grouping — never `NPR 280,000`
- *  · #2 **one P&L chain**; Net Profit appeared twice with different values
- *  · #3 four KPIs, and the second is a **count**, not a repeat of the first
- *  · #4 Payment Methods must reconcile to Received, and say for what period
- *  · #5 **`Partially Paid` is invoice-only** — payment and invoice statuses
- *    are different sets
+ * ## The one thing this screen exists to get right: restricted ≠ empty
+ *
+ * `invoices` and `payments` have **no `_v` view**. RLS gates them WHOLE-ROW
+ * (`<table>_money_blind ... using (auth_can_view_money())`, migration 0014), so
+ * a Warehouse / Technician / Driver / Client session does not get a 403 — it
+ * gets HTTP 200 and `[]`. `useList` turns that into `isEmpty`, and an
+ * unguarded `PageBody` would then render "No invoices yet", which is a *claim
+ * about the business* the query never made and cannot make.
+ *
+ * So the money gate is `useCanViewMoney()` (`lib/moneyVisibility.ts`, which
+ * mirrors `auth_can_view_money()`) and it is applied at the PAGE level, above
+ * the KPI strip:
+ *
+ *  - `financeRestriction(money)` is spread into the outer `PageBody`, which
+ *    renders `RestrictedState` — "Access restricted", the reason, and a
+ *    "Requires Accounts" chip — before it looks at loading, error or empty.
+ *  - every fetcher **short-circuits** when `!money` and returns
+ *    `{ rows: [], total: 0 }` without touching the network. Sending four
+ *    requests you already know RLS will refuse is not a gate, it is noise; and
+ *    a count of 0 coming back from a denied read would be printed as a fact.
+ *
+ * This is deliberately stricter than the old `canViewMoneyField(gctx,
+ * 'booking')` check, which omitted the Amount column and left the rest of the
+ * table standing. Under RLS there is no rest of the table: the row never leaves
+ * Postgres. `gctx` survives only for `invoiceGlance`/`invoiceDetailGroups`,
+ * which do their own field gating and are only ever reached by a session that
+ * already cleared the page gate.
+ *
+ * ## §9.4 — six real tabs, hosted here, not linked out
+ *
+ * `09_FINANCE.md` line 3 names the defect this file used to be: *"Six real
+ * working tabs, **not links out** to reports: Dashboard · Invoices · Payments ·
+ * Expenses · Documents · Reports."* Where a row of `<Link>`s with an
+ * `external_link` icon stood — defended in a comment that argued re-hosting
+ * would duplicate each screen's `PageHeader` and search box — the four other
+ * tabs are now MOUNTED:
+ *
+ *  - **Payments** → `modules/finance/Payments.tsx` (§9.3)
+ *  - **Expenses** → `modules/finance/Expenses.tsx` (§9.4) — the ledger, not
+ *    `/reports/expenses`, which is the expense *report* over a fixture
+ *  - **Documents** → `modules/documents/Documents.tsx` (§9.5)
+ *  - **Reports** → `modules/reports/ReportCatalog.tsx` (§9.6 + §9.7)
+ *
+ * The old comment's argument was correct and is now closed work rather than a
+ * reason: `TabHeader.tsx` demotes each duplicate `<h1>` to a subtitle keeping
+ * its description and its actions, and `Documents` drops its second search
+ * field because the Shell already renders one for `/finance`.
+ *
+ * **The fifth "Audit" link is deleted.** `data/nav.ts:336` records the ruling
+ * and `WIREFRAME_RULINGS_2026-08-12.md` §1 lists it among the eight genuine
+ * removals — the audit log is a Tools card (`10_TOOLS.md` §10.4).
+ *
+ * Each hosted screen keeps its own money gate, so they are mounted OUTSIDE this
+ * page's `PageBody` — nesting them would stack two restricted states.
+ *
+ * ## What is NOT on this screen any more, and why
+ *
+ * Law 1 (never fabricate) removed five figures that had no column behind them.
+ * They were module constants — `REVENUE`, `COST_OF_RENTAL`,
+ * `OPERATING_EXPENSES` and the derived `GROSS_PROFIT` / `NET_PROFIT` — wired
+ * together by two module-scope `throw`s so they always reconciled with each
+ * other and with nothing else. There is no revenue column, no COGS concept and
+ * no cost-of-rental column anywhere in `supabase/migrations`; `expenses.amount`
+ * exists but answers a different question and `queries/finance.ts` is outside
+ * this task's file list, so no named set for it could be added.
+ *
+ * A P&L built from two real numbers and three invented ones is worse than no
+ * P&L, so the card now states what is missing instead of printing it. Same for
+ * the `Outstanding Invoices` KPI, whose value was the literal string `'23'`.
+ *
+ * ## Every figure that IS here comes from a named filter set
+ *
+ * `outstandingInvoices()`, `overdueInvoices()`, `paymentsInPeriod()`,
+ * `liveInvoices()`, `voidedInvoices()` — all from `queries/finance.ts`. Nothing
+ * on this screen filters, sorts or pages an array in memory.
  */
 
-/** Lakh grouping via the canonical Financial Engine — `Rs 2,80,000`, never `Rs 280,000`. */
-const rs = (n: number) => formatMoney(rupees(n))
-
-/* ── one P&L chain (§4). Every figure below derives from these. ───────────── */
-const REVENUE = 1985000
-const COST_OF_RENTAL = 742000
-const OPERATING_EXPENSES = 413000
-const GROSS_PROFIT = REVENUE - COST_OF_RENTAL
-const NET_PROFIT = GROSS_PROFIT - OPERATING_EXPENSES
-
-const RECEIVED = 1250000
-const RECEIVABLE = 735000
-if (RECEIVED + RECEIVABLE !== REVENUE) {
-  throw new Error(`Finance: received + receivable must equal revenue (${RECEIVED + RECEIVABLE} vs ${REVENUE})`)
-}
-
-/** §5.4 — methods are period-labelled and reconcile to Received exactly. */
-const METHOD_ROWS: Array<{ label: string; value: number }> = [
-  { label: 'Bank Transfer', value: 596000 },
-  { label: 'Cash', value: 312500 },
-  { label: 'eSewa', value: 168000 },
-  { label: 'Khalti', value: 104500 },
-  { label: 'Card', value: 69000 },
-]
-const METHOD_SUM = METHOD_ROWS.reduce((a, m) => a + m.value, 0)
-if (METHOD_SUM !== RECEIVED) {
-  throw new Error(`Finance: payment methods must reconcile to Received (${METHOD_SUM} vs ${RECEIVED})`)
-}
-const METHODS: Slice[] = METHOD_ROWS.map((m) => ({
-  label: m.label,
-  value: m.value,
-  display: rs(m.value),
-  percent: `${((m.value / RECEIVED) * 100).toFixed(1)}%`,
-}))
-
-/**
- * §3 — four KPIs; the second is a count, not the same money twice.
+/* ── The reporting period, stated rather than implied ─────────────────────
  *
- * Law 6 / §8.3: money-blind roles get the count-only KPI, never a masked or
- * blurred figure — `Total Revenue`, `Received` and `Net Profit` (all pure ₨
- * figures) and the Outstanding Invoices ₨ *note* are simply not constructed.
+ * §5.4 requires the payment-methods breakdown to say what period it covers.
+ * "This Month" alone does not, so the AD calendar month is resolved here and
+ * its two ends are rendered in the card title.
+ *
+ * `TODAY_DAY_AD` is the KATHMANDU calendar day of `TODAY`, resolved through
+ * `bs.ts`'s `kathmanduCivil` in `data/today.ts` — not `TODAY.toISOString()
+ * .slice(0,10)`, which is a different day for 5h45m of every day. The month
+ * bounds below are then pure calendar arithmetic on a bare date: no instant
+ * survives the round trip, so no timezone is implied and none is needed.
+ * `paymentsInPeriod` is what converts them to `+05:45` instants, because
+ * `payments.payment_date` is a `timestamptz` while `invoices.issue_date` is a
+ * plain `date`. That asymmetry is documented in `queries/finance.ts`.
  */
-function kpisFor(money: boolean): Kpi[] {
-  const outstandingInvoices: Kpi = {
-    label: 'Outstanding Invoices',
-    value: '23',
-    icon: 'invoice',
-    accent: 'progress',
-    ...(money ? { note: `${rs(RECEIVABLE)} receivable` } : {}),
-  }
-  if (!money) return [outstandingInvoices]
-  return [
-    { label: 'Total Revenue', value: rs(REVENUE), icon: 'dollar', accent: 'success', delta: { direction: 'up', text: '14.2% vs last month' } },
-    outstandingInvoices,
-    { label: 'Received (This Month)', value: rs(RECEIVED), icon: 'card', accent: 'primary', delta: { direction: 'up', text: '9.8% vs last month' } },
-    { label: 'Net Profit', value: rs(NET_PROFIT), icon: 'chart', accent: 'primary', note: `Margin ${((NET_PROFIT / REVENUE) * 100).toFixed(1)}%` },
-  ]
+function lastDayOfMonth(dayAd: string): string {
+  const year = Number(dayAd.slice(0, 4))
+  const month = Number(dayAd.slice(5, 7))
+  // Day 0 of the NEXT month is the last day of this one.
+  return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10)
 }
 
-/** §2.2 / §7 — BS dates and the Nepali fiscal year, from the one Date Engine. */
+const PERIOD_FROM_AD = `${TODAY_DAY_AD.slice(0, 7)}-01`
+const PERIOD_TO_AD = lastDayOfMonth(TODAY_DAY_AD)
+const PERIOD_LABEL = `${formatAd(new Date(`${PERIOD_FROM_AD}T00:00:00.000Z`))} – ${formatAd(
+  new Date(`${PERIOD_TO_AD}T00:00:00.000Z`),
+)}`
+
+/* ── The named filter sets, resolved once ─────────────────────────────────
+ *
+ * Module scope rather than inside the component: `TODAY` is frozen
+ * (`bs.ts:135`), so these are constants, and `useList` keys its effect on
+ * `filterKey(filters)` — a set rebuilt every render would still not refetch,
+ * but it would allocate on every keystroke elsewhere on the page.
+ */
+const LIVE_INVOICES: ListFilters = liveInvoices()
+const VOIDED_INVOICES: ListFilters = voidedInvoices()
+const OUTSTANDING_INVOICES: ListFilters = outstandingInvoices()
+const OVERDUE_INVOICES: ListFilters = overdueInvoices(NOW_AD)
+const RECEIVED_IN_PERIOD: ListFilters = paymentsInPeriod(PERIOD_FROM_AD, PERIOD_TO_AD)
+
+/** §2.2 / §7 — BS dates and the fiscal-year label, from the one Date Engine. */
 const bs = toBs(TODAY)
 const AS_OF = { bs: bs ? formatBs(bs) : '—', ad: formatAd(TODAY) }
-const FISCAL_YEAR = 'FY 2083/84 · Shrawan – Ashadh'
-
-const PL_CHAIN = [
-  { label: 'Revenue', value: rs(REVENUE) },
-  { label: 'Cost of Rental', value: `− ${rs(COST_OF_RENTAL)}`, tone: 'danger' as const },
-  { label: 'Gross Profit', value: rs(GROSS_PROFIT) },
-  { label: 'Operating Expenses', value: `− ${rs(OPERATING_EXPENSES)}`, tone: 'danger' as const },
-]
 
 /**
- * §5.2 — payment and invoice statuses are **different sets**. `Partially Paid`
- * is an invoice status and never a payment status; the build the spec reviewed
- * listed it as both. The set below is the DB payment-status enum
- * (`0001_enums.sql` / `types/database.ts` `PaymentStatus`) — payments are
- * recorded manually when received, so there is no `Pending` payment state.
+ * §5.2 — payment and invoice statuses are **different sets**, and the build the
+ * spec reviewed listed `Partially Paid` as both.
+ *
+ * Both vocabularies now carry the caveat the schema puts on them:
+ *  - `payment_status` has four members and only `Received` is reachable on a
+ *    live row. Law 4 revokes UPDATE on `payments`, so nothing can move a row
+ *    out of it; 'Refunded' is derived from a `payment_reversals` row.
+ *  - `invoice_status` has six members and only five are ever stored.
+ *    'Overdue' is derived (0001:1010) — `STORED_INVOICE_STATUSES` is the
+ *    filterable set, and it is imported rather than retyped so a chip built
+ *    from it cannot ask for a value that matches nothing.
  */
 const PAYMENT_STATUSES = ['Received', 'Refunded', 'Failed', 'Cancelled'] as const
-/* INVOICE_STATUSES / INVOICE_TOKEN now live in `data/invoiceIntel.ts` (imported
-   above) — that file is also where `InvoiceRow` and the Glance/Detail card
-   builders live, so the status vocabulary has one source instead of two. */
+
+/* ── §9.4 the six tabs, and §9.2 the seven chips ──────────────────────────── */
 
 /**
- * HIS v2.1 Tier 2 — 2 of the 5 rows below (`INV-2026-0491`, `INV-2026-0489`)
- * carry the optional `lines`/`vatPaisa`/`paidPaisa`/`payments` fields; the
- * other 3 stay genuinely unseeded rather than guessed. Both seeded rows
- * reconcile exactly: `lines` sums to the pre-VAT taxable amount, `vatPaisa`
- * is 13% of that taxable amount (Half Up, `lib/money.ts` §2.4's convention),
- * `taxable + vatPaisa` equals the row's existing `amount`, and `payments`
- * sums to `paidPaisa`.
+ * **The six tabs, read from `data/nav.ts` rather than typed here.**
+ *
+ * `09_FINANCE.md` line 3: *"Six real working tabs, not links out to reports:
+ * Dashboard · Invoices · Payments · Expenses · Documents · Reports."* Line 3 is
+ * naming a defect, and this file was it — `CONFLICTS.md` §09.2 quotes the
+ * comment that used to sit below, arguing that re-hosting the other four would
+ * duplicate their `PageHeader` and search box, so a row of `<Link>`s with an
+ * `external_link` icon was shipped instead.
+ *
+ * The argument was true and is now done work: `TabHeader.tsx` demotes the
+ * duplicate `<h1>` to a subtitle and `Documents` drops its second search field,
+ * so the four are hosted rather than linked. **The fifth link, "Audit", is
+ * deleted** — `data/nav.ts:336` already records the ruling ("'Audit' is gone —
+ * the audit log is a Tools card, `10_TOOLS.md` §10.4"), and
+ * `WIREFRAME_RULINGS_2026-08-12.md` §1 lists it among the eight genuine
+ * removals.
+ *
+ * Reading the labels from `SPEC_TABS` rather than retyping them is the point of
+ * that constant — its own header says *"no page reads it yet"* and names this
+ * file as the one that should. Now one does, so the strip cannot drift from the
+ * ruling.
  */
-export const INVOICES: InvoiceRow[] = [
-  // Amount matches data/booking.ts's engine-computed Rental Total for this
-  // booking (Rs 1,39,506) — was a disagreeing stale figure. Status 'Sent' not
-  // 'Overdue': the due date (2 Aug) is still ahead of TODAY (31 Jul, lib/bs.ts).
-  { id: 'INV-2026-0492', client: 'ABC Films Pvt. Ltd.', booking: 'BK-2026-0715', amount: rs(139506), due: '2 Aug 2026', status: 'Sent' },
-  {
-    id: 'INV-2026-0491',
-    client: 'Vision Production',
-    booking: 'BK-2026-0710',
-    amount: rs(312000),
-    due: '5 Aug 2026',
-    status: 'Partially Paid',
-    lines: [
-      { desc: 'RED Komodo 6K Camera Package — 6 days', amountPaisa: rupees(210000) },
-      { desc: 'Grip & Lighting Kit — 6 days', amountPaisa: rupees(48000) },
-      { desc: 'Crew: 1x DP, 1x AC — 6 days', amountPaisa: rupees(18106) },
-    ],
-    vatPaisa: rupees(35894),
-    paidPaisa: rupees(180000),
-    payments: [
-      { ad: '20 Jul 2026', amountPaisa: rupees(120000), method: 'Bank Transfer' },
-      { ad: '28 Jul 2026', amountPaisa: rupees(60000), method: 'eSewa' },
-    ],
-  },
-  { id: 'INV-2026-0490', client: 'Creative Studio', booking: 'BK-2026-0716', amount: rs(198500), due: '9 Aug 2026', status: 'Sent' },
-  {
-    id: 'INV-2026-0489',
-    client: 'Mountain Stories',
-    booking: 'BK-2026-0709',
-    amount: rs(164000),
-    due: '—',
-    status: 'Paid',
-    lines: [
-      { desc: 'Sony FX6 Camera Package — 4 days', amountPaisa: rupees(96000) },
-      { desc: 'Lighting & Grip — 4 days', amountPaisa: rupees(32000) },
-      { desc: 'Delivery & setup crew — 4 days', amountPaisa: rupees(17133) },
-    ],
-    vatPaisa: rupees(18867),
-    paidPaisa: rupees(164000),
-    payments: [{ ad: '30 Jul 2026', amountPaisa: rupees(164000), method: 'Bank Transfer' }],
-  },
-  { id: 'INV-2026-0488', client: 'Mirage Weddings', booking: 'BK-2026-0713', amount: rs(88000), due: '—', status: 'Draft' },
-]
+const FINANCE_TABS = SPEC_TABS['/finance'] ?? []
+type FinanceTab = 'Dashboard' | 'Invoices' | 'Payments' | 'Expenses' | 'Documents' | 'Reports'
+
+/**
+ * §9.2's chip row — `(All)(Draft)(Sent)(Partially Paid)(Paid)(Overdue)(Void)`.
+ *
+ * Three of the seven are **not** a `status` filter, and taking the drawing
+ * literally on any of them would have shipped a chip that silently matches
+ * nothing:
+ *
+ *  - **All** is `liveInvoices()` — everything not voided. Not "every row":
+ *    a list headed "All" that included voided invoices would double-count the
+ *    business's receivables.
+ *  - **Overdue** is a real member of `invoice_status` and is **never stored**
+ *    (`0001:1010` — *"'Overdue' is derived (due_date vs today on the AD value)
+ *    and must never be persisted"*). `chips: { status: ['Overdue'] }` does not
+ *    error; it returns zero rows and the screen reports "no overdue invoices"
+ *    to a business that has them. So this chip is `overdueInvoices(NOW_AD)`,
+ *    which asks the question the schema can answer.
+ *  - **Void** is `voidedInvoices()` — `voided_at IS NOT NULL`, the fact the
+ *    void CHECK guarantees, rather than the `status` label nothing forces to
+ *    agree with it. Law 3: a voided invoice is not deleted and stays reachable.
+ *
+ * The other four are the stored statuses, taken from `STORED_INVOICE_STATUSES`
+ * so a chip cannot ask for a value the enum does not admit.
+ */
+const INVOICE_CHIPS = ['All', ...STORED_INVOICE_STATUSES.filter((s) => s !== 'Void'), 'Overdue', 'Void'] as const
+type InvoiceChip = (typeof INVOICE_CHIPS)[number]
+
+/** The chip → the named filter set. Never a `.filter()` over fetched rows. */
+function invoiceChipFilters(chip: InvoiceChip): ListFilters {
+  if (chip === 'All') return LIVE_INVOICES
+  if (chip === 'Void') return VOIDED_INVOICES
+  if (chip === 'Overdue') return OVERDUE_INVOICES
+  return { ...LIVE_INVOICES, chips: { status: [chip] } }
+}
+
+/**
+ * Empty state per chip.
+ *
+ * One message per chip rather than one for the table, because "no invoices" and
+ * "no invoices in Draft" are different facts and only the first is a statement
+ * about the business. A shared string would have the (Paid) chip telling an
+ * operator that nothing has ever been invoiced.
+ */
+const EMPTY_TITLE: Readonly<Record<InvoiceChip, string>> = {
+  All: 'No invoices yet',
+  Draft: 'No drafts',
+  Sent: 'Nothing awaiting payment',
+  'Partially Paid': 'Nothing part-paid',
+  Paid: 'Nothing settled yet',
+  Overdue: 'Nothing overdue',
+  Void: 'No voided invoices',
+}
+
+const EMPTY_MESSAGE: Readonly<Record<InvoiceChip, string>> = {
+  All: 'Nothing has been invoiced. Invoices are raised against a booking, so a booking has to exist first.',
+  Draft: 'Every invoice raised has been issued. A draft is an invoice that exists but has not gone to the client.',
+  Sent: 'No invoice is issued and unpaid. Sent means the client has it and nothing has been received against it.',
+  'Partially Paid': 'No invoice has had part of its total received. A part payment moves an invoice here until it settles.',
+  Paid: 'No invoice has been settled in full.',
+  Overdue:
+    'No issued invoice is past its due date. Overdue is derived from the due date at read time, never stored — so this is a live answer, not a stale label.',
+  Void: 'No invoice has been voided. Voiding is how an invoice reaches its terminal state — nothing is ever deleted.',
+}
+
+/** Payments with no `bank_account_id`. NEVER labelled 'Cash' — see `PaymentListRow.channelGroup`. */
+const NO_ACCOUNT_RECORDED = 'No account recorded'
 
 const th = { textAlign: 'left' as const, padding: '9px 10px', fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)', whiteSpace: 'nowrap' as const, borderBottom: '1px solid var(--border)' }
 const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
 
+/** A `date` column, `YYYY-MM-DD`, rendered as "2 Aug 2026". */
+function formatDayAd(dayAd: string): string {
+  return formatAd(new Date(`${dayAd}T00:00:00.000Z`))
+}
+
+/**
+ * A count the query actually returned, or an explicit non-value.
+ *
+ * `total` is `count: 'exact'` from PostgREST — the size of the whole matching
+ * set, not of the page in hand. While the query is in flight, or if it failed,
+ * or if the caller never asked for a count, there is no number to print and a
+ * dash is printed instead. Printing `rows.length` in those cases is how a KPI
+ * comes to state a figure nobody computed.
+ */
+function countOf(list: ListResult<unknown>): string {
+  if (list.loading) return '…'
+  if (list.error || list.total === null) return '—'
+  return String(list.total)
+}
+
+/**
+ * The sum of a money column over a result set — **only when the rows in hand
+ * ARE the whole set**.
+ *
+ * These lists are unpaged, and PostgREST caps an unpaged response (1000 rows on
+ * a default Supabase project). So `rows` can silently be a prefix of the answer,
+ * and summing it would print a total that is short by an unknown amount while
+ * looking exactly like a correct one. `total` is the exact count, so
+ * `total === rows.length` is the proof that nothing was cut off; without that
+ * proof this returns `null` and the caller renders a dash.
+ *
+ * TODO(persistence): the right fix is a server-side aggregate (an RPC or a
+ * `_totals_v`), which would also stop pulling every outstanding invoice down
+ * the wire to add up one column. That belongs in `queries/finance.ts`.
+ */
+function sumOf<T>(list: ListResult<T>, pick: (row: T) => Paisa): Paisa | null {
+  if (list.loading || list.error) return null
+  if (list.total === null || list.total !== list.rows.length) return null
+  return list.rows.reduce<Paisa>((acc, row) => (acc + pick(row)) as Paisa, rupees(0))
+}
+
+function moneyOf(total: Paisa | null): string {
+  return total === null ? '—' : formatMoney(total)
+}
+
+/**
+ * `InvoiceListRow` → the shape the Hover Intel builders take.
+ *
+ * `InvoiceRow.amount` is a pre-formatted string (`data/invoiceIntel.ts:47`) and
+ * `amountPaisaOf` recovers the paisa with `parseMoney`, which reads grouping and
+ * a decimal fraction correctly — so `formatMoney(totalAmount)` round-trips
+ * exactly. That is NOT the old defect: the page used to recover a total with
+ * `parseInt(amount.replace(/[^0-9]/g, ''))`, which reads "Rs 1,234.50" as
+ * Rs 1,23,450. Nothing on this screen parses a money string any more; the two
+ * places that need a figure (`+ Pay`, `Refund`) read `outstandingAmount` and
+ * `paidAmount` as `Paisa` directly.
+ *
+ * Three optional fields are deliberately left undefined rather than defaulted:
+ *  - `lines` — `invoice_lines` is a separate table this list query does not
+ *    read. The intel card omits the group entirely when it is absent.
+ *  - `payments` — one `paymentsForInvoice()` query per row. Not fetched.
+ *  - and neither is faked from `paidAmount`, which would render an invented
+ *    single receipt for money that arrived in several.
+ */
+function toIntelRow(row: InvoiceListRow): InvoiceRow {
+  return {
+    id: row.invoiceNo,
+    client: row.clientName,
+    booking: row.bookingNo,
+    amount: formatMoney(row.totalAmount),
+    due: formatDayAd(row.dueDateAd),
+    status: row.status,
+    vatPaisa: row.vatAmount,
+    paidPaisa: row.paidAmount,
+  }
+}
+
 export default function Finance() {
   const { user } = useAuth()
   /**
-   * `gateContext` returns a fresh object literal on every call, so it must be
-   * memoized here — otherwise the `invoiceRows` memo below (keyed on `gctx`)
-   * would see a "changed" dependency on every render regardless of whether
-   * the role actually changed, and recompute every row's Glance/Detail cards
-   * anyway.
+   * `gateContext` returns a fresh object literal on every call, so it is
+   * memoized — the `invoiceRows` memo below is keyed on it and would otherwise
+   * rebuild every row's Glance/Detail cards on every render.
+   *
+   * It is used for the intel cards ONLY. The page's own gate is
+   * `useCanViewMoney()` below, which mirrors the RLS predicate exactly; see the
+   * header for why the two are not interchangeable.
    */
   const role = user?.role ?? 'Client'
   const gctx = useMemo(() => gateContext(role), [role])
-  /** Invoice/booking money is Coordinator-visible (HIS v2.1 §4.1) — 'booking', not 'asset-finance'. */
-  const money = canViewMoneyField(gctx, 'booking')
-  const [tab, setTab] = useState<'Dashboard' | 'Invoices'>('Dashboard')
-  const [invoicesList, setInvoicesList] = useState<InvoiceRow[]>(INVOICES)
+  const money = useCanViewMoney()
+  const restriction = financeRestriction(money)
+
+  /*
+   * ⛔ The three Record Payment launchers on this screen (header button, table
+   * row `+ Pay`, phone card `+ Pay`) had NO permission gate at all — only the
+   * page-wide `money` gate, which is *visibility*. Every role that could read
+   * an invoice was offered the button, Admin and Manager included, and since
+   * `actions/core.ts` now really resolves `recordPayment`'s
+   * `permissions: ['payment.create']` through `lib/rbac`, that button leads to
+   * an inline `ActionPermissionError` rather than to a payment.
+   *
+   * `canRecordPayment` is Owner / Coordinator / Accounts — strictly narrower
+   * than money visibility, and the same predicate the dispatcher will apply.
+   * Kept as a second condition rather than folded into `money`: `money` gates
+   * the FIGURES (KPIs, the invoice table, the donut) and a Manager keeps all of
+   * them; this gates only the ACT of recording.
+   *
+   * Absent, not disabled, per `MovementList.tsx:307`. `isOnline` is not passed,
+   * matching `UnifiedInbox.tsx:163` — the modal dispatches without it, so both
+   * sides evaluate the rule with the same online default.
+   */
+  const canTakePayment = user ? canRecordPayment(user.role) : false
+
   /**
-   * Law 13/14 — width decides, never a platform/orientation branch.
-   * `viewport` collapses the dashboard grid and the P&L/Payment-Methods pair
-   * below desktop/phone respectively; `tabular` swaps the ~840px Invoices
-   * table for phone cards, same threshold RentalsList's table-to-cards
-   * branch uses.
+   * The other two row actions, which were left open when `+ Pay` was gated.
+   *
+   * **Refund** — `canRecordPayment`, the same rule as recording one. That is not
+   * a judgement made here: `actions/core.ts:110-112` resolves BOTH
+   * `payment.create` and `payment.refund` through `canRecordPayment`, and
+   * `refundPayment` declares `permissions: ['payment.refund']`. A reversal is a
+   * money movement, so it sits under the money-movement rule, and gating on the
+   * dispatcher's own predicate is what stops this screen offering an action the
+   * engine will refuse. It was gated on `!row.isVoid && row.paidAmount > 0`
+   * alone — two facts about the INVOICE, neither of them about the session.
+   *
+   * TODO(decision): `lib/rbac` has no refund-specific rule, so a reversal
+   * inherits Coordinator. Taking an advance and paying money back out are
+   * plausibly not the same authority, but narrowing it here would invent a
+   * product decision and would desync the UI from `actions/core.ts`. The rule
+   * belongs in `lib/rbac` + `actions/core.ts` together, and in PLAN.md §4.
+   *
+   * **Void** — `canVoidInvoice`, Owner / Accounts. This rule already existed,
+   * `actions/core.ts:113-114` already maps `invoice.void` to it, and the button
+   * had no gate at all: a comment where `RowActions` is defined acknowledged the
+   * omission and left it. Voiding is how an invoice reaches its terminal state
+   * (Law 3), so it is the narrowest of the three.
+   *
+   * `isOnline` is not passed to either, matching `canTakePayment` above — both
+   * rbac rules refuse offline, and the modals dispatch without it, so both sides
+   * must evaluate with the same online default or the UI and the dispatcher
+   * disagree about what is offered.
+   */
+  const canRefund = canTakePayment
+  const canVoid = user ? canVoidInvoice(user.role) : false
+
+  /**
+   * **Create Invoice** — the launcher the last pass missed.
+   *
+   * `+ Pay`, Refund and Void were each given a capability gate above; the header's
+   * Create Invoice button and its modal mount were left on `money` alone, which
+   * is *visibility*. Issuing an invoice is a money act — it is how a receivable
+   * comes into existence — so every role that could merely READ the invoice table
+   * was being offered the button that raises one.
+   *
+   * TODO(decision): **`lib/rbac` has no invoice-creation rule.** `checkCapability`
+   * in `actions/core.ts` maps `invoice.void` and nothing else under `invoice.*`,
+   * and `CreateInvoiceModal` dispatches no action at all, so there is no
+   * dispatcher predicate to mirror — unlike the three gates above, each of which
+   * matches a rule the engine will itself apply. Who may issue an invoice is a
+   * product decision and is not made here; it belongs in `lib/rbac` +
+   * `actions/core.ts` together, and in PLAN.md §4.
+   *
+   * Chosen meanwhile: **`canVoidInvoice` — Owner and Accounts.** It is the only
+   * rule in `lib/rbac` that names the invoice entity, it is the narrowest money
+   * rule available, and an open money launcher is the worse failure of the two.
+   * Note what that costs: a Coordinator "takes the advance" (see the roll call at
+   * the top of `lib/rbac`) and may record a payment under `canRecordPayment`, but
+   * cannot raise the invoice that payment settles. That asymmetry is the reason
+   * this is a TODO(decision) and not a ruling — if the answer comes back
+   * "Coordinator too", this becomes `canTakePayment` and the rule gets a name of
+   * its own.
+   */
+  const canIssueInvoice = user ? canVoidInvoice(user.role) : false
+
+  const [tab, setTab] = useState<FinanceTab>('Dashboard')
+  /** §9.2 — the seven chips. Law 3 keeps `Void` among them, never a Delete. */
+  const [chip, setChip] = useState<InvoiceChip>('All')
+
+  /**
+   * Law 13/14 — width decides, never a platform branch. `viewport` collapses
+   * the dashboard grid; `tabular` swaps the ~840px Invoices table for phone
+   * cards at the same threshold RentalsList uses.
    */
   const viewport = useViewport()
   const tabular = useTabularLayout()
@@ -202,173 +474,538 @@ export default function Finance() {
   const [showRecordPayment, setShowRecordPayment] = useState(false)
   const [showCreateInvoice, setShowCreateInvoice] = useState(false)
   const [selectedInvoiceForRecord, setSelectedInvoiceForRecord] = useState<string>('')
-  const [selectedInvoiceForRefund, setSelectedInvoiceForRefund] = useState<InvoiceRow | null>(null)
-  const [selectedInvoiceForVoid, setSelectedInvoiceForVoid] = useState<InvoiceRow | null>(null)
-
-  const kpis = kpisFor(money)
+  const [selectedInvoiceForRefund, setSelectedInvoiceForRefund] = useState<InvoiceListRow | null>(null)
+  const [selectedInvoiceForVoid, setSelectedInvoiceForVoid] = useState<InvoiceListRow | null>(null)
 
   /**
-   * HIS v2.1 perf — `invoiceGlance`/`invoiceDetailGroups` build a full
-   * field-gated object graph per row (role/PII/money filtering); calling
-   * them inline inside the table's `.map()` reran that work on every
-   * re-render of `Finance` (e.g. a tab switch or any parent state change),
-   * even when `invoicesList`/`gctx` hadn't changed. Computed once per row
-   * here instead, keyed on every value the builders actually read.
+   * Law 12 — an action that changed nothing says so inline and persistently.
+   *
+   * Create Invoice and Void Invoice write NOTHING: neither `CreateInvoiceModal`
+   * nor `VoidInvoiceModal` dispatches an action, and the actions that exist are
+   * stubs (`actions/core.ts:131` throws unless `implemented: true`, which
+   * nothing outside a test sets). While this screen held its rows in `useState`
+   * that was invisible — the row appeared, or its badge flipped to Void, and the
+   * operator had every reason to believe it had landed. Reading from Postgres
+   * makes it visible, and the honest thing is to say which half happened rather
+   * than to let a refetch quietly undo the work.
+   *
+   * ⚠ Both modals now refuse INSIDE themselves and never call `onSuccess`, so
+   * neither disclosure below currently fires. Each says why it is kept. Both
+   * also used to `DomainEvents.emit` from the screen, announcing a create and a
+   * void that never happened; both emits are gone (events follow the write, and
+   * the dispatcher owns them).
    */
-  const invoiceRows = useMemo(
-    () =>
-      invoicesList.map((row) => ({
-        row,
-        glance: invoiceGlance(row, gctx),
-        detail: invoiceDetailGroups(row, gctx),
-      })),
-    [invoicesList, gctx],
+  const [notPersisted, setNotPersisted] = useState<{ title: string; message: string } | null>(null)
+
+  /* ── The four reads ────────────────────────────────────────────────────
+   *
+   * Fixed calls in a fixed order, never a loop, so the hook order cannot change
+   * between renders.
+   *
+   * Each fetcher short-circuits for a money-blind session. `listQuery.ts` gives
+   * the rule for a narrowing that cannot match — return without calling — and
+   * this is the same shape: RLS has already decided, and the four requests
+   * would come back 200/`[]`, which is the exact ambiguity this screen exists
+   * to remove.
+   */
+  const invoiceFetcher = useCallback(
+    async (filters: ListFilters): Promise<ListQueryResult<InvoiceListRow>> => {
+      if (!money) return { rows: [], total: 0 }
+      return listInvoices({ ...filters, withCount: true })
+    },
+    [money],
+  )
+  const paymentFetcher = useCallback(
+    async (filters: ListFilters): Promise<ListQueryResult<PaymentListRow>> => {
+      if (!money) return { rows: [], total: 0 }
+      return listPayments({ ...filters, withCount: true })
+    },
+    [money],
+  )
+
+  const chipFilters = useMemo(() => invoiceChipFilters(chip), [chip])
+  /**
+   * `baseline` is `LIVE_INVOICES` — the (All) chip.
+   *
+   * `useList` compares `filters` against `baseline` to decide whether an empty
+   * result means "nothing exists" or "nothing matches what you asked", and only
+   * the second gets a "Clear filters" affordance. (All) IS the baseline, so an
+   * empty (All) reads as "no invoices yet"; an empty (Draft) reads as "no draft
+   * invoices" with a way back. `Void` and `Overdue` are structurally different
+   * questions rather than narrowings, but they are reached from the same row of
+   * chips and clearing back to (All) is exactly the right offer for both.
+   */
+  const list = useList<InvoiceListRow>(invoiceFetcher, chipFilters, { baseline: LIVE_INVOICES })
+
+  /* A KPI is never "filtered": its set is the tile's own definition and no
+     operator input reaches it. */
+  const outstanding = useList<InvoiceListRow>(invoiceFetcher, OUTSTANDING_INVOICES, { isFilteredOverride: false })
+  const overdue = useList<InvoiceListRow>(invoiceFetcher, OVERDUE_INVOICES, { isFilteredOverride: false })
+  const received = useList<PaymentListRow>(paymentFetcher, RECEIVED_IN_PERIOD, { isFilteredOverride: false })
+
+  const refreshAll = useCallback(() => {
+    list.refetch()
+    outstanding.refetch()
+    overdue.refetch()
+    received.refetch()
+  }, [list.refetch, outstanding.refetch, overdue.refetch, received.refetch])
+
+  const receivableTotal = sumOf(outstanding, (r) => r.outstandingAmount)
+  const overdueTotal = sumOf(overdue, (r) => r.outstandingAmount)
+  const receivedTotal = sumOf(received, (r) => r.amount)
+
+  /**
+   * §3 — the KPI strip.
+   *
+   * Three tiles, not four, and every one of them is a query result. The two
+   * that were dropped (`Total Revenue`, `Net Profit`) were the head and tail of
+   * the invented P&L chain; see the header. `Outstanding Invoices` keeps its
+   * place as the count §3 asks for, and its value is now `count: 'exact'`
+   * rather than the string `'23'`.
+   *
+   * Nothing here is money-gated per-tile any more: for a money-blind session
+   * the whole strip is inside the restricted `PageBody` and is not constructed
+   * at all. That is a stronger guarantee than omitting a note.
+   */
+  const kpis: Kpi[] = [
+    {
+      label: 'Outstanding Invoices',
+      value: countOf(outstanding),
+      icon: 'invoice',
+      accent: 'progress',
+      note: `${moneyOf(receivableTotal)} receivable`,
+    },
+    {
+      label: 'Overdue',
+      value: countOf(overdue),
+      icon: 'alert_triangle',
+      accent: 'danger',
+      note: `${moneyOf(overdueTotal)} past due`,
+    },
+    {
+      label: 'Received',
+      value: moneyOf(receivedTotal),
+      icon: 'card',
+      accent: 'success',
+      note: PERIOD_LABEL,
+    },
+  ]
+
+  /**
+   * §5.4 — the payment-method breakdown, from `bank_accounts.channel_group`
+   * through the `payments` embed. It reconciles to Received by construction:
+   * these are the same rows, bucketed, so the slices sum to the KPI above and
+   * cannot drift from it the way two hand-typed arrays did.
+   *
+   * A payment with no `bank_account_id` lands in `No account recorded`, never
+   * in `Cash`. 'Cash' is itself a `payment_channel_group` value, so reading it
+   * out of an absent account would manufacture a fact about how money arrived.
+   */
+  const methodSlices = useMemo<Slice[]>(() => {
+    if (receivedTotal === null || receivedTotal <= 0) return []
+    const buckets = new Map<string, number>()
+    for (const p of received.rows) {
+      const key = p.channelGroup ?? NO_ACCOUNT_RECORDED
+      buckets.set(key, (buckets.get(key) ?? 0) + p.amount)
+    }
+    return [...buckets.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value]) => ({
+        label,
+        value,
+        display: formatMoney(value as Paisa),
+        percent: `${((value / receivedTotal) * 100).toFixed(1)}%`,
+      }))
+  }, [received.rows, receivedTotal])
+
+  /**
+   * §9.1's chart series — the same `paymentsInPeriod` rows as the Received KPI
+   * and the method donut, bucketed by the Nepal calendar day they arrived on.
+   *
+   * `PaymentListRow.paymentDateAd` is already the Kathmandu civil day (the
+   * conversion happens in `queries/finance.ts`, which documents why
+   * `payments.payment_date` is a `timestamptz` while `invoices.issue_date` is a
+   * plain `date`). Slicing an instant here would put 5h45m of every day in the
+   * wrong bar.
+   *
+   * Guarded on `receivedTotal !== null` for the reason `sumOf` exists: if the
+   * unpaged response was truncated, the bars would be short by an unknown
+   * amount while looking exactly like a complete series.
+   */
+  const dailyCollections = useMemo(() => {
+    if (receivedTotal === null) return []
+    const byDay = new Map<string, number>()
+    for (const p of received.rows) {
+      byDay.set(p.paymentDateAd, (byDay.get(p.paymentDateAd) ?? 0) + (p.amount as number))
+    }
+    return [...byDay.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .map(([dayAd, total]) => ({ dayAd, total }))
+  }, [received.rows, receivedTotal])
+
+  const dailyPeak = Math.max(...dailyCollections.map((d) => d.total), 1)
+  const busiestDay = dailyCollections.reduce(
+    (best, d) => (d.total > best.total ? d : best),
+    dailyCollections[0] ?? { dayAd: TODAY_DAY_AD, total: 0 },
   )
 
   /**
-   * Reconciles this screen's local copy of a payment the **modal has already
-   * written**. It does not dispatch, and must not.
-   *
-   * It used to. This handler fired a second
-   * `recordPayment({ amountPaisa, paymentMethod, reference })` for the same
-   * receipt the modal had just dispatched — fire-and-forget, no `.catch()`,
-   * and no `ActionContext`, which the fail-closed dispatcher rejects outright,
-   * so the duplicate could only ever reject into an unobserved promise. It was
-   * invisible for exactly one reason: `recordPayment` is still a stub, so the
-   * modal's own dispatch rejects first and `onSuccess` never runs. The day
-   * that action sets `implemented: true`, one click writes the payment twice —
-   * two payment rows for one receipt, against the law that payments are
-   * immutable and corrections are reversal rows. The modal owns the dispatch;
-   * this handler only ever owned the view.
-   *
-   * The local row update below stays, and is honest: the modal `await`s the
-   * action and calls `onSuccess` only after it resolves, so reaching this line
-   * means the write landed. It is still only an in-memory reconciliation —
-   * nothing here re-reads the invoice from the engine.
-   *
-   * Left alone deliberately (out of this task's scope, not a blessing):
-   * `totalPaisa` recovers the invoice total by stripping non-digits and
-   * `parseInt`-ing the formatted string, which would read "Rs 1,234.50" as
-   * Rs 1,23,450. Every seeded row is whole rupees, so it is latent today;
-   * `invoiceIntel.ts`'s `amountPaisaOf()` (`parseMoney`) is the right source.
+   * HIS v2.1 perf — the glance/detail builders walk a full field-gated object
+   * graph per row, so they run once per row here rather than inside the
+   * table's `.map()`, keyed on every value they read.
    */
-  const handleRecordPaymentSuccess = (payment: { invoiceId: string; amountPaisa: Paisa; method: string; reference: string }) => {
-    setInvoicesList((prev) =>
-      prev.map((inv) => {
-        if (inv.id === payment.invoiceId) {
-          const newPaid = (inv.paidPaisa || 0) + payment.amountPaisa
-          const totalPaisa = rupees(parseInt(inv.amount.replace(/[^0-9]/g, '')) || 0)
-          const newStatus = newPaid >= totalPaisa ? 'Paid' : 'Partially Paid'
-          return {
-            ...inv,
-            status: newStatus,
-            paidPaisa: newPaid as Paisa,
-            payments: [
-              ...(inv.payments || []),
-              { ad: new Date().toLocaleDateString('en-GB'), amountPaisa: payment.amountPaisa, method: payment.method },
-            ],
-          }
-        }
-        return inv
+  const invoiceRows = useMemo(
+    () =>
+      list.rows.map((row) => {
+        const intel = toIntelRow(row)
+        return { row, intel, glance: invoiceGlance(intel, gctx), detail: invoiceDetailGroups(intel, gctx) }
       }),
-    )
-  }
+    [list.rows, gctx],
+  )
 
-  const handleCreateInvoiceSuccess = (newInv: InvoiceRow) => {
-    setInvoicesList((prev) => [newInv, ...prev])
-  }
+  /**
+   * What `RecordPaymentModal` needs, and no more — it takes a structural type
+   * (`{ id, client, amount, status, booking }`), so the DB row is narrowed to
+   * it here rather than the modal being taught about `InvoiceListRow`.
+   *
+   * `booking` carries `bookingNo`, not `bookingId`: the modal passes it
+   * straight through to `recordPayment` as `bookingId`, and every other screen
+   * in the app addresses a booking by its number. Correcting that to the uuid
+   * is a change to the action's input contract, which is not this screen's to
+   * make. TODO(decision).
+   */
+  const modalInvoices = useMemo(
+    () =>
+      list.rows.map((r) => ({
+        id: r.invoiceNo,
+        client: r.clientName,
+        amount: formatMoney(r.totalAmount),
+        status: r.status,
+        booking: r.bookingNo,
+      })),
+    [list.rows],
+  )
 
-  const handleRefundSuccess = (refund: { invoiceId: string; refundAmountPaisa: Paisa; reason: string }) => {
-    setInvoicesList((prev) =>
-      prev.map((inv) => {
-        if (inv.id === refund.invoiceId) {
-          const newPaid = Math.max(0, (inv.paidPaisa || 0) - refund.refundAmountPaisa)
-          return {
-            ...inv,
-            status: newPaid === 0 ? 'Sent' : 'Partially Paid',
-            paidPaisa: newPaid as Paisa,
-          }
-        }
-        return inv
-      }),
-    )
-  }
+  /**
+   * The modal has already written the payment; this only brings the screen back
+   * into line with what the database now says.
+   *
+   * It used to rewrite a local array — recomputing the new status from
+   * `parseInt(inv.amount.replace(/[^0-9]/g, ''))` and appending a payment row
+   * the engine had not confirmed. Both are gone: `refreshAll()` re-reads
+   * `invoices.status`, `paid_amount` and `outstanding_amount` as the engine
+   * computed them, so the screen cannot disagree with the ledger.
+   *
+   * It must not dispatch. It used to fire a second `recordPayment` for the same
+   * receipt with no `ActionContext` — one click, two irreversible rows, against
+   * Law 4. `__tests__/FinanceDoubleWrite.test.tsx` counts the calls.
+   */
+  const handleRecordPaymentSuccess = useCallback(() => {
+    refreshAll()
+  }, [refreshAll])
 
-  const handleVoidSuccess = (invoiceId: string) => {
-    setInvoicesList((prev) =>
-      prev.map((inv) => (inv.id === invoiceId ? { ...inv, status: 'Void' as const } : inv)),
-    )
-  }
+  const handleRefundSuccess = useCallback(() => {
+    refreshAll()
+  }, [refreshAll])
+
+  /**
+   * ⚠ **Currently unreachable, on purpose.**
+   *
+   * `CreateInvoiceModal` no longer calls `onSuccess`. It used to mint a number
+   * client-side, emit `invoice.created` and hand the invoice over as though a
+   * write had happened; it now refuses inline and says nothing was saved, which
+   * is the truth (`src/actions/finance/` has no invoice write, and numbering
+   * belongs to `next_document_number('invoice')` — see that modal's header).
+   * That moves the disclosure from *after* the modal closes to *inside* it,
+   * before any number is handed out.
+   *
+   * The handler and the prop stay wired because the seam is real: the day an
+   * invoice write exists, `created.id` is the number the DATABASE assigned, and
+   * this becomes an ordinary refetch. Until then `setNotPersisted` is the
+   * fallback disclosure for a path that cannot currently fire — deliberately
+   * kept, not dead weight, because a future `onSuccess` that fires before the
+   * list has the row would otherwise be silent again.
+   *
+   * Prepending the row locally is still refused either way: the list is read
+   * from Postgres, so an invoice put on screen by hand would vanish at the next
+   * refetch with no explanation.
+   */
+  const handleCreateInvoiceSuccess = useCallback(
+    (created: { id: string }) => {
+      setNotPersisted({
+        title: `${created.id} is not in the list yet`,
+        message:
+          'The invoice write reported success but the table below is read from the database, so this row appears only once the ' +
+          'refetch returns it. If it does not appear, nothing was saved and no client has been billed — report it rather than retrying.',
+      })
+      refreshAll()
+    },
+    [refreshAll],
+  )
+
+  /**
+   * ⚠ **Currently unreachable, on purpose** — the same shape as
+   * `handleCreateInvoiceSuccess` above, and for the same reason.
+   *
+   * `VoidInvoiceModal` no longer calls `onSuccess`. It used to
+   * `DomainEvents.emit('invoice.voided')` and hand the number back as though a
+   * write had happened; this screen then set `notPersisted` and refetched, so
+   * the operator learned the truth only AFTER the modal had closed on them. The
+   * modal now refuses inline, before it closes and while their reason is still
+   * on screen, which is the earlier and better place for it. (It also never
+   * dispatched an action, so `invoice.void` → `rbac.canVoidInvoice` was never
+   * consulted — the launcher gates above are the other half of that.)
+   *
+   * Kept wired, not deleted: the day a `voidInvoice` action exists, `onSuccess`
+   * fires after a real write and this becomes the disclosure for a row the
+   * refetch has not caught up with yet.
+   */
+  const handleVoidSuccess = useCallback(
+    (invoiceNo: string) => {
+      setNotPersisted({
+        title: `${invoiceNo} is not shown as voided yet`,
+        message:
+          'The void reported success but the table below is read from the database, so the badge changes only once the refetch ' +
+          'returns the row. If it stays live, nothing was voided — report it rather than retrying.',
+      })
+      refreshAll()
+    },
+    [refreshAll],
+  )
+
+  /**
+   * ⚠ The invoice list is UNPAGED, and an unpaged PostgREST response is capped
+   * (1000 rows on a default Supabase project). So `rows` can be a prefix of the
+   * answer, and a table that quietly shows the first 1000 of 1400 invoices is
+   * indistinguishable from one showing all of them.
+   *
+   * `count: 'exact'` knows the real number, so the title states both figures the
+   * moment they differ rather than leaving the truncation silent. That is a
+   * disclosure, not a fix: the fix is `ListFilters.page` plus a pager, the way
+   * `RentalsList` does it, and it also decides what Export means (the page, or
+   * the set). TODO(decision).
+   */
+  const invoiceCardTitle =
+    list.total === null
+      ? 'Invoices'
+      : list.total > list.rows.length
+        ? `Invoices · showing ${list.rows.length} of ${list.total}`
+        : `Invoices (${list.total})`
+
+  const exportCsv = useCallback(() => {
+    const headers = ['Invoice', 'Client', 'Booking', 'Total', 'Outstanding', 'Issued', 'Due', 'Status']
+    const rows = list.rows.map((i) => [
+      i.invoiceNo,
+      `"${i.clientName.replace(/"/g, '""')}"`,
+      i.bookingNo,
+      formatMoney(i.totalAmount),
+      formatMoney(i.outstandingAmount),
+      i.issueDateAd,
+      i.dueDateAd,
+      i.isVoid ? 'Void' : i.status,
+    ])
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `finance_invoices_${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [list.rows])
+
+  /**
+   * §9.1's right-rail stack — `P&L SUMMARY` then `BY METHOD`.
+   *
+   * Held as a value rather than written inline because it is rendered in two
+   * places: inside `Rail` at desktop, and inline beneath the list below 1180.
+   * One definition, so the two cannot drift; see where it is used for why the
+   * rail is not simply left to `CollapsibleAside`.
+   */
+  const railCards = (
+    <>
+      <Card title="Summary">
+        {/* Three rows, all query results. Revenue, Gross Profit and Net Profit
+            were here as constants and are gone with the P&L chain — see the
+            header. */}
+        <SummaryRows
+          rows={[
+            { label: `Received · ${PERIOD_LABEL}`, value: moneyOf(receivedTotal), tone: 'success' },
+            { label: 'Receivable (outstanding)', value: moneyOf(receivableTotal), tone: 'progress' },
+            { label: 'Of which past due', value: moneyOf(overdueTotal), tone: 'danger' },
+          ]}
+        />
+      </Card>
+
+      {/*
+        §9.1's `P&L SUMMARY` — `Revenue − Cost of rental = Gross profit −
+        Operating expenses = Net profit`.
+
+        Law 1 and the never-fabricate rule between them mean the five rows
+        cannot be drawn. They used to be five module constants in this file,
+        wired together by two `throw`s so they always reconciled with each other
+        and with nothing else. There is no revenue column, no COGS concept and
+        no cost-of-rental column anywhere in `supabase/migrations`.
+
+        So the card renders the chain's SHAPE with every row marked untracked
+        and names what each one needs. That is more use than a blank card and is
+        not a figure: the reader learns which three things are missing, in the
+        order the statement wants them.
+      */}
+      <Card title="P&L summary">
+        <SummaryRows
+          rows={[
+            { label: 'Revenue', value: 'Not tracked yet' },
+            { label: '− Cost of rental', value: 'Not tracked yet' },
+            { label: '= Gross profit', value: 'Not tracked yet' },
+            { label: '− Operating expenses', value: 'Not tracked yet' },
+            { label: '= Net profit', value: 'Not tracked yet' },
+          ]}
+        />
+        <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.6 }}>
+          Invoices carry what was billed and payments carry what was received; neither is a profit-and-loss statement.
+          What this needs: an <span className="identifier">invoiced-in-period</span> named set over{' '}
+          <span className="identifier">invoices.total_amount</span>, an approved-expense total over{' '}
+          <span className="identifier">expenses.amount</span>, and a ruling on what cost of rental means for owned stock.
+          All three belong in <span className="identifier">lib/queries/finance.ts</span>. TODO(decision).
+        </p>
+      </Card>
+
+      {/* §9.1's `BY METHOD ▓▓▓░░`, from `bank_accounts.channel_group` through
+          the `payments` embed. Same rows as the Received KPI, bucketed — so the
+          slices sum to it by construction and cannot drift the way two
+          hand-typed arrays did. */}
+      <Card title={`By method · ${PERIOD_LABEL}`}>
+        {receivedTotal === null ? (
+          <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.6 }}>
+            {received.loading
+              ? 'Loading payments…'
+              : received.error
+                ? 'The payments for this period could not be read, so the breakdown is not shown rather than shown short.'
+                : 'More payments matched than were fetched in one request, so any breakdown drawn here would be short by an unknown amount.'}
+          </p>
+        ) : methodSlices.length === 0 ? (
+          <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.6 }}>
+            No payment was received in this period.
+          </p>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 'var(--sp-md)', alignItems: 'center', flexWrap: 'wrap' }}>
+              <Donut slices={methodSlices} centreLabel="Received" centreValue={formatMoney(receivedTotal)} size={116} />
+              <Legend slices={methodSlices} />
+            </div>
+            <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.6 }}>
+              Every payment received in this period is in exactly one slice, so this reconciles to Received by
+              construction. A payment with no bank account on file is shown as “{NO_ACCOUNT_RECORDED}” — it is not
+              assumed to be cash.
+            </p>
+          </>
+        )}
+      </Card>
+
+      <div style={{ ...cardStyle, padding: 'var(--sp-md)', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
+        Deposits are liabilities and never appear in revenue or receivables — they live in{' '}
+        <span className="identifier">security_deposits</span>, and a table CHECK stops one ever being recorded as a
+        payment. Payments are immutable; corrections are reversal rows, never edits.
+      </div>
+    </>
+  )
+
+  const headerActions = (
+    <>
+      <span
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 34, padding: '0 11px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card)' }}
+      >
+        <Icon name="calendar" size={14} style={{ color: 'var(--muted)' }} />
+        <span style={{ lineHeight: 1.2, textAlign: 'left' }}>
+          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+            {AS_OF.bs}
+          </span>
+          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{AS_OF.ad}</span>
+        </span>
+      </span>
+      {/* Launcher 1 of 2 money launchers. Hidden, not disabled, like its three
+          siblings — a greyed button still says an invoice can be raised here.
+          See `canIssueInvoice` for which rule this is and the TODO(decision)
+          about which rule it should be. */}
+      {canIssueInvoice && (
+        <Button icon="plus" variant="secondary" onClick={() => setShowCreateInvoice(true)}>
+          Create Invoice
+        </Button>
+      )}
+      {/* Launcher 2 of 2. Export stays on the page's money gate alone — it
+          writes nothing and reads only rows this session already has. */}
+      {canTakePayment && (
+        <Button
+          icon="dollar"
+          variant="primary"
+          onClick={() => {
+            setSelectedInvoiceForRecord('')
+            setShowRecordPayment(true)
+          }}
+        >
+          Record Payment
+        </Button>
+      )}
+      <Button icon="download" onClick={exportCsv}>
+        Export
+      </Button>
+    </>
+  )
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+      {/* The three actions are omitted for a money-blind session, not disabled:
+          all three operate on records that session may not read. */}
+      {/* The header actions belong to the two tabs this file owns: Create
+          Invoice and Record Payment act on invoices, and Export exports the
+          invoice list. The four hosted tabs bring their own primaries (＋ Record
+          Payment, ＋ Add Expense, ＋ Generate, the catalog's own controls), and
+          two Export buttons on one screen exporting different things is the
+          duplication the re-host was done to remove. */}
       <PageHeader
         icon="card"
         title="Finance"
         description="Finance consumes operational data and never creates it."
-        actions={
-          <>
-            <span
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 34, padding: '0 11px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card)' }}
-            >
-              <Icon name="calendar" size={14} style={{ color: 'var(--muted)' }} />
-              <span style={{ lineHeight: 1.2, textAlign: 'left' }}>
-                <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-                  {AS_OF.bs}
-                </span>
-                <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{AS_OF.ad}</span>
-              </span>
-            </span>
-            <Button
-              icon="plus"
-              variant="secondary"
-              onClick={() => setShowCreateInvoice(true)}
-            >
-              Create Invoice
-            </Button>
-            <Button
-              icon="dollar"
-              variant="primary"
-              onClick={() => {
-                setSelectedInvoiceForRecord('')
-                setShowRecordPayment(true)
-              }}
-            >
-              Record Payment
-            </Button>
-            <Button
-              icon="download"
-              onClick={() => {
-                const headers = ['Invoice ID', 'Client', 'Booking', 'Amount', 'Due Date', 'Status']
-                const rows = invoicesList.map((i) => [i.id, `"${i.client}"`, i.booking, i.amount, i.due, i.status])
-                const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
-                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-                const url = URL.createObjectURL(blob)
-                const a = document.createElement('a')
-                a.href = url
-                a.download = `finance_invoices_${new Date().toISOString().slice(0, 10)}.csv`
-                a.click()
-                URL.revokeObjectURL(url)
-              }}
-            >
-              Export
-            </Button>
-          </>
-        }
+        {...(money && (tab === 'Dashboard' || tab === 'Invoices') ? { actions: headerActions } : {})}
       />
 
-      <div style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)' }}>
-        {(['Dashboard', 'Invoices'] as const).map((t) => {
+      {/*
+        §9.4 — the six tabs. Every one of them renders its screen HERE; none is
+        a link out. `overflowX` because the strip is six items wide and §9.1's
+        phone note is "tabs scroll" — it scrolls rather than wrapping or
+        truncating, so no tab becomes unreachable at 320px.
+
+        The labels come from `SPEC_TABS['/finance']`; see `FINANCE_TABS` above
+        for why, and for where the deleted fifth "Audit" tab went.
+      */}
+      <div
+        role="tablist"
+        aria-label="Finance"
+        style={{
+          display: 'flex',
+          gap: 'var(--sp-xs)',
+          borderBottom: '1px solid var(--border)',
+          overflowX: 'auto',
+          scrollbarWidth: 'thin',
+        }}
+      >
+        {FINANCE_TABS.map((t) => {
           const on = tab === t
           return (
             <button
               key={t}
               type="button"
-              onClick={() => setTab(t)}
-              aria-current={on ? 'page' : undefined}
+              role="tab"
+              aria-selected={on}
+              onClick={() => setTab(t as FinanceTab)}
               style={{
-                height: 34,
+                /* Law 15 — 44×44 at every width, desktop included. The strip was
+                   34px high, which is a touch target nobody on the tablet this
+                   product targets can hit reliably. */
+                minHeight: 44,
                 padding: '0 13px',
+                flexShrink: 0,
                 border: 'none',
                 borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
                 background: 'transparent',
@@ -378,475 +1015,662 @@ export default function Finance() {
                 cursor: 'pointer',
                 fontFamily: 'inherit',
                 marginBottom: -1,
+                whiteSpace: 'nowrap',
               }}
             >
               {t}
             </button>
           )
         })}
-
-        {/*
-          §5.1 declares five tabs here — Payments · Expenses · Documents ·
-          Reports · Audit. Dashboard/Invoices above *are* Payments, already
-          built. The other four already exist as full screens elsewhere in the
-          app; rather than re-host them (and duplicate their own PageHeader and
-          search box), this row is a door to each — the same move Settings ▸
-          System makes for Administration.
-        */}
-        {[
-          ['Expenses', '/reports/expenses'],
-          ['Documents', '/documents'],
-          ['Reports', '/reports/clients'],
-          ['Audit', '/admin/audit'],
-        ].map(([label, to]) => (
-          <Link
-            key={label}
-            to={to as string}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 'var(--sp-xs)',
-              height: 34,
-              padding: '0 13px',
-              marginBottom: -1,
-              border: 'none',
-              borderBottom: '2px solid transparent',
-              color: 'var(--text2)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 500,
-              textDecoration: 'none',
-            }}
-          >
-            {label}
-            <Icon name="external_link" size={11} />
-          </Link>
-        ))}
       </div>
 
-      <KpiStrip items={kpis} columns={kpis.length} />
+      {/*
+        The four re-hosted screens.
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: viewport === 'desktop' ? 'minmax(0,1fr) auto' : '1fr',
-          gap: 'var(--sp-md)',
-          alignItems: 'start',
-        }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
-          {tab === 'Dashboard' ? (
-            /* Law 6 / §8.3 — P&L and Payment Methods are entirely ₨ figures;
-               for a money-blind role neither Card is constructed. */
-            money && (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: viewport === 'phone' ? '1fr' : 'minmax(0,1fr) minmax(0,1fr)',
-                gap: 'var(--sp-md)',
-              }}
-            >
-              <Card title="Profit & Loss">
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {PL_CHAIN.map((r) => (
-                    <div key={r.label} style={{ display: 'flex', gap: 10, padding: '7px 0', fontSize: 'var(--t-meta)', borderBottom: '1px solid var(--border)' }}>
-                      <span style={{ flex: 1, color: 'var(--text2)' }}>{r.label}</span>
-                      <span className="figure" style={{ fontWeight: 600, color: r.tone ? 'var(--danger-text)' : 'var(--text)' }}>
-                        {r.value}
-                      </span>
+        Each is its own component with its own queries, its own money gate and
+        its own restricted state — this file hosts them and does not reach into
+        them. `embedded` strips only the duplicate title block (and, on
+        Documents, the second search field); see `TabHeader.tsx`.
+
+        Mounted here rather than inside the `PageBody` below because each screen
+        applies `financeRestriction` itself: nesting them would render the
+        restricted state twice, once from this page and once from theirs.
+      */}
+      {tab === 'Payments' && <Payments embedded />}
+      {tab === 'Expenses' && <Expenses embedded />}
+      {tab === 'Documents' && <Documents embedded />}
+      {tab === 'Reports' && <ReportCatalog />}
+
+      {/*
+        THE gate. `restricted` outranks every other state in `PageBody`, so a
+        money-blind session never reaches the KPI strip, the donut or the table
+        — and never sees "No invoices yet" for rows RLS withheld.
+
+        No `loading`/`error`/`empty` at this level: those belong to the invoice
+        list, which has its own `PageBody` inside, and a failing KPI count must
+        not blank the whole page.
+
+        Scoped to the two tabs this file itself owns. The other four are mounted
+        above and bring their own gate; rendering this one around them would
+        stack two restricted states on one screen.
+      */}
+      {(tab === 'Dashboard' || tab === 'Invoices') && (
+      <PageBody noun="finance records" {...restriction}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+          <KpiStrip items={kpis} columns={kpis.length} />
+
+          {/* No `onRetry`: `ErrorBanner`'s only button says "Retry", and retrying
+              would mean issuing the invoice again, which is not what dismissing
+              it does. Law 12 wants this persistent anyway — the work really was
+              lost, and it stays said until another action replaces it. */}
+          {notPersisted && <ErrorBanner title={notPersisted.title} message={notPersisted.message} />}
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: viewport === 'desktop' ? 'minmax(0,1fr) auto' : '1fr',
+              gap: 'var(--sp-md)',
+              alignItems: 'start',
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
+              {tab === 'Dashboard' ? (
+                <>
+                  {/*
+                    §9.1's `REVENUE (chart)` slot.
+
+                    ⚠ It is titled **Collections**, not Revenue, and that is not
+                    a cosmetic choice. Revenue needs a recognition basis — is a
+                    14-day hire earned on the day it is booked, spread across the
+                    rental days, or recognised at return? `data/pulse.ts` records
+                    that question as an open TODO(decision) (`PERIOD_BASIS`), and
+                    no column in `supabase/migrations` answers it. What this
+                    screen can prove is what ARRIVED, day by day: the same
+                    `paymentsInPeriod` rows the Received KPI and the method donut
+                    are built from, bucketed by payment date.
+
+                    So the chart is real and reconciles to the KPI above it by
+                    construction, and it is labelled as the quantity it actually
+                    is rather than as the one the box is captioned.
+                  */}
+                  <Card title={`Collections by day · ${PERIOD_LABEL}`}>
+                    {receivedTotal === null ? (
+                      <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.6 }}>
+                        {received.loading
+                          ? 'Loading payments…'
+                          : received.error
+                            ? 'The payments for this period could not be read, so no chart is drawn rather than one drawn short.'
+                            : 'More payments matched than were fetched in one request, so a chart drawn here would be short by an unknown amount.'}
+                      </p>
+                    ) : dailyCollections.length === 0 ? (
+                      <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.6 }}>
+                        No payment was received in this period.
+                      </p>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 110 }}>
+                          {dailyCollections.map((d) => (
+                            <span
+                              key={d.dayAd}
+                              title={`${formatDayAd(d.dayAd)} · ${formatMoney(d.total as Paisa)}`}
+                              style={{
+                                flex: 1,
+                                minWidth: 3,
+                                height: `${Math.max((d.total / dailyPeak) * 100, 2)}%`,
+                                background: 'var(--nav-active-accent)',
+                                borderRadius: '2px 2px 0 0',
+                              }}
+                            />
+                          ))}
+                        </div>
+                        {/* Law 11 — the bars are never the only statement. The
+                            busiest day and the total are printed. */}
+                        <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.6 }}>
+                          {formatMoney(receivedTotal)} received across {dailyCollections.length} day
+                          {dailyCollections.length === 1 ? '' : 's'}. Busiest: {formatDayAd(busiestDay.dayAd)} at{' '}
+                          {formatMoney(busiestDay.total as Paisa)}.
+                        </p>
+                      </>
+                    )}
+                  </Card>
+
+                  {/*
+                    §9.1's `OUTSTANDING INVOICES` table — `inv# │ client │ due │
+                    amount`, exactly the four columns drawn.
+
+                    It reuses the `outstandingInvoices()` query the KPI already
+                    runs, so the count in the tile and the rows in the table
+                    cannot disagree: they are the same result set, printed twice.
+                  */}
+                  <Card
+                    title={`Outstanding invoices${outstanding.total === null ? '' : ` (${outstanding.total})`}`}
+                    bodyStyle={{ padding: 0 }}
+                  >
+                    <PageBody
+                      loading={outstanding.loading}
+                      error={outstanding.error}
+                      onRetry={refreshAll}
+                      hasRows={outstanding.rows.length > 0}
+                      empty={outstanding.isEmpty}
+                      noun="outstanding invoices"
+                      skeleton="table"
+                      skeletonRows={4}
+                      emptyTitle="Nothing outstanding"
+                      emptyMessage="Every issued invoice has been settled. Drafts are excluded — a draft has not gone to the client, so it is not owed."
+                      {...restriction}
+                    >
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ background: 'var(--th-bg)' }}>
+                              {['Invoice', 'Client', 'Due', 'Outstanding'].map((h, i) => (
+                                <th key={h} style={i === 3 ? { ...th, textAlign: 'right' } : th}>
+                                  {h}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {outstanding.rows.slice(0, 8).map((i) => (
+                              <tr key={i.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                <td className="identifier" style={{ ...td, color: 'var(--link)', fontWeight: 600 }}>{i.invoiceNo}</td>
+                                <td style={td}>{i.clientName}</td>
+                                <td style={{ ...td, color: 'var(--text2)' }}>{formatDayAd(i.dueDateAd)}</td>
+                                <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 600 }}>
+                                  {formatMoney(i.outstandingAmount)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {outstanding.total !== null && outstanding.total > 8 && (
+                        <p style={{ margin: 0, padding: '10px 14px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                          The eight due soonest, of {outstanding.total}. The Invoices tab lists them all.
+                        </p>
+                      )}
+                    </PageBody>
+                  </Card>
+                </>
+              ) : (
+                <Card
+                  title={invoiceCardTitle}
+                  action={
+                    /* §9.2 — `(All)(Draft)(Sent)(Partially Paid)(Paid)(Overdue)(Void)`.
+                       Each chip is a NAMED FILTER SET from `queries/finance.ts`;
+                       nothing here narrows rows already fetched. See
+                       `invoiceChipFilters` for why three of the seven are not a
+                       `status` filter and what happens if they are made one. */
+                    <div role="group" aria-label="Filter invoices by status" style={{ display: 'flex', gap: 'var(--sp-xs)', flexWrap: 'wrap' }}>
+                      {INVOICE_CHIPS.map((c) => {
+                        const on = chip === c
+                        return (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => setChip(c)}
+                            aria-pressed={on}
+                            {...(c === 'Overdue'
+                              ? { title: 'Derived from the due date, never stored — 0001:1010. This asks due_date < today on unsettled invoices.' }
+                              : c === 'Void'
+                                ? { title: 'Law 3 — nothing is deleted. Voiding is how an invoice reaches its terminal state, and voided invoices stay readable.' }
+                                : {})}
+                            style={{
+                              minHeight: 28,
+                              padding: '0 10px',
+                              borderRadius: 'var(--r-badge)',
+                              border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+                              background: on ? 'var(--nav-active-accent)' : 'var(--card)',
+                              color: on ? 'var(--on-accent, #fff)' : 'var(--text2)',
+                              fontSize: 'var(--t-meta)',
+                              fontWeight: on ? 700 : 500,
+                              cursor: 'pointer',
+                              fontFamily: 'inherit',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {c}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  }
+                  bodyStyle={{ padding: 0 }}
+                >
+                  {/*
+                    Fixed ladder: restricted → error → loading → empty → children.
+                    `restricted` is spread here as well as on the page body: this
+                    card is the surface whose empty state would otherwise read
+                    "No invoices yet" for a session that was simply refused.
+
+                    `hasRows` keeps a failed REFRESH from blanking a table
+                    somebody is reading — the banner renders above the rows.
+                  */}
+                  <PageBody
+                    loading={list.loading}
+                    error={list.error}
+                    onRetry={refreshAll}
+                    hasRows={list.rows.length > 0}
+                    empty={list.isEmpty}
+                    emptyIsFiltered={list.isFiltered}
+                    noun="invoices"
+                    skeleton="table"
+                    skeletonRows={6}
+                    emptyTitle={EMPTY_TITLE[chip]}
+                    emptyMessage={EMPTY_MESSAGE[chip]}
+                    {...restriction}
+                  >
+                    {tabular ? (
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+                          <thead>
+                            <tr style={{ background: 'var(--th-bg)' }}>
+                              {/* Two money columns rather than one "Amount": the
+                                  invoice carries seven distinct money columns and
+                                  collapsing them into a display string is what
+                                  made this file parse "Rs 1,234.50" as
+                                  Rs 1,23,450. There is no per-column money gate
+                                  because there is no money-blind reader here —
+                                  the page gate above already refused the session. */}
+                              {['Invoice', 'Client', 'Booking', 'Total', 'Outstanding', 'Due', 'Status', 'Actions'].map((h) => (
+                                <th key={h} style={th}>
+                                  {h}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {invoiceRows.map(({ row: i, glance, detail }) => (
+                              <tr key={i.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                <td className="identifier" style={{ ...td, color: 'var(--link)', fontWeight: 600 }}>
+                                  <IntelCard
+                                    glance={glance}
+                                    detail={detail}
+                                    detailTitle={i.invoiceNo}
+                                    detailSubtitle={`${i.clientName} · ${i.status}`}
+                                  >
+                                    <span>{i.invoiceNo}</span>
+                                  </IntelCard>
+                                </td>
+                                <td style={td}>{i.clientName}</td>
+                                <td className="figure" style={{ ...td, color: 'var(--link)', fontSize: 'var(--t-meta)' }}>
+                                  <Link to={`/rentals/${i.bookingNo}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                                    {i.bookingNo}
+                                  </Link>
+                                </td>
+                                <td className="figure" style={{ ...td, fontWeight: 600 }}>{formatMoney(i.totalAmount)}</td>
+                                <td
+                                  className="figure"
+                                  style={{ ...td, color: i.outstandingAmount > 0 ? 'var(--danger-text)' : 'var(--text2)' }}
+                                >
+                                  {formatMoney(i.outstandingAmount)}
+                                </td>
+                                <td style={{ ...td, color: 'var(--text2)' }}>{formatDayAd(i.dueDateAd)}</td>
+                                <td style={td}>
+                                  <StatusBadge row={i} />
+                                </td>
+                                <td style={{ ...td, display: 'flex', gap: 6 }}>
+                                  <RowActions
+                                    row={i}
+                                    canPay={canTakePayment}
+                                    canRefund={canRefund}
+                                    canVoid={canVoid}
+                                    onPay={() => {
+                                      setSelectedInvoiceForRecord(i.invoiceNo)
+                                      setShowRecordPayment(true)
+                                    }}
+                                    onRefund={() => setSelectedInvoiceForRefund(i)}
+                                    onVoid={() => setSelectedInvoiceForVoid(i)}
+                                  />
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      /* Below 768px a 900px table is a horizontal scrollbar, not a
+                         layout (`useTabularLayout`) — same card shape RentalsList
+                         uses. Every column and action above is preserved. */
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        {invoiceRows.map(({ row: i, glance, detail }) => (
+                          <div
+                            key={i.id}
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 'var(--sp-sm)',
+                              padding: '13px 14px',
+                              borderBottom: '1px solid var(--border)',
+                            }}
+                          >
+                            <span style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                              <IntelCard
+                                glance={glance}
+                                detail={detail}
+                                detailTitle={i.invoiceNo}
+                                detailSubtitle={`${i.clientName} · ${i.status}`}
+                              >
+                                <span className="identifier" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--link)' }}>
+                                  {i.invoiceNo}
+                                </span>
+                              </IntelCard>
+                              <StatusBadge row={i} />
+                            </span>
+
+                            <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{i.clientName}</span>
+
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)' }}>
+                              <Icon name="box" size={12} style={{ color: 'var(--muted)' }} />
+                              <Link to={`/rentals/${i.bookingNo}`} className="figure" style={{ color: 'var(--link)', textDecoration: 'none' }}>
+                                {i.bookingNo}
+                              </Link>
+                            </span>
+
+                            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                              <span className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                                {formatMoney(i.totalAmount)}
+                              </span>
+                              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Due {formatDayAd(i.dueDateAd)}</span>
+                            </span>
+
+                            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 'var(--t-meta)' }}>
+                              <span style={{ color: 'var(--text2)' }}>Outstanding</span>
+                              <span
+                                className="figure"
+                                style={{ fontWeight: 600, color: i.outstandingAmount > 0 ? 'var(--danger-text)' : 'var(--text2)' }}
+                              >
+                                {formatMoney(i.outstandingAmount)}
+                              </span>
+                            </span>
+
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap', marginTop: 2 }}>
+                              <RowActions
+                                phone
+                                row={i}
+                                canPay={canTakePayment}
+                                canRefund={canRefund}
+                                canVoid={canVoid}
+                                onPay={() => {
+                                  setSelectedInvoiceForRecord(i.invoiceNo)
+                                  setShowRecordPayment(true)
+                                }}
+                                onRefund={() => setSelectedInvoiceForRefund(i)}
+                                onVoid={() => setSelectedInvoiceForVoid(i)}
+                              />
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </PageBody>
+                </Card>
+              )}
+
+              <Card title="Status vocabularies">
+                {/* §5.2 — spelled out on the page, because conflating them is the bug. */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  {[
+                    { title: 'Payment statuses', list: PAYMENT_STATUSES as readonly string[] },
+                    { title: 'Invoice statuses (stored)', list: STORED_INVOICE_STATUSES as readonly string[] },
+                  ].map((g) => (
+                    <div key={g.title}>
+                      <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 7 }}>{g.title}</div>
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                        {g.list.map((s) => (
+                          <span
+                            key={s}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              height: 20,
+                              padding: '0 8px',
+                              borderRadius: 'var(--r-badge)',
+                              border: '1px solid var(--border)',
+                              background: 'var(--card2)',
+                              color: 'var(--text2)',
+                              fontSize: 'var(--t-meta)',
+                              fontWeight: 600,
+                            }}
+                          >
+                            {s}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   ))}
-                  {/* One chain — Net Profit is derived here, not stated twice. */}
-                  <div style={{ display: 'flex', gap: 10, paddingTop: 10, fontSize: 'var(--t-ui)', fontWeight: 700 }}>
-                    <span style={{ flex: 1 }}>Net Profit</span>
-                    <span className="figure">{rs(NET_PROFIT)}</span>
-                  </div>
                 </div>
-                <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{FISCAL_YEAR}</p>
-              </Card>
-
-              <Card title="Payment Methods (This Month)">
-                <div style={{ display: 'flex', gap: 'var(--sp-md)', alignItems: 'center' }}>
-                  <Donut slices={METHODS} centreLabel="Received" centreValue={rs(RECEIVED)} size={116} />
-                  <Legend slices={METHODS} />
-                </div>
-                {/* §5.4 — reconciled, and the period is on the card title. */}
-                <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                  Reconciles to Received exactly.
+                <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.6 }}>
+                  These are different sets. <strong style={{ color: 'var(--text2)' }}>Partially Paid</strong> is an invoice
+                  status and never a payment status. <strong style={{ color: 'var(--text2)' }}>Overdue</strong> is a declared
+                  invoice status that is never stored — it is derived from the due date, so it is not listed above and a chip
+                  asking for it would match nothing. On the payment side only{' '}
+                  <strong style={{ color: 'var(--text2)' }}>Received</strong> is reachable on a live row: payments are immutable,
+                  so a refund is a reversal row rather than a status change.
                 </p>
               </Card>
             </div>
-            )
-          ) : (
-            <Card title="Invoices" bodyStyle={{ padding: 0 }}>
-              {tabular ? (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 840 }}>
-                    <thead>
-                      <tr style={{ background: 'var(--th-bg)' }}>
-                        {/* §8.3 — Amount is omitted, not masked, for a money-blind role.
-                            `Due` here is a due *date* (e.g. "2 Aug 2026"), not a ₨ figure —
-                            it stays visible for every role; only the true money column is gated. */}
-                        {['Invoice', 'Client', 'Booking', ...(money ? ['Amount'] : []), 'Due', 'Status', 'Actions'].map((h) => (
-                          <th key={h} style={th}>
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {invoiceRows.map(({ row: i, glance, detail }) => (
-                        <tr key={i.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                          <td className="identifier" style={{ ...td, color: 'var(--link)', fontWeight: 600 }}>
-                            <IntelCard
-                              glance={glance}
-                              detail={detail}
-                              detailTitle={i.id}
-                              detailSubtitle={`${i.client} · ${i.status}`}
-                            >
-                              <span>{i.id}</span>
-                            </IntelCard>
-                          </td>
-                          <td style={td}>{i.client}</td>
-                          <td className="figure" style={{ ...td, color: 'var(--link)', fontSize: 'var(--t-meta)' }}>
-                            <Link to={`/rentals/${i.booking}`} style={{ color: 'inherit', textDecoration: 'none' }}>
-                              {i.booking}
-                            </Link>
-                          </td>
-                          {money && <td className="figure" style={{ ...td, fontWeight: 600 }}>{i.amount}</td>}
-                          <td style={{ ...td, color: 'var(--text2)' }}>{i.due}</td>
-                          <td style={td}>
-                            <span
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                height: 20,
-                                padding: '0 8px',
-                                borderRadius: 'var(--r-badge)',
-                                background: STATUS[INVOICE_TOKEN[i.status]].bg,
-                                color: STATUS[INVOICE_TOKEN[i.status]].fg,
-                                fontSize: 'var(--t-meta)',
-                                fontWeight: 600,
-                              }}
-                            >
-                              {i.status}
-                            </span>
-                          </td>
-                          <td style={{ ...td, display: 'flex', gap: 6 }}>
-                            {i.status !== 'Void' && i.status !== 'Paid' && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedInvoiceForRecord(i.id)
-                                  setShowRecordPayment(true)
-                                }}
-                                style={{
-                                  border: '1px solid var(--border)',
-                                  background: 'var(--card)',
-                                  color: 'var(--nav-active-accent)',
-                                  padding: '2px 8px',
-                                  borderRadius: 'var(--r-btn)',
-                                  fontSize: 'var(--t-meta)',
-                                  fontWeight: 600,
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                + Pay
-                              </button>
-                            )}
-                            {i.status === 'Paid' || i.status === 'Partially Paid' ? (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedInvoiceForRefund(i)}
-                                style={{
-                                  border: '1px solid var(--border)',
-                                  background: 'var(--card)',
-                                  color: 'var(--text2)',
-                                  padding: '2px 8px',
-                                  borderRadius: 'var(--r-btn)',
-                                  fontSize: 'var(--t-meta)',
-                                  fontWeight: 500,
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                Refund
-                              </button>
-                            ) : null}
-                            {i.status !== 'Void' && (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedInvoiceForVoid(i)}
-                                style={{
-                                  border: '1px solid var(--border)',
-                                  background: 'var(--card)',
-                                  color: 'var(--danger)',
-                                  padding: '2px 8px',
-                                  borderRadius: 'var(--r-btn)',
-                                  fontSize: 'var(--t-meta)',
-                                  fontWeight: 500,
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                Void
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                /* Below 768px an 840px-wide table is a horizontal scrollbar, not a
-                   layout (`useTabularLayout`, `lib/device.ts`) — same threshold and
-                   card shape RentalsList's table-to-cards branch uses. Every column
-                   and action from the table above is preserved, just restacked. */
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  {invoiceRows.map(({ row: i, glance, detail }) => (
-                    <div
-                      key={i.id}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 'var(--sp-sm)',
-                        padding: '13px 14px',
-                        borderBottom: '1px solid var(--border)',
-                      }}
-                    >
-                      <span style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-                        <IntelCard
-                          glance={glance}
-                          detail={detail}
-                          detailTitle={i.id}
-                          detailSubtitle={`${i.client} · ${i.status}`}
-                        >
-                          <span className="identifier" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--link)' }}>
-                            {i.id}
-                          </span>
-                        </IntelCard>
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            height: 20,
-                            padding: '0 8px',
-                            borderRadius: 'var(--r-badge)',
-                            background: STATUS[INVOICE_TOKEN[i.status]].bg,
-                            color: STATUS[INVOICE_TOKEN[i.status]].fg,
-                            fontSize: 'var(--t-meta)',
-                            fontWeight: 600,
-                            flexShrink: 0,
-                          }}
-                        >
-                          {i.status}
-                        </span>
-                      </span>
 
-                      <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{i.client}</span>
+            {/*
+              §9.1's right rail — `P&L SUMMARY` then `BY METHOD`.
 
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)' }}>
-                        <Icon name="box" size={12} style={{ color: 'var(--muted)' }} />
-                        <Link to={`/rentals/${i.booking}`} className="figure" style={{ color: 'var(--link)', textDecoration: 'none' }}>
-                          {i.booking}
-                        </Link>
-                      </span>
+              **"Right rails collapse below 1180" is REFLOW, not hide** —
+              `WIREFRAME_RULINGS_2026-08-12.md` §7, and §9.1's own tablet note
+              is "rail drops below". `Rail` wraps `CollapsibleAside`, which
+              reads "collapse" as *hide behind a 28px handle* at both tablet and
+              phone; under that reading the P&L summary and the method
+              breakdown vanish on the 768–1179px tablet this product actually
+              targets, behind a control nothing labels.
 
-                      <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                        {money && (
-                          <span className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
-                            {i.amount}
-                          </span>
-                        )}
-                        <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Due {i.due}</span>
-                      </span>
-
-                      {/* Every action from the table's Actions column, same conditions — restacked to full-width touch rows instead of squeezed into a 6px-gap row. */}
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap', marginTop: 2 }}>
-                        {i.status !== 'Void' && i.status !== 'Paid' && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedInvoiceForRecord(i.id)
-                              setShowRecordPayment(true)
-                            }}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              height: 40,
-                              flex: '1 1 88px',
-                              border: '1px solid var(--border)',
-                              background: 'var(--card)',
-                              color: 'var(--nav-active-accent)',
-                              padding: '0 12px',
-                              borderRadius: 'var(--r-btn)',
-                              fontSize: 'var(--t-meta)',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            + Pay
-                          </button>
-                        )}
-                        {i.status === 'Paid' || i.status === 'Partially Paid' ? (
-                          <button
-                            type="button"
-                            onClick={() => setSelectedInvoiceForRefund(i)}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              height: 40,
-                              flex: '1 1 88px',
-                              border: '1px solid var(--border)',
-                              background: 'var(--card)',
-                              color: 'var(--text2)',
-                              padding: '0 12px',
-                              borderRadius: 'var(--r-btn)',
-                              fontSize: 'var(--t-meta)',
-                              fontWeight: 500,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Refund
-                          </button>
-                        ) : null}
-                        {i.status !== 'Void' && (
-                          <button
-                            type="button"
-                            onClick={() => setSelectedInvoiceForVoid(i)}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              height: 40,
-                              flex: '1 1 88px',
-                              border: '1px solid var(--border)',
-                              background: 'var(--card)',
-                              color: 'var(--danger)',
-                              padding: '0 12px',
-                              borderRadius: 'var(--r-btn)',
-                              fontSize: 'var(--t-meta)',
-                              fontWeight: 500,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Void
-                          </button>
-                        )}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          )}
-
-          <Card title="Status vocabularies">
-            {/* §5.2 — spelled out on the page, because conflating them is the bug. */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              {[
-                { title: 'Payment statuses', list: PAYMENT_STATUSES },
-                { title: 'Invoice statuses', list: INVOICE_STATUSES },
-              ].map((g) => (
-                <div key={g.title}>
-                  <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 7 }}>{g.title}</div>
-                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                    {g.list.map((s) => (
-                      <span
-                        key={s}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          height: 20,
-                          padding: '0 8px',
-                          borderRadius: 'var(--r-badge)',
-                          border: '1px solid var(--border)',
-                          background: 'var(--card2)',
-                          color: 'var(--text2)',
-                          fontSize: 'var(--t-meta)',
-                          fontWeight: 600,
-                        }}
-                      >
-                        {s}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-              These are different sets. <strong style={{ color: 'var(--text2)' }}>Partially Paid</strong> is an invoice
-              status and never a payment status.
-            </p>
-          </Card>
-        </div>
-
-        <Rail>
-          {/* Law 6 / §8.3 — every row here is a ₨ figure; the whole Card is omitted, not blurred. */}
-          {money && (
-            <Card title="Summary">
-              <SummaryRows
-                rows={[
-                  { label: 'Revenue', value: rs(REVENUE) },
-                  { label: 'Received', value: rs(RECEIVED), tone: 'success' },
-                  { label: 'Receivable', value: rs(RECEIVABLE), tone: 'progress' },
-                  { label: 'Gross Profit', value: rs(GROSS_PROFIT) },
-                  { label: 'Net Profit', value: rs(NET_PROFIT) },
-                ]}
-              />
-            </Card>
-          )}
-
-          <div style={{ ...cardStyle, padding: 'var(--sp-md)', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
-            Deposits are liabilities and never appear in revenue or receivables. Payments are immutable —
-            corrections are reversal rows, never edits.
+              So the rail is rendered only at desktop, and the same cards are
+              rendered inline beneath the list below it — the `CasesQueue.tsx`
+              pattern the ruling cites. `CollapsibleAside`'s defaults are NOT
+              changed: other pages depend on them.
+            */}
+            {viewport === 'desktop' ? (
+              <Rail>{railCards}</Rail>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>{railCards}</div>
+            )}
           </div>
-        </Rail>
-      </div>
+        </div>
+      </PageBody>
+      )}
 
-      {/* Finance Modals */}
-      {/* Mounted conditionally (same pattern as RefundPaymentModal below): the modal
-          captures initialInvoiceId in useState on first mount, so a persistent mount
+      {/* Finance modals. Mounted only for a session that can read the records
+          they operate on, and remounted per open: `RecordPaymentModal` captures
+          `initialInvoiceId` in `useState` on first mount, so a persistent mount
           posts every later payment against the first-ever invoice (P0-1,
-          BUG_SWEEP_REGISTER_v1.0). Remounting per open recaptures the right row. */}
-      {showRecordPayment && (
+          BUG_SWEEP_REGISTER_v1.0). */}
+      {/* `canTakePayment` as well as `money`: the three launchers already carry
+          it, and repeating it here means a role change mid-session cannot leave
+          an open payment form belonging to a session that may not post it. */}
+      {money && canTakePayment && showRecordPayment && (
         <RecordPaymentModal
           isOpen={showRecordPayment}
           onClose={() => setShowRecordPayment(false)}
           onSuccess={handleRecordPaymentSuccess}
           initialInvoiceId={selectedInvoiceForRecord}
-          invoices={invoicesList}
+          invoices={modalInvoices}
         />
       )}
 
-      <CreateInvoiceModal
-        isOpen={showCreateInvoice}
-        onClose={() => setShowCreateInvoice(false)}
-        onSuccess={handleCreateInvoiceSuccess}
-      />
+      {/* `canIssueInvoice` here as well as on the launcher, for the reason the
+          Record Payment mount above states: a role change mid-session must not
+          leave an open money form belonging to a session that may no longer
+          submit it. This mount is unconditional on `showCreateInvoice` and is
+          left that way — the modal reads `isOpen` itself, and changing its mount
+          lifecycle is not this pass. */}
+      {money && canIssueInvoice && (
+        <CreateInvoiceModal
+          isOpen={showCreateInvoice}
+          onClose={() => setShowCreateInvoice(false)}
+          onSuccess={handleCreateInvoiceSuccess}
+        />
+      )}
 
-      {selectedInvoiceForRefund && (
+      {/* `canRefund` / `canVoid` here as well as on the launchers, for the reason
+          the Record Payment mount above states: a role change mid-session must
+          not leave an open money form belonging to a session that may no longer
+          submit it. */}
+      {money && canRefund && selectedInvoiceForRefund && (
         <RefundPaymentModal
           isOpen={!!selectedInvoiceForRefund}
           onClose={() => setSelectedInvoiceForRefund(null)}
           onSuccess={handleRefundSuccess}
-          invoiceId={selectedInvoiceForRefund.id}
-          client={selectedInvoiceForRefund.client}
-          currentPaidPaisa={selectedInvoiceForRefund.paidPaisa}
+          invoiceId={selectedInvoiceForRefund.invoiceNo}
+          client={selectedInvoiceForRefund.clientName}
+          currentPaidPaisa={selectedInvoiceForRefund.paidAmount}
         />
       )}
 
-      {selectedInvoiceForVoid && (
+      {money && canVoid && selectedInvoiceForVoid && (
         <VoidInvoiceModal
           isOpen={!!selectedInvoiceForVoid}
           onClose={() => setSelectedInvoiceForVoid(null)}
           onSuccess={handleVoidSuccess}
-          invoiceId={selectedInvoiceForVoid.id}
-          client={selectedInvoiceForVoid.client}
+          invoiceId={selectedInvoiceForVoid.invoiceNo}
+          client={selectedInvoiceForVoid.clientName}
         />
       )}
 
       <FooterNote extra={['Finance consumes operational data and never creates it']} />
     </div>
+  )
+}
+
+/**
+ * Law 3 — the badge reads the TIMESTAMP, not the label.
+ *
+ * `invoices_void_requires_reason` (0006:124-127) constrains `voided_at`,
+ * `voided_by`, `void_reason` and `credit_note_no` together and says nothing at
+ * all about `status`. So `voided_at` is the fact the database guarantees and
+ * `status = 'Void'` is a label nothing forces to agree with it. When the two
+ * disagree, the timestamp wins here — the same rule `InvoiceListRow.isVoid`
+ * follows.
+ */
+function StatusBadge({ row }: { row: InvoiceListRow }) {
+  const label = row.isVoid ? 'Void' : row.status
+  const token = INVOICE_TOKEN[label]
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        height: 20,
+        padding: '0 8px',
+        borderRadius: 'var(--r-badge)',
+        background: STATUS[token].bg,
+        color: STATUS[token].fg,
+        fontSize: 'var(--t-meta)',
+        fontWeight: 600,
+        flexShrink: 0,
+      }}
+    >
+      {label}
+    </span>
+  )
+}
+
+/**
+ * The three row actions, and the columns that decide whether each applies.
+ *
+ * Every condition now reads a real column instead of the status label:
+ *  - **+ Pay** — there is something left to pay: `outstanding_amount > 0`.
+ *    That is the invoice's own settled figure, computed by the engine.
+ *  - **Refund** — something was actually received: `paid_amount > 0`. The old
+ *    condition (`status === 'Paid' || 'Partially Paid'`) offered a refund on an
+ *    invoice whose label had drifted and refused one where it had not caught up.
+ *  - **Void** — the invoice is not already void, by timestamp.
+ */
+function RowActions({
+  row,
+  phone = false,
+  canPay,
+  canRefund,
+  canVoid,
+  onPay,
+  onRefund,
+  onVoid,
+}: {
+  row: InvoiceListRow
+  phone?: boolean
+  /**
+   * `rbac.canRecordPayment` for the signed-in session, passed in rather than
+   * read here so the desktop table and the phone cards cannot answer the
+   * permission question differently — they are two renderings of one row, and
+   * this component is the single place `+ Pay` is drawn.
+   *
+   * Required, not defaulted: a `canPay = true` default would silently restore
+   * the ungated behaviour at any future call site that forgets it.
+   */
+  canPay: boolean
+  /** `rbac.canRecordPayment` — see the derivation in `Finance()`. Required, same reason as `canPay`. */
+  canRefund: boolean
+  /** `rbac.canVoidInvoice` — Owner / Accounts. Required, same reason as `canPay`. */
+  canVoid: boolean
+  onPay: () => void
+  onRefund: () => void
+  onVoid: () => void
+}) {
+  const base = phone
+    ? {
+        display: 'inline-flex' as const,
+        alignItems: 'center' as const,
+        justifyContent: 'center' as const,
+        height: 40,
+        flex: '1 1 88px',
+        padding: '0 12px',
+        border: '1px solid var(--border)',
+        background: 'var(--card)',
+        borderRadius: 'var(--r-btn)',
+        fontSize: 'var(--t-meta)',
+        cursor: 'pointer' as const,
+      }
+    : {
+        border: '1px solid var(--border)',
+        background: 'var(--card)',
+        padding: '2px 8px',
+        borderRadius: 'var(--r-btn)',
+        fontSize: 'var(--t-meta)',
+        cursor: 'pointer' as const,
+      }
+
+  return (
+    <>
+      {/*
+        Every one of the three now carries BOTH questions: may this session do
+        it (the `can*` boolean, from `lib/rbac`), and does this invoice admit it
+        (the row conditions, from real columns). They are separate questions and
+        neither substitutes for the other — an invoice with nothing outstanding
+        offers no Pay to anyone, and an Owner is not offered a Refund on an
+        invoice nothing was received against.
+
+        Refund and Void were the two that answered only the second. `Refund` was
+        `!row.isVoid && row.paidAmount > 0` — no session question at all — and
+        `Void` was `!row.isVoid`, with a comment here that noted the missing
+        `canVoidInvoice` check and left it. Both moved money or moved an invoice
+        to a terminal state for anyone who could see the table, which is Admin
+        and Manager as well.
+
+        Absent, not disabled, per `MovementList.tsx:307` — a greyed control
+        still tells you the action lives here.
+      */}
+      {canPay && !row.isVoid && row.outstandingAmount > 0 && (
+        <button type="button" onClick={onPay} style={{ ...base, color: 'var(--nav-active-accent)', fontWeight: 600 }}>
+          + Pay
+        </button>
+      )}
+      {canRefund && !row.isVoid && row.paidAmount > 0 && (
+        <button type="button" onClick={onRefund} style={{ ...base, color: 'var(--text2)', fontWeight: 500 }}>
+          Refund
+        </button>
+      )}
+      {canVoid && !row.isVoid && (
+        <button type="button" onClick={onVoid} style={{ ...base, color: 'var(--danger)', fontWeight: 500 }}>
+          Void
+        </button>
+      )}
+    </>
   )
 }

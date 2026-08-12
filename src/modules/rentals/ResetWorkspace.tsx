@@ -1,13 +1,17 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, Button, cardStyle, Rail, SideRail } from '../../components/ui/Page'
-import { EmptyState } from '../../components/ui/StateViews'
+import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
-import { JOBS } from '../../lib/workflow'
+import { JOBS, BOOKING_STATUS } from '../../lib/workflow'
 import type { JobState } from '../../lib/workflow'
+import { useViewport } from '../../lib/device'
+import { useAuth } from '../../lib/auth'
+import { stepWriteGate } from '../../data/operationsShell'
 import { BOOKING } from '../../data/booking'
+import { FloorAside, floorPlacements } from '../operations/FloorAside'
 import { PACKAGE } from '../../data/packing'
 import {
   UNITS,
@@ -94,7 +98,24 @@ const TONE: Record<QueueState, StatusKey> = {
   Ready: 'in',
 }
 
-const CURRENT_USER = 'Ramesh Shrestha'
+/**
+ * Was `const CURRENT_USER = 'Ramesh Shrestha'`, stamped as `actor` on every
+ * cleaning and QC record this screen creates (four call sites below).
+ *
+ * A reset record names who cleaned a unit and who QC'd it, and the QC gate
+ * compares those two — `selfCheck` at the QC panel refuses a self-check by
+ * testing `by === rec.actor`. With a module-level constant, EVERY operator was
+ * that same name, so the self-check rule compared a literal against itself and
+ * could neither pass nor fail meaningfully.
+ *
+ * There is no honest stand-in for the person who did the work, so there is none:
+ * `actorName(user)` returns `null` with no session, and the callers refuse
+ * rather than substituting.
+ */
+function actorName(user: { name: string } | null): string | null {
+  const name = user?.name?.trim()
+  return name ? name : null
+}
 
 interface LineRec {
   queueState: QueueState
@@ -157,10 +178,49 @@ function problemReady(draft: ProblemDraft): boolean {
   return false
 }
 
-export default function ResetWorkspace({ embedded = false, readOnly = false }: { embedded?: boolean; readOnly?: boolean } = {}) {
+/*
+ * ⭐ RULED 12 Aug 2026 (Rulings §3): operations are ROUTES, so `embedded` and
+ * `readOnly` are both gone — they existed only to serve the operations modal.
+ *
+ * `readOnly` is not lost with them. It carried one real behaviour: a Closed
+ * booking opens Reset for reading and writes nothing. That answer came from
+ * `stepWriteGate('Reset', bookingStatus)`, which this page can ask directly,
+ * so it is now derived here instead of passed in — the same canonical gate,
+ * one caller closer to the thing it gates.
+ */
+export default function ResetWorkspace() {
   const navigate = useNavigate()
   const { bookingNo } = useParams()
   const id = bookingNo ?? BOOKING.no
+  /** The one identity this screen's dispatch may act as. No fallback. */
+  const { user } = useAuth()
+  /**
+   * The name written into `actor` on a cleaning or QC record. `null` with no
+   * session — the four handlers below refuse rather than stamping a literal.
+   */
+  const actor = actorName(user)
+  const NO_ACTOR =
+    'Nobody is signed in, so this cleaning work cannot be recorded against anyone. ' +
+    'A reset names who cleaned the unit and who QC’d it, and the QC gate compares the two. Sign in and reopen this workspace.'
+  /* Law 13/14 — width decides, at Foundation's locked 768 / 1180. */
+  const viewport = useViewport()
+  const desktop = viewport === 'desktop'
+  const phone = viewport === 'phone'
+  const place = floorPlacements(desktop, phone)
+  /*
+   * The Closed-booking read-only case the shell used to pass in as a prop.
+   * `stepWriteGate` is the canonical answer and supplies the banner's wording.
+   *
+   * Only the *backward* half of the gate is enforced as read-only: a booking
+   * that has moved past Reset's own stage can no longer be reset.
+   * TODO(decision): the forward half — a booking that has not reached
+   * `Returned` yet — is left writable, which is what this route has always
+   * done. Enforcing it would lock the workspace on every booking before
+   * return, and whether the floor may pre-stage a reset is a product call, not
+   * something to settle while relocating a prop.
+   */
+  const resetGate = stepWriteGate('Reset', BOOKING.status)
+  const readOnly = BOOKING_STATUS[BOOKING.status].order > BOOKING_STATUS[JOBS.Reset.runsAt].order
 
   const [lines, setLines] = useState<Record<string, LineRec>>(buildInitialLines)
   const [selected, setSelected] = useState<Set<string>>(() => new Set(SEED_CLEANING))
@@ -173,6 +233,21 @@ export default function ResetWorkspace({ embedded = false, readOnly = false }: {
   const [qcBy, setQcByDraft] = useState<Record<string, string>>({})
   const [qcReason, setQcReason] = useState<Record<string, string>>({})
   const [jobCompletedAt, setJobCompletedAt] = useState<string | null>(null)
+  /**
+   * Why a dispatch failure needs somewhere to be rendered.
+   *
+   * `completeReset` is a real write now, and its failure used to be reported
+   * only by `console.error('reset failed:', err)` on a floating promise — while
+   * `setJobCompletedAt('—')` ran unconditionally on the line below it. The header
+   * then rendered "Reset job completed at —" and `canCompleteJob` went false, so
+   * from the operator's seat the job was done and the button was spent, whether
+   * or not a single `cleaning_queue_entries` row was touched. Today none ever is
+   * (the empty `unitIds` list is refused by `validate`).
+   *
+   * Law 12 — the failure is inline and persistent, and the completion stamp is
+   * set only on a resolved promise.
+   */
+  const [dispatchError, setDispatchError] = useState<string | null>(null)
 
   const set = (uid: string, patch: Partial<LineRec>) => setLines((p) => ({ ...p, [uid]: { ...(p[uid] as LineRec), ...patch } }))
 
@@ -260,22 +335,41 @@ export default function ResetWorkspace({ embedded = false, readOnly = false }: {
   const start = (uid: string) => {
     if (readOnly) return
     const rec = lines[uid] as LineRec
-    set(uid, { queueState: 'Cleaning', actor: rec.actor ?? CURRENT_USER, actedAt: '—' })
+    // An existing `actor` is a real prior worker from the seeded queue; only a
+    // NEW attribution needs a session.
+    const attributed = rec.actor ?? actor
+    if (!attributed) {
+      setDispatchError(NO_ACTOR)
+      return
+    }
+    setDispatchError(null)
+    set(uid, { queueState: 'Cleaning', actor: attributed, actedAt: '—' })
     setSelected((prev) => new Set(prev).add(uid))
   }
 
   /* ── checklist ticking — shared tasks cascade to every selected item ────── */
   const toggleShared = (task: string) => {
     if (readOnly) return
+    // Ticking a task attributes the cleaning to whoever is doing it.
+    if (!actor && selUnits.some((u) => !(lines[u.id] as LineRec).actor)) {
+      setDispatchError(NO_ACTOR)
+      return
+    }
+    setDispatchError(null)
     const allDone = selUnits.every((u) => (lines[u.id] as LineRec).ticks.has(task))
     setLines((prev) => {
       const next = { ...prev }
       selUnits.forEach((u) => {
         const rec = next[u.id] as LineRec
+        const attributed = rec.actor ?? actor
+        // Unreachable — the guard above returns when any selected unit would
+        // need an attribution there is no session to supply. Kept so the
+        // invariant is enforced here too, not just asserted upstream.
+        if (!attributed) return
         const ticks = new Set(rec.ticks)
         if (allDone) ticks.delete(task)
         else ticks.add(task)
-        next[u.id] = { ...rec, ticks, queueState: rec.queueState === 'Waiting' && ticks.size > 0 ? 'Cleaning' : rec.queueState, actor: rec.actor ?? CURRENT_USER }
+        next[u.id] = { ...rec, ticks, queueState: rec.queueState === 'Waiting' && ticks.size > 0 ? 'Cleaning' : rec.queueState, actor: attributed }
       })
       return next
     })
@@ -283,19 +377,33 @@ export default function ResetWorkspace({ embedded = false, readOnly = false }: {
   const toggleUnitTask = (uid: string, task: string) => {
     if (readOnly) return
     const rec = lines[uid] as LineRec
+    const attributed = rec.actor ?? actor
+    if (!attributed) {
+      setDispatchError(NO_ACTOR)
+      return
+    }
+    setDispatchError(null)
     const ticks = new Set(rec.ticks)
     if (ticks.has(task)) ticks.delete(task)
     else ticks.add(task)
-    set(uid, { ticks, queueState: rec.queueState === 'Waiting' && ticks.size > 0 ? 'Cleaning' : rec.queueState, actor: rec.actor ?? CURRENT_USER })
+    set(uid, { ticks, queueState: rec.queueState === 'Waiting' && ticks.size > 0 ? 'Cleaning' : rec.queueState, actor: attributed })
   }
 
   const markCleanMoveToQc = () => {
     if (readOnly) return
+    if (!actor && eligibleUnits.some((u) => !(lines[u.id] as LineRec).actor)) {
+      setDispatchError(NO_ACTOR)
+      return
+    }
+    setDispatchError(null)
     setLines((prev) => {
       const next = { ...prev }
       eligibleUnits.forEach((u) => {
         const rec = next[u.id] as LineRec
-        next[u.id] = { ...rec, queueState: 'QC', actor: rec.actor ?? CURRENT_USER, actedAt: rec.actedAt ?? '—' }
+        const attributed = rec.actor ?? actor
+        // Unreachable — guarded above. See `toggleShared`.
+        if (!attributed) return
+        next[u.id] = { ...rec, queueState: 'QC', actor: attributed, actedAt: rec.actedAt ?? '—' }
       })
       return next
     })
@@ -366,17 +474,18 @@ export default function ResetWorkspace({ embedded = false, readOnly = false }: {
   // Floor scale (DEVICES.md item 3) is applied automatically by route in App.tsx's Shell, not here.
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      {/* Closed bookings — OperationsShell still opens this tab so the queue stays viewable
+      {/* Closed bookings — the route still opens so the queue stays viewable
           (§4.1 "every step is always viewable"), but every write/checkbox/save control below
-          is disabled. Icon + text, never colour alone (Law 11). */}
+          is disabled. Icon + text, never colour alone (Law 11). Inline and persistent,
+          never a toast (Law 12). */}
       {readOnly && (
         <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '10px 14px', borderRadius: 'var(--r-btn)', background: 'var(--st-neutral-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600 }}>
           <Icon name="lock" size={14} style={{ flexShrink: 0, color: 'var(--muted)' }} />
-          This booking is closed — read only.
+          {resetGate.reason ?? 'This booking is closed — read only.'}
         </div>
       )}
-      {!embedded && (
-      /* ── header — booking status is fixed at Returned; only the job state moves ── */
+      {/* ── header — booking status is fixed at Returned; only the job state moves.
+           Rulings §4: no `←`; the shell breadcrumb is the upward affordance. ── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -418,7 +527,6 @@ export default function ResetWorkspace({ embedded = false, readOnly = false }: {
           </div>
         </div>
       </div>
-      )}
 
       {/* §4 booking summary strip, same shape as the sibling workspaces. */}
       <div style={{ ...cardStyle, display: 'flex', gap: 0, flexWrap: 'wrap', overflow: 'hidden' }}>
@@ -441,7 +549,7 @@ export default function ResetWorkspace({ embedded = false, readOnly = false }: {
       </div>
 
       {/* §3.2 — chip tiles. Priority is styled apart and does not enter the state sum. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: phone ? 'repeat(2, minmax(0,1fr))' : 'repeat(5, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
         {([
           { key: 'priority', label: 'PRIORITY', sub: 'Older than 4 hrs or urgent', value: priorityCount, icon: 'flag' as const, tone: 'danger' as StatusKey },
           { key: 'Waiting', label: 'WAITING', sub: 'Not started', value: counts.Waiting, icon: 'timer' as const, tone: TONE.Waiting },
@@ -504,9 +612,20 @@ export default function ResetWorkspace({ embedded = false, readOnly = false }: {
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      {/* §3.5 draws Reset as one column at desktop AND tablet and a single stack
+          at phone. The categories rail and the batch panel reflow rather than
+          collapse below 1180 (Rulings §7), same primitive the sibling
+          workspaces use. */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: desktop ? 'auto minmax(0,1fr) auto' : phone ? '1fr' : 'minmax(0,1fr) 320px',
+          gap: 'var(--sp-md)',
+          alignItems: 'start',
+        }}
+      >
         {/* ── left — categories, derived counts ──────────────────────────── */}
-        <SideRail width={220} label="Categories">
+        <FloorAside collapsible={desktop} side="left" width={220} label="Categories" style={place.tree}>
         <Card title="Categories">
           {CATEGORIES.map((c) => {
             const units = UNITS.filter((u) => u.category === c.name)
@@ -523,9 +642,10 @@ export default function ResetWorkspace({ embedded = false, readOnly = false }: {
             Category counts are derived from the queue and always sum to {TOTAL_ITEMS}.
           </p>
         </Card>
-        </SideRail>
+        </FloorAside>
 
         {/* ── centre — the queue ──────────────────────────────────────────── */}
+        <div style={{ minWidth: 0, ...place.list }}>
         <Card
           title="Reset Queue"
           bodyStyle={{ padding: 0 }}
@@ -627,9 +747,10 @@ export default function ResetWorkspace({ embedded = false, readOnly = false }: {
             </table>
           </div>
         </Card>
+        </div>
 
-        {/* ── right — the batch action panel, the one primary (§9.3) ──────── */}
-        <Rail width={320} label="Reset selected items">
+        {/* ── right — the batch action panel ─────────────────────────────── */}
+        <FloorAside collapsible={desktop} side="right" width={320} label="Reset selected items" style={place.rail}>
         <Card title={`Reset Selected Items (${selected.size})`} action={selected.size > 0 ? <button type="button" onClick={clearSelection} style={{ border: 'none', background: 'transparent', color: 'var(--link)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'var(--t-meta)' }}>Clear</button> : undefined}>
           {selUnits.length === 0 ? (
             <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Select items from the queue to work a batch.</p>
@@ -829,29 +950,43 @@ export default function ResetWorkspace({ embedded = false, readOnly = false }: {
                 style={{ width: '100%', minHeight: 44, marginTop: 4, padding: 'var(--sp-sm)', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
               />
 
-              {/* §9.2/§9.3 — the one primary action, owned by this panel. */}
+              {/*
+                ⭐ FIXED 12 Aug 2026 — this page shipped TWO blue primaries:
+                this one and `Complete Reset` in the footer. Spec 03's closing
+                notes allow exactly one per workspace, **and it is the
+                completion gate**, so this batch action is now a secondary.
+
+                Nothing else about it changes: it is still the batch panel's
+                own action, still disabled with its reason named (§9.2), and
+                `Complete Reset` is still the one filled button on the page.
+              */}
               <button
                 type="button"
                 disabled={markCleanReason !== null}
                 onClick={markCleanMoveToQc}
-                title={markCleanReason ?? undefined}
                 style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%', height: 36, marginTop: 10,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%', minHeight: 44, marginTop: 10,
                   borderRadius: 'var(--r-btn)', fontSize: 'var(--t-ui)', fontWeight: 600, fontFamily: 'inherit',
                   cursor: markCleanReason === null ? 'pointer' : 'not-allowed',
-                  ...(markCleanReason === null ? BLUE_PRIMARY : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
+                  ...(markCleanReason === null
+                    ? { background: 'var(--btn-secondary-bg)', color: 'var(--text)', border: '1px solid var(--btn-secondary-border)' }
+                    : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
                 }}
               >
                 <Icon name="checklist" size={15} />
                 Mark Clean &amp; Move to QC
               </button>
+              {/* Law 12 — the reason is inline and persistent, never a `title`
+                  tooltip (inert on touch and for keyboard users) and never a toast. */}
               {markCleanReason && (
-                <p style={{ margin: '6px 0 0', textAlign: 'right', fontSize: 'var(--t-meta)', color: 'var(--progress-text)', fontWeight: 600 }}>{markCleanReason}</p>
+                <p role="status" style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--progress-text)', fontWeight: 600, lineHeight: 1.45 }}>
+                  {markCleanReason}
+                </p>
               )}
             </>
           )}
         </Card>
-        </Rail>
+        </FloorAside>
       </div>
 
       {/* §9.3 — the selection bar shows only the count and Clear Selection. No second primary. */}
@@ -867,10 +1002,11 @@ export default function ResetWorkspace({ embedded = false, readOnly = false }: {
         </div>
       )}
 
-      {/* §13 — metrics, reconciled against the same population they describe. */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)' }}>
+      {/* §13 — metrics, reconciled against the same population they describe.
+          Below 768 they stack rather than squeeze into two columns (Law 14). */}
+      <div style={{ display: 'grid', gridTemplateColumns: phone ? '1fr' : '1fr 1fr', gap: 'var(--sp-md)' }}>
         <Card title="Today's Reset Summary">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: phone ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 10 }}>
             {[
               { l: 'Completed today', v: completedToday, tone: 'var(--success-text)' },
               { l: 'Remaining', v: remainingToday, tone: 'var(--progress-text)' },
@@ -926,10 +1062,33 @@ export default function ResetWorkspace({ embedded = false, readOnly = false }: {
             type="button"
             disabled={!canCompleteJob}
             onClick={() => {
-              if (canCompleteJob) {
-                import('../../actions/rentals/index').then(m => m.completeReset({ id: id! }, { userId: 'USR-001', role: 'Manager' }));
-                setJobCompletedAt('—');
+              if (!canCompleteJob) return
+              // The identity is the signed-in one or there is no dispatch. The
+              // `{ userId: 'USR-001', role: 'Manager' }` this replaces stamped a
+              // made-up operator on every reset — and on a table whose own
+              // comment (0003:906) is that WHO did the work is the point.
+              if (!user) {
+                setDispatchError('You are not signed in, so this reset cannot be recorded against anyone. Nothing was written.')
+                return
               }
+              setDispatchError(null)
+              // `unitIds` is deliberately empty: this workspace's item ids come
+              // from `data/reset`'s hardcoded UNITS, not from
+              // `cleaning_queue_entries.unit_id`, so there is nothing true to
+              // send and `completeReset`'s own `validate` refuses it. Reset is
+              // recorded per item (0003:899); a booking id alone cannot say
+              // which items were reset.
+              // ⚠ `setJobCompletedAt` is INSIDE `.then`. It used to sit after this
+              // block, firing synchronously on every press, so the header claimed
+              // the reset job was complete while the write was still in flight and,
+              // today, always failing.
+              import('../../actions/rentals/index')
+                .then(m => m.completeReset({ id: id!, unitIds: [] }, { userId: user.id, role: user.role }))
+                .then(() => setJobCompletedAt('—'))
+                .catch((err) => {
+                  console.error('reset failed:', err);
+                  setDispatchError(err instanceof Error ? err.message : String(err));
+                });
             }}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 7, height: 36, padding: '0 16px', borderRadius: 'var(--r-btn)',
@@ -945,6 +1104,9 @@ export default function ResetWorkspace({ embedded = false, readOnly = false }: {
       {completeReason && !jobCompletedAt && (
         <p style={{ margin: '-4px 2px 0', textAlign: 'right', fontSize: 'var(--t-meta)', color: 'var(--progress-text)', fontWeight: 600 }}>{completeReason}</p>
       )}
+      {/* Law 12 — inline and persistent, never a toast. It replaces a completion
+          stamp the operator used to get whether or not anything was written. */}
+      {dispatchError && <ErrorBanner title="The reset was not recorded" message={dispatchError} />}
     </div>
   )
 }

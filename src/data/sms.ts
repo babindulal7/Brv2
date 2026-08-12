@@ -84,7 +84,7 @@ export const VIEWER = {
   gateway: 'Sparrow',
   body: [
     'Hi Suman,',
-    'Your booking BK-2082-05-1032 for Sony FX6 (24-70mm GM Lens) has been confirmed from May 15, 2082 BS to May 18, 2082 BS.',
+    'Your booking B-1032 for Sony FX6 (24-70mm GM Lens) has been confirmed from May 15, 2082 BS to May 18, 2082 BS.',
     'Thank you for choosing Babin Rentals.',
     '– Team Babin Rentals',
   ],
@@ -96,8 +96,8 @@ export const VIEWER = {
     { label: 'Action Taken', at: '—', done: false },
   ],
   linked: [
-    { label: 'Booking', value: 'BK-2082-05-1032' },
-    { label: 'Invoice', value: 'INV-2082-05-2018' },
+    { label: 'Booking', value: 'B-1032' },
+    { label: 'Invoice', value: 'INV-2018' },
     { label: 'Payment', value: 'Paid NPR 48,500' },
   ],
 }

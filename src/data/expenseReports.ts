@@ -1,6 +1,7 @@
 import type { Slice } from '../components/ui/Charts'
 import type { StatusKey } from '../lib/status'
 import { rupees, formatMoney, roundHalfUp } from '../lib/money'
+import { wearsPrefixOf } from './numbering'
 import type { Paisa } from '../lib/money'
 
 /**
@@ -270,7 +271,7 @@ export const EXPENSES: ExpenseRow[] = [
     submittedBy: 'Sunil Shrestha',
     branch: 'Boudha (Head Office)',
     recurring: false,
-    link: { kind: 'Maintenance', id: 'MNT-2026-0114' },
+    link: { kind: 'Maintenance', id: 'MT-2026-0114' },
     attachments: 2,
   },
   {
@@ -434,7 +435,7 @@ export const EXPENSES: ExpenseRow[] = [
     submittedBy: 'Hari Tamang',
     branch: 'Thamel Branch',
     recurring: false,
-    link: { kind: 'Booking', id: 'BK-2026-0710' },
+    link: { kind: 'Booking', id: 'B-710' },
     attachments: 1,
   },
   {
@@ -496,7 +497,7 @@ export const EXPENSES: ExpenseRow[] = [
     submittedBy: 'Sita',
     branch: 'Thamel Branch',
     recurring: false,
-    link: { kind: 'Booking', id: 'BK-2026-0715' },
+    link: { kind: 'Booking', id: 'B-715' },
     attachments: 1,
     note: 'No tax invoice, so the gross amount is recorded with no VAT split.',
   },
@@ -518,7 +519,7 @@ export const EXPENSES: ExpenseRow[] = [
     submittedBy: 'Sunil Shrestha',
     branch: 'Boudha (Head Office)',
     recurring: false,
-    link: { kind: 'Maintenance', id: 'MNT-2026-0117' },
+    link: { kind: 'Maintenance', id: 'MT-2026-0117' },
     attachments: 1,
   },
   {
@@ -1017,7 +1018,18 @@ export const SEED_ERRORS: string[] = (() => {
   const ids = new Set(EXPENSES.map((r) => r.id))
   if (ids.size !== EXPENSES.length) errs.push('Expense IDs are not unique.')
 
-  const bad = EXPENSES.find((r) => r.billNo !== null && r.billNo.startsWith('INV-'))
+  /* A NEGATIVE assertion — §2.3, a vendor bill must not wear *our* sales-invoice
+     prefix. It is asked through the registry rather than against the literal
+     'INV-' so that it keeps testing the right thing if the invoice prefix is
+     ever edited in Settings ▸ Numbering. Do not "fix" this by deleting the
+     surrounding literals: inverting it silently accepts the collision the
+     render shipped.
+
+     `wearsPrefixOf`, not `isIssuedBy`: the question is whether a vendor bill
+     squats on our namespace at all, not whether it is a well-formed invoice
+     number. `INV-WHATEVER` fails the format but is exactly the collision worth
+     reporting, so the looser predicate is the correct one here. */
+  const bad = EXPENSES.find((r) => wearsPrefixOf('INV', r.billNo))
   if (bad) errs.push(`${bad.id}: a vendor bill must not carry our sales-invoice prefix (§2.3).`)
 
   return errs

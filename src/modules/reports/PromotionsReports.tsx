@@ -1,4 +1,7 @@
 import { PageHeader, Card, Rail, SideRail, cardStyle } from '../../components/ui/Page'
+import { PageBody } from '../../components/ui/PageBody'
+import { ReportToolbar } from '../../components/ui/ReportToolbar'
+import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { Donut, Legend } from '../../components/ui/Charts'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { formatMoney } from '../../lib/money'
@@ -16,16 +19,55 @@ function PromoKpiCard({ label, value, accent, note }: any) {
   )
 }
 
+/** The export body — the headline block, both tables and the two rail lists. */
+function promotionsCsv(totalIssued: number): ReportCsvRow[] {
+  return [
+    ['Figure', 'Value'],
+    ['Promotion revenue', formatMoney(METRICS.promotionRevenue as Paisa)],
+    ['Discounts given', formatMoney(METRICS.discountsGiven as Paisa)],
+    ['Return on promotion', `${RETURN_ON_PROMOTION}x`],
+    ['Revenue gained', formatMoney(IMPACT.gained as Paisa)],
+    ['Net impact', formatMoney(IMPACT.net as Paisa)],
+    ['Redemption rate', `${METRICS.redemptionRate}%`],
+    ['Coupons issued', totalIssued],
+    [],
+    ['Most used coupons'],
+    ['ID', 'Code', 'Issued', 'Redeemed', 'Expiry', 'ROP'],
+    ...TOP_COUPONS.map((c): ReportCsvRow => [c.id, c.code, c.issued, c.redeemed, c.expiry, `${c.rop}x`]),
+    [],
+    ['Bundle discount analysis'],
+    ['Bundle', 'Bookings generated', 'Bundle revenue', 'Discount', 'ROP'],
+    ...BUNDLE_ANALYSIS.map((b): ReportCsvRow => [
+      b.name,
+      b.bookings,
+      formatMoney(b.revenue as Paisa),
+      `-${formatMoney(b.discount as Paisa)}`,
+      `${b.rop}x`,
+    ]),
+    [],
+    ['Usage by client type'],
+    ...CLIENT_USAGE.map((u): ReportCsvRow => [u.type, u.count]),
+    [],
+    ['Discount types'],
+    ...DISCOUNT_TYPES.map((t): ReportCsvRow => [t.label, formatMoney(t.value as Paisa)]),
+  ]
+}
+
 export default function PromotionsReports() {
   const money = useCanViewMoney()
 
+  // Law 6 — promotion revenue, discounts given and net impact are all rupees.
   if (!money) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
         <PageHeader icon="box" title="Promotions & Discounts" description="Analyze campaign performance and discount ROI." />
-        <Card style={{ padding: 'var(--sp-xl)', textAlign: 'center', color: 'var(--text2)' }}>
-          Promotions data is restricted for your role.
-        </Card>
+        <PageBody
+          restricted
+          restrictedReason="Promotions are reported as revenue against discount given, so every headline figure on this page is money."
+          restrictedRequiredRole="Owner, Admin, Coordinator or Accounts"
+        >
+          {null}
+        </PageBody>
       </div>
     )
   }
@@ -39,6 +81,13 @@ export default function PromotionsReports() {
         title="Promotions & Discounts"
         description="Analyze campaign performance and discount ROI."
       />
+
+      {/*
+        Export only. `TOP_COUPONS` carries an `expiry` string and nothing else
+        dated; the campaign figures above it are single totals with no period
+        dimension, so a date range would filter one column of one table.
+      */}
+      <ReportToolbar title="Promotions & Discounts" csv={{ filename: 'promotions', build: () => promotionsCsv(totalIssued) }} />
 
       <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
         <PromoKpiCard

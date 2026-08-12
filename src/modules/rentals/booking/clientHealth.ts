@@ -25,6 +25,19 @@
  * genuinely **absent** today. An absent signal contributes nothing; it never
  * silently reads as zero-and-therefore-fine, and the quick-view renders it as
  * an honest em-dash.
+ *
+ * ## The one absent signal that is NOT allowed to contribute nothing
+ *
+ * "Contributes nothing" is the right default for a signal that can only ever
+ * *add* a reason — an overdue invoice count that is missing cannot make a
+ * client look better than they are.
+ *
+ * **Credit used is different.** It is the denominator of a blocker
+ * ("credit limit exceeded"), so treating its absence as nothing is the same as
+ * asserting the client is within their limit. See `creditCheck` below: when the
+ * check cannot be run it returns `unavailable`, and `clientHealth` raises that
+ * as a *critical* reason. A safety check that cannot be computed withholds the
+ * verdict; it does not pass it.
  */
 
 import { formatMoney, rupees } from '../../../lib/money'
@@ -131,8 +144,24 @@ export const CLIENT_HEALTH_THRESHOLDS = {
  *   the opposite of pending. Deposit-pending is a per-booking figure and lives
  *   on the booking, not the client.
  * - `paymentDueInDays` — no due dates exist; see `overdueInvoiceCount`.
+ * - `creditUsedPaisa` — the one whose absence is *dangerous* rather than merely
+ *   incomplete. See `creditCheck`.
  */
 export interface ClientHealthSignals {
+  /**
+   * How much of the client's approved credit limit is currently committed.
+   *
+   * **The only source this engine will accept for the credit-limit check.**
+   * Supply it only from a figure something actually computed; leaving it absent
+   * is not a neutral choice, it makes the check report `unavailable` and the
+   * client read as Attention Required. That is deliberate — see `creditCheck`.
+   *
+   * ⚠ TODO(decision) — nothing in the app can produce this today. There is no
+   * `credit_used` column, no view exposes one, and no formula has been ruled
+   * (`lib/queries/clients.ts` carries the same TODO). Until a rule exists,
+   * every client with a configured credit limit is unverifiable, and says so.
+   */
+  creditUsedPaisa?: Paisa
   /** Count of the client's invoices past their due date. */
   overdueInvoiceCount?: number
   /** Units still out past their scheduled return. */
@@ -212,16 +241,62 @@ export function healthPresentation(level: ClientHealthLevel): {
 }
 
 /**
- * Credit utilisation as a fraction of the limit, or `null` when the client has
- * no limit configured (see `zeroCreditLimitMeansNoCredit`).
+ * Whether the credit-limit check can be run for this client, and its result if
+ * it can.
  *
- * Uses `creditUsedPaisa` — the field the client record maintains for exactly
- * this — rather than re-deriving from `outstandingPaisa`, which is a different
- * quantity (what is owed now, not what is committed against the facility).
+ * ## Why this replaced `creditUtilisation(client): number | null`
+ *
+ * That function divided `client.creditUsedPaisa` by `client.creditLimitPaisa`
+ * and returned `null` for one reason only — no limit configured. Two different
+ * facts therefore shared one representation, and callers read both as benign:
+ *
+ *   1. "there is no limit, so there is nothing to exceed" — genuinely benign;
+ *   2. "we cannot tell how much of the limit is used" — **not benign at all**.
+ *
+ * Case 2 was unreachable only by accident. `ClientRecord.creditUsedPaisa` has
+ * no source: there is no `credit_used` column, no view publishes one, and no
+ * formula has been ruled, so `toClientRecord` in `lib/queries/clients.ts` sets
+ * it to `0`. The only non-zero values anywhere are the hand-typed demo numbers
+ * in `CLIENTS_DATA`. On the day the New Booking screen reads real clients
+ * instead of that seed, every utilisation becomes `0 / limit = 0`,
+ * "Credit limit exceeded" stops firing for every client alive, and nothing
+ * anywhere shows a symptom — a safety gate failing open, silently, on the
+ * screen where money decisions are taken.
+ *
+ * So the figure comes from `ClientHealthSignals.creditUsedPaisa`, which a
+ * caller passes only when something really computed it, and its absence is
+ * reported as `unavailable` instead of being computed as zero. `clientHealth`
+ * raises `unavailable` as a **critical** reason.
+ *
+ * `ClientRecord.creditUsedPaisa` is deliberately **not read here**. It cannot
+ * distinguish "this client has committed nothing" from "nobody computed this",
+ * and a check that gates money must not guess which of the two it is holding.
+ * Do not reconnect it — the way to make this compute again is a ruled formula
+ * plus a caller that supplies the signal.
  */
-export function creditUtilisation(client: ClientRecord): number | null {
-  if (client.creditLimitPaisa <= 0) return null
-  return client.creditUsedPaisa / client.creditLimitPaisa
+export type CreditCheck =
+  /**
+   * No credit facility configured, so there is no limit to exceed. This is a
+   * fact about the client, not a gap in the data — `approved_credit_limit` is a
+   * real column and 0/absent is a real answer. See `zeroCreditLimitMeansNoCredit`.
+   */
+  | { state: 'not-applicable' }
+  /**
+   * A limit **is** configured, but how much of it is used is not computed
+   * anywhere. The check could not be run; nothing may report the client as
+   * within their limit.
+   */
+  | { state: 'unavailable'; limitPaisa: Paisa }
+  | { state: 'computed'; ratio: number; usedPaisa: Paisa; limitPaisa: Paisa }
+
+export function creditCheck(client: ClientRecord, signals: ClientHealthSignals = {}): CreditCheck {
+  const limitPaisa = client.creditLimitPaisa
+  if (limitPaisa <= 0) return { state: 'not-applicable' }
+
+  const usedPaisa = signals.creditUsedPaisa
+  if (usedPaisa === undefined) return { state: 'unavailable', limitPaisa }
+
+  return { state: 'computed', ratio: usedPaisa / limitPaisa, usedPaisa, limitPaisa }
 }
 
 /**
@@ -260,16 +335,25 @@ export function clientHealth(
     )
   }
 
-  // "credit limit exceeded"
-  const utilisation = creditUtilisation(client)
-  if (utilisation !== null && utilisation > 1) {
+  // "credit limit exceeded" — and, when the check cannot be run at all, a
+  // critical that says exactly that. `creditCheck`'s doc has the reasoning: an
+  // uncomputable credit check withholds the verdict rather than passing it, so
+  // this branch can never quietly become "fine".
+  const credit = creditCheck(client, signals)
+  if (credit.state === 'computed' && credit.ratio > 1) {
     crit(
       'credit-exceeded',
-      `Credit limit exceeded — ${formatMoney(client.creditUsedPaisa)} used against a ${formatMoney(
-        client.creditLimitPaisa,
+      `Credit limit exceeded — ${formatMoney(credit.usedPaisa)} used against a ${formatMoney(
+        credit.limitPaisa,
       )} limit`,
     )
-  } else if (utilisation === null && !T.zeroCreditLimitMeansNoCredit && client.outstandingPaisa > 0) {
+  } else if (credit.state === 'unavailable') {
+    crit(
+      'credit-check-unavailable',
+      `Credit limit ${formatMoney(credit.limitPaisa)} is set, but credit used is not computed anywhere — ` +
+        'the credit-limit check could not be run. Unverified, not within limit.',
+    )
+  } else if (credit.state === 'not-applicable' && !T.zeroCreditLimitMeansNoCredit && client.outstandingPaisa > 0) {
     crit('credit-none-configured', 'No credit limit configured and a balance is outstanding')
   }
 
@@ -313,12 +397,14 @@ export function clientHealth(
     warn('outstanding-small', `Outstanding ${formatMoney(client.outstandingPaisa)}`)
   }
 
-  // "credit limit approaching"
-  if (utilisation !== null && utilisation >= T.creditLimitApproachingRatio && utilisation <= 1) {
+  // "credit limit approaching" — only ever from a figure that was really
+  // computed. An unavailable check has already fired a critical above; it must
+  // not also produce a softer, reassuring-sounding percentage here.
+  if (credit.state === 'computed' && credit.ratio >= T.creditLimitApproachingRatio && credit.ratio <= 1) {
     warn(
       'credit-approaching',
-      `Credit ${Math.round(utilisation * 100)}% used — ${formatMoney(client.creditUsedPaisa)} of ${formatMoney(
-        client.creditLimitPaisa,
+      `Credit ${Math.round(credit.ratio * 100)}% used — ${formatMoney(credit.usedPaisa)} of ${formatMoney(
+        credit.limitPaisa,
       )}`,
     )
   }

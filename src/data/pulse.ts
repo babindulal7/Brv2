@@ -320,16 +320,29 @@ export interface ExceptionSeed {
  * periods differ because the closed ones were open then — which is the point of
  * scoping the card to the period.
  */
+/*
+ * Ruling §2.1 — one registry per entity. The three Damage rows below carried
+ * a "CS-" prefix while every other Incident Case in the app (numbering.ts's
+ * CASE row, cases.ts's module-load assertion, documents.ts, CasesReports.tsx)
+ * uses "CASE-". Two prefixes for one entity, printed in the same `ref` column
+ * as real booking numbers, so a reader could not tell which register either
+ * belonged to. Collapsed to CASE-, numeric part unchanged.
+ *
+ * TODO(decision) — the numbers themselves (0101, 0118, 0125) resolve to no
+ * row in `data/cases.ts`, which seeds CASE-2026-0035…0044. That was already
+ * true before the rename; pointing them at real cases would be inventing the
+ * link, so it is reported rather than guessed.
+ */
 export const EXCEPTIONS: ExceptionSeed[] = [
-  { kind: 'Overdue', ref: 'BK-2026-0641', what: 'Classic Media — 3 days late', raisedOn: new Date(Date.UTC(2026, 6, 24)), closedOn: null },
-  { kind: 'Overdue', ref: 'BK-2026-0655', what: 'Everest Studios — 2 days late', raisedOn: new Date(Date.UTC(2026, 6, 26)), closedOn: null },
-  { kind: 'Overdue', ref: 'BK-2026-0662', what: 'Himalayan Films — 1 day late', raisedOn: new Date(Date.UTC(2026, 6, 28)), closedOn: null },
-  { kind: 'Overdue', ref: 'BK-2026-0670', what: 'Sagarmatha TV — due back today', raisedOn: new Date(Date.UTC(2026, 6, 30)), closedOn: null },
-  { kind: 'Damage', ref: 'CS-2026-0118', what: 'Ronin 4D 6K — gimbal arm', raisedOn: new Date(Date.UTC(2026, 6, 22)), closedOn: null },
-  { kind: 'Damage', ref: 'CS-2026-0125', what: 'Sony FX3 — screen delamination', raisedOn: new Date(Date.UTC(2026, 6, 29)), closedOn: null },
-  { kind: 'Overdue', ref: 'BK-2026-0602', what: 'Nepal Media Hub — settled', raisedOn: new Date(Date.UTC(2026, 5, 12)), closedOn: new Date(Date.UTC(2026, 5, 20)) },
-  { kind: 'Overdue', ref: 'BK-2026-0618', what: 'Kantipur Post — settled', raisedOn: new Date(Date.UTC(2026, 6, 2)), closedOn: new Date(Date.UTC(2026, 6, 10)) },
-  { kind: 'Damage', ref: 'CS-2026-0101', what: 'Aputure 600d Pro — yoke', raisedOn: new Date(Date.UTC(2026, 5, 5)), closedOn: new Date(Date.UTC(2026, 5, 18)) },
+  { kind: 'Overdue', ref: 'B-641', what: 'Classic Media — 3 days late', raisedOn: new Date(Date.UTC(2026, 6, 24)), closedOn: null },
+  { kind: 'Overdue', ref: 'B-655', what: 'Everest Studios — 2 days late', raisedOn: new Date(Date.UTC(2026, 6, 26)), closedOn: null },
+  { kind: 'Overdue', ref: 'B-662', what: 'Himalayan Films — 1 day late', raisedOn: new Date(Date.UTC(2026, 6, 28)), closedOn: null },
+  { kind: 'Overdue', ref: 'B-670', what: 'Sagarmatha TV — due back today', raisedOn: new Date(Date.UTC(2026, 6, 30)), closedOn: null },
+  { kind: 'Damage', ref: 'CASE-2026-0118', what: 'Ronin 4D 6K — gimbal arm', raisedOn: new Date(Date.UTC(2026, 6, 22)), closedOn: null },
+  { kind: 'Damage', ref: 'CASE-2026-0125', what: 'Sony FX3 — screen delamination', raisedOn: new Date(Date.UTC(2026, 6, 29)), closedOn: null },
+  { kind: 'Overdue', ref: 'B-602', what: 'Nepal Media Hub — settled', raisedOn: new Date(Date.UTC(2026, 5, 12)), closedOn: new Date(Date.UTC(2026, 5, 20)) },
+  { kind: 'Overdue', ref: 'B-618', what: 'Kantipur Post — settled', raisedOn: new Date(Date.UTC(2026, 6, 2)), closedOn: new Date(Date.UTC(2026, 6, 10)) },
+  { kind: 'Damage', ref: 'CASE-2026-0101', what: 'Aputure 600d Pro — yoke', raisedOn: new Date(Date.UTC(2026, 5, 5)), closedOn: new Date(Date.UTC(2026, 5, 18)) },
 ]
 
 /* ── upcoming payments and receivables ─────────────────────────────────── */
@@ -349,11 +362,11 @@ export interface UpcomingRow {
  * never typed into the data.
  */
 export const UPCOMING: UpcomingRow[] = [
-  { kind: 'Receivable', reference: 'INV-2026-0159', party: 'Classic Media', due: new Date(Date.UTC(2026, 6, 28)), amount: rupees(75_000) },
+  { kind: 'Receivable', reference: 'INV-159', party: 'Classic Media', due: new Date(Date.UTC(2026, 6, 28)), amount: rupees(75_000) },
   { kind: 'Payment', reference: 'Salary Shrawan 2083', party: 'Staff salary', due: new Date(Date.UTC(2026, 7, 1)), amount: rupees(2_15_000) },
-  { kind: 'Receivable', reference: 'INV-2026-0160', party: 'Himalayan Films', due: new Date(Date.UTC(2026, 7, 6)), amount: rupees(45_000) },
+  { kind: 'Receivable', reference: 'INV-160', party: 'Himalayan Films', due: new Date(Date.UTC(2026, 7, 6)), amount: rupees(45_000) },
   { kind: 'Payment', reference: 'Office rent — Bhadra', party: 'Sunrise Complex Pvt. Ltd.', due: new Date(Date.UTC(2026, 7, 5)), amount: rupees(85_000) },
-  { kind: 'Receivable', reference: 'INV-2026-0162', party: 'Everest Studios', due: new Date(Date.UTC(2026, 7, 9)), amount: rupees(1_18_000) },
+  { kind: 'Receivable', reference: 'INV-162', party: 'Everest Studios', due: new Date(Date.UTC(2026, 7, 9)), amount: rupees(1_18_000) },
   { kind: 'Payment', reference: 'VAT — Ashadh 2083', party: 'Inland Revenue', due: new Date(Date.UTC(2026, 7, 12)), amount: rupees(1_64_000) },
 ]
 

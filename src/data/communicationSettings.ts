@@ -32,8 +32,10 @@ import { CLIENTS_DATA } from './clients'
  *    "Email sent to 15 customers". The word is banned in UI text — they are
  *    **clients**.
  *  · the render's IDs read `#BR-2087` and `#MN-102`. `BR-` is the *branch*
- *    prefix and belongs to nothing else (§7 ID registry); bookings are
- *    `BK-YYYY-NNNNN`, invoices `INV-BR-YYYY-NNNN`, maintenance `MT-YYYY-NNNNN`.
+ *    prefix and belongs to nothing else (§7 ID registry). Since the 12 Aug
+ *    ruling bookings are `B-N` and invoices are `INV-N` — no year, no padding,
+ *    and no branch segment on the invoice. Maintenance is unruled and stays
+ *    `MT-YYYY-NNNN`. The authority is `data/numbering.ts`, never this comment.
  *    Recipients and booking numbers below are read out of `data/clients`, so
  *    this screen cannot address a client who does not exist.
  *  · the render draws a sparkline under each analytics tile. No daily series
@@ -425,10 +427,10 @@ export const TIMELINE: TimelineRow[] = [
     channel: 'sms',
     to: client(2)?.phone ?? '—',
     who: client(2)?.name ?? '—',
-    subject: 'Payment reminder — invoice INV-KTM-2026-00492',
+    subject: 'Payment reminder — invoice INV-492',
     status: 'Delivered',
     ago: '15m ago',
-    related: 'INV-KTM-2026-00492',
+    related: 'INV-492',
     dest: TO('/finance/documents'),
   },
   {
@@ -447,10 +449,10 @@ export const TIMELINE: TimelineRow[] = [
     channel: 'email',
     to: client(4)?.email ?? '—',
     who: client(4)?.name ?? '—',
-    subject: 'Invoice INV-KTM-2026-00492 has been issued',
+    subject: 'Invoice INV-492 has been issued',
     status: 'Delivered',
     ago: '1h ago',
-    related: 'INV-KTM-2026-00492',
+    related: 'INV-492',
     dest: TO('/finance/documents'),
   },
   {

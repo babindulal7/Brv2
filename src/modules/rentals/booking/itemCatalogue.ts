@@ -100,7 +100,7 @@ export interface AvailabilityVerdict {
   level: AvailabilityLevel
   /** Never colour alone — this word ships with the colour, always. */
   label: 'Available' | 'Partial' | 'Unavailable'
-  /** The one-line *why*: "1 component unavailable", "On Rent · BK-2026-0710". */
+  /** The one-line *why*: "1 component unavailable", "On Rent · B-710". */
   detail: string
   tone: StatusKey
   icon: IconName
@@ -192,7 +192,7 @@ export interface EquipmentResult {
 
 export interface BundleResult {
   kind: 'bundle'
-  /** The bundle code — `BND-00023`. §26 searches it. */
+  /** The bundle code — `BND-23`. §26 searches it. */
   id: string
   name: string
   category: string
@@ -766,6 +766,76 @@ export function addBundleToBooking(
     savingPaisa: facts.savingPaisa,
     notes,
   }
+}
+
+/* ── redesign v1 §2 — one row per model, one chip per unit ────────────────
+ *
+ * `EQUIPMENT_RESULTS` stays flat (one entry per serial, or per pooled SKU) —
+ * search, ranking and per-unit availability all still read it exactly as
+ * before. This groups the *already-ranked* results from one query group by
+ * model name, purely for rendering: three FX3 bodies become one row with
+ * three chips instead of three rows that look like three different products.
+ * A non-serialised SKU (bulk stock) is a "group" of one, with no chips — a
+ * chip is a physical unit, and bulk stock has none to point at.
+ */
+
+export interface EquipmentModelGroup {
+  name: string
+  kind: 'equipment' | 'accessory'
+  category: string
+  ratePaisa: Paisa
+  sku?: string
+  brand?: string
+  inBundles: readonly string[]
+  /** Every unit sharing this name, in the order the query already ranked them. */
+  units: readonly EquipmentResult[]
+  /**
+   * The unit tapping the *model name* would add — the first free unit in
+   * serial order, or the sole row for bulk stock. Null when nothing is free.
+   *
+   * "Least-used free unit" (the spec's wording) needs a non-zero usage
+   * counter; `data/inventory.ts`'s `ChildRow.rentalCount` is seeded to zero
+   * on every row in this build (the same gap `SORT_OPTIONS`' omitted "Most
+   * Used" sort documents above), so every free unit ties. Serial order is the
+   * honest, deterministic tiebreak until that counter is real.
+   */
+  autoPick: EquipmentResult | null
+  /** The best (lowest-severity) availability across every unit in the group. */
+  availability: AvailabilityVerdict
+}
+
+/** Groups one query group's already-sorted equipment/accessory results by model name. */
+export function groupEquipmentResults(results: readonly EquipmentResult[]): EquipmentModelGroup[] {
+  const order: string[] = []
+  const byName = new Map<string, EquipmentResult[]>()
+  for (const r of results) {
+    if (!byName.has(r.name)) {
+      byName.set(r.name, [])
+      order.push(r.name)
+    }
+    byName.get(r.name)!.push(r)
+  }
+  return order.map((name) => {
+    const units = byName.get(name)!
+    const first = units[0]!
+    const free = units.filter((u) => u.status === 'In Stock').sort((a, b) => a.serial.localeCompare(b.serial))
+    const availability = units.reduce(
+      (best, u) => (AVAILABILITY_RANK[u.availability.level] < AVAILABILITY_RANK[best.level] ? u.availability : best),
+      first.availability,
+    )
+    return {
+      name,
+      kind: first.kind,
+      category: first.category,
+      ratePaisa: first.ratePaisa,
+      ...(first.sku ? { sku: first.sku } : {}),
+      ...(first.brand ? { brand: first.brand } : {}),
+      inBundles: first.inBundles,
+      units,
+      autoPick: free[0] ?? null,
+      availability,
+    }
+  })
 }
 
 /** The single-row equivalent — one equipment result becomes one draft. */

@@ -1,7 +1,7 @@
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { BRAND } from '../../lib/status'
-import type { Movement } from '../../types/today'
 import {
   CAL_MONTH,
   CAL_WEEKDAYS,
@@ -12,14 +12,18 @@ import {
   CAL_TODAY_ISO,
   CAL_PREV_ISO,
   CAL_NEXT_ISO,
-  CAL_EVENT_DAYS,
-  CUSTOM_CHIP,
-  PERIOD_CHIPS,
   TODAY_DATE,
+  TODAY_DAY_AD,
   dotTone,
+  eventDaysOf,
+  periodRange,
   timeOf,
+  type LivePeriod,
+  type MovementRow,
 } from '../../data/today'
+import { formatAd } from '../../lib/bs'
 import { cardStyle } from '../../components/ui/Page'
+import { PageBody } from '../../components/ui/PageBody'
 
 const ghostBtn = {
   width: 26,
@@ -42,6 +46,28 @@ const ghostBtn = {
  */
 const dayHref = (iso: string) => `/calendar?d=${iso}`
 
+/**
+ * The heading over the day list — the dates the rows underneath actually cover.
+ *
+ * ⛔ It used to read `TODAY_DATE` unconditionally, so selecting "Next Month"
+ * left next month's rows sitting under "16 Shrawan 2083 · 31 Jul 2026". A date
+ * label that contradicts the rows below it is the same class of defect as an
+ * invented figure: the operator has no way to tell which of the two is the lie.
+ *
+ * `Today` keeps the BS-leading pill (`TODAY_DATE` is built by the one Date
+ * Engine), `All` states that it is unbounded, and every other chip states its
+ * own resolved AD range — the same range `periodRange` handed to the query, so
+ * the label cannot drift from what was fetched.
+ */
+function periodDates(period: LivePeriod): { lead: string; sub: string } {
+  if (period === 'Today') return { lead: `Today · ${TODAY_DATE.bs}`, sub: TODAY_DATE.ad }
+  const range = periodRange(period, TODAY_DAY_AD)
+  if (!range) return { lead: 'All', sub: 'Every scheduled date' }
+  const from = formatAd(new Date(`${range.from}T00:00:00.000Z`))
+  const to = formatAd(new Date(`${range.to}T00:00:00.000Z`))
+  return { lead: period, sub: from === to ? from : `${from} → ${to}` }
+}
+
 /** Out-of-month days — leading and trailing spill, greyed and non-interactive. */
 function SpillDay({ ad }: { ad: number }) {
   return (
@@ -57,21 +83,50 @@ function SpillDay({ ad }: { ad: number }) {
   )
 }
 
-/**
- * The period chips. The Dashboard render puts them in this card's header rather
- * than on a strip of their own, so that is where they live.
+/*
+ * ⛔ `PeriodChips` was deleted here — the control, not the periods.
  *
- * They still govern **every** panel on the page, because every panel reads the
- * one movements query (§4) — which is why the columns retitle themselves when
- * the period is not Today, instead of silently showing a different day's rows
- * under a heading that says "Today".
+ * The Dashboard render put seven chips (All · Today · Tomorrow · Next 7 Days ·
+ * This Week · Next Month · Custom) in this card's header. Spec 02 §2.1 puts the
+ * period control in the PAGE header and draws exactly `[Today▾][Tomorrow]`,
+ * with line 3 reading "Today's jobs only. All other days live in Operation" —
+ * so a seven-chip rail on a card is now the wrong shape in both readings, and
+ * spec 03 already gives Operation its own `[Today][Tomorrow][Custom ▾]`.
+ *
+ * Nothing was removed from `data/today.ts`: `PERIOD_CHIPS`, `CUSTOM_CHIP`,
+ * `PERIOD_UNAVAILABLE` and all six `periodRange` cases are untouched and still
+ * exported, so whichever way the TODO(decision) in `Today.tsx` is ruled, the
+ * ranges are there. This card still RECEIVES the period, because the heading
+ * over its day list has to state the dates those rows actually cover.
  */
-function PeriodChips({ period, setPeriod }: { period: string; setPeriod: (p: string) => void }) {
-  const chip = (p: string) => {
-    const on = period === p
+
+/**
+ * A movement's Pickup/Return bucket — Delivery counts as Pickup-side (gear
+ * going out), matching which of the two queries the row came out of, so this
+ * chip can never disagree with what the Pickups/Returns columns call the same
+ * row.
+ */
+type Kind = 'all' | 'pickup' | 'return'
+const kindOf = (m: MovementRow): 'pickup' | 'return' => (m.kind === 'Return' || m.kind === 'Inspection' ? 'return' : 'pickup')
+
+/**
+ * A second, narrower chip row: which side of the day this list shows, not
+ * which day. Deliberately independent of `PeriodChips` — this only narrows the
+ * *view* this one card renders (§4: "a view of the same rows"), it does not
+ * change which period the rest of the page is on.
+ *
+ * It is the one filter on this screen that stays client-side, and legitimately:
+ * both sides are ALREADY fetched (the columns above render them), and the
+ * distinction is which of the two queries a row came from rather than a column
+ * `bookings` carries — `delivery_type` separates Pickup from Delivery and says
+ * nothing at all about returns.
+ */
+function KindChips({ kind, setKind }: { kind: Kind; setKind: (k: Kind) => void }) {
+  const chip = (k: Kind) => {
+    const on = kind === k
     return {
       height: 26,
-      padding: p === CUSTOM_CHIP ? '0 9px' : '0 10px',
+      padding: '0 10px',
       borderRadius: 7,
       border: on ? '1px solid transparent' : '1px solid var(--border)',
       background: on ? 'var(--st-primary-bg)' : 'transparent',
@@ -80,64 +135,84 @@ function PeriodChips({ period, setPeriod }: { period: string; setPeriod: (p: str
       fontWeight: 600,
       cursor: 'pointer',
       fontFamily: 'inherit',
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 5,
       whiteSpace: 'nowrap' as const,
     }
   }
 
   return (
-    <div
-      role="group"
-      aria-label="Filter every panel by period"
-      style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}
-    >
-      {PERIOD_CHIPS.filter((p) => p !== CUSTOM_CHIP).map((p) => (
-        <button key={p} type="button" onClick={() => setPeriod(p)} aria-pressed={period === p} style={chip(p)}>
-          {p}
-        </button>
-      ))}
-      {/* The render separates Custom behind a divider and gives it the calendar
-          affordance — it is the one chip that asks for a date, not a shortcut. */}
-      <span aria-hidden style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 3px' }} />
-      <button
-        type="button"
-        onClick={() => setPeriod(CUSTOM_CHIP)}
-        aria-pressed={period === CUSTOM_CHIP}
-        style={chip(CUSTOM_CHIP)}
-      >
-        <Icon name="calendar" size={13} />
-        {CUSTOM_CHIP}
+    <div role="group" aria-label="Show only pickups or only returns" style={{ display: 'flex', gap: 5 }}>
+      <button type="button" onClick={() => setKind('pickup')} aria-pressed={kind === 'pickup'} style={chip('pickup')}>
+        Pickups
       </button>
+      <button type="button" onClick={() => setKind('return')} aria-pressed={kind === 'return'} style={chip('return')}>
+        Returns
+      </button>
+      {kind !== 'all' && (
+        <button type="button" onClick={() => setKind('all')} aria-pressed={false} style={chip('all')}>
+          All
+        </button>
+      )}
     </div>
   )
 }
 
 /**
- * Dashboard render — the calendar card: the day's movements on the left, the
- * mini month on the right, period chips in the header.
+ * Spec 02 §2.1 — the CALENDAR mini, second card in the right rail: the day's
+ * movements on the left, the mini month on the right.
  *
- * The day list is a **view of the same rows** the Pickups and Returns columns
+ * The day list is a **view of the same rows** the Outgoing and Incoming lists
  * render (§4 Single Source Rule) — merged back into one chronological day and
  * passed in, never fetched here — so a booking cannot carry one time in the
- * column and another in the calendar.
+ * list and another in the calendar.
  *
  * Nepal Mode: the BS day leads at full size, the AD day sits small in the
  * corner. BS is rendered here, never stored (Foundation law).
+ *
+ * ⚠ The mini month's GRID is still generated from `CAL_DAYS` (July 2026, from
+ * the Date Engine's one `TODAY`) — a month-wide movements query does not exist,
+ * because `listBookings` is a list and marking 31 days needs a grouped count.
+ *
+ * Its event dots, however, are no longer seed. They were `[3, 8, 14, 22, 27]`,
+ * five day numbers with nothing behind them, announced to a screen reader as
+ * "has movements" inside the same card as a queried day list. They now come from
+ * `eventDaysOf(rows)` — the Kathmandu days the fetched rows actually fall on —
+ * so every dot is a booking. Days outside the selected period carry no dot,
+ * which is why the legend under the grid names the period: an absent dot means
+ * "not in what was asked for", not "nothing scheduled".
  */
 export default function CalendarPanel({
   period,
-  setPeriod,
   rows,
-  emptyNote,
+  loading,
+  error,
+  isFiltered,
+  onRetry,
+  onClearFilters,
+  periodLabel,
 }: {
-  period: string
-  setPeriod: (p: string) => void
-  rows: Movement[]
-  emptyNote: string
+  /**
+   * Read-only here. The control that SETS it lives in the page header (spec 02
+   * §2.1); this card only needs it to label the day list with the dates those
+   * rows actually cover — a heading that says "Today" over tomorrow's rows is
+   * the one way this card could mislead.
+   */
+  period: LivePeriod
+  rows: MovementRow[]
+  loading: boolean
+  error: string | null
+  isFiltered: boolean
+  onRetry: () => void
+  onClearFilters: () => void
+  periodLabel: string
 }) {
   const navigate = useNavigate()
+  const [kind, setKind] = useState<Kind>('all')
+  const visibleRows = kind === 'all' ? rows : rows.filter((m) => kindOf(m) === kind)
+  /* Every dot is a booking the screen fetched — see the header. Derived from
+     `visibleRows` rather than `rows` so the Pickups/Returns chip narrows the
+     month exactly as it narrows the list beside it. */
+  const eventDays = eventDaysOf(visibleRows)
+  const dates = periodDates(period)
 
   return (
     <section style={{ ...cardStyle, minWidth: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -152,7 +227,21 @@ export default function CalendarPanel({
         }}
       >
         <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>Calendar</h2>
-        <PeriodChips period={period} setPeriod={setPeriod} />
+        <Link
+          to={dayHref(CAL_TODAY_ISO)}
+          style={{ marginLeft: 'auto', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' }}
+        >
+          Open Calendar
+        </Link>
+      </div>
+
+      <div
+        style={{
+          display: 'flex',
+          padding: '9px 15px 0',
+        }}
+      >
+        <KindChips kind={kind} setKind={setKind} />
       </div>
 
       {/*
@@ -181,12 +270,12 @@ export default function CalendarPanel({
                 className="figure"
                 style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
               >
-                {period === 'Today' ? 'Today' : period} · {TODAY_DATE.bs}
+                {dates.lead}
               </span>
               <span
                 style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
               >
-                {TODAY_DATE.ad}
+                {dates.sub}
               </span>
             </Link>
             <button
@@ -200,54 +289,71 @@ export default function CalendarPanel({
           </div>
 
           {/*
-            Capped rather than unbounded: the day carries 25 movements, and a
-            list that renders all of them would drag this card — and the
-            timeline stretched beside it — to twice the height the row should
-            be. It scrolls; the full day is one click away in the Calendar.
+            Capped rather than unbounded: a busy day carries more movements than
+            this card can hold, and a list that rendered all of them would drag
+            the card — and the timeline stretched beside it — to twice the height
+            the row should be. It scrolls; the full day is one click away.
           */}
           <div style={{ flex: 1, minHeight: 0, maxHeight: 250, overflowY: 'auto' }}>
-            {rows.length === 0 && (
-              <p style={{ margin: 0, padding: '18px 2px', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.6 }}>
-                {emptyNote}
-              </p>
-            )}
-            {rows.map((m) => (
-              <Link
-                key={m.id}
-                to={`/rentals/${m.bookingNo}`}
-                className="lift"
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '9px 66px 62px minmax(0,1fr)',
-                  gap: 9,
-                  alignItems: 'center',
-                  padding: '6px 8px',
-                  borderRadius: 'var(--r-xs)',
-                  textDecoration: 'none',
-                  transition: 'background-color 0.15s ease',
-                }}
-              >
-                <span
-                  aria-hidden
-                  style={{ width: 9, height: 9, borderRadius: 'var(--r-badge)', background: BRAND[dotTone(m)] }}
-                />
-                <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
-                  {timeOf(m)}
-                </span>
-                <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{m.kind}</span>
-                <span
+            <PageBody
+              loading={loading}
+              error={error}
+              hasRows={visibleRows.length > 0}
+              onRetry={onRetry}
+              empty={!loading && error === null && visibleRows.length === 0}
+              // A kind chip is a narrowing the operator chose too, so the empty
+              // state offers Clear whenever either control is doing something.
+              emptyIsFiltered={isFiltered || kind !== 'all'}
+              onClearFilters={() => {
+                setKind('all')
+                onClearFilters()
+              }}
+              noun="movements"
+              skeleton="table"
+              skeletonRows={4}
+              {...(isFiltered || kind !== 'all'
+                ? {}
+                : { emptyTitle: `No movements ${periodLabel}`, emptyMessage: 'Nothing is scheduled in this period.' })}
+            >
+              {visibleRows.map((m) => (
+                <Link
+                  key={m.id}
+                  to={`/rentals/${m.bookingNo}`}
+                  className="lift"
                   style={{
-                    fontSize: 'var(--t-meta)',
-                    color: 'var(--text2)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
+                    display: 'grid',
+                    gridTemplateColumns: '9px 66px 62px minmax(0,1fr)',
+                    gap: 9,
+                    alignItems: 'center',
+                    padding: '6px 8px',
+                    borderRadius: 'var(--r-xs)',
+                    textDecoration: 'none',
+                    transition: 'background-color 0.15s ease',
                   }}
                 >
-                  {m.client} — {m.kit}
-                </span>
-              </Link>
-            ))}
+                  <span
+                    aria-hidden
+                    style={{ width: 9, height: 9, borderRadius: 'var(--r-badge)', background: BRAND[dotTone(m)] }}
+                  />
+                  <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
+                    {timeOf(m)}
+                  </span>
+                  <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{m.kind}</span>
+                  <span
+                    style={{
+                      fontSize: 'var(--t-meta)',
+                      color: 'var(--text2)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {/* Was `{client} — {kit}`; `kit` had no column. */}
+                    {m.client} — {m.project ?? '—'}
+                  </span>
+                </Link>
+              ))}
+            </PageBody>
           </div>
         </div>
 
@@ -299,7 +405,7 @@ export default function CalendarPanel({
 
             {CAL_DAYS.map((d) => {
               const isToday = d.ad === CAL_TODAY_AD
-              const hasEvent = CAL_EVENT_DAYS.includes(d.ad)
+              const hasEvent = eventDays.includes(d.ad)
               return (
                 <button
                   key={d.ad}
@@ -375,6 +481,17 @@ export default function CalendarPanel({
               <SpillDay key={`trail-${d}`} ad={d} />
             ))}
           </div>
+
+          {/*
+            Says what a dot means AND what its absence does not mean. The dots
+            are derived from the rows this screen fetched, so they only ever
+            cover the selected period — without this line an undotted day reads
+            as "nothing scheduled", which the screen has not established.
+          */}
+          <p style={{ margin: '8px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
+            A dot marks a day with movements {periodLabel}. Days this period does not cover are not marked — open the
+            Calendar for the full month.
+          </p>
         </div>
       </div>
     </section>

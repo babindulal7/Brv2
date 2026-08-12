@@ -1,11 +1,11 @@
 import { Fragment, useMemo, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { Card, Button, PageHeader, Rail, SummaryRows, cardStyle } from '../../components/ui/Page'
 import { thStyle } from '../../components/ui/TableHeaderCell'
 import { Input } from '../../components/ui/Input'
 import { EmptyState } from '../../components/ui/StateViews'
-import { useToast } from '../../components/ui/Toast'
+import { Unavailable } from '../../components/ui/Unavailable'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { formatMoney, crewBilling } from '../../lib/money'
@@ -72,8 +72,71 @@ function onShootToday(a: CrewAssignment): boolean {
   return !Number.isNaN(s) && !Number.isNaN(e) && t >= s && t <= e
 }
 
+/**
+ * **The four buttons on this screen that reported work nobody did.**
+ *
+ * `SUCCESS_FABRICATION_REGISTER_2026-08-12.md` names the class: a screen tells
+ * the operator a write succeeded when nothing was written. It is silent by
+ * construction — no error anywhere, and the operator's picture of what the
+ * system knows quietly stops matching reality.
+ *
+ * The header's `Book Crew` was the worst of the four. It fired
+ * `bookCrew({ crewIds: … })` with no `ActionContext` and no `.catch()`, and
+ * `showSuccessToast('Book Crew', 'Opening crew booking flow')` ran
+ * **synchronously on the next line** — a success claim with no relationship to
+ * the dispatch, for a flow that never opened. Two further inventions rode
+ * inside that one call:
+ *
+ *  1. **A fabricated subject.** With nothing selected the id list fell back to
+ *     `['CRW-101']`. No such id exists anywhere in this repo — the roster is
+ *     `CR-001…` (`data/crew.ts:103`) — so it was an invented identifier in an
+ *     invented *format*, asserted on a write. Had the action been implemented,
+ *     a crew member the operator never chose would have been booked. This is
+ *     the same treatment `today/MovementList.tsx` gave `equipmentIds:
+ *     ['EQP-101']`: a button pressed with no selection must **refuse**, never
+ *     substitute a subject.
+ *  2. **The wrong subject even when there was one.** `selectedRowIds` holds
+ *     ASSIGNMENT ids (`CB-2026-0001`), and they were passed as `crewIds`, which
+ *     `BookCrewInput` reads as roster people.
+ *
+ * Nothing honest is left to dispatch from here. `BookCrewInput` also wants a
+ * `bookingId` — which booking the crew is being booked *onto* — and this screen
+ * never knows one; a real booking additionally needs dates, a role and a rate,
+ * and no form on this page and no route in `App.tsx` collects any of them. So
+ * the button states the gap where it stands instead of miming a flow. The row
+ * checkboxes are deliberately left in place: the selection is the input the
+ * real flow will want, and removing working UI is not this fix.
+ *
+ * TODO(decision): where the crew-booking flow lives — a `/crew/new` workspace,
+ * a modal on this screen, or an entry point on the booking itself — and which
+ * record it attaches to. A page may not answer that (CLAUDE.md).
+ */
+const BOOK_CREW_UNAVAILABLE =
+  'Not built yet — booking crew needs a booking to attach to, a person and dates, and nothing here collects them'
+
+/**
+ * §13 — call sheets are unbuilt, and this button said so **through a success
+ * toast** (`showSuccessToast('Create Call Sheet', 'Call sheets are not built
+ * yet — spec §13')`). The words were honest; the channel was not. Law 12:
+ * toasts are for successes only, and a control that cannot act says so where it
+ * stands rather than congratulating the operator for pressing it.
+ */
+const CALL_SHEET_UNAVAILABLE = 'Not built yet — call sheets are spec §13'
+
+/**
+ * `Export` toasted "Generating crew payroll report…" and generated nothing —
+ * no file, no download, no report, no dispatch. Same honest-gap shape
+ * `NewRental.tsx`'s Send Quote menu uses for the artefacts it cannot produce
+ * ("No PDF generator is connected in this build").
+ *
+ * Deliberately **not** replaced with a client-side CSV of the visible table:
+ * the label promises a payroll report, half these columns are `asset-finance`
+ * money behind `canCrewMoney` (Law 6), and quietly redefining what an operator
+ * gets when they press Export is its own kind of untruth.
+ */
+const EXPORT_UNAVAILABLE = 'Not built yet — no payroll-report generator is connected in this build'
+
 export function CrewBooking() {
-  const { showSuccessToast } = useToast()
   const navigate = useNavigate()
   const { user } = useAuth()
   // gateContext() returns a fresh object literal on every call (see
@@ -181,18 +244,11 @@ export function CrewBooking() {
         title="Crew Booking"
         description="Book, coordinate and reconcile production crew — schedule, cost and payouts in one place."
         actions={
-          <Button
-            variant="primary"
-            icon="plus"
-            onClick={() => {
-              import('../../actions/crew/bookCrew').then((m) =>
-                m.bookCrew({ crewIds: Array.from(selectedRowIds.size ? selectedRowIds : ['CRW-101']) })
-              )
-              showSuccessToast('Book Crew', 'Opening crew booking flow')
-            }}
-          >
-            Book Crew
-          </Button>
+          <Unavailable reason={BOOK_CREW_UNAVAILABLE}>
+            <Button variant="primary" icon="plus" disabled>
+              Book Crew
+            </Button>
+          </Unavailable>
         }
       />
 
@@ -292,9 +348,11 @@ export function CrewBooking() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
-              <Button variant="secondary" icon="download" onClick={() => showSuccessToast('Exporting', 'Generating crew payroll report…')}>
-                Export
-              </Button>
+              <Unavailable reason={EXPORT_UNAVAILABLE}>
+                <Button variant="secondary" icon="download" disabled>
+                  Export
+                </Button>
+              </Unavailable>
             </div>
           </div>
 
@@ -439,17 +497,31 @@ export function CrewBooking() {
               </RailSection>
 
               <RailSection title="Alerts" badge={String(railAlertCount(conflicts.length, travelWarnings.length, OPEN_ROLE_REQUESTS.length, CREW_DATA))}>
-                <AlertsList conflicts={conflicts} travelWarnings={travelWarnings} openRoles={OPEN_ROLE_REQUESTS} assignments={CREW_DATA} />
+                <AlertsList
+                  conflicts={conflicts}
+                  travelWarnings={travelWarnings}
+                  openRoles={OPEN_ROLE_REQUESTS}
+                  assignments={CREW_DATA}
+                  onOpenPayouts={() => setActiveTab('Payouts')}
+                />
               </RailSection>
 
               <RailSection title="Quick actions">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
-                  <Button variant="primary" icon="plus" onClick={() => showSuccessToast('Book Crew', 'Opening crew booking flow')}>
-                    Book Crew
-                  </Button>
-                  <Button variant="secondary" icon="calendar" onClick={() => showSuccessToast('Create Call Sheet', 'Call sheets are not built yet — spec §13')}>
-                    Create Call Sheet
-                  </Button>
+                  {/* `Unavailable` is `inline-flex`, which would collapse these two
+                      to content width beside the two full-width live buttons below.
+                      `display: grid` makes the single child a grid item, which
+                      stretches — the column reads as one stack again. */}
+                  <Unavailable reason={BOOK_CREW_UNAVAILABLE} style={{ display: 'grid', width: '100%' }}>
+                    <Button variant="primary" icon="plus" disabled>
+                      Book Crew
+                    </Button>
+                  </Unavailable>
+                  <Unavailable reason={CALL_SHEET_UNAVAILABLE} style={{ display: 'grid', width: '100%' }}>
+                    <Button variant="secondary" icon="calendar" disabled>
+                      Create Call Sheet
+                    </Button>
+                  </Unavailable>
                   <Button variant="secondary" icon="receipt" onClick={() => setActiveTab('Timesheets')}>
                     Open Timesheets
                   </Button>
@@ -649,20 +721,65 @@ function railAlertCount(conflictCount: number, travelCount: number, openRoleCoun
   return conflictCount + travelCount + openRoleCount + payoutDue
 }
 
+const ALERT_ROW_LAYOUT: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '26px minmax(0,1fr)',
+  gap: 'var(--sp-sm)',
+  padding: '7px 6px',
+  borderRadius: 'var(--r-sm)',
+  textDecoration: 'none',
+  textAlign: 'left',
+  width: '100%',
+  color: 'inherit',
+}
+
+/**
+ * **Two of these four alert kinds went nowhere.** The conflict and travel rows
+ * link to the booking they are about — a real route. The unfilled-role rows and
+ * the payout row were `<Link to="#">`, visually identical to the two beside
+ * them: a click landed back on the same page with nothing said, and the
+ * operator came away believing they had looked at the thing being flagged.
+ *
+ * Each kind is now rendered as whatever actually exists behind it:
+ *
+ *  - **Payout due** has a real destination on this very screen — the Payouts
+ *    tab, the same place the rail's `Open Payouts` button goes. It is a tab,
+ *    not a route, so it is a button rather than a `Link`; the tab states its
+ *    own unbuilt-ness once it gets there, which is honest and visible.
+ *  - **Unfilled role** has none. `OpenRoleRequest` carries a production *name*,
+ *    not a booking number (`data/crew.ts`), no route in `App.tsx` addresses a
+ *    role request, and the flow that would fill one is itself unbuilt — see
+ *    `BOOK_CREW_UNAVAILABLE`, which already states that gap on this screen. So
+ *    the row is rendered as what it is: information, no anchor, no pointer
+ *    cursor, nothing to click.
+ *
+ * `to` is optional and never `'#'`. A row with no destination does not get one.
+ */
 function AlertsList({
   conflicts,
   travelWarnings,
   openRoles,
   assignments,
+  onOpenPayouts,
 }: {
   conflicts: ReturnType<typeof detectConflicts>
   travelWarnings: ReturnType<typeof detectTravelWarnings>
   openRoles: typeof OPEN_ROLE_REQUESTS
   assignments: CrewAssignment[]
+  onOpenPayouts: () => void
 }) {
   const payoutsDue = assignments.filter((a) => !a.cancelled && a.payoutStatus === 'Due')
 
-  type Row = { title: string; detail: string; to: string; severity: 'Critical' | 'Warning'; icon: IconName }
+  type Row = {
+    title: string
+    detail: string
+    severity: 'Critical' | 'Warning'
+    icon: IconName
+    /** A route this row really opens. Omitted when none exists. */
+    to?: string | undefined
+    /** An in-page destination (a tab on this screen) for rows whose home is not a route. */
+    onSelect?: (() => void) | undefined
+  }
   const rows: Row[] = [
     ...conflicts.map((c): Row => ({
       title: 'Double booking',
@@ -674,7 +791,6 @@ function AlertsList({
     ...openRoles.map((r): Row => ({
       title: `${r.role} unfilled`,
       detail: `${r.production} — needed from ${r.neededFromAd}`,
-      to: '#',
       severity: 'Critical',
       icon: 'users',
     })),
@@ -686,7 +802,15 @@ function AlertsList({
       icon: 'calendar',
     })),
     ...(payoutsDue.length > 0
-      ? [{ title: 'Payout due', detail: `${payoutsDue.length} crew payout${payoutsDue.length === 1 ? '' : 's'} awaiting release`, to: '#', severity: 'Warning' as const, icon: 'card' as const }]
+      ? [
+          {
+            title: 'Payout due',
+            detail: `${payoutsDue.length} crew payout${payoutsDue.length === 1 ? '' : 's'} awaiting release`,
+            onSelect: onOpenPayouts,
+            severity: 'Warning' as const,
+            icon: 'card' as const,
+          },
+        ]
       : []),
   ]
 
@@ -698,12 +822,8 @@ function AlertsList({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       {rows.map((r, i) => {
         const tone = STATUS[r.severity === 'Critical' ? 'danger' : 'progress']
-        return (
-          <Link
-            key={i}
-            to={r.to}
-            style={{ display: 'grid', gridTemplateColumns: '26px minmax(0,1fr)', gap: 'var(--sp-sm)', padding: '7px 6px', borderRadius: 'var(--r-sm)', textDecoration: 'none', color: 'inherit' }}
-          >
+        const body = (
+          <>
             <span style={{ width: 26, height: 26, borderRadius: 7, background: tone.bg, color: tone.fg, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
               <Icon name={r.icon} size={13} />
             </span>
@@ -711,7 +831,33 @@ function AlertsList({
               <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>{r.title}</div>
               <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.detail}</div>
             </span>
-          </Link>
+          </>
+        )
+
+        if (r.to) {
+          return (
+            <Link key={i} to={r.to} style={ALERT_ROW_LAYOUT}>
+              {body}
+            </Link>
+          )
+        }
+        if (r.onSelect) {
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={r.onSelect}
+              className="press"
+              style={{ ...ALERT_ROW_LAYOUT, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit' }}
+            >
+              {body}
+            </button>
+          )
+        }
+        return (
+          <div key={i} style={ALERT_ROW_LAYOUT}>
+            {body}
+          </div>
         )
       })}
     </div>

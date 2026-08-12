@@ -54,6 +54,8 @@ import { formatMoney } from '../../../lib/money'
 import type { BundleRecord } from '../../../data/bundles'
 import { AvailabilityChip, BundlePreview } from './BundlePreview'
 import { TOUCH } from './ClientHealthChip'
+import { OverbookingOverrideModal } from './OverbookingOverrideModal'
+import { getAllowOverbooking } from '../../../lib/bookingRules'
 import {
   DERIVED_CATEGORIES,
   OMITTED_SORTS,
@@ -61,6 +63,7 @@ import {
   SORT_OPTIONS,
   addBundleToBooking,
   equipmentLineDraft,
+  groupEquipmentResults,
   runQuery,
 } from './itemCatalogue'
 import type {
@@ -69,7 +72,7 @@ import type {
   BookingLineDraft,
   BookingWindow,
   BundleResult,
-  CatalogueResult,
+  EquipmentModelGroup,
   EquipmentResult,
   QueryGroup,
   ResultKind,
@@ -108,15 +111,28 @@ const AVAILABILITY_FILTERS: ReadonlyArray<{ value: AvailabilityLevel | 'any'; la
 
 /* ── Flattened options, so ↑/↓ can cross a group heading ───────────────── */
 
-interface FlatOption {
-  result: CatalogueResult
-  /** Index into the flat list — also the DOM id suffix. */
-  index: number
-}
+/**
+ * redesign v1 §2 — one row per model, so the flat cursor list is one entry
+ * per bundle and one entry per **model group**, not one per physical unit.
+ * Arrow keys move row to row; the chips inside an equipment row are reachable
+ * by mouse, touch, and native Tab order, same trade-off already documented
+ * above for a bundle's [View] button.
+ */
+type FlatOption =
+  | { type: 'bundle'; result: BundleResult; index: number }
+  | { type: 'equipmentGroup'; group: EquipmentModelGroup; index: number }
 
 function flatten(groups: readonly QueryGroup[]): FlatOption[] {
   const out: FlatOption[] = []
-  for (const g of groups) for (const r of g.results) out.push({ result: r, index: out.length })
+  for (const g of groups) {
+    if (g.kind === 'bundle') {
+      for (const r of g.results) out.push({ type: 'bundle', result: r as BundleResult, index: out.length })
+    } else if (g.kind === 'equipment' || g.kind === 'accessory') {
+      for (const group of groupEquipmentResults(g.results as EquipmentResult[])) {
+        out.push({ type: 'equipmentGroup', group, index: out.length })
+      }
+    }
+  }
   return out
 }
 
@@ -179,6 +195,10 @@ export function AddItemPanel({
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<TabKey>('all')
   const [category, setCategory] = useState<string | null>(null)
+  // redesign v1 §3 — read once per mount, same reasoning as `lib/bookingRules.ts`'s
+  // header comment: Settings and this panel are never mounted together.
+  const [allowOverbooking] = useState<boolean>(() => getAllowOverbooking())
+  const [overrideUnit, setOverrideUnit] = useState<EquipmentResult | null>(null)
   const [availability, setAvailability] = useState<AvailabilityLevel | 'any'>('any')
   const [sort, setSort] = useState<SortKey>('recommended')
   const [activeIndex, setActiveIndex] = useState(0)
@@ -262,14 +282,6 @@ export function AddItemPanel({
     [bookingWindow, days, existing, includeCrewAndVehicle, applyBundleSaving, onAdd],
   )
 
-  const commit = useCallback(
-    (r: CatalogueResult) => {
-      if (r.kind === 'bundle') addBundle(r)
-      else addEquipment(r)
-    },
-    [addBundle, addEquipment],
-  )
-
   /* ── Keyboard ───────────────────────────────────────────────────────── */
 
   function onKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
@@ -293,18 +305,21 @@ export function AddItemPanel({
         return
       case 'ArrowRight': {
         // The keyboard equivalent of the [View] button on a bundle row.
-        const r = options[activeIndex]?.result
-        if (!r || r.kind !== 'bundle') return
+        const opt = options[activeIndex]
+        if (!opt || opt.type !== 'bundle') return
         e.preventDefault()
-        setPreview(r.record)
+        setPreview(opt.result.record)
         return
       }
       case 'Enter': {
-        const r = options[activeIndex]?.result
-        if (!r) return
+        const opt = options[activeIndex]
+        if (!opt) return
         // Never let the keystroke that picks an item submit the booking form.
         e.preventDefault()
-        commit(r)
+        // redesign v1 §2 — Enter on a model row is the keyboard equivalent of
+        // tapping the model name: auto-pick the least-used free unit.
+        if (opt.type === 'bundle') addBundle(opt.result)
+        else if (opt.group.autoPick) addEquipment(opt.group.autoPick)
         return
       }
       case 'Escape':
@@ -341,9 +356,12 @@ export function AddItemPanel({
           minHeight: TOUCH,
           padding: '0 12px',
           borderRadius: 'var(--r-btn)',
-          background: 'var(--btn-primary-bg)',
-          color: 'var(--btn-primary-fg)',
-          border: '1px solid transparent',
+          // redesign v1 §7.2 — one accent on the page: Confirm Booking is the
+          // only filled-blue button. Add Item was competing with it, so this
+          // moves to the same `secondary` treatment Button.tsx uses.
+          background: 'var(--btn-secondary-bg)',
+          color: 'var(--text)',
+          border: '1px solid var(--btn-secondary-border)',
           fontFamily: 'inherit',
           fontSize: 'var(--t-meta)',
           fontWeight: 600,
@@ -634,32 +652,42 @@ export function AddItemPanel({
                     </p>
                   ) : (
                     <ul role="presentation" style={{ listStyle: 'none', margin: 0, padding: 'var(--sp-xs)' }}>
-                      {g.results.map((r) => {
-                        const flatIndex = options.findIndex((o) => o.result === r)
-                        return r.kind === 'bundle' ? (
-                          <BundleRow
-                            key={r.id}
-                            id={`${listboxId}-opt-${flatIndex}`}
-                            result={r}
-                            active={flatIndex === activeIndex}
-                            showPrices={showPrices}
-                            onHover={() => setActiveIndex(flatIndex)}
-                            onAdd={() => addBundle(r)}
-                            onView={() => setPreview(r.record)}
-                          />
-                        ) : (
-                          <EquipmentRow
-                            key={r.id}
-                            id={`${listboxId}-opt-${flatIndex}`}
-                            result={r}
-                            active={flatIndex === activeIndex}
-                            onBooking={existing.has(r.id)}
-                            showPrices={showPrices}
-                            onHover={() => setActiveIndex(flatIndex)}
-                            onAdd={() => addEquipment(r)}
-                          />
-                        )
-                      })}
+                      {g.kind === 'bundle'
+                        ? g.results.map((r) => {
+                            const bundle = r as BundleResult
+                            const flatIndex = options.findIndex((o) => o.type === 'bundle' && o.result === bundle)
+                            return (
+                              <BundleRow
+                                key={bundle.id}
+                                id={`${listboxId}-opt-${flatIndex}`}
+                                result={bundle}
+                                active={flatIndex === activeIndex}
+                                showPrices={showPrices}
+                                onHover={() => setActiveIndex(flatIndex)}
+                                onAdd={() => addBundle(bundle)}
+                                onView={() => setPreview(bundle.record)}
+                              />
+                            )
+                          })
+                        : // redesign v1 §2 — one row per model, one chip per unit.
+                          groupEquipmentResults(g.results as EquipmentResult[]).map((group) => {
+                            const flatIndex = options.findIndex((o) => o.type === 'equipmentGroup' && o.group === group)
+                            return (
+                              <EquipmentGroupRow
+                                key={group.name}
+                                id={`${listboxId}-opt-${flatIndex}`}
+                                group={group}
+                                active={flatIndex === activeIndex}
+                                existing={existing}
+                                showPrices={showPrices}
+                                allowOverbooking={allowOverbooking}
+                                onHover={() => setActiveIndex(flatIndex)}
+                                onAutoPick={() => group.autoPick && addEquipment(group.autoPick)}
+                                onPickUnit={(unit) => addEquipment(unit)}
+                                onRequestOverride={(unit) => setOverrideUnit(unit)}
+                              />
+                            )
+                          })}
                     </ul>
                   )}
                 </li>
@@ -738,6 +766,15 @@ export function AddItemPanel({
             bundle: result,
           })
         }}
+      />
+
+      {/* §3 — only reachable when a booked/maintenance chip is tapped while
+          the valve is on; `overrideUnit` is null otherwise. */}
+      <OverbookingOverrideModal
+        isOpen={overrideUnit !== null}
+        unit={overrideUnit}
+        onClose={() => setOverrideUnit(null)}
+        onOverbook={(unit) => addEquipment(unit)}
       />
     </div>
   )
@@ -878,56 +915,78 @@ function BundleRow({
   )
 }
 
-function EquipmentRow({
+/**
+ * redesign v1 §2 — one row per model, one chip per unit. Bulk (non-serialised)
+ * stock renders as before — a chip is a physical unit, and pooled stock has
+ * none to point at. Tapping the model name (anywhere in the header) auto-picks
+ * `group.autoPick`; tapping a chip adds that exact serial. A booked/maintenance
+ * chip is not tappable — colour never carries the state alone, so every chip
+ * also carries a glyph and its accessible name states the status in words.
+ *
+ * "Sub-rented in" (gold outline, tappable) from the spec has no corresponding
+ * `InvStatus` in this build's data model — an honest gap, not implemented,
+ * rather than a fabricated third status.
+ */
+function EquipmentGroupRow({
   id,
-  result,
+  group,
   active,
-  onBooking,
+  existing,
   showPrices,
+  allowOverbooking,
   onHover,
-  onAdd,
+  onAutoPick,
+  onPickUnit,
+  onRequestOverride,
 }: {
   id: string
-  result: EquipmentResult
+  group: EquipmentModelGroup
   active: boolean
-  onBooking: boolean
+  existing: ReadonlySet<string>
   showPrices: boolean
+  /** §3 — Settings ▸ Financial ▸ Booking rules ▸ Allow overbooking. Off by default. */
+  allowOverbooking: boolean
   onHover: () => void
-  onAdd: () => void
+  onAutoPick: () => void
+  onPickUnit: (unit: EquipmentResult) => void
+  /** A booked/maintenance chip while the valve is on opens the override dialog instead of adding directly. */
+  onRequestOverride: (unit: EquipmentResult) => void
 }) {
-  const { availability } = result
-  const meta = [
-    result.kind === 'accessory' ? 'Accessory' : 'Equipment',
-    result.category,
-    result.serial !== '—' ? result.serial : null,
-    result.sku ?? null,
-    result.brand ?? null,
-  ].filter((x): x is string => Boolean(x))
+  const bulk = group.units.length === 1 && group.units[0]!.serial === '—'
+  const freeCount = group.units.filter((u) => u.status === 'In Stock').length
+  const allOnBooking = group.units.every((u) => existing.has(u.id))
+  const meta = [group.kind === 'accessory' ? 'Accessory' : 'Equipment', group.category, group.sku ?? null, group.brand ?? null].filter(
+    (x): x is string => Boolean(x),
+  )
+  const summary = bulk ? group.availability.detail : `${freeCount} of ${group.units.length} free for these dates`
 
   return (
     <li
       id={id}
       role="option"
       aria-selected={active}
-      aria-label={`${result.name}. ${meta.join(', ')}. ${availability.label} — ${availability.detail}. ${
-        showPrices ? `${formatMoney(result.ratePaisa)} per day. ` : ''
-      }${onBooking ? 'Already on this booking.' : 'Press Enter to add it.'}`}
+      aria-label={`${group.name}. ${meta.join(', ')}. ${summary}. ${showPrices ? `${formatMoney(group.ratePaisa)} per day. ` : ''}${
+        group.autoPick ? 'Press Enter to add the least-used free unit.' : 'Nothing free for these dates.'
+      }`}
       onMouseMove={onHover}
-      onClick={onBooking ? undefined : onAdd}
       style={{
         display: 'grid',
-        gap: 3,
+        gap: 6,
         minHeight: TOUCH,
         padding: '9px 10px',
         borderRadius: 'var(--r-btn)',
-        cursor: onBooking ? 'default' : 'pointer',
         background: active ? 'var(--hover-row)' : 'transparent',
-        opacity: onBooking ? 0.6 : 1,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minWidth: 0 }}>
+      <div
+        role="button"
+        tabIndex={-1}
+        aria-hidden="true"
+        onClick={group.autoPick ? onAutoPick : undefined}
+        style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minWidth: 0, cursor: group.autoPick ? 'pointer' : 'default' }}
+      >
         <span style={{ display: 'inline-flex', flexShrink: 0, color: 'var(--text2)' }}>
-          <Icon name={result.kind === 'accessory' ? 'box' : 'camera'} size={15} />
+          <Icon name={group.kind === 'accessory' ? 'box' : 'camera'} size={15} />
         </span>
         <span
           style={{
@@ -939,12 +998,12 @@ function EquipmentRow({
             whiteSpace: 'nowrap',
           }}
         >
-          {result.name}
+          {group.name}
         </span>
         <span style={{ flexShrink: 0 }}>
-          <AvailabilityChip verdict={availability} />
+          <AvailabilityChip verdict={group.availability} />
         </span>
-        {onBooking && (
+        {allOnBooking && (
           <span
             style={{
               flexShrink: 0,
@@ -969,36 +1028,79 @@ function EquipmentRow({
             className="figure"
             style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}
           >
-            {formatMoney(result.ratePaisa)}
+            {formatMoney(group.ratePaisa)}
             <span style={{ fontSize: 'var(--t-meta)', fontWeight: 500, color: 'var(--text2)' }}> / day</span>
           </span>
         )}
       </div>
 
-      <div
-        style={{
-          fontSize: 'var(--t-meta)',
-          color: 'var(--text2)',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
+      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {meta.map((m, i) => (
-          <span key={m} className={i >= 2 ? 'identifier' : undefined}>
+          <span key={`${m}-${i}`}>
             {i > 0 ? ' · ' : ''}
             {m}
           </span>
         ))}
+        {meta.length > 0 ? ' · ' : ''}
+        {summary}
+        {group.inBundles.length > 0 && ` · In ${group.inBundles.length} bundle${group.inBundles.length === 1 ? '' : 's'}`}
       </div>
 
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-        <span>{result.location}</span>
-        {availability.level !== 'available' && (
-          <span style={{ color: 'var(--danger-text)', fontWeight: 600 }}>{availability.detail}</span>
-        )}
-        {result.inBundles.length > 0 && <span>In {result.inBundles.length} bundle{result.inBundles.length === 1 ? '' : 's'}</span>}
-      </div>
+      {!bulk && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {group.units.map((u) => {
+            const free = u.status === 'In Stock'
+            const onBooking = existing.has(u.id)
+            // §3 — a booked/maintenance chip is a hard block by default. When
+            // the valve is on it becomes tappable too, opening the override
+            // dialog instead of adding directly.
+            const opensOverride = !free && allowOverbooking && !onBooking
+            const tappable = (free && !onBooking) || opensOverride
+            return (
+              <button
+                key={u.id}
+                type="button"
+                className="press"
+                disabled={!tappable}
+                title={free ? `${u.serial} — free` : `${u.serial} · ${u.status}${u.committedTo !== '—' ? ` · ${u.committedTo}` : ''}`}
+                aria-label={
+                  onBooking
+                    ? `${u.serial} — already on this booking`
+                    : free
+                      ? `Add unit ${u.serial}`
+                      : opensOverride
+                        ? `${u.serial} — booked. ${u.status}${u.committedTo !== '—' ? ` · ${u.committedTo}` : ''}. Opens the overbooking override.`
+                        : `${u.serial} — booked, not tappable. ${u.status}${u.committedTo !== '—' ? ` · ${u.committedTo}` : ''}`
+                }
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (free && !onBooking) onPickUnit(u)
+                  else if (opensOverride) onRequestOverride(u)
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  minHeight: 24,
+                  padding: '0 8px',
+                  borderRadius: 'var(--r-badge)',
+                  border: 'none',
+                  background: onBooking ? 'var(--st-neutral-bg)' : free ? 'var(--st-in-bg)' : 'var(--st-danger-bg)',
+                  color: onBooking ? 'var(--st-neutral-fg)' : free ? 'var(--st-in-fg)' : 'var(--st-danger-fg)',
+                  fontFamily: 'inherit',
+                  fontSize: 'var(--t-th)',
+                  fontWeight: 700,
+                  cursor: tappable ? 'pointer' : 'not-allowed',
+                  opacity: onBooking ? 0.7 : 1,
+                }}
+              >
+                <Icon name={free ? 'check' : 'error'} size={10} />
+                <span className="identifier">{u.serial}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
     </li>
   )
 }

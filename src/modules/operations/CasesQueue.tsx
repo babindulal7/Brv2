@@ -3,11 +3,12 @@ import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
-import { EmptyState } from '../../components/ui/StateViews'
+import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
-import { canViewMoney } from '../../lib/rbac'
 import type { Role } from '../../lib/rbac'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useAuth } from '../../lib/auth'
 import { formatMoney } from '../../lib/money'
 import { formatAd } from '../../lib/bs'
 import { useTabularLayout } from '../../lib/device'
@@ -58,19 +59,27 @@ import { findClientIdByBooking } from '../../data/clients'
  * 8-column job table: Cases' 14 columns, disposition vocabulary and
  * money-bearing rail do not fit that shape.
  *
- * **Warehouse sees no money** (§11's role table) — `canViewMoney(role)`
+ * **Warehouse sees no money** (§11's role table) — `useCanViewMoney()`
  * structurally omits Assessed/Outstanding/Financial Impact rather than
  * masking them, the same primitive `data/operations.ts`'s `NO_MONEY_NOTE`
- * describes for the other four queues. There is no auth session yet
- * (Phase 7), so `role` below is a local "viewing as" toggle rather than a
- * real session — every other workspace in this build that needs a role
- * check is in the same position.
+ * describes for the other four queues.
+ *
+ * That gate reads the **signed-in session** (`lib/auth` → `lib/rbac`), which
+ * is the same row `auth_user_role()` resolves server-side, so the UI and RLS
+ * cannot disagree. It used to read a local `useState<Role>` "viewing as"
+ * dropdown in this header — dating from before auth existed — which meant a
+ * money-blind session could reveal Exposure, Recovered, Assessed, Outstanding
+ * and the whole Financial Impact panel by picking `Owner` from a select box.
+ * A control that changes what money a session sees is a privilege-escalation
+ * control whatever it is labelled, so it is gone; the sibling
+ * `CasesWorkspace.tsx` has always used the hook.
+ *
+ * Law 6 is enforced by RLS (PLAN.md §0); this gate is the UI half of it.
  */
 
 const BLUE_PRIMARY = { background: 'var(--cat-1)', color: '#fff', border: '1px solid transparent' } as const
 /** `CASES` is asserted non-empty at module load in `data/cases.ts`; this names that guarantee once instead of an unchecked index everywhere below. */
 const FIRST_CASE = CASES[0] as Case
-const ROLES: Role[] = ['Owner', 'Admin', 'Manager', 'Coordinator', 'Warehouse', 'Technician', 'Accounts', 'Driver', 'Client']
 /** §11 — Resolution is Manager/Owner only. */
 function canResolve(role: Role): boolean {
   return role === 'Owner' || role === 'Admin'
@@ -132,7 +141,14 @@ export default function CasesQueue() {
      1180) is unreadable below 768; the right rail's fixed 340px column breaks
      too. Law 13: branch on capability, not platform. */
   const tabular = useTabularLayout()
-  const [role, setRole] = useState<Role>('Admin')
+  /* Law 6 — the session decides, not this component. `user` is null before the
+     first session lookup resolves and for a signed-out visitor; both are
+     treated as `Client`, the portal-only role every staff gate already
+     excludes, which is the same "unknown identity is not trusted" default
+     `lib/auth`'s own profile loader takes. It is never a working role, so a
+     render that happens before auth lands cannot leak a rupee. */
+  const { user } = useAuth()
+  const role: Role = user?.role ?? 'Client'
   const [statusFilter, setStatusFilter] = useState<'All' | CaseStatus>('All')
   const [flagFilter, setFlagFilter] = useState<CaseFlag | null>(null)
   const [query, setQuery] = useState('')
@@ -144,10 +160,10 @@ export default function CasesQueue() {
   const [overrides, setOverrides] = useState<Record<string, Partial<Case>>>({})
   const [newCaseNote, setNewCaseNote] = useState(false)
 
-  const money = canViewMoney(role)
-  // No auth session yet (Phase 7, same as `money` above) — the Hover Intel
-  // gate context reads the same local "viewing as" toggle rather than
-  // `useAuth`, so it can never disagree with this screen's own money gate.
+  const money = useCanViewMoney()
+  // The Hover Intel gate context is built from the same session role the money
+  // gate above resolves from (`useCanViewMoney` is `canViewMoney(user.role)`),
+  // so the card payload and this screen's own columns can never disagree.
   // Memoized on `role` alone: `gateContext()` (lib/fieldGating.ts) returns a
   // fresh object literal on every call, so calling it unmemoized here would
   // silently defeat `rowsWithIntel`'s memoization below — every unrelated
@@ -214,16 +230,59 @@ export default function CasesQueue() {
     })
   const selectRow = (id: string) => setSelectedId(id)
 
+  /**
+   * The last resolution failure, kept per case so switching rows cannot leave a
+   * stale one attached to a case it did not come from. Law 12 — inline and
+   * persistent; `useToast()` carries successes only and no error toast exists.
+   */
+  const [resolveError, setResolveError] = useState<{ caseId: string; message: string } | null>(null)
+
+  /**
+   * ⭐ 12 Aug 2026 — the local commit now runs **after** the dispatch resolves.
+   *
+   * What stood here was `setOverrides(...)` — which sets `disposition`, moves
+   * the case to `statusAfterDisposition(...)` and posts the whole Financial
+   * Impact allocation — followed, in the rail's own button, by:
+   *
+   *   import('../../actions/cases/resolveCase').then(m => m.resolveCase({ caseId, resolution }))
+   *
+   * No `ActionContext`, so `actions/core.ts` refused it outright; no `.catch()`,
+   * so the refusal was an unhandled promise; and the override had already
+   * closed the case in the UI. The queue showed Resolved, the chip counts and
+   * Exposure recomputed around it, and RESOLVE_CASE never ran. Nobody signed
+   * the disposition either — a money-bearing decision (§11 restricts it to
+   * Manager/Owner) was recorded against no identity at all.
+   *
+   * RESOLVE_CASE is still a stub, so today every press lands in the `.catch()`
+   * and the operator reads why instead of watching the case close.
+   */
   const confirmDisposition = (c: Case) => {
     const disposition = draftDisposition[c.id]
     if (!disposition) return
-    const allocation = defaultAllocationFor(c, disposition)
-    setOverrides((prev) => ({ ...prev, [c.id]: { ...prev[c.id], disposition, status: statusAfterDisposition(disposition), ...allocation } }))
-    setDraftDisposition((prev) => {
-      const next = { ...prev }
-      delete next[c.id]
-      return next
-    })
+    if (!user) {
+      setResolveError({
+        caseId: c.id,
+        message:
+          'You are not signed in, so this disposition cannot be recorded against anyone. Nothing was written and the case is unchanged.',
+      })
+      return
+    }
+    setResolveError(null)
+    void import('../../actions/cases/resolveCase')
+      .then((m) => m.resolveCase({ caseId: c.id, resolution: disposition }, { userId: user.id, role: user.role }))
+      .then(() => {
+        const allocation = defaultAllocationFor(c, disposition)
+        setOverrides((prev) => ({ ...prev, [c.id]: { ...prev[c.id], disposition, status: statusAfterDisposition(disposition), ...allocation } }))
+        setDraftDisposition((prev) => {
+          const next = { ...prev }
+          delete next[c.id]
+          return next
+        })
+      })
+      .catch((err: unknown) => {
+        console.error('resolveCase failed:', err)
+        setResolveError({ caseId: c.id, message: err instanceof Error ? err.message : String(err) })
+      })
   }
 
   return (
@@ -240,21 +299,6 @@ export default function CasesQueue() {
           <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Manage damage, missing items, disputes, theft and operational incidents.</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-            Viewing as
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value as Role)}
-              aria-label="Simulate viewing role — no auth session is built yet (Phase 7)"
-              style={{ height: 30, borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', padding: '0 6px' }}
-            >
-              {ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          </label>
           <Button icon="download">Export</Button>
           <span title={NEW_CASE_UNAVAILABLE_REASON}>
             <button
@@ -324,7 +368,8 @@ export default function CasesQueue() {
       {!money && (
         <div style={{ ...cardStyle, display: 'flex', gap: 7, alignItems: 'flex-start', padding: 'var(--sp-md)', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
           <Icon name="info" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-          Warehouse view — Exposure, Recovered This Month, Assessed and Outstanding are not shown or requested on this screen (Foundation §8.3, Cases §11).
+          {/* Named from the session rather than hardcoded to "Warehouse": Law 6 covers Technician, Driver and Client too, and a Technician told they are seeing "the Warehouse view" would reasonably think the screen was wrong. */}
+          {role} view — Exposure, Recovered This Month, Assessed and Outstanding are not shown or requested on this screen (Foundation §8.3, Cases §11).
         </div>
       )}
 
@@ -704,7 +749,15 @@ export default function CasesQueue() {
 
         {/* ── §6 right rail — Case Summary → Evidence → Resolution → Financial Impact → Linked Records → Timeline → Quick Actions ── */}
         <Rail width={340} label="Case detail">
-          <CaseRail c={selected} role={role} money={money} draft={draftDisposition[selected.id] ?? ''} onDraft={(v) => setDraftDisposition((p) => ({ ...p, [selected.id]: v }))} onConfirm={() => confirmDisposition(selected)} />
+          <CaseRail
+            c={selected}
+            role={role}
+            money={money}
+            draft={draftDisposition[selected.id] ?? ''}
+            onDraft={(v) => setDraftDisposition((p) => ({ ...p, [selected.id]: v }))}
+            onConfirm={() => confirmDisposition(selected)}
+            error={resolveError?.caseId === selected.id ? resolveError.message : null}
+          />
         </Rail>
       </div>
 
@@ -800,6 +853,7 @@ function CaseRail({
   draft,
   onDraft,
   onConfirm,
+  error,
 }: {
   c: Case
   role: Role
@@ -807,6 +861,8 @@ function CaseRail({
   draft: string
   onDraft: (v: string) => void
   onConfirm: () => void
+  /** The last RESOLVE_CASE rejection for THIS case, or null. */
+  error: string | null
 }) {
   const dispositions = DISPOSITIONS_BY_TYPE[c.type]
   const alloc = allocationOf(c)
@@ -879,7 +935,7 @@ function CaseRail({
       <RailSection title="Resolution" badge="Manager only">
         {!canDoResolution ? (
           <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-            Restricted to Manager and Owner. Viewing as <strong>{role}</strong>.
+            Restricted to Manager and Owner. Signed in as <strong>{role}</strong>.
           </p>
         ) : c.disposition ? (
           <SummaryRows rows={[{ label: 'Disposition', value: c.disposition, tone: 'primary' }]} />
@@ -900,15 +956,14 @@ function CaseRail({
                 )
               })}
             </div>
+            {/* The dispatch lives in the parent's `confirmDisposition`, which
+                waits for it before committing anything locally. It used to be
+                here, fired alongside `onConfirm()` with no context and no
+                catch — see the note on `confirmDisposition`. */}
             <button
               type="button"
               disabled={!draft}
-              onClick={() => {
-                onConfirm()
-                import('../../actions/cases/resolveCase').then((m) =>
-                  m.resolveCase({ caseId: c.id, resolution: draft })
-                )
-              }}
+              onClick={onConfirm}
               style={{
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%', height: 34, marginTop: 10,
                 borderRadius: 'var(--r-btn)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', cursor: draft ? 'pointer' : 'not-allowed',
@@ -919,6 +974,13 @@ function CaseRail({
               Confirm Disposition
             </button>
             {!draft && <p style={{ margin: '5px 0 0', textAlign: 'right', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Select a disposition above first</p>}
+            {/* Law 12 — inline and persistent, right under the control that
+                failed. The case is still open above it, which is the truth. */}
+            {error && (
+              <div style={{ marginTop: 9 }}>
+                <ErrorBanner title="The case was not resolved" message={error} />
+              </div>
+            )}
           </>
         )}
       </RailSection>

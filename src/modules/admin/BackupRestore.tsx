@@ -2,6 +2,11 @@ import { useState } from 'react'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows, FooterNote } from '../../components/ui/Page'
 import { Donut, Legend, catColor } from '../../components/ui/Charts'
+import { Unavailable } from '../../components/ui/Unavailable'
+import { ErrorBanner } from '../../components/ui/StateViews'
+import { SystemRestoreModal } from './SystemRestoreModal'
+import { useAuth } from '../../lib/auth'
+import { useViewport } from '../../lib/device'
 import { BRAND, BRAND_TEXT, STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import {
@@ -21,7 +26,7 @@ import {
   ALERTS,
   QUICK_ACTIONS,
   ACTIVITY,
-  ADVISOR,
+  /* `ADVISOR` is deliberately not imported — see the Law 16 note at the rail. */
 } from '../../data/backup'
 
 const STATUS_OF: Record<string, StatusKey> = {
@@ -102,15 +107,91 @@ function Spark({ points, tone }: { points: number[]; tone: 'primary' | 'success'
 }
 
 /**
- * Administration → **Backup & Restore**, built from render `F134F2C8`.
+ * **Backup & Restore — `10_TOOLS.md` §10.7**, on the page built from render
+ * `F134F2C8`.
  *
- * The Start Restore control is deliberately inert here. Restore is the single
- * most destructive action in the product, and wiring a live button before the
- * confirmation flow exists would be the wrong order to build it in.
+ * ## §10.7 is NOT built as drawn, and that is the ruling
+ *
+ * `WIREFRAME_RULINGS_2026-08-12.md` §7, verbatim: *"§10.7 Restore with only a
+ * typed confirmation → **Do not build as drawn.** Keep Owner-only + 2FA,
+ * sandbox as default target, mandatory pre-restore checkpoint. Gate Download
+ * the same way — a full backup walks around Law 6's RLS."*
+ *
+ * The wireframe draws one control — type the backup name, press Restore — and
+ * says nothing about who may press it or what it targets. Four protections it
+ * never mentions are enforced here and in `SystemRestoreModal.tsx`:
+ *
+ *  1. **Owner-only.** `Tools.tsx:77-80` already records why the render's own
+ *     Backup button was removed: *"a Rental Officer can press it, against
+ *     Administration §25.2's Owner-only, 2FA-gated rule."* Every destructive or
+ *     exfiltrating control on this page is behind that gate, and a non-Owner
+ *     sees a stated reason rather than a button that fails.
+ *  2. **Two-factor** before the restore is armed.
+ *  3. **Sandbox is the default target**, production a deliberate second choice.
+ *  4. **A pre-restore checkpoint is mandatory** — taken before anything is
+ *     overwritten, not offered as an option.
+ *
+ * **Download is gated identically, and this is the non-obvious half.** Law 6
+ * hides money columns from Warehouse *at the database*, through RLS and twenty
+ * masking views. A full backup file is the same data with no RLS in front of
+ * it, so an ungated Download hands a money-blind role every figure the whole
+ * schema exists to withhold. The spec draws `[Download]` on every history row
+ * with no gate at all; it gets the Owner gate here.
+ *
+ * The typed confirmation §10.7 *does* ask for is kept and sharpened: the modal
+ * asks for **the backup's own name**, as the wireframe says, not a fixed word.
+ * Typing `RESTORE` is muscle memory; typing `BKP-2026-0812-01` requires having
+ * read which backup is about to overwrite the database.
+ *
+ * ## The error state
+ *
+ * §10.7: *"This page needs a real error state — a restore that fails silently
+ * is the worst failure in the product."* There is no restore service in this
+ * build, so the honest terminal state of the flow is a **failure that names
+ * what is missing**, carried inline and persistently (Law 12). It is not a
+ * success screen, and `SUCCESS_FABRICATION_REGISTER_2026-08-12.md` is the
+ * reason: a screen that says a restore completed when nothing ran is the exact
+ * defect that register exists to close. The same applies to Download.
+ *
+ * ## Removed under a law, not under a wireframe
+ *
+ * The render's **"AI Backup Advisor"** card is gone. Law 16 — *"No AI panel
+ * renders until backed by a validated computation"* — and its four bullets were
+ * hand-written strings with an "Ask AI" box behind them. Rulings §7 applies the
+ * same law to Settings' "AI Branch Insights" card by name; this is the same
+ * card on a different page. Nothing else was removed: Rulings §1 keeps every
+ * other panel the wireframe simply does not draw.
  */
 export default function BackupRestore() {
+  const viewport = useViewport()
+  const { user } = useAuth()
   const [scope, setScope] = useState('Entire System')
   const [opts, setOpts] = useState(() => RESTORE_OPTIONS.map((o) => o.on))
+
+  /** Administration §25.2. Not a UI preference — the same gate the modal re-checks. */
+  const isOwner = user?.role === 'Owner'
+  const OWNER_ONLY =
+    'Owner-only, and two-factor gated. Administration §25.2 — a restore overwrites live data and a full backup file carries every money column Law 6 hides from the floor, with no RLS in front of it.'
+
+  /** The backup a restore has been requested for, or `null`. */
+  const [restoreFor, setRestoreFor] = useState<{ id: string; kind: string } | null>(null)
+
+  /**
+   * Law 12 — inline and persistent. A download that produced no file must say
+   * so on the page, not in a toast that has already gone.
+   */
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+
+  function requestDownload(id: string) {
+    /* No backup service exists in this build, so this is the whole truth of
+       what happens: nothing is fetched and the operator is told. Returning a
+       fabricated "Download started" here would be a
+       SUCCESS_FABRICATION_REGISTER entry on the most sensitive file in the
+       product. */
+    setDownloadError(
+      `No file was downloaded for ${id}. This build has no backup storage service, so there is nothing to fetch — and an ungated download of a full backup would carry every money column Law 6 withholds from the floor. Nothing was written, sent or exposed.`,
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
@@ -119,22 +200,59 @@ export default function BackupRestore() {
         title="Backup & Restore"
         description="Protect your data with automated backups and restore with confidence."
         actions={
+          /* §10.7's header is `[ Back up now ]`. The three that follow are the
+             render's and survive (Rulings §1); each states its own gate. */
           <>
-            <Button icon="plus" variant="primary">
-              Create Backup
-            </Button>
-            <Button icon="refresh">Restore</Button>
-            <Button icon="download">Export</Button>
-            <Button icon="refresh">Refresh</Button>
+            <Unavailable
+              reason={
+                isOwner
+                  ? 'No backup service exists in this build, so pressing this would write nothing while saying it had.'
+                  : OWNER_ONLY
+              }
+            >
+              <Button icon="plus" variant="primary" disabled>
+                Back up now
+              </Button>
+            </Unavailable>
+            <Unavailable reason={isOwner ? 'Pick the backup to restore from a history row below.' : OWNER_ONLY}>
+              <Button icon="refresh" disabled>
+                Restore
+              </Button>
+            </Unavailable>
+            <Unavailable reason={OWNER_ONLY}>
+              <Button icon="download" disabled>
+                Export
+              </Button>
+            </Unavailable>
+            <Unavailable reason="Nothing to refresh — this build reads a static seed, not a live backup service.">
+              <Button icon="refresh" disabled>
+                Refresh
+              </Button>
+            </Unavailable>
           </>
         }
       />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      {/* Law 12 — the error sits at the top of the page and stays until the
+          operator dismisses it. Never a toast: toasts carry successes only. */}
+      {downloadError && (
+        <ErrorBanner title="Download did not happen" message={downloadError} onRetry={() => setDownloadError(null)} />
+      )}
+
+      <div
+        style={{
+          display: 'grid',
+          /* Rulings §7 — below 1180 the rail reflows underneath, still visible.
+             It is not wrapped in CollapsibleAside and its defaults are untouched. */
+          gridTemplateColumns: viewport === 'desktop' ? 'minmax(0,1fr) auto' : 'minmax(0,1fr)',
+          gap: 'var(--sp-md)',
+          alignItems: 'start',
+        }}
+      >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <KpiStrip items={KPIS} columns={6} />
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 'var(--sp-md)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: viewport === 'phone' ? 'minmax(0,1fr)' : 'minmax(0,1fr) minmax(0,1fr)', gap: 'var(--sp-md)' }}>
             <Card
               title="Backup Overview"
               action={
@@ -253,11 +371,29 @@ export default function BackupRestore() {
                           <Pill text={b.status} status={STATUS_OF[b.status] ?? 'neutral'} />
                         </td>
                         <td style={{ ...td, color: 'var(--text2)' }}>{b.by}</td>
-                        <td style={{ ...td, color: 'var(--muted)' }}>
-                          <span style={{ display: 'flex', gap: 5 }}>
-                            <Icon name="download" size={14} />
-                            <Icon name="checklist" size={14} />
-                            <Icon name="more_vert" size={14} />
+                        {/* §10.7's `[Download] [Restore] ⋮` — the three the
+                            wireframe draws as bare glyphs, made real and gated. */}
+                        <td style={td}>
+                          <span style={{ display: 'flex', gap: 'var(--sp-xs)', alignItems: 'center' }}>
+                            <RowAction
+                              icon="download"
+                              label={`Download backup ${b.id}`}
+                              enabled={isOwner}
+                              reason={OWNER_ONLY}
+                              onClick={() => requestDownload(b.id)}
+                            />
+                            <RowAction
+                              icon="refresh"
+                              label={`Restore from backup ${b.id}`}
+                              enabled={isOwner}
+                              reason={OWNER_ONLY}
+                              onClick={() => setRestoreFor({ id: b.id, kind: `${b.type} · ${b.size}` })}
+                            />
+                            <Unavailable reason="The row menu (verify · duplicate · retention) is specified but not built yet.">
+                              <span style={rowActionStyle(false)}>
+                                <Icon name="more_vert" size={14} />
+                              </span>
+                            </Unavailable>
                           </span>
                         </td>
                       </tr>
@@ -379,30 +515,59 @@ export default function BackupRestore() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                disabled
-                title="Restore is not wired up — the confirmation flow does not exist yet"
-                /* Rendered as disabled, not as a dimmed primary — a washed-out
-                   purple fill still reads as the thing you are meant to press. */
-                style={{
-                  marginTop: 'var(--sp-md)',
-                  width: '100%',
-                  height: 36,
-                  borderRadius: 'var(--r-btn)',
-                  border: '1px solid var(--border)',
-                  background: 'var(--card2)',
-                  color: 'var(--muted)',
-                  fontSize: 'var(--t-meta)',
-                  fontWeight: 600,
-                  fontFamily: 'inherit',
-                  cursor: 'not-allowed',
-                }}
-              >
-                Start Restore
-              </button>
-              <p style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', textAlign: 'center' }}>
-                Disabled until the confirmation flow is built.
+              {/*
+                Live for an Owner now that the confirmation flow exists —
+                warning, environment choice, mandatory checkpoint, 2FA, then the
+                typed backup name. For anybody else it is a stated reason, not a
+                dead button: Rulings §7 keeps the Owner-only + 2FA gate §10.7
+                never mentions.
+              */}
+              {isOwner ? (
+                <button
+                  type="button"
+                  onClick={() => setRestoreFor({ id: RESTORE_POINT.id, kind: `${RESTORE_POINT.kind} · ${scope}` })}
+                  style={{
+                    marginTop: 'var(--sp-md)',
+                    width: '100%',
+                    /* Law 15 — 44×44 at every width, desktop included. */
+                    minHeight: 44,
+                    borderRadius: 'var(--r-btn)',
+                    border: '1px solid transparent',
+                    background: 'var(--btn-danger-bg)',
+                    color: 'var(--btn-danger-fg)',
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: 700,
+                    fontFamily: 'inherit',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Start Restore
+                </button>
+              ) : (
+                <Unavailable reason={OWNER_ONLY} style={{ marginTop: 'var(--sp-md)', width: '100%' }}>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      width: '100%',
+                      minHeight: 44,
+                      borderRadius: 'var(--r-btn)',
+                      border: '1px solid var(--border)',
+                      background: 'var(--card2)',
+                      color: 'var(--muted)',
+                      fontSize: 'var(--t-meta)',
+                      fontWeight: 700,
+                    }}
+                  >
+                    <Icon name="lock" size={14} />
+                    Start Restore
+                  </span>
+                </Unavailable>
+              )}
+              <p style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', textAlign: 'center', lineHeight: 1.45 }}>
+                Sandbox is the default target. A pre-restore checkpoint is taken first, and it is not optional.
               </p>
             </Card>
           </div>
@@ -511,31 +676,49 @@ export default function BackupRestore() {
           </Card>
 
           <Card title="Quick Actions">
+            {/*
+              `modules/settings/Tools.tsx:77-80` records why the render's Backup
+              quick action was removed from *that* page: "a Rental Officer can
+              press it, against Administration §25.2's Owner-only, 2FA-gated
+              rule." The identical defect was live here — a "Restore Backup"
+              tile any role could press. Every tile now states its gate; none is
+              a live no-op.
+            */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-sm)' }}>
               {QUICK_ACTIONS.map((q) => (
-                <button
+                <Unavailable
                   key={q.label}
-                  type="button"
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '12px 6px',
-                    borderRadius: 'var(--r-btn)',
-                    border: '1px solid var(--border)',
-                    background: 'var(--card2)',
-                    color: 'var(--text)',
-                    fontSize: 'var(--t-meta)',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                    textAlign: 'center',
-                  }}
+                  reason={
+                    /^(Create|Restore|Export)/.test(q.label)
+                      ? OWNER_ONLY
+                      : 'Specified but not built — this build has no backup service to run it against.'
+                  }
+                  style={{ width: '100%' }}
                 >
-                  <Icon name={q.icon} size={17} style={{ color: BRAND[q.tone] }} />
-                  {q.label}
-                </button>
+                  <span
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      width: '100%',
+                      /* Law 15 — 44×44 at every width. */
+                      minHeight: 44,
+                      padding: '12px 6px',
+                      borderRadius: 'var(--r-btn)',
+                      border: '1px solid var(--border)',
+                      background: 'var(--card2)',
+                      color: 'var(--muted)',
+                      fontSize: 'var(--t-meta)',
+                      fontWeight: 600,
+                      textAlign: 'center',
+                    }}
+                  >
+                    <Icon name={q.icon} size={17} style={{ color: BRAND[q.tone] }} />
+                    {q.label}
+                  </span>
+                </Unavailable>
               ))}
             </div>
           </Card>
@@ -562,48 +745,89 @@ export default function BackupRestore() {
             </div>
           </Card>
 
-          <Card
-            title="AI Backup Advisor — Preview"
-            action={
-              <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
-                View insights →
-              </span>
-            }
-          >
-            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 9 }}>
-              {ADVISOR.map((t) => (
-                <li key={t} style={{ display: 'flex', gap: 7, fontSize: 'var(--t-meta)', alignItems: 'flex-start' }}>
-                  <Icon name="dot" size={10} style={{ color: 'var(--success-text)', flexShrink: 0, marginTop: 3 }} />
-                  <span style={{ color: 'var(--text2)' }}>{t}</span>
-                </li>
-              ))}
-            </ul>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                marginTop: 11,
-                height: 32,
-                padding: '0 9px',
-                borderRadius: 'var(--r-input)',
-                border: '1px solid var(--input-border)',
-                background: 'var(--input-bg)',
-              }}
-            >
-              <input
-                aria-label="Ask AI about backups"
-                placeholder="Ask AI about backups…"
-                style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', fontSize: 'var(--t-meta)', color: 'var(--text)', fontFamily: 'inherit' }}
-              />
-              <Icon name="arrow_right" size={14} style={{ color: 'var(--muted)' }} />
-            </div>
-          </Card>
+          {/*
+            The render's "AI Backup Advisor — Preview" card was here. Deleted
+            under Law 16 — "No AI panel renders until backed by a validated
+            computation" — not under a wireframe. Its four bullets
+            (`data/backup.ts`'s ADVISOR) were hand-written strings behind an
+            "Ask AI" box that went nowhere, and Rulings §7 applies exactly this
+            law to Settings' "AI Branch Insights" card by name. `data/backup.ts`
+            is not this pass's file to edit, so ADVISOR stays exported and
+            unused rather than being half-removed across an ownership boundary.
+          */}
         </Rail>
       </div>
 
+      {/*
+        The typed confirmation §10.7 asks for, plus the three protections it
+        does not: Owner-only, 2FA, sandbox-by-default and a mandatory
+        pre-restore checkpoint. The modal re-checks the role itself — this
+        page's gate is the first of two, never the only one.
+      */}
+      {restoreFor && (
+        <SystemRestoreModal
+          isOpen
+          onClose={() => setRestoreFor(null)}
+          restorePointId={restoreFor.id}
+          restorePointKind={restoreFor.kind}
+        />
+      )}
+
       <FooterNote extra={['Backups are encrypted at rest and in transit']} />
     </div>
+  )
+}
+
+/* ── row actions ───────────────────────────────────────────────────────── */
+
+function rowActionStyle(enabled: boolean) {
+  return {
+    display: 'grid',
+    placeItems: 'center',
+    /* Law 15 — 44×44 at every width. The render drew 14px glyphs. */
+    minWidth: 44,
+    minHeight: 44,
+    borderRadius: 'var(--r-xs)',
+    border: '1px solid var(--border)',
+    background: 'transparent',
+    color: enabled ? 'var(--text2)' : 'var(--muted)',
+    cursor: enabled ? 'pointer' : 'not-allowed',
+    opacity: enabled ? 1 : 0.6,
+    fontFamily: 'inherit',
+  } as const
+}
+
+/**
+ * One history-row control. Enabled only for an Owner; otherwise it states the
+ * gate rather than failing on press — `rbac.ts`'s rule is that a forbidden item
+ * is absent or explained, never a button that quietly does nothing.
+ */
+function RowAction({
+  icon,
+  label,
+  enabled,
+  reason,
+  onClick,
+}: {
+  icon: 'download' | 'refresh'
+  label: string
+  enabled: boolean
+  reason: string
+  onClick: () => void
+}) {
+  if (!enabled) {
+    return (
+      <Unavailable reason={reason}>
+        <span aria-label={label} style={rowActionStyle(false)}>
+          <Icon name={icon} size={14} />
+        </span>
+      </Unavailable>
+    )
+  }
+  return (
+    <button type="button" aria-label={label} title={label} onClick={onClick} style={rowActionStyle(true)}>
+      <Icon name={icon} size={14} />
+    </button>
   )
 }
 

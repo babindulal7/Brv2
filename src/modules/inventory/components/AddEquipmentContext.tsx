@@ -47,7 +47,7 @@ import type { UnitDraft, ContainedDraft, FileDraft } from './EquipmentShared'
  *    off the body, which defeats scanning. The serial is typed or scanned.
  *  · **Status is read-only and engine-owned** (§5.3). The render makes it an
  *    editable dropdown and creates a brand-new unit already `On Rent` against
- *    BK-2026-0718 — a booking that cannot reference an asset that does not exist
+ *    B-718 — a booking that cannot reference an asset that does not exist
  *    yet. Here units carry no status at all while the record is a Draft, and
  *    §5.3's `In Stock` is stated as what creation will set.
  *  · **One Tracking field** (§5.1) in place of the render's `Equipment Type` +
@@ -541,12 +541,20 @@ export function useEquipmentFormState() {
     const e: Record<string, string> = {}
 
     /* §13 — a Draft keeps an incomplete record, so only structural faults are
-       checked for it. Create publishes, so the required set applies. */
-    if (mode === 'create') {
-      if (!name.trim()) e.name = 'Equipment Name is required.'
-      if (!category) e.category = 'Category is required.'
-      if (!brand.trim()) e.brand = 'Brand is required.'
-    }
+       checked for it. Create publishes, so the required set applies.
+     *
+     * **The required set is now two things, not five** (ruling, 12 Aug 2026):
+     * the **unit serial** and the **warehouse + bin**, both checked further
+     * down. Name, category and brand used to gate Create here and no longer do.
+     *
+     * The two that remain are the two the floor loop actually depends on: a
+     * unit without a serial cannot be scanned at Packing, cannot be picked as a
+     * chip in New Rental, and cannot be told from its siblings; a unit without a
+     * location cannot be found. Everything else — name, category, brand, price,
+     * warranty, photos, rates — is information someone will fill in later, and
+     * gating on it only meant a correction had to be a re-creation.
+     *
+     * The seven sections stay. They simply stop blocking. */
 
     /*
      * §3 — quantity never appears in the name: `NP-FZ100 Battery (x4)` is wrong.

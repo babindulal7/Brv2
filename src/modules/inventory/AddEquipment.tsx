@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { EquipmentProvider, useEquipmentContext } from './components/AddEquipmentContext'
 import { SectionIdentity } from './components/SectionIdentity'
 import { SectionStockUnits } from './components/SectionStockUnits'
@@ -14,6 +15,7 @@ import { PageHeader, Button, FooterNote, Rail, cardStyle } from '../../component
 import Icon from '../../components/ui/Icon'
 import { Link, useNavigate } from 'react-router-dom'
 import { useViewport } from '../../lib/device'
+import { useAuth } from '../../lib/auth'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { SEED_ERRORS, SAVE_UNAVAILABLE_REASON, PREVIEW_UNAVAILABLE_REASON } from '../../data/addEquipment'
 
@@ -36,7 +38,50 @@ function AddEquipmentLayout() {
   const navigate = useNavigate()
   const viewport = useViewport()
   const money = useCanViewMoney()
+  /** The one identity a dispatch on this screen may act as. No fallback. */
+  const { user } = useAuth()
+  /**
+   * The last CREATE_EQUIPMENT rejection. Law 12 — inline and persistent; it
+   * renders through the `ErrorBanner` this page already uses for its validation
+   * and seed failures, and `useToast()` carries successes only.
+   */
+  const [dispatchError, setDispatchError] = useState<string | null>(null)
 
+  /**
+   * ⭐ 12 Aug 2026 — both submit buttons dispatched like this:
+   *
+   *   import('../../actions/inventory/createEquipment').then(m =>
+   *     m.createEquipment({ name: name || 'New Equipment', isDraft: true }))
+   *
+   * No `ActionContext`, so `actions/core.ts` refused the call before `execute`;
+   * no `.catch()`, so the refusal was an unhandled promise. The page's own
+   * report ("Draft validated — nothing was stored") is honest about the write,
+   * which kept the harm low, but the failing dispatch itself was invisible —
+   * and the moment CREATE_EQUIPMENT is implemented, an invisible failure
+   * becomes an invisible *missing record*.
+   *
+   * `handleSubmit` still runs first: it is this screen's validation pass, it
+   * scrolls to the first section with a problem, and its report says in its own
+   * title that nothing was stored. It is not a claim that a write happened.
+   */
+  const submit = (mode: 'draft' | 'create') => {
+    handleSubmit(mode)
+    if (!user) {
+      setDispatchError(
+        'You are not signed in, so this equipment cannot be created against anyone. Nothing was written; your entries are still on the page.',
+      )
+      return
+    }
+    setDispatchError(null)
+    void import('../../actions/inventory/createEquipment')
+      .then((m) =>
+        m.createEquipment({ name: name || 'New Equipment', isDraft: mode === 'draft' }, { userId: user.id, role: user.role }),
+      )
+      .catch((err: unknown) => {
+        console.error('createEquipment failed:', err)
+        setDispatchError(err instanceof Error ? err.message : String(err))
+      })
+  }
 
   /* ── render ──────────────────────────────────────────────────────────── */
 
@@ -49,18 +94,20 @@ function AddEquipmentLayout() {
         </Link>
         <span aria-hidden>›</span>
         <span style={{ color: 'var(--text)', fontWeight: 600 }}>Add Equipment</span>
+        {/* Not an identifier and no longer styled as one: the Asset Code is
+            assigned on save by the database, so the crumb carries the state of
+            the code rather than a code (see `data/addEquipment.ts`'s note). */}
         <span
-          className="identifier"
           style={{
             padding: '2px 8px',
             borderRadius: 4,
             background: 'var(--card2)',
             border: '1px solid var(--border)',
             fontSize: 'var(--t-th)',
-            color: 'var(--nav-active-accent)',
+            color: 'var(--muted)',
           }}
         >
-          {assetCode}
+          Asset code · {assetCode}
         </span>
       </nav>
 
@@ -78,27 +125,10 @@ function AddEquipmentLayout() {
                 Preview
               </Button>
             </Unavailable>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                import('../../actions/inventory/createEquipment').then((m) =>
-                  m.createEquipment({ name: name || 'New Equipment', isDraft: true })
-                )
-                handleSubmit('draft')
-              }}
-            >
+            <Button variant="secondary" onClick={() => submit('draft')}>
               Save Draft (not stored)
             </Button>
-            <Button
-              variant="primary"
-              icon="check"
-              onClick={() => {
-                import('../../actions/inventory/createEquipment').then((m) =>
-                  m.createEquipment({ name: name || 'New Equipment', isDraft: false })
-                )
-                handleSubmit('create')
-              }}
-            >
+            <Button variant="primary" icon="check" onClick={() => submit('create')}>
               Create Equipment (not stored)
             </Button>
           </>
@@ -120,6 +150,10 @@ function AddEquipmentLayout() {
         <Icon name="info" size={15} style={{ color: 'var(--muted)', flexShrink: 0, marginTop: 2 }} />
         <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.45 }}>{SAVE_UNAVAILABLE_REASON}</span>
       </div>
+
+      {/* Law 12 — the dispatch rejection, inline and persistent, above the
+          validation report so the two are never mistaken for each other. */}
+      {dispatchError && <ErrorBanner title="Nothing was created" message={dispatchError} />}
 
       {SEED_ERRORS.length > 0 && (
         <ErrorBanner

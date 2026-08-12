@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, Button, cardStyle, Rail, SideRail } from '../../components/ui/Page'
-import { EmptyState } from '../../components/ui/StateViews'
+import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { FloorAside, floorPlacements } from '../operations/FloorAside'
+import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { STATUS } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
 import type { JobState } from '../../lib/workflow'
 import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
+import { useViewport } from '../../lib/device'
+import { useAuth } from '../../lib/auth'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { BOOKING } from '../../data/booking'
 import { UNITS, PACKAGE, GROUPS, CASES, TOTAL_ITEMS, EVIDENCE, NOTES, FILTERS } from '../../data/packing'
@@ -60,11 +63,28 @@ interface LineStateRec {
   reason?: string
 }
 
-// embedded: popup shell hides this page's own header; standalone route (App.tsx) always renders with no props.
-export default function PackingWorkspace({ embedded = false }: { embedded?: boolean } = {}) {
+
+/*
+ * ⭐ RULED 12 Aug 2026 (Rulings §3): operations are ROUTES, so the `embedded`
+ * prop is gone. It existed only so the operations popup shell could suppress
+ * this page's own header while drawing one above it; there is no shell above
+ * this page any more. `/rentals/:bookingNo/packing` is the only mount, and
+ * `bookingNo` comes off the route for ANY booking, not one seeded id.
+ */
+export default function PackingWorkspace() {
   const navigate = useNavigate()
   const { bookingNo } = useParams()
   const id = bookingNo ?? BOOKING.no
+  /** The one identity every dispatch on this screen may act as. No fallback. */
+  const { user } = useAuth()
+  /* Law 13/14 — width decides, at Foundation's locked 768 / 1180. §3.2 draws
+     three layouts and the tablet one is the real device here: list | progress
+     side by side, which means the progress column must NOT be a collapsing
+     aside below 1180 (Rulings §7 — reflow, not hide). */
+  const viewport = useViewport()
+  const desktop = viewport === 'desktop'
+  const phone = viewport === 'phone'
+  const place = floorPlacements(desktop, phone)
 
   const [lines, setLines] = useState<Record<string, LineStateRec>>(() =>
     Object.fromEntries(UNITS.map((u) => [u.id, { state: 'Pending' as LineState }])),
@@ -74,6 +94,22 @@ export default function PackingWorkspace({ embedded = false }: { embedded?: bool
   const [query, setQuery] = useState('')
   const [highlight, setHighlight] = useState<string | null>(null)
   const [scanLog, setScanLog] = useState<string[]>([])
+  /**
+   * Why a dispatch failure needs somewhere to be rendered.
+   *
+   * `packRental` is a real write now, and the only report of its failure used to
+   * be `console.error('pack failed:', err)` on a floating promise — while
+   * `navigate()` ran unconditionally on the line below it, synchronously, before
+   * the promise had settled. So Complete Packing closed the workspace and landed
+   * the operator on the booking detail whether or not anything reached Postgres,
+   * and today it NEVER does (the empty `lines` list is refused by `validate`).
+   * Navigating away is a stronger success signal than a toast and it was firing
+   * on a path that always fails.
+   *
+   * Law 12 — the failure is inline and persistent, and the navigation now
+   * happens only on a resolved promise.
+   */
+  const [dispatchError, setDispatchError] = useState<string | null>(null)
   /**
    * ⭐ RULED: evidence is **mandatory** before Complete Packing, at Evidence
    * Workspace §14's granularity — **one photo per packed case, not per item.**
@@ -171,62 +207,128 @@ export default function PackingWorkspace({ embedded = false }: { embedded?: bool
   // Floor scale (DEVICES.md item 3) is applied automatically by route in App.tsx's Shell, not here.
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      {!embedded && (
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
-          {/* §3 — header. No Back, no ✕, and Complete Packing is NOT here. */}
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
-                Packing Workspace
-              </h1>
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  height: 22,
-                  padding: '0 9px',
-                  borderRadius: 'var(--r-badge)',
-                  background: STATUS[statusToken(status)].bg,
-                  color: STATUS[statusToken(status)].fg,
-                  fontSize: 'var(--t-meta)',
-                  fontWeight: 700,
-                }}
-              >
-                {status}
-              </span>
-            </div>
-            <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-              <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
-                {id}
-              </Link>
-              {' · '}
-              {PACKAGE.name} · {BOOKING.client}
-            </p>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
+        {/*
+          §3 — header. No Back, no ✕, and Complete Packing is NOT here.
+          Rulings §4: the `←` spec 03 §3.2 draws is shorthand for "this is a
+          sub-page" — the shell's breadcrumb trail is the upward affordance and
+          `Cancel Packing` in the footer is the single exit. Adding `←` here
+          recreates the two-exits defect a previous correction removed.
+        */}
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+            <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
+              Packing Workspace
+            </h1>
+            {/*
+              ⭐ RULED (Rulings §7, last-but-eight row): spec 03 §3.2's stage
+              badge reads "Preparing", which is NOT one of the canonical six
+              (Quote · Booked · Packed · On Rent · Returned · Closed) and which
+              §12's own correction list already rejected. The badge shows the
+              canonical status; the mid-pack signal the drawing was reaching for
+              is the *job* state, and it is a SEPARATE chip beside it. Two
+              axes, two chips — never a seventh status name.
+              Law 11 on both: icon + label + colour.
+            */}
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 'var(--sp-xs)',
+                height: 22,
+                padding: '0 9px',
+                borderRadius: 'var(--r-badge)',
+                background: STATUS[statusToken(status)].bg,
+                color: STATUS[statusToken(status)].fg,
+                fontSize: 'var(--t-meta)',
+                fontWeight: 700,
+              }}
+            >
+              <Icon name="dot" size={9} />
+              {status}
+            </span>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 'var(--sp-xs)',
+                height: 22,
+                padding: '0 9px',
+                borderRadius: 'var(--r-badge)',
+                border: '1px solid var(--border)',
+                background: 'var(--card2)',
+                color: jobState === 'Complete' ? 'var(--success-text)' : jobState === 'In Progress' ? 'var(--progress-text)' : 'var(--text2)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: 700,
+              }}
+            >
+              <Icon name={jobState === 'Complete' ? 'checklist' : jobState === 'In Progress' ? 'refresh' : 'dot'} size={11} />
+              Pack job: {jobState}
+            </span>
           </div>
+          <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
+              {id}
+            </Link>
+            {' · '}
+            {PACKAGE.name} · {BOOKING.client}
+          </p>
+        </div>
 
-          {/* §3 centre — progress with a message. */}
-          <div style={{ minWidth: 260, flex: 1 }}>
-            <div style={{ display: 'flex', gap: 10, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-              <span>Packing Progress</span>
-              <span className="figure" style={{ marginLeft: 'auto', fontWeight: 700, color: 'var(--text)' }}>
-                {packed} / {TOTAL_ITEMS} ({pct}%)
-              </span>
-            </div>
-            <div aria-hidden style={{ height: 8, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 6, overflow: 'hidden' }}>
-              <div style={{ width: '100%', height: '100%', background: 'var(--success)', borderRadius: 'var(--r-badge)', transform: `scaleX(${pct / 100})`, transformOrigin: 'left', transition: 'transform var(--dur) ease' }} />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, fontSize: 'var(--t-meta)', color: pending ? 'var(--progress-text)' : 'var(--success-text)', fontWeight: 600 }}>
-              <Icon name={pending ? 'alert_triangle' : 'checklist'} size={12} />
-              {pending ? `${pending} item${pending > 1 ? 's' : ''} pending` : 'All items packed'}
-            </div>
+        {/* §3 centre — progress with a message. §3.2's phone layout puts this
+            strip directly under the title, which is where it already sits. */}
+        <div style={{ minWidth: 260, flex: 1 }}>
+          <div style={{ display: 'flex', gap: 10, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            <span>Packing Progress</span>
+            <span className="figure" style={{ marginLeft: 'auto', fontWeight: 700, color: 'var(--text)' }}>
+              {packed} / {TOTAL_ITEMS} ({pct}%)
+            </span>
           </div>
-
-          <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
-            <Button icon="file">Print Packing List</Button>
-            <Button onClick={() => import('../../actions/rentals/index').then(m => m.saveDraft({ id: id! }, { userId: 'USR-001', role: 'Manager' }))}>Save Draft</Button>
+          <div aria-hidden style={{ height: 8, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 6, overflow: 'hidden' }}>
+            <div style={{ width: '100%', height: '100%', background: 'var(--success)', borderRadius: 'var(--r-badge)', transform: `scaleX(${pct / 100})`, transformOrigin: 'left', transition: 'transform var(--dur) ease' }} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, fontSize: 'var(--t-meta)', color: pending ? 'var(--progress-text)' : 'var(--success-text)', fontWeight: 600 }}>
+            <Icon name={pending ? 'alert_triangle' : 'checklist'} size={12} />
+            {pending ? `${pending} item${pending > 1 ? 's' : ''} pending` : 'All items packed'}
           </div>
         </div>
-      )}
+
+        <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
+          <Button icon="file">Print Packing List</Button>
+          {/*
+            * Same treatment as Complete Packing below, which was fixed first and
+            * left this one behind: the identity is the signed-in operator or
+            * there is no dispatch. `{ userId: 'USR-001', role: 'Manager' }` was
+            * stamped here too — a made-up id, and a role the business-9
+            * migration retired.
+            *
+            * The rejection also has to be visible. This was a floating promise
+            * with no `.catch()`, so `saveDraft` — an unimplemented stub the
+            * dispatcher refuses before `execute` — failed silently on every
+            * press. A draft button that does nothing and says nothing is
+            * indistinguishable from one that saved, which is the failure this
+            * whole pass removes. It reuses `dispatchError`, the inline
+            * persistent line this screen already renders (Law 12).
+            */}
+          <Button
+            onClick={() => {
+              if (!user) {
+                setDispatchError('You are not signed in, so this draft cannot be saved against anyone. Nothing was written.')
+                return
+              }
+              setDispatchError(null)
+              import('../../actions/rentals/index')
+                .then((m) => m.saveDraft({ id: id! }, { userId: user.id, role: user.role }))
+                .catch((err) => {
+                  console.error('saveDraft failed:', err)
+                  setDispatchError(err instanceof Error ? err.message : String(err))
+                })
+            }}
+          >
+            Save Draft
+          </Button>
+        </div>
+      </div>
 
       {/* §4 — read-only booking summary, one compact row. BS above AD. */}
       <div style={{ ...cardStyle, display: 'flex', gap: 0, flexWrap: 'wrap', overflow: 'hidden' }}>
@@ -257,9 +359,27 @@ export default function PackingWorkspace({ embedded = false }: { embedded?: bool
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      {/*
+        §3.2's three layouts, all of them REFLOW rather than hide (Rulings §7):
+
+         · desktop ≥1180 — tree │ list │ progress, three columns;
+         · tablet 768–1179 — "split, scan-first": list and progress side by
+           side, the tree beneath the list. This is the real device here, and
+           it is the layout `Rail`'s collapse-by-default would have destroyed,
+           which is why `FloorAside` stops being collapsible below 1180;
+         · phone <768 — one column: list → progress + blockers + Complete →
+           tree.
+      */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: desktop ? 'auto minmax(0,1fr) auto' : phone ? '1fr' : 'minmax(0,1fr) 320px',
+          gap: 'var(--sp-md)',
+          alignItems: 'start',
+        }}
+      >
         {/* ── §5 left — bundle tree, counts derived ─────────────────────── */}
-        <SideRail width={260} label="Bundle / Item Tree">
+        <FloorAside collapsible={desktop} side="left" width={260} label="Bundle / Item Tree" style={place.tree}>
         <Card title="1 · Bundle / Item Tree">
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', paddingBottom: 9, borderBottom: '1px solid var(--border)' }}>
             <Icon name="box" size={17} style={{ color: 'var(--st-progress-fg)' }} />
@@ -329,9 +449,10 @@ export default function PackingWorkspace({ embedded = false }: { embedded?: bool
             </p>
           </div>
         </Card>
-        </SideRail>
+        </FloorAside>
 
         {/* ── §6 centre — checklist ─────────────────────────────────────── */}
+        <div style={{ minWidth: 0, ...place.list }}>
         <Card
           title="2 · Packing Checklist"
           bodyStyle={{ padding: 0 }}
@@ -497,9 +618,111 @@ export default function PackingWorkspace({ embedded = false }: { embedded?: bool
             </div>
           )}
         </Card>
+        </div>
 
-        {/* ── §9 right — summary, missing, evidence, notes, quick actions ── */}
-        <Rail width={290} label="Packing summary">
+        {/* ── §9 right — progress, blockers, the completion gate, then §9's
+             summary / missing / evidence / notes / quick actions ─────────── */}
+        <FloorAside collapsible={desktop} side="right" width={300} label="Packing progress" style={place.rail}>
+          {/*
+            §3.2 PROGRESS + BLOCKERS + [ Complete Packing ], in that order and
+            in this column at every width.
+
+            Spec 03 Notes, bullets 1 and 2, both live here:
+             · "Exactly one primary button per workspace, and it is the
+               completion gate" — `Complete Packing` is the only filled button
+               on this page; the footer keeps the exit and nothing else;
+             · "Blockers render inline in the rail; a blocked gate never shows
+               a toast" (Law 12) — the gate reason is a persistent card below,
+               never a toast, and it stays on screen while the block lasts.
+          */}
+          <Card title="Progress">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
+              <Ring pct={pct} />
+              <div style={{ minWidth: 0 }}>
+                <div className="figure" style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--text)' }}>
+                  {TOTAL_ITEMS} items · {packed} packed
+                </div>
+                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 2 }}>
+                  Pack job: {jobState}
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          <Card title="Blockers">
+            {gateReason ? (
+              <div role="status" style={{ display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--progress-text)', fontWeight: 600, lineHeight: 1.45 }}>
+                <Icon name="alert_triangle" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                {gateReason}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--success-text)', fontWeight: 600 }}>
+                <Icon name="checklist" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                Nothing is blocking completion.
+              </div>
+            )}
+          </Card>
+
+          <button
+            type="button"
+            disabled={!canComplete}
+            onClick={() => {
+              if (!canComplete) return
+              // The identity is the signed-in one or there is no dispatch.
+              // `{ userId: 'USR-001', role: 'Manager' }` used to be stamped on
+              // every packing session here — a made-up operator on a floor
+              // record, and 'Manager' happened to be a role the business-9
+              // migration had retired.
+              if (!user) {
+                setDispatchError('You are not signed in, so this packing session cannot be recorded against anyone. Nothing was written.')
+                return
+              }
+              setDispatchError(null)
+              // `lines` is deliberately empty: this workspace's item ids come
+              // from `data/packing`'s hardcoded UNITS, not from `booking_lines`,
+              // so there is nothing true to send and `packRental`'s own
+              // `validate` refuses it. Same shape, and same reason, as
+              // `MovementList`'s empty unit list. Supplying the real ids needs
+              // this screen converted onto `useList`, which is its own task.
+              //
+              // ⚠ `navigate` is INSIDE `.then`. It used to sit after this block,
+              // firing synchronously on every press — so the workspace closed and
+              // the operator was returned to the booking as though the session had
+              // been recorded, while the write was still in flight and, today,
+              // always failing. Leaving on success only is the whole point.
+              import('../../actions/rentals/index')
+                .then((m) => m.packRental({ id: id!, lines: [] }, { userId: user.id, role: user.role }))
+                .then(() => navigate(`/rentals/${id}`))
+                .catch((err) => {
+                  console.error('pack failed:', err)
+                  setDispatchError(err instanceof Error ? err.message : String(err))
+                })
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 7,
+              width: '100%',
+              minHeight: 44,
+              padding: '0 16px',
+              borderRadius: 'var(--r-btn)',
+              fontSize: 'var(--t-ui)',
+              fontWeight: 600,
+              fontFamily: 'inherit',
+              cursor: canComplete ? 'pointer' : 'not-allowed',
+              ...(canComplete ? BLUE_PRIMARY : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
+            }}
+          >
+            <Icon name="checklist" size={15} />
+            Complete Packing
+          </button>
+
+          {/* Law 12 — inline and persistent, never a toast. This is what the
+              operator sees instead of being navigated away from a session that
+              was never recorded. */}
+          {dispatchError && <ErrorBanner title="Packing was not recorded" message={dispatchError} />}
+
           <Card title="3 · Packing Summary">
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
               <Ring pct={pct} />
@@ -649,56 +872,30 @@ export default function PackingWorkspace({ embedded = false }: { embedded?: bool
               </div>
             </div>
           )}
-        </Rail>
+        </FloorAside>
       </div>
 
-      {/* §11 — footer. Two buttons. No Previous, no Next, no second Complete. */}
+      {/*
+        §11 — footer. The single EXIT, and nothing else.
+
+        `Complete Packing` used to sit here as well as being the gate; spec 03
+        Notes bullet 1 allows exactly one primary per workspace and §3.2 draws
+        it in the progress column, so it now lives there only. The gate reason
+        went with it, into the Blockers card — inline, persistent, never a
+        toast (Law 12).
+      */}
       <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '12px 14px', flexWrap: 'wrap' }}>
         <button
           type="button"
           onClick={() => navigate(`/rentals/${id}`)}
-          style={{ height: 34, padding: '0 14px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger-text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+          style={{ minHeight: 44, padding: '0 14px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger-text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
         >
           Cancel Packing
         </button>
         <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
           {pending ? `${pending} item${pending > 1 ? 's' : ''} pending` : 'All changes saved'} · Cancelling discards nothing
         </span>
-        <span style={{ marginLeft: 'auto' }} title={gateReason ?? undefined}>
-          <button
-            type="button"
-            disabled={!canComplete}
-            onClick={() => {
-              if (canComplete) {
-                import('../../actions/rentals/index').then(m => m.packRental({ id: id! }, { userId: 'USR-001', role: 'Manager' }));
-                navigate(`/rentals/${id}`);
-              }
-            }}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 7,
-              height: 36,
-              padding: '0 16px',
-              borderRadius: 'var(--r-btn)',
-              fontSize: 'var(--t-ui)',
-              fontWeight: 600,
-              fontFamily: 'inherit',
-              cursor: canComplete ? 'pointer' : 'not-allowed',
-              ...(canComplete ? BLUE_PRIMARY : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
-            }}
-          >
-            <Icon name="checklist" size={15} />
-            Complete Packing
-          </button>
-        </span>
       </div>
-      {/* §10 — the disabled button states which condition is unmet. */}
-      {gateReason && (
-        <p style={{ margin: '-4px 2px 0', textAlign: 'right', fontSize: 'var(--t-meta)', color: 'var(--progress-text)', fontWeight: 600 }}>
-          {gateReason}
-        </p>
-      )}
 
       <BarcodeScannerModal
         isOpen={showScanner}

@@ -346,7 +346,39 @@ function downloadCsv(name: string, rows: string[][]) {
 
 /* ── the screen ────────────────────────────────────────────────────────── */
 
-const BUNDLE_ID = 'BND-00024'
+/*
+ * ── This screen does not mint a bundle number, and must not ────────────────
+ *
+ * What stood here:
+ *
+ *   const BUNDLE_ID = issue('BND', Number(sequence('BND')?.counter ?? 0) + 1)
+ *
+ * — the Bundle counter *as printed on the Settings ▸ Numbering render*,
+ * advanced by one, computed once at module scope and then shown to the operator
+ * in a read-only box labelled "Bundle ID · Auto generated", stamped on every row
+ * of the CSV export and quoted in both save toasts.
+ *
+ * It is the identical defect `finance/modals/CreateInvoiceModal.tsx` (~9-42)
+ * documents and refuses to repeat, and that decision is followed here rather
+ * than re-litigated:
+ *
+ *  · **It collides.** Two operators building a bundle at the same time read the
+ *    same counter and are both shown the same number. So does one operator in
+ *    two tabs. A module-scope constant additionally freezes the value for the
+ *    life of the page load, so it cannot even follow a bundle saved in between.
+ *  · **It is a prediction of a figure the database owns.** `next_document_number
+ *    (p_sequence_key)` takes a row lock and increments under it — the only way
+ *    two concurrent inserts cannot collide — and `recordPayment.ts` and
+ *    `createClient.ts` already call it by RPC for `payment_no` / `client_code`.
+ *    Whatever eventually writes a bundle does the same.
+ *  · **It is a prediction from the wrong source.** `data/numbering.ts` transcribes
+ *    the numbering *screen*, not `number_sequences.current_value`, so the two
+ *    are not the same counter and the operator would carry a number the ledger
+ *    never issues.
+ *
+ * So the field says the number is assigned on save, the export no longer stamps
+ * one, and the success toast quotes only what the action hands back.
+ */
 const NOTES_LIMIT = 500
 
 export function AddBundle() {
@@ -396,6 +428,22 @@ export function AddBundle() {
   const [blockedOpen, setBlockedOpen] = useState(false)
   const [packingOpen, setPackingOpen] = useState(false)
   const [seq, setSeq] = useState(100)
+
+  /*
+   * ── The save seam ─────────────────────────────────────────────────────────
+   *
+   * `saveError` is why a save did not happen, held until the operator resolves
+   * it — Law 12: errors are inline and persistent, and `useToast()` exposes
+   * only `showSuccessToast`, which is the wrong shape for a failure by
+   * definition. It renders through this screen's existing `Banner tone="danger"`
+   * (already used for the seed-reconciliation and unauthorised-discount cases),
+   * so no new error affordance was invented for it.
+   *
+   * `saving` disables both buttons while a dispatch is in flight, so a second
+   * click cannot start a second write.
+   */
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
   /*
    * ── derived, never typed ─────────────────────────────────────────────
@@ -464,6 +512,109 @@ export function AddBundle() {
                 : override && overrideReason.trim().length < 10
                   ? 'An override rate is stored with a reason of at least 10 characters.'
                   : null
+
+  /**
+   * A draft is a weaker claim than a bundle, but it is still a row with a name
+   * on it — `CreateBundleInput.name` is required and `createBundle.validate`
+   * throws on an empty one. The old handler papered over that with
+   * `name: name || 'New Bundle'`, so an operator who saved before typing got a
+   * bundle called something they never chose. Named here instead, and the
+   * button is `Unavailable` with this reason until it is fixed.
+   */
+  const draftBlockingReason =
+    SEED_ERRORS.length > 0
+      ? 'The inventory tree does not reconcile — see the banner above.'
+      : name.trim().length === 0
+        ? 'A draft still needs a name — nothing here will invent one for you.'
+        : null
+
+  /* ── saving ────────────────────────────────────────────────────────────────
+   *
+   * ⛔ What both footer buttons used to do:
+   *
+   *   import('../../actions/inventory/createBundle').then((m) => m.createBundle({…}))
+   *   showSuccessToast('Bundle created', `${BUNDLE_ID} · …`)
+   *
+   * — a floating dynamic-import promise with **no `ActionContext`** and **no
+   * `.catch()`**, and a success toast fired synchronously beside it, quoting a
+   * bundle number this screen had predicted. Create Bundle also called
+   * `navigate('/inventory')` on the same tick, which in this app is the
+   * universal "the write landed" signal.
+   *
+   * Every part of that was a claim about work that had not happened, and could
+   * not: `createBundle` carries no `implemented: true`, so `createAction`
+   * throws `ActionNotImplementedError` before validate/execute/events — into an
+   * unhandled rejection nobody saw, while the operator read "Bundle created"
+   * and was returned to the list.
+   *
+   * Now: a real session or a refusal; the dispatch is awaited; success reporting
+   * and the navigation live *only* on the resolved path; and the rejection is
+   * surfaced inline where the operator can act on it. The toast quotes the id
+   * the action hands back — never one chosen here.
+   *
+   * `TODO(decision)` — `createBundle`'s capability is `inventory.create`, and
+   * `actions/core.ts:109-125` maps no rule for that string, so an unmapped
+   * capability is denied fail-closed for every role. Who may create a bundle is
+   * unruled; it belongs in `PLAN.md` §4, not in this file. Until it is ruled and
+   * the action is implemented, every press of these buttons ends in the banner
+   * below — which is the honest outcome, and is why no toast may precede it.
+   */
+  const saveBundle = (isDraft: boolean) => {
+    if (!user) {
+      setSaveError(
+        'You are not signed in, so this bundle cannot be attributed to anyone. Nothing was saved. Sign in and try again.',
+      )
+      return
+    }
+    const items = lines.map((l) => ({
+      modelId: l.modelId,
+      qty: l.qty,
+      discountPct: l.discountPct,
+      discountReason: l.discountReason,
+      approvedBy: l.approvedBy,
+    }))
+    setSaveError(null)
+    setSaving(true)
+    void import('../../actions/inventory/createBundle')
+      .then((m) =>
+        m.createBundle(
+          {
+            name: name.trim(),
+            /* `exactOptionalPropertyTypes` — an unset category is absent from
+               the payload, never the empty string, which would reach the action
+               as a category nobody picked. Create Bundle cannot reach here with
+               one unset (`blockingReason`); a draft can. */
+            ...(category ? { category } : {}),
+            items,
+            itemCount: isDraft ? lines.length : breakdown.totalItems,
+            isDraft,
+          },
+          { userId: user.id, role: user.role },
+        ),
+      )
+      .then((result) => {
+        if (isDraft) {
+          showSuccessToast('Draft saved', `${result.bundleId} · ${lines.length} lines`)
+        } else {
+          showSuccessToast(
+            'Bundle created',
+            `${result.bundleId} · ${breakdown.totalItems} items · ${formatMoney(effectiveRatePaisa)} per day`,
+          )
+          /* Only a landed write leaves the page. Navigating on the failing path
+             would discard everything the operator typed to show them a list
+             their bundle is not in. */
+          navigate('/inventory')
+        }
+      })
+      .catch((err: unknown) => {
+        setSaveError(
+          `${isDraft ? 'Draft not saved' : 'Bundle not created'} — ${
+            err instanceof Error ? err.message : 'the save failed and no reason was reported.'
+          } Everything you typed is still here.`,
+        )
+      })
+      .finally(() => setSaving(false))
+  }
 
   /* ── line editing ─────────────────────────────────────────────────────── */
 
@@ -583,8 +734,12 @@ export function AddBundle() {
   }
 
   const exportLines = () => {
+    /* Was 'Bundle ID' + `BUNDLE_ID` on every row, and `${BUNDLE_ID}-lines.csv`
+       as the filename — a predicted number stamped into a file that leaves the
+       app and gets mailed around. The draft has no number until it is saved, so
+       the column carries the name the operator actually typed. */
     const head = [
-      'Bundle ID',
+      'Bundle',
       'Model',
       'SKU',
       'Category',
@@ -601,7 +756,7 @@ export function AddBundle() {
       const m = modelOf(l.modelId)
       const t = totalsOf(l)
       return [
-        BUNDLE_ID,
+        name.trim() || 'Untitled draft',
         m?.name ?? l.modelId,
         m?.sku ?? '—',
         m?.category ?? '—',
@@ -615,7 +770,7 @@ export function AddBundle() {
         String(m?.stock ?? 0),
       ]
     })
-    downloadCsv(`${BUNDLE_ID}-lines.csv`, [head, ...body])
+    downloadCsv('bundle-draft-lines.csv', [head, ...body])
   }
 
   /* ── the tree ─────────────────────────────────────────────────────────── */
@@ -764,9 +919,23 @@ export function AddBundle() {
                   style={controlBase}
                 />
               </Field>
-              <Field label="Bundle ID" hint="Auto generated">
-                <input value={BUNDLE_ID} readOnly className="identifier" style={{ ...controlBase, background: 'var(--card2)', color: 'var(--text2)' }} />
-              </Field>
+              {/* Not an input, and not a number: the box held a prediction of the
+                  next Bundle counter (see the note above `NOTES_LIMIT`). A
+                  `FieldBlock`, because there is no control here to label. */}
+              <FieldBlock label="Bundle ID" hint="Assigned on save, by the database — not by this form">
+                <span
+                  className="identifier"
+                  style={{
+                    ...controlBase,
+                    display: 'flex',
+                    alignItems: 'center',
+                    background: 'var(--card2)',
+                    color: 'var(--muted)',
+                  }}
+                >
+                  Assigned on save
+                </span>
+              </FieldBlock>
               <Field label="Primary Category" required hint="From the Inventory category list">
                 <select value={category} onChange={(e) => setCategory(e.target.value as InventoryCategory | '')} style={selectStyle}>
                   <option value="">Select category…</option>
@@ -1466,24 +1635,17 @@ export function AddBundle() {
           >
             <Button onClick={() => navigate('/inventory')}>Cancel</Button>
             <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Button
-                icon="file"
-                onClick={() => {
-                  const itemPayload = lines.map((l) => ({
-                    modelId: l.modelId,
-                    qty: l.qty,
-                    discountPct: l.discountPct,
-                    discountReason: l.discountReason,
-                    approvedBy: l.approvedBy,
-                  }))
-                  import('../../actions/inventory/createBundle').then((m) =>
-                    m.createBundle({ name: name || 'New Bundle', category, items: itemPayload, itemCount: lines.length, isDraft: true })
-                  )
-                  showSuccessToast('Draft saved', `${BUNDLE_ID} · ${lines.length} lines held locally`)
-                }}
-              >
-                Save Draft
-              </Button>
+              {draftBlockingReason ? (
+                <Unavailable reason={draftBlockingReason}>
+                  <Button icon="file" disabled>
+                    Save Draft
+                  </Button>
+                </Unavailable>
+              ) : (
+                <Button icon="file" disabled={saving} onClick={() => saveBundle(true)}>
+                  {saving ? 'Saving…' : 'Save Draft'}
+                </Button>
+              )}
               {blockingReason ? (
                 <Unavailable reason={blockingReason}>
                   <Button icon="plus" variant="primary" disabled>
@@ -1491,32 +1653,21 @@ export function AddBundle() {
                   </Button>
                 </Unavailable>
               ) : (
-                <Button
-                  icon="plus"
-                  variant="primary"
-                  onClick={() => {
-                    const itemPayload = lines.map((l) => ({
-                      modelId: l.modelId,
-                      qty: l.qty,
-                      discountPct: l.discountPct,
-                      discountReason: l.discountReason,
-                      approvedBy: l.approvedBy,
-                    }))
-                    import('../../actions/inventory/createBundle').then((m) =>
-                      m.createBundle({ name: name || 'New Bundle', category, items: itemPayload, itemCount: breakdown.totalItems, isDraft: false })
-                    )
-                    showSuccessToast(
-                      'Bundle created',
-                      `${BUNDLE_ID} · ${breakdown.totalItems} items · ${formatMoney(effectiveRatePaisa)} per day`,
-                    )
-                    navigate('/inventory')
-                  }}
-                >
-                  Create Bundle
+                <Button icon="plus" variant="primary" disabled={saving} onClick={() => saveBundle(false)}>
+                  {saving ? 'Saving…' : 'Create Bundle'}
                 </Button>
               )}
             </span>
           </div>
+
+          {/* Law 12 — inline and persistent, beside the control that failed, and
+              below it so it cannot push the buttons out from under the cursor.
+              `Banner tone="danger"` already carries `role="alert"`. */}
+          {saveError && (
+            <Banner tone="danger" icon="alert_triangle" title="Nothing was saved.">
+              {saveError}
+            </Banner>
+          )}
         </div>
 
         {/* ── right rail ─────────────────────────────────────────────────── */}

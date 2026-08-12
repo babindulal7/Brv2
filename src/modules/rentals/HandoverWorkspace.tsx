@@ -1,7 +1,12 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, Button, cardStyle, Rail } from '../../components/ui/Page'
+import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { FloorAside } from '../operations/FloorAside'
+import { ErrorBanner } from '../../components/ui/StateViews'
+import { Unavailable } from '../../components/ui/Unavailable'
+import { useViewport } from '../../lib/device'
+import { useAuth } from '../../lib/auth'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
@@ -72,14 +77,26 @@ import type { HandoverUnit, HandoverSession, SessionId, Sig } from '../../data/h
  * reason (§13.1: hidden for Warehouse; there is no role switch in this build
  * to hide them behind, so they were never modelled).
  *
- * §11.4's Manager override on gates 1/3/4 is implemented as a plain reason
- * field, not a role check — Foundation §8.2's role set is still an open
- * decision blocking the schema (see `PROGRESS.md`), so there is nothing to
- * gate a real "Owner/Manager only" restriction against yet. TODO(decision):
- * wire this to real RBAC once §8.2 lands.
+ * §11.4's Manager override on gates 1/3/4 is **refused**, not implemented. It
+ * was a plain reason field with no role check and no approver: `overrideApplied`
+ * flipped three gates open and nothing recorded who opened them. §8.2's role set
+ * has since landed (`lib/rbac`'s business 9), but no rule there covers *this*
+ * override — `canPerformOperations` grants Warehouse, which §11.4 explicitly
+ * forbids, and the other two are money-approval rules for other decisions — and
+ * no action persists an override at all. TODO(decision): rule who may override a
+ * session gate, then add the rbac predicate and a `session.override` capability
+ * to `actions/core.ts`. Until then the control states why it cannot act. See the
+ * long note at `OVERRIDE_UNAVAILABLE`.
  */
 
 const BLUE_PRIMARY = { background: 'var(--cat-1)', color: '#fff', border: '1px solid transparent' } as const
+
+/**
+ * The reason the Witness row cannot be signed — see `captureSignature`. Stated on
+ * the control rather than solved with a name, because the name would be invented.
+ */
+const WITNESS_UNAVAILABLE =
+  'No witness identity is captured on this screen, so a witness signature cannot be attested here. §9.2 makes the witness optional — this session is recorded with no witness rather than with a placeholder.'
 
 /** Same tone choice `ReturnWorkspace.tsx` makes for the identical Foundation type — solid green while a line is still out, soft green once back (§4.2). `Ready` reuses Packing's Pending yellow: work not yet done. */
 const ITEM_TONE: Record<ItemState, StatusKey> = {
@@ -101,10 +118,24 @@ interface GateRow {
   resolve?: () => void
 }
 
-export default function HandoverWorkspace({ embedded = false }: { embedded?: boolean } = {}) {
+/*
+ * ⭐ RULED 12 Aug 2026 (Rulings §3): operations are ROUTES, so the `embedded`
+ * prop is gone with the modal it served. `/rentals/:bookingNo/handover` is the
+ * only mount and works for ANY booking number.
+ */
+export default function HandoverWorkspace() {
   const navigate = useNavigate()
   const { bookingNo } = useParams()
   const id = bookingNo ?? BOOKING.no
+  /** The one identity this screen's dispatches may act as. No fallback. */
+  const { user } = useAuth()
+  /* Law 13/14 — width decides. §3.3's tablet layout is "checklist left,
+     signature full-width beneath, client as a bar on top": the client card is
+     already a full-width band above the split, and the summary rail must
+     REFLOW below the list rather than collapse (Rulings §7). */
+  const viewport = useViewport()
+  const desktop = viewport === 'desktop'
+  const phone = viewport === 'phone'
 
   const [units, setUnits] = useState<Record<string, HandoverUnit>>(() =>
     Object.fromEntries(SEED_UNITS.map((u) => [u.id, { ...u }])),
@@ -120,11 +151,33 @@ export default function HandoverWorkspace({ embedded = false }: { embedded?: boo
   const [bookingAuthVerified, setBookingAuthVerified] = useState(false)
   const [paymentVerified, setPaymentVerified] = useState(false)
   const [depositReceived, setDepositReceived] = useState(false)
+  /**
+   * The reason an operator would give for a §11.4 override. It is still typed
+   * here, and still shown back, but nothing consumes it — see
+   * `OVERRIDE_UNAVAILABLE` and the block above `applyOverride`'s former home.
+   * There is deliberately no `overrideApplied` state any more: it was the flag
+   * three gates fell open on with nobody named against it.
+   */
   const [overrideReason, setOverrideReason] = useState('')
-  const [overrideApplied, setOverrideApplied] = useState(false)
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('All')
   const [query, setQuery] = useState('')
   const [scanLog, setScanLog] = useState<string[]>([])
+  /**
+   * Why a dispatch failure needs somewhere to be rendered.
+   *
+   * `handoverRental` is a real write now, and its failure used to be reported
+   * only by `console.error('handover failed:', err)` on a floating promise —
+   * while `handOver` flipped the unit to `'Picked Up'` and wrote
+   * `✓ … handed over` into the scan log SYNCHRONOUSLY, before the dispatch had
+   * settled. So a unit read as handed over, with a timestamp, on a screen whose
+   * write had failed — and today it always fails (the empty `lines` list is
+   * refused by `validate`). Gear leaving the building is exactly the fact this
+   * must not assert on its own authority.
+   *
+   * Law 12 — the failure is inline and persistent, and the unit flips only on a
+   * resolved promise.
+   */
+  const [dispatchError, setDispatchError] = useState<string | null>(null)
 
   const activeId: SessionId = ACTIVE_SESSION
   const active = sessions[activeId]
@@ -158,9 +211,20 @@ export default function HandoverWorkspace({ embedded = false }: { embedded?: boo
   const casesWithoutPhoto = casesNeeded.filter((c) => (casePhotos[c] ?? 0) < EVIDENCE_MIN_PHOTOS_PER_CASE)
 
   const driverNeeded = driverSignatureRequired(DELIVERY.method)
-  const receiverPassing = (govIdVerified && bookingAuthVerified) || overrideApplied
-  const paymentPassing = paymentVerified || overrideApplied
-  const depositPassing = depositReceived || overrideApplied
+  /*
+   * ⭐ 12 Aug 2026 — `|| overrideApplied` is gone from all three.
+   *
+   * These gates now pass only on the fact each one is about: the receiver's ID
+   * and authorization actually checked, payment actually cleared, deposit
+   * actually received. An override can no longer stand in for any of them,
+   * because the override recorded nobody — see `OVERRIDE_UNAVAILABLE`.
+   *
+   * Nothing is bricked by this: gate 1 is cleared by the two verification
+   * checkboxes above, and gates 3 and 4 keep their `Mark Cleared →` resolve.
+   */
+  const receiverPassing = govIdVerified && bookingAuthVerified
+  const paymentPassing = paymentVerified
+  const depositPassing = depositReceived
   const signaturesPassing = Boolean(active.signatures.receiver) && Boolean(active.signatures.warehouse) && (!driverNeeded || Boolean(active.signatures.driver))
   const evidencePassing = casesWithoutPhoto.length === 0
 
@@ -172,18 +236,57 @@ export default function HandoverWorkspace({ embedded = false }: { embedded?: boo
       setScanLog((p) => [`• ${u.name} already handed over at ${u.handoverAt ?? '—'}`, ...p].slice(0, 5))
       return
     }
-    set(uid, { state: 'Picked Up', sessionId: activeId, handoverAt: '02:15 PM' })
-    import('../../actions/rentals').then((m) =>
-      m.handoverRental({ bookingId: id, unitIds: [uid], sessionId: activeId })
+    // ⚠ The flip and the log line are INSIDE `.then`. They used to bracket the
+    // dispatch synchronously, so the unit read as handed over before the write
+    // had settled — and stayed that way when it failed.
+    dispatchHandover()
+      .then(() => {
+        set(uid, { state: 'Picked Up', sessionId: activeId, handoverAt: '02:15 PM' })
+        setScanLog((p) => [`✓ ${u.name} (${u.serial}) handed over`, ...p].slice(0, 5))
+      })
+      .catch((err: unknown) => {
+        console.error('handover failed:', err)
+        const message = err instanceof Error ? err.message : String(err)
+        setDispatchError(message)
+        setScanLog((p) => [`✕ ${u.name} (${u.serial}) NOT handed over — nothing was recorded`, ...p].slice(0, 5))
+      })
+  }
+
+  /*
+   * ⚠ This used to be two dispatches per bulk action, not one: `handOverMany`
+   * called `handOver` for every id — each of which fired its own
+   * `handoverRental` — and THEN fired a second one for the whole array. Four
+   * selected units produced five dispatches covering the same units. While the
+   * action was a stub that was five identical refusals; now that it writes, it
+   * would be a real double count in `session_line_movements`. The bulk path
+   * therefore no longer dispatches at all — `handOver` is the single writer.
+   *
+   * `lines` is deliberately empty, and `unitIds`/`sessionId` are gone from the
+   * input entirely. This workspace's unit ids come from `data/handover`'s
+   * hardcoded UNITS, not from `booking_lines`/`product_units`, so there is
+   * nothing true to send and `handoverRental`'s own `validate` refuses it —
+   * the same shape, and the same reason, as `MovementList`'s empty unit list.
+   * `sessionId` was never the caller's to choose either: `operation_sessions`
+   * is opened by the action, and `session_no` is read from the booking's
+   * existing sessions (0003:85). Supplying real ids needs this screen converted
+   * onto `useList`, which is its own task.
+   */
+  const dispatchHandover = (): Promise<unknown> => {
+    if (!user) {
+      // Rejected rather than swallowed: the caller decides what the operator
+      // sees, and "no session" must not read as a completed handover.
+      return Promise.reject(
+        new Error('You are not signed in, so this handover cannot be recorded against anyone. Nothing was written.'),
+      )
+    }
+    setDispatchError(null)
+    return import('../../actions/rentals').then((m) =>
+      m.handoverRental({ bookingId: id, lines: [] }, { userId: user.id, role: user.role }),
     )
-    setScanLog((p) => [`✓ ${u.name} (${u.serial}) handed over`, ...p].slice(0, 5))
   }
 
   const handOverMany = (ids: string[]) => {
     ids.forEach((uid) => handOver(uid))
-    import('../../actions/rentals').then((m) =>
-      m.handoverRental({ bookingId: id, unitIds: ids, sessionId: activeId })
-    )
     setSelected(new Set())
   }
 
@@ -211,9 +314,27 @@ export default function HandoverWorkspace({ embedded = false }: { embedded?: boo
       return next
     })
 
-  const captureSignature = (role: 'receiver' | 'warehouse' | 'driver' | 'witness') => {
-    const names: Record<typeof role, string> = { receiver: RECEIVER.receiver, warehouse: active.warehouseStaff, driver: DELIVERY.pickupPerson, witness: 'Witness' }
-    const roleLabel: Record<typeof role, string> = { receiver: 'Receiver', warehouse: 'Warehouse', driver: 'Driver', witness: 'Witness' }
+  /**
+   * ⭐ 12 Aug 2026 — the witness is gone from here, and cannot come back by accident.
+   *
+   * `names.witness` was the literal string `'Witness'`. Pressing Capture on the
+   * Witness row therefore signed the handover attestation with a placeholder, so
+   * the session read as **witnessed** when nobody witnessed it. A placeholder in
+   * a signature block is not a blank: it is a claim that someone stood there.
+   *
+   * This screen captures no witness identity anywhere — no field, no picker, and
+   * `HandoverSession` names only the receiver, the warehouse staff and (when the
+   * delivery method needs one) the driver. §9.2 already makes the witness
+   * OPTIONAL, so absent is the honest state; the role union below no longer
+   * admits `witness`, and the Witness row's Capture control is `Unavailable`
+   * with its reason attached.
+   *
+   * The three remaining names are read off real records — the booking's receiver,
+   * the session's warehouse staff, the delivery's pickup person — never typed here.
+   */
+  const captureSignature = (role: 'receiver' | 'warehouse' | 'driver') => {
+    const names: Record<typeof role, string> = { receiver: RECEIVER.receiver, warehouse: active.warehouseStaff, driver: DELIVERY.pickupPerson }
+    const roleLabel: Record<typeof role, string> = { receiver: 'Receiver', warehouse: 'Warehouse', driver: 'Driver' }
     setSessions((p) => ({
       ...p,
       [activeId]: {
@@ -223,11 +344,48 @@ export default function HandoverWorkspace({ embedded = false }: { embedded?: boo
     }))
   }
 
-  const applyOverride = () => {
-    if (overrideReason.trim().length < 10) return
-    setOverrideApplied(true)
-    setScanLog((p) => [`⚠ Manager override applied — ${overrideReason.trim()}`, ...p].slice(0, 5))
-  }
+  /*
+   * ⭐ 12 Aug 2026 — `applyOverride` is REFUSED, not repaired. TODO(decision).
+   *
+   * It used to read, in full:
+   *
+   *     const applyOverride = () => {
+   *       if (overrideReason.trim().length < 10) return
+   *       setOverrideApplied(true)
+   *       setScanLog((p) => [`⚠ Manager override applied — ${reason}`, ...p])
+   *     }
+   *
+   * — no approver identity, no dispatch, no write. Three session gates (Receiver
+   * Verified, Payment Verified, Deposit Received) fell open on that one boolean,
+   * and the log line said "Manager override applied" without naming a manager.
+   * An override IS an accountability record: naming who authorised bypassing a
+   * gate is its entire purpose. Gates that fall open with no record are worse
+   * than gates that stay shut, so they now stay shut.
+   *
+   * Two things are missing, and neither may be invented here (CLAUDE.md: "Never
+   * invent a product decision to unblock yourself"):
+   *
+   *  1. **No rule says who may override a session gate.** `lib/rbac` holds
+   *     `canOverrideCreditLimit` (a *client credit limit*), `canApproveDiscount`
+   *     (a *discount percentage*) and `canPerformOperations` — and that last one
+   *     grants Warehouse and Technician, which §11.4 printed on this very screen
+   *     explicitly forbids ("Owner / Manager only… Warehouse cannot override").
+   *     Borrowing the credit-limit rule would be ruling that credit-limit
+   *     authority IS handover-gate authority. That is a ruling, not a fix.
+   *     TODO(decision): rule who may override a session gate; then add the rbac
+   *     predicate and a `session.override` capability to `checkCapability` in
+   *     `src/actions/core.ts`, which today denies any capability it has no rule for.
+   *  2. **Nothing persists an override.** There is no override action anywhere
+   *     under `src/actions/`, so an applied override lived only in this
+   *     component's state for as long as the tab stayed open. The helper text's
+   *     "written to audit" was simply false, and is corrected below.
+   *
+   * The reason field stays — it is real input, and an operator can still see what
+   * they would be recording — but the control refuses and says why (Law 12,
+   * inline and persistent), rather than opening three gates against nobody.
+   */
+  const OVERRIDE_UNAVAILABLE =
+    'A manager override cannot be applied: no rule defines who may override a session gate, and no action records the approver, so applying one would open three gates with nobody named against them. Clear the gates themselves instead.'
 
   /* ── §11.1 — all six Session Gates, shown in full per §5.6, none of them a money amount ── */
   const gates: GateRow[] = [
@@ -276,8 +434,7 @@ export default function HandoverWorkspace({ embedded = false }: { embedded?: boo
   // Floor scale (DEVICES.md item 3) is applied automatically by route in App.tsx's Shell, not here.
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      {/* ── header ─────────────────────────────────────────────────────── */}
-      {!embedded && (
+      {/* ── header. Rulings §4 — breadcrumbs, no `←`. ───────────────────── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
@@ -331,7 +488,6 @@ export default function HandoverWorkspace({ embedded = false }: { embedded?: boo
           </Link>
         </div>
       </div>
-      )}
 
       {/* ── §5 booking strip — read-only, no money (§8.3) ───────────────── */}
       <div style={{ ...cardStyle, display: 'flex', gap: 0, flexWrap: 'wrap', overflow: 'hidden' }}>
@@ -392,7 +548,17 @@ export default function HandoverWorkspace({ embedded = false }: { embedded?: boo
         </Card>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      {/* §3.3 — gate checklist and signature on the left, client/summary on the
+          right at desktop; below 1180 the right column REFLOWS beneath the
+          checklist rather than collapsing to a handle (Rulings §7). */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: desktop ? 'minmax(0,1fr) auto' : '1fr',
+          gap: 'var(--sp-md)',
+          alignItems: 'start',
+        }}
+      >
         {/* ── main column ──────────────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           {/* ── §7 Equipment Table ──────────────────────────────────────── */}
@@ -449,7 +615,7 @@ export default function HandoverWorkspace({ embedded = false }: { embedded?: boo
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)' }}>
-                    {['', 'Equipment', 'Serial', 'Qty', 'Handover', 'Status', 'Evidence', 'Session', ''].map((h, i) => (
+                    {['', 'Equipment', 'Serial', 'Qty', 'Handover', 'Status', 'Evidence', 'Session #', ''].map((h, i) => (
                       <th key={h || i} style={th}>{h}</th>
                     ))}
                   </tr>
@@ -510,7 +676,14 @@ export default function HandoverWorkspace({ embedded = false }: { embedded?: boo
                             {casePhotos[u.case] ?? 0}
                           </span>
                         </td>
-                        <td className="identifier" style={{ ...td, color: 'var(--muted)' }}>{u.sessionId ? u.sessionId.slice(1) : '—'}</td>
+                        {/* A session is a real sub-operation with its own gates,
+                            signatures and close — not a booking under another
+                            name — so ruling §2.1 leaves it. What it did wrong was
+                            print `S1` stripped to a bare "1" in an `identifier`
+                            cell inside a booking workspace, which reads exactly
+                            like a record number. Labelled instead; it never gains
+                            a prefix and never reaches a route. */}
+                        <td style={{ ...td, color: 'var(--muted)' }}>{u.sessionId ? `Session ${u.sessionId.slice(1)}` : '—'}</td>
                         <td style={{ ...td, width: 110 }}>
                           <span style={{ display: 'flex', gap: 'var(--sp-xs)', justifyContent: 'flex-end', alignItems: 'center' }}>
                             {u.state === 'Ready' && <RowAction label="Missing" onClick={() => markMissing(u.id)} />}
@@ -548,8 +721,10 @@ export default function HandoverWorkspace({ embedded = false }: { embedded?: boo
                       Mark Cleared →
                     </button>
                   )}
+                  {/* §11.4 calls these three overridable; this build cannot record an
+                      override, so the marker says so rather than promising a way past. */}
                   {!g.passing && g.overridable && (
-                    <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', whiteSpace: 'nowrap' }}>Overridable</span>
+                    <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', whiteSpace: 'nowrap' }}>Override unavailable</span>
                   )}
                 </div>
               ))}
@@ -566,44 +741,56 @@ export default function HandoverWorkspace({ embedded = false }: { embedded?: boo
               </div>
             </div>
 
-            {/* §11.4 — Manager override on gates 1, 3, 4 only. */}
-            {!overrideApplied && overridableFailing && (
+            {/* §11.4 — Manager override on gates 1, 3, 4 only, and refused until it
+                has an approver and somewhere to be recorded. See OVERRIDE_UNAVAILABLE. */}
+            {overridableFailing && (
               <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
                 <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Manager Override</div>
-                <p style={{ margin: '4px 0 6px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                  Owner / Manager only (§11.4). Warehouse cannot override. Reason of at least 10 characters, written to audit.
+                {/* Law 12 — inline, persistent, and states what happened, why, and what to do instead.
+                    The previous copy claimed the reason was "written to audit"; nothing wrote it. */}
+                <p role="alert" style={{ margin: '4px 0 6px', fontSize: 'var(--t-meta)', color: 'var(--danger-text)', fontWeight: 600, lineHeight: 1.45 }}>
+                  Not available in this build. {OVERRIDE_UNAVAILABLE}
+                </p>
+                <p style={{ margin: '0 0 6px', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
+                  §11.4 reserves this for Owner / Manager; Warehouse cannot override. Who may override a
+                  session gate is not yet ruled, and no action records the approver — so no override is
+                  recorded here, rather than one recorded against nobody.
                 </p>
                 <textarea
                   value={overrideReason}
                   onChange={(e) => setOverrideReason(e.target.value)}
                   placeholder="Reason for override (min 10 characters)"
                   aria-label="Manager override reason"
+                  aria-describedby="override-unavailable"
                   style={{ width: '100%', minHeight: 40, padding: 7, borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
                 />
-                <button
-                  type="button"
-                  disabled={overrideReason.trim().length < 10}
-                  onClick={applyOverride}
-                  style={{
-                    marginTop: 6,
-                    height: 30,
-                    padding: '0 12px',
-                    borderRadius: 'var(--r-btn)',
-                    fontSize: 'var(--t-meta)',
-                    fontWeight: 600,
-                    fontFamily: 'inherit',
-                    cursor: overrideReason.trim().length >= 10 ? 'pointer' : 'not-allowed',
-                    ...(overrideReason.trim().length >= 10 ? BLUE_PRIMARY : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
-                  }}
-                >
-                  Apply Override
-                </button>
+                {/* Spec 03 Notes bullet 1 — one primary per workspace, and it is the
+                    completion gate. `Apply Override` is a secondary; the only filled
+                    button on this page is `Complete Session` / `Complete Handover`. */}
+                <div style={{ marginTop: 6 }}>
+                  <Unavailable reason={OVERRIDE_UNAVAILABLE}>
+                    <button
+                      id="override-unavailable"
+                      type="button"
+                      disabled
+                      style={{
+                        minHeight: 44,
+                        padding: '0 12px',
+                        borderRadius: 'var(--r-btn)',
+                        fontSize: 'var(--t-meta)',
+                        fontWeight: 600,
+                        fontFamily: 'inherit',
+                        cursor: 'not-allowed',
+                        background: 'var(--card2)',
+                        color: 'var(--muted)',
+                        border: '1px solid var(--border)',
+                      }}
+                    >
+                      Apply Override
+                    </button>
+                  </Unavailable>
+                </div>
               </div>
-            )}
-            {overrideApplied && (
-              <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--progress-text)', fontWeight: 600 }}>
-                Manager override applied — {overrideReason.trim()}
-              </p>
             )}
 
             {/* §9.1 Evidence — ⭐ TODO(decision), see handover.ts EVIDENCE_MIN_PHOTOS_PER_CASE. */}
@@ -636,14 +823,14 @@ export default function HandoverWorkspace({ embedded = false }: { embedded?: boo
               <SigRow label="Receiver" sig={active.signatures.receiver} onCapture={() => captureSignature('receiver')} required disabled={active.state === 'Complete'} />
               <SigRow label="Warehouse Staff" sig={active.signatures.warehouse} onCapture={() => captureSignature('warehouse')} required disabled={active.state === 'Complete'} />
               {driverNeeded && <SigRow label="Driver" sig={active.signatures.driver} onCapture={() => captureSignature('driver')} required disabled={active.state === 'Complete'} />}
-              {/* §9.2 — witness renders as Optional, never as pending. */}
-              <SigRow label="Witness" sig={active.signatures.witness} onCapture={() => captureSignature('witness')} required={false} disabled={active.state === 'Complete'} />
+              {/* §9.2 — optional, and uncapturable: there is no witness identity on this screen to sign as. */}
+              <SigRow label="Witness" sig={active.signatures.witness} required={false} disabled={active.state === 'Complete'} unavailable={WITNESS_UNAVAILABLE} />
             </div>
           </Card>
         </div>
 
         {/* ── right rail ───────────────────────────────────────────────── */}
-        <Rail width={300} label="Handover summary">
+        <FloorAside collapsible={desktop} side="right" width={300} label="Handover summary">
           {/* §10 — no Outstanding, no Deposit Pending here (§13.1). Warehouse sees no money. */}
           <Card title="Handover Summary" action={<span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{pct}%</span>}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
@@ -752,7 +939,8 @@ export default function HandoverWorkspace({ embedded = false }: { embedded?: boo
           </Card>
 
           <Card title="Quick Actions">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 7 }}>
+            {/* Law 15 — 44×44 at every width, so three across is two across below 768. */}
+            <div style={{ display: 'grid', gridTemplateColumns: phone ? 'repeat(2,1fr)' : 'repeat(3,1fr)', gap: 7 }}>
               {(['Print', 'Share', 'More'] as const).map((a, i) => (
                 <button
                   key={a}
@@ -766,6 +954,10 @@ export default function HandoverWorkspace({ embedded = false }: { embedded?: boo
             </div>
           </Card>
 
+          {/* Law 12 — inline and persistent, never a toast. It replaces a unit
+              that used to flip to Picked Up whether or not the write landed. */}
+          {dispatchError && <ErrorBanner title="This handover was not recorded" message={dispatchError} />}
+
           {scanLog.length > 0 && (
             <div style={{ ...cardStyle, padding: 11 }}>
               <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Scan log</div>
@@ -776,7 +968,7 @@ export default function HandoverWorkspace({ embedded = false }: { embedded?: boo
               </div>
             </div>
           )}
-        </Rail>
+        </FloorAside>
       </div>
 
       {/* ── §12 footer — two buttons, autosave, no Save Draft, no Previous ── */}
@@ -857,7 +1049,15 @@ function CheckLine({ label, checked, onToggle, disabled }: { label: string; chec
   )
 }
 
-function SigRow({ label, sig, onCapture, required, disabled }: { label: string; sig: Sig | undefined; onCapture: () => void; required: boolean; disabled: boolean }) {
+/**
+ * `unavailable` is the reason a row can never be signed on this screen (today:
+ * Witness, which has no identity to capture). It takes precedence over
+ * `onCapture`, which such a row is not given at all — the Capture control renders
+ * through `Unavailable`, so the reason reaches a hover device via `title` AND a
+ * warehouse tablet via long-press, instead of the row signing a placeholder.
+ */
+function SigRow({ label, sig, onCapture, required, disabled, unavailable }: { label: string; sig: Sig | undefined; onCapture?: () => void; required: boolean; disabled: boolean; unavailable?: string }) {
+  const capture = { height: 26, padding: '0 9px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'var(--card2)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', whiteSpace: 'nowrap' } as const
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
       <div style={{ minWidth: 0, flex: 1 }}>
@@ -866,19 +1066,26 @@ function SigRow({ label, sig, onCapture, required, disabled }: { label: string; 
           <div style={{ fontSize: 'var(--t-meta)', color: 'var(--success-text)' }}>Signed · {sig.at}</div>
         ) : (
           // §9.2 — witness renders as "Optional", never as "Pending".
-          <div style={{ fontSize: 'var(--t-meta)', color: required ? 'var(--progress-text)' : 'var(--muted)' }}>{required ? 'Required' : 'Optional / No witness added'}</div>
+          <div style={{ fontSize: 'var(--t-meta)', color: required ? 'var(--progress-text)' : 'var(--muted)' }}>{required ? 'Required' : 'Optional — no witness recorded'}</div>
         )}
       </div>
-      {!sig && (
-        <button
-          type="button"
-          onClick={onCapture}
-          disabled={disabled}
-          style={{ height: 26, padding: '0 9px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
-        >
-          Capture
-        </button>
-      )}
+      {!sig &&
+        (unavailable ? (
+          <Unavailable reason={unavailable}>
+            <button type="button" disabled style={{ ...capture, color: 'var(--muted)', cursor: 'not-allowed' }}>
+              Capture
+            </button>
+          </Unavailable>
+        ) : (
+          <button
+            type="button"
+            onClick={onCapture}
+            disabled={disabled}
+            style={{ ...capture, color: 'var(--text2)', cursor: disabled ? 'not-allowed' : 'pointer' }}
+          >
+            Capture
+          </button>
+        ))}
     </div>
   )
 }

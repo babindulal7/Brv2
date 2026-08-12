@@ -15,6 +15,7 @@ import type { BrandKey, StatusKey } from '../../lib/status'
 import { grouped } from '../../lib/money'
 import { TODAY, toBs, formatBs, formatAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
+import { useNetwork } from '../../lib/network'
 import { gateContext } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
 import { rackGlance, rackDetailGroups } from '../../data/rackIntel'
@@ -46,10 +47,10 @@ import {
 import type {
   Warehouse,
   StockTransfer,
-  TransferStatus,
   TransferType,
   AlertKey,
 } from '../../data/warehouse'
+import type { ActionContext } from '../../actions/core'
 
 /**
  * **Inventory ▸ Warehouse Management** — built against
@@ -90,6 +91,12 @@ import type {
  *    "This Month" period picker. Neither has a destination or a second period in
  *    this build, and §Law "no dead controls" outranks the render, so they are
  *    absent rather than inert.
+ *  · The Transfer Center's step buttons — Approve / Start Packing / Dispatch /
+ *    Mark Received / Reconcile & Complete, and Cancel beside them — are
+ *    disabled with a stated reason. No stock-transfer state-change action
+ *    exists in this build, and a card that says "Received 18:00" when nothing
+ *    was written leaves two warehouses disagreeing about where the gear is.
+ *    See the note where `advance()` used to be.
  *
  * **Profile tabs** — Overview carries §Warehouse Profile ▸ General and
  * ▸ Location, the only two of the spec's eleven profile sections whose fields
@@ -469,10 +476,19 @@ const COLUMNS: Array<{ key: SortKey; header: string; numeric?: boolean }> = [
 
 const ROWS_PER_PAGE_OPTIONS = [10, 25, 50]
 
+/**
+ * Why every Transfer Center step button is stated as unbuilt — see the note
+ * where `advance()` used to be. One string so the Cancel and the Next Step
+ * button can never drift apart in what they claim.
+ */
+const TRANSFER_TRANSITION_UNAVAILABLE =
+  'Advancing a transfer is not built — src/actions/inventory has no state-change action for a stock transfer, and the create action is not one. This button would move nothing.'
+
 /* ── screen ────────────────────────────────────────────────────────────── */
 
 export default function Warehouses() {
   const { user } = useAuth()
+  const online = useNetwork()
   /* Stable identity so the `rackGlance`/`rackDetailGroups` memo below (and
      anything else keyed on `gctx`) only recomputes when the viewing role
      actually changes — `gateContext` returns a fresh object literal on every
@@ -496,6 +512,13 @@ export default function Warehouses() {
   /* transfers */
   const [transfers, setTransfers] = useState<StockTransfer[]>(TRANSFERS)
   const [modalOpen, setModalOpen] = useState(false)
+  /* Law 12 — a create that did not land says so, in the modal's own existing
+     ErrorBanner slot, and persists there until the next attempt. */
+  const [transferError, setTransferError] = useState<string | null>(null)
+  const openTransferModal = () => {
+    setTransferError(null)
+    setModalOpen(true)
+  }
 
   const selected = WAREHOUSES.find((w) => w.id === selectedId) ?? WAREHOUSES[0]
 
@@ -596,30 +619,49 @@ export default function Warehouses() {
 
   /* ── transfer workflow ───────────────────────────────────────────────── */
 
-  const advance = (id: string, next: TransferStatus) => {
-    setTransfers((prev) =>
-      prev.map((t): StockTransfer => {
-        if (t.id !== id) return t
-        return {
-          ...t,
-          status: next,
-          ...(next === 'In Transit' ? { dispatchedAt: `${formatAd(TODAY)} 14:30` } : {}),
-          ...(next === 'Received' ? { receivedAt: `${formatAd(TODAY)} 18:00` } : {}),
-        }
-      }),
-    )
-    import('../../actions/inventory/createStockTransfer').then((m) =>
-      m.createStockTransfer({ transferId: id, status: next })
-    )
-  }
+  /**
+   * No session, no dispatch — and never a substituted identity. Same shape as
+   * `rentals/NewRental.tsx`'s `dispatchContext()` and `today/MovementList.tsx`'s
+   * `runMovementAction`.
+   *
+   * `isOnline` is passed because this screen knows it and `lib/rbac` degrades
+   * several approvals offline; omitting it lets `ActionContext` default to
+   * online in `actions/core.ts`, which is the fail-OPEN direction. Same as
+   * `clients/DuplicateCenter.tsx`.
+   */
+  const dispatchContext = (): ActionContext | null =>
+    user ? { userId: user.id, role: user.role, isOnline: online } : null
 
-  const nextTransferNo = () => {
-    const highest = transfers.reduce((max, t) => {
-      const n = Number(t.transferNo.split('-').pop())
-      return Number.isFinite(n) && n > max ? n : max
-    }, 0)
-    return `TR-${TODAY.getUTCFullYear()}-${String(highest + 1).padStart(4, '0')}`
-  }
+  /**
+   * ⛔ `advance(id, next)` lived here and is **deleted**.
+   *
+   * It wrote the new transfer status into local state — plus a
+   * `dispatchedAt` / `receivedAt` timestamp built from `TODAY` and a literal
+   * clock time — and then fired `createStockTransfer` fire-and-forget with no
+   * `ActionContext` and no `.catch()`. An operator marking a branch transfer
+   * Received at 18:00 saw the card say Received, with a time on it, while
+   * nothing persisted: the destination's stock never incremented and the
+   * source's never decremented, so two warehouses disagreed about where the
+   * gear was with no error anywhere.
+   *
+   * It is not re-pointed at another action, because there is no action for
+   * this operation. `src/actions/inventory/` holds `createStockTransfer`
+   * (`CREATE_STOCK_TRANSFER`) and nothing that advances or cancels an existing
+   * transfer. That input happens to carry optional `transferId`/`status`
+   * fields, which is what made the original call typecheck — but a create is
+   * not a transition, and deciding that `CREATE_STOCK_TRANSFER` also means
+   * "move TR-2026-0045 from In Transit to Received" would be inventing a
+   * semantic mapping that produces wrong data the moment the action is wired
+   * to the database. So the Transfer Center's step buttons are stated as
+   * unbuilt (`TRANSFER_TRANSITION_UNAVAILABLE`) in the same
+   * `Unavailable`-with-a-reason idiom this screen already uses for Add
+   * Warehouse, Print Labels and Refresh, rather than moving a card that
+   * nothing behind it has moved.
+   *
+   * Cancel goes with them: Law 3 makes cancelling a *named state change*, so
+   * it needs the same missing transition action — it is not a delete and it is
+   * not a create either.
+   */
 
   const [form, setForm] = useState({
     type: 'Branch Transfer' as TransferType,
@@ -636,41 +678,128 @@ export default function Warehouses() {
         ? 'Name the asset being moved.'
         : null
 
+  /**
+   * Create is the one transfer operation this build has a real action for
+   * (`CREATE_STOCK_TRANSFER`), so it dispatches — but nothing appears in the
+   * ledger until that dispatch resolves.
+   *
+   * ⛔ It used to append the row, close the modal and jump to the Transfer
+   * Center having called no action at all, under a transfer number minted here
+   * (`nextTransferNo()`, "the highest seeded number plus one"). That reference
+   * was shown to the operator, and quoted between warehouses, for a transfer
+   * that existed only in this tab. Both are gone: the row is built on the
+   * resolved path, and it carries the identifier the write itself reports back
+   * rather than one this screen guessed.
+   *
+   * `createStockTransfer` does not set `implemented: true`, so `actions/core.ts`
+   * refuses it and the modal stays open with the reason — no row, no number, no
+   * navigation. That is the correct outcome today.
+   *
+   * TODO(decision) — `CreateStockTransferInput` carries source, target and an
+   * item count only. The transfer **type**, the asset's name and serial, the
+   * source/destination zones and the operator's reason/notes are collected by
+   * this form and are not sent, because there is nowhere declared to put them.
+   * Widening that input belongs to whoever owns the actions layer; the fields
+   * are left collected rather than removed so the fix is a schema change, not a
+   * re-collection from the floor.
+   */
   const createTransfer = () => {
     if (formError) return
+    const ctx = dispatchContext()
+    /* `!user` is exactly what makes `ctx` null, so this reads as redundant — it
+       is not. The committed row below stamps `requestedBy` with the session's
+       own name, and this is what lets the compiler see that a session exists at
+       that point. Refuse rather than substitute: an actor field carries the real
+       identity or the write does not happen. */
+    if (!ctx || !user) {
+      setTransferError(
+        'Not created — you are not signed in, so this transfer cannot be attributed to anyone. Sign in and try again.',
+      )
+      return
+    }
     const from = WAREHOUSES.find((w) => w.name === form.source)
     const to = WAREHOUSES.find((w) => w.name === form.destination)
-    const created: StockTransfer = {
-      id: `tr-${Date.now()}`,
-      transferNo: nextTransferNo(),
-      type: form.type,
-      sourceWarehouse: form.source,
-      sourceZone: zonesOf(from?.id ?? '')[0]?.zone ?? 'Unassigned',
-      destinationWarehouse: form.destination,
-      destinationZone: zonesOf(to?.id ?? '')[0]?.zone ?? 'Unassigned',
-      assetCount: 1,
-      items: [
-        {
-          assetCode: '—',
-          name: form.item.trim(),
-          serial: form.serial.trim() || '—',
-          category: '—',
-          condition: '—',
-        },
-      ],
-      status: 'Pending',
-      /* The request is raised by the facility the stock leaves, not by whichever
-         warehouse the reader happened to have open. */
-      requestedBy: from?.manager ?? 'Warehouse',
-      dateAD: TODAY.toISOString().slice(0, 10),
-      notes: form.notes.trim(),
-    }
-    setTransfers((prev) => [created, ...prev])
-    setModalOpen(false)
-    /* Land on a profile the new row is actually visible in — the Transfer Center
-       lists transfers touching the selected warehouse, so open the source. */
-    if (from) setSelectedId(from.id)
-    openTransferCentre()
+    setTransferError(null)
+    void import('../../actions/inventory/createStockTransfer')
+      .then((m) =>
+        m.createStockTransfer(
+          { sourceWarehouse: form.source, targetWarehouse: form.destination, itemCount: 1 },
+          ctx,
+        ),
+      )
+      .then((res) => {
+        const created: StockTransfer = {
+          /* A local React key, not an identifier anyone is shown. */
+          id: `tr-${Date.now()}`,
+          /*
+           * ⚠ This is the reference the operator reads off the card and quotes
+           * between warehouses, and it is **not yet a real number**. This screen
+           * no longer mints it — that part was fixed — but the write it comes
+           * from does: `actions/inventory/createStockTransfer.ts` returns
+           * `TR-${Date.now().toString().slice(-4)}` when the caller supplies no
+           * id. Four digits off a clock collide (two transfers raised in the
+           * same 10ms window get the same reference, and the series restarts
+           * from wherever the clock happens to be), and nothing reserved it.
+           *
+           * The comment here used to say the reference "is the write's, not
+           * ours" and stop, which read as though something authoritative had
+           * assigned it. It is the write's, and the write is guessing.
+           *
+           * Numbering belongs to the database: `data/numbering.ts` +
+           * `issue()`/`prefixOf()` over the sequence tables. Fixing it is a
+           * change to the action (and its already-logged TODO(decision) on
+           * whether the Stock Transfer series is coded `TR` or `TRF`), not to
+           * this screen — a second numbering scheme built here would be the
+           * thing that guarantees the two disagree. Nothing is displayed today
+           * regardless: `createStockTransfer` is not `implemented`, so this
+           * resolved path does not run.
+           */
+          transferNo: res.transferId,
+          type: form.type,
+          sourceWarehouse: form.source,
+          sourceZone: zonesOf(from?.id ?? '')[0]?.zone ?? 'Unassigned',
+          destinationWarehouse: form.destination,
+          destinationZone: zonesOf(to?.id ?? '')[0]?.zone ?? 'Unassigned',
+          assetCount: 1,
+          items: [
+            {
+              assetCode: '—',
+              name: form.item.trim(),
+              serial: form.serial.trim() || '—',
+              category: '—',
+              condition: '—',
+            },
+          ],
+          status: 'Pending',
+          /*
+           * The requester is **the signed-in person who filled this form in** —
+           * the same identity `ctx` carries to the action, so the row and the
+           * write name the same actor.
+           *
+           * ⛔ It used to be `from?.manager ?? 'Warehouse'`: the source
+           * facility's manager, who may not have been anywhere near this, and
+           * a bare literal `'Warehouse'` when no facility matched. The Transfer
+           * Center prints this string in its "Requested By" column, so a
+           * transfer raised by a coordinator was attributed on screen to a
+           * manager who never raised it — the same defect class as the invented
+           * `USR-001`. An actor field carries the real session or the write is
+           * refused (see the guard above); it is never substituted.
+           */
+          requestedBy: user.name,
+          dateAD: TODAY.toISOString().slice(0, 10),
+          notes: form.notes.trim(),
+        }
+        setTransfers((prev) => [created, ...prev])
+        setModalOpen(false)
+        /* Land on a profile the new row is actually visible in — the Transfer Center
+           lists transfers touching the selected warehouse, so open the source. */
+        if (from) setSelectedId(from.id)
+        openTransferCentre()
+      })
+      .catch((err: unknown) => {
+        console.error('create stock transfer failed:', err)
+        setTransferError(`Not created — ${err instanceof Error ? err.message : String(err)}`)
+      })
   }
 
   /* ── derived panels ──────────────────────────────────────────────────── */
@@ -732,7 +861,7 @@ export default function Warehouses() {
                 Add Warehouse
               </Button>
             </Unavailable>
-            <Button icon="truck" onClick={() => setModalOpen(true)}>
+            <Button icon="truck" onClick={openTransferModal}>
               Transfer Stock
             </Button>
             <Unavailable reason="Print Labels is not built — no shelf, zone or rack label pipeline exists yet.">
@@ -1668,7 +1797,7 @@ export default function Warehouses() {
                         {profileTransfers.length} transfers touch {selected.name}
                       </span>
                       <span style={{ marginLeft: 'auto' }}>
-                        <Button icon="plus" variant="primary" onClick={() => setModalOpen(true)}>
+                        <Button icon="plus" variant="primary" onClick={openTransferModal}>
                           Create Transfer
                         </Button>
                       </span>
@@ -1723,14 +1852,18 @@ export default function Warehouses() {
                                   <td style={{ ...td, textAlign: 'right' }}>
                                     <span style={{ display: 'inline-flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
                                       {!TRANSFER_TERMINAL.has(t.status) && (
-                                        <Button icon="close" onClick={() => advance(t.id, 'Cancelled')}>
-                                          Cancel
-                                        </Button>
+                                        <Unavailable reason={TRANSFER_TRANSITION_UNAVAILABLE}>
+                                          <Button icon="close" disabled>
+                                            Cancel
+                                          </Button>
+                                        </Unavailable>
                                       )}
                                       {flow ? (
-                                        <Button variant="primary" icon="arrow_right" onClick={() => advance(t.id, flow.next)}>
-                                          {flow.label}
-                                        </Button>
+                                        <Unavailable reason={TRANSFER_TRANSITION_UNAVAILABLE}>
+                                          <Button variant="primary" icon="arrow_right" disabled>
+                                            {flow.label}
+                                          </Button>
+                                        </Unavailable>
                                       ) : (
                                         <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Closed</span>
                                       )}
@@ -1865,7 +1998,7 @@ export default function Warehouses() {
               {(
                 [
                   { label: 'Add Warehouse', icon: 'plus' as IconName, reason: 'No warehouse intake screen exists in this release.' },
-                  { label: 'Transfer Equipment', icon: 'truck' as IconName, onClick: () => setModalOpen(true) },
+                  { label: 'Transfer Equipment', icon: 'truck' as IconName, onClick: openTransferModal },
                   { label: 'Print QR Labels', icon: 'file' as IconName, reason: 'No shelf, zone or rack label pipeline exists yet.' },
                   { label: 'Export Report', icon: 'download' as IconName, onClick: () => exportCsv(WAREHOUSES) },
                 ] as const
@@ -2048,9 +2181,19 @@ export default function Warehouses() {
 
             {/* Law 12 — errors are inline and persistent; toasts carry successes only. */}
             {formError && <ErrorBanner title="Can't create this transfer" message={formError} />}
+            {!formError && transferError && <ErrorBanner title="Transfer was not created" message={transferError} />}
 
+            {/* This note used to promise a workflow that no longer runs: "advance
+                one step at a time through the Transfer Center", written when
+                `advance()` still existed. It was deleted (see the note in its
+                place), the step buttons are disabled with
+                `TRANSFER_TRANSITION_UNAVAILABLE` on them, and a modal that
+                describes the old behaviour sends the operator looking for
+                controls that will not act. */}
             <p style={{ margin: 0, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-              Created transfers open at <strong>Pending</strong> and advance one step at a time through the Transfer Center.
+              A transfer that is created opens at <strong>Pending</strong> and stays there. Advancing or
+              cancelling one is not built in this release — the Transfer Center's step buttons are
+              disabled with the reason on them.
             </p>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--sp-sm)' }}>

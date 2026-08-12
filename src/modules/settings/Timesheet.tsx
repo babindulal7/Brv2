@@ -1,82 +1,55 @@
-import { Card, Button, Badge, thStyle } from '../../components/ui'
-import Icon from '../../components/ui/Icon'
-import { PageHeader } from '../../components/ui'
+import { Button, PageHeader, EmptyState } from '../../components/ui'
+import { Unavailable } from '../../components/ui/Unavailable'
 
-const MOCK_TIMESHEET = [
-  { id: '1', date: '28 Jul 2026', user: 'Ramesh (Warehouse)', firstAction: '06:14 AM', lastAction: '14:30 PM', hours: '8.2h', jobs: 24, status: 'derived' },
-  { id: '2', date: '28 Jul 2026', user: 'Sita (Warehouse)', firstAction: '14:10 PM', lastAction: '22:45 PM', hours: '8.5h', jobs: 18, status: 'derived' },
-  { id: '3', date: '27 Jul 2026', user: 'Ramesh (Warehouse)', firstAction: '06:05 AM', lastAction: '14:15 PM', hours: '8.1h', jobs: 22, status: 'derived' },
-  { id: '4', date: '27 Jul 2026', user: 'Hari (Driver)', firstAction: '07:00 AM', lastAction: '16:00 PM', hours: '9.0h', jobs: 4, status: 'manual' }, // Example of a manual correction
-]
+/**
+ * **Presence Log & Timesheet.**
+ *
+ * This screen rendered four rows of `MOCK_TIMESHEET` — Ramesh 8.2h / 24 jobs,
+ * Sita 8.5h / 18 jobs, Hari 9.0h / 4 jobs across 27–28 Jul 2026 — under column
+ * headers reading "Hours Present" and "Jobs Completed", one row badged `Manual`
+ * as though a correction had been made and audited. Attendance and job counts
+ * are payroll-adjacent: those rows asserted that named people were present for
+ * paid hours, and they were literals inside this component, not records.
+ *
+ * Nothing derives presence in this build — there is no timesheet query in
+ * `src/lib/queries/`, no timesheet action in `src/actions/`, and no first/last
+ * action feed to derive an hour from. So the screen states that it is unbuilt
+ * instead of showing attendance nobody logged. (The hardcoded people in
+ * `src/data/*.ts` are seed fixtures and stay: legitimate demo data. The
+ * difference is that these were rendered as live records.)
+ */
+
+const WHY_UNBUILT =
+  'Nothing in this build derives presence from first and last system actions, and no timesheet is stored, so there is no attendance to show.'
 
 export default function Timesheet() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageHeader
         title="Presence Log & Timesheet"
-        description="Derived automatically from first and last system actions. Manual corrections are audited."
+        description="Specified to derive presence from first and last system actions, with every manual correction audited. Not built yet."
         actions={
           <>
-            <Button icon="download">Export CSV</Button>
-            <Button variant="primary" icon="edit">
-              Manual Correction
-            </Button>
+            <Unavailable reason={`There is nothing to export — ${WHY_UNBUILT}`}>
+              <Button disabled>Export CSV</Button>
+            </Unavailable>
+            <Unavailable reason="A manual correction is an audited payroll edit. It needs a timesheet to correct and an action to record the correction against a real user; this build has neither.">
+              <Button variant="primary" disabled>
+                Manual Correction
+              </Button>
+            </Unavailable>
           </>
         }
       />
 
-      <Card>
-        <div style={{ margin: '-20px' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-ui)' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                <th style={thStyle}>Date</th>
-                <th style={thStyle}>User</th>
-                <th style={thStyle}>First Action</th>
-                <th style={thStyle}>Last Action</th>
-                <th style={{ ...thStyle, textAlign: 'right' }}>Hours Present</th>
-                <th style={{ ...thStyle, textAlign: 'right' }}>Jobs Completed</th>
-                <th style={thStyle}>Source</th>
-                <th style={{ ...thStyle, width: 40 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-            {MOCK_TIMESHEET.map((row) => (
-              <tr key={row.id}>
-                <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)' }} className="figure">{row.date}</td>
-                <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)' }}>{row.user}</td>
-                <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)' }} className="figure">{row.firstAction}</td>
-                <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)' }} className="figure">{row.lastAction}</td>
-                <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', textAlign: 'right', fontWeight: 600 }} className="figure">{row.hours}</td>
-                <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', textAlign: 'right' }} className="figure">{row.jobs}</td>
-                <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)' }}>
-                  {row.status === 'manual' ? (
-                    <Badge tone="warning" label="Manual" />
-                  ) : (
-                    <Badge tone="neutral" label="System" />
-                  )}
-                </td>
-                <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)' }}>
-                  <button
-                    type="button"
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--muted)',
-                      cursor: 'pointer',
-                      padding: 'var(--sp-xs)',
-                    }}
-                    title="View Audit Log"
-                  >
-                    <Icon name="calendar_stats" size={16} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        </div>
-      </Card>
+      {/*
+        Was: a Date / User / First Action / Last Action / Hours Present / Jobs
+        Completed / Source table over `MOCK_TIMESHEET`, with a per-row "View
+        Audit Log" button that opened nothing. The table is gone with the rows —
+        an empty presence table would read as "nobody was present", which is
+        itself a claim; this states that nothing is measured instead.
+      */}
+      <EmptyState title="Presence log — not built yet" description={WHY_UNBUILT} />
     </div>
   )
 }

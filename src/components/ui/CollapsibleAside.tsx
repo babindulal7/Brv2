@@ -40,7 +40,20 @@ export function CollapsibleAside({
 
   if (collapsed) {
     return (
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', width: 32 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'center',
+          width: 32,
+          // Sticky for the same reason the expanded panel is (see below): the
+          // handle that reopens the rail has to still be on screen when someone
+          // has scrolled down far enough to want it back.
+          position: 'sticky',
+          top: 'calc(var(--header-h) + var(--sp-md))',
+          alignSelf: 'flex-start',
+        }}
+      >
         <button
           type="button"
           onClick={toggle}
@@ -82,12 +95,53 @@ export function CollapsibleAside({
     ...(side === 'right' ? { left: -12 } : { right: -12 }),
   }
 
+  /**
+   * Sticky, with its own contained scroll.
+   *
+   * This was `position: relative`, so both rails scrolled away with the page —
+   * on a long booking the Quick Actions card and its Receive Payment button
+   * ended up above the viewport exactly when someone scrolled down to the
+   * payment history to use them.
+   *
+   * `overscroll-behavior: contain` is the half that makes it behave: reaching
+   * the end of this panel does NOT start scrolling the page behind it. Hover
+   * the panel, the panel scrolls; hover the list, the list scrolls.
+   *
+   * ## Why the scroll is on an INNER box
+   *
+   * The collapse handle sits at `right: -12` — deliberately outside this
+   * element's box, straddling the border. `overflow-y: auto` on the same
+   * element would compute `overflow-x` to `auto` as well (CSS overflow §3: a
+   * `visible` axis becomes `auto` when the other is not visible), and the handle
+   * would be clipped at the edge it hangs over. So the sticky box keeps
+   * `overflow: visible` and holds the handle, and a child owns the scroll.
+   */
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0, width, position: 'relative' }}>
+    <div
+      style={{
+        position: 'sticky',
+        top: 'calc(var(--header-h) + var(--sp-md))',
+        alignSelf: 'flex-start',
+        minWidth: 0,
+        width,
+      }}
+    >
       <button type="button" onClick={toggle} aria-label={`Collapse ${label}`} title={`Collapse ${label}`} style={handleStyle}>
         <Icon name={collapseIcon} size={12} />
       </button>
-      {children}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 'var(--sp-md)',
+          minWidth: 0,
+          maxHeight: 'calc(100vh - var(--header-h) - var(--sp-md) * 2)',
+          overflowY: 'auto',
+          overscrollBehavior: 'contain',
+        }}
+      >
+        {children}
+      </div>
     </div>
   )
 }

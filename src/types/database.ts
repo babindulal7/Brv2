@@ -42,6 +42,33 @@ export type ItemQuantityState = 'Ready' | 'Picked Up' | 'Returned' | 'Missing' |
 export type PackingLineState = 'Pending' | 'Packed' | 'Partial' | 'Missing' | 'Not Required' | 'Replaced'
 export type PhysicalCondition = 'Excellent' | 'Good' | 'Fair' | 'Damaged' | 'Not Inspected'
 
+/* ── operations enums (0001_enums.sql), typed 12 Aug 2026 ──────────────────
+ *
+ * `src/actions/rentals/floorVerb.ts` writes the five operations tables below
+ * through `idempotentInsert`/`safeUpdate`, both of which are generic over
+ * `keyof Database['public']['Tables']` — an untyped table is not writable
+ * through the data-access layer at all. Same reason `booking_stage_transitions`
+ * was typed on 11 Aug (see its own note). Mirrors of the migration, not new
+ * vocabulary: every member below is copied from `0001_enums.sql` verbatim.
+ */
+
+/** `0001_enums.sql:61-64`. Packing's own two-value condition, NOT `item_condition`. */
+export type PackingCondition = 'Good' | 'Damaged'
+/** `0001_enums.sql:67-71`. Three states holding Remaining + Picked Up + Missing = Total. */
+export type HandoverLineState = 'Remaining' | 'Picked Up' | 'Missing'
+/** `0001_enums.sql:74-78`. Routing destinations are derived, never states. */
+export type ReturnLineState = 'Outstanding' | 'Returned' | 'Not Returned'
+/** `0001_enums.sql:81-84`. Tracked separately from the line state, per returned line. */
+export type InspectionState = 'Pending' | 'Inspected'
+/** `0001_enums.sql:87-93`. Single-select — exactly one value per item. */
+export type ItemCondition = 'Excellent' | 'Good' | 'Fair' | 'Damaged' | 'Lost'
+/** `0001_enums.sql:96-101`. Mandatory alongside a Not Returned reason. */
+export type NotReturnedDecision = 'Still expected' | 'Charge replacement' | 'Insurance claim' | 'Write off'
+/** `0001_enums.sql:221-226`. The four are mutually exclusive and sum to the queue total. */
+export type CleaningQueueState = 'Waiting' | 'Cleaning' | 'QC' | 'Ready'
+/** `0001_enums.sql:229-234`. Set per item, never per batch. */
+export type CleaningProblemState = 'No Problems' | 'Missing Item' | 'Needs Repair' | 'Damaged'
+
 /**
  * The canonical six (0015_canonical_six_stages.sql), in lifecycle order —
  * matches `BookingStatus` in src/lib/workflow.ts §1.2 exactly. Cancelled is a
@@ -814,6 +841,345 @@ export interface Database {
           created_at?: string
         }
         Update: never // Audit events are immutable!
+      }
+
+      /* ═══════════════════════════════════════════════════════════════════
+       * operations — `0003_operations.sql`
+       *
+       * The five tables the four floor verbs (Pack · Handover · Return ·
+       * Reset) write. Typed 12 Aug 2026 for the same stated reason
+       * `booking_stage_transitions` was typed on 11 Aug: `idempotentInsert`
+       * and `safeUpdate` are generic over `keyof Database['public']['Tables']`,
+       * so a table absent from here cannot be written through the data-access
+       * layer at all — and casting around that generic would silently switch
+       * off payload checking on exactly the writes that most need it.
+       *
+       * Columns are copied from `0003_operations.sql`, nullability included.
+       * `Insert` marks optional every column the migration gives a DEFAULT.
+       * No column is added, renamed or omitted; where the migration and
+       * `src/lib/workflow.ts` disagree the migration is what is typed, because
+       * this file describes Postgres.
+       * ═══════════════════════════════════════════════════════════════════ */
+
+      /**
+       * `0003_operations.sql:47-123`. One Packing, Handover or Return session
+       * against a booking — `operation_sessions_operation_is_a_session` (:88)
+       * limits `operation` to those three, so `'Reset'`/`'Cleaning'` are
+       * members of `OperationKind` that this table refuses. Reset has no
+       * session at all (`0003:855-857`).
+       */
+      operation_sessions: {
+        Row: {
+          id: string
+          client_uuid: string
+          booking_id: string
+          operation: OperationKind
+          session_no: number
+          state: SessionState
+          started_at: string | null
+          started_by: string | null
+          completed_at: string | null
+          completed_by: string | null
+          cancelled_at: string | null
+          cancel_reason: string | null
+          warehouse_staff_id: string
+          delivery_method: DeliveryMethod | null
+          receiver_name: string | null
+          receiver_phone: string | null
+          receiver_email: string | null
+          receiver_id_document_evidence_id: string | null
+          government_id_verified: boolean
+          booking_authorization_verified: boolean
+          received_at: string | null
+          returning_person_name: string | null
+          pickup_person_name: string | null
+          pickup_person_phone: string | null
+          vehicle_plate: string | null
+          driver_name: string | null
+          driver_contact: string | null
+          courier_name: string | null
+          courier_tracking_number: string | null
+          delivery_address: string | null
+          estimated_arrival: string | null
+          device_id: string | null
+          notes: string | null
+          created_at: string
+          created_by: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          booking_id: string
+          operation: OperationKind
+          session_no?: number
+          state?: SessionState
+          started_at?: string | null
+          started_by?: string | null
+          completed_at?: string | null
+          completed_by?: string | null
+          cancelled_at?: string | null
+          cancel_reason?: string | null
+          warehouse_staff_id: string
+          delivery_method?: DeliveryMethod | null
+          receiver_name?: string | null
+          receiver_phone?: string | null
+          receiver_email?: string | null
+          receiver_id_document_evidence_id?: string | null
+          government_id_verified?: boolean
+          booking_authorization_verified?: boolean
+          received_at?: string | null
+          returning_person_name?: string | null
+          pickup_person_name?: string | null
+          pickup_person_phone?: string | null
+          vehicle_plate?: string | null
+          driver_name?: string | null
+          driver_contact?: string | null
+          courier_name?: string | null
+          courier_tracking_number?: string | null
+          delivery_address?: string | null
+          estimated_arrival?: string | null
+          device_id?: string | null
+          notes?: string | null
+          created_at?: string
+          created_by: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['operation_sessions']['Insert']>
+      }
+
+      /**
+       * `0003_operations.sql:190-207`. Append-only: `0003:1643-1647` revokes
+       * UPDATE from every role, and a correction is a compensating row via
+       * `reverses_movement_id`. `Update` is `never` for the same reason
+       * `payments`' is.
+       */
+      session_line_movements: {
+        Row: {
+          id: string
+          client_uuid: string
+          session_id: string
+          booking_line_id: string
+          unit_id: string | null
+          serial: string | null
+          qty: number
+          resulting_item_state: ItemQuantityState | null
+          moved_at: string
+          scan_event_id: string | null
+          device_id: string | null
+          reverses_movement_id: string | null
+          created_at: string
+          created_by: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          session_id: string
+          booking_line_id: string
+          unit_id?: string | null
+          serial?: string | null
+          qty?: number
+          resulting_item_state?: ItemQuantityState | null
+          moved_at: string
+          scan_event_id?: string | null
+          device_id?: string | null
+          reverses_movement_id?: string | null
+          created_at?: string
+          created_by: string
+        }
+        Update: never // Append-only — 0003:1643 revokes UPDATE from everyone.
+      }
+
+      /** `0003_operations.sql:250-278`. One row per booking line (unique :271). */
+      packing_lines: {
+        Row: {
+          id: string
+          client_uuid: string
+          session_id: string
+          booking_line_id: string
+          state: PackingLineState
+          qty_required: number
+          qty_packed_entered: number | null
+          is_required: boolean
+          condition: PackingCondition | null
+          warehouse_location: string | null
+          packed_at: string | null
+          packed_by: string | null
+          missing_reason: string | null
+          blocker_note: string | null
+          replacement_packing_line_id: string | null
+          not_required_set_at: string | null
+          created_at: string
+          created_by: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          session_id: string
+          booking_line_id: string
+          state?: PackingLineState
+          qty_required: number
+          qty_packed_entered?: number | null
+          is_required?: boolean
+          condition?: PackingCondition | null
+          warehouse_location?: string | null
+          packed_at?: string | null
+          packed_by?: string | null
+          missing_reason?: string | null
+          blocker_note?: string | null
+          replacement_packing_line_id?: string | null
+          not_required_set_at?: string | null
+          created_at?: string
+          created_by: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['packing_lines']['Insert']>
+      }
+
+      /**
+       * `0003_operations.sql:309-327`. Note it carries **no `session_id`** —
+       * a line outlives any one session, so the session is recorded as
+       * `first_session_id` / `completed_session_id` instead.
+       */
+      handover_lines: {
+        Row: {
+          id: string
+          client_uuid: string
+          booking_line_id: string
+          state: HandoverLineState
+          qty_required: number
+          missing_reason: string | null
+          first_session_id: string | null
+          completed_session_id: string | null
+          picked_up_at: string | null
+          created_at: string
+          created_by: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          booking_line_id: string
+          state?: HandoverLineState
+          qty_required: number
+          missing_reason?: string | null
+          first_session_id?: string | null
+          completed_session_id?: string | null
+          picked_up_at?: string | null
+          created_at?: string
+          created_by: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['handover_lines']['Insert']>
+      }
+
+      /** `0003_operations.sql:356-385`. Inspection is a column set here, not a second table. */
+      return_lines: {
+        Row: {
+          id: string
+          client_uuid: string
+          booking_line_id: string
+          state: ReturnLineState
+          qty_expected: number
+          session_id: string | null
+          returned_at: string | null
+          inspection_state: InspectionState
+          condition: ItemCondition | null
+          inspector_note: string | null
+          inspected_by: string | null
+          inspected_at: string | null
+          returned_by_name: string | null
+          not_returned_reason: string | null
+          not_returned_decision: NotReturnedDecision | null
+          created_at: string
+          created_by: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          booking_line_id: string
+          state?: ReturnLineState
+          qty_expected: number
+          session_id?: string | null
+          returned_at?: string | null
+          inspection_state?: InspectionState
+          condition?: ItemCondition | null
+          inspector_note?: string | null
+          inspected_by?: string | null
+          inspected_at?: string | null
+          returned_by_name?: string | null
+          not_returned_reason?: string | null
+          not_returned_decision?: NotReturnedDecision | null
+          created_at?: string
+          created_by: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['return_lines']['Insert']>
+      }
+
+      /**
+       * `0003_operations.sql:859-897`. **Per item, not per booking** (:899) —
+       * this is why Reset takes unit ids and not a line list. `requires_reset`
+       * gates `reset_completed_at` by CHECK (:895).
+       */
+      cleaning_queue_entries: {
+        Row: {
+          id: string
+          client_uuid: string
+          unit_id: string
+          booking_id: string | null
+          return_line_id: string | null
+          state: CleaningQueueState
+          requires_clean: boolean
+          requires_reset: boolean
+          clean_completed_at: string | null
+          reset_completed_at: string | null
+          entered_queue_at: string
+          first_task_at: string | null
+          completed_at: string | null
+          assigned_to: string | null
+          cleaned_by: string | null
+          qc_by: string | null
+          qc_at: string | null
+          qc_skipped: boolean
+          qc_skip_reason: string | null
+          qc_fail_reason: string | null
+          problem_state: CleaningProblemState
+          checklist_version: number | null
+          created_at: string
+          created_by: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          unit_id: string
+          booking_id?: string | null
+          return_line_id?: string | null
+          state?: CleaningQueueState
+          requires_clean?: boolean
+          requires_reset?: boolean
+          clean_completed_at?: string | null
+          reset_completed_at?: string | null
+          entered_queue_at?: string
+          first_task_at?: string | null
+          completed_at?: string | null
+          assigned_to?: string | null
+          cleaned_by?: string | null
+          qc_by?: string | null
+          qc_at?: string | null
+          qc_skipped?: boolean
+          qc_skip_reason?: string | null
+          qc_fail_reason?: string | null
+          problem_state?: CleaningProblemState
+          checklist_version?: number | null
+          created_at?: string
+          created_by: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['cleaning_queue_entries']['Insert']>
       }
     }
   }

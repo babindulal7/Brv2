@@ -265,7 +265,10 @@
  *
  * Same shape of gap `clients.ts` documents for `client_code`:
  * `bookings.booking_no` is `NOT NULL UNIQUE`, format-locked to
- * `^BK-[0-9]{4}-[0-9]{4}$` (AD year), immutable after creation
+ * `^BK-[0-9]{4}-[0-9]{4}$` (AD year), immutable after creation.
+ * ⚠ That CHECK is `0002_bookings.sql`'s and still names the retired form. The
+ * app now issues `B-715` per the 12 Aug ruling, which the constraint rejects —
+ * reported, not migrated here.
  * (`0002_bookings.sql`'s own column comment), and normally minted via
  * `next_document_number('BK')` (`0007_admin_security.sql` confirms a `BK`
  * prefix is registered). This file never invents one — `sync.ts` mints one
@@ -369,7 +372,7 @@ export interface OrderSyncContext {
   productRefs: ReadonlyMap<BooqableId, string>
   /** external bundle id -> local `bundles.id` (from `products.ts`'s `external_refs`, entity `'bundles'`), for order lines whose `item_type === 'bundle'`. */
   bundleRefs: ReadonlyMap<BooqableId, string>
-  /** external order id -> a freshly minted `BK-YYYY-NNNN` from `next_document_number('BK')`, one entry per NEW order in this batch. See file header. */
+  /** external order id -> a freshly minted booking number (`B-N`) from `next_document_number('BK')`, one entry per NEW order in this batch. See file header. */
   mintedBookingNumbers: ReadonlyMap<BooqableId, string>
   /** See file header — TODO(decision), no confirmed location->branch rule. `undefined` for an unresolved location ⇒ the order is skipped, never inserted with a guessed branch. */
   resolveBranch(externalLocationId: BooqableId | null): string | undefined

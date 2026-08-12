@@ -8,10 +8,10 @@
  * Three deliberate departures from those renders, each forced by Foundation:
  *
  *  1. **No purple.** §4.2 bans purple / violet / cyan / teal / indigo outright.
- *     The renders draw Sub-Rental bars and the Utilization KPI in purple. Both
- *     move to an allowed family — sub-rental to the **gold outline** that §4.2
- *     reserves for exactly that ("Gold, outline only — sub-rental, partner
- *     equipment"), Utilization to `progress`.
+ *     The renders draw Sub-Rental bars in purple; they move to the **gold
+ *     outline** §4.2 reserves for exactly that ("Gold, outline only —
+ *     sub-rental, partner equipment"). The renders' purple Utilization KPI is
+ *     moot — the KPI band was removed from the screen on 12 Aug 2026.
  *  2. **Dates are AD instants, never pre-rendered BS strings.** The renders
  *     label the same week "10–16 Shrawan"; the Date Engine's anchor
  *     (16 Jul 2026 = 1 Shrawan 2083) makes it 11–17. Nothing here stores a BS
@@ -45,8 +45,65 @@ export function dayDiff(a: Date, b: Date): number {
 
 /* ── views ─────────────────────────────────────────────────────────────── */
 
-export const VIEWS = ['Resource Timeline', 'Month', 'Week', 'Day'] as const
+/**
+ * §5.1 draws the tab row as `[Month][Week][Timeline][Availability]`, and the
+ * spec's opening line — *"Simple month view by default; other views are
+ * options"* — makes Month the landing view rather than the timeline.
+ *
+ * Two consequences, both deliberate:
+ *  · `Resource Timeline` is now spelled **Timeline**. The view is unchanged —
+ *    same rows, same bars, same zoom steps — only the tab label moved.
+ *  · The old `Day` tab is gone. Its whole job was "show me one day", which
+ *    §5.1 now gives to the day peek / bottom sheet / phone agenda that a day
+ *    click opens. Keeping both would put the same day on screen two ways.
+ */
+export const VIEWS = ['Month', 'Week', 'Timeline', 'Availability'] as const
 export type ViewName = (typeof VIEWS)[number]
+
+/** §5.1 — "Simple month view by default". */
+export const DEFAULT_VIEW: ViewName = 'Month'
+
+/**
+ * The tab row each width may show.
+ *
+ * §5.1's tablet box draws `[Month][Week]` and its phone box draws no tab row at
+ * all — the phone layout is the month grid plus the selected-day agenda beneath
+ * it. This is a *layout* narrowing, not a deletion: every view stays reachable
+ * on a wider window, and nothing is removed from `VIEWS`.
+ */
+export const VIEWS_BY_WIDTH: Record<'desktop' | 'tablet' | 'phone', readonly ViewName[]> = {
+  desktop: VIEWS,
+  tablet: ['Month', 'Week'],
+  phone: ['Month'],
+}
+
+/* ── layers ────────────────────────────────────────────────────────────── */
+
+/**
+ * §5.1 Notes — *"Multi-layer overlays (crew, maintenance, transport) are
+ * desktop-only."*
+ *
+ * The month grid's base layer is the booking layer: what is reserved, out,
+ * blocked, cleaning, sub-rented, in conflict or expiring. Crew duty, the
+ * maintenance bench and the vehicles ride *over* it as toggleable overlays,
+ * and below 1180 they are not offered at all — the narrow grid states that in
+ * words rather than silently dropping rows.
+ */
+export type LayerName = 'Crew' | 'Maintenance' | 'Transport'
+
+export const LAYERS: Array<{ name: LayerName; label: string; icon: IconName }> = [
+  { name: 'Crew', label: 'Crew', icon: 'crew' },
+  { name: 'Maintenance', label: 'Maintenance', icon: 'tool' },
+  { name: 'Transport', label: 'Transport', icon: 'truck' },
+]
+
+/** The overlay a bar belongs to, or `null` when it is part of the base booking layer. */
+export function layerOf(row: ResourceRow, bar: Bar): LayerName | null {
+  if (row.type === 'Crew' || bar.kind === 'Crew Duty') return 'Crew'
+  if (row.type === 'Vehicles') return 'Transport'
+  if (bar.kind === 'Maintenance') return 'Maintenance'
+  return null
+}
 
 /** §3 — Resource Timeline rows are grouped by resource type, in render order. */
 export const ROW_TYPES = ['Equipment', 'Vehicles', 'Crew', 'Warehouse Bays'] as const
@@ -167,11 +224,11 @@ export const ROWS: ResourceRow[] = [
     metaTone: 'success',
     icon: 'camera',
     bars: [
-      { id: 'bk-0715-fx3', kind: 'On Rent', label: 'BK-2026-0715', sub: 'Himalayan Films', client: 'Himalayan Films', from: adDay(-1), to: adDay(1), dot: 'success' },
+      { id: 'bk-0715-fx3', kind: 'On Rent', label: 'B-715', sub: 'Himalayan Films', client: 'Himalayan Films', from: adDay(-1), to: adDay(1), dot: 'success' },
       { id: 'cl-fx3', kind: 'Cleaning', label: 'Cleaning', sub: 'Maya Production', client: 'Maya Production', from: adDay(3), to: adDay(3), dot: 'progress' },
       { id: 'rs-fx3', kind: 'Reserved', label: 'Reserved', sub: 'Pixel Studio', client: 'Pixel Studio', from: adDay(4), to: adDay(5) },
-      { id: 'bk-0702-fx3', kind: 'On Rent', label: 'BK-2026-0702', sub: 'Classic Media', client: 'Classic Media', from: adDay(-6), to: adDay(-4) },
-      { id: 'bk-0731-fx3', kind: 'Reserved', label: 'BK-2026-0731', sub: 'Himalayan Films', client: 'Himalayan Films', from: adDay(8), to: adDay(10) },
+      { id: 'bk-0702-fx3', kind: 'On Rent', label: 'B-702', sub: 'Classic Media', client: 'Classic Media', from: adDay(-6), to: adDay(-4) },
+      { id: 'bk-0731-fx3', kind: 'Reserved', label: 'B-731', sub: 'Himalayan Films', client: 'Himalayan Films', from: adDay(8), to: adDay(10) },
     ],
   },
   {
@@ -183,9 +240,9 @@ export const ROWS: ResourceRow[] = [
     metaTone: 'success',
     icon: 'video',
     bars: [
-      { id: 'bk-0712-kmx', kind: 'On Rent', label: 'BK-2026-0712', sub: 'Classic Media', client: 'Classic Media', from: adDay(0), to: adDay(2), dot: 'success' },
+      { id: 'bk-0712-kmx', kind: 'On Rent', label: 'B-712', sub: 'Classic Media', client: 'Classic Media', from: adDay(0), to: adDay(2), dot: 'success' },
       { id: 'cf-kmx', kind: 'Conflict', label: 'CONFLICT', sub: 'Double Booking', from: adDay(3), to: adDay(3), dot: 'danger' },
-      { id: 'bk-0718-kmx', kind: 'On Rent', label: 'BK-2026-0718', sub: 'Nepal Docs Lab', client: 'Nepal Docs Lab', from: adDay(4), to: adDay(5) },
+      { id: 'bk-0718-kmx', kind: 'On Rent', label: 'B-718', sub: 'Nepal Docs Lab', client: 'Nepal Docs Lab', from: adDay(4), to: adDay(5) },
       { id: 'mt-kmx', kind: 'Maintenance', label: 'Sensor Clean', sub: 'Service Center', from: adDay(-5), to: adDay(-4) },
     ],
   },
@@ -199,9 +256,9 @@ export const ROWS: ResourceRow[] = [
     icon: 'battery',
     bars: [
       { id: 'bl-ap6', kind: 'Blocked', label: 'Blocked', sub: 'Demo Shoot', from: adDay(-1), to: adDay(-1) },
-      { id: 'bk-0716-ap6', kind: 'On Rent', label: 'BK-2026-0716', sub: 'Maya Production', client: 'Maya Production', from: adDay(1), to: adDay(2), dot: 'success' },
+      { id: 'bk-0716-ap6', kind: 'On Rent', label: 'B-716', sub: 'Maya Production', client: 'Maya Production', from: adDay(1), to: adDay(2), dot: 'success' },
       { id: 'mt-ap6', kind: 'Maintenance', label: 'Maintenance', sub: 'Service Center', from: adDay(5), to: adDay(5), dot: 'progress' },
-      { id: 'qt-ap6', kind: 'Quote Expiry', label: 'QT-2026-0088', sub: 'Expires today', client: 'Pixel Studio', from: adDay(7), to: adDay(7), dot: 'progress' },
+      { id: 'qt-ap6', kind: 'Quote Expiry', label: 'Q-88', sub: 'Expires today', client: 'Pixel Studio', from: adDay(7), to: adDay(7), dot: 'progress' },
     ],
   },
   {
@@ -213,8 +270,8 @@ export const ROWS: ResourceRow[] = [
     metaTone: 'success',
     icon: 'tool',
     bars: [
-      { id: 'bk-0715-rs4', kind: 'On Rent', label: 'BK-2026-0715', sub: 'Himalayan Films', client: 'Himalayan Films', from: adDay(-1), to: adDay(1), dot: 'progress' },
-      { id: 'bk-0720-rs4', kind: 'On Rent', label: 'BK-2026-0720', sub: 'Pixel Studio', client: 'Pixel Studio', from: adDay(3), to: adDay(5) },
+      { id: 'bk-0715-rs4', kind: 'On Rent', label: 'B-715', sub: 'Himalayan Films', client: 'Himalayan Films', from: adDay(-1), to: adDay(1), dot: 'progress' },
+      { id: 'bk-0720-rs4', kind: 'On Rent', label: 'B-720', sub: 'Pixel Studio', client: 'Pixel Studio', from: adDay(3), to: adDay(5) },
       { id: 'av-rs4', kind: 'Available', label: 'Available', from: adDay(-5), to: adDay(-2) },
     ],
   },
@@ -241,8 +298,8 @@ export const ROWS: ResourceRow[] = [
     metaTone: 'primary',
     icon: 'truck',
     bars: [
-      { id: 'bk-0712-van', kind: 'On Rent', label: 'BK-2026-0712', sub: 'Classic Media', client: 'Classic Media', from: adDay(-1), to: adDay(1), dot: 'success' },
-      { id: 'bk-0718-van', kind: 'On Rent', label: 'BK-2026-0718', sub: 'Nepal Docs Lab', client: 'Nepal Docs Lab', from: adDay(3), to: adDay(4) },
+      { id: 'bk-0712-van', kind: 'On Rent', label: 'B-712', sub: 'Classic Media', client: 'Classic Media', from: adDay(-1), to: adDay(1), dot: 'success' },
+      { id: 'bk-0718-van', kind: 'On Rent', label: 'B-718', sub: 'Nepal Docs Lab', client: 'Nepal Docs Lab', from: adDay(3), to: adDay(4) },
       { id: 'mt-van', kind: 'Maintenance', label: 'Servicing', sub: 'Workshop', from: adDay(8), to: adDay(9) },
     ],
   },
@@ -255,8 +312,8 @@ export const ROWS: ResourceRow[] = [
     metaTone: 'success',
     icon: 'crew',
     bars: [
-      { id: 'bk-0715-cr1', kind: 'Reserved', label: 'BK-2026-0715', sub: 'Full Day', client: 'Himalayan Films', from: adDay(-1), to: adDay(1), dot: 'primary' },
-      { id: 'bk-0720-cr1', kind: 'Reserved', label: 'BK-2026-0720', sub: 'Full Day', client: 'Pixel Studio', from: adDay(3), to: adDay(5), dot: 'primary' },
+      { id: 'bk-0715-cr1', kind: 'Reserved', label: 'B-715', sub: 'Full Day', client: 'Himalayan Films', from: adDay(-1), to: adDay(1), dot: 'primary' },
+      { id: 'bk-0720-cr1', kind: 'Reserved', label: 'B-720', sub: 'Full Day', client: 'Pixel Studio', from: adDay(3), to: adDay(5), dot: 'primary' },
     ],
   },
   {
@@ -293,7 +350,7 @@ export const ROWS: ResourceRow[] = [
     metaTone: 'muted',
     icon: 'package',
     bars: [
-      { id: 'pk-prep2', kind: 'Reserved', label: 'Packing', sub: 'BK-2026-0718', client: 'Nepal Docs Lab', from: adDay(2), to: adDay(3) },
+      { id: 'pk-prep2', kind: 'Reserved', label: 'Packing', sub: 'B-718', client: 'Nepal Docs Lab', from: adDay(2), to: adDay(3) },
       { id: 'bl-prep2', kind: 'Blocked', label: 'Blocked', sub: 'Tihar (Laxmi Puja)', from: adDay(11), to: adDay(12) },
     ],
   },
@@ -320,58 +377,6 @@ export const SAVED_VIEWS: SavedView[] = [
   { name: 'Equipment View', rowType: 'Equipment', kinds: [], starred: true },
   { name: 'Crew Schedule', rowType: 'Crew', kinds: [] },
   { name: 'Conflict View', rowType: 'All', kinds: ['Conflict', 'Case Escalation'] },
-]
-
-/* ── KPI band ──────────────────────────────────────────────────────────── */
-
-export interface CalendarKpi {
-  label: string
-  value: string
-  icon: IconName
-  /** §4.2's five families only — `purple` is not among them. */
-  accent: 'success' | 'primary' | 'progress' | 'danger'
-  note: string
-  delta?: { text: string; direction: 'up' | 'down'; good: boolean }
-  link?: { label: string; to: string }
-  /** Renders the ⓘ affordance the render shows on Utilization. */
-  hint?: string
-}
-
-export const KPIS: CalendarKpi[] = [
-  {
-    label: 'Active Bookings',
-    value: '52',
-    icon: 'calendar',
-    accent: 'success',
-    note: 'Across all dates',
-    delta: { text: '8%', direction: 'up', good: true },
-  },
-  {
-    label: "Today's Operations",
-    value: '18',
-    icon: 'file',
-    accent: 'primary',
-    note: 'Pickup · Return · Cleaning',
-    link: { label: 'View Today', to: '/today' },
-  },
-  {
-    // The render tints this one purple. §4.2 bans the hue outright.
-    label: 'Equipment Utilization',
-    value: '84%',
-    icon: 'chart',
-    accent: 'progress',
-    note: 'This month',
-    hint: 'Matches Today & Inventory',
-  },
-  {
-    label: 'Schedule Conflicts',
-    // Derived from ROWS, not hand-typed — the render had '4' but the seed data
-    // has exactly 1 Conflict bar (AUDIT_FINDINGS P2 / calendar.ts:368).
-    value: String(ROWS.flatMap((r) => r.bars).filter((b) => b.kind === 'Conflict').length),
-    icon: 'alert_triangle',
-    accent: 'danger',
-    note: 'Requires attention',
-  },
 ]
 
 /* ── right rail ────────────────────────────────────────────────────────── */
@@ -463,7 +468,9 @@ export const EVENT_MARKERS: CountRow[] = [
 export const SHORTCUTS: Array<{ key: string; label: string }> = [
   { key: 'F', label: 'Full Calendar' },
   { key: 'T', label: 'Today' },
-  { key: 'R', label: 'Resource Timeline' },
+  /* Follows the tab's new name. `R` still opens the resource timeline; the key
+     is unchanged so a hand that learned it does not have to relearn it. */
+  { key: 'R', label: 'Timeline' },
   { key: '?', label: 'Shortcuts Help' },
 ]
 
@@ -489,8 +496,8 @@ export interface EventDetail {
 }
 
 export const EVENT_DETAIL: Record<string, EventDetail> = {
-  'BK-2026-0715': {
-    bookingNo: 'BK-2026-0715',
+  'B-715': {
+    bookingNo: 'B-715',
     status: 'On Rent',
     client: 'Himalayan Films',
     project: 'Documentary Project',

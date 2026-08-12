@@ -2,14 +2,15 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { lazy, Suspense } from 'react'
 import type { ReactNode } from 'react'
 import Sidebar from './components/shell/Sidebar'
-import BottomBar, { BOTTOM_BAR_HEIGHT } from './components/shell/BottomBar'
+import BottomBar, { BAR_BOX } from './components/shell/BottomBar'
 import HeaderBar from './components/shell/Header'
+import { SessionlessBanner } from './components/shell/SessionlessBanner'
 import type { Crumb } from './components/shell/Header'
 import ScannerFab from './components/shell/ScannerFab'
 import { ErrorBoundary } from './components/shell/ErrorBoundary'
 import { LoadingSkeleton, RestrictedState } from './components/ui/StateViews'
 import Placeholder from './modules/Placeholder'
-import { NAV } from './data/nav'
+import { NAV, isMoneySurface } from './data/nav'
 import { ToastProvider } from './components/ui/Toast'
 import { CommandPalette } from './components/shell/CommandPalette'
 import Login from './modules/auth/Login'
@@ -55,9 +56,22 @@ const Calendar          = lazy(() => import('./modules/calendar/Calendar'))
 const Documents         = lazy(() => import('./modules/documents/Documents'))
 const OperationsQueues  = lazy(() => import('./modules/operations/OperationsQueues'))
 const Finance           = lazy(() => import('./modules/finance/Finance'))
+/* `09_FINANCE.md` §9.3 — the Payments TAB. Read-only by law: `payments` is
+   immutable (Law 4), so the screen records and reverses but never edits. */
+const Payments          = lazy(() => import('./modules/finance/Payments'))
+/* `09_FINANCE.md` §9.4 — the Expenses TAB. Not the same screen as
+   `/reports/expenses`, which is the Expense *report* over a fixture; this is the
+   ledger, reading `expenses` through `lib/queries/finance.ts`. */
+const Expenses          = lazy(() => import('./modules/finance/Expenses'))
 const SystemMonitor     = lazy(() => import('./modules/system/SystemMonitor'))
 const AiAssistant       = lazy(() => import('./modules/ai/AiAssistant'))
 const Settings          = lazy(() => import('./modules/settings/Settings'))
+const ToolsLanding      = lazy(() => import('./modules/tools/ToolsLanding'))
+const DepreciationCalculator = lazy(() => import('./modules/tools/DepreciationCalculator'))
+const PricingCalculator = lazy(() => import('./modules/tools/PricingCalculator'))
+/* The cinematography calculator suite. Kept by Rulings §6, which also fixes its
+   home at /tools/cinematography; /settings/tools redirects there. */
+const CineTools         = lazy(() => import('./modules/settings/Tools'))
 const EventTriggers     = lazy(() => import('./modules/automation/EventTriggers'))
 const SmsCenter         = lazy(() => import('./modules/notifications/SmsCenter'))
 const UnifiedInbox      = lazy(() => import('./modules/notifications/UnifiedInbox'))
@@ -76,7 +90,7 @@ const WallDisplay       = lazy(() => import('./modules/wall/WallDisplay'))
 
 /**
  * Route table follows the ID registry in Navigation & Platform Shells v2.0 §7.
- *   /rentals/BK-2026-0715      /clients/CL-2026-0034
+ *   /rentals/B-715      /clients/C-34
  *   /inventory/EQ000234        /cases/CASE-2026-0041
  * Never `BR-` — that is the branch prefix.
  */
@@ -104,13 +118,23 @@ export default function App() {
         <Route path="/" element={<Navigate to={user ? "/today" : "/login"} replace />} />
 
         {/*
-          v2.0 §5.1 removed Reports and Administration from the sidebar — Reports
-          is a Finance tab, Administration is inside Settings. Their routes stay
-          so existing deep links and breadcrumbs still resolve; they are simply
-          no longer a way *in*.
+          v2.0 §5.1 removed Reports from the sidebar — it is a Finance tab
+          (`09_FINANCE.md`). Its routes stay so existing deep links and
+          breadcrumbs still resolve; they are simply no longer a way *in*.
         */}
         <Route path="/reports" element={<Navigate to="/reports/pulse" replace />} />
-        <Route path="/admin" element={<Navigate to="/admin/numbering" replace />} />
+        {/*
+          Administration is now **Tools** — `10_TOOLS.md` puts Audit Log,
+          Activity Log, Numbering and Backup & Restore on nav item 10. The four
+          screens themselves are untouched in `modules/admin/`; only the way in
+          moved. Law 3 — nothing is deleted, so every `/admin/*` URL that ever
+          shipped still resolves, as a `replace` redirect to its new home.
+        */}
+        <Route path="/admin" element={<Navigate to="/tools" replace />} />
+        <Route path="/admin/numbering" element={<Navigate to="/tools/numbering" replace />} />
+        <Route path="/admin/audit-log" element={<Navigate to="/tools/audit-log" replace />} />
+        <Route path="/admin/activity-log" element={<Navigate to="/tools/activity-log" replace />} />
+        <Route path="/admin/backup" element={<Navigate to="/tools/backup" replace />} />
 
         <Route
           path="/clients"
@@ -165,7 +189,7 @@ export default function App() {
           path="/rentals/:bookingNo/packing"
           element={
             <Shell
-              crumbs={[{ label: 'Rentals List' }, { label: 'Bookings' }, { label: 'BK-2026-0715' }, { label: 'Packing' }]}
+              crumbs={[{ label: 'Rentals List' }, { label: 'Bookings' }, { label: 'B-715' }, { label: 'Packing' }]}
               search="Search item, serial, accessory…"
             >
               <PackingWorkspace />
@@ -176,7 +200,7 @@ export default function App() {
           path="/rentals/:bookingNo/handover"
           element={
             <Shell
-              crumbs={[{ label: 'Rentals List' }, { label: 'Bookings' }, { label: 'BK-2026-0715' }, { label: 'Handover' }]}
+              crumbs={[{ label: 'Rentals List' }, { label: 'Bookings' }, { label: 'B-715' }, { label: 'Handover' }]}
               search="Search item, serial, accessory…"
             >
               <HandoverWorkspace />
@@ -187,7 +211,7 @@ export default function App() {
           path="/rentals/:bookingNo/return"
           element={
             <Shell
-              crumbs={[{ label: 'Rentals List' }, { label: 'Bookings' }, { label: 'BK-2026-0715' }, { label: 'Return' }]}
+              crumbs={[{ label: 'Rentals List' }, { label: 'Bookings' }, { label: 'B-715' }, { label: 'Return' }]}
               search="Search item, serial, accessory…"
             >
               <ReturnWorkspace />
@@ -198,7 +222,7 @@ export default function App() {
           path="/rentals/:bookingNo/reset"
           element={
             <Shell
-              crumbs={[{ label: 'Rentals List' }, { label: 'Bookings' }, { label: 'BK-2026-0715' }, { label: 'Reset' }]}
+              crumbs={[{ label: 'Rentals List' }, { label: 'Bookings' }, { label: 'B-715' }, { label: 'Reset' }]}
               search="Search item, serial, accessory…"
             >
               <ResetWorkspace />
@@ -209,7 +233,7 @@ export default function App() {
           path="/rentals/:bookingNo/evidence"
           element={
             <Shell
-              crumbs={[{ label: 'Rentals List' }, { label: 'Bookings' }, { label: 'BK-2026-0715' }, { label: 'Evidence' }]}
+              crumbs={[{ label: 'Rentals List' }, { label: 'Bookings' }, { label: 'B-715' }, { label: 'Evidence' }]}
               search="Search file, product, serial…"
             >
               <EvidenceWorkspace />
@@ -217,12 +241,15 @@ export default function App() {
           }
         />
 
-        {/* Booking detail. The registry's ID form is BK-YYYY-NNNN. */}
+        {/* Booking detail. The ID form is whatever `data/numbering.ts` issues for
+            `BK` — `B-715` under the 12 Aug ruling. Never re-state it here: this
+            comment and the crumb four lines below contradicted each other for
+            exactly as long as the form was written down twice. */}
         <Route
           path="/rentals/:bookingNo"
           element={
             <Shell
-              crumbs={[{ label: 'Rentals List' }, { label: 'Bookings' }, { label: 'BK-2026-0715' }]}
+              crumbs={[{ label: 'Rentals List' }, { label: 'Bookings' }, { label: 'B-715' }]}
               search="Search booking, client, equipment, invoice…"
             >
               <BookingDetail />
@@ -230,7 +257,8 @@ export default function App() {
           }
         />
 
-        {/* Crew Booking spec v3.2 §1 — top-level module, sidebar item 4 of 8. */}
+        {/* Crew Booking spec v3.2 §1 — top-level module, sidebar item 6 of the
+            fixed 11 (the wireframe shell block; `data/nav.ts`). */}
         <Route
           path="/crew"
           element={
@@ -379,6 +407,32 @@ export default function App() {
           element={
             <Shell crumbs={[{ label: 'Finance' }]} search="Search invoice, payment, client…">
               <Finance />
+            </Shell>
+          }
+        />
+
+        {/* §9.3. Money surface by prefix — `isMoneySurface('/finance/payments')`
+            already matches on `/finance`, so the Shell guard refuses a typed URL
+            for a money-blind role without `MONEY_ROUTES` gaining an entry. The
+            screen spreads `financeRestriction()` too: the guard is a route table,
+            that one is the query's own contract. */}
+        <Route
+          path="/finance/payments"
+          element={
+            <Shell crumbs={[{ label: 'Finance' }, { label: 'Payments' }]} search="Search payment no, transaction ref…">
+              <Payments />
+            </Shell>
+          }
+        />
+
+        {/* §9.4. Money surface by prefix — `isMoneySurface('/finance/expenses')`
+            already matches on `/finance`, so the Shell guard refuses a typed URL
+            for a money-blind role without `MONEY_ROUTES` gaining an entry. */}
+        <Route
+          path="/finance/expenses"
+          element={
+            <Shell crumbs={[{ label: 'Finance' }, { label: 'Expenses' }]} search="Search expense no, vendor, description…">
+              <Expenses />
             </Shell>
           }
         />
@@ -596,15 +650,8 @@ export default function App() {
           }
         />
 
-        <Route
-          path="/admin/backup"
-          element={
-            <Shell crumbs={[{ label: 'Administration' }, { label: 'Backup & Restore' }]}>
-              <BackupRestore />
-            </Shell>
-          }
-        />
-
+        {/* Audit *Settings* is a different screen from the Audit *Log* and
+            `10_TOOLS.md` does not list it, so it keeps its own route. */}
         <Route
           path="/admin/audit"
           element={
@@ -623,32 +670,88 @@ export default function App() {
           }
         />
 
+        {/* ── Tools — nav item 10, `10_TOOLS.md` ──────────────────────────
+            Six cards plus the cinematography suite kept by Rulings §6: two
+            calculators (§10.2, §10.3), four admin screens (§10.4–§10.7), and
+            the suite at its ruled path below. */}
         <Route
-          path="/admin/activity-log"
+          path="/tools"
           element={
-            <Shell crumbs={[{ label: 'Admin' }, { label: 'Activity Log' }]}>
-              <ActivityLog />
+            <Shell crumbs={[{ label: 'Tools' }]} search="Search tools…">
+              <ToolsLanding />
             </Shell>
           }
         />
 
         <Route
-          path="/admin/audit-log"
+          path="/tools/depreciation"
           element={
-            <Shell crumbs={[{ label: 'Admin' }, { label: 'Audit Log' }]}>
+            <Shell crumbs={[{ label: 'Tools' }, { label: 'Depreciation' }]}>
+              <DepreciationCalculator />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/tools/pricing"
+          element={
+            <Shell crumbs={[{ label: 'Tools' }, { label: 'Pricing' }]}>
+              <PricingCalculator />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/tools/audit-log"
+          element={
+            <Shell crumbs={[{ label: 'Tools' }, { label: 'Audit Log' }]}>
               <AuditLog />
             </Shell>
           }
         />
 
         <Route
-          path="/admin/numbering"
+          path="/tools/activity-log"
           element={
-            <Shell crumbs={[{ label: 'Administration' }, { label: 'Numbering Sequences' }]}>
+            <Shell crumbs={[{ label: 'Tools' }, { label: 'Activity Log' }]}>
+              <ActivityLog />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/tools/numbering"
+          element={
+            <Shell crumbs={[{ label: 'Tools' }, { label: 'Numbering Sequences' }]}>
               <NumberingSequences />
             </Shell>
           }
         />
+
+        <Route
+          path="/tools/backup"
+          element={
+            <Shell crumbs={[{ label: 'Tools' }, { label: 'Backup & Restore' }]}>
+              <BackupRestore />
+            </Shell>
+          }
+        />
+
+        {/* The cinematography calculator suite — kept by Rulings §6, which also
+            settles where it lives: `/tools/cinematography`. `11_SETTINGS.md`'s
+            eight sections include no Tools, so `/settings/tools` had no home in
+            either spec. Law 3 — nothing is deleted, so the old path still
+            resolves as a `replace` redirect, the same treatment the four
+            `/admin/*` URLs get above. */}
+        <Route
+          path="/tools/cinematography"
+          element={
+            <Shell crumbs={[{ label: 'Tools' }, { label: 'Cinematography' }]} search="Search tools, formulas…">
+              <CineTools />
+            </Shell>
+          }
+        />
+        <Route path="/settings/tools" element={<Navigate to="/tools/cinematography" replace />} />
 
         {UNBUILT.map((u) => (
           <Route
@@ -719,22 +822,33 @@ const BUILT = new Set([
   '/settings',
   '/clients',
   '/clients/new',
-  '/clients/CL-2026-0001',
+  '/clients/C-1',
   '/clients/duplicates',
   '/clients/import',
   '/clients/referral/new',
   '/reports',
   '/admin',
+  /* Nav item 10. Must be listed, or `UNBUILT` below derives a second `/tools`
+     route from NAV and mounts a Placeholder against the real landing page. */
+  '/tools',
+  '/tools/depreciation',
+  '/tools/pricing',
+  '/tools/audit-log',
+  '/tools/activity-log',
+  '/tools/numbering',
+  '/tools/backup',
+  '/tools/cinematography',
+  '/settings/tools',
   '/finance/documents',
   '/reports/pulse',
   '/reports/cash-flow',
   '/reports/working-capital',
   '/rentals/new',
-  '/rentals/BK-2026-0715/packing',
-  '/rentals/BK-2026-0715/handover',
-  '/rentals/BK-2026-0715/return',
-  '/rentals/BK-2026-0715/reset',
-  '/rentals/BK-2026-0715/evidence',
+  '/rentals/B-715/packing',
+  '/rentals/B-715/handover',
+  '/rentals/B-715/return',
+  '/rentals/B-715/reset',
+  '/rentals/B-715/evidence',
 ])
 
 const UNBUILT: Array<{ to: string; title: string; crumbs: Crumb[] }> = NAV.flatMap((s) => {
@@ -824,11 +938,23 @@ function Shell({
     return <Navigate to="/login" replace />
   }
 
-  // RBAC Permission Check (Mock basic logic based on role)
-  // Was `role === 'Warehouse'` only — Technician/Driver/Client are equally
-  // money-blind per lib/rbac.ts's MONEY_BLIND set but could still navigate
-  // straight to /finance. Reuse the one gate everywhere else in the app uses.
-  const isForbidden = !canViewMoney(user.role) && pathname.startsWith('/finance')
+  /*
+   * Law 6 — the backstop for a typed URL, the one case nav omission cannot
+   * cover.
+   *
+   * Two drifts closed here. The role test was `role === 'Warehouse'` only, while
+   * Technician, Driver and Client are equally money-blind per `lib/rbac.ts`'s
+   * MONEY_BLIND set. And the route test was the literal
+   * `pathname.startsWith('/finance')` while `data/nav.ts` had already declared
+   * `/reports` and `/admin` money-adjacent and withheld them from the nav — so
+   * the nav hid a module the guard then let a typed URL through to. Both now
+   * read one predicate, `isMoneySurface()`, over one list.
+   *
+   * The report screens each drop their own figures via `useCanViewMoney()`, so
+   * this is defence in depth rather than the only gate — but a money-blind role
+   * should not reach a hollowed-out Finance report at all.
+   */
+  const isForbidden = !canViewMoney(user.role) && isMoneySurface(pathname)
 
   return (
     <div
@@ -842,10 +968,20 @@ function Shell({
       {!phone && <Sidebar active={pathname + query} />}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <OfflineBanner />
+        {/* Above the header on purpose: it explains why everything BELOW the
+            header is empty, so it has to be read before the empty thing is. */}
+        <SessionlessBanner />
         <HeaderBar crumbs={crumbs} {...(search ? { searchPlaceholder: search } : {})} />
         <main
           data-floor={isFloor ? 'true' : undefined}
-          style={{ flex: 1, padding: phone ? `16px 20px ${24 + BOTTOM_BAR_HEIGHT}px` : '16px 20px 24px' }}
+          style={{
+            flex: 1,
+            /* `BAR_BOX`, not `BOTTOM_BAR_HEIGHT`: the bar occupies its 58px plus
+               the home-indicator inset, so reserving only the 58 leaves the last
+               row of content under the bar on a notched phone. One expression,
+               owned by `BottomBar.tsx`, so the two cannot drift. */
+            padding: phone ? `16px 20px calc(24px + ${BAR_BOX})` : '16px 20px 24px',
+          }}
         >
           {isForbidden ? (
             <div style={{ maxWidth: 420, margin: '10vh auto 0' }}>

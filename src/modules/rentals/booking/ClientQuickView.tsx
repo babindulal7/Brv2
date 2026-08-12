@@ -28,7 +28,7 @@ import { formatMoney } from '../../../lib/money'
 import Icon from '../../../components/ui/Icon'
 import { Button } from '../../../components/ui/Page'
 import type { ClientRecord } from '../../../data/clients'
-import { clientHealth, creditUtilisation } from './clientHealth'
+import { CLIENT_HEALTH_THRESHOLDS, clientHealth, creditCheck } from './clientHealth'
 import type { ClientHealthSignals } from './clientHealth'
 import { ClientHealthChip, ClientHealthReasons } from './ClientHealthChip'
 import { Drawer, DrawerRow, DrawerSection, DrawerUnavailable } from './Drawer'
@@ -64,7 +64,14 @@ export function ClientQuickView({
   id = 'client-quick-view',
 }: ClientQuickViewProps) {
   const verdict = signals ? clientHealth(client, signals) : clientHealth(client)
-  const utilisation = creditUtilisation(client)
+  /**
+   * Three states, not a ratio-or-null. `unavailable` means a credit limit IS
+   * configured but nothing computes how much of it is used, so this panel may
+   * not print a percentage — see `creditCheck`. It renders the em-dash and says
+   * why, and the health chip above is already holding the client at Attention
+   * for the same reason.
+   */
+  const credit = creditCheck(client, signals)
 
   /**
    * §14's "Payment Status", from what the record actually knows.
@@ -164,15 +171,34 @@ export function ClientQuickView({
           }
           figure={showMoney && client.creditLimitPaisa > 0}
         />
-        {showMoney && utilisation !== null && (
+        {showMoney && credit.state === 'computed' && (
           <DrawerRow
             label="Credit used"
-            value={`${formatMoney(client.creditUsedPaisa)} · ${Math.round(utilisation * 100)}%`}
+            value={`${formatMoney(credit.usedPaisa)} · ${Math.round(credit.ratio * 100)}%`}
             figure
-            {...(utilisation > 1 ? { tone: 'danger' as const } : utilisation >= 0.8 ? { tone: 'warning' as const } : {})}
+            {...(credit.ratio > 1
+              ? { tone: 'danger' as const }
+              : credit.ratio >= CLIENT_HEALTH_THRESHOLDS.creditLimitApproachingRatio
+                ? { tone: 'warning' as const }
+                : {})}
+          />
+        )}
+        {showMoney && credit.state === 'unavailable' && (
+          <DrawerRow
+            label="Credit used"
+            value={null}
+            unavailableNote="Not computed anywhere in the system — there is no credit-used column and no ruled formula, so the credit-limit check cannot be run for this client."
           />
         )}
         <DrawerRow label="Payment status" value={paymentStatus.text} tone={paymentStatus.tone} />
+        {showMoney && credit.state === 'unavailable' && (
+          <DrawerUnavailable>
+            <strong>The credit-limit check could not be run.</strong> A limit of{' '}
+            {formatMoney(credit.limitPaisa)} is approved, but nothing in the system computes how much of it
+            is committed — so this client is <strong>unverified</strong>, which is not the same as within
+            limit. The health above is held at Attention Required until a credit-used figure exists.
+          </DrawerUnavailable>
+        )}
         <DrawerUnavailable>
           Invoice-level status (overdue, days past due) is not tracked yet — no invoice source exists in the
           data layer, so this reflects the client balance only.

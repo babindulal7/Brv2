@@ -1,11 +1,12 @@
-import type { AlertRow, Movement, HoverFacts } from '../types/today'
-import type { Kpi } from '../components/ui/Page'
+import type { AlertRow, Movement, MovementKind } from '../types/today'
 import type { BrandKey, StatusKey } from '../lib/status'
 import { statusToken, STATUS_ORDER } from '../lib/workflow'
 import type { BookingStatus, Flag } from '../lib/workflow'
-import { TODAY, toBs, formatBs, formatAd, eachDay } from '../lib/bs'
+import { TODAY, toBs, formatBs, formatAd, eachDay, kathmanduCivil, NPT_OFFSET_MIN } from '../lib/bs'
 import { clockPad } from '../lib/format'
 import { formatMoney, rupees } from '../lib/money'
+import { todaysIncoming, todaysOutgoing, type BookingListRow } from '../lib/queries/bookings'
+import type { ListFilters } from '../lib/queries/listQuery'
 
 /**
  * Today Operations seed data.
@@ -25,13 +26,26 @@ import { formatMoney, rupees } from '../lib/money'
  * There is **one array**, `MOVEMENTS`. Pickups, Returns, the Timeline, the
  * throughput strip and the calendar markers are all *derived* from it, and the
  * KPI counts are derived from the same place. The render this page was ported
- * from broke the rule in the open: ABC Films' pickup of BK-2026-0715 appeared
+ * from broke the rule in the open: ABC Films' pickup of B-715 appeared
  * in the Pickups column at **09:00 AM / Ready** and on the Timeline at
  * **06:00 AM / Completed** — one booking, two times, two statuses. That cannot
  * be expressed here, because both panels read the same object.
  *
- * NOT wired to Supabase. `MOVEMENTS` is replaced wholesale by the real
- * movements query; every derivation below survives untouched.
+ * ## 12 Aug 2026 — Today now reads Supabase; this seed does not feed it
+ *
+ * `modules/today/*` no longer imports `MOVEMENTS` or anything derived from it.
+ * The Pickups and Returns columns are `useList(listBookings, todaysOutgoing /
+ * todaysIncoming …)`, and the row shape they render is `MovementRow` — built by
+ * `toMovementRow` at the bottom of this file from a real `BookingListRow`.
+ *
+ * The seed below stayed because **`modules/wall/WallDisplay.tsx` still reads
+ * it** (`PICKUPS`, `RETURNS`, `TODAY_DATE`, `timeOf`, `statusKeyOf`, `has`) and
+ * `data/pulse.ts` reads `COUNTS`, `UTILIZATION_PCT` and `REVENUE_TODAY_PAISA`
+ * from it. Neither file is in this conversion's scope, so deleting the array
+ * would have broken two screens to tidy one. Everything Today alone used —
+ * `dashboardKpis`, `ACTIVE_RENTALS`, `HOVER`, `filterMovements`,
+ * `SEEDED_PERIODS`, `criticalAlertsFor` — is gone, because a constant that no
+ * longer has a screen is just a fabricated figure waiting for one.
  */
 
 /**
@@ -48,9 +62,6 @@ export const TODAY_DATE = {
   bs: TODAY_BS ? formatBs(TODAY_BS) : '—',
   ad: formatAd(TODAY),
 }
-
-/** The clock position the page is rendered at, in minutes since midnight. */
-export const NOW = 9 * 60 + 40
 
 /**
  * A seeded rupee figure, rendered by the Financial Engine.
@@ -103,33 +114,33 @@ const M = (m: Movement) => m
 
 export const MOVEMENTS: Movement[] = [
   // ── pickups & deliveries ──────────────────────────────────────────────
-  M({ id: 'm01', kind: 'Delivery', at: 6 * 60, client: 'Everest Media', avatar: ['EVR', 'MEDIA'], avatarTone: 'primary', bookingNo: 'BK-2026-0701', category: 'Corporate Film', kit: 'Aputure Lighting Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Delivery: Ramesh', due: 'Due: 2 Aug, 06:00 AM', complete: true }),
-  M({ id: 'm02', kind: 'Pickup', at: 7 * 60, client: 'Kathmandu Post', avatar: ['KTM', 'POST'], avatarTone: 'progress', bookingNo: 'BK-2026-0702', category: 'News Desk', kit: 'Sony A7S III Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Hari', due: 'Due: 1 Aug, 06:00 AM', complete: true }),
-  M({ id: 'm03', kind: 'Pickup', at: 7 * 60 + 30, client: 'Sagarmatha TV', avatar: ['SGM', 'TV'], avatarTone: 'neutral', bookingNo: 'BK-2026-0703', category: 'Broadcast', kit: 'Canon C70 Package', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Sanu', due: 'Due: 3 Aug, 06:00 AM', complete: true }),
-  M({ id: 'm04', kind: 'Delivery', at: 8 * 60, client: 'Himalaya Broadcast', avatar: ['HIM', 'BCAST'], avatarTone: 'in', bookingNo: 'BK-2026-0704', category: 'Live Event', kit: 'Sennheiser Audio Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Delivery: Bikash', due: 'Due: 2 Aug, 06:00 AM', complete: true }),
-  M({ id: 'm05', kind: 'Pickup', at: 8 * 60 + 30, client: 'Nepal Film Dev', avatar: ['NFD', 'BOARD'], avatarTone: 'progress', bookingNo: 'BK-2026-0705', category: 'Feature Film', kit: 'DJI Ronin 4D', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Ramesh', due: 'Due: 5 Aug, 06:00 AM', complete: true }),
-  M({ id: 'm06', kind: 'Pickup', at: 9 * 60, client: 'ABC Films', avatar: ['ABC', 'FILMS'], avatarTone: 'neutral', bookingNo: 'BK-2026-0715', category: 'Commercial Shoot', kit: 'RED Komodo X Package', kitStatus: 'primary', status: 'Packed', flags: ['VIP'], staff: 'Pickup: Ramesh', due: 'Due: 2 Aug, 06:00 AM' }),
-  M({ id: 'm07', kind: 'Pickup', at: 9 * 60 + 30, client: 'Lumbini Studios', avatar: ['LUM', 'STUDIO'], avatarTone: 'neutral', bookingNo: 'BK-2026-0706', category: 'Music Video', kit: 'Godox Strobe Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Hari', due: 'Due: 1 Aug, 06:00 AM', complete: true }),
-  M({ id: 'm08', kind: 'Pickup', at: 10 * 60 + 30, client: 'Creative Studio', avatar: ['CS', 'STUDIO'], avatarTone: 'primary', bookingNo: 'BK-2026-0716', category: 'Music Video', kit: 'Sony FX6 Kit', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Pickup: Hari', due: 'Due: 1 Aug, 06:00 AM', notReset: 2 }),
-  M({ id: 'm09', kind: 'Delivery', at: 11 * 60, client: 'Pokhara Productions', avatar: ['PKR', 'PROD'], avatarTone: 'in', bookingNo: 'BK-2026-0718', category: 'Travel Series', kit: 'Grip & Rigging Set', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Delivery: Bikash', due: 'Due: 4 Aug, 06:00 AM' }),
-  M({ id: 'm10', kind: 'Pickup', at: 12 * 60, client: 'Mountain Stories', avatar: ['MTN', 'STORIES'], avatarTone: 'in', bookingNo: 'BK-2026-0717', category: 'Documentary', kit: 'Ronin 4D 6K Package', kitStatus: 'primary', status: 'Packed', flags: [], staff: 'Pickup: Sanu', due: 'Due: 3 Aug, 06:00 AM' }),
-  M({ id: 'm11', kind: 'Pickup', at: 13 * 60 + 30, client: 'Annapurna Films', avatar: ['ANP', 'FILMS'], avatarTone: 'progress', bookingNo: 'BK-2026-0719', category: 'Feature Film', kit: 'Zeiss CP.3 Prime Set', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Pickup: Ramesh', due: 'Due: 6 Aug, 06:00 AM', notReset: 1 }),
-  M({ id: 'm12', kind: 'Delivery', at: 14 * 60, client: 'Bagmati Broadcast', avatar: ['BGM', 'BCAST'], avatarTone: 'neutral', bookingNo: 'BK-2026-0720', category: 'Live Event', kit: 'Lighting Truss Package', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Delivery: Bikash', due: 'Due: 2 Aug, 06:00 AM' }),
-  M({ id: 'm13', kind: 'Pickup', at: 15 * 60, client: 'Inside Out Films', avatar: ['IO', 'FILMS'], avatarTone: 'in', bookingNo: 'BK-2026-0721', category: 'Short Film', kit: 'Ronin 4D Handheld Kit', kitStatus: 'primary', status: 'Packed', flags: [], staff: 'Pickup: Sanu', due: 'Due: 3 Aug, 06:00 AM' }),
-  M({ id: 'm14', kind: 'Pickup', at: 16 * 60 + 30, client: 'Studio Nine', avatar: ['S9', 'STUDIO'], avatarTone: 'primary', bookingNo: 'BK-2026-0722', category: 'Fashion Shoot', kit: 'Blackmagic URSA Kit', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Pickup: Hari', due: 'Due: 4 Aug, 06:00 AM' }),
+  M({ id: 'm01', kind: 'Delivery', at: 6 * 60, client: 'Everest Media', avatar: ['EVR', 'MEDIA'], avatarTone: 'primary', bookingNo: 'B-701', category: 'Corporate Film', kit: 'Aputure Lighting Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Delivery: Ramesh', due: 'Due: 2 Aug, 06:00 AM', complete: true }),
+  M({ id: 'm02', kind: 'Pickup', at: 7 * 60, client: 'Kathmandu Post', avatar: ['KTM', 'POST'], avatarTone: 'progress', bookingNo: 'B-702', category: 'News Desk', kit: 'Sony A7S III Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Hari', due: 'Due: 1 Aug, 06:00 AM', complete: true }),
+  M({ id: 'm03', kind: 'Pickup', at: 7 * 60 + 30, client: 'Sagarmatha TV', avatar: ['SGM', 'TV'], avatarTone: 'neutral', bookingNo: 'B-703', category: 'Broadcast', kit: 'Canon C70 Package', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Sanu', due: 'Due: 3 Aug, 06:00 AM', complete: true }),
+  M({ id: 'm04', kind: 'Delivery', at: 8 * 60, client: 'Himalaya Broadcast', avatar: ['HIM', 'BCAST'], avatarTone: 'in', bookingNo: 'B-704', category: 'Live Event', kit: 'Sennheiser Audio Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Delivery: Bikash', due: 'Due: 2 Aug, 06:00 AM', complete: true }),
+  M({ id: 'm05', kind: 'Pickup', at: 8 * 60 + 30, client: 'Nepal Film Dev', avatar: ['NFD', 'BOARD'], avatarTone: 'progress', bookingNo: 'B-705', category: 'Feature Film', kit: 'DJI Ronin 4D', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Ramesh', due: 'Due: 5 Aug, 06:00 AM', complete: true }),
+  M({ id: 'm06', kind: 'Pickup', at: 9 * 60, client: 'ABC Films', avatar: ['ABC', 'FILMS'], avatarTone: 'neutral', bookingNo: 'B-715', category: 'Commercial Shoot', kit: 'RED Komodo X Package', kitStatus: 'primary', status: 'Packed', flags: ['VIP'], staff: 'Pickup: Ramesh', due: 'Due: 2 Aug, 06:00 AM' }),
+  M({ id: 'm07', kind: 'Pickup', at: 9 * 60 + 30, client: 'Lumbini Studios', avatar: ['LUM', 'STUDIO'], avatarTone: 'neutral', bookingNo: 'B-706', category: 'Music Video', kit: 'Godox Strobe Kit', kitStatus: 'in', status: 'On Rent', flags: [], staff: 'Pickup: Hari', due: 'Due: 1 Aug, 06:00 AM', complete: true }),
+  M({ id: 'm08', kind: 'Pickup', at: 10 * 60 + 30, client: 'Creative Studio', avatar: ['CS', 'STUDIO'], avatarTone: 'primary', bookingNo: 'B-716', category: 'Music Video', kit: 'Sony FX6 Kit', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Pickup: Hari', due: 'Due: 1 Aug, 06:00 AM', notReset: 2 }),
+  M({ id: 'm09', kind: 'Delivery', at: 11 * 60, client: 'Pokhara Productions', avatar: ['PKR', 'PROD'], avatarTone: 'in', bookingNo: 'B-718', category: 'Travel Series', kit: 'Grip & Rigging Set', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Delivery: Bikash', due: 'Due: 4 Aug, 06:00 AM' }),
+  M({ id: 'm10', kind: 'Pickup', at: 12 * 60, client: 'Mountain Stories', avatar: ['MTN', 'STORIES'], avatarTone: 'in', bookingNo: 'B-717', category: 'Documentary', kit: 'Ronin 4D 6K Package', kitStatus: 'primary', status: 'Packed', flags: [], staff: 'Pickup: Sanu', due: 'Due: 3 Aug, 06:00 AM' }),
+  M({ id: 'm11', kind: 'Pickup', at: 13 * 60 + 30, client: 'Annapurna Films', avatar: ['ANP', 'FILMS'], avatarTone: 'progress', bookingNo: 'B-719', category: 'Feature Film', kit: 'Zeiss CP.3 Prime Set', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Pickup: Ramesh', due: 'Due: 6 Aug, 06:00 AM', notReset: 1 }),
+  M({ id: 'm12', kind: 'Delivery', at: 14 * 60, client: 'Bagmati Broadcast', avatar: ['BGM', 'BCAST'], avatarTone: 'neutral', bookingNo: 'B-720', category: 'Live Event', kit: 'Lighting Truss Package', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Delivery: Bikash', due: 'Due: 2 Aug, 06:00 AM' }),
+  M({ id: 'm13', kind: 'Pickup', at: 15 * 60, client: 'Inside Out Films', avatar: ['IO', 'FILMS'], avatarTone: 'in', bookingNo: 'B-721', category: 'Short Film', kit: 'Ronin 4D Handheld Kit', kitStatus: 'primary', status: 'Packed', flags: [], staff: 'Pickup: Sanu', due: 'Due: 3 Aug, 06:00 AM' }),
+  M({ id: 'm14', kind: 'Pickup', at: 16 * 60 + 30, client: 'Studio Nine', avatar: ['S9', 'STUDIO'], avatarTone: 'primary', bookingNo: 'B-722', category: 'Fashion Shoot', kit: 'Blackmagic URSA Kit', kitStatus: 'primary', status: 'Booked', flags: [], staff: 'Pickup: Hari', due: 'Due: 4 Aug, 06:00 AM' }),
 
   // ── returns ───────────────────────────────────────────────────────────
-  M({ id: 'm15', kind: 'Return', at: 11 * 60 + 30, client: 'Mountain Stories', avatar: ['MS', 'FILMS'], avatarTone: 'in', bookingNo: 'BK-2026-0709', category: 'Documentary', kit: 'Sony FX6 Package', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '1 day late', staff: 'Returned by Hari' }),
-  M({ id: 'm16', kind: 'Return', at: 12 * 60 + 30, client: 'Trishuli Media', avatar: ['TRI', 'MEDIA'], avatarTone: 'progress', bookingNo: 'BK-2026-0723', category: 'Web Series', kit: 'Aputure 300D Kit', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '2 days late', staff: 'Returned by Sanu' }),
-  M({ id: 'm17', kind: 'Return', at: 13 * 60, client: 'Vision Production', avatar: ['VP', 'PROD'], avatarTone: 'primary', bookingNo: 'BK-2026-0710', category: 'TV Show', kit: 'NISI Athena Set', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], statusNote: 'Due today', staff: 'Returned by Sanu' }),
-  M({ id: 'm18', kind: 'Return', at: 14 * 60 + 30, client: 'Inside Out Films', avatar: ['IO', 'FILMS'], avatarTone: 'in', bookingNo: 'BK-2026-0711', category: 'Short Film', kit: 'Aputure 600D Pro Kit', kitStatus: 'in', status: 'Returned', flags: [], staff: 'ETA: 04:00 PM' }),
-  M({ id: 'm19', kind: 'Return', at: 15 * 60, client: 'Chitwan Films', avatar: ['CHT', 'FILMS'], avatarTone: 'neutral', bookingNo: 'BK-2026-0712', category: 'Wildlife Doc', kit: 'Sachtler Tripod Set', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Bikash' }),
-  M({ id: 'm20', kind: 'Return', at: 15 * 60 + 30, client: 'Dolpo Docs', avatar: ['DLP', 'DOCS'], avatarTone: 'in', bookingNo: 'BK-2026-0724', category: 'Documentary', kit: 'Sony FX3 Body', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '3 days late', staff: 'Returned by Hari' }),
-  M({ id: 'm21', kind: 'Return', at: 16 * 60, client: 'Newa Cinema', avatar: ['NEW', 'CINEMA'], avatarTone: 'primary', bookingNo: 'BK-2026-0725', category: 'Feature Film', kit: 'Zhiyun Gimbal Kit', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Sanu' }),
-  M({ id: 'm22', kind: 'Return', at: 16 * 60 + 30, client: 'Terai Television', avatar: ['TRI', 'TV'], avatarTone: 'progress', bookingNo: 'BK-2026-0726', category: 'Broadcast', kit: 'LED Panel Set', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '1 day late', staff: 'Returned by Bikash' }),
-  M({ id: 'm23', kind: 'Return', at: 17 * 60, client: 'Gandaki Media', avatar: ['GND', 'MEDIA'], avatarTone: 'neutral', bookingNo: 'BK-2026-0727', category: 'Corporate Film', kit: 'Canon RF Lens Set', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Ramesh' }),
-  M({ id: 'm24', kind: 'Return', at: 17 * 60 + 30, client: 'Rara Pictures', avatar: ['RARA', 'PIX'], avatarTone: 'in', bookingNo: 'BK-2026-0728', category: 'Short Film', kit: 'Audio Recorder Kit', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Hari' }),
-  M({ id: 'm25', kind: 'Return', at: 18 * 60, client: 'Vision Production', avatar: ['VP', 'PROD'], avatarTone: 'primary', bookingNo: 'BK-2026-0713', category: 'TV Show', kit: 'Alexa Mini LF', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Sanu' }),
+  M({ id: 'm15', kind: 'Return', at: 11 * 60 + 30, client: 'Mountain Stories', avatar: ['MS', 'FILMS'], avatarTone: 'in', bookingNo: 'B-709', category: 'Documentary', kit: 'Sony FX6 Package', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '1 day late', staff: 'Returned by Hari' }),
+  M({ id: 'm16', kind: 'Return', at: 12 * 60 + 30, client: 'Trishuli Media', avatar: ['TRI', 'MEDIA'], avatarTone: 'progress', bookingNo: 'B-723', category: 'Web Series', kit: 'Aputure 300D Kit', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '2 days late', staff: 'Returned by Sanu' }),
+  M({ id: 'm17', kind: 'Return', at: 13 * 60, client: 'Vision Production', avatar: ['VP', 'PROD'], avatarTone: 'primary', bookingNo: 'B-710', category: 'TV Show', kit: 'NISI Athena Set', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], statusNote: 'Due today', staff: 'Returned by Sanu' }),
+  M({ id: 'm18', kind: 'Return', at: 14 * 60 + 30, client: 'Inside Out Films', avatar: ['IO', 'FILMS'], avatarTone: 'in', bookingNo: 'B-711', category: 'Short Film', kit: 'Aputure 600D Pro Kit', kitStatus: 'in', status: 'Returned', flags: [], staff: 'ETA: 04:00 PM' }),
+  M({ id: 'm19', kind: 'Return', at: 15 * 60, client: 'Chitwan Films', avatar: ['CHT', 'FILMS'], avatarTone: 'neutral', bookingNo: 'B-712', category: 'Wildlife Doc', kit: 'Sachtler Tripod Set', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Bikash' }),
+  M({ id: 'm20', kind: 'Return', at: 15 * 60 + 30, client: 'Dolpo Docs', avatar: ['DLP', 'DOCS'], avatarTone: 'in', bookingNo: 'B-724', category: 'Documentary', kit: 'Sony FX3 Body', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '3 days late', staff: 'Returned by Hari' }),
+  M({ id: 'm21', kind: 'Return', at: 16 * 60, client: 'Newa Cinema', avatar: ['NEW', 'CINEMA'], avatarTone: 'primary', bookingNo: 'B-725', category: 'Feature Film', kit: 'Zhiyun Gimbal Kit', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Sanu' }),
+  M({ id: 'm22', kind: 'Return', at: 16 * 60 + 30, client: 'Terai Television', avatar: ['TRI', 'TV'], avatarTone: 'progress', bookingNo: 'B-726', category: 'Broadcast', kit: 'LED Panel Set', kitStatus: 'in', status: 'On Rent', flags: ['Overdue'], statusNote: '1 day late', staff: 'Returned by Bikash' }),
+  M({ id: 'm23', kind: 'Return', at: 17 * 60, client: 'Gandaki Media', avatar: ['GND', 'MEDIA'], avatarTone: 'neutral', bookingNo: 'B-727', category: 'Corporate Film', kit: 'Canon RF Lens Set', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Ramesh' }),
+  M({ id: 'm24', kind: 'Return', at: 17 * 60 + 30, client: 'Rara Pictures', avatar: ['RARA', 'PIX'], avatarTone: 'in', bookingNo: 'B-728', category: 'Short Film', kit: 'Audio Recorder Kit', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Hari' }),
+  M({ id: 'm25', kind: 'Return', at: 18 * 60, client: 'Vision Production', avatar: ['VP', 'PROD'], avatarTone: 'primary', bookingNo: 'B-713', category: 'TV Show', kit: 'Alexa Mini LF', kitStatus: 'in', status: 'On Rent', flags: ['Due Soon'], staff: 'Returned by Sanu' }),
 ]
 
 /* ── derived views — never re-typed ────────────────────────────────────── */
@@ -145,7 +156,7 @@ export const TIMELINE = [...MOVEMENTS].sort((a, b) => a.at - b.at)
 export const ROWS_PER_COLUMN = 6
 
 /** §1.9 — a flag coexists with status; asking for one is not asking for a status. */
-export const has = (m: Movement, f: Flag) => m.flags.includes(f)
+export const has = (m: { flags: readonly Flag[] }, f: Flag) => m.flags.includes(f)
 
 export const PICKUP_DONE = PICKUPS.filter((m) => m.complete).length
 export const PICKUP_PENDING = PICKUPS.length - PICKUP_DONE
@@ -186,6 +197,35 @@ export const THROUGHPUT = `${MOVE_DONE} of ${MOVE_TOTAL} movements completed tod
  * from the array — and therefore from the DOM — never masked. `KpiStrip` lays
  * out `items.length` columns, so the strip closes up to four rather than leaving
  * two holes.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * TODO(decision) — PLAN.md §4 · 12 Aug 2026. **The paragraph above is one of
+ * three live, mutually contradictory answers, and it is not obviously the
+ * winner.** Naming the contradiction rather than resolving it, per
+ * `WIREFRAME_RULINGS_2026-08-12.md` §9:
+ *
+ *  1. **This comment** — SETTLED 6 Aug 2026, six cards, Revenue and Utilization
+ *     among them, ruled correct against `Dashboard.PNG`.
+ *  2. **`types/today.ts`:74-75** quotes v2.0 §5.2 the other way: "A thin count
+ *     strip — pickups · returns · overdue · alerts. **No money KPIs.** No
+ *     charts."
+ *  3. **`../updated mds/02_TODAY.md`:39-41** draws exactly four — Out · In ·
+ *     Overdue · **Cash due** — reintroducing one money card, which is precisely
+ *     what (2) forbids, and dropping the Critical Alerts card that
+ *     `AlertsPanel`'s Critical-only filter used to cite as its authority.
+ *
+ * PLAN.md contradicts itself across the same seam: §4.0 (line 454) declares the
+ * "4-KPI cap" **superseded**, while Phase 6 (line 338) still lists "Today ships
+ * a 6-KPI strip against a ≤4 cap" as a **live violation**. An implementer can
+ * cite either and be right, which is why this is a decision and not a fix.
+ *
+ * Until it is ruled, `modules/today/Today.tsx` renders spec 02's four first and
+ * keeps Active Rentals and Alerts reachable behind a disclosure — the two of the
+ * six that still have a real query behind them. Revenue and Utilization are not
+ * rendered on Today by either route: no query in `lib/queries/` produces either,
+ * and the two constants below feed Reports ▸ Pulse. **Do not delete them, and do
+ * not wire them into a KPI card to close this TODO** — that would answer a
+ * decision with a seeded figure.
  */
 
 /* ── §8 alerts ─────────────────────────────────────────────────────────── */
@@ -198,7 +238,7 @@ export const THROUGHPUT = `${MOVE_DONE} of ${MOVE_TOTAL} movements completed tod
  * count", so the column below renders `CRITICAL_ALERTS`, not this list.
  */
 export const ALERTS: AlertRow[] = [
-  { icon: 'error', statusKey: 'danger', title: 'Battery Overdue', detail: 'FX3 Battery #B123 is 3 days overdue', right: '3 days ago', rightTone: 'danger', action: 'Open Booking', to: '/rentals/BK-2026-0709', priority: 'Critical' },
+  { icon: 'error', statusKey: 'danger', title: 'Battery Overdue', detail: 'FX3 Battery #B123 is 3 days overdue', right: '3 days ago', rightTone: 'danger', action: 'Open Booking', to: '/rentals/B-709', priority: 'Critical' },
   { icon: 'tool', statusKey: 'progress', title: 'Inspection Pending', detail: 'NISI 50mm T1.9 needs inspection', right: 'Due today', rightTone: 'progress', action: 'Open Inspection', to: '/operations', priority: 'Critical' },
   { icon: 'invoice', statusKey: 'danger', title: 'Invoice Unpaid', detail: 'Invoice #INV-1021 is unpaid', right: amount(48000), rightTone: 'danger', action: 'Receive Payment', to: '/finance', priority: 'Critical' },
   { icon: 'alert_triangle', statusKey: 'progress', title: 'Equipment Missing', detail: 'SmallRig Cage for Komodo', right: 'Since 2 days', rightTone: 'progress', action: 'Open Item', to: '/inventory', priority: 'Critical' },
@@ -208,24 +248,19 @@ export const ALERTS: AlertRow[] = [
 
 export const CRITICAL_ALERTS = ALERTS.filter((a) => a.priority === 'Critical')
 
-/**
- * Foundation §8.3 — **Warehouse sees no money, anywhere.**
+/*
+ * ⛔ `criticalAlertsFor` / `lesserAlertsFor` / `carriesMoney` were deleted here.
  *
- * An alert that carries a rupee figure, or whose primary action is a money
- * action, is money. For a role that cannot see money the alert is **removed**
- * from the list rather than masked: a row reading "Invoice Unpaid — Required"
- * still tells a warehouse hand there is an unpaid invoice, and §8.3 asks for
- * structural absence, not redaction.
+ * They filtered the seed above by sniffing `a.right.startsWith('Rs')`, which is
+ * how a money alert was kept off a money-blind session. The Alerts column now
+ * builds its rows from two real queries — `overdue()` and `quotesExpiring()`,
+ * both in `lib/queries/bookings.ts` — and neither carries a rupee figure or a
+ * money action, so there is nothing to sniff and nothing to gate. See
+ * `overdueAlert` / `quoteLapsedAlert` at the bottom of this file.
+ *
+ * `ALERTS` itself survives only because `COUNTS` below counts it and
+ * `data/pulse.ts` imports `COUNTS`.
  */
-const carriesMoney = (a: AlertRow) => a.right.startsWith('Rs') || a.action === 'Receive Payment'
-
-/** The alerts a role may see, at Critical priority — the Alerts column. */
-export const criticalAlertsFor = (money: boolean) =>
-  money ? CRITICAL_ALERTS : CRITICAL_ALERTS.filter((a) => !carriesMoney(a))
-
-/** Everything below Critical the same role may see — the "+ N more" footer. */
-export const lesserAlertsFor = (money: boolean) =>
-  ALERTS.filter((a) => a.priority !== 'Critical' && (money || !carriesMoney(a)))
 
 /* ── v2.0 §5.2 · the count strip ───────────────────────────────────────── */
 
@@ -249,53 +284,47 @@ export const COUNTS = [
   { label: 'Alerts', value: CRITICAL_ALERTS.length, tone: 'danger', to: '/operations' },
 ] as const
 
-/** Seed figures the movements array cannot derive. Replaced by the query. */
-export const ACTIVE_RENTALS = 52
+/**
+ * Seed figures for **Reports ▸ Pulse only** (`data/pulse.ts` imports both).
+ *
+ * ⛔ `ACTIVE_RENTALS = 52` used to live here too and fed Today's first KPI card.
+ * It is gone: the card now counts `stage = 'On Rent'` through `listBookings`,
+ * which is a real number rather than a typed one. Today no longer renders
+ * Revenue or Utilization at all — see `dashboardKpis`' obituary below.
+ *
+ * ⚠ **`REVENUE_TODAY_PAISA` is not Today's "Cash due".** Spec 02 §2.1 draws a
+ * fourth KPI called Cash due and this repo derives it nowhere:
+ * `listBookings` does not join `payments` (0006:176), `bookings.deposit_required`
+ * is the amount REQUIRED rather than the amount owed, and a paid-versus-due
+ * total is the Financial Engine's figure and never a page's. Per
+ * `WIREFRAME_RULINGS_2026-08-12.md` §8 the card renders "Not tracked yet" until
+ * a real source exists. The constant below is a seeded day's *revenue*, a
+ * different quantity on a different screen — borrowing it would be exactly the
+ * `liquidityReports.ts:113` failure the register was written about.
+ * TODO(decision) — PLAN.md §4: what derives "Cash due"?
+ */
 export const REVENUE_TODAY_PAISA = rupees(185000)
 export const UTILIZATION_PCT = 84
 
-/**
- * The six KPI cards, in the Dashboard render's order:
- * Active Rentals · Pickups · Returns · Revenue · Utilization · Critical Alerts.
+/*
+ * ⛔ `dashboardKpis(money)` was deleted here.
  *
- * Every count is **derived** from `MOVEMENTS` / `ALERTS` rather than typed, so
- * §5.8's "card counts must equal the panel counts" cannot drift.
+ * Three of its six cards were constants with no column behind them —
+ * `ACTIVE_RENTALS = 52`, `REVENUE_TODAY_PAISA`, `UTILIZATION_PCT` — and one
+ * carried a hand-typed delta ("6 from yesterday"). The other three counted the
+ * seed array. Today builds its strip inline from the four queries it already
+ * runs (`Today.tsx`), so every figure on it is a row count from Postgres:
  *
- * Foundation §8.3 — the two business cards, Revenue and Utilization, are not in
- * the array at all for a role that cannot see money. They are not blurred, not
- * masked and not disabled: the card does not exist, and the strip closes up to
- * four columns. Revenue is money outright; Utilization is the yield figure the
- * revenue number is read against, and §5.2 files both under Reports, which
- * Warehouse cannot reach.
+ *   Active Rentals · Pickups · Returns · Overdue
+ *
+ * Revenue and Utilization are NOT rendered as "—" — they are absent. There is
+ * no revenue or utilization query in `lib/queries/`, and a card whose value can
+ * only ever be a dash is a promise the screen cannot keep. Both figures already
+ * have a home in Reports ▸ Pulse, which is where the two constants above still
+ * go. That also means this screen no longer touches money at all, which is the
+ * safest possible answer to Law 6 on a surface Warehouse, Technician and Driver
+ * all reach.
  */
-export function dashboardKpis(money: boolean): Kpi[] {
-  const cards: Kpi[] = [
-    { label: 'Active Rentals', value: String(ACTIVE_RENTALS), icon: 'briefcase', accent: 'primary', delta: { direction: 'up', text: '6 from yesterday', good: true } },
-    { label: 'Pickups Today', value: String(PICKUPS.length), icon: 'truck', accent: 'primary', note: `${PICKUP_PENDING} pending • ${PICKUP_DONE} completed` },
-    { label: 'Returns Today', value: String(RETURNS.length), icon: 'return_arrow', accent: 'progress', note: `${RETURN_OVERDUE} overdue • ${RETURN_EXPECTED} expected` },
-  ]
-
-  if (money) {
-    cards.push(
-      // Rendered through the money engine, so it groups in lakhs — the render's
-      // "Rs 185,000" is western grouping, which Foundation §02 does not use.
-      { label: 'Revenue Today', value: formatMoney(REVENUE_TODAY_PAISA), icon: 'dollar', accent: 'success', delta: { direction: 'up', text: '18% vs yesterday', good: true } },
-      // The render tints this tile purple; §4.2's five-colour law bans purple
-      // outright, so it wears the same blue as the other commercial figures.
-      { label: 'Utilization', value: `${UTILIZATION_PCT}%`, icon: 'chart', accent: 'primary', note: 'Top 10 assets' },
-    )
-  }
-
-  cards.push({
-    label: 'Critical Alerts',
-    value: String(criticalAlertsFor(money).length),
-    icon: 'alert_triangle',
-    accent: 'danger',
-    note: 'Requires attention',
-  })
-
-  return cards
-}
 
 /* ── §4 / §5.8 invariants — asserted, not documented ───────────────────── */
 
@@ -356,44 +385,21 @@ if (PICKUPS.length !== 14 || RETURNS.length !== 11) {
 
 /* ── §12 hover card ────────────────────────────────────────────────────── */
 
-/**
- * §12 — 520px, and it must have a **long-press equivalent**: "Hover-only intel
- * does not ship." One record per booking; anything not seeded falls back to a
- * stated placeholder rather than an empty card.
+/*
+ * ⛔ `HOVER` and `HOVER_FALLBACK` were deleted here.
+ *
+ * They were eight hand-typed strings per booking, seeded for 2 of 25 — deposits
+ * held, payments outstanding, "18 items · FX3 Documentary Package", named staff,
+ * free-text notes. Not one had a column behind it, and two of them were rupee
+ * figures on a screen three money-blind roles can open.
+ *
+ * The card now renders `MovementRow` fields only, every one of which came off
+ * `bookings`: project, the pickup→return dates, the item count, the delivery
+ * mode and the two locations. Deposit, Payment, Documents, Staff and Notes are
+ * NOT rendered as "Not recorded" — they are absent from the card, because
+ * "Not recorded" asserts the database was asked and said nothing, and this
+ * query never asks. What each one would need is named in `MovementList.tsx`.
  */
-export const HOVER: Record<string, HoverFacts> = {
-  'BK-2026-0715': {
-    project: 'Daraz Dashain TVC',
-    duration: '31 Jul → 2 Aug 2026 · 3 days',
-    deposit: `${amount(50000)} held`,
-    payment: `${amount(15000)} of ${amount(139506)} · ${amount(124506)} outstanding`,
-    equipment: '18 items · FX3 Documentary Package',
-    documents: 'Quotation · Agreement signed',
-    staff: 'Ramesh Shrestha (pickup) · Sanu Maharjan (packing)',
-    notes: 'Client collects from Boudha. Needs the spare 85mm.',
-  },
-  'BK-2026-0709': {
-    project: 'Annapurna Circuit — Ep. 4',
-    duration: '26 Jul → 30 Jul 2026 · 5 days',
-    deposit: `${amount(35000)} held`,
-    payment: `${amount(88000)} of ${amount(88000)} · settled`,
-    equipment: '12 items · Sony FX6 Package',
-    documents: 'Invoice INV-1018 · Delivery note',
-    staff: 'Hari Bhandari (return)',
-    notes: 'One day late. Late fee not yet applied.',
-  },
-}
-
-export const HOVER_FALLBACK: HoverFacts = {
-  project: 'Not recorded',
-  duration: 'Not recorded',
-  deposit: 'None held',
-  payment: 'Not recorded',
-  equipment: 'Not recorded',
-  documents: 'None attached',
-  staff: 'Not assigned',
-  notes: '—',
-}
 
 /* ── §13 row menu ──────────────────────────────────────────────────────── */
 
@@ -468,19 +474,62 @@ export const CAL_PREV_ISO = isoDay(MONTH_RANGE[TODAY_INDEX - 1] ?? TODAY)
 export const CAL_NEXT_ISO = isoDay(MONTH_RANGE[TODAY_INDEX + 1] ?? TODAY)
 
 /**
- * Days carrying movements. Today's marker is derived from `MOVEMENTS` so the
- * calendar cannot claim a quiet day the columns are busy on; the other days are
- * seed until the query spans a month.
+ * Days carrying movements — **derived from the rows on screen**, never typed.
+ *
+ * ⛔ This used to be `[3, 8, 14, 22, 27]` plus today: five hand-picked day
+ * numbers with nothing behind them, rendered as dots inside the same card as a
+ * queried day list and announced to a screen reader as "has movements". That is
+ * rule 1's exact failure — a fabricated figure sitting beside real rows, wearing
+ * the same mark.
+ *
+ * The honest set is the one the screen can prove: the Kathmandu civil days its
+ * own fetched rows fall on, intersected with the days this mini-month draws.
+ * Days outside the selected period therefore carry **no** dot, and that is why
+ * `CalendarPanel` labels the marks with the period rather than leaving a bare
+ * dot to be read as "nothing scheduled" — an absent dot here means "outside what
+ * was asked for", which is a different statement from "empty".
+ *
+ * Marking all 31 days truthfully needs a month-wide grouped count that
+ * `listBookings` does not provide (it is a list, not an aggregate); that is a
+ * query to add, not a constant to keep.
  */
-export const CAL_EVENT_DAYS = [...new Set([3, 8, 14, 22, 27, ...(MOVEMENTS.length > 0 ? [CAL_TODAY_AD] : [])])].sort((a, b) => a - b)
+const CAL_DAY_BY_ISO = new Map(CAL_DAYS.map((d) => [d.iso, d.ad]))
+
+export function eventDaysOf(rows: readonly { atDayAd: string }[]): number[] {
+  const days = new Set<number>()
+  for (const r of rows) {
+    const ad = CAL_DAY_BY_ISO.get(r.atDayAd)
+    if (ad !== undefined) days.add(ad)
+  }
+  return [...days].sort((a, b) => a - b)
+}
 
 /* ── §11 filters ───────────────────────────────────────────────────────── */
 
 /**
  * §11 period chips — the locked seven, in the Dashboard render's order
  * (All first, Custom last, with its own calendar affordance).
+ *
+ * ⚠ **Five of these seven are no longer offered on Today.** 12 Aug 2026:
+ * `modules/today/Today.tsx` renders a `[Today][Tomorrow]` control in the page
+ * header, which is what `../updated mds/02_TODAY.md`:37 draws, and the chip rail
+ * that used to sit in `CalendarPanel`'s header is gone.
+ *
+ * The array is deliberately untouched. All six live cases in `periodRange` below
+ * still work, still reach Postgres as a `dateRange`, and are still covered by
+ * `modules/today/__tests__/todayQuery.test.ts` — because the question of how
+ * many Today may offer is open, not settled:
+ *
+ * TODO(decision) — PLAN.md §4: spec 02 line 3 reads "Today's jobs only. All
+ * other days live in Operation", while spec 02 line 37 draws `[Today▾]
+ * [Tomorrow]` and spec 03 line 38 gives Operation its own
+ * `[Today][Tomorrow][Custom ▾]`. Under the strict reading Tomorrow goes too and
+ * line 37 is the error; under the drawn reading Today and Tomorrow stay. Both
+ * agree the other five do not belong on this screen, which is the only part
+ * that has been acted on. **Do not delete these entries to tidy up** — that
+ * would decide the open question by making the alternative unbuildable.
  */
-export const PERIOD_CHIPS = ['All', 'Today', 'Tomorrow', 'Next 7 Days', 'This Week', 'Next Month', 'Custom']
+export const PERIOD_CHIPS = ['All', 'Today', 'Tomorrow', 'Next 7 Days', 'This Week', 'Next Month', 'Custom'] as const
 
 /** The chip the render draws separately, behind a divider and an icon. */
 export const CUSTOM_CHIP = 'Custom'
@@ -510,51 +559,118 @@ export const MORE_FILTERS: Array<{ group: string; options: string[] }> = [
 ]
 
 /**
- * §11 — the filters have to *filter*. A control that looks live and moves
- * nothing is the same defect class as a nav link that does not navigate.
+ * §11 — the filters have to *filter*, and the ones that cannot must say so.
  *
- * Only predicates the seed can honour are wired; the rest are declared here as
- * unsupported so the UI can say so instead of silently returning everything.
+ * ⛔ This replaces `PREDICATES` + `UNSUPPORTED_FILTERS` + `filterMovements`,
+ * which narrowed a fetched array. Rule: a filter whose column exists goes to
+ * the server; one that cannot names the column or join that is missing.
+ *
+ * Exactly ONE thing on this panel is expressible through `ListFilters` against
+ * `bookings`: a booking **stage**. Everything else needs either a second
+ * `dateRange` (the shape carries one, and the period chips already own it) or a
+ * filter scoped to an embedded table (`applyListFilters` builds unscoped
+ * `in`/`or` clauses only — see `listQuery.ts`).
+ *
+ * Nothing here is faked and nothing silently no-ops: an option with a `reason`
+ * renders as a genuinely `disabled` control carrying that sentence.
  */
-const PREDICATES: Record<string, (m: Movement) => boolean> = {
-  VIP: (m) => has(m, 'VIP'),
-  Late: (m) => has(m, 'Overdue'),
-  Overdue: (m) => has(m, 'Overdue'),
-  Expected: (m) => m.kind === 'Return' && !has(m, 'Overdue'),
-  // §11's Pickup group predates v2.0: "Booked" and "Packed" are now statuses,
-  // and Inspection is a Return *job*, not a status — §1.4 maps it to Returned.
-  Inspection: (m) => m.status === 'Returned',
-  ...Object.fromEntries(STAGE_NAMES.map((s) => [s, (m: Movement) => m.status === s])),
+export type FilterSupport =
+  | { readonly kind: 'stage'; readonly stage: BookingStatus }
+  | { readonly kind: 'unavailable'; readonly reason: string }
+
+/** Needs `return_at` compared with *now* while the period already owns the range. */
+const NEEDS_SECOND_RANGE =
+  'Needs a second date range on bookings.return_at; ListFilters carries one and the period chips own it.'
+
+/** Two embeds away: bookings → booking_lines → booking_line_units. */
+const NEEDS_UNIT_EMBED = (column: string) =>
+  `Lives on booking_line_units.${column}, two embeds from bookings; applyListFilters cannot scope a filter to an embedded table.`
+
+const CATEGORY_REASON =
+  'Equipment category is inventory_categories.name, reached bookings → booking_lines → products.category_id (0004:89). No embed-scoped filter in ListFilters.'
+
+const CLIENT_TYPE_REASON =
+  'Client type is clients.type_parent / clients.org_subtype (0005:42-43). Filtering it needs clients!inner(…) plus a referencedTable-scoped filter, which ListFilters does not express.'
+
+export const FILTER_SUPPORT: Readonly<Record<string, FilterSupport>> = {
+  /* Pickup group — "Booked" and "Packed" are stage names, so they are live. */
+  Late: { kind: 'unavailable', reason: NEEDS_SECOND_RANGE },
+  VIP: {
+    kind: 'unavailable',
+    reason:
+      'No VIP column. clients carries segments[] and tags[] (0005:66,70) but no VIP member, and the booking row carries only client_id.',
+  },
+
+  /* Return group. */
+  Expected: { kind: 'unavailable', reason: NEEDS_SECOND_RANGE },
+  Overdue: { kind: 'unavailable', reason: NEEDS_SECOND_RANGE },
+  // §11's Return group predates v2.0: Inspection is a return *job*, not a
+  // status, and §1.4 maps it onto the Returned stage. That is a real column.
+  Inspection: { kind: 'stage', stage: 'Returned' },
+  'Deposit Pending': {
+    kind: 'unavailable',
+    reason:
+      'bookings.deposit_required is the figure REQUIRED; nothing on the booking records what has been received, and the column is unmasked money (Law 6).',
+  },
+  'Payment Pending': {
+    kind: 'unavailable',
+    reason: 'payments (0006:176) is not joined by listBookings, and a payment total is the Financial Engine’s to compute.',
+  },
+  Damage: { kind: 'unavailable', reason: NEEDS_UNIT_EMBED('damaged') },
+  Missing: { kind: 'unavailable', reason: NEEDS_UNIT_EMBED('missing_reason') },
+
+  /* Equipment category ×10 and Client type ×7. */
+  ...Object.fromEntries(
+    (MORE_FILTERS.find((g) => g.group === 'Equipment category')?.options ?? []).map((o) => [
+      o,
+      { kind: 'unavailable', reason: CATEGORY_REASON } as const,
+    ]),
+  ),
+  ...Object.fromEntries(
+    (MORE_FILTERS.find((g) => g.group === 'Client type')?.options ?? []).map((o) => [
+      o,
+      { kind: 'unavailable', reason: CLIENT_TYPE_REASON } as const,
+    ]),
+  ),
+
+  /* Status group — the canonical six, straight onto `bookings.stage`. Listed
+     last so 'Booked' and 'Packed' (which the Pickup group also offers) resolve
+     to the stage rather than to anything above. */
+  ...Object.fromEntries(STAGE_NAMES.map((s) => [s, { kind: 'stage', stage: s } as const])),
 }
 
-export const UNSUPPORTED_FILTERS = new Set(
-  MORE_FILTERS.flatMap((g) => g.options).filter((o) => !(o in PREDICATES)),
-)
-
-/** Periods the seed covers. Everything else is honestly empty, not silently all. */
-export const SEEDED_PERIODS = ['Today', 'All']
-
-export function filterMovements(rows: Movement[], period: string, picked: string[]): Movement[] {
-  if (!SEEDED_PERIODS.includes(period)) return []
-  const live = picked.map((p) => PREDICATES[p]).filter(Boolean) as Array<(m: Movement) => boolean>
-  if (live.length === 0) return rows
-  // Selections are a union inside the panel — picking VIP and Overdue asks for
-  // both, not for rows that are somehow both at once.
-  return rows.filter((m) => live.some((f) => f(m)))
+/** The stages a picked option set asks for. Options with no stage are ignored here. */
+export function pickedStages(picked: readonly string[]): BookingStatus[] {
+  const out: BookingStatus[] = []
+  for (const option of picked) {
+    const support = FILTER_SUPPORT[option]
+    if (support?.kind === 'stage' && !out.includes(support.stage)) out.push(support.stage)
+  }
+  return out
 }
 
 /**
  * The calendar card's day list (§4 again — it is a *view* of the same rows the
  * two columns render, merged back into one chronological day, never a second
  * fetch and never a second set of times).
+ *
+ * Generic over `{ at }` so the seeded `Movement` (Wall display) and the queried
+ * `MovementRow` (Today) both go through the one merge.
  */
-export const mergeByTime = (...lists: Movement[][]): Movement[] =>
+export const mergeByTime = <T extends { at: number }>(...lists: T[][]): T[] =>
   lists.flat().sort((a, b) => a.at - b.at)
 
 /* ── display helpers ───────────────────────────────────────────────────── */
 
+/*
+ * These four take the STRUCTURAL minimum rather than `Movement`, so the seeded
+ * row the Wall display renders and the queried row Today renders resolve their
+ * time, dot and status pill through the same four functions. Two copies of
+ * "what colour is an overdue row" is exactly the drift §4 exists to stop.
+ */
+
 /** §6 — "Time on one line, not stacked." Derived from `at`, never typed. */
-export const timeOf = (m: Movement) => clockPad(m.at)
+export const timeOf = (m: { at: number }) => clockPad(m.at)
 
 /**
  * The solid dot colour a movement wears on the Timeline and in the calendar's
@@ -574,10 +690,435 @@ const STATUS_DOT: Record<BookingStatus, BrandKey> = {
 }
 
 /** §1.9 — Overdue is Critical and outranks the status wherever it appears. */
-export const dotTone = (m: Movement): BrandKey => (has(m, 'Overdue') ? 'danger' : STATUS_DOT[m.status])
+export const dotTone = (m: { flags: readonly Flag[]; status: BookingStatus }): BrandKey =>
+  has(m, 'Overdue') ? 'danger' : STATUS_DOT[m.status]
 
 /** Status text for a movement: the Foundation stage, never an invented word. */
-export const statusKeyOf = (m: Movement) =>
+export const statusKeyOf = (m: { flags: readonly Flag[]; status: BookingStatus }) =>
   // §1.9 — a Critical flag outranks the status for tone. Overdue is red
   // wherever it appears, whatever the booking's status says.
   has(m, 'Overdue') ? 'danger' : statusToken(m.status)
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * §4 · THE REAL QUERY
+ *
+ * Everything above this line is seed for the Wall display and Pulse.
+ * Everything below it is what `modules/today/*` actually renders: one anchor
+ * instant, the six period ranges, the two column filter sets, the raw-row →
+ * view-model mapping, and the two alert mappings.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ## The anchor — one instant, one day
+ *
+ * `lib/bs.ts`'s `TODAY` is the app's single "today" and is deliberately frozen
+ * to the seeded operating day; its own comment says it "becomes the real clock
+ * when data is wired". This screen reads it rather than calling `new Date()`,
+ * for the reason `Calendar.md` §4.2 calls the highest-priority correctness bug
+ * in the product: the app once held three opinions about what day it was. A
+ * Today screen that queried the wall clock while the DatePill, the mini-month
+ * and Rentals all labelled 31 Jul would be the fourth.
+ *
+ * ⚠ So the screen queries the day `lib/bs.ts:135` names, NOT the wall clock.
+ * Flipping that one line moves this screen, the Calendar, Rentals and Pulse
+ * together — which is the only safe way to move it. That file is outside this
+ * conversion's scope and was not touched.
+ */
+export const NOW_AD = TODAY.toISOString()
+
+/** The **Kathmandu** calendar day `NOW_AD` falls on — `YYYY-MM-DD`. */
+export const TODAY_DAY_AD = new Date(kathmanduCivil(TODAY)).toISOString().slice(0, 10)
+
+const DAY_MS = 86_400_000
+
+/**
+ * An instant → its clock position **in Kathmandu**, minutes since local
+ * midnight. This is the number `MovementRow.at` holds and `clockPad` renders.
+ *
+ * The offset comes from `bs.ts`'s one `NPT_OFFSET_MIN`, never a second literal
+ * — the same rule `queries/bookings.ts` follows when it builds `+05:45` day
+ * boundaries. A row's time and the day boundary that selected it therefore
+ * cannot disagree about where Kathmandu is.
+ */
+export function kathmanduMinutes(instantAd: string): number {
+  const t = Date.parse(instantAd)
+  if (Number.isNaN(t)) {
+    throw new Error(`Expected a full ISO instant, got ${JSON.stringify(instantAd)}`)
+  }
+  const shifted = new Date(t + NPT_OFFSET_MIN * 60_000)
+  return shifted.getUTCHours() * 60 + shifted.getUTCMinutes()
+}
+
+/** The clock position the page is rendered at. Drives the Timeline's "now" ring. */
+export const NOW = kathmanduMinutes(NOW_AD)
+
+/** Whole Kathmandu calendar days from one instant to another. Negative before. */
+export function civilDaysBetween(fromAd: string, toAd: string): number {
+  return Math.round((kathmanduCivil(new Date(toAd)) - kathmanduCivil(new Date(fromAd))) / DAY_MS)
+}
+
+/* ── §11 · the period chips, as AD day ranges ──────────────────────────── */
+
+export type Period = (typeof PERIOD_CHIPS)[number]
+/** Every chip except Custom, which opens no picker — see `PERIOD_UNAVAILABLE`. */
+export type LivePeriod = Exclude<Period, typeof CUSTOM_CHIP>
+
+/** Why the Custom chip is rendered `disabled` instead of half-built. */
+export const PERIOD_UNAVAILABLE =
+  'Custom needs a date-range picker this screen does not have. Every other chip is a real server-side range.'
+
+export interface DayRange {
+  /** Inclusive first Nepal calendar day, `YYYY-MM-DD`. */
+  readonly from: string
+  /** Inclusive last Nepal calendar day. */
+  readonly to: string
+}
+
+/** `YYYY-MM-DD` → the UTC-midnight `Date` the Date Engine works in. */
+const dayStart = (dayAd: string) => new Date(`${dayAd}T00:00:00.000Z`)
+
+/**
+ * n days from a day, forwards or backwards.
+ *
+ * UTC-midnight arithmetic, which is exactly what `bs.ts`'s `eachDay` does
+ * internally (`start + i * DAY`) — `eachDay` itself only runs forwards, and
+ * "This Week" has to walk back to Monday. Day *numbers* are never added: that
+ * is the bug `data/today.ts` already fixed once, where `31 + 1` produced
+ * `2026-07-32`.
+ */
+const shiftDay = (dayAd: string, days: number) => isoDay(new Date(dayStart(dayAd).getTime() + days * DAY_MS))
+
+/**
+ * A period chip → the AD day range it means. `null` is the **All** chip: no
+ * date constraint at all, not an empty range.
+ *
+ * ⛔ Four of the six chips used to return `[]` from `filterMovements` because
+ * they were not in `SEEDED_PERIODS`, so Tomorrow, Next 7 Days, This Week and
+ * Next Month each emptied all four panels and blamed the backend. Every one of
+ * them is a date range and every one is expressible; they are computed here and
+ * pushed into `dateRange`, so the narrowing happens in Postgres.
+ *
+ * Two conventions are chosen here rather than found in a spec, and are stated
+ * so they can be corrected in one place:
+ *
+ *  - **Next 7 Days** is today plus the next six — seven days INCLUDING today,
+ *    the reading that matches how the chip sits beside "Today" and "Tomorrow".
+ *  - **This Week** runs Monday→Sunday, because `CAL_WEEKDAYS` above starts the
+ *    app's week on MON. (`bs.ts`'s `isWeekend` shades Saturday, which is Nepal's
+ *    weekend day; that is which day is off, not which day starts the week.)
+ *
+ * **Next Month** is the next AD calendar month, first to last — Law 7, AD is
+ * what is stored and queried, BS is rendered.
+ */
+export function periodRange(period: LivePeriod, todayAd: string): DayRange | null {
+  switch (period) {
+    case 'All':
+      return null
+    case 'Today':
+      return { from: todayAd, to: todayAd }
+    case 'Tomorrow': {
+      const d = shiftDay(todayAd, 1)
+      return { from: d, to: d }
+    }
+    case 'Next 7 Days':
+      return { from: todayAd, to: shiftDay(todayAd, 6) }
+    case 'This Week': {
+      // getUTCDay: 0 Sun … 6 Sat. Days elapsed since the Monday of this week.
+      const sinceMonday = (dayStart(todayAd).getUTCDay() + 6) % 7
+      return { from: shiftDay(todayAd, -sinceMonday), to: shiftDay(todayAd, 6 - sinceMonday) }
+    }
+    case 'Next Month': {
+      const d = dayStart(todayAd)
+      // Day 0 of month n+2 is the last day of month n+1 — no month-length table.
+      return {
+        from: isoDay(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1))),
+        to: isoDay(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 2, 0))),
+      }
+    }
+  }
+}
+
+/* ── the two column filter sets ────────────────────────────────────────── */
+
+/**
+ * A column's filters, plus the one thing `ListFilters` cannot say.
+ *
+ * ⚠ `impossible` is not decoration. `applyListFilters` treats an EMPTY chip
+ * array as "no constraint", never as "match nothing" — so a filter set whose
+ * stage intersection came out empty would, if sent, return **every stage**,
+ * which is the exact opposite of what the operator asked for. The screen must
+ * not send it; it renders the empty state instead. See `Today.tsx`.
+ */
+export interface ColumnQuery {
+  readonly filters: ListFilters
+  readonly impossible: boolean
+}
+
+/**
+ * Widen a named single-day set to a day RANGE.
+ *
+ * Both ends are taken from the named set itself — `todaysOutgoing(from)` for the
+ * lower bound and `todaysOutgoing(to)` for the upper — rather than by building
+ * boundaries here. `startOfDay`/`endOfDay` are module-private in
+ * `queries/bookings.ts` and carry the `+05:45` reasoning that makes the day a
+ * screen filters by the day it labels; re-deriving them in a data file is how a
+ * second, wrong copy of Nepal's offset gets written.
+ */
+function overDays(
+  namedSet: (dayAd: string) => ListFilters,
+  range: DayRange | null,
+  anchorDayAd: string,
+): ListFilters {
+  const lo = namedSet(range ? range.from : anchorDayAd)
+  // The All chip: keep the set's stage chips, presence flags and sort, drop the
+  // day bounds entirely. `filterKey` and `applyListFilters` both ignore an
+  // `undefined` dateRange, so this is "no constraint", not an empty one.
+  if (!range) return { ...lo, dateRange: undefined }
+
+  const hi = namedSet(range.to)
+  if (!lo.dateRange || !hi.dateRange) return lo
+  return {
+    ...lo,
+    dateRange: { column: lo.dateRange.column, fromAd: lo.dateRange.fromAd, toAd: hi.dateRange.toAd },
+  }
+}
+
+/**
+ * Narrow a column's structural stage set by the operator's Status chips.
+ *
+ * **Intersection, never replacement.** The Pickups column MEANS "Booked or
+ * Packed pickups in this period" (`todaysOutgoing`); letting a Status chip
+ * overwrite that would put Quotes and Closed bookings in a column headed
+ * Pickups. Picking a stage the column does not carry is therefore legitimately
+ * empty rather than wrong — and that emptiness is reported through
+ * `impossible`, because the empty array itself cannot express it.
+ */
+function narrowStages(base: ListFilters, stages: readonly BookingStatus[]): ColumnQuery {
+  if (stages.length === 0) return { filters: base, impossible: false }
+  const structural = (base.chips?.['stage'] ?? []) as readonly BookingStatus[]
+  const kept = structural.filter((s) => stages.includes(s))
+  return { filters: { ...base, chips: { ...base.chips, stage: kept } }, impossible: kept.length === 0 }
+}
+
+/** Today ▸ Pickups — `todaysOutgoing` widened to the chip's range and narrowed by Status. */
+export function pickupsQuery(period: LivePeriod, picked: readonly string[]): ColumnQuery {
+  return narrowStages(overDays(todaysOutgoing, periodRange(period, TODAY_DAY_AD), TODAY_DAY_AD), pickedStages(picked))
+}
+
+/** Today ▸ Returns — the same, over `todaysIncoming`. */
+export function returnsQuery(period: LivePeriod, picked: readonly string[]): ColumnQuery {
+  return narrowStages(overDays(todaysIncoming, periodRange(period, TODAY_DAY_AD), TODAY_DAY_AD), pickedStages(picked))
+}
+
+/**
+ * The Active Rentals KPI — everything currently with a client.
+ *
+ * Not a named set in `queries/bookings.ts` because it is one card on one
+ * screen, and 'On Rent' is the stage's own definition of "out": `workflow.ts`
+ * §1.2 reads "All items with the client." No date range — an active rental is
+ * active whatever day it left on, which is also why the period chips do not
+ * touch this card.
+ */
+export const ACTIVE_RENTALS_FILTERS: ListFilters = {
+  chips: { stage: ['On Rent'] satisfies BookingStatus[] },
+  presence: { cancelled_at: false, actual_return_at: false },
+  sort: { column: 'return_at', ascending: true },
+}
+
+/* ── raw row → the shape the panels render ─────────────────────────────── */
+
+/**
+ * What a Today panel draws. Every field is either a `bookings` column or a
+ * formatting of one — there are no derived business figures here (Law 1) and
+ * nothing invented (rule 1).
+ *
+ * What `Movement` carried and this does NOT, because no column exists:
+ * `kit` / `kitStatus` (the package name — `bookings` has `itemCount`, a number,
+ * and nothing else), `category`, `staff`, `complete`, `notReset`, and the `VIP`
+ * flag. Each absence is handled at the render site, named there.
+ */
+export interface MovementRow {
+  id: string
+  bookingNo: string
+  clientId: string
+  /** `clients.name` through the join. */
+  client: string
+  /** Initials of `client`. Display formatting of a real field, not a new fact. */
+  monogram: string
+  /** Identity, not state — see `AVATAR_RAMP`. Deterministic in `clientId`. */
+  avatarTone: StatusKey
+  /** Pickup/Delivery from `delivery_type`; Return from which query the row came out of. */
+  kind: MovementKind
+  /** Minutes since Kathmandu midnight, off this row's own movement instant. */
+  at: number
+  /**
+   * The **Kathmandu** calendar day that same instant falls on, `YYYY-MM-DD`.
+   *
+   * `at` alone cannot say which day a row is on, so the mini-month had no way to
+   * mark a day from real rows and marked five invented ones instead. Derived
+   * through `bs.ts`'s `kathmanduCivil` — the one function the query side's day
+   * boundaries also use — so the day a row is DRAWN on and the day it was
+   * SELECTED by cannot disagree.
+   */
+  atDayAd: string
+  /** `bookings.stage` — one of the canonical six, verified 1:1 against `BookingStatus`. */
+  status: BookingStatus
+  /** Only ever `['Overdue']` or `[]`. `VIP` and `Due Soon` have no source — see below. */
+  flags: Flag[]
+  /** "2 days late". Present only when the row is overdue. */
+  statusNote?: string
+  /** `bookings.project`, nullable. Rendered as an explicit non-value when null. */
+  project: string | null
+  /** `sum(booking_lines.qty)` over live lines — UNITS, not rows. */
+  itemCount: number
+  /** "Due 2 Aug 2026 · 06:00 AM" — formatted `bookings.return_at`. */
+  due: string
+  /** "31 Jul 2026 → 2 Aug 2026" — the two dates, with no day count. */
+  duration: string
+  /** `bookings.pickup_location`, nullable free text — never the branch name. */
+  pickupLocation: string | null
+  /** `bookings.return_location`, nullable. */
+  returnLocation: string | null
+  /** `bookings.delivery_type`. An enum member, not UI copy. */
+  deliveryType: BookingListRow['deliveryType']
+}
+
+/**
+ * The avatar tint for a client.
+ *
+ * `AVATAR_RAMP` at the top of this file is the closed four-tone identity ramp,
+ * and the seed asserted one tone per client by hand. With real rows the same
+ * invariant has to hold without a table: a pure function of `clients.id` gives
+ * the same client the same tone in every panel, on every load, and cannot reach
+ * `danger` / `out` / `ext`, each of which carries a hard meaning on this screen.
+ *
+ * It is a colour, not a fact — nothing is claimed about the client by it.
+ */
+export function avatarToneFor(clientId: string): StatusKey {
+  let h = 0
+  for (let i = 0; i < clientId.length; i += 1) h = (h * 31 + clientId.charCodeAt(i)) >>> 0
+  return AVATAR_RAMP[h % AVATAR_RAMP.length] ?? 'neutral'
+}
+
+/**
+ * "Mountain Stories" → "MS". One token, not two stacked: §4.3.6 puts text at
+ * 12px minimum and two 12px lines do not fit a 34px disc. The full name is on
+ * the row beside it, so this only has to be a recognisable mark.
+ */
+export function monogramOf(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return '—'
+  const initials = words.slice(0, 3).map((w) => (w[0] ?? '').toUpperCase()).join('')
+  return initials || name.slice(0, 2).toUpperCase()
+}
+
+/** "2 Aug 2026 · 06:00 AM" — the one way this screen writes an instant. */
+function stampOf(instantAd: string): string {
+  return `${formatAd(new Date(instantAd))} · ${clockPad(kathmanduMinutes(instantAd))}`
+}
+
+/**
+ * A raw booking row → the row a panel renders.
+ *
+ * `side` is which named query produced it, and it is load-bearing twice:
+ *
+ *  1. **Which instant the row sits at.** An outgoing row is at its `pickup_at`,
+ *     an incoming one at its `return_at`. That is what puts the same booking in
+ *     two panels at two honest times rather than one wrong one.
+ *  2. **`kind`.** `delivery_type` separates Pickup from Delivery, and nothing on
+ *     the row says "this is a return" — Return-ness is which query asked. There
+ *     is no `Inspection` kind here at all: `0015` collapsed Inspection onto the
+ *     Returned stage and, by its own admission, the job-state axis that would
+ *     tell them apart "has no storage anywhere in this schema today".
+ *
+ * ### Overdue, and the flag that is NOT here
+ *
+ * `Overdue` is the predicate `queries/bookings.ts`'s `overdue()` already encodes
+ * server-side — due back before now, never actually returned — evaluated here
+ * against the same anchor instant so a row cannot be overdue in the Alerts panel
+ * and on time in the column beside it.
+ *
+ * `Due Soon` is deliberately NOT derived. It needs a "how soon is soon" window
+ * that no spec in this repo states, and inventing one puts an amber border on a
+ * booking for a reason nobody chose. `VIP` needs a client attribute that does
+ * not exist in the schema at all.
+ */
+export function toMovementRow(row: BookingListRow, side: 'outgoing' | 'incoming', nowAd: string): MovementRow {
+  const atAd = side === 'outgoing' ? row.pickupAtAd : row.returnAtAd
+  const overdue = row.actualReturnAtAd === null && Date.parse(row.returnAtAd) < Date.parse(nowAd)
+  const lateDays = overdue ? civilDaysBetween(row.returnAtAd, nowAd) : 0
+
+  return {
+    id: row.id,
+    bookingNo: row.bookingNo,
+    clientId: row.clientId,
+    client: row.clientName,
+    monogram: monogramOf(row.clientName),
+    avatarTone: avatarToneFor(row.clientId),
+    kind: side === 'incoming' ? 'Return' : row.deliveryType === 'Customer Pickup' ? 'Pickup' : 'Delivery',
+    at: kathmanduMinutes(atAd),
+    atDayAd: new Date(kathmanduCivil(new Date(atAd))).toISOString().slice(0, 10),
+    status: row.stage,
+    flags: overdue ? ['Overdue'] : [],
+    ...(overdue ? { statusNote: lateDays > 0 ? `${lateDays} day${lateDays === 1 ? '' : 's'} late` : 'Late today' } : {}),
+    project: row.project,
+    itemCount: row.itemCount,
+    due: `Due ${stampOf(row.returnAtAd)}`,
+    // Two dates and no day count on purpose. "3 days" is a rental-day figure and
+    // Law 1 puts every figure in the engine that owns it; a page counting its
+    // own billing days is the second opinion that law exists to prevent.
+    duration: `${formatAd(new Date(row.pickupAtAd))} → ${formatAd(new Date(row.returnAtAd))}`,
+    pickupLocation: row.pickupLocation,
+    returnLocation: row.returnLocation,
+    deliveryType: row.deliveryType,
+  }
+}
+
+/* ── §8 · alerts, from queries rather than from a list of six ──────────── */
+
+/**
+ * An overdue booking → the Critical alert row.
+ *
+ * The source is `overdue(NOW_AD)` — stage On Rent, due back before the anchor
+ * instant, `actual_return_at` still null. Every field below is that row.
+ *
+ * §8: "every alert carries its own primary action", and it is the same action
+ * the Returns column offers, pointing at the same booking.
+ */
+export function overdueAlert(row: BookingListRow, nowAd: string): AlertRow {
+  const days = civilDaysBetween(row.returnAtAd, nowAd)
+  return {
+    icon: 'error',
+    statusKey: 'danger',
+    title: 'Return Overdue',
+    detail: `${row.clientName} · ${row.bookingNo}`,
+    right: days > 0 ? `${days} day${days === 1 ? '' : 's'} late` : 'Late today',
+    rightTone: 'danger',
+    action: 'Open Booking',
+    to: `/rentals/${row.bookingNo}`,
+    priority: 'Critical',
+  }
+}
+
+/**
+ * A quote whose stated date has passed → a High alert.
+ *
+ * ⚠ It says the date has PASSED, not that the quote is dead. `0002:37` carries
+ * a `TODO(decision)` recording that whether a quote lapses at all is
+ * unspecified and nothing in the schema acts on the date, and `quotesExpiring`
+ * repeats that in its own header. So the row states the date and offers the
+ * booking; it does not render a verdict.
+ */
+export function quoteLapsedAlert(row: BookingListRow): AlertRow {
+  return {
+    icon: 'calendar_stats',
+    statusKey: 'progress',
+    title: 'Quote Past Its Date',
+    detail: `${row.clientName} · ${row.bookingNo}`,
+    right: row.quoteExpiresAtAd ? formatAd(new Date(row.quoteExpiresAtAd)) : '—',
+    rightTone: 'progress',
+    action: 'Open Quote',
+    to: `/rentals/${row.bookingNo}`,
+    priority: 'High',
+  }
+}

@@ -1,0 +1,333 @@
+// @vitest-environment jsdom
+/**
+ * # Rentals list — what §4.1 actually renders, at all three widths
+ *
+ * `rentalsList.test.ts` beside this file pins the two *mappings* (chip →
+ * `ListFilters`, raw row → view model). This one pins the **screen**, because
+ * the 12 Aug rebuild made claims that a unit test over `data/rentals.ts` cannot
+ * see:
+ *
+ *  1. **Productions is removed** (`04_RENTALS.md` line 3) — the tab strip, the
+ *     tab component and the two seed files are gone. A later session must not
+ *     be able to reinstate the tab without this failing.
+ *  2. **Sub-Rental is a chip, not a tab**, and it is `disabled` carrying its
+ *     reason — rulings §9.1 is still open and the data model answers none of
+ *     its three readings.
+ *  3. **The action column stays visible while the table scrolls horizontally**
+ *     (§4.1's last desktop line). That is a real requirement, not decoration.
+ *  4. **Import is gone, Export stays honestly disabled.**
+ *  5. The three layouts, from ONE width reading (Law 14).
+ *
+ * Environment pragma per `vitest.config.ts`, which keeps the suite on `node`.
+ */
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { MemoryRouter, useLocation } from 'react-router-dom'
+import type { BookingListRow } from '../../../lib/queries/bookings'
+
+/* `data/rentals.ts` reaches `queries/bookings.ts` for its named filter sets,
+   and that module holds the supabase client. Replaced wholesale, exactly as the
+   sibling suite does — nothing here touches a database. */
+vi.mock('../../../lib/supabase', () => ({
+  supabase: { from: () => ({ select: () => ({}) }) },
+  newClientUuid: () => '00000000-0000-4000-8000-000000000000',
+}))
+
+const ROW: BookingListRow = {
+  id: '8f1d1a56-0b6a-4f0e-9d3c-2f4b6c7a9e11',
+  bookingNo: 'B-715',
+  clientId: 'c0ffee00-1111-4222-8333-444455556666',
+  clientName: 'Mountain Stories',
+  project: 'FX3 Documentary',
+  stage: 'Booked',
+  pickupAtAd: '2026-08-14T03:15:00.000Z',
+  returnAtAd: '2026-08-18T10:30:00.000Z',
+  actualReturnAtAd: null,
+  deliveryType: 'Customer Pickup',
+  pickupLocation: 'Kathmandu',
+  returnLocation: null,
+  quoteExpiresAtAd: null,
+  createdAtAd: '2026-07-12T09:41:00.000Z',
+  itemCount: 7,
+  depositRequired: null,
+  isCancelled: false,
+  isClosed: false,
+}
+
+/* The mocked count, so a test can have more rows than one page. `vi.hoisted`
+   because a `vi.mock` factory is hoisted above ordinary consts and cannot close
+   over one. Reset in `afterEach`. */
+const stub = vi.hoisted(() => ({ total: 1 }))
+
+/* The real named filter sets are kept (the screen builds its four KPI queries
+   from them); only the fetch is replaced, so rows actually arrive and the table
+   renders. */
+vi.mock('../../../lib/queries/bookings', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../lib/queries/bookings')>()
+  return { ...real, listBookings: async () => ({ rows: [ROW], total: stub.total }) }
+})
+
+vi.mock('../../../lib/moneyVisibility', () => ({ useCanViewMoney: () => true }))
+vi.mock('../../../lib/auth', () => ({
+  useAuth: () => ({
+    user: { id: 'u-1', name: 'Babin Shrestha', role: 'Owner', isSharedDevice: false },
+    loading: false,
+    isLocked: false,
+  }),
+}))
+
+window.matchMedia = ((q: string) => ({
+  matches: false,
+  media: q,
+  onchange: null,
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  addListener: () => {},
+  removeListener: () => {},
+  dispatchEvent: () => false,
+})) as unknown as typeof window.matchMedia
+;(globalThis as Record<string, unknown>)['IS_REACT_ACT_ENVIRONMENT'] = true
+
+const { default: RentalsList } = await import('../RentalsList')
+
+let container: HTMLDivElement
+let root: Root
+
+/** The live query string, so a test can assert what a refresh would restore. */
+let search = ''
+function LocationProbe() {
+  search = useLocation().search
+  return null
+}
+
+/** Foundation's locked breakpoints — 768 and 1180. Width only (Law 14). */
+async function mount(width: number, entry = '/rentals') {
+  Object.defineProperty(window, 'innerWidth', { value: width, configurable: true, writable: true })
+  container = document.createElement('div')
+  document.body.appendChild(container)
+  root = createRoot(container)
+  await act(async () => {
+    root.render(
+      <MemoryRouter initialEntries={[entry]}>
+        <RentalsList />
+        <LocationProbe />
+      </MemoryRouter>,
+    )
+  })
+  // One more tick so `useList`'s async fetch has resolved into the tree.
+  await act(async () => {
+    await Promise.resolve()
+  })
+}
+
+afterEach(async () => {
+  if (root) await act(async () => root.unmount())
+  container?.remove()
+  stub.total = 1
+})
+
+const text = () => container.textContent ?? ''
+const allButtons = () => [...container.querySelectorAll('button')]
+const button = (label: string) => allButtons().find((b) => b.textContent?.trim() === label)
+
+describe('§4.1 — one list, no tabs', () => {
+  it('renders no tab strip and no trace of Productions', async () => {
+    await mount(1280)
+    // `04_RENTALS.md` line 3 removes it in prose, which is what makes this one
+    // of the eight genuine deletions in rulings §1.
+    expect(text()).not.toContain('Productions')
+    expect(button('Bookings')).toBeUndefined()
+  })
+
+  it('draws the seven stage chips the wireframe names, in stage order', async () => {
+    await mount(1280)
+    const chips = allButtons()
+      .filter((b) => b.getAttribute('aria-pressed') !== null)
+      .map((b) => b.textContent?.trim())
+    expect(chips.slice(0, 7)).toEqual(['All', 'Quote', 'Booked', 'Packed', 'On Rent', 'Returned', 'Closed'])
+  })
+
+  it('gives every stage chip an icon beside its word (Law 11 — never colour alone)', async () => {
+    await mount(1280)
+    const quote = allButtons().find((b) => b.textContent?.trim() === 'Quote')
+    expect(quote?.querySelector('svg')).not.toBeNull()
+  })
+
+  it('keeps the KPI strip and the pager, which no prose removes (rulings §1)', async () => {
+    await mount(1280)
+    expect(text()).toContain('Active Rentals')
+    expect(text()).toContain('Rows per page')
+  })
+})
+
+describe('Sub-Rental — the chip that replaced the tab', () => {
+  it('is present, disabled, and says why in its accessible name', async () => {
+    await mount(1280)
+    const sub = allButtons().find((b) => b.getAttribute('aria-label')?.startsWith('Sub-Rental'))
+    expect(sub).toBeDefined()
+    expect(sub?.disabled).toBe(true)
+    // Not "not built yet" — the sentence has to be actionable.
+    expect(sub?.getAttribute('aria-label')).toContain('line_type')
+    expect(sub?.getAttribute('aria-label')).toContain('TODO(decision)')
+  })
+})
+
+describe('the header actions — §4.1 draws New Rental and Export, and nothing else', () => {
+  it('keeps Export, honestly disabled with its reason', async () => {
+    await mount(1280)
+    const exportBtn = button('Export')
+    expect(exportBtn).toBeDefined()
+    expect(exportBtn?.disabled).toBe(true)
+  })
+
+  it('no longer draws an Import button', async () => {
+    await mount(1280)
+    expect(button('Import')).toBeUndefined()
+  })
+})
+
+describe('§4.1 — "action column stays visible; table scrolls horizontally"', () => {
+  it('pins the Actions header and cell to the right edge of the scroller', async () => {
+    await mount(1280)
+    const scroller = container.querySelector('[data-table-scroll]') as HTMLElement | null
+    expect(scroller).not.toBeNull()
+    expect(scroller?.style.overflowX).toBe('auto')
+
+    const headers = [...container.querySelectorAll('th')]
+    const actions = headers[headers.length - 1]
+    expect(actions?.textContent).toContain('Actions')
+    expect(actions?.style.position).toBe('sticky')
+    expect(actions?.style.right).toBe('0px')
+
+    // A sticky cell floats over the columns sliding beneath it, so it needs its
+    // own opaque background or they read straight through.
+    expect(actions?.style.background).not.toBe('')
+
+    const cells = [...container.querySelectorAll<HTMLTableCellElement>('tbody td')]
+    const lastCell = cells[cells.length - 1]
+    expect(lastCell?.style.position).toBe('sticky')
+    expect(lastCell?.style.background).not.toBe('')
+  })
+})
+
+/** The Filters button — `aria-controls` rather than its label, which is shared. */
+const filterButton = () => container.querySelector<HTMLButtonElement>('button[aria-controls="rentals-filters"]')
+
+describe('§18 — this screen’s filters are the query string', () => {
+  it('restores a quick filter and a stage from the URL, before any query fires', async () => {
+    // What a refresh, a bookmark and a shared link all depend on.
+    await mount(1280, '/rentals?quick=Overdue&stage=Booked')
+    const overdue = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Overdue')
+    expect(overdue?.getAttribute('aria-pressed')).toBe('true')
+    const booked = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Booked')
+    expect(booked?.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('puts a picked stage on the URL', async () => {
+    await mount(1280)
+    const booked = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Booked')!
+    await act(async () => booked.click())
+    expect(search).toBe('?stage=Booked')
+  })
+
+  it('shows what is narrowing the list as removable chips', async () => {
+    await mount(1280, '/rentals?quick=Overdue&stage=Booked')
+    const row = container.querySelector('[aria-label="Active filters"]')
+    expect(row?.textContent).toContain('Stage: Booked')
+    expect(row?.textContent).toContain('Quick filter: Overdue')
+    // §6 — two groups, so the badge reads 2 rather than counting values.
+    expect(filterButton()?.textContent).toContain('2')
+  })
+
+  it('drops every filter in ONE write, so one Back undoes Clear all', async () => {
+    await mount(1280, '/rentals?quick=Overdue&stage=Booked&stage=Packed')
+    const clear = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Clear all')!
+    await act(async () => clear.click())
+    expect(search).toBe('')
+  })
+
+  it('keeps a page the URL named once the count says it exists', async () => {
+    /*
+     * `total` is null until the count lands, and `pageCount` collapses to 1
+     * while it is — so a "clamp a stale page" effect that does not wait for the
+     * count rewrites `?page=3` to page 1 on the very first render, before the
+     * count has had a chance to disagree. §18's "a refresh puts you back where
+     * you were" would then hold for every filter except the page number, and a
+     * second wasted query would run behind it.
+     *
+     * 120 rows over 20 per page is six pages, so page 3 is real here. With the
+     * default one-row stub it is not, and the clamp would be right to drop it —
+     * which is why this test sets its own count rather than reading the URL
+     * back under the default.
+     */
+    stub.total = 120
+    await mount(1280, '/rentals?page=3')
+    expect(search).toContain('page=3')
+  })
+
+  it('ignores a hand-edited URL naming things that do not exist', async () => {
+    // A query string is user input: a bookmark someone edited, a link a chat
+    // client truncated, a URL from before a stage was renamed. None of it may
+    // reach `rentalsQuery` unchecked.
+    await mount(1280, '/rentals?quick=DropTable&stage=Nonsense')
+    const all = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'All')
+    expect(all?.getAttribute('aria-pressed')).toBe('true')
+    expect(container.querySelector('[aria-label="Active filters"]')).toBeNull()
+  })
+})
+
+describe('the three layouts, from one width reading (Law 14)', () => {
+  it('desktop ≥1180 — table, and the filter panel costs the table no width', async () => {
+    await mount(1280)
+    expect(container.querySelector('table')).not.toBeNull()
+
+    // The rail this replaced took a grid column even collapsed — a 32px track
+    // content could not reflow into. The drawer is `position: fixed`, so the
+    // grid is one track at every width and the table gets all of it.
+    const grid = [...container.querySelectorAll<HTMLDivElement>('div')].find(
+      (d) => d.style.display === 'grid' && d.style.gridTemplateColumns !== '',
+    )
+    expect(grid?.style.gridTemplateColumns).toBe('minmax(0,1fr)')
+
+    // Closed by default, and nothing of the panel is in the tree until asked for.
+    expect(filterButton()?.getAttribute('aria-expanded')).toBe('false')
+    expect(text()).not.toContain('Save as new filter')
+  })
+
+  it('tablet 768–1179 — fewer columns, and the filter panel is reachable at this width too', async () => {
+    await mount(1000)
+    const headers = [...container.querySelectorAll('th')].map((h) => h.textContent?.trim())
+    // §4.1 tablet draws `BR# │ client │ dates │ badge │ [prim]⋮`.
+    expect(headers).not.toContain('Items')
+    expect(headers).not.toContain('Return')
+    expect(headers).toContain('Pickup')
+
+    /*
+     * Rulings §7 — "rails collapse below 1180" means REFLOW, not hide — used to
+     * be satisfied by rendering the same card inline under the list, and this
+     * test asserted that by looking for its contents on the page.
+     *
+     * There is no rail to collapse now, so the ruling is met a better way: one
+     * button at every width opens the same panel, and it holds the same facets.
+     * The claim is unchanged — the filters must not become unreachable on a
+     * tablet, which is this product's actual target device — so the assertion
+     * moved from "the card is already on the page" to "the card is one press
+     * away", which is what the screen now promises.
+     */
+    const open = filterButton()
+    expect(open).not.toBeNull()
+    await act(async () => {
+      open!.click()
+    })
+    expect(open?.getAttribute('aria-expanded')).toBe('true')
+    expect(text()).toContain('Save as new filter')
+  })
+
+  it('phone <768 — card rows, one primary action each, no table', async () => {
+    await mount(420)
+    expect(container.querySelector('table')).toBeNull()
+    expect(text()).toContain('Open Booking')
+    expect(text()).toContain('B-715')
+  })
+})

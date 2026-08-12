@@ -1,4 +1,7 @@
 import { PageHeader, Card, Rail, cardStyle } from '../../components/ui/Page'
+import { PageBody } from '../../components/ui/PageBody'
+import { ReportToolbar } from '../../components/ui/ReportToolbar'
+import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useAuth } from '../../lib/auth'
 import { formatMoney } from '../../lib/money'
@@ -15,17 +18,54 @@ function StaffKpiCard({ label, value, accent, note }: any) {
   )
 }
 
+/**
+ * The export body.
+ *
+ * ⚠ It takes the same two arguments the TABLE uses to decide whether a
+ * performance score is visible, and withholds the score the same way. An export
+ * that dumped every score regardless would be a way to read, in a spreadsheet,
+ * exactly what the screen refuses to show — which is how a permission gate gets
+ * quietly repealed by a download button.
+ */
+function staffCsv(isManager: boolean, myName: string | undefined): ReportCsvRow[] {
+  return [
+    ['Figure', 'Value'],
+    ['Revenue handled', formatMoney(STAFF_METRICS.revenueHandled as Paisa)],
+    ['Collection rate', `${STAFF_METRICS.collectionRate}%`],
+    ['Tasks completed', STAFF_METRICS.tasksCompleted],
+    ['Average response time', STAFF_METRICS.averageResponseTime],
+    [],
+    ['Staff', 'Role', 'Revenue Handled', 'Collections', 'Collection Rate', 'Tasks', 'Performance Score'],
+    ...STAFF_LIST.map((s): ReportCsvRow => [
+      s.name,
+      s.role,
+      formatMoney(s.revenueHandled as Paisa),
+      formatMoney(s.collections as Paisa),
+      `${((s.collections / s.revenueHandled) * 100).toFixed(1)}%`,
+      s.tasksCompleted,
+      isManager || s.name === myName ? s.performanceScore : 'Hidden',
+    ]),
+  ]
+}
+
 export default function StaffReports() {
   const money = useCanViewMoney()
   const { user } = useAuth()
 
+  // Law 6 — revenue handled and collections are the report; there is no
+  // money-free version of it, so the shared RESTRICTED state stands in for the
+  // whole page and no export is offered above it.
   if (!money) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
         <PageHeader icon="users" title="Staff Performance" description="Track revenue handled, collections, and task completion." />
-        <Card style={{ padding: 'var(--sp-xl)', textAlign: 'center', color: 'var(--text2)' }}>
-          Staff financial performance data is restricted for your role.
-        </Card>
+        <PageBody
+          restricted
+          restrictedReason="Staff performance is measured in revenue handled and collections, so there is no version of this page your role can see."
+          restrictedRequiredRole="Owner, Admin, Coordinator or Accounts"
+        >
+          {null}
+        </PageBody>
       </div>
     )
   }
@@ -39,6 +79,20 @@ export default function StaffReports() {
         icon="users"
         title="Staff Performance"
         description="Track revenue handled, collections, and task completion."
+      />
+
+      {/*
+        Export only. `data/staffReports` is two constants — a headline block and
+        one row per person — with no date on any row and no branch column, so a
+        date range or a branch picker here would narrow nothing.
+      */}
+      <ReportToolbar
+        title="Staff Performance"
+        csv={{
+          filename: 'staff-performance',
+          build: () => staffCsv(isManager, myName),
+          ...(user?.name ? { generatedBy: user.name } : {}),
+        }}
       />
 
       <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-md)' }}>

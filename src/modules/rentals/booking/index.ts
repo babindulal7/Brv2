@@ -14,7 +14,10 @@ export {
   CLIENT_HEALTH_THRESHOLDS,
   HEALTH_RANK,
   clientHealth,
-  creditUtilisation,
+  // Replaced `creditUtilisation`, which returned `number | null` and so could
+  // not tell "no limit to exceed" apart from "nobody computed the usage" —
+  // the second of which was silently reading as the first. See `creditCheck`.
+  creditCheck,
   deriveClientHealthSignals,
   healthAccessibleName,
   healthPresentation,
@@ -25,6 +28,7 @@ export type {
   ClientHealthSeverity,
   ClientHealthSignals,
   ClientHealthVerdict,
+  CreditCheck,
 } from './clientHealth'
 
 /* Presentation of that verdict — chip, reason list, and the §11 eye control. */
@@ -79,6 +83,7 @@ export {
   bundleResults,
   componentSummaryOf,
   equipmentLineDraft,
+  groupEquipmentResults,
   inCategory,
   normalise,
   runQuery,
@@ -92,6 +97,7 @@ export type {
   BookingWindow,
   BundleResult,
   CatalogueResult,
+  EquipmentModelGroup,
   EquipmentResult,
   QueryGroup,
   QueryOptions,
@@ -106,3 +112,15 @@ export type { AddItemPanelProps, AddItemSource } from './AddItemPanel'
 
 export { AvailabilityChip, BundlePreview } from './BundlePreview'
 export type { BundlePreviewProps } from './BundlePreview'
+
+/* redesign v1 §4 — typeable date + time with a calendar and a time-list
+   popover, BS rendered under AD. No date/time picker existed anywhere in the
+   repo before this one. */
+export { DateTimeField, parseDateInput, parseTimeInput } from './DateTimeField'
+export type { DateTimeFieldProps } from './DateTimeField'
+
+/* redesign v1 §5 — draft-only, review-before-send email composer. Comms are
+   never auto-sent (21 Jul lock); nothing here dispatches to a real backend,
+   since none exists yet — `onSend` is the page's own stub. */
+export { DraftEmailModal } from './DraftEmailModal'
+export type { DraftEmailModalProps } from './DraftEmailModal'

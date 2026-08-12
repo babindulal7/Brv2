@@ -612,11 +612,11 @@ async function pullStock(config: BooqableSyncConfig, productRefs: ReadonlyMap<Bo
 
 /**
  * Correlation token handed to `mapClients` in place of a real
- * `CL-YYYY-####`, so no atomic sequence number is consumed for a record the
+ * `C-N`, so no atomic sequence number is consumed for a record the
  * mapper is about to reject. Never written to the database: `pullClients`
  * substitutes a freshly minted code before every insert and refuses to write
  * a row still carrying the token. Deliberately unlike a real client code
- * (which is format-locked to `^CL-[0-9]{4}-[0-9]{4}$`), so a leak is loud.
+ * (still format-locked to the retired `^CL-[0-9]{4}-[0-9]{4}$`), so a leak is loud.
  */
 const CLIENT_CODE_PENDING_PREFIX = 'booqable-pending-client-code:'
 
@@ -753,7 +753,7 @@ async function pullClients(config: BooqableSyncConfig): Promise<{ clientRefs: Ma
   // per-record placeholder token instead: `mapClients` only ever copies this
   // value through to `LocalClientInsert.client_code`, never parses or
   // validates it, and nothing carrying a placeholder is ever written — the
-  // insert loop below mints the real `CL-YYYY-####` and substitutes it
+  // insert loop below mints the real client code and substitutes it
   // immediately before the write. The token doubles as an EXACT reverse key
   // back to the Booqable id, replacing a fragile scan over the minted-code map.
   const pendingClientCodes = new Map<BooqableId, string>()

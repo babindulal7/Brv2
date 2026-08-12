@@ -1,14 +1,124 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { EditableRows } from '../../components/ui/EditableRows'
 import { EmptyState } from '../../components/ui/StateViews'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useAuth } from '../../lib/auth'
 import { gateContext, canViewUtilization } from '../../lib/fieldGating'
+import { useEditMode } from '../../lib/edit/useEditMode'
+import type { FieldSpec } from '../../lib/edit/useEditMode'
 import { formatMoney } from '../../lib/money'
 import { formatAd } from '../../lib/bs'
-import { PARENTS } from '../../data/inventory'
+import { PARENTS, CONDITIONS } from '../../data/inventory'
+import type { ChildRow, InvStatus } from '../../data/inventory'
+
+const INV_STATUSES: InvStatus[] = [
+  'In Stock', 'Reserved', 'Packed', 'On Rent', 'Returning',
+  'Inspection', 'Cleaning', 'Maintenance', 'Missing', 'Retired',
+]
+
+const UNIT_FIELDS: FieldSpec[] = [
+  /* §3 — the serial is the one field the floor loop cannot work without: a unit
+     without it cannot be scanned at Packing and cannot be told from its
+     siblings. Uniqueness is checked system-wide at Add Equipment; this only
+     refuses emptying it, which is the failure this screen can cause. */
+  { key: 'serial', validate: (v) => (String(v ?? '').trim() ? null : 'A unit without a serial cannot be scanned at Packing.') },
+  { key: 'assetTag' },
+  /* §2.1 — status and location move together. A unit marked On Rent that still
+     claims a shelf, or moved to a bay while still Packed, is exactly the
+     halfway state per-field saving would otherwise persist. */
+  {
+    key: 'status',
+    group: 'placement',
+    validate: (v) => (INV_STATUSES.includes(String(v) as InvStatus) ? null : `Status must be one of: ${INV_STATUSES.join(', ')}.`),
+  },
+  { key: 'location', group: 'placement', validate: (v) => (String(v ?? '').trim() ? null : 'The floor has to be able to find it.') },
+  {
+    key: 'condition',
+    validate: (v) => (CONDITIONS.includes(String(v) as (typeof CONDITIONS)[number]) ? null : `Condition must be one of: ${CONDITIONS.join(', ')}.`),
+  },
+  /* §2.2 / §3.3 — Σ child replacement must equal the parent's. Editing one
+     child here would silently break that invariant, so the correction lives
+     where the sum is recomputed. */
+  { key: 'replacement', immutable: 'Replacement value sums to the parent SKU (§3.3). Change it on the parent record, not the unit.' },
+]
+
+/**
+ * Inline edit for one unit.
+ *
+ * A component per row rather than one hook for the table: `useEditMode` holds a
+ * draft for **one** record, and a table-wide instance would make the drafts of
+ * two half-edited units share a namespace. One row, one hook, one draft.
+ */
+function UnitEditor({ unit, onDone }: { unit: ChildRow; onDone: () => void }) {
+  const [draft, setDraft] = useState<ChildRow>(unit)
+  const [leaveError, setLeaveError] = useState<string | null>(null)
+
+  const record = useMemo(() => ({ ...draft }) as Record<string, unknown>, [draft])
+  const onSave = useCallback(async (patch: Record<string, unknown>) => {
+    /* Seed data, and every action under `src/actions/` is still a stub — see
+       the same note on `ClientDetail`. The edit lands in this component. */
+    setDraft((d) => ({ ...d, ...patch }) as ChildRow)
+  }, [])
+
+  const edit = useEditMode({ record, fields: UNIT_FIELDS, onSave })
+
+  /* The panel only exists because someone pressed Edit on this row, so it opens
+     unlocked. `startEditing` is idempotent; the empty deps keep it to mount. */
+  const { startEditing } = edit
+  useEffect(() => {
+    startEditing()
+  }, [startEditing])
+
+  return (
+    <div style={{ ...cardStyle, padding: 14, display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-sm)' }}>
+        <strong style={{ fontSize: 'var(--t-ui)' }}>Editing unit {unit.serial}</strong>
+        <Button
+          variant="ghost"
+          icon="close"
+          onClick={() => {
+            const outcome = edit.stopEditing()
+            if (!outcome.ok) {
+              setLeaveError(`Unsaved: ${outcome.unsaved.join(', ')}. Save or cancel each before closing.`)
+              return
+            }
+            setLeaveError(null)
+            onDone()
+          }}
+        >
+          Close
+        </Button>
+      </div>
+
+      {leaveError && (
+        <span role="alert" style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--danger-text)' }}>
+          <Icon name="alert_triangle" size={12} />
+          {leaveError}
+        </span>
+      )}
+
+      <EditableRows
+        edit={edit}
+        rows={[
+          { key: 'serial', label: 'Manufacturer serial', value: draft.serial },
+          { key: 'assetTag', label: 'Asset tag', value: draft.assetTag ?? '—', hint: 'The physical tag, distinct from the manufacturer serial.' },
+          { key: 'status', label: 'Status', value: draft.status, hint: 'Saves together with Location.' },
+          { key: 'location', label: 'Location', value: draft.location, hint: 'Saves together with Status.' },
+          { key: 'condition', label: 'Condition', value: draft.condition, hint: CONDITIONS.join(' · ') },
+          { key: 'replacement', label: 'Replacement value', value: formatMoney(draft.replacement) },
+        ]}
+      />
+
+      <span style={{ display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+        <Icon name="info" size={11} style={{ flexShrink: 0, marginTop: 2 }} />
+        Editing this session only — unit records are not persisted yet.
+      </span>
+    </div>
+  )
+}
 
 type AssetTab = 'Units' | 'Timeline' | 'Maintenance' | 'Money' | 'Documents' | 'Activity'
 
@@ -37,6 +147,8 @@ export default function AssetDetail() {
   const [activeTab, setActiveTab] = useState<AssetTab>('Units')
   const [expandedUnits, setExpandedUnits] = useState<Set<string>>(new Set(['SN-FX3-001', 'SN-FX3-002']))
   const [selectedUnitForQr, setSelectedUnitForQr] = useState<string | null>(null)
+  /** Serial of the unit whose inline editor is open, or null. One at a time. */
+  const [editingUnit, setEditingUnit] = useState<string | null>(null)
 
   const asset = PARENTS.find(p => p.code === assetId || p.children?.some(c => c.serial === assetId))
 
@@ -374,10 +486,24 @@ export default function AssetDetail() {
                         <td style={{ padding: '10px 8px', textAlign: 'right' }}>
                           <div style={{ display: 'inline-flex', gap: 6 }}>
                             <Button variant="ghost" onClick={() => setSelectedUnitForQr(u.serial)}>Label</Button>
-                            <Button variant="ghost" onClick={() => navigate('/inventory')}>Edit</Button>
+                            {/* Was `navigate('/inventory')` — a button labelled
+                                Edit that returned to the list and edited
+                                nothing. It now opens the unit's fields. */}
+                            <Button variant="ghost" onClick={() => setEditingUnit((s) => (s === u.serial ? null : u.serial))}>
+                              {editingUnit === u.serial ? 'Close' : 'Edit'}
+                            </Button>
                           </div>
                         </td>
                       </tr>
+
+                      {editingUnit === u.serial && (
+                        <tr key={`${u.serial}-edit`} style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
+                          <td />
+                          <td colSpan={8} style={{ padding: '8px 12px 14px' }}>
+                            <UnitEditor unit={u} onDone={() => setEditingUnit(null)} />
+                          </td>
+                        </tr>
+                      )}
 
                       {/* Expandable Child Accessories Checklist */}
                       {expanded && (
@@ -439,12 +565,12 @@ export default function AssetDetail() {
                 <div style={{ flex: 1, height: 32, borderRadius: 'var(--r-xs)', background: 'var(--card2)', position: 'relative', display: 'flex', alignItems: 'center', padding: '0 8px' }}>
                   {u.status === 'On Rent' && (
                     <div style={{ height: 24, width: '40%', borderRadius: 4, background: 'var(--orange-bg, rgba(234,88,12,0.2))', border: '1px solid var(--orange-text)', display: 'flex', alignItems: 'center', padding: '0 8px', fontSize: 'var(--t-th)', color: 'var(--orange-text)', fontWeight: 600 }}>
-                      On Rent · BK-2026-0189 (Vision Prod)
+                      On Rent · B-189 (Vision Prod)
                     </div>
                   )}
                   {u.status === 'Reserved' && (
                     <div style={{ height: 24, width: '35%', marginLeft: '30%', borderRadius: 4, background: 'var(--st-progress-bg)', border: '1px solid var(--nav-active-accent)', display: 'flex', alignItems: 'center', padding: '0 8px', fontSize: 'var(--t-th)', color: 'var(--nav-active-accent)', fontWeight: 600 }}>
-                      Reserved · BK-2026-0195 (10-14 Aug)
+                      Reserved · B-195 (10-14 Aug)
                     </div>
                   )}
                   {u.status === 'In Stock' && (

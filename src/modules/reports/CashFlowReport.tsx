@@ -1,6 +1,8 @@
-import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
+import { PageBody } from '../../components/ui/PageBody'
+import { ReportToolbar, reportDateRange } from '../../components/ui/ReportToolbar'
+import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
@@ -74,23 +76,57 @@ const td = {
 }
 const num = { ...td, textAlign: 'right' as const, fontFamily: 'var(--font-id)' }
 
+/**
+ * The export body — the statement as the page draws it, with the two rules the
+ * report exists to enforce carried into the file rather than lost in it:
+ * deposits are reported beside the statement and never inside a cash total, and
+ * paper profit is quoted only to name the gap.
+ */
+function cashFlowCsv(): ReportCsvRow[] {
+  return [
+    ['Basis', 'Cash — actual money in and out, not the accrual P&L'],
+    [],
+    ['Line', 'NPR'],
+    ['Opening cash balance', money(OPENING_CASH)],
+    ...CASH_LINES.map((l): ReportCsvRow => [l.detail ? `${l.label} (${l.detail})` : l.label, signed(l.amount)]),
+    ['Net operating cash', signed(netOperatingCash())],
+    ['Net cash movement', signed(netCash())],
+    ['Closing cash balance', money(closingCash())],
+    [],
+    ['Reconciliation', 'NPR'],
+    ['Paper profit (accrual)', money(PAPER_PROFIT)],
+    ['Cash generated', signed(netCash())],
+    ['Gap', money(profitToCashGap())],
+    // Client money, refundable — reported beside the statement, never in it.
+    ['Held in trust (deposits)', money(DEPOSITS_HELD)],
+    [],
+    ['Collection', 'Value'],
+    ['Invoiced', money(INVOICED)],
+    ['Cash collected', money(cashIn())],
+    ['Collection rate', `${collectionRate()}%`],
+    ['Uncollected', money(uncollected())],
+    ['Overdue', money(OVERDUE)],
+    ['Operating runway', `${runwayMonths()} months`],
+  ]
+}
+
 export default function CashFlowReport() {
   const canSeeMoney = useCanViewMoney()
 
-  // Law 6: a money-blind role is not shown a masked figure — the page is not built.
+  // Law 6: a money-blind role is not shown a masked figure — the page is not
+  // built. The bespoke card that used to say so is now the shared RESTRICTED
+  // state, which also names the roles to ask.
   if (!canSeeMoney) {
     return (
       <>
         <PageHeader title="Cash Flow" description="Finance ▸ Reports" />
-        <Card>
-          <div style={{ padding: '22px 4px', textAlign: 'center' }}>
-            <Icon name="error" size={22} />
-            <h3 style={{ fontSize: 'var(--fs-h3)', margin: '9px 0 5px' }}>Money isn’t shown here</h3>
-            <p style={{ fontSize: 'var(--fs-body)', color: 'var(--text-2)' }}>
-              Cash reporting is for Owner, Admin, Coordinator and Accounts.
-            </p>
-          </div>
-        </Card>
+        <PageBody
+          restricted
+          restrictedReason="Cash reporting is money end to end — every line of the statement, every KPI and the whole reconciliation."
+          restrictedRequiredRole="Owner, Admin, Coordinator or Accounts"
+        >
+          {null}
+        </PageBody>
       </>
     )
   }
@@ -152,6 +188,21 @@ export default function CashFlowReport() {
         title="Cash Flow"
         description={`${period} · cash basis · NPR · 3 min read`}
       />
+
+      {/*
+        The period is passed WITHOUT an `onChange`, so no picker is drawn and the
+        export header still names the real range instead of "All dates". It is
+        not editable because it cannot be: `data/liquidityReports` holds one
+        month's closed statement and its engine functions take no range — a
+        picker here would relabel the page and leave every figure where it was.
+      */}
+      <div style={{ marginTop: 'var(--sp-md)' }}>
+        <ReportToolbar
+          title="Cash Flow"
+          value={{ dateRange: reportDateRange('cash_date', PERIOD_START, PERIOD_END) }}
+          csv={{ filename: 'cash-flow', build: cashFlowCsv }}
+        />
+      </div>
 
       {/* The answer, before any figure. */}
       <Card>

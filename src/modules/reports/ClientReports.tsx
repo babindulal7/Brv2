@@ -1,13 +1,13 @@
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { ReportToolbar } from '../../components/ui/ReportToolbar'
+import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { Donut, Legend, HBars, catColor } from '../../components/ui/Charts'
 import { STATUS, BRAND, BRAND_TEXT } from '../../lib/status'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-import { PERIOD_CHIPS } from '../../data/expenseReports'
 import {
   KPIS,
-  FILTERS,
   GROWTH,
   REVENUE_BY_CLIENT,
   REVENUE_AXIS,
@@ -25,7 +25,6 @@ import {
   INSIGHTS,
   BS_NOTE,
 } from '../../data/clientReports'
-import { useState } from 'react'
 
 const th = {
   textAlign: 'left' as const,
@@ -39,30 +38,12 @@ const th = {
 const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
 const link = { fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' } as const
 
-function PeriodPill() {
-  return (
-    <button
-      type="button"
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 5,
-        height: 26,
-        padding: '0 8px',
-        borderRadius: 7,
-        border: '1px solid var(--border)',
-        background: 'transparent',
-        color: 'var(--text2)',
-        fontSize: 'var(--t-meta)',
-        cursor: 'pointer',
-        fontFamily: 'inherit',
-      }}
-    >
-      This Month
-      <Icon name="chevron_down" size={12} style={{ color: 'var(--muted)' }} />
-    </button>
-  )
-}
+/*
+ * `PeriodPill` used to live here — a "This Month ▾" button on nine cards, with
+ * no handler on any of them. It is gone rather than wired: nine independent
+ * period pickers is not what this report wants, and one that claims a period
+ * the figures do not obey is what the shared toolbar exists to stop.
+ */
 
 function GrowthChart() {
   const w = 100
@@ -132,6 +113,59 @@ function GrowthChart() {
 }
 
 /**
+ * The export body.
+ *
+ * ⚠ Takes `money` and cuts the same three columns and the same three sections
+ * the screen cuts — revenue, outstanding and lifetime value. This page does not
+ * restrict as a whole (bookings, rental days, retention and case counts are
+ * operational facts a money-blind role needs), so the export has to make the
+ * same cut the render does, or the download becomes the way around the gate.
+ */
+function clientsCsv(money: boolean): ReportCsvRow[] {
+  const rows: ReportCsvRow[] = [
+    ['Figure', 'Value'],
+    ...(money ? SUMMARY : SUMMARY.filter((s) => s.label !== 'Outstanding Receivables' && s.label !== 'Average Lifetime Value')).map(
+      (s): ReportCsvRow => [s.label, s.value],
+    ),
+    [],
+    ['Client performance overview'],
+    money
+      ? ['Client', 'Client ID', 'Membership', 'Bookings', 'Rental Days', 'Revenue (Rs)', 'Outstanding (Rs)', 'Lifetime Value (Rs)', 'Last Booking (AD)', 'Last Booking (BS)', 'Late Returns', 'Cases']
+      : ['Client', 'Client ID', 'Membership', 'Bookings', 'Rental Days', 'Last Booking (AD)', 'Last Booking (BS)', 'Late Returns', 'Cases'],
+    ...CLIENTS.map((c): ReportCsvRow =>
+      money
+        ? [c.name, c.id, c.membership, c.bookings, c.days, c.revenue, c.outstanding, c.lifetime, c.lastAd, c.lastBs, c.lateReturns, c.cases]
+        : [c.name, c.id, c.membership, c.bookings, c.days, c.lastAd, c.lastBs, c.lateReturns, c.cases],
+    ),
+    [],
+    ['Retention'],
+    // `Slice.display` carries the share and `Slice.percent` the count on this
+    // dataset — named for the donut, not for a column header. Read the values,
+    // not the field names.
+    ['Segment', 'Share', 'Clients'],
+    ...RETENTION.map((s): ReportCsvRow => [s.label, s.display, (s.percent ?? '').replace(/[()]/g, '')]),
+  ]
+
+  if (!money) return rows
+
+  return [
+    ...rows,
+    [],
+    ['Outstanding ageing'],
+    ['Bucket', 'Amount', 'Share'],
+    ...AGEING.map((s): ReportCsvRow => [s.label, s.display, (s.percent ?? '').replace(/[()]/g, '')]),
+    [],
+    ['Top clients by lifetime value'],
+    ['Rank', 'Client', 'Lifetime value'],
+    ...TOP_CLIENTS.map((c): ReportCsvRow => [c.rank, c.name, c.amount]),
+    [],
+    ['High risk clients'],
+    ['Client', 'Outstanding (Rs)', 'Ageing'],
+    ...HIGH_RISK.map((r): ReportCsvRow => [r.name, r.outstanding, r.ageing]),
+  ]
+}
+
+/**
  * Reports → **Client Reports**, built from render `D1353039`.
  *
  * The client table shows AD above BS and says so in a note beneath — the render
@@ -139,7 +173,6 @@ function GrowthChart() {
  */
 export default function ClientReports() {
   const navigate = useNavigate()
-  const [chip, setChip] = useState('This Month')
   const money = useCanViewMoney()
   const kpis = money ? KPIS : KPIS.filter((k) => k.label !== 'Outstanding Receivables')
   const summary = money ? SUMMARY : SUMMARY.filter((s) => s.label !== 'Outstanding Receivables' && s.label !== 'Average Lifetime Value')
@@ -152,91 +185,43 @@ export default function ClientReports() {
       <PageHeader
         title="Client Reports"
         description="Analyze client value, revenue, retention, payment behavior, and rental performance."
-        actions={
-          <>
-            <Button icon="refresh">Compare</Button>
-            <Button icon="download">Export</Button>
-            <Button icon="eye">Saved Views</Button>
-            <Button icon="calendar_stats" variant="primary">
-              Schedule Report
-            </Button>
-          </>
-        }
       />
 
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {PERIOD_CHIPS.map((p) => {
-          const on = chip === p
-          return (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setChip(p)}
-              aria-pressed={on}
-              style={{
-                height: 30,
-                padding: '0 11px',
-                borderRadius: 'var(--r-sm)',
-                border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                background: on ? 'var(--nav-active-bg)' : 'var(--card)',
-                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: on ? 600 : 500,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {p}
-            </button>
-          )
-        })}
-      </div>
+      {/*
+        This replaces three separate pieces of dead chrome: four header buttons
+        (Compare · Export · Saved Views · Schedule Report) with no handler
+        between them, a fourteen-chip period row that set state and filtered
+        nothing, and eight dropdown-shaped buttons that opened nothing.
 
-      <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-        {FILTERS.map((f) => (
-          <button
-            key={f}
-            type="button"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 'var(--sp-sm)',
-              height: 34,
-              padding: '0 11px',
-              borderRadius: 'var(--r-input)',
-              border: '1px solid var(--input-border)',
-              background: 'var(--input-bg)',
-              color: 'var(--text2)',
-              fontSize: 'var(--t-meta)',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {f}
-            <Icon name="chevron_down" size={13} style={{ color: 'var(--muted)' }} />
-          </button>
-        ))}
-        <Button icon="queues">Filters</Button>
-      </div>
+        What it does NOT gain is a date range, and that is deliberate rather
+        than unfinished. Everything above the client table —  the four KPIs, the
+        growth chart, the retention donut, the ageing donut, membership, cases,
+        top clients, high risk and the insight list — is a separate
+        pre-aggregated constant in `data/clientReports` with no date dimension
+        at all. `CLIENTS[].lastAd` is the one dated field on the page, so a
+        range control here would narrow six table rows while eleven cards sat
+        frozen at figures for a period nobody chose. A filter that moves part of
+        a report is a worse lie than no filter; this one arrives when the report
+        reads Postgres.
+      */}
+      <ReportToolbar title="Client Reports" csv={{ filename: 'client-reports', build: () => clientsCsv(money) }} />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <KpiStrip items={kpis} columns={kpis.length} />
 
           <div style={{ display: 'grid', gridTemplateColumns: money ? 'repeat(3, minmax(0,1fr))' : 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
-            <Card title="Client Growth Trend" action={<PeriodPill />}>
+            <Card title="Client Growth Trend">
               <GrowthChart />
             </Card>
 
             {money && (
-              <Card title="Revenue by Client (Top 10)" action={<PeriodPill />}>
+              <Card title="Revenue by Client (Top 10)">
                 <HBars rows={REVENUE_BY_CLIENT} axisTicks={REVENUE_AXIS} colorIndex={2} />
               </Card>
             )}
 
-            <Card title="Client Retention Analysis" action={<PeriodPill />}>
+            <Card title="Client Retention Analysis">
               <div style={{ display: 'flex', gap: 'var(--sp-md)', alignItems: 'center' }}>
                 <Donut slices={RETENTION} centreLabel="Total" centreValue={RETENTION_TOTAL} size={116} />
                 <Legend slices={RETENTION} />
@@ -245,7 +230,7 @@ export default function ClientReports() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: money ? 'minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,0.75fr)' : 'minmax(0,1fr) minmax(0,1fr) minmax(0,0.75fr)', gap: 'var(--sp-md)' }}>
-            <Card title="Booking Frequency" action={<PeriodPill />}>
+            <Card title="Booking Frequency">
               <div style={{ display: 'grid', gridTemplateColumns: `repeat(${frequency.length},1fr)`, gap: 'var(--sp-sm)' }}>
                 {frequency.map((f, i) => (
                   <div key={f.label} style={{ textAlign: 'center', minWidth: 0 }}>
@@ -264,7 +249,7 @@ export default function ClientReports() {
             </Card>
 
             {money && (
-              <Card title="Outstanding Ageing" action={<PeriodPill />}>
+              <Card title="Outstanding Ageing">
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                   <Donut slices={AGEING} centreLabel="Total" centreValue={AGEING_TOTAL} size={100} />
                   <Legend slices={AGEING} />
@@ -272,7 +257,7 @@ export default function ClientReports() {
               </Card>
             )}
 
-            <Card title="Membership Analysis" action={<PeriodPill />}>
+            <Card title="Membership Analysis">
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
                 {[
                   { l: 'Members', d: MEMBERSHIP.members, tone: 'success' as const },
@@ -317,7 +302,7 @@ export default function ClientReports() {
             </Card>
           </div>
 
-          <Card title="Client Performance Overview" action={<PeriodPill />} bodyStyle={{ padding: 0 }}>
+          <Card title="Client Performance Overview" bodyStyle={{ padding: 0 }}>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
                 <thead>
@@ -441,12 +426,12 @@ export default function ClientReports() {
         </div>
 
         <Rail>
-          <Card title="Client Summary" action={<PeriodPill />}>
+          <Card title="Client Summary">
             <SummaryRows rows={summary} />
           </Card>
 
           {money && (
-            <Card title="Top Clients by Lifetime Value" action={<PeriodPill />}>
+            <Card title="Top Clients by Lifetime Value">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                 {TOP_CLIENTS.map((c) => (
                   <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
@@ -469,7 +454,7 @@ export default function ClientReports() {
           )}
 
           {money && (
-            <Card title="High Risk Clients" action={<PeriodPill />}>
+            <Card title="High Risk Clients">
               <div
                 style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto', gap: 'var(--sp-sm)', paddingBottom: 6, borderBottom: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}
               >

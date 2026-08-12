@@ -64,20 +64,56 @@ export type IntakeCondition = (typeof INTAKE_CONDITIONS)[number]
 /* ── §4 · identifiers ──────────────────────────────────────────────────── */
 
 /**
- * The record's Asset Code. §4 collapses the render's two auto identifiers —
- * `SKU EQ-CAM-000234` and `Unique Code EQ000234` — into this one, which is also
- * the SKU and drives the barcode and the QR.
+ * ── This screen does not mint an Asset Code, and must not ──────────────────
  *
- * Derived from the catalogue count, the same reasoning `AddClient`'s
- * `NEXT_CLIENT_CODE` uses: a number this screen can defend rather than a
- * constant that drifts the moment a model is added.
+ * What stood here:
+ *
+ *   export const NEXT_ASSET_CODE = `EQ${String(INVENTORY_MODELS.length + 1).padStart(6, '0')}`
+ *
+ * — the length of a seeded catalogue array plus one, computed once at module
+ * scope, then shown to the operator as **the** Asset Code in Section 1, quoted
+ * as the barcode and QR payload in the rail, printed into every unit's asset
+ * tag, and read back in the validation report.
+ *
+ * It is the identical defect `finance/modals/CreateInvoiceModal.tsx` (~9-42)
+ * documents and refuses to repeat, and that `inventory/AddBundle.tsx` had
+ * removed for `BUNDLE_ID` on 12 Aug 2026. That decision is followed here rather
+ * than re-litigated:
+ *
+ *  · **It collides.** Two operators adding equipment at the same moment read
+ *    the same array length and are shown the same code. So does one operator in
+ *    two tabs. A module-scope constant additionally freezes the value for the
+ *    life of the page load.
+ *  · **It predicts a figure the database owns.** `next_document_number
+ *    (p_sequence_key)` takes a row lock and increments under it — the only way
+ *    two concurrent inserts cannot collide — and `recordPayment.ts` /
+ *    `createClient.ts` already call it by RPC for `payment_no` / `client_code`.
+ *    Whatever eventually writes equipment does the same.
+ *  · **It predicts from the wrong source.** `INVENTORY_MODELS` is the Bundles
+ *    builder's seeded catalogue, not `number_sequences.current_value` and not
+ *    `products`, so its length is unrelated to the counter the ledger issues.
+ *    `actions/inventory/createEquipment.ts` says as much in its own
+ *    `TODO(decision)`: the three authorities that describe an equipment code
+ *    (`data/numbering.ts`, `lib/seed.ts`, `products_asset_code_format`) do not
+ *    even agree on its *shape*.
+ *
+ * So the field says the code is assigned on save. The name `NEXT_ASSET_CODE` is
+ * kept only because `AddEquipmentContext.tsx` and `EquipmentShared.tsx` import
+ * it and belong to another pass; nothing about it is "next" any more.
  */
-export const NEXT_ASSET_CODE = `EQ${String(INVENTORY_MODELS.length + 1).padStart(6, '0')}`
+export const ASSET_CODE_ON_SAVE = 'Assigned on save'
+
+/** @see ASSET_CODE_ON_SAVE — a placeholder to display, never an identifier. */
+export const NEXT_ASSET_CODE = ASSET_CODE_ON_SAVE
 
 /**
  * §4 — the **Asset Tag** is our own printed label, one per unit, and it is the
  * only per-unit identifier that may be generated. The serial is the
  * manufacturer's and is typed or scanned, never minted.
+ *
+ * It is generated *from the asset code*, so before the code exists the tag does
+ * not either: given the placeholder above, this composes a placeholder — the
+ * per-unit ordinal is real, the prefix is openly not yet assigned.
  */
 export function assetTagFor(assetCode: string, index: number): string {
   return `${assetCode}-${String(index + 1).padStart(2, '0')}`
@@ -254,8 +290,14 @@ export const SEED_ERRORS: string[] = (() => {
     }
   }
 
-  if (!/^EQ\d{6}$/.test(NEXT_ASSET_CODE)) {
-    errs.push(`§4: the Asset Code format is EQ + six digits; "${NEXT_ASSET_CODE}" does not match.`)
+  /* The old check asserted the *format* of a minted code (`EQ` + six digits).
+     Nothing here mints one any more, so the invariant is inverted: the
+     placeholder must NOT look like a real Asset Code, or the screen is back to
+     showing the operator an identifier the database never issued. */
+  if (/^EQ[-\s]?\d+$/i.test(ASSET_CODE_ON_SAVE)) {
+    errs.push(
+      `§4: "${ASSET_CODE_ON_SAVE}" reads like a real Asset Code. The code is assigned on save by the database; this field may only say so.`,
+    )
   }
 
   for (const l of LOCATIONS) {
