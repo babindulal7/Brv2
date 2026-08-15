@@ -94,6 +94,30 @@ export default defineConfig({
     // Honour an assigned PORT so more than one session can run a dev server;
     // falls back to Vite's default when unset.
     ...(process.env['PORT'] ? { port: Number(process.env['PORT']) } : {}),
-    allowedHosts: ['.ngrok-free.app', '.ngrok-free.dev', '.ngrok.app', '.ngrok.io'],
+    allowedHosts: [
+      '.ngrok-free.app', '.ngrok-free.dev', '.ngrok.app', '.ngrok.io',
+      /* Pinggy hands out a different suffix per tunnel type — a free tunnel
+         returns BOTH `*.free.pinggy.net` and `*.run.pinggy-free.link`, and paid
+         subdomains land on `*.pinggy.link`. Allow all of them; a missing suffix
+         fails as a bare 403 "Blocked request" that looks like a tunnel fault. */
+      '.pinggy.net', '.pinggy-free.link', '.pinggy.link', '.pinggy.io', '.pinggy.online',
+      '.trycloudflare.com',
+    ],
+  },
+  preview: {
+    /* `vite preview` carries its own host check (Vite >= 5.4.12), separate from
+       `server.allowedHosts` above. The tunnel hits preview, not dev, whenever the
+       offline layer is under test — the dev server registers no service worker at
+       all (`devOptions` is unset), so airplane-mode behaviour is only observable
+       against a built bundle. */
+    allowedHosts: [
+      '.ngrok-free.app', '.ngrok-free.dev', '.ngrok.app', '.ngrok.io',
+      /* Pinggy hands out a different suffix per tunnel type — a free tunnel
+         returns BOTH `*.free.pinggy.net` and `*.run.pinggy-free.link`, and paid
+         subdomains land on `*.pinggy.link`. Allow all of them; a missing suffix
+         fails as a bare 403 "Blocked request" that looks like a tunnel fault. */
+      '.pinggy.net', '.pinggy-free.link', '.pinggy.link', '.pinggy.io', '.pinggy.online',
+      '.trycloudflare.com',
+    ],
   },
 })

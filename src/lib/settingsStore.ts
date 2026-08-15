@@ -35,6 +35,7 @@ export type SettingKey =
   | 'vatRatePercent'
   | 'crewCoordinationFeeRupees'
   | 'paymentTermsDays'
+  | 'overdueStopDays'
   | 'latePaymentPercentPerMonth'
   | 'sessionTimeoutMinutes'
   | 'passwordPolicy'
@@ -109,6 +110,36 @@ export const SETTING_SPECS: Record<SettingKey, SettingSpec> = {
       const n = Number(v)
       if (!Number.isInteger(n) || n < 0) return 'Credit terms are a whole number of days.'
       if (n > 365) return 'Credit terms beyond a year need a written agreement, not a default.'
+      return null
+    },
+  },
+  /**
+   * **Rulings §11.2 — the On Stop threshold.**
+   *
+   * "On Stop" is not a `client_flag_type` and never will be: a client is on
+   * stop when their outstanding exceeds their credit limit, **or** when they
+   * hold an invoice more than this many days past its due date. The ruling puts
+   * the number here, beside the payment terms, precisely so that no module
+   * writes `30` into itself — §11.4: *"Every value here is read by a screen.
+   * None is hardcoded."*
+   *
+   * Read by `data/clients.ts:readOverdueStopDays()`, which is the only reader;
+   * the directory chip and the client record's credit box both go through the
+   * one predicate that takes it.
+   *
+   * Deliberately NOT derived from `paymentTermsDays` (14). They answer
+   * different questions — when an invoice falls due, versus how long a business
+   * carries a late one before it stops trading with that client — and tying
+   * them would move the second every time somebody edited the first.
+   */
+  overdueStopDays: {
+    default: 30,
+    kind: 'number',
+    suffix: ' days',
+    validate: (v) => {
+      const n = Number(v)
+      if (!Number.isInteger(n) || n < 1) return 'A client goes on stop after a whole number of days — at least one.'
+      if (n > 365) return 'Past a year this is a write-off decision, not a stop threshold.'
       return null
     },
   },

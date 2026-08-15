@@ -26,6 +26,22 @@ interface AuthContextType {
    */
   loading: boolean
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
+  /**
+   * Send a password-reset link to `email`.
+   *
+   * ⚠ Read `requestPasswordReset`'s own comment before writing UI against this.
+   * A `null` error does **not** mean an email was sent — Supabase answers the
+   * same way for an address with no account, deliberately.
+   */
+  requestPasswordReset: (email: string) => Promise<{ error: string | null }>
+  /** Set a new password for the session established by a recovery link. */
+  updatePassword: (password: string) => Promise<{ error: string | null }>
+  /**
+   * True once Supabase has reported `PASSWORD_RECOVERY` for this tab — i.e. the
+   * visitor arrived by clicking a reset link, and the session that now exists is
+   * a recovery session rather than a normal sign-in.
+   */
+  isPasswordRecovery: boolean
   logout: () => void
   isLocked: boolean
   setLocked: (locked: boolean) => void
@@ -49,6 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
   const [isLocked, setLocked] = useState(false)
+  const [isPasswordRecovery, setPasswordRecovery] = useState(false)
 
   /**
    * Resolve the staff row for a signed-in identity. The role must come from
@@ -130,8 +147,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
     })
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (cancelled) return
+
+      /*
+       * A recovery link is the ONLY way `PASSWORD_RECOVERY` fires. Supabase
+       * establishes a real session when the link is followed, so without this
+       * flag `/reset-password` cannot tell "arrived by clicking the emailed
+       * link" from "already signed in and typed the URL". The first may set a
+       * new password without knowing the old one; the second is a stranger at
+       * an unattended desk. `setPasswordRecovery(false)` is deliberately NOT
+       * called on other events — the flag is cleared by `updatePassword`
+       * succeeding or by `logout`, so a token refresh mid-form does not eject
+       * someone from the screen they are legitimately using.
+       */
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true)
+
       if (!session) {
         setUser(null)
         setLoading(false)
@@ -178,6 +209,81 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   /**
+   * Email a password-reset link. Built 15 Aug 2026.
+   *
+   * ## ⚠ A `null` error here does NOT mean an email was sent
+   *
+   * `resetPasswordForEmail` answers identically for an address that has an
+   * account and one that does not — that is deliberate on Supabase's side, and
+   * it is the correct behaviour: an endpoint that distinguishes them is an
+   * account-enumeration oracle, and the accounts in question are staff of a
+   * business whose client list is commercially sensitive.
+   *
+   * The consequence for this app is specific and it is the whole reason this
+   * comment is long: **the screen must not say "we sent you an email."** It
+   * cannot know that. `ForgotPassword.tsx` says "if that address has an account"
+   * instead, which is the true statement and costs the operator nothing. Writing
+   * the confident sentence here would put a fresh entry in
+   * `SUCCESS_FABRICATION_REGISTER_2026-08-12.md` — a screen reporting an
+   * outcome it did not verify — three days after that register was closed.
+   *
+   * ## `redirectTo` is not enough on its own
+   *
+   * The link only returns to this app if the URL is in the project's **Auth →
+   * URL Configuration → Redirect URLs** allow-list. It is not set from code and
+   * no migration can set it; an unlisted URL silently falls back to the Site
+   * URL, which sends the operator somewhere else entirely with a valid token in
+   * the address bar. Add `http://localhost:3000/reset-password` for development
+   * and the deployed origin for production.
+   */
+  const requestPasswordReset = useCallback(async (email: string) => {
+    /*
+     * The mock data source's auth stub implements getSession, signInWithPassword,
+     * onAuthStateChange and signOut, and nothing else — reasonably, since it
+     * accepts any password for three known addresses and so has no password to
+     * reset. Calling straight through would be a TypeError in the console and a
+     * spinner that never resolves on the screen. Refused by name instead.
+     */
+    if (typeof supabase.auth.resetPasswordForEmail !== 'function') {
+      return {
+        error:
+          'Password reset needs the live Supabase project, and this build is running on the mock data ' +
+          'source (VITE_DATA_SOURCE=mock). Mock sign-in accepts any password, so there is nothing to reset.',
+      }
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
+    return { error: error ? error.message : null }
+  }, [])
+
+  /**
+   * Set a new password on the session a recovery link established.
+   *
+   * Supabase requires a session for this call and the recovery link provides
+   * one, which is why there is no "old password" field: possession of the link
+   * sent to the address on the staff row IS the proof. It will also succeed for
+   * an ordinary signed-in session, which is what makes `isPasswordRecovery`
+   * necessary on the screen rather than here — this function's job is the write,
+   * not deciding who may reach it.
+   */
+  const updatePassword = useCallback(async (password: string) => {
+    // Same reason as `requestPasswordReset` — the mock stub has no `updateUser`.
+    if (typeof supabase.auth.updateUser !== 'function') {
+      return {
+        error:
+          'Setting a password needs the live Supabase project, and this build is running on the mock data ' +
+          'source (VITE_DATA_SOURCE=mock).',
+      }
+    }
+
+    const { error } = await supabase.auth.updateUser({ password })
+    if (!error) setPasswordRecovery(false)
+    return { error: error ? error.message : null }
+  }, [])
+
+  /**
    * Kept synchronous-looking because existing call sites (`Header`,
    * `HandoverSheet`) call it and then navigate in the same tick. Clearing local
    * state immediately is the honest behaviour — the network sign-out that
@@ -186,11 +292,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     setUser(null)
     setLocked(false)
+    setPasswordRecovery(false)
     void supabase.auth.signOut()
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, logout, isLocked, setLocked }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        signIn,
+        requestPasswordReset,
+        updatePassword,
+        isPasswordRecovery,
+        logout,
+        isLocked,
+        setLocked,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )

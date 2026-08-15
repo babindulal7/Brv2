@@ -814,27 +814,28 @@ export interface CanonicalBundleIntegrity {
   message: string | null
 }
 
-/* ── DEPOSIT · why it is opt-in and off by default ─────────────────────────
+/* ── DEPOSIT · now read through a masking view ─────────────────────────────
  *
- * ⛔⛔ `bookings.deposit_required` IS UNMASKED MONEY ON A BASE TABLE. ⛔⛔
+ * ✅ **CLOSED 16 Aug 2026.** The `TODO(persistence)` that stood here — and its
+ * twin in `queries/bookings.ts`, which noted "one fix closes both" — asked for a
+ * view masking `deposit_required` the way 0019 masks `booking_lines.rate`.
+ * `0061_bookings_deposit_masking_view.sql` is that view and it is applied.
+ * Verified live as both roles: Owner reads 13,65,000 across 121 rows, Warehouse
+ * reads `null` across the same 121 rows.
  *
- * Verified, and identical to the reasoning in `queries/bookings.ts`: no
- * `revoke select (...) on bookings` exists in any migration, and there is no
- * `bookings_v` view anywhere in 0001-0054. Meanwhile `bookings_select`
- * (0020:102) is `using (auth_is_staff())` and `auth_is_staff()` (0014:65) is
- * `auth_user_role() <> 'Client'` — so all eight internal roles, INCLUDING the
- * three Law 6 declares money-blind (Warehouse, Technician, Driver), can read
- * every booking row. Naming `deposit_required` in a select hands a real rupee
- * figure to the warehouse floor. Postgres will not stop it.
+ * `withDeposit` now triggers a second, id-keyed read of `bookings_deposit_v`
+ * (`readDeposit`) instead of naming the column on the base table. The flag is
+ * kept rather than deleted: it still distinguishes "this caller wants the
+ * figure" from "this caller does not", which saves a round trip and keeps
+ * `depositRequired: null` meaning "not asked for" rather than "no deposit".
  *
- * Until a `bookings_v` exists the ONLY protection is this module refusing to
- * ask. Hence opt-in, default off; callers gate on `useCanViewMoney()`
- * (`lib/moneyVisibility.ts`), which mirrors `auth_can_view_money()`.
- *
- * TODO(persistence): add `bookings_v` masking `deposit_required` the way 0019
- * masks `booking_lines.rate`, then make this unconditional and delete the flag.
- * That is a migration, deliberately not written here. Same item as
- * `queries/bookings.ts`'s — one fix closes both.
+ * ⚠ **The column is still unmasked on the base table** until
+ * `0062_law6_column_grants_arm_the_mask.sql` is applied. `0019`'s
+ * `revoke select (col)` never worked — `authenticated` holds table-level SELECT,
+ * which covers every column, so the revoke was a no-op and `pg_attribute.attacl`
+ * is null. Until 0062 lands, no module naming the column is the only protection,
+ * and this module no longer names it. A crafted request still reaches it.
+ * PLAN.md §4.28.
  */
 
 /* ══ THE MONEY SEAM ════════════════════════════════════════════════════════
@@ -942,8 +943,30 @@ const COLUMNS =
   'booking_line_units ( id, qty, unit_state, is_required, packed, damaged ) ' +
   ')'
 
-/** The `deposit_required` variant. Never reached unless the caller passed `withDeposit`. */
-const COLUMNS_WITH_DEPOSIT = `${COLUMNS}, deposit_required`
+/**
+ * `bookings_deposit_v` (0061) — the masked path to the one money column on
+ * `bookings`. Read in a second, id-keyed query rather than added to `COLUMNS`,
+ * so the base select keeps its `clients ( … )` and `booking_lines_v ( … )`
+ * embeds, which PostgREST cannot reliably infer through a view.
+ *
+ * Errors are not swallowed. `depositRequired: null` already means "not asked
+ * for / not entitled"; a failed query producing the same value would make an
+ * outage indistinguishable from a permission answer.
+ */
+async function readDeposit(bookingId: string): Promise<number | null> {
+  const { data, error } = await supabase
+    .from('bookings_deposit_v')
+    .select('deposit_required')
+    .eq('id', bookingId)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(
+      `The booking loaded but its deposit did not, so no figure is shown rather than a wrong one: ${error.message}`,
+    )
+  }
+  return (data as unknown as { deposit_required: number | null } | null)?.deposit_required ?? null
+}
 
 /**
  * `booking_discounts` embed. Opt-in for a different reason than the deposit:
@@ -1934,8 +1957,13 @@ export interface FetchCanonicalBookingOptions {
 /**
  * Fetches one booking and everything Law 2 says every surface must agree on.
  *
- * Accepts either the UUID primary key or the `BK-YYYY-NNNN` booking number
- * (0002:58's format constraint), so a deep link and a scan both land here.
+ * Accepts either the UUID primary key or the `B-` + digits booking number, so a
+ * deep link and a scan both land here.
+ *
+ * ⚠ Corrected 15 Aug 2026. This said `BK-YYYY-NNNN` and cited 0002:58's format
+ * constraint, which `0055_ruled_identifier_formats` replaced on 12 Aug with
+ * `bookings_booking_no_format CHECK (booking_no ~ '^B-[0-9]+$')`. See
+ * `actions/rentals/confirmRental.ts` above `UUID_RE`.
  *
  * Returns `null` **only** when no such booking exists.
  *
@@ -1952,7 +1980,9 @@ export async function fetchCanonicalBooking(
 ): Promise<CanonicalBooking | null> {
   const { withDeposit, withDiscounts } = opts
 
-  const columns = [withDeposit ? COLUMNS_WITH_DEPOSIT : COLUMNS, ...(withDiscounts ? [DISCOUNT_EMBED] : [])].join(', ')
+  /* `COLUMNS` never names `deposit_required` now — the deposit comes from
+     `bookings_deposit_v` below (0061). See the DEPOSIT block. */
+  const columns = [COLUMNS, ...(withDiscounts ? [DISCOUNT_EMBED] : [])].join(', ')
 
   const query = supabase
     .from('bookings')
@@ -1968,7 +1998,14 @@ export async function fetchCanonicalBooking(
   if (error) throw new Error(`fetchCanonicalBooking failed: ${error.message}`)
   if (!data) return null
 
-  return toCanonical(data, { withDiscounts: withDiscounts === true })
+  /* Second query, only when asked. Keyed by the booking's own uuid, which the
+     first query has just resolved — so a `BK-`/`B-` reference costs no extra
+     lookup here. */
+  const raw: RawBooking = withDeposit
+    ? { ...data, deposit_required: await readDeposit(data.id) }
+    : data
+
+  return toCanonical(raw, { withDiscounts: withDiscounts === true })
 }
 
 /**

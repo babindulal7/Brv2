@@ -19,7 +19,7 @@ import {
  * `./floorVerb.ts` for the whole shape; all four verbs share it.
  */
 export type PackRentalInput = {
-  /** `bookings.id` (uuid) or `bookings.booking_no` (`BK-YYYY-NNNN`). */
+  /** `bookings.id` (uuid) or `bookings.booking_no` (`B-` + digits — corrected 15 Aug 2026, see `confirmRental.ts`). */
   id: string;
   /**
    * The booking lines this session resolved, each naming a `booking_lines.id`.

@@ -42,14 +42,33 @@ import type { SystemRole } from '../types/database';
  *    rules, rather than a matrix invented here. A permission with no known
  *    check is refused, not waved through -- the fail-closed direction.
  *
+ * ## The capability matrix — closed 16 Aug 2026, except three
+ *
+ * `checkCapability` resolves **32 of the 35** strings it knows about: the seven
+ * app-level rules (money, operations, payment ×2, invoice-void,
+ * credit-override, settings), the four ruled on 15 Aug, and the 24 ruled on
+ * 16 Aug. **Every capability declared anywhere under `src/actions/` now
+ * resolves, except the three named below.**
+ *
+ * This was done *ahead of* the bodies rather than behind them. The 15 Aug four
+ * were ruled after their actions shipped, and the gap denied them to every role
+ * including Owner for three days — a permission error where the truth was a
+ * missing switch case. Twenty-four more sat in exactly that state, each one
+ * springing the moment someone wrote its body.
+ *
+ * The rule for answering them is the one that worked on 15 Aug and is now
+ * ruled in PLAN.md §4.20: find the RLS policy on the table the action writes
+ * and mirror it. A capability can then never be granted here and denied at the
+ * row, or the reverse.
+ *
  * ## What is deliberately still open
  *
- * `TODO(decision)`: the full capability-string -> role matrix. `lib/rbac` covers
- * money, operations, payment, discount, invoice-void, credit-override and
- * settings; the rest of the strings in `permissions:` arrays across
- * `src/actions/` have no defined rule anywhere in the repo. Writing one here
- * would be inventing a product decision, which `CLAUDE.md` forbids. Until it is
- * ruled, an unknown capability is denied and says so by name.
+ * `TODO(decision)`: `inspection.create`, `inspection.pass`, `inspection.fail`.
+ * There is no table to mirror — nothing in the schema matches `inspect`, and
+ * `operation_session_type` has no `Inspection` member. Any role set here would
+ * be invented, which `CLAUDE.md` forbids. All three stay denied and say so by
+ * name; all three actions are stubs, so the decision blocks nobody until one is
+ * built. See PLAN.md §4.29.
  */
 
 export type ActionContext = {
@@ -121,20 +140,78 @@ async function checkCapability(capability: string, ctx: ActionContext): Promise<
     case 'money.view':
       return rbac.canViewMoney(ctx.role);
     /*
-     * ⚠ Three capability strings are declared by actions and NOT handled here:
-     * `client.block` (`clients/blockClient.ts:195`), `client.create`
-     * (`clients/createClient.ts:274`) and `rental.confirm`
-     * (`rentals/confirmRental.ts:252`). All three were flipped to
-     * `implemented: true` in the 12 Aug rebuild, so their bodies are real — but
-     * an unhandled capability falls through to `undefined` below, which the
-     * dispatcher treats as a denial for EVERY role, Owner included. Fail-closed
-     * is the right default and is deliberately left in place.
+     * ── Ruled 15 Aug 2026, closing PLAN.md §4.20 ────────────────────────────
      *
-     * TODO(decision) — PLAN.md §4: which roles hold each of the three. A guess
-     * here would silently grant a write nobody ruled, which is worse than the
-     * current "denied" (CLAUDE.md: never invent a product decision to unblock
-     * yourself). `ClientDetail.tsx` states the same gap to the operator.
+     * These four were declared by actions carrying REAL bodies and handled by
+     * nothing here, so each fell through to `undefined` and was denied for every
+     * role, Owner included. Fail-closed was the correct default and it held for
+     * three days; it was never the correct answer.
+     *
+     * The answer was not invented. Each capability is now the role set of the
+     * RLS policy on the table its action actually writes, read off the live
+     * project on 15 Aug — so a capability still cannot be granted here and
+     * denied at the row, which is what this file's rules exist to prevent. The
+     * derivation for each sits in `lib/rbac`, next to the rule.
+     *
+     * ⚠ `inventory.create` was the fourth, and no document had it: §4.20 named
+     * only the other three. It surfaced by checking every `permissions:` string
+     * against this switch rather than by reading the register.
      */
+    case 'rental.confirm':
+      return rbac.canConfirmRental(ctx.role);
+    case 'client.create':
+      return rbac.canCreateClient(ctx.role);
+    case 'client.block':
+      return rbac.canBlockClient(ctx.role);
+    case 'inventory.create':
+      return rbac.canCreateBundle(ctx.role);
+    /*
+     * ── Ruled 16 Aug 2026 — the remaining 24, same method as the four above ──
+     *
+     * Role sets read from `pg_policies` on the live project, per capability,
+     * from the table that capability's action writes. Derivation table:
+     * `CAPABILITY_MAPPING_2026-08-16.md` §4; the rules themselves sit in
+     * `lib/rbac` next to the policy each one cites.
+     *
+     * Done BEFORE any of these actions gets a body, deliberately. The four
+     * above were ruled *after* their bodies shipped, and the gap denied them to
+     * every role including Owner for three days. Twenty-four more of the same
+     * trap were sitting unsprung.
+     *
+     * `inspection.create` / `.pass` / `.fail` are deliberately ABSENT. No table
+     * matches `inspect` anywhere in the schema and `operation_session_type` is
+     * `Packing | Handover | Return | Reset | Cleaning` — Inspection is not one
+     * of them, so there is nothing to mirror and any role set would be
+     * invented. They keep failing closed. See PLAN.md §4.29.
+     */
+    case 'rental.create':
+    case 'rental.draft':
+    case 'rental.cancel':
+    case 'rental.extend':
+    case 'client.update':
+    case 'inventory.reserve':
+    case 'document.create':
+    case 'subrental.create':
+      return rbac.canWriteBookingDesk(ctx.role);
+
+    case 'rental.pickup':
+    case 'rental.return':
+    case 'inventory.pack':
+    case 'inventory.ready':
+    case 'inventory.audit':
+    case 'inventory.transfer':
+    case 'maintenance.create':
+    case 'maintenance.complete':
+    case 'evidence.review':
+      return rbac.canWriteFloor(ctx.role);
+
+    case 'client.merge':
+      return rbac.canMergeClients(ctx.role);
+
+    case 'case.resolve':
+    case 'crew.assign':
+    case 'purchase.approve':
+      return rbac.canWriteSharedTriage(ctx.role);
     default:
       return undefined;
   }

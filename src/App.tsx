@@ -13,6 +13,8 @@ import { NAV, isMoneySurface } from './data/nav'
 import { ToastProvider } from './components/ui/Toast'
 import { CommandPalette } from './components/shell/CommandPalette'
 import Login from './modules/auth/Login'
+import ForgotPassword from './modules/auth/ForgotPassword'
+import ResetPassword from './modules/auth/ResetPassword'
 import ScreenLock from './modules/auth/ScreenLock'
 import { useAuth } from './lib/auth'
 import { useViewport } from './lib/device'
@@ -62,8 +64,6 @@ const Payments          = lazy(() => import('./modules/finance/Payments'))
    `/reports/expenses`, which is the Expense *report* over a fixture; this is the
    ledger, reading `expenses` through `lib/queries/finance.ts`. */
 const Expenses          = lazy(() => import('./modules/finance/Expenses'))
-const SystemMonitor     = lazy(() => import('./modules/system/SystemMonitor'))
-const AiAssistant       = lazy(() => import('./modules/ai/AiAssistant'))
 const Settings          = lazy(() => import('./modules/settings/Settings'))
 const ToolsLanding      = lazy(() => import('./modules/tools/ToolsLanding'))
 const DepreciationCalculator = lazy(() => import('./modules/tools/DepreciationCalculator'))
@@ -71,9 +71,6 @@ const PricingCalculator = lazy(() => import('./modules/tools/PricingCalculator')
 /* The cinematography calculator suite. Kept by Rulings §6, which also fixes its
    home at /tools/cinematography; /settings/tools redirects there. */
 const CineTools         = lazy(() => import('./modules/settings/Tools'))
-const EventTriggers     = lazy(() => import('./modules/automation/EventTriggers'))
-const SmsCenter         = lazy(() => import('./modules/notifications/SmsCenter'))
-const UnifiedInbox      = lazy(() => import('./modules/notifications/UnifiedInbox'))
 const Membership        = lazy(() => import('./modules/clients/Membership'))
 const Clients           = lazy(() => import('./modules/clients/Clients'))
 const AddClient         = lazy(() => import('./modules/clients/AddClient'))
@@ -81,11 +78,9 @@ const ClientDetail      = lazy(() => import('./modules/clients/ClientDetail'))
 const DuplicateCenter   = lazy(() => import('./modules/clients/DuplicateCenter'))
 const ImportCenter      = lazy(() => import('./modules/clients/ImportCenter'))
 const GenerateReferralCode = lazy(() => import('./modules/clients/GenerateReferralCode'))
-const BroadcastCenter   = lazy(() => import('./modules/notifications/BroadcastCenter'))
 const CasesWorkspace    = lazy(() => import('./modules/operations/CasesWorkspace').then(m => ({ default: m.CasesWorkspace })))
 const CrewBooking       = lazy(() => import('./modules/crew/CrewBooking').then(m => ({ default: m.CrewBooking })))
 const SubRental         = lazy(() => import('./modules/operations/SubRental').then(m => ({ default: m.SubRental })))
-const WallDisplay       = lazy(() => import('./modules/wall/WallDisplay'))
 
 /**
  * Route table follows the ID registry in Navigation & Platform Shells v2.0 §7.
@@ -101,19 +96,18 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         {/*
-          DEVICES.md §7 build order item 6 — "no auth, no money." A kiosk URL
-          for a TV near the packing bench, deliberately mounted outside <Shell>
-          so it never redirects to /login and carries no sidebar, header or
-          Scanner FAB — the app's own nav never links here.
+          Password reset, built 15 Aug 2026. Mounted beside /login and outside
+          <Shell> for the same reason: a locked-out operator has no session, so
+          anything inside the shell would bounce them straight back to /login —
+          and `/reset-password` in particular is reached while Supabase HAS
+          established a session, which would bounce them to /today instead and
+          swallow the recovery link. Neither screen may sit behind the guard.
+
+          NOTE — these two are NOT part of the administrative cut. They post-date
+          the cut package and were re-added by hand when it was applied.
         */}
-        <Route
-          path="/wall"
-          element={
-            <Suspense fallback={null}>
-              <WallDisplay />
-            </Suspense>
-          }
-        />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/" element={<Navigate to={user ? "/today" : "/login"} replace />} />
 
         {/*
@@ -123,17 +117,22 @@ export default function App() {
         */}
         <Route path="/reports" element={<Navigate to="/reports/pulse" replace />} />
         {/*
-          Administration is now **Tools** — `10_TOOLS.md` puts Audit Log,
-          Activity Log, Numbering and Backup & Restore on nav item 10. The four
-          screens themselves are untouched in `modules/admin/`; only the way in
-          moved. Law 3 — nothing is deleted, so every `/admin/*` URL that ever
-          shipped still resolves, as a `replace` redirect to its new home.
+          Administration lives in **Settings ▸ System**, ruled 15 Aug 2026.
+
+          It used to answer to two URLs at once: `/admin/audit-log` and
+          `/tools/audit-log` both mounted the same screen, four pages behind
+          eight routes, reachable from two different landing pages. `/admin/*`
+          is the single spelling now and Tools is calculators only.
+
+          Law 3 — nothing is deleted, so the `/tools/*` URLs that shipped still
+          resolve, as `replace` redirects to their one home. `/admin` itself
+          lands on the Settings tab that now lists them.
         */}
-        <Route path="/admin" element={<Navigate to="/tools" replace />} />
-        <Route path="/admin/numbering" element={<Navigate to="/tools/numbering" replace />} />
-        <Route path="/admin/audit-log" element={<Navigate to="/tools/audit-log" replace />} />
-        <Route path="/admin/activity-log" element={<Navigate to="/tools/activity-log" replace />} />
-        <Route path="/admin/backup" element={<Navigate to="/tools/backup" replace />} />
+        <Route path="/admin" element={<Navigate to="/settings?tab=system" replace />} />
+        <Route path="/tools/audit-log" element={<Navigate to="/admin/audit-log" replace />} />
+        <Route path="/tools/activity-log" element={<Navigate to="/admin/activity-log" replace />} />
+        <Route path="/tools/numbering" element={<Navigate to="/admin/numbering" replace />} />
+        <Route path="/tools/backup" element={<Navigate to="/admin/backup" replace />} />
 
         <Route
           path="/clients"
@@ -583,59 +582,11 @@ export default function App() {
           }
         />
 
-        <Route
-          path="/notifications"
-          element={
-            <Shell crumbs={[{ label: 'Notifications' }, { label: 'Broadcast Center' }]}>
-              <BroadcastCenter />
-            </Shell>
-          }
-        />
 
-        <Route
-          path="/notifications/inbox"
-          element={
-            <Shell crumbs={[{ label: 'Notifications' }, { label: 'Unified Inbox' }]}>
-              <UnifiedInbox />
-            </Shell>
-          }
-        />
 
-        <Route
-          path="/notifications/sms"
-          element={
-            <Shell crumbs={[{ label: 'Notifications' }, { label: 'SMS Gateway' }]}>
-              <SmsCenter />
-            </Shell>
-          }
-        />
 
-        <Route
-          path="/automation"
-          element={
-            <Shell crumbs={[{ label: 'Automation' }, { label: 'Event Triggers' }]}>
-              <EventTriggers />
-            </Shell>
-          }
-        />
 
-        <Route
-          path="/system"
-          element={
-            <Shell crumbs={[{ label: 'System Monitor' }]} search="Search services, jobs, incidents…">
-              <SystemMonitor />
-            </Shell>
-          }
-        />
 
-        <Route
-          path="/ai"
-          element={
-            <Shell crumbs={[{ label: 'AI Intelligence' }, { label: 'Operations Assistant' }]}>
-              <AiAssistant />
-            </Shell>
-          }
-        />
 
         <Route
           path="/settings"
@@ -698,36 +649,36 @@ export default function App() {
         />
 
         <Route
-          path="/tools/audit-log"
+          path="/admin/audit-log"
           element={
-            <Shell crumbs={[{ label: 'Tools' }, { label: 'Audit Log' }]}>
+            <Shell crumbs={[{ label: 'Settings' }, { label: 'Audit Log' }]}>
               <AuditLog />
             </Shell>
           }
         />
 
         <Route
-          path="/tools/activity-log"
+          path="/admin/activity-log"
           element={
-            <Shell crumbs={[{ label: 'Tools' }, { label: 'Activity Log' }]}>
+            <Shell crumbs={[{ label: 'Settings' }, { label: 'Activity Log' }]}>
               <ActivityLog />
             </Shell>
           }
         />
 
         <Route
-          path="/tools/numbering"
+          path="/admin/numbering"
           element={
-            <Shell crumbs={[{ label: 'Tools' }, { label: 'Numbering Sequences' }]}>
+            <Shell crumbs={[{ label: 'Settings' }, { label: 'Numbering Sequences' }]}>
               <NumberingSequences />
             </Shell>
           }
         />
 
         <Route
-          path="/tools/backup"
+          path="/admin/backup"
           element={
-            <Shell crumbs={[{ label: 'Tools' }, { label: 'Backup & Restore' }]}>
+            <Shell crumbs={[{ label: 'Settings' }, { label: 'Backup & Restore' }]}>
               <BackupRestore />
             </Shell>
           }
@@ -800,10 +751,7 @@ const BUILT = new Set([
   '/reports/expenses',
   '/admin/backup',
   '/clients/memberships',
-  '/notifications',
   '/admin/audit',
-  '/automation',
-  '/notifications/sms',
   '/reports/clients',
   '/reports/inventory',
   '/admin/numbering',
@@ -813,8 +761,6 @@ const BUILT = new Set([
   '/documents',
   '/operations',
   '/finance',
-  '/system',
-  '/ai',
   '/settings',
   '/clients',
   '/clients/new',
@@ -823,16 +769,13 @@ const BUILT = new Set([
   '/clients/import',
   '/clients/referral/new',
   '/reports',
-  '/admin',
   /* Nav item 10. Must be listed, or `UNBUILT` below derives a second `/tools`
      route from NAV and mounts a Placeholder against the real landing page. */
   '/tools',
   '/tools/depreciation',
   '/tools/pricing',
-  '/tools/audit-log',
-  '/tools/activity-log',
-  '/tools/numbering',
-  '/tools/backup',
+  '/admin/audit-log',
+  '/admin/activity-log',
   '/tools/cinematography',
   '/settings/tools',
   '/finance/documents',
@@ -861,6 +804,7 @@ const UNBUILT: Array<{ to: string; title: string; crumbs: Crumb[] }> = NAV.flatM
   .filter((r, i, all) => all.findIndex((x) => x.to === r.to) === i)
 
 import { useNetwork } from './lib/network'
+import { IS_MOCK } from './lib/supabase'
 import Icon from './components/ui/Icon'
 
 function OfflineBanner() {
@@ -882,6 +826,50 @@ function OfflineBanner() {
     }}>
       <Icon name="error" size={16} />
       <span>You are offline. Changes will be saved locally and synced when you reconnect.</span>
+    </div>
+  )
+}
+
+/**
+ * **Mock-data banner — not dismissible, on every screen, at every width.**
+ *
+ * `VITE_DATA_SOURCE=mock` serves a local corpus instead of Supabase. The rule
+ * this banner enforces comes straight from the dev-bypass post-mortem in
+ * `lib/auth.tsx`: that shim carried a loud `console.warn` and it was still
+ * mistaken for real data for a full session. A console message is not a
+ * disclosure — the screen has to say it.
+ *
+ * Uses the `progress` (amber) status pair rather than OfflineBanner's colours:
+ * `--warning-bg` is not defined anywhere in `theme.css`, so OfflineBanner
+ * silently paints its hard-coded `#4d3a00` literal in BOTH themes. Do not copy
+ * that pair. `--st-progress-*` is defined in light and dark, and is already the
+ * "this data is seeded" notice on BookingDetail.
+ *
+ * NOTE — not part of the administrative cut; re-added by hand when it was
+ * applied, because the cut package predates mock mode.
+ */
+function MockBanner() {
+  if (!IS_MOCK) return null
+  return (
+    <div
+      role="status"
+      style={{
+        background: 'var(--st-progress-bg)',
+        color: 'var(--st-progress-fg)',
+        padding: '8px 16px',
+        fontSize: 'var(--t-meta)',
+        fontWeight: 600,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        borderBottom: '1px solid var(--border)',
+      }}
+    >
+      <Icon name="error" size={16} />
+      <span style={{ minWidth: 0 }}>
+        Mock data — local corpus, not your Supabase project. Nothing here is real
+        and nothing you change leaves this browser.
+      </span>
     </div>
   )
 }
@@ -1002,6 +990,7 @@ function Shell({
     >
       {!phone && <Sidebar active={pathname + query} />}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        <MockBanner />
         <OfflineBanner />
         <HeaderBar crumbs={crumbs} {...(search ? { searchPlaceholder: search } : {})} />
         <main

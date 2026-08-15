@@ -1,7 +1,7 @@
 import type { PeriodFigures } from '../../data/pulse'
 
 /**
- * # The 45-report register — `09_FINANCE.md` §9.6
+ * # The 43-report register — `09_FINANCE.md` §9.6, deduplicated by rulings §11.3
  *
  * ## What this file is, and the rule it was written under
  *
@@ -42,8 +42,36 @@ import type { PeriodFigures } from '../../data/pulse'
  * are clients."* `WIREFRAME_RULINGS_2026-08-12.md` §7 — laws outrank
  * wireframes. So spec 09's "05 Customers / Customer Revenue / Customer Lifetime
  * Value / Customer History" is registered as **Clients / Client Revenue /
- * Client Lifetime Value / Client History**. The count and the order are
- * untouched; only the banned word is.
+ * Client Lifetime Value / Client History**. The order is untouched and only the
+ * banned word is — the count moved for a different reason, §11.3 below.
+ *
+ * ## ⚠ Rulings §11.3 — spec 09 §9.6's three duplications are CLOSED
+ *
+ * `WIREFRAME_RULINGS_2026-08-12.md` §11.3, 13 Aug 2026. §9.6 declared three
+ * duplications and left them open, and this register carried all three as
+ * flagged `unresolved` entries until that ruling. **Do not re-open them from
+ * spec 09 §9.6 — the spec is the older document.**
+ *
+ * | §9.6's duplication | Ruled |
+ * |---|---|
+ * | Profit & Loss in groups 01 **and** 06 | Lives in **01** only. The 06 entry is gone. |
+ * | Payments and Expenses are each both a Finance tab and a report | The group-06 entries **deep-link into the tab**; they do not duplicate it. Both carry `financeTab`, and the catalog draws them as a link to that tab rather than as a report tile. |
+ * | `05 Outstanding` = `06 Receivables` | Collapsed into **06 Receivables**. The 05 entry is gone; the surviving entry names both. |
+ *
+ * *"Two screens showing the same figure under different names is how
+ * reconciliation arguments start."* So **45 − 2 = 43**, every report with
+ * exactly one home, and `CATALOG_ERRORS` asserts the new total, the new
+ * per-group counts, and that no two reports share a name.
+ *
+ * Nothing else moved, and nothing gained a projection to tidy the arithmetic
+ * up: the two entries removed were duplicates of entries that remain exactly as
+ * blocked as they were, and `06 Receivables` still renders "not tracked yet"
+ * for the same unruled `outstanding_amount` formula (`PLAN.md` §4.17).
+ *
+ * The surviving Profit & Loss keeps the key `profit-and-loss-01`. A key is the
+ * selection identity and the CSV filename; renaming one to tidy away a suffix
+ * is how a saved link breaks silently, so the suffix stays and this paragraph
+ * explains it instead.
  */
 
 /* ── groups ──────────────────────────────────────────────────────────────── */
@@ -76,7 +104,7 @@ export const GROUPS: readonly ReportGroup[] = [
  * A projection of `PeriodFigures` into the §9.7 template's fixed shape:
  * one headline sentence, one chart, one table.
  *
- * There are six of them for 45 reports, and that ratio is the point. A report
+ * There are six of them for 43 reports, and that ratio is the point. A report
  * either asks a question this ledger answers — in which case it reuses the
  * projection rather than inventing a parallel one — or it does not, in which
  * case it says so.
@@ -162,9 +190,24 @@ export interface CatalogReport {
    */
   needs?: string
   /**
-   * Set where `09_FINANCE.md` §9.6 declares the entry unresolved. Rendered on
-   * the tile so the duplication is visible rather than silently shipped.
-   * `WIREFRAME_RULINGS_2026-08-12.md` §9.3 forbids resolving these here.
+   * **Rulings §11.3** — the name of the Finance tab this entry *is*, for the
+   * two §9.6 registered as both a tab and a report. The entry is a signpost
+   * into that tab, never a second rendering of it: the catalog draws such a row
+   * as a link that says which tab it opens, and the §9.7 template is never
+   * mounted for it. `route` is where it goes; this is what it is.
+   *
+   * An entry carrying this must carry a `route` — asserted below, because a
+   * signpost pointing nowhere is worse than no signpost.
+   */
+  financeTab?: string
+  /**
+   * Set where a spec declares an entry unresolved and no ruling has closed it.
+   * Rendered on the tile so the conflict is visible rather than silently
+   * shipped.
+   *
+   * **No entry carries one today.** §9.6's three were the only ones and
+   * rulings §11.3 closed all three; the field survives as the mechanism for
+   * the next such conflict, not as a description of this register.
    */
   unresolved?: string
 }
@@ -189,15 +232,10 @@ export const REPORTS: readonly CatalogReport[] = [
     needs: 'Pulse is this report — it is the built screen, with the period picker, the reconciliation checks and the model disclosure.',
   },
   { key: 'revenue', name: 'Revenue', group: '01', route: null, projection: 'revenue' },
-  {
-    key: 'profit-and-loss-01',
-    name: 'Profit & Loss',
-    group: '01',
-    route: null,
-    projection: 'profit',
-    unresolved:
-      'TODO(decision) — §9.6: "Profit & Loss appears in 01 and 06." Both entries are kept and both point at the same projection, so collapsing them later is a one-line edit; deleting one now is not reversible.',
-  },
+  /* Rulings §11.3 — §9.6 listed Profit & Loss in 01 and again in 06. This is
+     the surviving entry; the 06 twin is gone. The key keeps its `-01` suffix
+     deliberately (see the header). */
+  { key: 'profit-and-loss-01', name: 'Profit & Loss', group: '01', route: null, projection: 'profit' },
   { key: 'cash-flow', name: 'Cash Flow', group: '01', route: '/reports/cash-flow', projection: 'cash' },
 
   /* ── 02 Rentals · 5 ──────────────────────────────────────────────────── */
@@ -297,7 +335,10 @@ export const REPORTS: readonly CatalogReport[] = [
     needs: 'A register is a listing, not a period report — it needs the purchase-cost and depreciation columns the Lifecycle report is also waiting on.',
   },
 
-  /* ── 05 Clients · 4 ──────────────────────────────────────────────────── */
+  /* ── 05 Clients · 3 ──────────────────────────────────────────────────────
+     Was four. Rulings §11.3 collapsed `05 Outstanding` into `06 Receivables`
+     — the same figure under two names, blocked on the same unruled formula.
+     Law 17's rename of this group and its three reports is untouched. */
   { key: 'client-revenue', name: 'Client Revenue', group: '05', route: '/reports/clients', projection: null, needs: 'The Clients report is the built screen.' },
   {
     key: 'client-lifetime-value',
@@ -308,17 +349,6 @@ export const REPORTS: readonly CatalogReport[] = [
     needs: 'CLV needs a retention and margin assumption. Neither is ruled anywhere, and assuming one is inventing a product decision.',
   },
   {
-    key: 'outstanding',
-    name: 'Outstanding',
-    group: '05',
-    route: null,
-    projection: null,
-    needs:
-      '`invoices.outstanding_amount` has no ruled recompute formula and `payment_reversals` never flow back into `paid_amount` (PLAN.md §4.17), so a figure here is one the database cannot defend.',
-    unresolved:
-      'TODO(decision) — §9.6: "`05 Outstanding` = `06 Receivables`." Both entries are kept, both blocked on the same formula; collapsing them is reversible, deleting one is not.',
-  },
-  {
     key: 'client-history',
     name: 'Client History',
     group: '05',
@@ -327,7 +357,10 @@ export const REPORTS: readonly CatalogReport[] = [
     needs: `${NEEDS_QUERY} Per-client history is a filtered booking list, not a period aggregate; the client record already shows it.`,
   },
 
-  /* ── 06 Finance · 7 ──────────────────────────────────────────────────── */
+  /* ── 06 Finance · 6 ──────────────────────────────────────────────────────
+     Was seven. Rulings §11.3 removed the second Profit & Loss (01 keeps it)
+     and turned Payments and Expenses into deep-links to the Finance tabs of
+     those names rather than second renderings of them. */
   {
     key: 'sales',
     name: 'Sales',
@@ -337,14 +370,19 @@ export const REPORTS: readonly CatalogReport[] = [
     needs:
       'Sales means invoiced, and the ledger’s revenue is recognised across rental days (`PERIOD_BASIS` — itself a TODO(decision)). Rendering one under the other’s name would be the same number twice with two meanings.',
   },
+  /* Rulings §11.3 — the Payments tab IS this report. `projection` is null not
+     because nothing is tracked but because this entry renders nothing itself:
+     projecting `cash` here would put the same money on two screens under two
+     names, which is what the ruling removes. `financeTab` makes the catalog
+     draw it as a link to that tab. */
   {
     key: 'payments',
     name: 'Payments',
     group: '06',
     route: '/finance/payments',
-    projection: 'cash',
-    unresolved:
-      'TODO(decision) — §9.6: "Payments and Expenses are both a tab and a report." The register entry is kept and points at the tab rather than duplicating it, which is the reversible reading.',
+    projection: null,
+    financeTab: 'Payments',
+    needs: 'Finance ▸ Payments is this report — it is the built tab, with the reversal rows Law 4 requires and the filters over them.',
   },
   {
     key: 'receivables',
@@ -352,9 +390,11 @@ export const REPORTS: readonly CatalogReport[] = [
     group: '06',
     route: null,
     projection: null,
+    /* Rulings §11.3 — `05 Outstanding` collapsed into this entry. Both names
+       are kept in the sentence so a reader looking for "Outstanding" in group
+       05 finds where it went rather than assuming it was cut. */
     needs:
-      'Same blocker as 05 Outstanding: no ruled recompute for `invoices.outstanding_amount`, and reversals do not flow back into `paid_amount` (PLAN.md §4.17).',
-    unresolved: 'TODO(decision) — §9.6: "`05 Outstanding` = `06 Receivables`." See the 05 entry.',
+      'Outstanding and Receivables are the same figure — rulings §11.3 collapsed them here — and it has no ruled recompute for `invoices.outstanding_amount`, with reversals not flowing back into `paid_amount` (PLAN.md §4.17). A figure here is one the database cannot defend.',
   },
   {
     key: 'payables',
@@ -366,14 +406,17 @@ export const REPORTS: readonly CatalogReport[] = [
     needs:
       'There is no supplier-invoice table anywhere in supabase/migrations — no bills, no supplier_invoices, no accounts_payable. Nothing in this system knows what Babin owes. The Working Capital report now withholds three derived figures for the same reason.',
   },
+  /* Rulings §11.3 — as Payments above. The `expenses` projection stays in
+     `PROJECTIONS` and is still what the template would draw if a report ever
+     asks this ledger for expenses by period; this entry asks the tab instead. */
   {
     key: 'expenses',
     name: 'Expenses',
     group: '06',
     route: '/finance/expenses',
-    projection: 'expenses',
-    unresolved:
-      'TODO(decision) — §9.6: "Payments and Expenses are both a tab and a report." Points at the tab rather than duplicating it.',
+    projection: null,
+    financeTab: 'Expenses',
+    needs: 'Finance ▸ Expenses is this report — it is the built tab, with the categories and the approval state on each row.',
   },
   {
     key: 'vat-tax',
@@ -384,15 +427,9 @@ export const REPORTS: readonly CatalogReport[] = [
     needs:
       'The VAT rate lives in Settings and must never be hardcoded (PLAN.md §5), and the IRD pool view has no statutory rates anywhere in this repo (Rulings §8).',
   },
-  {
-    key: 'profit-and-loss-06',
-    name: 'Profit & Loss',
-    group: '06',
-    route: null,
-    projection: 'profit',
-    unresolved:
-      'TODO(decision) — §9.6: "Profit & Loss appears in 01 and 06." Duplicate of `01 Profit & Loss`, kept deliberately; see that entry.',
-  },
+  /* `profit-and-loss-06` was here. Rulings §11.3 — Profit & Loss lives in 01
+     only. It is not cut, it is not duplicated: search "profit" in the catalog
+     and one entry answers, in `01 Overview`. */
 
   /* ── 07 Operations · 5 ───────────────────────────────────────────────── */
   { key: 'pickups', name: 'Pickups', group: '07', route: null, projection: null, needs: NO_LEDGER_DIMENSION },
@@ -496,31 +533,54 @@ export function groupByKey(key: GroupKey): ReportGroup {
  * `data/inventory.ts` already use: a list of statements that must be true,
  * checked at module load and surfaced on screen if any fails.
  *
- * §9.6 says "45 reports (Sales & Marketing cut)" and prints a count on each of
- * the ten group tiles. Both are asserted here, so the register cannot silently
- * gain a 46th or lose one — which is exactly how "8 groups" became a target to
- * delete three seeded expense categories for.
+ * §9.6 said "45 reports (Sales & Marketing cut)" and prints a count on each of
+ * the ten group tiles. **Rulings §11.3 deduplicated that 45 down to 43** —
+ * `TOTAL` and `PER_GROUP` below are the ruled numbers, not the spec's, and they
+ * are exported so the tests assert the same constants the banner does rather
+ * than a second copy that can drift from it.
+ *
+ * The assertion is not decoration. It is the thing that keeps the register
+ * honest: it must be re-pointed when the register is ruled on, never deleted to
+ * make a count pass — which is exactly how "8 groups" became a target to delete
+ * three seeded expense categories for.
  */
+export const TOTAL_REPORTS = 43
+
+export const PER_GROUP: Readonly<Record<GroupKey, number>> = {
+  '01': 4, '02': 5, '03': 5, '04': 4, '05': 3, '06': 6, '07': 5, '08': 4, '09': 3, '10': 4,
+} as const
+
 export const CATALOG_ERRORS: string[] = (() => {
   const errs: string[] = []
-  if (REPORTS.length !== 45) errs.push(`§9.6 declares 45 reports; the register holds ${REPORTS.length}.`)
-
-  const expected: Record<GroupKey, number> = {
-    '01': 4, '02': 5, '03': 5, '04': 4, '05': 4, '06': 7, '07': 5, '08': 4, '09': 3, '10': 4,
+  if (REPORTS.length !== TOTAL_REPORTS) {
+    errs.push(`Rulings §11.3 leaves ${TOTAL_REPORTS} reports (§9.6's 45, deduplicated); the register holds ${REPORTS.length}.`)
   }
+
   for (const g of GROUPS) {
     const n = reportsIn(g.key).length
-    if (n !== expected[g.key]) errs.push(`§9.6 group ${g.key} ${g.name}: register holds ${n}, the table says ${expected[g.key]}.`)
+    if (n !== PER_GROUP[g.key]) errs.push(`Group ${g.key} ${g.name}: register holds ${n}, the ruled count is ${PER_GROUP[g.key]}.`)
   }
 
   const seen = new Set<string>()
+  const named = new Set<string>()
   for (const r of REPORTS) {
     if (seen.has(r.key)) errs.push(`Duplicate report key "${r.key}" — keys are the selection identity.`)
     seen.add(r.key)
+    /* Rulings §11.3 — "each report with exactly one home". A repeated name is
+       how the two Profit & Loss entries and the Outstanding/Receivables pair
+       shipped in the first place, so the register now refuses one. */
+    if (named.has(r.name)) {
+      errs.push(`Two reports are both named "${r.name}" — rulings §11.3 gives each report exactly one home.`)
+    }
+    named.add(r.name)
     /* The rule the whole file exists for: a report that can draw nothing must
        say what is missing. Silence here is how a blank chart ships. */
     if (r.projection === null && r.route === null && !r.needs) {
       errs.push(`"${r.name}" has no projection, no route and no \`needs\` — it would render an empty report with no reason.`)
+    }
+    /* A tab deep-link with nowhere to go is a dead row that looks like a link. */
+    if (r.financeTab && !r.route) {
+      errs.push(`"${r.name}" says it opens the ${r.financeTab} tab but carries no route.`)
     }
   }
   return errs

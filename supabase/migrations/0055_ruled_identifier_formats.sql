@@ -18,14 +18,30 @@
 -- numbers and `C-34`. Applying migrations in order fails at 0047's first client
 -- insert. This migration is what makes 0047 runnable.
 --
--- ⚠ APPLY ORDER. This file is numbered 0055 but **must be applied before
--- 0047**, which is still unapplied (PROGRESS.md: blocked by the permission
--- classifier three times across two agents) while 0052 and 0053 have already
--- gone to the live project — the application order is already not the file
--- order. Applying 0047 first will abort, harmlessly, on the old CHECK.
+-- ⚠ APPLIED 12 Aug 2026, with approval, BEFORE 0047 — the application order is
+-- deliberately not the file order. Everything above this line describes the
+-- state that made this migration necessary; it is history, not the live rule.
 --
--- ⚠ NOT APPLIED. CLAUDE.md: "Never apply a migration to a live Supabase project
--- without explicit approval." Written and reviewed, not executed.
+-- ⚠ Corrected 15 Aug 2026. This header used to end "⚠ NOT APPLIED … Written and
+-- reviewed, not executed", and that line outlived the apply. It was still being
+-- read as current: two separate audits on 15 Aug quoted it (and the doc comments
+-- it had seeded across `src/actions/rentals`) to conclude that the booking-number
+-- format was in conflict with itself and that `createRental` was blocked. It is
+-- not, and it was not. Read from project sxguwvgoserhdolewibb on 15 Aug 2026 —
+-- every section of this file is present in the live schema:
+--
+--   §2  bookings: 121 rows, B-715 … B-917. 121 match '^B-[0-9]+$', 0 match the
+--       retired '^BK-[0-9]{4}-[0-9]{4}$'.
+--   §3  bookings_booking_no_format CHECK (booking_no ~ '^B-[0-9]+$')
+--       clients_client_code_format  CHECK (client_code ~ '^C-[0-9]+$')
+--   §4  number_sequences: booking B- · client C- · invoice INV-,
+--       all padding 1, all include_year false.
+--
+-- PROGRESS.md agrees twice over: "0055 had a fatal ordering bug, found by
+-- applying it … It applied cleanly after that", and the census line counting 41
+-- clients "with the pre-existing C-102, rewritten from CL-2026-0102 by 0055" —
+-- a row only this file's UPDATE could have rewritten. 0047 then applied on top
+-- of it, which the retired CHECK would have refused.
 --
 -- SCOPE. Only the two ruled columns move. `crew_bookings.crew_booking_no`
 -- (CB-), `products.asset_code` (EQ), `cases.case_no` (CASE-) and

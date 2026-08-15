@@ -127,7 +127,37 @@ export interface BookingListRow {
  * not fixed from here — that file is a separate module with its own banner.
  */
 
-/* ── DEPOSIT · why this is opt-in and off by default ──────────────────────
+/* ── DEPOSIT · now read through a masking view ────────────────────────────
+ *
+ * ✅ **CLOSED 16 Aug 2026.** The `TODO(persistence)` at the end of this block
+ * asked for a view masking `deposit_required` the way 0019 masks
+ * `booking_lines.rate`. `0061_bookings_deposit_masking_view.sql` is that view,
+ * and it is applied — `bookings_deposit_v (id, deposit_required)`, `case when
+ * auth_can_view_money() then … else null end`, `security_invoker = on` so the
+ * row policy on `bookings` still applies. Verified live as both roles:
+ *
+ *     Owner     -> 121 rows, sum(deposit_required) = 13,65,000
+ *     Warehouse -> 121 rows, sum(deposit_required) = null
+ *
+ * `withDeposit` now fetches from that view in a second, id-keyed query instead
+ * of naming the column on the base table. Two queries rather than one, and that
+ * is the point: the base query keeps its `clients ( … )` and
+ * `booking_lines ( … )` embeds, which PostgREST cannot reliably infer through a
+ * view.
+ *
+ * **The flag is deliberately NOT deleted**, against the old TODO's advice. It
+ * still means "this caller wants the figure", which is a real distinction — it
+ * saves a round trip for the many callers that do not, and `depositRequired:
+ * null` continues to mean "not asked for" rather than "no deposit". What has
+ * changed is that passing it from a money-blind session is now merely useless
+ * rather than a Law 6 breach.
+ *
+ * ⚠ The column is STILL unmasked on the base table until
+ * `0062_law6_column_grants_arm_the_mask.sql` is applied. This module no longer
+ * names it, so this module is no longer a way to reach it — but a crafted
+ * request still is. Read on for what that means.
+ *
+ * ── The original hazard, kept because 0062 is not applied yet ─────────────
  *
  * ⛔⛔ `bookings.deposit_required` IS UNMASKED MONEY ON A BASE TABLE. ⛔⛔
  *
@@ -149,14 +179,11 @@ export interface BookingListRow {
  * (Client is the one role the row policy does exclude, so a Client session gets
  * no bookings at all through this query, deposit or not.)
  *
- * Until a `bookings_v` exists, the ONLY protection is this module refusing to
- * ask for the column. Hence: opt-in, default off, and callers must gate on
- * `useCanViewMoney()` (`src/lib/moneyVisibility.ts`) — which mirrors
- * `auth_can_view_money()` — before passing `withDeposit`.
- *
- * TODO(persistence): add `bookings_v` masking `deposit_required` the way 0019
- * masks `booking_lines.rate`, then make this unconditional and delete the flag.
- * That is a migration, deliberately not written here.
+ * Until 0062 is applied, the protection is that no module names the column.
+ * This one no longer does. Callers should still gate on `useCanViewMoney()`
+ * (`src/lib/moneyVisibility.ts`) before passing `withDeposit` — not for safety
+ * now, but because asking for a figure you will render as "—" is a wasted
+ * round trip.
  */
 
 /* ── ITEM COUNT · units, not rows; and voided lines ───────────────────────
@@ -234,8 +261,13 @@ const BASE_COLUMNS =
   'cancelled_at, closed_at, created_at, ' +
   'clients ( name ), booking_lines ( id, qty )'
 
-/** The money variant. Never reached unless the caller passed `withDeposit`. */
-const COLUMNS_WITH_DEPOSIT = `${BASE_COLUMNS}, deposit_required`
+/**
+ * The deposit is no longer a column variant of the base select — it comes from
+ * `bookings_deposit_v` in a second query (see `readDeposits`). `BASE_COLUMNS` is
+ * now the only projection this module uses against `bookings`, which is what
+ * makes "this module cannot leak a rupee figure" checkable by reading one
+ * constant instead of two.
+ */
 
 interface RawBookingRow {
   id: string
@@ -346,12 +378,41 @@ export interface BookingListOptions extends ListFilters {
   withDeposit?: boolean
 }
 
+/**
+ * The deposits for a page of bookings, through `bookings_deposit_v` (0061).
+ *
+ * Keyed by `bookings.id` and run only when the caller asked. A money-blind
+ * session gets rows back with `deposit_required: null` — the view decides, not
+ * this function and not the screen, which is the whole point of moving it off
+ * the base table.
+ *
+ * Errors are NOT swallowed into `null`. A `null` deposit already means "not
+ * asked for / not entitled"; letting a failed query produce the same value
+ * would make an outage indistinguishable from a permission answer, and the
+ * screen would render "—" for a booking that has a deposit.
+ */
+async function readDeposits(ids: string[]): Promise<Map<string, number | null>> {
+  if (ids.length === 0) return new Map()
+
+  const { data, error } = await supabase.from('bookings_deposit_v').select('id, deposit_required').in('id', ids)
+
+  if (error) {
+    throw new Error(
+      `The bookings loaded but their deposits did not, so no deposit figure is shown rather than a ` +
+        `wrong one: ${error.message}`,
+    )
+  }
+
+  const rows = (data ?? []) as unknown as Array<{ id: string; deposit_required: number | null }>
+  return new Map(rows.map((r) => [r.id, r.deposit_required]))
+}
+
 export async function listBookings(opts: BookingListOptions = {}): Promise<ListQueryResult<BookingListRow>> {
   const { withCount, withDeposit, ...filters } = opts
 
   const base = supabase
     .from('bookings')
-    .select(withDeposit ? COLUMNS_WITH_DEPOSIT : BASE_COLUMNS, withCount ? { count: 'exact' } : undefined)
+    .select(BASE_COLUMNS, withCount ? { count: 'exact' } : undefined)
     // Law 3: a removed line is voided, never deleted, so it must not be counted.
     .is('booking_lines.voided_at', null)
 
@@ -402,7 +463,18 @@ export async function listBookings(opts: BookingListOptions = {}): Promise<ListQ
 
   if (error) throw new Error(`listBookings failed: ${error.message}`)
 
-  return { rows: (data ?? []).map(toRow), total: count ?? null }
+  const raw = data ?? []
+  const rows = raw.map(toRow)
+
+  /* Second query, and only if asked. `toRow` has already set every
+     `depositRequired` to null (the base select no longer carries the column),
+     so this fills in the ones the view is willing to answer for. */
+  if (withDeposit && rows.length > 0) {
+    const deposits = await readDeposits(raw.map((r) => r.id))
+    for (const row of rows) row.depositRequired = toPaisa(deposits.get(row.id))
+  }
+
+  return { rows, total: count ?? null }
 }
 
 /**
@@ -758,3 +830,290 @@ function startOfDay(dayAd: string): string {
 function endOfDay(dayAd: string): string {
   return `${nepalDay(dayAd)}T23:59:59.999${NPT_OFFSET}`
 }
+
+/* ── Floor lines ──────────────────────────────────────────────────────────
+   The per-booking read the five floor workspaces need, named by the empty
+   state they render today: `BookingNotLoaded` says "the missing piece is a
+   floor-lines read on lib/queries/bookings.ts, not this screen".
+
+   This is the READ only. It does not by itself make a workspace work — see the
+   TODO(decision) block below for what is still missing and why the rest is not
+   safe to invent here.
+   ----------------------------------------------------------------------- */
+
+/** `bookings.id` is a uuid; `booking_no` is `B-` + digits (CHECK, 0055). */
+const FLOOR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * One physical unit on a booking line.
+ *
+ * The floor screens are UNIT-shaped (one row per item) while every floor verb
+ * is LINE-shaped — `validateFloorVerb` refuses a duplicate `bookingLineId` in
+ * one call, because each line table carries `unique (booking_line_id)`. A
+ * screen must therefore collapse units back onto their parent line before
+ * dispatching; {@link groupFloorLines} does exactly that.
+ */
+export interface FloorUnit {
+  /** `booking_line_units.id`. */
+  id: string
+  /**
+   * `product_units.id` — what `session_line_movements.unit_id` needs. Nullable
+   * rather than defaulted: a quantity-tracked line legitimately has none, and
+   * defaulting it would invent a physical unit.
+   */
+  assetId: string | null
+  serial: string | null
+  assetTag: string | null
+  /** `item_quantity_state`: Ready · Picked Up · Returned · Missing · Damaged. */
+  unitState: string
+  isRequired: boolean
+  packed: boolean
+  damaged: boolean
+  /** `rack / shelf / bin` joined; null when all three are null. */
+  location: string | null
+}
+
+/** One booking line, with its physical units nested. */
+export interface FloorLine {
+  /** `booking_lines.id` — the key every floor verb writes against. */
+  id: string
+  qty: number
+  lineType: string
+  description: string | null
+  productId: string | null
+  productName: string | null
+  trackingMode: string | null
+  parentLineId: string | null
+  sortOrder: number
+  /**
+   * `'absent'` means the embed did not come back at all; `[]` means the line
+   * genuinely has no units assigned. Collapsing the two is the defect
+   * `bookingQuery.ts:110-113` records — an absent unit embed once read as a
+   * PASSED pack. Branch on this, never on `units.length`.
+   */
+  unitsPresence: 'present' | 'absent'
+  units: FloorUnit[]
+}
+
+/** The booking head the floor screens show above the item list. */
+export interface FloorBooking {
+  id: string
+  bookingNo: string
+  stage: string
+  clientName: string | null
+  project: string | null
+  pickupAtAd: string | null
+  returnAtAd: string | null
+  actualReturnAtAd: string | null
+  deliveryType: string | null
+  isCancelled: boolean
+  isClosed: boolean
+  /** Same rule as {@link FloorLine.unitsPresence}, one level up. */
+  linesPresence: 'present' | 'absent'
+  lines: FloorLine[]
+}
+
+interface RawFloorUnitJoin {
+  serial_no: string | null
+  asset_tag: string | null
+  rack: string | null
+  shelf: string | null
+  bin: string | null
+}
+
+interface RawFloorUnit {
+  id: string
+  asset_id: string | null
+  unit_state: string
+  is_required: boolean
+  packed: boolean
+  damaged: boolean
+  product_units: RawFloorUnitJoin | null
+}
+
+interface RawFloorLine {
+  id: string
+  qty: number
+  line_type: string
+  description: string | null
+  product_id: string | null
+  parent_line_id: string | null
+  sort_order: number
+  products: { name: string | null; tracking_mode: string | null } | null
+  booking_line_units: RawFloorUnit[] | null
+}
+
+interface RawFloorBooking {
+  id: string
+  booking_no: string
+  stage: string
+  project: string | null
+  pickup_at: string | null
+  return_at: string | null
+  actual_return_at: string | null
+  delivery_type: string | null
+  cancelled_at: string | null
+  closed_at: string | null
+  clients: { name: string | null } | null
+  booking_lines: RawFloorLine[] | null
+}
+
+/**
+ * Columns, named explicitly and never `*`.
+ *
+ * `booking_lines` carries `rate`, `discount_amount`, `supplier_cost` and
+ * `markup_amount`, and a warehouse screen must not ask for them (Law 6).
+ * Naming columns is the ONLY thing standing between this read and a money
+ * leak: the column grants do not stop it. `authenticated` and `anon` both hold
+ * SELECT on all four, verified against the live project on 16 Aug 2026 — which
+ * contradicts the comment at `bookingQuery.ts:918-928` claiming they are
+ * revoked. Do not add `deposit_required` here either.
+ */
+const FLOOR_COLUMNS =
+  'id, booking_no, stage, project, pickup_at, return_at, actual_return_at, delivery_type, cancelled_at, closed_at, ' +
+  'clients ( name ), ' +
+  'booking_lines ( id, qty, line_type, description, product_id, parent_line_id, sort_order, ' +
+  'products ( name, tracking_mode ), ' +
+  'booking_line_units ( id, asset_id, unit_state, is_required, packed, damaged, ' +
+  'product_units ( serial_no, asset_tag, rack, shelf, bin ) ) )'
+
+function joinLocation(u: RawFloorUnitJoin | null): string | null {
+  if (!u) return null
+  const parts = [u.rack, u.shelf, u.bin].filter((p): p is string => !!p)
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
+/**
+ * Read one booking with its lines and physical units, for the floor.
+ *
+ * Accepts either `bookings.id` or `booking_no` — the same branch
+ * `floorVerb.readBooking` uses, so a screen and the verb it dispatches resolve
+ * the same URL identically.
+ *
+ * Returns `null` when no booking matches. That is a DIFFERENT fact from a
+ * booking that exists but has no lines, and the two must render differently.
+ */
+export async function fetchFloorBooking(bookingRef: string): Promise<FloorBooking | null> {
+  const column = FLOOR_UUID_RE.test(bookingRef) ? 'id' : 'booking_no'
+
+  const { data, error } = await supabase
+    .from('bookings')
+    .select(FLOOR_COLUMNS)
+    // Law 3 — a removed line is voided, never deleted. PostgREST prunes the
+    // embed in place and leaves the parent row, which is what the floor wants.
+    .is('booking_lines.voided_at', null)
+    .eq(column, bookingRef)
+    .maybeSingle()
+
+  if (error) throw new Error(`fetchFloorBooking(${bookingRef}) failed: ${error.message}`)
+  if (!data) return null
+
+  const raw = data as unknown as RawFloorBooking
+  const rawLines = raw.booking_lines
+
+  return {
+    id: raw.id,
+    bookingNo: raw.booking_no,
+    stage: raw.stage,
+    clientName: raw.clients?.name ?? null,
+    project: raw.project,
+    pickupAtAd: raw.pickup_at,
+    returnAtAd: raw.return_at,
+    actualReturnAtAd: raw.actual_return_at,
+    deliveryType: raw.delivery_type,
+    isCancelled: raw.cancelled_at !== null,
+    isClosed: raw.closed_at !== null,
+    linesPresence: rawLines == null ? 'absent' : 'present',
+    lines: (rawLines ?? [])
+      .slice()
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map(
+        (l): FloorLine => ({
+          id: l.id,
+          qty: l.qty,
+          lineType: l.line_type,
+          description: l.description,
+          productId: l.product_id,
+          productName: l.products?.name ?? null,
+          trackingMode: l.products?.tracking_mode ?? null,
+          parentLineId: l.parent_line_id,
+          sortOrder: l.sort_order,
+          unitsPresence: l.booking_line_units == null ? 'absent' : 'present',
+          units: (l.booking_line_units ?? []).map(
+            (u): FloorUnit => ({
+              id: u.id,
+              assetId: u.asset_id,
+              serial: u.product_units?.serial_no ?? null,
+              assetTag: u.product_units?.asset_tag ?? null,
+              unitState: u.unit_state,
+              isRequired: u.is_required,
+              packed: u.packed,
+              damaged: u.damaged,
+              location: joinLocation(u.product_units),
+            }),
+          ),
+        }),
+      ),
+  }
+}
+
+/**
+ * Collapse a unit selection into the one-entry-per-line shape the floor verbs
+ * require.
+ *
+ * `validateFloorVerb` refuses a duplicated `bookingLineId` in a single call, so
+ * four battery units on one line must arrive as ONE entry carrying four
+ * `unitIds` — not four entries. Units with no `assetId` (quantity-tracked
+ * lines) carry no movement row and contribute to `qty` only.
+ */
+export function groupFloorLines(
+  lines: readonly FloorLine[],
+  selectedUnitIds: ReadonlySet<string>,
+): Array<{ bookingLineId: string; unitIds: string[]; serials: string[]; qty: number }> {
+  const out: Array<{ bookingLineId: string; unitIds: string[]; serials: string[]; qty: number }> = []
+  for (const line of lines) {
+    const chosen = line.units.filter((u) => selectedUnitIds.has(u.id))
+    if (chosen.length === 0) continue
+    const unitIds: string[] = []
+    const serials: string[] = []
+    for (const u of chosen) {
+      if (u.assetId === null) continue
+      unitIds.push(u.assetId)
+      serials.push(u.serial ?? u.assetTag ?? '')
+    }
+    out.push({ bookingLineId: line.id, unitIds, serials, qty: chosen.length })
+  }
+  return out
+}
+
+/*
+ * What this read deliberately does NOT supply. **All four were ruled on
+ * 16 Aug 2026 — PLAN.md §4.31.**
+ *
+ * 1. ✅ DISSOLVED — there is no packing `case`, and this read is right not to
+ *    supply one. Complete Packing's gate is **one photo per BOOKING**, not one
+ *    per packed case, so "which physical case is this item in for this booking"
+ *    is no longer a question the floor asks. No migration; and
+ *    `product_units.container_id` stays what it is — a unit's *home* container.
+ *    ⚠ The cost is accepted deliberately: when an item comes back missing, the
+ *    photos no longer say which case it was in. Do not quietly re-add a case
+ *    model to recover that without re-opening §4.31.
+ *    Separately ruled: a packing photo's **image file** expires on a retention
+ *    schedule once the booking completes, while its `evidence_files` **row is
+ *    kept** — which is what keeps this inside Law 0. Neither the schedule nor
+ *    the job exists yet, so nothing expires today.
+ * 2. ✅ RULED — the packing tree `group` is `bundles.name` via
+ *    `booking_lines.bundle_id`, falling back to `inventory_categories.name` for
+ *    a line with no bundle. Reflects how the gear was sold, which is what a
+ *    packer works from. Same grouping `queries/availability.ts` needs to expand
+ *    a bundle line into its member products.
+ * 3. ✅ RULED — Reset's `demand` / `vip` / `rush` priority flags are DROPPED.
+ *    No column existed for any of them; the queue renders without priority
+ *    rather than inventing a source. If prioritisation is wanted later, derive
+ *    it from the next booking's urgency — real data, no migration — rather than
+ *    adding hand-set flags that go stale.
+ * 4. ✅ RULED — empty-state copy for Handover, Return and Cleaning & Reset is
+ *    drafted against the pattern Packing and Evidence set, and marked in the
+ *    code as drafted-not-ruled so the wording can be corrected without being
+ *    mistaken for a spec sentence.
+ */

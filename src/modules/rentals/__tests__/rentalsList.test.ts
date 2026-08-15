@@ -45,7 +45,9 @@ import {
   OPTIONAL_COLUMNS,
   PAYMENT_DUE_UNAVAILABLE,
   RENTAL_KPI_FILTERS,
-  SUB_RENTAL_UNAVAILABLE,
+  ROWS,
+  SUB_RENTAL_NOTE,
+  withSubRental,
   chipsFor,
   filterGroupsFor,
   rentalDetailGroups,
@@ -54,6 +56,14 @@ import {
   toRentalListRow,
   type ChipKey,
 } from '../../../data/rentals'
+/* §11.1 — the rule itself lives beside the lines it is about, so the list's
+   filter and the booking screen's outline read one predicate, not two. */
+import {
+  ITEMS,
+  SUB_RENTAL_LINE_TYPES,
+  isSubRentalBooking,
+  isSubRentedLine,
+} from '../../../data/booking'
 import { overdue, todaysIncoming, todaysOutgoing, type BookingListRow } from '../../../lib/queries/bookings'
 import type { ListFilters } from '../../../lib/queries/listQuery'
 import { NOW_AD, TODAY_DAY_AD } from '../../../data/today'
@@ -655,46 +665,122 @@ describe('Law 17 — the word "customer" appears in no UI copy', () => {
   })
 })
 
-/* ── Sub-Rental: drawn by the spec, unanswerable by the schema ───────────── */
+/* ── Sub-Rental — rulings §11.1: line-level fact, derived booking flag ───── */
 
-describe('Sub-Rental — the chip that replaced the tab, and why it is disabled', () => {
-  it('names the exact column the predicate would need', () => {
-    // A disabled control has to say why, and "not built yet" is not why —
-    // whoever wires it next must be able to act on the sentence.
-    expect(SUB_RENTAL_UNAVAILABLE).toContain('booking_lines')
-    expect(SUB_RENTAL_UNAVAILABLE).toContain('line_type')
-    expect(SUB_RENTAL_UNAVAILABLE).toContain('ListFilters')
+describe('the sub-rental predicate — one rule, in one place', () => {
+  it('answers the LINE, and derives the booking from its lines', () => {
+    expect(isSubRentedLine({ subRental: true })).toBe(true)
+    expect(isSubRentedLine({ lineType: 'Sub-rental' })).toBe(true)
+    expect(isSubRentedLine({ lineType: 'Equipment' })).toBe(false)
+    expect(isSubRentedLine({})).toBe(false)
+
+    // "A booking counts as sub-rental if ANY of its lines is" — §11.1.
+    expect(isSubRentalBooking([{ lineType: 'Equipment' }, { subRental: true }])).toBe(true)
+    expect(isSubRentalBooking([{ lineType: 'Equipment' }])).toBe(false)
+    expect(isSubRentalBooking([])).toBe(false)
   })
 
-  it('records that it is unruled rather than merely unbuilt', () => {
-    // Rulings §9.1: Sub-Rental is specified three incompatible ways. Building
-    // the chip against a guess is the failure this string exists to prevent.
-    expect(SUB_RENTAL_UNAVAILABLE).toContain('TODO(decision)')
+  it('keeps the vocabulary the server filter sends and the predicate tests identical', () => {
+    // The `.in()` in `subRentalBookingIds` and the predicate above both read
+    // SUB_RENTAL_LINE_TYPES. Widening one without the other is how a filter and
+    // a verdict start disagreeing about the same booking.
+    for (const t of SUB_RENTAL_LINE_TYPES) {
+      expect(isSubRentedLine({ lineType: t })).toBe(true)
+    }
   })
 
-  it('is not a quick-filter chip, so no chip can select it and return everything', () => {
+  it('stores the booking-level answer nowhere — §11.1', () => {
+    // ⛔ The failure this pins: a `subRental` field appearing on the row shape.
+    // "Storing the same fact twice is how the two disagree."
+    for (const row of ROWS) {
+      expect(row).not.toHaveProperty('subRental')
+      expect(row).not.toHaveProperty('isSubRental')
+    }
+  })
+
+  it('seeds a realistic minority of lines, not half the corpus', () => {
+    const sub = ITEMS.filter(isSubRentedLine)
+    expect(sub.length).toBeGreaterThan(0)
+    expect(sub.length).toBeLessThan(ITEMS.length / 2)
+    expect(isSubRentalBooking(ITEMS)).toBe(true)
+  })
+})
+
+describe('the Sub-Rental chip — narrows server-side on the derived set', () => {
+  it('sends the derived booking ids as an ordinary id group', () => {
+    const query = rentalsQuery('All', NO_RANGE, [], NOW_AD, { on: true, bookingIds: ['b1', 'b2'] })
+    expect(query.impossible).toBe(false)
+    expect(query.filters.chips?.['id']).toEqual(['b1', 'b2'])
+  })
+
+  it('ANDs with the stage chips rather than replacing them', () => {
+    // §4.1 draws it on its own line beside the view toggle, not among the
+    // twelve — so it narrows whatever they selected.
+    const query = rentalsQuery('On Rent', NO_RANGE, [], NOW_AD, { on: true, bookingIds: ['b1'] })
+    expect(stagesOf(query.filters)).toEqual(['On Rent'])
+    expect(query.filters.chips?.['id']).toEqual(['b1'])
+  })
+
+  it('reports an empty derived set as impossible, never as an empty in()', () => {
+    // ⛔ `applyListFilters` reads `[]` as "no constraint". Sending it would
+    // return EVERY booking under a label reading Sub-Rental.
+    const empty = rentalsQuery('All', NO_RANGE, [], NOW_AD, { on: true, bookingIds: [] })
+    expect(empty.impossible).toBe(true)
+    expect(empty.filters.chips?.['id']).toBeUndefined()
+  })
+
+  it('treats an unanswered set as impossible too — null is never “none”', () => {
+    const unknown = rentalsQuery('All', NO_RANGE, [], NOW_AD, { on: true, bookingIds: null })
+    expect(unknown.impossible).toBe(true)
+    expect(unknown.filters.chips?.['id']).toBeUndefined()
+  })
+
+  it('adds nothing at all when the chip is off', () => {
+    expect(rentalsQuery('All', NO_RANGE, [], NOW_AD, { on: false, bookingIds: ['b1'] }).filters.chips?.['id'])
+      .toBeUndefined()
+    expect(q('All').filters.chips?.['id']).toBeUndefined()
+  })
+
+  it('is still not one of the twelve quick chips', () => {
     expect(ALL_CHIPS).not.toContain('Sub-Rental')
     for (const chip of LIVE_CHIPS) {
       expect(JSON.stringify(q(chip).filters)).not.toContain('line_type')
     }
   })
+
+  it('states the derivation in the sentence the footer shows', () => {
+    expect(SUB_RENTAL_NOTE).toContain('booking_lines.line_type')
+    expect(SUB_RENTAL_NOTE).toContain('any of its lines')
+  })
 })
 
-describe('toRentalListRow — external gear is unanswered, never answered "no"', () => {
-  it('reports null, which is “this query cannot tell”', () => {
+describe('toRentalListRow — external gear is derived, and null still means “unanswered”', () => {
+  it('reports null when no set was supplied', () => {
     // ⛔ `false` would be a fabricated figure: the screen would be asserting
     // "carries no external gear" about every booking in the database, from a
-    // query that never selected `booking_lines.line_type`. The gold-outline
-    // treatment fires on `true` only, so it simply never fires today.
+    // question nobody asked. The gold-outline treatment fires on `true` only.
     expect(map().isExternal).toBeNull()
     expect(map({ stage: 'On Rent' }).isExternal).toBeNull()
   })
 
   it('is not derived from any field that happens to be present', () => {
-    // Nothing on a list row correlates with sub-rental. Pinning this stops a
-    // later "helpful" derivation from itemCount, project or delivery type.
+    // Nothing else on a list row correlates with sub-rental. Pinning this stops
+    // a later "helpful" derivation from itemCount, project or delivery type.
     expect(map({ itemCount: 0, project: null }).isExternal).toBeNull()
     expect(map({ deliveryType: 'Third Party' }).isExternal).toBeNull()
+  })
+
+  it('answers true or false once the derived set is known', () => {
+    expect(toRentalListRow(ROW, BEFORE_EVERYTHING, new Set([ROW.id])).isExternal).toBe(true)
+    expect(toRentalListRow(ROW, BEFORE_EVERYTHING, new Set()).isExternal).toBe(false)
+  })
+
+  it('withSubRental applies the same answer to an already-mapped row', () => {
+    const row = map()
+    expect(withSubRental(row, new Set([ROW.id])).isExternal).toBe(true)
+    expect(withSubRental(row, new Set()).isExternal).toBe(false)
+    // Unchanged answer, unchanged identity — the render memo must not churn.
+    expect(withSubRental(row, null)).toBe(row)
   })
 })
 

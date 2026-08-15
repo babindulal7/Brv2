@@ -32,7 +32,7 @@ import type {
  *
  * The body is therefore written once:
  *
- *  1. **Resolve** the booking from a uuid or a `BK-YYYY-NNNN`, reading no money.
+ *  1. **Resolve** the booking from a uuid or a `B-` number, reading no money.
  *  2. **Refuse** unless `bookings.stage === JOBS[job].runsAt`. That one clause
  *     is also the replay guard for the three session verbs: completing one
  *     advances the stage, so a double-submit finds the booking already past
@@ -130,7 +130,13 @@ export interface FloorLineInput {
 }
 
 export interface FloorVerbInput {
-  /** `bookings.id` (uuid) or `bookings.booking_no` (`BK-YYYY-NNNN`). */
+  /**
+   * `bookings.id` (uuid) or `bookings.booking_no` (`B-` + digits).
+   *
+   * ⚠ Corrected 15 Aug 2026 — this said `BK-YYYY-NNNN`. See the same correction
+   * in `confirmRental.ts` above `UUID_RE` for the live CHECK it was read
+   * against; nothing here depended on the shape, only on "uuid or not".
+   */
   bookingRef: string
   /** Pack / Handover / Return. Required — an empty list is refused. */
   lines?: readonly FloorLineInput[]
@@ -367,7 +373,7 @@ async function readLatestSession(
 /** Runs inside each action's `validate`, so it fires before `execute` and before any write. */
 export function validateFloorVerb(job: JobName, input: FloorVerbInput): void {
   if (!input.bookingRef || input.bookingRef.trim() === '') {
-    throw new Error('A booking reference is required — pass the booking uuid or its BK- number.')
+    throw new Error('A booking reference is required — pass the booking uuid or its B- number.')
   }
 
   if (!isSessionJob(job)) {

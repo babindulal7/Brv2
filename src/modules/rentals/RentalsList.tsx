@@ -32,13 +32,17 @@ import {
   CHIP_MEANS,
   RENTAL_DEPOSIT_NOTE,
   RENTAL_KPI_FILTERS,
-  SUB_RENTAL_UNAVAILABLE,
+  SUB_RENTAL_NOTE,
+  SUB_RENTAL_PENDING,
+  SUB_RENTAL_UNANSWERED,
   chipsFor,
   filterGroupsFor,
   rentalGlance,
   rentalDetailGroups,
   rentalsQuery,
+  subRentalBookingIds,
   toRentalListRow,
+  withSubRental,
 } from '../../data/rentals'
 import type { ChipKey, OptionalColumn, RentalListRow } from '../../data/rentals'
 
@@ -61,8 +65,11 @@ import type { ChipKey, OptionalColumn, RentalListRow } from '../../data/rentals'
  *    The `TODO(decision)` it left ("what `productions` should be") is closed in
  *    `PLAN.md §4.21` as *dissolved by 04_RENTALS.md line 3*, so a later session
  *    does not resurrect it from Foundation §5.1.
- *  - Sub-Rental becomes a chip in the row below, next to the view toggle. It is
- *    `disabled` and carries its reason — see `SUB_RENTAL_UNAVAILABLE`.
+ *  - Sub-Rental becomes a chip in the row below, next to the view toggle.
+ *    Rulings §11.1 (13 Aug 2026) then made it a LIVE chip: sub-rental is a
+ *    line-level property and the booking-level answer is derived from the
+ *    lines, never stored. The chip narrows on that derivation, server-side —
+ *    see `data/rentals.ts`'s `subRentalBookingIds`.
  *
  * **Kept**, because no prose removes them (rulings §1): the KPI strip, the
  * pagination footer, the Filters rail (ten of eleven groups inert) and the
@@ -119,11 +126,9 @@ function Tag({ text, status }: { text: string; status: StatusKey }) {
  * monochrome print both get the fact; the gold is the fourth carrier, not the
  * only one.
  *
- * ⚠ **Nothing fires this on the Rentals list today**, and that is deliberate
- * rather than an omission — `RentalListRow.isExternal` is permanently `null`
- * ("this query cannot answer"), because sub-rental is a `booking_lines`
- * property the list query does not select. Rendering every row as *not*
- * external would be a fabricated figure. See `SUB_RENTAL_UNAVAILABLE`.
+ * ⚠ It fires on `isExternal === true` and on nothing else. `null` is "the set
+ * has not arrived / could not be read", and rendering those rows as *not*
+ * external would be a fabricated figure — see `RentalListRow.isExternal`.
  */
 const EXTERNAL_LABEL = 'Sub-rented — external gear'
 const EXTERNAL_ICON: IconName = 'external_link'
@@ -667,7 +672,13 @@ export default function RentalsList() {
     () => ({
       chips: ['stage'],
       dateColumn: 'pickup_at',
-      extras: ['quick'],
+      /* `sub` is §11.1's chip. An extra rather than a chip group for the same
+         reason `quick` is one: there is no `sub_rental` column to put in an
+         `in ()`, because the fact is line-level and the booking-level answer is
+         derived (`data/rentals.ts`'s `subRentalBookingIds`). It rides the URL so
+         a refresh keeps it and "the sub-rented bookings out this week" is a
+         link (§18). */
+      extras: ['quick', 'sub'],
       pageSize: perPage,
       /* A query string is user input in the most literal sense — a bookmark
          someone edited, a link a chat client truncated, a URL from before a
@@ -675,13 +686,13 @@ export default function RentalsList() {
          dropped at the parser, so the badge, the chip row and the query all
          agree it is not a filter. Validating it only on the way to
          `rentalsQuery` would leave the first two counting it. */
-      allow: { stage: STATUS_ORDER, quick: Object.keys(CHIP_MEANS) },
+      allow: { stage: STATUS_ORDER, quick: Object.keys(CHIP_MEANS), sub: ['on'] },
     }),
     [perPage],
   )
   const f = useFilters({
     url: urlSchema,
-    labels: { stage: 'Stage', quick: 'Quick filter', pickup_at: 'Pickup' },
+    labels: { stage: 'Stage', quick: 'Quick filter', sub: 'Sub-Rental', pickup_at: 'Pickup' },
   })
   const page = f.page
   const setPage = f.setPage
@@ -715,6 +726,53 @@ export default function RentalsList() {
     const raw = f.extras['quick']
     return raw && raw in CHIP_MEANS ? (raw as ChipKey) : 'All'
   }, [f.extras])
+
+  /** §11.1's chip. `?sub=on` or nothing — no third state to validate. */
+  const subOn = f.extras['sub'] === 'on'
+
+  /**
+   * ## Which bookings are sub-rental — asked once, read by both surfaces
+   *
+   * Rulings §11.1: a booking is sub-rental **if any of its lines is**, and the
+   * booking-level answer is never stored. `subRentalBookingIds()` evaluates
+   * that derivation over `booking_lines_v` and returns the set of booking ids.
+   *
+   * One request, two consumers, so they cannot disagree:
+   *   - the `(Sub-Rental)` chip narrows the list query by it (server-side, as
+   *     `chips: { id: [...] }`, so the count and the pager stay honest);
+   *   - `withSubRental` marks each rendered row from the same set, which is
+   *     what fires the gold outline.
+   *
+   * `ids === null` means **"not answered"** and never "none". It is the state
+   * before the request lands and after it fails, and in both the chip refuses
+   * to select rather than reporting an empty result it did not compute.
+   */
+  const [subIds, setSubIds] = useState<readonly string[] | null>(null)
+  const [subPending, setSubPending] = useState(true)
+
+  useEffect(() => {
+    let live = true
+    setSubPending(true)
+    void subRentalBookingIds()
+      .then((ids) => {
+        if (!live) return
+        setSubIds(ids)
+      })
+      /* A rejected promise must not leave the chip spinning forever: `null` and
+         `pending: false` is the error state, and the chip says so (Law 12). */
+      .catch(() => {
+        if (live) setSubIds(null)
+      })
+      .finally(() => {
+        if (live) setSubPending(false)
+      })
+    return () => {
+      live = false
+    }
+  }, [])
+
+  /** The same answer as a set, for the per-row marking. */
+  const subIdSet = useMemo(() => (subIds === null ? null : new Set(subIds)), [subIds])
 
   const statusKey = (f.filters.chips?.stage ?? []).join(' ')
   const statuses = useMemo(
@@ -763,7 +821,10 @@ export default function RentalsList() {
    * treats an empty chip array as "no constraint", so sending it would return
    * EVERY stage. The set is not sent at all; the empty state renders instead.
    */
-  const query = useMemo(() => rentalsQuery(chip, { from, to }, statuses, NOW_AD), [chip, from, to, statuses])
+  const query = useMemo(
+    () => rentalsQuery(chip, { from, to }, statuses, NOW_AD, { on: subOn, bookingIds: subIds }),
+    [chip, from, to, statuses, subOn, subIds],
+  )
 
   /* §6 — groups, not values. Three stages ticked is ONE thing being filtered
      on. `useFilters` counts the quick-filter extra alongside them, because it
@@ -852,14 +913,26 @@ export default function RentalsList() {
     { label: 'Overdue', value: countOf(overdueKpi, overdueKpi.total), icon: 'alert_triangle', accent: 'danger', note: 'Past due, never returned' },
   ]
 
+  /*
+   * §11.1 — the derived sub-rental answer is applied HERE rather than in
+   * `fetchRentals`, because the id set and the page of rows come from two
+   * independent requests and either can land first. `useList` holds its fetcher
+   * in a ref and re-runs only when the FILTERS change, so a set that arrives
+   * after the rows would never reach them if the marking happened at fetch
+   * time. `withSubRental` returns the row untouched when the answer has not
+   * moved, so this does not churn.
+   */
   const rowsWithIntel = useMemo(
     () =>
-      list.rows.map((r) => ({
-        row: r,
-        glance: rentalGlance(r, gctx),
-        detail: rentalDetailGroups(r, gctx),
-      })),
-    [list.rows, gctx],
+      list.rows.map((raw) => {
+        const r = withSubRental(raw, subIdSet)
+        return {
+          row: r,
+          glance: rentalGlance(r, gctx),
+          detail: rentalDetailGroups(r, gctx),
+        }
+      }),
+    [list.rows, subIdSet, gctx],
   )
 
   /**
@@ -1129,24 +1202,48 @@ export default function RentalsList() {
         }}
       >
         {/*
-          (Sub-Rental) — §4.1 line 40, "a filter chip, not a tab". It is
-          `disabled` and carries its own reason: no column on `bookings`
-          answers it and `ListFilters` cannot express the line-level join
-          that would. Narrowing the fetched page instead would leave the
-          server count and the pager describing a different set.
-          TODO(decision) — rulings §9.1. See `SUB_RENTAL_UNAVAILABLE`.
+          (Sub-Rental) — §4.1 line 40, "a filter chip, not a tab", and now a
+          LIVE one: rulings §11.1 ruled the question it was disabled waiting
+          on. It narrows on the derived set (`subIds`), AND-ed with whichever
+          stage and quick filters are on, because it sits on its own line in
+          §4.1's drawing rather than inside the twelve.
+
+          It refuses to select in exactly two states, and never selects and
+          quietly returns the unfiltered list: while the set is still in
+          flight, and if reading it failed. `null` is "not answered", never
+          "none" — see `subIds`.
         */}
-        <Unavailable reason={SUB_RENTAL_UNAVAILABLE}>
+        {subIds === null ? (
+          <Unavailable reason={subPending ? SUB_RENTAL_PENDING : SUB_RENTAL_UNANSWERED}>
+            <button
+              type="button"
+              disabled
+              aria-busy={subPending}
+              aria-label={`Sub-Rental — unavailable. ${subPending ? SUB_RENTAL_PENDING : SUB_RENTAL_UNANSWERED}`}
+              style={{ ...stageChipStyle(false), color: 'var(--muted)', cursor: 'not-allowed', opacity: 0.65 }}
+            >
+              <Icon name="external_link" size={13} style={{ color: 'var(--disabled)' }} />
+              Sub-Rental
+            </button>
+          </Unavailable>
+        ) : (
           <button
             type="button"
-            disabled
-            aria-label={`Sub-Rental — unavailable. ${SUB_RENTAL_UNAVAILABLE}`}
-            style={{ ...stageChipStyle(false), color: 'var(--muted)', cursor: 'not-allowed', opacity: 0.65 }}
+            onClick={() => f.setExtra('sub', subOn ? undefined : 'on')}
+            aria-pressed={subOn}
+            title={SUB_RENTAL_NOTE}
+            style={stageChipStyle(subOn)}
           >
-            <Icon name="external_link" size={13} style={{ color: 'var(--disabled)' }} />
+            {/* Law 11 — the gold outline is never the only carrier, so the chip
+                that turns it on carries the same icon and the same word. */}
+            <Icon
+              name="external_link"
+              size={13}
+              style={{ color: subOn ? 'var(--nav-active-accent)' : STATUS.ext.fg }}
+            />
             Sub-Rental
           </button>
-        </Unavailable>
+        )}
 
         <span aria-hidden style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px', flexShrink: 0 }} />
 
@@ -1371,8 +1468,16 @@ export default function RentalsList() {
               "no rentals match these filters" is the true answer.
             */}
             <PageBody
-              loading={list.loading}
-              error={list.error}
+              /* With `?sub=on` the screen is waiting on TWO requests, and the
+                 derived set is the one the chip cannot narrow without. Holding
+                 the skeleton up until it lands is what stops a "no rentals
+                 match these filters" flashing over a question still in flight —
+                 `query.impossible` is true for that whole window by design. */
+              loading={list.loading || (subOn && subPending)}
+              /* Law 12 — inline and persistent. A sub-rental read that failed
+                 is a real error on a screen filtering by it, not a silent
+                 empty list. */
+              error={subOn && !subPending && subIds === null ? SUB_RENTAL_UNANSWERED : list.error}
               onRetry={refreshAll}
               hasRows={list.rows.length > 0}
               empty={list.isEmpty || query.impossible}
@@ -1383,11 +1488,17 @@ export default function RentalsList() {
               skeletonRows={6}
               emptyTitle={isFiltered ? 'No rentals match these filters' : 'No rentals yet'}
               emptyMessage={
-                query.impossible
-                  ? `The “${chip}” chip covers ${CHIP_MEANS[chip]}, and none of the stages you ticked is in it.`
-                  : isFiltered
-                    ? `“${chip}” covers ${CHIP_MEANS[chip]}. Nothing matches right now.`
-                    : 'No booking has been created yet.'
+                /* Three different emptinesses, and saying which one it is
+                   matters: an empty derived set is a fact about the corpus, an
+                   empty stage intersection is a fact about the filters, and
+                   neither is "nothing exists". */
+                subOn && subIds !== null && subIds.length === 0
+                  ? 'No booking carries a sub-rented line. Sub-Rental is derived from booking_lines.line_type — a booking counts when any of its lines does — and no line in this corpus is one.'
+                  : query.impossible
+                    ? `The “${chip}” chip covers ${CHIP_MEANS[chip]}, and none of the stages you ticked is in it.`
+                    : isFiltered
+                      ? `“${chip}” covers ${CHIP_MEANS[chip]}${subOn ? ', narrowed to bookings carrying a sub-rented line' : ''}. Nothing matches right now.`
+                      : 'No booking has been created yet.'
               }
             >
               {(view === 'Cards' || !tabular) && (
@@ -1402,8 +1513,8 @@ export default function RentalsList() {
                         padding: '13px 14px',
                         borderBottom: '1px solid var(--border)',
                         // §4.1 — "gold outline row = external gear". Fires
-                        // only on a real `true`; `isExternal` is `null`
-                        // ("cannot answer") on every row today.
+                        // only on a real `true`; `null` is "not answered" and
+                        // leaves the row unmarked (§11.1, Law 11).
                         ...externalRowStyle(r.isExternal),
                       }}
                     >
@@ -1893,9 +2004,7 @@ export default function RentalsList() {
           'Cancelled bookings are retained, never deleted',
           `Quick filters are relative to ${formatAd(TODAY)}`,
           'Date chips narrow by pickup date — a return-date range needs a second dateRange the shared filter shape does not carry',
-          // Never a fabricated figure: the list cannot see line types, so it
-          // must not imply that no booking carries external gear.
-          'External-gear (sub-rental) marking is not derivable from this list yet — it is a booking_lines property the list query does not select',
+          SUB_RENTAL_NOTE,
           ...(money ? [RENTAL_DEPOSIT_NOTE] : []),
         ]}
       />

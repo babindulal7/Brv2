@@ -264,12 +264,19 @@
  * ## `booking_no` — minted, never taken from Booqable
  *
  * Same shape of gap `clients.ts` documents for `client_code`:
- * `bookings.booking_no` is `NOT NULL UNIQUE`, format-locked to
- * `^BK-[0-9]{4}-[0-9]{4}$` (AD year), immutable after creation.
- * ⚠ That CHECK is `0002_bookings.sql`'s and still names the retired form. The
- * app now issues `B-715` per the 12 Aug ruling, which the constraint rejects —
- * reported, not migrated here.
- * (`0002_bookings.sql`'s own column comment), and normally minted via
+ * `bookings.booking_no` is `NOT NULL UNIQUE`, format-locked to `^B-[0-9]+$`,
+ * immutable after creation.
+ *
+ * ⚠ Corrected 15 Aug 2026. This said `^BK-[0-9]{4}-[0-9]{4}$` (AD year) and
+ * then reported the app and the constraint as being in conflict — "the app now
+ * issues `B-715` … which the constraint rejects — reported, not migrated here".
+ * There is no conflict: `0055_ruled_identifier_formats` was applied on 12 Aug
+ * and moved the CHECK to the ruled form, so the constraint and the app agree.
+ * The retired pattern was `0002_bookings.sql:58`'s. See
+ * `actions/rentals/confirmRental.ts` above `UUID_RE`.
+ *
+ * Immutability is `0002_bookings.sql`'s own column comment, and the number is
+ * normally minted via
  * `next_document_number('BK')` (`0007_admin_security.sql` confirms a `BK`
  * prefix is registered). This file never invents one — `sync.ts` mints one
  * per NEW order via `next_document_number('BK')` and supplies it through

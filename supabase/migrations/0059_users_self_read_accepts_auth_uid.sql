@@ -30,6 +30,21 @@
 -- because the GUC is a single point of failure that fails SILENTLY: no error,
 -- no denial message, just an identity that resolves to the least-privileged
 -- role and screens that render themselves correctly around nothing.
+--
+-- ## Renumbered 0057 → 0059 on 15 Aug 2026
+--
+-- This file and `0057_damage_approval_rank.sql` both carried `0057`; its own
+-- companion and `0058_late_fee_rank_and_approver_is_actor.sql` both carried
+-- `0058`. Replaying this directory in filename order would therefore have run
+-- damage → users → late_fee → staff, which is NOT the order that produced the
+-- live project. There the four landed as versions 20260812163615 (damage),
+-- 20260812165503 (late fee), 20260812170827 (this file) and 20260812170856
+-- (staff row). The new numbers make filename order and applied order the same
+-- sequence, so a rebuild from this directory reproduces what is live.
+--
+-- Nothing was re-applied and no SQL below changed. The project records an
+-- applied migration by its timestamp version, not by this prefix, so the rename
+-- is invisible to the live database; it matters only to a rebuild.
 -- =============================================================================
 
 begin;

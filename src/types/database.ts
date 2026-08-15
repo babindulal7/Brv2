@@ -506,6 +506,57 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['bundle_items']['Insert']>
       }
 
+      /**
+       * Transcribed from the **live** catalog on 13 Aug 2026
+       * (`information_schema.columns`), not from a migration file — this table
+       * existed in the database while this file did not declare it, so
+       * `lib/queries/availability.ts` could not typecheck against it.
+       *
+       * `period` is a `tstzrange`, which PostgREST serialises as a string like
+       * `["2026-08-13 00:00+00","2026-08-16 00:00+00")`. It is typed `string`
+       * here rather than a parsed shape because nothing in `src/` decomposes it
+       * yet, and inventing a range type would be guessing at how it will be read.
+       *
+       * `state` is the `inventory_state` enum, defaulting to `'Reserved'`.
+       * `asset_id` and `product_id` are both nullable: a reservation names a
+       * serialised unit **or** a quantity of a product, never both.
+       */
+      inventory_reservations: {
+        Row: {
+          id: string
+          client_uuid: string
+          booking_id: string
+          booking_line_id: string
+          asset_id: string | null
+          product_id: string | null
+          qty: number
+          period: string
+          state: string
+          reserved_at: string
+          released_at: string | null
+          released_reason: string | null
+          created_at: string
+          created_by: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          booking_id: string
+          booking_line_id: string
+          asset_id?: string | null
+          product_id?: string | null
+          qty?: number
+          period: string
+          state?: string
+          reserved_at?: string
+          released_at?: string | null
+          released_reason?: string | null
+          created_at?: string
+          created_by: string
+        }
+        Update: Partial<Database['public']['Tables']['inventory_reservations']['Insert']>
+      }
+
       inventory_units: {
         Row: {
           id: string
@@ -684,6 +735,56 @@ export interface Database {
           created_at?: string
         }
         Update: Partial<Database['public']['Tables']['booking_lines']['Insert']>
+      }
+
+      booking_line_units: {
+        Row: {
+          id: string
+          client_uuid: string
+          booking_line_id: string
+          asset_id: string | null
+          qty: number
+          unit_state: ItemQuantityState
+          is_required: boolean
+          packed: boolean
+          packed_at: string | null
+          packed_by: string | null
+          packing_session_id: string | null
+          handover_session_id: string | null
+          return_session_id: string | null
+          returned_at: string | null
+          condition: string | null
+          missing_reason: string | null
+          damaged: boolean
+          reset_done_at: string | null
+          cleaning_done_at: string | null
+          created_at: string
+          created_by: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          booking_line_id: string
+          asset_id?: string | null
+          qty?: number
+          unit_state?: ItemQuantityState
+          is_required?: boolean
+          packed?: boolean
+          packed_at?: string | null
+          packed_by?: string | null
+          packing_session_id?: string | null
+          handover_session_id?: string | null
+          return_session_id?: string | null
+          returned_at?: string | null
+          condition?: string | null
+          missing_reason?: string | null
+          damaged?: boolean
+          reset_done_at?: string | null
+          cleaning_done_at?: string | null
+          created_at?: string
+          created_by: string
+        }
+        Update: Partial<Database['public']['Tables']['booking_line_units']['Insert']>
       }
 
       invoices: {

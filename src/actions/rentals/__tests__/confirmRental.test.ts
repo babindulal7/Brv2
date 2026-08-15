@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ActionNotImplementedError, ActionPermissionError } from '../../core'
 import { BOOKING_STATUS, STATUS_ORDER, jobThatSets, type BookingStatus } from '../../../lib/workflow'
+import { canPerformOperations } from '../../../lib/rbac'
 
 /**
  * # CONFIRM_RENTAL — what this suite pins
@@ -128,6 +129,75 @@ vi.mock('../../../lib/dataAccess', () => ({
   },
 }))
 
+/* ── Auto Assign Serials ────────────────────────────────────────────────────
+ *
+ * Stubbed here on purpose. `lib/availability` (the rule) and
+ * `lib/queries/availability` (the range round-trip) each have their own suite
+ * driven by execution; what THIS file has to prove is the ORDERING Confirm
+ * imposes on them — reserve first, move the stage second, and give the units
+ * back if the stage does not move. Reproducing a unit corpus through the `db`
+ * stub would test the stub.
+ */
+const assign = vi.hoisted(() => {
+  const state = {
+    /** Set false to simulate a line that cannot be covered. */
+    complete: true,
+    /** Reservation ids handed back by a successful reserve. */
+    reservationIds: ['res-1', 'res-2'] as string[],
+    /** Booking line unit row ids handed back by a successful reserve. */
+    unitRowIds: ['blu-1', 'blu-2'] as string[],
+    /** Ordered log of every availability call, for interleaving assertions. */
+    calls: [] as string[],
+    /** Rows released, with the reason given. */
+    released: [] as Array<{ ids: readonly string[]; reason: string }>,
+    /** Booking line unit rows released. */
+    releasedUnits: [] as Array<{ ids: readonly string[]; reason?: string }>,
+  }
+  function reset(): void {
+    state.complete = true
+    state.reservationIds = ['res-1', 'res-2']
+    state.unitRowIds = ['blu-1', 'blu-2']
+    state.calls = []
+    state.released = []
+    state.releasedUnits = []
+  }
+  return { state, reset }
+})
+
+vi.mock('../../../lib/queries/availability', () => {
+  class AssignmentIncompleteError extends Error {
+    plan: unknown
+    constructor(plan: unknown) {
+      super('cannot be confirmed: not every line has units free for these dates.')
+      this.name = 'AssignmentIncompleteError'
+      this.plan = plan
+    }
+  }
+  return {
+    AssignmentIncompleteError,
+    planAssignment: async (bookingId: string) => {
+      assign.state.calls.push('plan')
+      return { bookingId, bookingNo: 'B-715', lines: [], skipped: [], complete: assign.state.complete }
+    },
+    reserveAssignedUnits: async () => {
+      assign.state.calls.push('reserve')
+      return {
+        reservationIds: assign.state.reservationIds,
+        unitRowIds: assign.state.unitRowIds,
+        units: assign.state.reservationIds.length,
+      }
+    },
+    releaseReservations: async (ids: readonly string[], reason: string) => {
+      assign.state.calls.push('release')
+      assign.state.released.push({ ids, reason })
+    },
+    releaseBookingLineUnits: async (ids: readonly string[], reason?: string) => {
+      assign.state.calls.push('releaseUnits')
+      assign.state.releasedUnits.push({ ids, reason })
+    },
+  }
+})
+
 const { confirmRental, confirmRentalConfig } = await import('../confirmRental')
 
 /* ── Fixtures ───────────────────────────────────────────────────────────── */
@@ -146,7 +216,7 @@ const CONFIRM_TO = STATUS_ORDER[BOOKING_STATUS['Quote'].order + 1] as BookingSta
 function bookingAt(stage: string): Record<string, unknown> {
   return {
     id: BOOKING_ID,
-    booking_no: 'BK-2026-0715',
+    booking_no: 'B-715',
     branch_id: BRANCH_ID,
     client_id: CLIENT_ID,
     stage,
@@ -177,6 +247,7 @@ function insertsOn(table: string) {
 beforeEach(() => {
   db.reset()
   writes.reset()
+  assign.reset()
 })
 
 /* ── 1 · The row it writes ──────────────────────────────────────────────── */
@@ -184,7 +255,7 @@ beforeEach(() => {
 describe('the stage moves through the transition trigger and nothing else', () => {
   it('writes ONE booking_stage_transitions row and never touches the bookings table', async () => {
     setUpConfirmable()
-    await confirm({ id: 'BK-2026-0715', clientUuid: ACTION_KEY })
+    await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
 
     expect(insertsOn('booking_stage_transitions')).toHaveLength(1)
     // `0021:199` revokes update (stage, closed_at) on bookings from authenticated.
@@ -193,7 +264,7 @@ describe('the stage moves through the transition trigger and nothing else', () =
 
   it('moves Quote → the next stage in workflow.ts order, which is Booked', async () => {
     setUpConfirmable()
-    const { result } = await confirm({ id: 'BK-2026-0715', clientUuid: ACTION_KEY })
+    const { result } = await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
 
     const row = insertsOn('booking_stage_transitions')[0]?.payload
     expect(row?.['from_stage']).toBe('Quote')
@@ -205,7 +276,7 @@ describe('the stage moves through the transition trigger and nothing else', () =
 
   it('is not a reversal, and carries the actor snapshot and the denormalised branch', async () => {
     setUpConfirmable()
-    await confirm({ id: 'BK-2026-0715', clientUuid: ACTION_KEY })
+    await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
 
     const row = insertsOn('booking_stage_transitions')[0]?.payload
     // A reversal needs approver + reason + audit_event_id together (0002:447).
@@ -220,30 +291,30 @@ describe('the stage moves through the transition trigger and nothing else', () =
 
   it('carries the caller action key onto client_uuid — a double-submitted Confirm may not advance two stages', async () => {
     setUpConfirmable()
-    await confirm({ id: 'BK-2026-0715', clientUuid: ACTION_KEY })
+    await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
     expect(insertsOn('booking_stage_transitions')[0]?.payload['client_uuid']).toBe(ACTION_KEY)
   })
 
   it('mints a key when the caller has none rather than sending the row without one', async () => {
     setUpConfirmable()
-    await confirm({ id: 'BK-2026-0715' })
+    await confirm({ id: 'B-715' })
     // NOT NULL and unique (0002:429/:444) — an absent key would be a 23502.
     expect(insertsOn('booking_stage_transitions')[0]?.payload['client_uuid']).toBe('gen-0001')
   })
 
   it('sends the caller occurred_at, which is the value causal-order validation compares', async () => {
     setUpConfirmable()
-    await confirm({ id: 'BK-2026-0715', clientUuid: ACTION_KEY, occurredAt: '2026-08-12T04:15:00.000Z' })
+    await confirm({ id: 'B-715', clientUuid: ACTION_KEY, occurredAt: '2026-08-12T04:15:00.000Z' })
     expect(insertsOn('booking_stage_transitions')[0]?.payload['occurred_at']).toBe('2026-08-12T04:15:00.000Z')
   })
 
   it('writes the audit row after the transition, never before it', async () => {
     setUpConfirmable()
-    await confirm({ id: 'BK-2026-0715', clientUuid: ACTION_KEY })
+    await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
     expect(writes.state.ops.map((o) => o.table)).toEqual(['booking_stage_transitions', 'audit_events'])
   })
 
-  it('resolves a uuid by id and a BK- number by booking_no', async () => {
+  it('resolves a uuid by id and a B- number by booking_no', async () => {
     setUpConfirmable()
     await confirm({ id: BOOKING_ID, clientUuid: ACTION_KEY })
     expect(db.state.calls[0]?.ops[0]).toEqual(['eq', 'id', BOOKING_ID])
@@ -251,8 +322,8 @@ describe('the stage moves through the transition trigger and nothing else', () =
     db.reset()
     writes.reset()
     setUpConfirmable()
-    await confirm({ id: 'BK-2026-0715', clientUuid: ACTION_KEY })
-    expect(db.state.calls[0]?.ops[0]).toEqual(['eq', 'booking_no', 'BK-2026-0715'])
+    await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
+    expect(db.state.calls[0]?.ops[0]).toEqual(['eq', 'booking_no', 'B-715'])
   })
 })
 
@@ -261,7 +332,7 @@ describe('the stage moves through the transition trigger and nothing else', () =
 describe('Confirm is reached by a decision, so it opens no session', () => {
   it('writes no operation_sessions row, and workflow.ts agrees no job sets Booked', async () => {
     setUpConfirmable()
-    await confirm({ id: 'BK-2026-0715', clientUuid: ACTION_KEY })
+    await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
 
     expect(writes.state.ops.filter((o) => o.table === 'operation_sessions')).toHaveLength(0)
     expect(writes.state.ops.filter((o) => o.table === 'session_line_movements')).toHaveLength(0)
@@ -278,32 +349,32 @@ describe('the result reports what was actually committed to', () => {
       { id: LINE_A, qty: 5 },
       { id: LINE_B, qty: 1 },
     ])
-    const { result } = await confirm({ id: 'BK-2026-0715', clientUuid: ACTION_KEY })
+    const { result } = await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
 
     expect(result.lines).toBe(2)
     // "Alexa Mini ×5" is 5 units, not 1 — the same sum listBookings makes.
     expect(result.units).toBe(6)
     expect(result.bookingId).toBe(BOOKING_ID)
-    expect(result.bookingNo).toBe('BK-2026-0715')
+    expect(result.bookingNo).toBe('B-715')
     expect(result.clientId).toBe(CLIENT_ID)
   })
 
   it('reads only live lines — a voided line is not a booked line (Law 3)', async () => {
     setUpConfirmable()
-    await confirm({ id: 'BK-2026-0715', clientUuid: ACTION_KEY })
+    await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
     const lineRead = db.state.calls.find((c) => c.table === 'booking_lines')
     expect(lineRead?.ops).toContainEqual(['is', 'voided_at', null])
   })
 
   it('emits RENTAL_CONFIRMED once, carrying what landed', async () => {
     setUpConfirmable()
-    const { events } = await confirm({ id: 'BK-2026-0715', clientUuid: ACTION_KEY })
+    const { events } = await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
 
     expect(events).toHaveLength(1)
     expect(events[0]?.type).toBe('rental.confirmed')
     expect(events[0]?.payload).toMatchObject({
       bookingId: BOOKING_ID,
-      bookingNo: 'BK-2026-0715',
+      bookingNo: 'B-715',
       from: 'Quote',
       to: CONFIRM_TO,
       lines: 1,
@@ -318,19 +389,19 @@ describe('the result reports what was actually committed to', () => {
 describe('the refusals that precede every write', () => {
   it('refuses a booking reference that resolves to nothing', async () => {
     db.state.responses['bookings'] = [[]]
-    await expect(confirm({ id: 'BK-2026-9999' })).rejects.toThrow(/No booking matches BK-2026-9999/)
+    await expect(confirm({ id: 'B-9999' })).rejects.toThrow(/No booking matches B-9999/)
     expect(writes.state.ops).toHaveLength(0)
   })
 
   it('refuses a cancelled booking', async () => {
     db.state.responses['bookings'] = [[{ ...bookingAt('Quote'), cancelled_at: '2026-08-01T00:00:00Z' }]]
-    await expect(confirm({ id: 'BK-2026-0715' })).rejects.toThrow(/was cancelled/)
+    await expect(confirm({ id: 'B-715' })).rejects.toThrow(/was cancelled/)
     expect(writes.state.ops).toHaveLength(0)
   })
 
   it('refuses a Closed booking', async () => {
     db.state.responses['bookings'] = [[{ ...bookingAt('Quote'), closed_at: '2026-08-02T00:00:00Z' }]]
-    await expect(confirm({ id: 'BK-2026-0715' })).rejects.toThrow(/Closed is final/)
+    await expect(confirm({ id: 'B-715' })).rejects.toThrow(/Closed is final/)
     expect(writes.state.ops).toHaveLength(0)
   })
 
@@ -339,7 +410,7 @@ describe('the refusals that precede every write', () => {
       db.reset()
       writes.reset()
       db.state.responses['bookings'] = [[bookingAt(stage)]]
-      await expect(confirm({ id: 'BK-2026-0715' })).rejects.toThrow(
+      await expect(confirm({ id: 'B-715' })).rejects.toThrow(
         new RegExp(`is at ${stage.replace(' ', ' ')}\\.`),
       )
       expect(writes.state.ops).toHaveLength(0)
@@ -348,20 +419,20 @@ describe('the refusals that precede every write', () => {
     db.reset()
     writes.reset()
     db.state.responses['bookings'] = [[bookingAt('Booked')]]
-    await expect(confirm({ id: 'BK-2026-0715' })).rejects.toThrow(/the first one already landed/)
+    await expect(confirm({ id: 'B-715' })).rejects.toThrow(/the first one already landed/)
   })
 
   it('refuses a Quote with no live lines — Booked commits gear that is not there', async () => {
     db.state.responses['bookings'] = [[bookingAt('Quote')]]
     db.state.responses['booking_lines'] = [[]]
-    await expect(confirm({ id: 'BK-2026-0715' })).rejects.toThrow(/no live lines/)
+    await expect(confirm({ id: 'B-715' })).rejects.toThrow(/no live lines/)
     expect(writes.state.ops).toHaveLength(0)
   })
 
   it('refuses offline when the context says so, before reading anything', async () => {
     setUpConfirmable()
     await expect(
-      confirm({ id: 'BK-2026-0715' }, { userId: 'u-1', role: 'Owner', isOnline: false }),
+      confirm({ id: 'B-715' }, { userId: 'u-1', role: 'Owner', isOnline: false }),
     ).rejects.toThrow(/offline/i)
     expect(writes.state.ops).toHaveLength(0)
     // Nothing at all reached the network.
@@ -372,7 +443,7 @@ describe('the refusals that precede every write', () => {
     setUpConfirmable()
     vi.stubGlobal('navigator', { onLine: false })
     try {
-      await expect(confirm({ id: 'BK-2026-0715' })).rejects.toThrow(/offline/i)
+      await expect(confirm({ id: 'B-715' })).rejects.toThrow(/offline/i)
       expect(writes.state.ops).toHaveLength(0)
       expect(db.state.calls).toHaveLength(0)
     } finally {
@@ -386,7 +457,7 @@ describe('the refusals that precede every write', () => {
     db.state.responses['bookings'] = [[bookingAt('Quote')], [{ stage: 'Quote' }]]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
 
-    await expect(confirm({ id: 'BK-2026-0715', clientUuid: ACTION_KEY })).rejects.toThrow(/NOT confirmed/)
+    await expect(confirm({ id: 'B-715', clientUuid: ACTION_KEY })).rejects.toThrow(/NOT confirmed/)
     // The insert was attempted — this is a verification failure, not a refusal.
     expect(insertsOn('booking_stage_transitions')).toHaveLength(1)
   })
@@ -394,7 +465,7 @@ describe('the refusals that precede every write', () => {
   it('refuses when the booking vanished between the write and the verification', async () => {
     db.state.responses['bookings'] = [[bookingAt('Quote')], []]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
-    await expect(confirm({ id: 'BK-2026-0715', clientUuid: ACTION_KEY })).rejects.toThrow(/unreadable stage/)
+    await expect(confirm({ id: 'B-715', clientUuid: ACTION_KEY })).rejects.toThrow(/unreadable stage/)
   })
 })
 
@@ -407,18 +478,18 @@ describe('validate refuses what cannot be sent, before anything is read', () => 
   })
 
   it('refuses an idempotency key that is present but empty', async () => {
-    await expect(confirm({ id: 'BK-2026-0715', clientUuid: '  ' })).rejects.toThrow(/idempotency key/)
+    await expect(confirm({ id: 'B-715', clientUuid: '  ' })).rejects.toThrow(/idempotency key/)
     expect(db.state.calls).toHaveLength(0)
   })
 
   it('refuses an occurredAt that is not a parseable instant', async () => {
     // `Date.parse('12 Aug')` succeeds, so the regex is the check, not the parse.
-    await expect(confirm({ id: 'BK-2026-0715', occurredAt: '12 Aug' })).rejects.toThrow(/full ISO instant/)
+    await expect(confirm({ id: 'B-715', occurredAt: '12 Aug' })).rejects.toThrow(/full ISO instant/)
     expect(db.state.calls).toHaveLength(0)
   })
 
   it('refuses an instant with no offset — it would be read as the device local time', async () => {
-    await expect(confirm({ id: 'BK-2026-0715', occurredAt: '2026-08-12T09:00:00' })).rejects.toThrow(
+    await expect(confirm({ id: 'B-715', occurredAt: '2026-08-12T09:00:00' })).rejects.toThrow(
       /no offset/,
     )
     expect(db.state.calls).toHaveLength(0)
@@ -429,7 +500,7 @@ describe('validate refuses what cannot be sent, before anything is read', () => 
       db.reset()
       writes.reset()
       setUpConfirmable()
-      await confirm({ id: 'BK-2026-0715', clientUuid: ACTION_KEY, occurredAt: at })
+      await confirm({ id: 'B-715', clientUuid: ACTION_KEY, occurredAt: at })
       expect(insertsOn('booking_stage_transitions')[0]?.payload['occurred_at']).toBe(at)
     }
   })
@@ -451,7 +522,7 @@ describe('Law 6 — no money column is read or written', () => {
 
   it('names no money column in any SELECT, and carries none in any write payload', async () => {
     setUpConfirmable()
-    await confirm({ id: 'BK-2026-0715', clientUuid: ACTION_KEY })
+    await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
 
     expect(db.state.calls.length).toBeGreaterThan(0)
     for (const call of db.state.calls) {
@@ -468,29 +539,158 @@ describe('Law 6 — no money column is read or written', () => {
 
 /* ── 7 · The dispatcher wiring ──────────────────────────────────────────── */
 
-describe('the dispatcher — implemented, and still denied by an unruled capability', () => {
+describe('the dispatcher — implemented, and ruled 15 Aug 2026', () => {
   it('is no longer a stub: it does NOT throw ActionNotImplementedError', async () => {
     setUpConfirmable()
-    await expect(confirmRental({ id: 'BK-2026-0715' }, OWNER)).rejects.not.toBeInstanceOf(
+    await expect(confirmRental({ id: 'B-715' }, OWNER)).resolves.not.toBeInstanceOf(
       ActionNotImplementedError,
     )
   })
 
-  it('denies every role, including Owner, because rental.confirm resolves to no rbac rule', async () => {
-    setUpConfirmable()
-    // This is the TODO(decision) in `confirmRental.ts`, stated as a test so that
-    // ruling the matrix flips a red assertion rather than being forgotten. The
-    // live RLS policy admits Owner, Admin, Manager, Coordinator and Warehouse.
-    for (const role of ['Owner', 'Admin', 'Manager', 'Coordinator', 'Warehouse'] as const) {
-      await expect(confirmRental({ id: 'BK-2026-0715' }, { userId: 'u-1', role })).rejects.toBeInstanceOf(
+  /*
+   * This block previously pinned the opposite: every role denied, Owner
+   * included, because `rental.confirm` resolved to no rule in `lib/rbac`. Its
+   * comment said ruling the matrix should flip a red assertion rather than be
+   * forgotten — and it did, on 15 Aug 2026. The list below is the same one that
+   * comment named, because both were read off the same live policy:
+   *
+   *     policy booking_stage_transitions_insert with check (
+   *       auth_user_role() = any (array['Owner','Admin','Manager','Coordinator','Warehouse'])
+   *       and actor_id = nullif(current_setting('app.current_user_id', true), '')::uuid )
+   */
+  it.each(['Owner', 'Admin', 'Manager', 'Coordinator', 'Warehouse'] as const)(
+    'admits %s — the roles the RLS policy on booking_stage_transitions admits',
+    async (role) => {
+      setUpConfirmable()
+      await expect(confirmRental({ id: 'B-715' }, { userId: 'u-1', role })).resolves.toMatchObject({
+        success: true,
+      })
+    },
+  )
+
+  it.each(['Technician', 'Accounts', 'Driver', 'Client'] as const)(
+    'denies %s, and writes nothing',
+    async (role) => {
+      setUpConfirmable()
+      await expect(confirmRental({ id: 'B-715' }, { userId: 'u-1', role })).rejects.toBeInstanceOf(
         ActionPermissionError,
       )
-    }
-    expect(writes.state.ops).toHaveLength(0)
+      expect(writes.state.ops).toHaveLength(0)
+    },
+  )
+
+  /*
+   * Technician is the one worth stating twice. `operations.perform` — the
+   * capability the four floor verbs use — admits them, and this one must not:
+   * the header of `confirmRental.ts` refused to borrow that capability for
+   * exactly this reason, and the database would reject the row anyway.
+   */
+  it('denies Technician although operations.perform admits them to the floor verbs', async () => {
+    setUpConfirmable()
+    expect(canPerformOperations('Technician')).toBe(true)
+    await expect(confirmRental({ id: 'B-715' }, { userId: 'u-1', role: 'Technician' })).rejects.toThrow(
+      /requires rental\.confirm/,
+    )
   })
 
   it('refuses a call with no session context — a confirm has an actor or it is not recorded', async () => {
-    await expect(confirmRental({ id: 'BK-2026-0715' })).rejects.toThrow(/session context/)
+    await expect(confirmRental({ id: 'B-715' })).rejects.toThrow(/session context/)
     expect(writes.state.ops).toHaveLength(0)
+  })
+})
+
+/* ── Auto Assign Serials — the ordering Confirm imposes ─────────────────────
+ *
+ * Added 16 Aug 2026 with the feature (PLAN.md §4.30). Until then Confirm moved
+ * the stage and assigned nothing, so every booking it confirmed reached the
+ * floor with no units behind it — the blocker sitting under Packing, Handover,
+ * Return, Reset and Evidence equally.
+ *
+ * The ordering is the part that can only be wrong here, and it is wrong in a
+ * way no type catches: reserve-then-transition leaves a Quote untouched when
+ * gear is short, transition-then-reserve leaves a Booked booking with nothing
+ * behind it. Booked is the stage the floor acts on, so the difference is real.
+ */
+describe('Auto Assign Serials', () => {
+  it('reserves BEFORE moving the stage, so a shortfall leaves the booking at Quote', async () => {
+    setUpConfirmable()
+    await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
+
+    expect(assign.state.calls).toEqual(['plan', 'reserve'])
+    /* The stage row is written after both — insertsOn reads the write log,
+       which is only appended to by applyBookingTransition. */
+    expect(insertsOn('booking_stage_transitions')).toHaveLength(1)
+  })
+
+  it('refuses the confirm when a line cannot be covered, and writes no stage row', async () => {
+    assign.state.complete = false
+    setUpConfirmable()
+
+    await expect(confirm({ id: 'B-715', clientUuid: ACTION_KEY })).rejects.toThrow(/not every line has units free/)
+    /* 0003:1478 — "If reservation fails on any line, Confirm is rejected with
+       the conflicting line named." Rejected means nothing moved. */
+    expect(insertsOn('booking_stage_transitions')).toHaveLength(0)
+    expect(assign.state.calls).toEqual(['plan'])
+  })
+
+  it('never reserves when the booking is not a Quote — the stage guard runs first', async () => {
+    db.state.responses['bookings'] = [[bookingAt(CONFIRM_TO)]]
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
+
+    await expect(confirm({ id: 'B-715', clientUuid: ACTION_KEY })).rejects.toThrow(/is at/)
+    /* A repeat submit must not take a second set of units off the shelf. */
+    expect(assign.state.calls).toEqual([])
+  })
+
+  it('never reserves for a booking with no live lines', async () => {
+    setUpConfirmable([])
+    await expect(confirm({ id: 'B-715', clientUuid: ACTION_KEY })).rejects.toThrow(/no live lines/)
+    expect(assign.state.calls).toEqual([])
+  })
+
+  it('reports units reserved separately from qty, because a bundle line has no serial', async () => {
+    assign.state.reservationIds = ['res-1']
+    assign.state.unitRowIds = ['blu-1']
+    setUpConfirmable([{ id: LINE_A, qty: 2 }, { id: LINE_B, qty: 3 }])
+
+    const { result } = await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
+    expect(result.units).toBe(5)
+    expect(result.unitsReserved).toBe(1)
+    expect(result.unitRowsCreated).toBe(1)
+  })
+
+  /*
+   * The compensation path. This is NOT atomicity — PostgREST gives a browser no
+   * transaction — but a refused transition must still give the units back, or a
+   * booking that was never confirmed keeps a camera off the shelf until someone
+   * finds it by hand.
+   */
+  it('releases the held units and booking line units when the stage transition is refused', async () => {
+    /* A Quote whose stage re-read never reports the move: applyBookingTransition
+       returns ok, then the persistence check fails. */
+    db.state.responses['bookings'] = [[bookingAt('Quote')], [{ stage: 'Quote' }]]
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
+
+    await expect(confirm({ id: 'B-715', clientUuid: ACTION_KEY })).rejects.toThrow(/treat the booking as NOT confirmed/)
+    expect(assign.state.calls).toContain('release')
+    expect(assign.state.calls).toContain('releaseUnits')
+    expect(assign.state.released[0]?.ids).toEqual(['res-1', 'res-2'])
+    expect(assign.state.releasedUnits[0]?.ids).toEqual(['blu-1', 'blu-2'])
+  })
+
+  it('names the booking in the release reason, so a stray hold is traceable', async () => {
+    db.state.responses['bookings'] = [[bookingAt('Quote')], [{ stage: 'Quote' }]]
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
+
+    await expect(confirm({ id: 'B-715', clientUuid: ACTION_KEY })).rejects.toThrow()
+    expect(assign.state.released[0]?.reason).toContain('B-715')
+    expect(assign.state.releasedUnits[0]?.reason).toContain('B-715')
+  })
+
+  it('does not release anything on a confirm that succeeds', async () => {
+    setUpConfirmable()
+    await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
+    expect(assign.state.released).toEqual([])
+    expect(assign.state.releasedUnits).toEqual([])
   })
 })

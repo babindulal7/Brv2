@@ -195,15 +195,26 @@ refuses any action not marked `implemented: true`, so those writes do not happen
 
 Raise them; do not invent an answer (`CLAUDE.md` hard rule).
 
-1. **Sub-Rental is specified three ways** — a booking-level chip (04 §4.1), a line-level
-   gold outline (04 Notes), and a row property. Neither `RentalRow` nor `LineItem` carries
-   any sub-rental field, and `/operations/sub-rental` exists as a separate register.
-   Deriving the booking flag from its lines satisfies both wireframes but is an inference.
-2. **"On Stop"** is drawn twice in spec 08 and does not exist in the schema —
-   `client_flag_type` is `VIP | Blocked | Upgrade Candidate`. Do not ship a chip whose
-   count is permanently 0.
-3. **Spec 09's three self-declared duplications** — P&L in groups 01 and 06; Payments and
-   Expenses each both a tab and a report; `05 Outstanding` = `06 Receivables`.
+> **Items 1–3 were RULED on 13 Aug 2026 and are recorded in §11 below.** They are kept
+> here, struck, so a reader who arrives via an old reference finds the answer rather than
+> an open question.
+
+1. ~~**Sub-Rental is specified three ways.**~~ **RULED → §11.1: line-level, booking flag
+   derived.**
+2. ~~**"On Stop" does not exist in the schema.**~~ **RULED → §11.2: derived from credit
+   state, threshold read from Settings ▸ Financial.**
+3. ~~**Spec 09's three self-declared duplications.**~~ **RULED → §11.3: deduplicate.**
+
+3a. **NEW, 13 Aug 2026 — the `payment` sequence diverges from every other document.**
+   `payments` mints `PAY-2026-0094`; everything else mints `INV-121`, `B-918`, `DEP-90`.
+   This is not an oversight. `trg_payments_reject_update` (`0046`) refuses UPDATE on
+   `payments` for **every role including `service_role`**, so the 93 existing
+   `PAY-2026-xxxx` numbers are permanent — an attempt to renumber them was refused by the
+   database and rolled back in full. The sequence was therefore left in the retired shape
+   so the table stays internally consistent rather than splitting at row 94.
+   **The decision:** accept the divergence, or move the sequence and accept that payments
+   1–93 read one way and 94-on read another. A one-line UPDATE either way; the historical
+   rows cannot move regardless. See `0056`'s header.
 4. **`0054` is unapplied**, so the Clients directory cannot expose the blocked flag that
    spec 08's closing note requires. Needs migration approval, not a code change.
 5. **Handover "No re-scan"** vs the built multi-session Partial Pickup model. If partial
@@ -239,3 +250,60 @@ Another session is writing to this repo **right now** (`src/lib/queries/*`,
 `NewRental.tsx`, `AddItemPanel.tsx`, `CalendarPanel.tsx` at 02:12). Restore point:
 `6fb1c62`. Re-read a file immediately before editing it; do not trust a line number
 you read minutes ago.
+
+---
+
+## 11. Rulings of 13 Aug 2026
+
+### 11.1 Sub-Rental is a **line-level** property; the booking flag is **derived**
+
+A line is sub-rented. A booking counts as sub-rental **if any of its lines is**. This is
+the only reading that satisfies both of spec 04's drawings at once — §4.1's gold-outline
+*row* and §4.2 Notes' gold-outline *line* — without storing the same fact twice and
+letting the two disagree.
+
+- `LineItem` gains the field. `RentalRow` does **not**: the booking-level answer is
+  computed from its lines, never written.
+- The `(Sub-Rental)` chip on `/rentals` filters on that derived predicate, replacing the
+  disabled-with-a-reason chip that ships today.
+- Law 11 still applies: the gold outline is never alone. It carries `STATUS.ext`'s icon
+  and an accessible label ("Sub-rented"), as §7 already requires.
+- `/operations/sub-rental` **survives** as the register behind it (Law 3).
+
+### 11.2 "On Stop" is **derived from credit state**, with the threshold in Settings
+
+Not a fourth `client_flag_type`. A client is On Stop when **either**:
+- their outstanding balance exceeds their credit limit, **or**
+- they hold an invoice more than *N* days past its due date.
+
+*N* is **read from Settings ▸ Financial**, beside the payment terms, defaulting to **30** —
+per spec 11 §11.4's own rule, *"Every value here is read by a screen. None is hardcoded."*
+No migration, no flag to go stale when a client pays, and the chip stops being a filter
+that always returns nothing.
+
+Blocked and On Stop remain **intersecting overlays**, not siblings of Active (§7): a client
+is routinely Active *and* On Stop, and `0005_clients.sql` is explicit that a block is a flag
+which "coexists with the client's state", never a status.
+
+### 11.3 The report catalog is **deduplicated**
+
+Spec 09 §9.6 declares three duplications and leaves them open. Resolved:
+
+| Duplication | Resolution |
+|---|---|
+| Profit & Loss in groups 01 **and** 06 | Lives in **01** only |
+| Payments and Expenses are each both a tab and a report | The group-06 entries **deep-link into the Finance tab**, they do not duplicate it |
+| `05 Outstanding` = `06 Receivables` | Collapses into **06 Receivables** |
+
+The register drops from 45 to ~42 reports, each with exactly one home. `catalog.ts`'s
+`CATALOG_ERRORS` module-load assertion must be updated to the new per-group counts in the
+same change, or it will report a failure on screen.
+
+Two screens showing the same figure under different names is how reconciliation arguments
+start; the spec was right to flag it and wrong to leave it.
+
+### 11.4 The identifier ruling reaches nine of ten sequences
+
+Added: `M-` membership, `Q-` quote, `BND-` bundle (none existed). Converted: `DEP-`
+deposit, `EXP-` expense. Untouched by design: `EQ` equipment (out of scope, CHECK-enforced)
+and `PAY-` payment (immutable — see §9.3a). Applied and verified live as `0056`.

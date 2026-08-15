@@ -28,7 +28,7 @@ import {
  * unit on. Units now travel inside their line (`FloorLineInput.unitIds`).
  */
 export type CompleteReturnInput = {
-  /** `bookings.id` (uuid) or `bookings.booking_no` (`BK-YYYY-NNNN`). */
+  /** `bookings.id` (uuid) or `bookings.booking_no` (`B-` + digits — corrected 15 Aug 2026, see `confirmRental.ts`). */
   rentalId: string;
   /**
    * The booking lines this session received. `validate` refuses an empty list —

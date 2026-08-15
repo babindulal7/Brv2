@@ -23,6 +23,8 @@ import { canManageSettings } from '../../lib/rbac'
 import { useAuth } from '../../lib/auth'
 import {
   TABS,
+  LEGACY_TAB,
+  DEFAULT_TAB,
   TAB_ICON,
   TAB_SHORT_LABEL,
   TAB_SUMMARY,
@@ -46,11 +48,11 @@ import {
 } from './sections/shared'
 import {
   FIELD_SECTIONS,
+  FINANCIAL_SECTIONS,
+  ORGANISATION_SECTIONS,
   BranchesPane,
   BranchesRail,
   FinancialPane,
-  OverviewPane,
-  OverviewRail,
   UsersPane,
   branchCsvRows,
 } from './sections'
@@ -175,18 +177,23 @@ export default function Settings() {
   const tabs = useMemo(() => TABS.filter((t) => money || !t.money), [money])
 
   const raw = params.get('tab')
-  const requested = isTabKey(raw) ? raw : 'overview'
-  /* A parked `?tab=ai` or `?tab=communication` link, and a `?tab=financial`
-     link opened by a money-blind session, both land on Overview rather than on
-     a 404 or an empty pane. */
-  const active: TabKey = tabs.some((t) => t.key === requested) ? requested : 'overview'
+  /*
+   * Eight tabs became four on 15 Aug. A `?tab=` value is a contract — bookmarks,
+   * Administration Modules rows and the phone list all carry one — so a retired
+   * key is TRANSLATED through `LEGACY_TAB` rather than dropped on the default.
+   * `?tab=financial` lands on Business, where the financial cards now live;
+   * `?tab=security` lands on System, where its two cards now live. Only a key
+   * that was never a tab falls back.
+   */
+  const requested: TabKey = isTabKey(raw) ? raw : (raw !== null && LEGACY_TAB[raw]) || DEFAULT_TAB
+  const active: TabKey = tabs.some((t) => t.key === requested) ? requested : DEFAULT_TAB
   /* At phone width the *absence* of a tab param is the section list; §11.1
      draws no Overview row there because Overview is what the list replaces. */
   const onPhoneList = phone && (raw === null || !tabs.some((t) => t.key === raw))
 
   const go = (tab: TabKey) => {
     const next = new URLSearchParams(params)
-    if (tab === 'overview' && !phone) next.delete('tab')
+    if (tab === DEFAULT_TAB && !phone) next.delete('tab')
     else next.set('tab', tab)
     setParams(next)
     window.scrollTo({ top: 0 })
@@ -204,15 +211,22 @@ export default function Settings() {
 
   const exportConfig = () => {
     const rows: string[][] = [['Section', 'Setting', 'Value']]
-    for (const t of tabs) {
-      const sections = FIELD_SECTIONS[t.key]
-      if (!sections) continue
+    const walk = (tabLabel: string, sections: readonly (typeof FINANCIAL_SECTIONS)[number][]) => {
       for (const s of sections) {
         for (const f of s.fields) {
-          rows.push([`${t.label} · ${s.title}`, f.label, fieldValue(f, settings)])
+          rows.push([`${tabLabel} · ${s.title}`, f.label, fieldValue(f, settings)])
         }
       }
     }
+    for (const t of tabs) {
+      const sections = FIELD_SECTIONS[t.key]
+      if (sections) walk(t.label, sections)
+    }
+    /* Law 6 — the financial rows reach the CSV only for a session that can see
+       money. They are kept out of FIELD_SECTIONS for exactly this reason: the
+       old money-gated TAB filtered them out of `tabs` and therefore out of the
+       export, and folding them into Business must not lose that. */
+    if (money) walk('Business', FINANCIAL_SECTIONS)
     downloadCsv('babin-settings.csv', rows)
   }
 
@@ -304,22 +318,32 @@ export default function Settings() {
   /* ── the panel ───────────────────────────────────────────────────────── */
 
   const panel = (() => {
-    if (active === 'overview') return <OverviewPane />
     if (active === 'branches') {
       return (
         <BranchesPane money={money} rows={branches} setRows={setBranches} addOpen={addOpen} setAddOpen={setAddOpen} />
       )
     }
-    if (active === 'users') return <UsersPane />
-    if (active === 'financial') return <FinancialPane />
+    if (active === 'people') return <UsersPane />
+    if (active === 'business') {
+      /*
+       * Business is Organisation + Financial in one pane. Law 6 is applied HERE
+       * rather than by dropping a tab: a money-blind session gets the
+       * organisation cards and no financial cards at all — removed, not
+       * disabled, which is the same treatment the `financial` tab used to get.
+       */
+      return (
+        <>
+          <SectionCards sections={ORGANISATION_SECTIONS} />
+          {money ? <FinancialPane /> : null}
+        </>
+      )
+    }
     const sections = FIELD_SECTIONS[active]
     return sections ? <SectionCards sections={sections} /> : null
   })()
 
   const rail =
-    active === 'overview' ? (
-      <OverviewRail />
-    ) : active === 'branches' ? (
+    active === 'branches' ? (
       <BranchesRail money={money} branches={branches} onAdd={() => setAddOpen(true)} onExport={exportBranches} />
     ) : (
       <>
@@ -367,14 +391,13 @@ export default function Settings() {
     }
 
     /* PHONE — §11.1: a list of sections, each tapping through to its own
-       screen. Built from `tabs`, the *filtered* set, so a money-blind session
-       gets six rows and not the seven the wireframe draws (Rulings §7). */
+       screen. Four rows since the 15 Aug cut, and no Overview row — Overview
+       was deleted, not hidden, so there is no longer a section the list has to
+       reach by a separate button underneath it. */
     if (onPhoneList) {
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
-          {tabs
-            .filter((t) => t.key !== 'overview')
-            .map((t) => (
+          {tabs.map((t) => (
               <button
                 key={t.key}
                 type="button"
@@ -403,18 +426,7 @@ export default function Settings() {
                 </span>
                 <Icon name="chevron_right" size={16} style={{ color: 'var(--muted)', flexShrink: 0 }} />
               </button>
-            ))}
-
-          {/* Overview is not a row — it is what the list replaces — but its
-              content still has to be reachable at phone width. */}
-          <button
-            type="button"
-            onClick={() => go('overview')}
-            style={{ ...controlStyle, minHeight: 44, width: '100%', justifyContent: 'center' }}
-          >
-            <Icon name={TAB_ICON.overview} size={14} />
-            Overview — organisation, key figures and every administration module
-          </button>
+          ))}
         </div>
       )
     }

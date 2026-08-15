@@ -18,11 +18,14 @@
  * lookup) and `lib/queries/clients` (code → uuid). Nothing about the action's
  * own logic is stubbed.
  *
- * ⚠ Driven through `blockClientConfig` for the same reason `createClient.test.ts`
- * is: `client.block` resolves to no rule in `lib/rbac`, so the dispatcher denies
- * every call before the body runs. That denial is pinned at the bottom.
+ * ⚠ Driven through `blockClientConfig` rather than through the dispatcher, so
+ * that the body's assertions stay independent of the permission gate. Until
+ * 15 Aug 2026 that was a necessity — `client.block` resolved to no rule and the
+ * dispatcher denied every call, Owner included. It is now ruled, and the gate is
+ * pinned at the bottom against the role list the database itself carries.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { canCreateClient, canBlockClient } from '../../../lib/rbac'
 /* Type-only, so it is erased and does not evaluate the module before the mocks. */
 import type { BlockClientInput } from '../blockClient'
 
@@ -297,23 +300,43 @@ describe('BLOCK_CLIENT — the ways it refuses', () => {
   })
 })
 
-describe('BLOCK_CLIENT — the dispatcher still refuses it', () => {
+describe('BLOCK_CLIENT — the dispatcher, ruled 15 Aug 2026', () => {
   /**
-   * ⚠ **The blocker, in executable form.** `client.block` resolves to nothing in
-   * `actions/core.ts:checkCapability`, so the dispatcher denies every role,
-   * Owner included. The rule is applied to the database and simply unmirrored:
-   * `policy client_flags_insert` admits Owner/Admin/Manager for a Blocked flag
-   * and additionally Coordinator/Warehouse for the other two flag types.
+   * **This block used to be the blocker in executable form** — `client.block`
+   * resolved to nothing and the dispatcher denied every role, Owner included. It
+   * said to rewrite rather than delete when the matrix was ruled. That is this.
    *
-   * When the matrix is ruled, this test fails — rewrite it to assert the ruled
-   * role list rather than deleting it.
+   * The narrow list is the database's own distinction, not a tightening invented
+   * here. `policy client_flags_insert` splits on the flag: Owner/Admin/Manager
+   * for a `Blocked` flag, and additionally Coordinator/Warehouse for every other
+   * flag type. This action writes `Blocked`, so it takes the narrow branch —
+   * which is why `lib/rbac`'s mirror is named `canBlockClient` and not something
+   * about flagging in general.
    */
-  it('denies every role by name, because client.block has no rule in lib/rbac', async () => {
-    await expect(blockClient(INPUT, CTX)).rejects.toThrow(/requires client\.block/)
+  const ALLOWED = ['Owner', 'Admin', 'Manager'] as const
+  const REFUSED = ['Coordinator', 'Warehouse', 'Technician', 'Accounts', 'Driver', 'Client'] as const
+
+  it.each(ALLOWED)('lets %s through the gate and reaches the write', async (role) => {
+    await expect(blockClient(INPUT, { ...CTX, role })).resolves.toBeDefined()
+    expect(access.inserts).toHaveLength(1)
+  })
+
+  it.each(REFUSED)('denies %s by name, and writes nothing', async (role) => {
+    await expect(blockClient(INPUT, { ...CTX, role })).rejects.toThrow(/requires client\.block/)
     expect(access.inserts).toHaveLength(0)
   })
 
-  it('is implemented — the refusal is the permission gate, not an unbuilt body', async () => {
-    await expect(blockClient(INPUT, CTX)).rejects.not.toThrow(/not connected to the database/)
+  /* The pair that shows the split is real: the same seat may create a client and
+     may not block one. */
+  it('refuses Coordinator here although clients_insert admits them to CREATE_CLIENT', async () => {
+    await expect(blockClient(INPUT, { ...CTX, role: 'Coordinator' })).rejects.toThrow(/requires client\.block/)
+    expect(canCreateClient('Coordinator')).toBe(true)
+    expect(canBlockClient('Coordinator')).toBe(false)
+  })
+
+  it('is implemented — a refusal here is the permission gate, never an unbuilt body', async () => {
+    await expect(blockClient(INPUT, { ...CTX, role: 'Driver' })).rejects.not.toThrow(
+      /not connected to the database/,
+    )
   })
 })

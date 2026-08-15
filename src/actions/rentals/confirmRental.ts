@@ -4,6 +4,13 @@ import { supabase } from '../../lib/supabase'
 import { generateClientUuid } from '../../lib/dataAccess'
 import { applyBookingTransition } from '../../lib/bookingTransition'
 import { BOOKING_STATUS, STATUS_ORDER, type BookingStatus } from '../../lib/workflow'
+import {
+  planAssignment,
+  reserveAssignedUnits,
+  releaseReservations,
+  releaseBookingLineUnits,
+  AssignmentIncompleteError,
+} from '../../lib/queries/availability'
 
 /**
  * # CONFIRM_RENTAL — the transition that makes a Quote a commitment
@@ -72,14 +79,25 @@ import { BOOKING_STATUS, STATUS_ORDER, type BookingStatus } from '../../lib/work
  *    PAN, a stacked discount above 10% without reason and approver, a Blocked
  *    client, or a client over credit limit."*
  *
- * Neither is synthesised here. The reservation belongs in one transaction with
- * the stage move, which PostgREST cannot offer a client, and
- * `inventory_reservations` is Booqable-mastered besides (`dataAccess.ts:201`).
- * The Critical-condition list gates the transition *after* this one, and three
- * of its five clauses are money facts. `TODO(decision)` — both are migrations,
- * not an action body. What this action does write is exactly the stage move,
- * and it reports the live line count it moved so the missing reservation is
- * visible rather than assumed.
+ * **The first of those is now done — 16 Aug 2026.** Confirm reserves inventory
+ * for the booking dates before it moves the stage; see the AUTO ASSIGN SERIALS
+ * block in `execute`. Both reasons this paragraph previously gave for not doing
+ * it have been addressed rather than worked around:
+ *
+ *  - *"`inventory_reservations` is Booqable-mastered besides
+ *    (`dataAccess.ts:201`)"* — ruled otherwise on 16 Aug, PLAN.md §4.30(a). It
+ *    was removed from `BOOQABLE_READ_ONLY_TABLES`, deliberately overriding
+ *    bridge spec §5.1, because it holds the schema's only double-booking
+ *    exclusion and the alternative table holds none.
+ *  - *"belongs in one transaction with the stage move, which PostgREST cannot
+ *    offer a client"* — still true, and still not solved. It is compensated
+ *    instead: a failed transition releases the holds. That is honest but it is
+ *    not atomic, and the server-side function remains the real fix.
+ *
+ * The remaining three of that first list — calendar, payment status, Rental
+ * Agreement — and the whole Critical-condition list are still not synthesised
+ * here. Three of that list's five clauses are money facts, and it gates the
+ * transition *after* this one.
  *
  * ## No pricing, by construction
  *
@@ -89,18 +107,18 @@ import { BOOKING_STATUS, STATUS_ORDER, type BookingStatus } from '../../lib/work
  * and a stage transition carries no amounts at all — so there is nothing for a
  * second copy of that order to drift from.
  *
- * ## ⚠ TODO(decision) — `rental.confirm` resolves to no rule in `lib/rbac`
+ * ## ✅ `rental.confirm` — ruled 15 Aug 2026, closing PLAN.md §4.20
  *
- * `actions/core.ts:105-126` resolves seven capability strings and
- * `rental.confirm` is not one of them, so `checkCapability` returns `undefined`
- * and the dispatcher denies this action **before** `validate` or `execute` runs
- * (`core.ts:144-149`). That is the fail-closed direction and it is deliberate.
+ * For three days this action was implemented and unreachable: `rental.confirm`
+ * resolved to no rule in `checkCapability`, which returns `undefined` for an
+ * unhandled capability, which the dispatcher reads as a denial for **every**
+ * role, Owner included. Fail-closed was the right default and the wrong answer.
  *
- * It is NOT re-pointed at a capability that happens to resolve.
- * `operations.perform` — the one `packRental` legitimately uses — maps to
- * `rbac.canPerformOperations`, which is `Owner | Admin | Manager | Warehouse |
+ * It was never re-pointed at a capability that happens to resolve.
+ * `operations.perform` — the one the four floor verbs legitimately use — maps to
+ * `rbac.canPerformOperations`: `Owner | Admin | Manager | Warehouse |
  * Technician`. The rule that actually governs this write is the live RLS policy
- * on the table it inserts into (read from the project, 12 Aug 2026):
+ * on the table it inserts into (re-read from the project, 15 Aug 2026):
  *
  *     policy booking_stage_transitions_insert with check (
  *       auth_user_role() = any (array['Owner','Admin','Manager','Coordinator','Warehouse'])
@@ -109,22 +127,38 @@ import { BOOKING_STATUS, STATUS_ORDER, type BookingStatus } from '../../lib/work
  *
  * The two sets differ in both directions: it admits **Coordinator** — the
  * booking desk, the seat that confirms bookings — and excludes **Technician**.
- * Borrowing `operations.perform` would therefore deny the role whose job this
- * is and admit one the database will reject. Writing the correct rule into
- * `lib/rbac` is a change to a file this task was not given, so it is reported
- * rather than invented. `permissions` keeps naming the real capability.
+ * Borrowing `operations.perform` would have denied the role whose job this is
+ * and admitted one the database rejects. So the ruling mirrored the policy
+ * instead: `rbac.canConfirmRental`, wired at `core.ts:checkCapability`.
+ * `permissions` still names the real capability, and always did.
  *
- * `confirmRentalConfig` is exported for the same reason `createClientConfig`
- * is: until the matrix is ruled, driving `validate`/`execute` through the
- * dispatcher is impossible, and "untested because unreachable" is how a write
- * body rots. The suite drives the config directly and pins the denial
- * separately through `confirmRental` itself.
+ * The policy's second clause — the actor must BE the session — has no mirror in
+ * `lib/rbac` and needs none: `applyBookingTransition` passes `ctx.userId` as
+ * `actor_id`, and RLS enforces the identity at the row where it cannot be talked
+ * past. `rbac` answers rank; the database answers identity.
+ *
+ * `confirmRentalConfig` stays exported. It was originally exported because the
+ * dispatcher was unreachable and "untested because unreachable" is how a write
+ * body rots; it stays because driving `validate`/`execute` directly keeps the
+ * body's assertions independent of the permission gate, which is now pinned
+ * separately against the ruled role list.
  */
 
 /** Confirm is the move OUT of `Quote`. */
 const CONFIRM_FROM: BookingStatus = 'Quote'
 
-/** `bookings.id` is a uuid; `booking_no` is `BK-YYYY-NNNN` (CHECK, live). */
+/**
+ * `bookings.id` is a uuid; `booking_no` is `B-` + digits.
+ *
+ * ⚠ Corrected 15 Aug 2026. This said `BK-YYYY-NNNN`, which was the CHECK in
+ * `0002_bookings.sql:58` and has not been the live rule since
+ * `0055_ruled_identifier_formats` was applied on 12 Aug. Read from the project:
+ * `bookings_booking_no_format CHECK (booking_no ~ '^B-[0-9]+$')`, and live rows
+ * are `B-715` … `B-917`. Nothing here depended on the shape — the branch below
+ * only asks "uuid or not" — but the comment was being quoted as fact by two
+ * separate reports on 15 Aug, both of which concluded the format was in conflict
+ * with itself. It is not; the comment was stale.
+ */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
@@ -141,7 +175,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const ISO_INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:\d{2})$/
 
 export type ConfirmRentalInput = {
-  /** `bookings.id` (uuid) or `bookings.booking_no` (`BK-YYYY-NNNN`). */
+  /** `bookings.id` (uuid) or `bookings.booking_no` (`B-` + digits — see UUID_RE). */
   id: string
   /**
    * **Law 8.** Minted where the operator pressed Confirm (`newClientUuid()` in
@@ -177,6 +211,20 @@ export type ConfirmRentalResult = {
    * bundle caveat, as `lib/queries/bookings.ts`'s ITEM COUNT block.
    */
   units: number
+  /**
+   * Physical units actually reserved — one `inventory_reservations` row each.
+   *
+   * Reported separately from `units` and never merged with it, because the two
+   * differ exactly where it matters: a bundle or service line contributes to
+   * `units` and can be assigned no serial, so `unitsReserved < units` is the
+   * normal, correct shape for a booking carrying one. Collapsing them would
+   * hide which lines got gear.
+   */
+  unitsReserved: number
+  /**
+   * Floor projection rows created in `booking_line_units`.
+   */
+  unitRowsCreated?: number
 }
 
 interface BookingHead {
@@ -190,7 +238,7 @@ interface BookingHead {
 }
 
 /**
- * The booking, by uuid or by `BK-` number. Every column is named and none of
+ * The booking, by uuid or by `B-` number. Every column is named and none of
  * them is money — `deposit_required` sits unmasked on this table
  * (`queries/bookings.ts` DEPOSIT), so a `select('*')` here would hand a rupee
  * figure to any session that can confirm a booking, Warehouse included.
@@ -230,7 +278,7 @@ async function readStage(bookingId: string): Promise<BookingStatus | null> {
 
 export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRentalResult> = {
   name: 'CONFIRM_RENTAL',
-  // Left naming the real capability. See the TODO(decision) in the header.
+  // Names the real capability, and now resolves. See the header.
   permissions: ['rental.confirm'],
 
   /**
@@ -244,16 +292,23 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
    * booking with one live line, then the exact payload this action sends. The
    * trigger accepted it and `bookings.stage` read `Booked`; a second insert
    * carrying `from_stage = 'Quote'` was rejected by the trigger, which is the
-   * replay case. It could **not** be driven through the UI: `rental.confirm`
-   * resolves to no rbac rule, so the dispatcher denies it before `execute`, and
-   * every operational table on the project is empty (0047 unapplied, PLAN.md
-   * §4.20) so there is no Quote to press the button on.
+   * replay case.
+   *
+   * ⚠ **It has still not been driven through the UI, but both reasons it could
+   * not be are gone as of 15 Aug 2026.** This said the dispatcher denied it
+   * before `execute` (ruled — see the header) and that "every operational table
+   * on the project is empty (0047 unapplied)". The second was true on 12 Aug and
+   * is not now: counted live on 15 Aug, `bookings` holds 121 rows and 18 of them
+   * are at `Quote`, with 419 `booking_lines` behind them. The seed corpus in
+   * `0047_seed_reference_corpus.sql` is indeed still unapplied — the rows came in
+   * by another route — so the file's status line is right and the conclusion
+   * drawn from it was wrong. There are real Quotes to press the button on.
    */
   implemented: true,
 
   validate: (input) => {
     if (!input.id || input.id.trim() === '') {
-      throw new Error('A booking reference is required — pass the booking uuid or its BK- number.')
+      throw new Error('A booking reference is required — pass the booking uuid or its B- number.')
     }
     if (input.clientUuid !== undefined && input.clientUuid.trim() === '') {
       throw new Error(
@@ -342,6 +397,51 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
       )
     }
 
+    /* ── AUTO ASSIGN SERIALS ────────────────────────────────────────────────
+     *
+     * `workflow.ts:45` defines the stage this action writes into: Booked means
+     * *"Committed. Gear reserved, calendar held, **serials assigned**."* Until
+     * 16 Aug 2026 this action moved the stage and assigned nothing, so every
+     * booking it confirmed arrived on the floor with no units behind it — which
+     * PROGRESS.md identified as the single blocker sitting under Packing,
+     * Handover, Return, Reset and Evidence equally.
+     *
+     * Ruled 16 Aug (PLAN.md §4.30): the assignment is written to
+     * `inventory_reservations`, the only table carrying a double-booking
+     * exclusion. `lib/availability` decides; `lib/queries/availability` fetches
+     * and writes. Nothing about availability is decided in this file — Law 1.
+     *
+     * ## Why reserve BEFORE moving the stage
+     *
+     * `0003:1478` — *"If reservation fails on any line, Confirm is rejected
+     * with the conflicting line named."* Reserving first is what makes that
+     * possible: a failure leaves the booking at Quote, untouched, which is the
+     * truth. The other order would produce a Booked booking with no gear behind
+     * it, and Booked is the stage the floor acts on.
+     *
+     * ⚠ It has one cost, recorded rather than hidden. `0003:1488` marks a
+     * `TRIGGER REQUIRED` — *"no row may exist for a booking at stage Quote or
+     * Draft"* — and for the moment between these two writes, rows do exist
+     * against a Quote. That trigger has never been built (checked live 16 Aug),
+     * so the database accepts either order today; if it is ever built it will
+     * reject this sequence, and the fix is the same server-side function the
+     * next paragraph names. The window is milliseconds, invisible to any
+     * screen, and self-healing in both directions: the transition follows, or
+     * the release below runs.
+     *
+     * ## This is two writes, not one transaction
+     *
+     * PostgREST cannot give a browser a transaction. If the stage move fails
+     * after the units are held, the holds are **released** (Law 3 — released,
+     * never deleted) and the booking stays at Quote. That is compensation, not
+     * atomicity. The real fix is the Postgres function PLAN.md already records
+     * for booking creation, doing both server-side under one commit.
+     */
+    const assignment = await planAssignment(booking.id)
+    if (!assignment.complete) throw new AssignmentIncompleteError(assignment)
+
+    const reservation = await reserveAssignedUnits(assignment, { userId: ctx.userId })
+
     const clientUuid = input.clientUuid ?? generateClientUuid()
     const occurredAt = input.occurredAt ?? new Date().toISOString()
 
@@ -358,6 +458,19 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
     })
 
     if (!ok) {
+      /* The units are already held at this point. Give them back before
+         reporting the refusal, or a booking that was never confirmed keeps a
+         camera off the shelf until someone finds it by hand. */
+      await Promise.all([
+        releaseReservations(
+          reservation.reservationIds,
+          `Rolled back: ${booking.booking_no} was not confirmed (${plan.blockers.map((b) => b.label).join('; ')}).`,
+        ),
+        releaseBookingLineUnits(
+          reservation.unitRowIds,
+          `Rolled back: ${booking.booking_no} was not confirmed (${plan.blockers.map((b) => b.label).join('; ')}).`,
+        ),
+      ])
       throw new Error(
         `${booking.booking_no} was not confirmed: ` +
           plan.blockers.map((b) => `${b.label}${b.blocking === null ? '' : ` (${b.blocking})`}`).join('; '),
@@ -376,6 +489,28 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
      */
     const persisted = await readStage(booking.id)
     if (persisted !== to) {
+      /*
+       * ⚠ The units are held and the booking did NOT move. Release them.
+       *
+       * This branch was missed when Auto Assign Serials was first wired and a
+       * test caught it — and it is the *more likely* of the two failures, not
+       * the exotic one: it is the path `idempotentInsert` takes when a write is
+       * queued offline or swallowed by the `'Failed to fetch'` / 408 branch
+       * (`dataAccess.ts:49-53`), which fires even when `navigator.onLine` is
+       * true. Without this, a confirm that visibly failed would leave every
+       * unit on the booking held against a Quote, invisibly, until someone
+       * found them by hand.
+       */
+      await Promise.all([
+        releaseReservations(
+          reservation.reservationIds,
+          `Rolled back: ${booking.booking_no} did not reach ${to} — the confirm was queued or rejected.`,
+        ),
+        releaseBookingLineUnits(
+          reservation.unitRowIds,
+          `Rolled back: ${booking.booking_no} did not reach ${to} — the confirm was queued or rejected.`,
+        ),
+      ])
       throw new Error(
         `${booking.booking_no} is still at ${persisted ?? 'an unreadable stage'} — the confirm was queued or ` +
           'rejected rather than applied, so treat the booking as NOT confirmed. Check the connection and try again.',
@@ -393,6 +528,8 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
         stage: { from: booking.stage, to },
         lines: lines.length,
         units,
+        unitsReserved: reservation.units,
+        unitRowsCreated: reservation.unitRowIds.length,
       },
       events: [
         {
@@ -406,6 +543,8 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
             to,
             lines: lines.length,
             units,
+            unitsReserved: reservation.units,
+            unitRowsCreated: reservation.unitRowIds.length,
             occurredAt,
             userId: ctx.userId,
           },

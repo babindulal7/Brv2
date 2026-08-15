@@ -24,7 +24,7 @@ import { GROUPS, REPORTS, CATALOG_ERRORS, reportsIn, type CatalogReport, type Gr
 import { ReportTemplate } from './ReportTemplate'
 
 /**
- * # `09_FINANCE.md` §9.6 — the Report Catalog, the way into all 45
+ * # `09_FINANCE.md` §9.6 — the Report Catalog, the way into all 43
  *
  * ```
  * │ Finance ▸ Reports                      [Simple ◉ | Detailed ○] │
@@ -35,8 +35,22 @@ import { ReportTemplate } from './ReportTemplate'
  * │ ┌──────────────────────────────────────┐                       │
  * │ │ one revenue chart                    │  + top-8 ROI table    │
  * │ └──────────────────────────────────────┘  + 3 plain sentences  │
- * │ DETAILED — 10 groups, 45 reports                               │
+ * │ DETAILED — 10 groups, 43 reports                               │
  * ```
+ *
+ * ## 43, not the 45 §9.6 prints
+ *
+ * `WIREFRAME_RULINGS_2026-08-12.md` §11.3 deduplicated the register: Profit &
+ * Loss lives in 01 only, `05 Outstanding` collapsed into `06 Receivables`, and
+ * the Payments and Expenses entries **deep-link into their Finance tabs rather
+ * than duplicating them**. The count on this page is read from `REPORTS.length`
+ * rather than typed, so the copy cannot disagree with the register, and
+ * `catalog.ts`'s `CATALOG_ERRORS` asserts the ruled numbers at module load —
+ * the banner below is what a drift looks like.
+ *
+ * A tab deep-link is drawn as a link that names its tab, never as a report tile
+ * (see `ReportRow`): a reader must be able to tell "this opens the Payments
+ * tab" from "this opens a report" without clicking either.
  *
  * ## The catalog holds no figures of its own
  *
@@ -229,10 +243,12 @@ export function ReportCatalog() {
         {matches ? (
           <Card title={`${matches.length} report${matches.length === 1 ? '' : 's'} matching “${query.trim()}”`} bodyStyle={{ padding: 0 }}>
             {matches.length === 0 ? (
-              <p style={{ margin: 0, padding: 'var(--sp-md)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                No report in the register of 45 has that name. The four Sales &amp; Marketing reports were cut —
+              <p style={{ margin: 0, padding: 'var(--sp-md)', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.6 }}>
+                No report in the register of {REPORTS.length} has that name. The four Sales &amp; Marketing reports were cut —
                 §9.6: no <span className="identifier">leads</span>, <span className="identifier">campaigns</span>,{' '}
                 <span className="identifier">conversion</span> or <span className="identifier">acquisition</span> table exists.
+                Two more names moved rather than went: rulings §11.3 collapsed <strong>Outstanding</strong> into{' '}
+                <strong>06 Receivables</strong>, and <strong>Profit &amp; Loss</strong> now lives in <strong>01 Overview</strong> only.
               </p>
             ) : (
               matches.map((r) => <ReportRow key={r.key} report={r} onOpen={() => setOpenReport(r)} showGroup />)
@@ -254,7 +270,7 @@ export function ReportCatalog() {
       <FooterNote
         extra={[
           dates ? (dates.bs ? `As of ${dates.ad} · BS ${dates.bs}` : `As of ${dates.ad}`) : `Ledger covers ${LEDGER_COVERAGE}`,
-          '45 reports. The four Sales & Marketing reports were cut — no backing tables exist.',
+          `${REPORTS.length} reports, each with one home. The four Sales & Marketing reports were cut — no backing tables exist — and rulings §11.3 deduplicated §9.6's remaining 45.`,
         ]}
       />
     </div>
@@ -445,45 +461,94 @@ function DetailedView({
   )
 }
 
+/** The row's own metrics, shared by the report button and the tab link so the
+    two are the same size and both clear Law 15's 44px floor at every width. */
+const rowBox = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 'var(--sp-sm)',
+  flex: 1,
+  minWidth: 0,
+  minHeight: 44,
+  padding: '8px 14px',
+  fontFamily: 'inherit',
+  fontSize: 'var(--t-meta)',
+  textAlign: 'left' as const,
+  cursor: 'pointer',
+}
+
 /**
  * One report in the catalog.
  *
  * Law 11 — a report with no source is not marked by a colour or a dimmed row.
  * It carries the words "not tracked yet" and an icon, and it stays clickable:
  * the §9.7 template's job in that case is to say *why*, and hiding the row
- * would leave the register looking shorter than the 45 the spec declares.
+ * would leave the register looking shorter than the count the register asserts.
+ *
+ * **Rulings §11.3 — two rows in group 06 are not reports.** Payments and
+ * Expenses each *are* a Finance tab, and the ruling is that the register entry
+ * deep-links into that tab rather than duplicating it. Such a row is drawn as a
+ * link, says which tab it opens in words beside an arrow — Law 11 again, never
+ * a colour or a different weight alone — and never opens the §9.7 template. A
+ * reader can tell it from a report row without hovering anything.
  */
 function ReportRow({ report, onOpen, showGroup = false }: { report: CatalogReport; onOpen: () => void; showGroup?: boolean }) {
-  const untracked = report.projection === null && report.route === null
+  const untracked = report.projection === null && report.route === null && !report.financeTab
   const group = GROUPS.find((g) => g.key === report.group)
+
+  const name = (
+    <span style={{ flex: 1, minWidth: 0 }}>
+      {report.name}
+      {showGroup && group && <span style={{ color: 'var(--muted)' }}>{` · ${group.key} ${group.name}`}</span>}
+    </span>
+  )
+
+  /* Rulings §11.3 — the tab deep-link. `financeTab` implies a route;
+     `CATALOG_ERRORS` refuses the register otherwise, and the banner at the top
+     of this page says so, but the guard is kept here too so a bad entry renders
+     as an ordinary row rather than as a link to `undefined`. */
+  if (report.financeTab && report.route) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
+        <Link
+          to={report.route}
+          aria-label={`${report.name} — opens the ${report.financeTab} tab in Finance`}
+          style={{ ...rowBox, color: 'var(--text)', textDecoration: 'none' }}
+        >
+          <Icon name="arrow_right" size={11} style={{ color: 'var(--link)', flexShrink: 0 }} />
+          {name}
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              flexShrink: 0,
+              padding: '0 7px',
+              height: 20,
+              borderRadius: 'var(--r-badge)',
+              border: '1px solid var(--border)',
+              background: 'var(--card2)',
+              color: 'var(--link)',
+              fontSize: 'var(--t-meta)',
+            }}
+          >
+            <Icon name="external_link" size={11} />
+            {`Opens the ${report.financeTab} tab`}
+          </span>
+        </Link>
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', borderBottom: '1px solid var(--border)' }}>
       <button
         type="button"
         onClick={onOpen}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 'var(--sp-sm)',
-          flex: 1,
-          minWidth: 0,
-          minHeight: 44,
-          padding: '8px 14px',
-          border: 'none',
-          background: 'transparent',
-          color: 'var(--text)',
-          fontFamily: 'inherit',
-          fontSize: 'var(--t-meta)',
-          textAlign: 'left',
-          cursor: 'pointer',
-        }}
+        style={{ ...rowBox, border: 'none', background: 'transparent', color: 'var(--text)' }}
       >
         <Icon name="dot" size={11} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-        <span style={{ flex: 1, minWidth: 0 }}>
-          {report.name}
-          {showGroup && group && <span style={{ color: 'var(--muted)' }}>{` · ${group.key} ${group.name}`}</span>}
-        </span>
+        {name}
         {untracked && (
           <span
             style={{

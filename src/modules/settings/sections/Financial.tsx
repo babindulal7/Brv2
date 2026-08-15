@@ -34,6 +34,20 @@ import type { Section } from './shared'
  * replacement value" would be charged to a real client by the first operator
  * who trusted this screen.
  *
+ * **3. A ruling that needs a number puts the number HERE.** Rulings §11.2 made
+ * "On Stop" a derived state rather than a fourth `client_flag_type`, and gave
+ * it a threshold — *N* days past due. `overdueStopDays` (default 30) is that
+ * threshold, added to Currency & terms beside the payment terms exactly as the
+ * ruling directs. `data/clients.ts:readOverdueStopDays()` is its only reader,
+ * and the predicate every On Stop surface calls takes it as an argument, so no
+ * module carries a literal 30.
+ *
+ * ⚠ 15 Aug — "Tax office" and "Exchange rates" were DELETED. Both were rows
+ * whose only content was that they are not built, and rule 2 above is about a
+ * FIGURE that would be trusted if invented, not about a row that names an
+ * absent screen. The "not tracked yet" PANELS below stay: those sit where a
+ * number would otherwise be read off the screen and charged to a client.
+ *
  * **The crew coordination fee is Rs 1,000, from `data/crew.ts`.** The Rs 500
  * duplicate that used to be exported from `data/settings.ts` under the same
  * name is deleted (Rulings §9.11) — splitting this file was exactly the moment
@@ -41,7 +55,6 @@ import type { Section } from './shared'
  */
 
 const R = (to: string): Dest => ({ kind: 'route', to })
-const N = (why: string): Dest => ({ kind: 'none', why })
 
 export const FINANCIAL_SECTIONS: Section[] = [
   {
@@ -73,7 +86,6 @@ export const FINANCIAL_SECTIONS: Section[] = [
         value: 'FY 2083/84',
         readOnlyWhy: 'Derived from the Date Engine’s current BS year, not stored. It rolls on 1 Shrawan by itself.',
       },
-      { label: 'Tax office', note: 'The IRD office this PAN is registered with.', dest: N('IRD registration details were never supplied for this build.') },
       { label: 'Invoice rules', note: 'Numbering, reversal and void behaviour.', dest: R('/admin/numbering') },
     ],
   },
@@ -100,12 +112,27 @@ export const FINANCIAL_SECTIONS: Section[] = [
         value: 'USD · EUR · INR',
         readOnlyWhy: 'No rate feed is connected, so nothing can convert. The list is illustrative until one is.',
       },
-      { label: 'Exchange rates', note: 'Rates are pulled from the day-open feed.', dest: N('No rate feed is connected in this build.') },
       {
         label: 'Payment terms',
         note: 'Default credit terms on a new invoice.',
         settingKey: 'paymentTermsDays',
         readBy: 'Create Invoice’s due date',
+      },
+      /*
+       * Rulings §11.2 — "On Stop" is DERIVED from credit state, and this is the
+       * threshold it derives from. It sits beside the payment terms because the
+       * ruling puts it there and because the two are read together: the terms
+       * decide when an invoice falls due, this decides how long a late one is
+       * carried before the client stops trading.
+       *
+       * They are separate settings on purpose. Deriving one from the other
+       * would move the stop threshold every time somebody edited the terms.
+       */
+      {
+        label: 'On stop after',
+        note: 'Days past an invoice due date before a client counts as On Stop. On Stop is not a flag — a client is also on stop the moment their outstanding exceeds their credit limit, and comes off it by itself when they pay.',
+        settingKey: 'overdueStopDays',
+        readBy: 'the Clients directory’s On Stop chip and the client record’s credit box',
       },
       { label: 'Late payment penalties', note: 'Interest on an overdue invoice.', settingKey: 'latePaymentPercentPerMonth' },
     ],
