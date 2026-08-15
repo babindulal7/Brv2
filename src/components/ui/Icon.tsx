@@ -186,6 +186,10 @@ interface IconProps {
 
 export default function Icon({ name, fill = false, size = 20, label, className, style }: IconProps) {
   const Cmp = REGISTRY[name]
+  if (!Cmp) {
+    console.error(`Icon "${name}" is undefined in REGISTRY!`);
+    return <span style={{ color: 'red', fontWeight: 'bold' }}>[Icon:{name}]</span>;
+  }
   return (
     <Cmp
       size={size}

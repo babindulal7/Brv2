@@ -26,20 +26,58 @@ import {
   clientMetrics,
   clientFilterGroupsFor,
   CLIENT_ROWS_PER_PAGE,
+  creditStopFactsOf,
+  evaluateCreditStop,
+  readOverdueStopDays,
   type ClientRecord,
+  type CreditStopVerdict,
 } from '../../data/clients'
 
 /* ── filters ───────────────────────────────────────────────────────────── */
 
-type FilterKey = 'all' | 'onRent' | 'paymentDue' | 'blocked' | 'vip' | 'typeOrg' | 'typeInd' | 'typeUnassigned'
+/**
+ * ⚠ **`blocked` is deliberately NOT a member of this union** — Rulings §11.2.4.
+ *
+ * It used to be, and that was the defect the ruling names: rendering Active,
+ * Blocked and On Stop as one exclusive chip group means selecting any of them
+ * hides the others, and the counts stop summing to the total. `0005_clients.sql`
+ * is explicit that a block is a **flag** that *"coexists with the client's
+ * state"*, never a state of its own — a client is routinely Active **and**
+ * blocked **and** on stop.
+ *
+ * So this union stays the one *exclusive* selector (a client is exactly one of
+ * these), and Blocked / On Stop moved to `overlays` below, which intersect with
+ * whatever is selected here.
+ *
+ * There is no `(Active)` chip, and inventing one would be worse than the
+ * omission: `ClientRecord` carries no deactivation field at all
+ * (`deactivatedAtAd` lives on `ClientProfile`, which the directory never
+ * fetches), so an Active chip would select exactly what `All` already selects
+ * and lie about doing something. Reported rather than faked.
+ */
+type FilterKey = 'all' | 'onRent' | 'paymentDue' | 'vip' | 'typeOrg' | 'typeInd' | 'typeUnassigned'
 type ViewKey = 'Table' | 'Cards'
 type SortKey = 'name' | 'type' | 'membership' | 'rentals' | 'outstanding' | 'deposit' | 'lastRental'
 type Density = 'comfortable' | 'compact'
+
+/**
+ * The two intersecting overlays. Both are independent booleans, both AND with
+ * the exclusive `FilterKey` and with each other, and neither is ever the
+ * selected "status".
+ */
+interface Overlays {
+  blocked: boolean
+  onStop: boolean
+}
+
+const NO_OVERLAYS: Overlays = { blocked: false, onStop: false }
 
 interface SavedView {
   label: string
   filter: FilterKey
   sort: { key: SortKey; dir: 'asc' | 'desc' }
+  /** The overlay state the view restores. Absent means "clear both". */
+  overlays?: Partial<Overlays>
   /**
    * "Payment Due" names no figure but still answers *who owes us money*, which
    * §8.3 puts out of reach of Warehouse as surely as the column does.
@@ -57,7 +95,8 @@ const SAVED_VIEWS: SavedView[] = [
   { label: 'Payment Due', filter: 'paymentDue', sort: { key: 'outstanding', dir: 'desc' }, money: true },
   { label: 'On Rent', filter: 'onRent', sort: { key: 'rentals', dir: 'desc' } },
   { label: 'Recently Added', filter: 'all', sort: { key: 'lastRental', dir: 'desc' } },
-  { label: 'Blocked Clients', filter: 'blocked', sort: { key: 'name', dir: 'asc' } },
+  /* Now an OVERLAY over every client, not a status that excludes the rest. */
+  { label: 'Blocked Clients', filter: 'all', sort: { key: 'name', dir: 'asc' }, overlays: { blocked: true } },
 ]
 
 const th = {
@@ -134,11 +173,29 @@ function SortHeader({
  * row. The icon defaults out of `STATUS_ICON`, which `lib/status.ts:52` exists
  * for precisely so "a bare colour chip cannot be built by accident".
  */
-function Tone({ text, tone, icon }: { text: string; tone: keyof typeof STATUS; icon?: IconName }) {
+function Tone({
+  text,
+  tone,
+  icon,
+  reason,
+}: {
+  text: string
+  tone: keyof typeof STATUS
+  icon?: IconName
+  /**
+   * Why this chip is on the row. Rulings §11.2.3 — *"a client told they are on
+   * stop will ask why"* — so the On Stop chip carries its firing limb here
+   * rather than making the operator open the profile to find out. It becomes
+   * both the accessible name and the hover text, so the reason is not
+   * hover-only.
+   */
+  reason?: string
+}) {
   const c = STATUS[tone]
   const glyph = (icon ?? STATUS_ICON[tone]) as IconName
   return (
     <span
+      {...(reason ? { title: reason, 'aria-label': `${text} — ${reason}` } : {})}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -229,6 +286,8 @@ export function ClientsDirectory({
   const narrow = viewport === 'tablet'
 
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all')
+  /** Rulings §11.2.4 — Blocked and On Stop intersect the selection, never replace it. */
+  const [overlays, setOverlays] = useState<Overlays>(NO_OVERLAYS)
   /**
    * `?q=` lets another surface hand this table a client — the Membership tab's
    * row action uses it, so "find this member in the directory" lands on the
@@ -269,6 +328,60 @@ export function ClientsDirectory({
   const metrics = useMemo(() => clientMetrics(clients), [clients])
   const filterGroups = useMemo(() => clientFilterGroupsFor(money), [money])
 
+  /**
+   * **Rulings §11.2 — On Stop, derived, once.**
+   *
+   * *N* comes from Settings ▸ Financial through `readOverdueStopDays()`; no
+   * number is written here. Read once per mount rather than per row: it is a
+   * `localStorage` read, and a threshold that changed mid-render would put two
+   * different answers on one screen. Changing it in Settings and returning here
+   * re-reads it.
+   *
+   * `daysPastDueOnOldestUnpaidInvoice` is left absent on purpose.
+   * `ClientRecord` carries no invoice due dates — `client_directory_v` does not
+   * publish them and `toClientRecord` cannot invent them — so the overdue limb
+   * reports itself **unavailable** on every directory row rather than
+   * defaulting to "not overdue". §11.2.7: *do NOT default to false silently.*
+   * The client record (`ClientDetail`), which does run the invoices query,
+   * evaluates both limbs.
+   */
+  const stopThresholdDays = useMemo(() => readOverdueStopDays(), [])
+  const stopVerdicts = useMemo(() => {
+    const verdicts = new Map<string, CreditStopVerdict>()
+    for (const c of clients) {
+      verdicts.set(
+        c.id,
+        evaluateCreditStop(creditStopFactsOf(c, { canViewMoney: money }), {
+          overdueStopDays: stopThresholdDays,
+          canViewMoney: money,
+        }),
+      )
+    }
+    return verdicts
+  }, [clients, money, stopThresholdDays])
+
+  const onStopCount = useMemo(
+    () => [...stopVerdicts.values()].filter((v) => v.onStop).length,
+    [stopVerdicts],
+  )
+  /**
+   * False when the check could not run for a single client on this list — which
+   * is the ordinary case for a money-blind session, because
+   * `toClientRecord` maps the view's withheld money to `0` and a zero that
+   * means "not shown to you" cannot be compared against a limit. The chip then
+   * says the check did not run instead of filtering to an empty list and
+   * implying nobody is on stop.
+   */
+  const stopCheckRan = useMemo(
+    () => [...stopVerdicts.values()].some((v) => !v.indeterminate),
+    [stopVerdicts],
+  )
+  /** The reason to show when it did not — taken from a real verdict, not written here. */
+  const stopUnavailableReason = useMemo(
+    () => [...stopVerdicts.values()][0]?.unavailable.join(' ') ?? 'No client records were read, so the on-stop check had nothing to run against.',
+    [stopVerdicts],
+  )
+
   const filteredClients = useMemo(() => {
     const rows = clients.filter((client) => {
       if (searchQuery.trim()) {
@@ -284,9 +397,14 @@ export function ClientsDirectory({
         if (!matches) return false
       }
 
+      /* Rulings §11.2.4 — the overlays AND with the selection and with each
+         other; neither replaces it. A blocked client still appears under
+         "Organisation" unless the Blocked overlay is on. */
+      if (overlays.blocked && !client.isBlocked) return false
+      if (overlays.onStop && !stopVerdicts.get(client.id)?.onStop) return false
+
       if (activeFilter === 'onRent') return client.currentRentalsCount > 0
       if (activeFilter === 'paymentDue') return client.outstandingPaisa > 0
-      if (activeFilter === 'blocked') return Boolean(client.isBlocked)
       if (activeFilter === 'vip') return Boolean(client.isVip)
       if (activeFilter === 'typeOrg') return client.clientType === 'Organisation'
       if (activeFilter === 'typeInd') return client.clientType === 'Individual'
@@ -321,7 +439,7 @@ export function ClientsDirectory({
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir
       return String(va).localeCompare(String(vb)) * dir
     })
-  }, [clients, searchQuery, activeFilter, sort])
+  }, [clients, searchQuery, activeFilter, overlays, stopVerdicts, sort])
 
   const pageCount = Math.max(1, Math.ceil(filteredClients.length / perPage))
   const current = Math.min(page, pageCount)
@@ -365,8 +483,15 @@ export function ClientsDirectory({
     resetPage()
   }
 
+  const toggleOverlay = (which: keyof Overlays) => {
+    setOverlays((prev) => ({ ...prev, [which]: !prev[which] }))
+    setActiveSavedView(null)
+    resetPage()
+  }
+
   const clearAll = () => {
     setActiveFilter('all')
+    setOverlays(NO_OVERLAYS)
     setSearchQuery('')
     setSort({ key: 'name', dir: 'asc' })
     setActiveSavedView(null)
@@ -600,6 +725,11 @@ export function ClientsDirectory({
     },
   ]
 
+  /**
+   * The EXCLUSIVE group — pick exactly one. Blocked has left it (Rulings
+   * §11.2.4); these counts are mutually exclusive within each family and every
+   * one of them is a subset of `All`.
+   */
   const chips: Array<{ label: string; key: FilterKey; count: number }> = [
     { label: 'All', key: 'all', count: metrics.total },
     { label: 'Organisation', key: 'typeOrg', count: metrics.typeOrg },
@@ -607,8 +737,31 @@ export function ClientsDirectory({
     { label: 'Unassigned', key: 'typeUnassigned', count: metrics.typeUnassigned },
     { label: 'On Rent', key: 'onRent', count: metrics.onRent },
     ...(money ? [{ label: 'Payment Due', key: 'paymentDue' as FilterKey, count: metrics.paymentDue }] : []),
-    { label: 'Blocked', key: 'blocked', count: metrics.blocked },
     { label: 'VIP', key: 'vip', count: metrics.vip },
+  ]
+
+  /**
+   * The INTERSECTING overlays. Independent toggles, counted over the whole
+   * directory rather than over the current selection — an overlay describes how
+   * many clients carry that condition, not how many survive the other filters,
+   * and the two chips deliberately overlap each other.
+   */
+  const overlayChips: Array<{
+    label: string
+    key: keyof Overlays
+    count: number
+    icon: IconName
+    /** Present when the condition cannot be evaluated at all — the chip goes inert and says why. */
+    unavailable?: string
+  }> = [
+    { label: 'Blocked', key: 'blocked', count: metrics.blocked, icon: 'alert_triangle' },
+    {
+      label: 'On Stop',
+      key: 'onStop',
+      count: onStopCount,
+      icon: 'lock',
+      ...(stopCheckRan ? {} : { unavailable: stopUnavailableReason }),
+    },
   ]
 
   return (
@@ -663,6 +816,82 @@ export function ClientsDirectory({
                 {c.count}
               </span>
             </button>
+          )
+        })}
+
+        {/*
+          ── the intersecting overlays ─────────────────────────────────────
+          Rulings §11.2.4. Separated from the exclusive group by a rule and a
+          label so the difference is visible and not merely behavioural: these
+          two narrow whatever is selected on the left, they do not replace it,
+          and unlike the chips above they can both be on at once.
+        */}
+        <span aria-hidden style={{ width: 1, alignSelf: 'stretch', minHeight: 28, background: 'var(--divider)', margin: '0 2px' }} />
+        <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>Also show only</span>
+        {overlayChips.map((c) => {
+          const on = overlays[c.key]
+          const chip = (
+            <button
+              key={c.key}
+              type="button"
+              onClick={() => toggleOverlay(c.key)}
+              aria-pressed={on}
+              disabled={Boolean(c.unavailable)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                /* Law 15 — 44×44 at every width, as with the chips above. */
+                minHeight: 44,
+                padding: '0 11px',
+                borderRadius: 'var(--r-sm)',
+                /* Law 11 — the overlay's state is icon + label + colour, never
+                   colour alone: the icon fills when the overlay is on. */
+                border: `1px dashed ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+                background: on ? 'var(--nav-active-bg)' : 'var(--card)',
+                color: c.unavailable ? 'var(--muted)' : on ? 'var(--nav-active-accent)' : 'var(--text2)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: on ? 600 : 500,
+                cursor: c.unavailable ? 'not-allowed' : 'pointer',
+                fontFamily: 'inherit',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <Icon name={c.icon} size={13} fill={on} />
+              {c.label}
+              {c.unavailable ? (
+                <span style={{ fontSize: 'var(--t-th)', fontWeight: 600 }}>check unavailable</span>
+              ) : (
+                <span
+                  className="figure"
+                  style={{
+                    minWidth: 18,
+                    height: 18,
+                    borderRadius: 5,
+                    display: 'inline-grid',
+                    placeItems: 'center',
+                    background: 'var(--card2)',
+                    color: 'var(--text)',
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: 700,
+                    padding: '0 4px',
+                  }}
+                >
+                  {c.count}
+                </span>
+              )}
+            </button>
+          )
+          /* §11.2.7 — when a limb cannot be evaluated the UI says the check did
+             not run. It is not silently omitted (an operator would read its
+             absence as "nobody is on stop") and it does not filter to an empty
+             list, which would say the same thing more convincingly. */
+          return c.unavailable ? (
+            <Unavailable key={c.key} reason={c.unavailable}>
+              {chip}
+            </Unavailable>
+          ) : (
+            chip
           )
         })}
 
@@ -792,6 +1021,10 @@ export function ClientsDirectory({
                   type="button"
                   onClick={() => {
                     setActiveFilter(v.filter)
+                    /* A saved view restores the WHOLE state, overlays included —
+                       otherwise "Blocked Clients" would leave a stale On Stop
+                       overlay on and show a different list each time. */
+                    setOverlays({ ...NO_OVERLAYS, ...v.overlays })
                     setSort(v.sort)
                     setActiveSavedView(v.label)
                     resetPage()
@@ -1027,6 +1260,19 @@ export function ClientsDirectory({
                         <Tone text={client.membership} tone={TIER_TONE[client.membership]} />
                         {client.isVip && <Tone text="VIP" tone="progress" />}
                         {client.isBlocked && <Tone text="Blocked" tone="danger" />}
+                        {/* Rulings §11.2.5 — icon + label + colour, and the
+                            firing limb travels with the chip so the row can
+                            answer "why?" without opening the profile. Blocked
+                            and On Stop can both be here at once: they are
+                            different facts, not two spellings of one. */}
+                        {stopVerdicts.get(client.id)?.onStop && (
+                          <Tone
+                            text="On Stop"
+                            tone="danger"
+                            icon="lock"
+                            reason={stopVerdicts.get(client.id)?.reasons.join(' ') ?? ''}
+                          />
+                        )}
                       </div>
 
                       {pii && (
@@ -1183,6 +1429,16 @@ export function ClientsDirectory({
                                       </span>
                                     )}
                                     {client.isBlocked && <Tone text="Blocked" tone="danger" />}
+                                    {/* Rulings §11.2 — derived, and drawn beside
+                                        Blocked rather than instead of it. */}
+                                    {stopVerdicts.get(client.id)?.onStop && (
+                                      <Tone
+                                        text="On Stop"
+                                        tone="danger"
+                                        icon="lock"
+                                        reason={stopVerdicts.get(client.id)?.reasons.join(' ') ?? ''}
+                                      />
+                                    )}
                                   </span>
                                   {client.company && (
                                     <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 1 }}>
@@ -1472,6 +1728,93 @@ export function ClientsDirectory({
                 {selectedClient.isBlocked && (
                   <ErrorBanner title="Account blocked." message={selectedClient.blockReason} />
                 )}
+
+                {/*
+                  ── ⛔ ON STOP ────────────────────────────────────────────────
+                  Rulings §11.2.3: the reason must name the limb that fired,
+                  *"because a client told they are on stop will ask why"*.
+
+                  Law 6 splits the message in two. `reasons` never carries a
+                  rupee figure and is shown to every role; `details` carries the
+                  amounts and is only populated when `canViewMoney` was true at
+                  the point the verdict was computed, so there is no second gate
+                  to forget here.
+
+                  It sits ABOVE the money block, not inside it, because being on
+                  stop is an operational fact — it stops a booking — while the
+                  balances behind it are the money surface Law 6 removes.
+                */}
+                {(() => {
+                  const stop = stopVerdicts.get(selectedClient.id)
+                  if (!stop) return null
+                  if (stop.onStop) {
+                    return (
+                      <ErrorBanner
+                        /* Stated, not enforced here. Whether a booking may
+                           proceed is `modules/rentals/booking/clientHealth.ts`'s
+                           question (Law 1 — pages hold no business logic), and
+                           promising an enforcement this screen does not perform
+                           would be the worse lie. */
+                        title="On stop."
+                        message={
+                          <span>
+                            {stop.reasons.map((r) => (
+                              <span key={r} style={{ display: 'block' }}>
+                                {r}
+                              </span>
+                            ))}
+                            {stop.details.map((d) => (
+                              <span key={d} style={{ display: 'block', marginTop: 2, opacity: 0.85 }}>
+                                {d}
+                              </span>
+                            ))}
+                            {stop.unavailable.map((u) => (
+                              <span key={u} style={{ display: 'block', marginTop: 2, opacity: 0.85 }}>
+                                {u}
+                              </span>
+                            ))}
+                          </span>
+                        }
+                      />
+                    )
+                  }
+                  /* One unavailable limb is enough to say so — see the same
+                     note on `ClientDetail`. Gating this on `indeterminate`
+                     alone left the rail silent whenever exactly one limb could
+                     not run, which reads as "both checks passed". */
+                  if (stop.unavailable.length > 0) {
+                    return (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: 'var(--sp-sm)',
+                          padding: '10px 12px',
+                          borderRadius: 'var(--r-sm)',
+                          border: '1px dashed var(--border)',
+                          background: 'var(--card2)',
+                          fontSize: 'var(--t-meta)',
+                          color: 'var(--text2)',
+                        }}
+                      >
+                        <Icon name="info" size={14} style={{ flexShrink: 0, marginTop: 2, color: 'var(--muted)' }} />
+                        <span>
+                          <span style={{ display: 'block', fontWeight: 600, color: 'var(--text)' }}>
+                            {stop.indeterminate
+                              ? 'The on-stop check could not run.'
+                              : 'Part of the on-stop check could not run.'}
+                          </span>
+                          {stop.unavailable.map((u) => (
+                            <span key={u} style={{ display: 'block', marginTop: 2 }}>
+                              {u}
+                            </span>
+                          ))}
+                        </span>
+                      </div>
+                    )
+                  }
+                  return null
+                })()}
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)', fontSize: 'var(--t-meta)' }}>
                   <span>

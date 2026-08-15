@@ -109,36 +109,43 @@ The critical path. 60+ specs assume tables that have never been written down.
       `0001`-`0042` applied to `sxguwvgoserhdolewibb`, 121 tables, 196 deferred FKs (§6.28 OUTCOME).
       One local-only follow-up remains: `0043`'s `booking_flags` CHECK rename ('Late Return' →
       'Overdue'), plus the retired enum member it cannot drop without a `0015`-style type rebuild.
-- [~] Constraints that enforce laws 3, 4, 5, 9, 10 **at the database**
+- [x] Constraints that enforce laws 3, 4, 5, 9, 10 **at the database**
       → Law 9 (days ≥ 1, six priced-line tables) and Law 5 (`payments_no_security_deposit`, no
-      FK path from deposits into invoices) genuinely done. **Laws 3 and 10 have LIVE bypasses**
-      — verified against the live DB 11 Aug, not inferred: `authenticated` still holds a DELETE
-      grant on `booking_lines`, and `trg_booking_discounts_stacking` is **INSERT-only** so the
-      25% cap is escapable by UPDATE. `0044` closes both but **is not applied** (§6.32).
+      FK path from deposits into invoices) genuinely done. **Laws 3 and 10 are now closed —
+      re-verified live 16 Aug 2026**, correcting the 11 Aug note below it: `0044` **is applied**
+      (version `20260811213239`), `authenticated` holds no DELETE grant on any priced-line
+      table, and `trg_booking_discounts_stacking` fires `INSERT UPDATE`. The 11 Aug text said
+      `0044` "is not applied" — it had been applied the same day.
 - [~] Exclusion constraint so double-booking is impossible, not merely unlikely
       → GiST `EXCLUDE` exists for serialised units. **Gap: quantity-tracked products have no
       equivalent** — a plain EXCLUDE cannot express sum-of-qty-over-a-range. `0045` adds a
       capacity ceiling (unapplied); the general case needs a trigger.
-- [~] Triggers: payment immutability, audit append-only, forward-only stages, causal order
-      → Forward-only stages + causal order done (`0021`, live). Payment immutability is a
-      **grant, not a trigger** — live check confirms `authenticated` has no UPDATE on
-      `payments`, so it holds for app sessions but not against a direct grant or `service_role`.
-      `0046` adds the backstop triggers (unapplied). Live trigger count: 13.
+- [x] Triggers: payment immutability, audit append-only, forward-only stages, causal order
+      → Forward-only stages + causal order done (`0021`, live). **Payment immutability is now a
+      trigger, not only a grant** — `0046` **is applied** (version `20260811213413`); live:
+      `trg_payments_reject_update`, `trg_payments_reject_delete`,
+      `trg_audit_events_reject_update`, `trg_audit_events_reject_delete`,
+      `trg_booking_lines_reject_delete`, `trg_booking_discounts_reject_delete`. The 11 Aug note
+      called `0046` unapplied. **Live trigger count: 36** (was 13).
 - [~] RLS on every table — role (only) **and** branch **and** warehouse/zone **and** approval limit
-      → **One of four dimensions.** Live: 121/121 tables RLS-enabled, 219 policies. Branch,
-      warehouse/zone and approval-limit scoping are **entirely unbuilt** (§6.20) — the largest
-      single gap in Phase 1. Also live: **6 tables are RLS-enabled with zero policies**
-      (fail-closed) — `crew_documents`, `evidence_files`, `evidence_references` (blocked on
-      §4.11) and `portal_users`, `portal_sessions`, `portal_auth_challenges` (need their own
-      non-`system_role` auth scheme). Exactly the two buckets §6.24 predicted; no surprises.
-- [~] Column-level money hiding for Warehouse (law 6) — **partial**, see §6.7
-      → *Downgraded from a proposed DONE by independent re-check.* DDL complete and live:
-      20 `revoke select` + 20 matching `_v` views, 1:1. **But zero `_v` views are queried
-      anywhere in `src/`** — `0019:62-72` warned in writing that this exact omission leaves the
-      migration "dead code sitting next to the tables it was written to guard." Worse, the
-      revoke is `from authenticated`, so `bookingQuery.ts`'s `booking_lines (*)` now returns
-      `42501 permission denied` for **Owner as much as Warehouse**. Closed at the DDL, open at
-      every call site.
+      → **One of four dimensions.** Live 16 Aug: 121/121 tables RLS-enabled, **231 policies**
+      (was 219). Branch, warehouse/zone and approval-limit scoping are **entirely unbuilt**
+      (§6.20) — the largest single gap in Phase 1. Zero-policy tables are now **3, not 6**:
+      `0049` gave `crew_documents`, `evidence_files` and `evidence_references` their policies.
+      The three that remain are `portal_users`, `portal_sessions`, `portal_auth_challenges` —
+      deny-all to everyone including the owner, so **the Client Portal cannot function**; they
+      need their own non-`system_role` auth scheme and the session→`client_id` binding ruled.
+- [ ] Column-level money hiding for Warehouse (law 6) — **NOT ENFORCED. Downgraded from `[~]`
+      to MISSING on 16 Aug 2026 by executing as a Warehouse session** (see the gate verdict).
+      → The 21 `_v` views are correct and do mask (`booking_lines_v.rate` reads `null` for
+      Warehouse). **The `revoke select (col)` half is a no-op**: `authenticated` holds
+      table-level SELECT, which covers every column, so the column revokes never took —
+      `pg_attribute.attacl` is null on all of them. A Warehouse session reads
+      `bookings.deposit_required`, `booking_lines.rate` and `products.daily_rate` off the base
+      tables today. `0019:62-72` warned the views would be "dead code sitting next to the
+      tables it was written to guard" — that is **no longer true** (9 `_v` reads exist in
+      `src/`, listed in §4.28), but the guard beside them was never armed.
+      **Blocked on §4.28** — the fix breaks base-table reads until 10 call sites move to `_v`.
 - [x] Indexes: lifecycle-order status sort, AD date sort, GIST range overlap, serial lookup, `client_uuid` unique
       → All present, correctly re-created after the `0015` enum rebuild; 85 `client_uuid`
       unique constraints.
@@ -150,9 +157,69 @@ The critical path. 60+ specs assume tables that have never been written down.
 wrong business outcome. Specifically: no path makes a deposit reduce Outstanding; no path
 updates a payment; no path lets Warehouse read a money column.
 
-**Gate verdict 11 Aug 2026 — ❌ FAILS. Verified against the live database, not by reading SQL.**
-An adversarial audit constructed three legal write sequences producing wrong outcomes; live
-catalog queries confirm all three are still reachable on `sxguwvgoserhdolewibb`:
+**Gate verdict 16 Aug 2026 — ❌ STILL FAILS, but not for the reasons below. Re-run against the
+live database by executing as a Warehouse session, not by reading the catalogue.**
+
+> The 11 Aug verdict is kept underneath because two of its three exploits are now **closed**,
+> and the record of what closed them is worth keeping. `0044`/`0045`/`0046` were described here
+> as "written and unapplied" — **they were applied on 11 Aug** (versions `20260811213239`,
+> `…213329`, `…213413`). That claim, like `0047`'s and `0058`'s status lines, was stale.
+
+**Closed since, verified live 16 Aug:**
+
+1. **Law 10 — ✅ CLOSED.** `trg_booking_discounts_stacking` now fires `INSERT UPDATE` (was
+   INSERT-only). The UPDATE-to-35% sequence no longer bypasses the trigger.
+2. **Law 3 — ✅ CLOSED, twice over.** `authenticated` and `anon` hold **no DELETE grant** on
+   `booking_lines`, `payments`, `audit_events`, `booking_discounts`, `invoices` or `bookings`;
+   and `trg_booking_lines_reject_delete` backstops it at row level. `payments` and
+   `audit_events` additionally carry `reject_update` + `reject_delete` triggers, so payment
+   immutability is **no longer "a grant, not a trigger"**.
+
+**Still open, deliberately:**
+
+3. **Outstanding is one UPDATE away from wrong.** `authenticated` still holds UPDATE on
+   `invoices`. Unchanged and correctly so — it needs the recompute formula ruled first (§4.17).
+
+**NEW — ❌ Law 6 fails at the database. This is the clause the 11 Aug verdict listed under
+"What passes."** Executed as `warehouse@babinrentals.com` (`set local role authenticated` +
+`app.current_user_id`), inside a rolled-back transaction:
+
+| Read as Warehouse | Result |
+|---|---|
+| `auth_user_role()` / `auth_can_view_money()` | `Warehouse` / **false** — the DB knows |
+| `payments`, `invoices` | 0 rows ✅ |
+| `booking_lines_v` (masking view) `sum(rate)` | `null` ✅ — the view mechanism is correct |
+| `bookings.deposit_required` | **Rs 13,65,000** ❌ |
+| `booking_lines.rate` | **Rs 6,64,695** ❌ |
+| `products.daily_rate` | **Rs 1,78,755** ❌ |
+
+**Cause — `0019` never worked, and this is not drift.** `authenticated` holds **table-level**
+`SELECT` on `booking_lines`, `products` and `product_units`. In PostgreSQL a table-level grant
+covers every column, and a column-level `REVOKE SELECT (col)` cannot subtract from it — the
+revoke is a no-op, which is why `pg_attribute.attacl` is **null on every one of these tables**.
+`0019:140-143` asserts the opposite in writing: *"revoke … from `authenticated` entirely …
+there is no direct-table path left that could accidentally bypass the mask."* There always was
+one. The correct sequence is `revoke select on <table> from authenticated` **first**, then
+`grant select (<non-money columns>)`.
+
+This also corrects §6.7 in the other direction: the claim that the revoke made
+`booking_lines (*)` return `42501` for Owner as much as Warehouse cannot have been caused by
+this migration, because the revoke has no effect. Whatever produced that 42501 is unexplained.
+
+`invoices` and `payments` are the two that *are* safe, and they use a different mechanism:
+row-level policies predicated on `auth_can_view_money()` / `auth_is_finance_or_admin()`.
+`bookings`, `booking_lines` and `products` carry `auth_is_staff()` — which includes Warehouse —
+and relied entirely on the column grants that do nothing.
+
+**⬅ NEEDS A RULING BEFORE IT CAN BE FIXED (see §4.28).** The repair is one migration, but
+revoking table-level SELECT breaks every `select *` and every base-table money read for *all*
+roles until the call sites move to the `_v` views — which PLAN.md already records as queried
+**nowhere** in `src/`. That is Phase 2 work, not a migration alone, so it is reported rather
+than patched.
+
+---
+
+**Superseded — gate verdict 11 Aug 2026** (kept for the record; items 1 and 2 are now closed):
 
 1. **Law 10 — the 25% cap is escapable by UPDATE.** `trg_booking_discounts_stacking` fires
    `INSERT` only (confirmed live). Insert 10% + 10%, then UPDATE the first to 25% → 35% stacked,
@@ -164,12 +231,8 @@ catalog queries confirm all three are still reachable on `sxguwvgoserhdolewibb`:
    is legal for four roles. The gate's literal wording ("no path makes a *deposit* reduce
    Outstanding") does hold — but by absence of a wire, not by a constraint.
 
-**What passes:** no path updates a payment (`authenticated` has zero UPDATE grants on
-`payments`, confirmed live), and Warehouse cannot read a money column (20/20 masking views
-present, `auth_can_view_money()` excludes the four money-blind roles).
-
-`0044`/`0045`/`0046` close (1), (2) and the trigger-vs-grant weakness — **all three are written
-and unapplied.** (3) is deliberately not patched: it needs a formula decision first (§4.14).
+**What 11 Aug said passes:** no path updates a payment (still true, now trigger-enforced), and
+Warehouse cannot read a money column (**false — see above**).
 
 **No longer blocked.** As of 5 Aug 2026 the decisions §4 listed are ruled or dissolved, and
 the spec library has had all 117 corrections applied — so the sections the schema reads from
@@ -442,25 +505,355 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
-## 4.20 ⬅ OPEN — who holds `client.block`, `client.create` and `rental.confirm`
+## 4.31 ✅ ALL FOUR RULED — the floor rulings, 16 Aug 2026
 
-**Raised 13 Aug 2026 by the post-rebuild sweep.** Three actions were flipped to
-`implemented: true` during the 11-section rebuild and carry real bodies —
-`clients/blockClient.ts:195`, `clients/createClient.ts:274`,
-`rentals/confirmRental.ts:252` — but each declares a capability string that
-`src/actions/core.ts:checkCapability` does not handle. An unhandled capability
+Raised as a `TODO(decision)` block at `lib/queries/bookings.ts:1089` — the four things the
+floor-lines read deliberately does not supply, without which the five workspaces cannot be
+wired.
+
+### ✅ (2) The packing tree `group` — `bundles.name`, falling back to the category
+
+Group a line under the bundle it belongs to (`booking_lines.bundle_id` → `bundles.name`); a
+line with no bundle falls back to `inventory_categories.name`. Reflects how the gear was
+actually sold, which is what a packer pulling a booking works from, and it matches the
+fixture's own labels ('Lens Set — NISI Athena Prime').
+
+**Second consequence, and the reason this one mattered beyond the tree:** it is also the
+grouping `planAssignment` needs to expand a bundle line into its member products. Bundle lines
+are currently *reported as skipped* rather than assigned (`queries/availability.ts`), because
+`booking_lines.product_id` is null on them. This ruling is what unblocks that.
+
+### ✅ (3) Reset's `demand` / `vip` / `rush` flags — dropped
+
+No column exists for any of them anywhere in the schema. The reset queue renders without
+priority flags rather than inventing a source. Nothing that exists today is lost. If the floor
+later asks for prioritisation, the option this ruling passed over — deriving it from the next
+booking's urgency, which is real data and needs no migration — is the one to revisit first.
+
+### ✅ (4) Empty-state copy for Handover, Return and Cleaning & Reset — to be drafted
+
+Drafted against the pattern Packing and Evidence already establish, and **marked in the code as
+drafted-not-ruled** so the wording can be corrected without anyone mistaking it for a spec
+sentence. Unblocks the three screens now; copy is cheap to change later.
+
+### ✅ (1) The packing `case` — DISSOLVED. The gate is one photo per BOOKING
+
+**There is no per-booking case model, and none is needed.** Complete Packing requires a photo
+for the booking as a whole, not one per packed case. The original question — which physical
+case an item goes into for this booking — **no longer has to be answered at all**, so the
+migration it would have required is not needed and `product_units.container_id` is not
+pressed into a role it does not fill (it remains what it is: a unit's *home* container).
+
+The first answer given was *"Photo upload and deleets if the booking comptetes all the
+stages"*, which did not by itself say whether the gate was per case or per booking; it was put
+back as a direct question and ruled **per booking**. Recorded because "the packing case was
+dropped" reads like an oversight otherwise.
+
+⚠ The evidence trade-off is real and accepted: when an item comes back missing, the photos no
+longer say **which case** it was in. That is the cost of dropping the model, and it is a
+deliberate choice, not something to quietly re-add.
+
+### ✅ (1b) Photo retention — the image file is deleted, the row is kept
+
+Ruled: the stored image is removed on a retention schedule once the booking has completed all
+its stages; the **`evidence_files` row remains** as the record that a photo was taken, by whom
+and when.
+
+This is what keeps the ruling inside **Law 0** — *"Nothing is deleted; every entity has a named
+terminal action."* The entity is not destroyed; its binary is expired, and the row is the named
+terminal state. A plain "delete both" would have been an override of Law 0 and would have had
+to be recorded as an explicit exception.
+
+⚠ Accepted consequence: if a dispute arrives after the retention window, the **picture itself
+is gone** and only the metadata survives. The retention *period* is not part of this ruling and
+nobody has stated one.
+
+**Not built.** This is a storage lifecycle policy plus a job, and neither exists. Until it is
+built, nothing expires — which is the safe direction (the evidence is still there), but it
+means the ruling is currently a statement of intent rather than behaviour. It must not be
+recorded anywhere as done.
+
+## 4.30 ✅ RULED 16 Aug 2026 — where a Confirm-time serial assignment writes, and where a window ends
+
+> **The rulings, taken 16 Aug 2026. Everything below this box is the evidence they were taken
+> from, kept because the derivation is what makes them checkable.**
+>
+> **(a) The OS writes `inventory_reservations`** — option (a2). It is dropped from
+> `BOOQABLE_READ_ONLY_TABLES` and Confirm writes it directly, so a double-booking is refused
+> by the GiST exclusion at the database rather than by the app trying not to make one. This
+> **deliberately overrides Booqable bridge spec §5.1's "indirectly via order writes only"**;
+> that conflict is now recorded rather than latent. Should the bridge ever go live, §5.1 and
+> this ruling must be reconciled explicitly — a later session must not "fix" one to match the
+> other by assuming this was an oversight.
+>
+> ⚠ **No migration is required, checked live 16 Aug.** `inventory_reservations_all` is already
+> `Owner · Admin · Manager · Coordinator · Warehouse` for ALL commands — the same set as
+> `rental.confirm` and as the `inventory.reserve` capability ruled in §4.29. The database has
+> been ready for this write the whole time; only `dataAccess.ts` refused it.
+>
+> **(b) Window bounds are `half-open`** — `[from, to)`. A booking ending at 18:00 frees its
+> unit for one starting at 18:00. Taken against the recommendation in the evidence below,
+> which argued for `closed` on turnaround grounds; recorded here so the reasoning is not
+> re-litigated. If same-instant turnaround proves wrong in practice the change is one
+> constant, `RENTAL_WINDOW_BOUNDS`, and `availability.test.ts` already pins both answers.
+>
+> **(c) §4.14 — condition states only.** `Maintenance`, `Missing` and `Retired` remove a unit
+> from the pool. The four booking-lifecycle states (`Reserved`, `Packed`, `On Rent`,
+> `Returning`) deliberately do **not**: they are facts about *today*, and the date-overlap
+> check already answers per-window. Disqualifying them outright would make a unit that is out
+> on rent today unassignable for a booking three months from now. `Inspection` and `Cleaning`
+> stay assignable on the stated assumption that those queues clear before a future pickup —
+> the one part of this ruling most likely to need revisiting, and it is one entry in
+> `DISQUALIFYING_UNIT_STATES`.
+>
+> This also closes **§4.14**, open since 11 Aug. `0045`'s capacity ceiling may now be tightened
+> to match with one `where` clause in `enforce_inventory_reservation_capacity()`, which §4.14
+> said was all it was waiting for. That tightening is **not** done here — it is a migration
+> against a live database and needs its own approval.
+
+### The evidence these were ruled from
+
+**Raised 16 Aug 2026 building the availability engine**, which PROGRESS.md's 16 Aug entry
+identified as the prerequisite blocking Packing, Handover, Return, Reset and Evidence
+*equally*: nothing in the app writes `booking_line_units`, so wiring the floor screens to a
+working read would only turn "not loaded yet" into "loaded — nothing to pack".
+
+The engine itself is built and tested (`lib/availability.ts`). It is pure, and it **refuses to
+default** the two questions below — both are required parameters, so no call site can acquire
+an invented answer by omission. What is missing is not code.
+
+### (a) The two candidate tables, and the problem with each — **the real blocker**
+
+`workflow.ts:45` defines the stage this happens at: Booked means *"Committed. Gear reserved,
+calendar held, **serials assigned**."* The schema agrees and is unusually explicit —
+`0003:1483` says `inventory_reservations.reserved_at` is *"Written by the Confirm
+transaction, never earlier"*, and `0003:1478` says *"If reservation fails on any line, Confirm
+is rejected with the conflicting line named."* So Confirm reserving is designed, not inferred.
+
+Measured on the live project, 16 Aug 2026:
+
+| | `inventory_reservations` | `booking_line_units` |
+|---|---|---|
+| Overlap protection | ✅ `exclude using gist (asset_id with =, period with &&) where (released_at is null and asset_id is not null)` | ❌ **none** — only `qty > 0`, two CHECKs and FKs |
+| Holds a date range | ✅ `period tstzrange not null` | ❌ no period column at all |
+| Live rows | **0** | 18 (all 6 lines of the reference booking; **all 18 carry `asset_id`**) |
+| The OS may write it | ❌ **`BOOQABLE_READ_ONLY_TABLES`** (`dataAccess.ts:195`) — spec §5.1, *"indirectly via order writes only"*, i.e. only through `pushOrderReserve` | ✅ os-native |
+
+**So the table that is protected may not be written, and the table that may be written is not
+protected.** Writing assignments straight into `booking_line_units` reproduces exactly the lie
+`seed.ts:762-770` refused to generate — *"the same `EQ000241-U01` on two bookings whose dates
+overlap — a lie the floor screens would render as fact"* — except at runtime, where an
+operator would act on it.
+
+This is a **conflict between two specs that no document records**: the OS schema says Confirm
+reserves; the Booqable bridge spec says Booqable owns reservations. Three ways out:
+
+- **(a1) Reserve through the bridge** — `pushOrderReserve` (`booqable/sync.ts:1838`), letting
+  Booqable be the availability authority. Consistent with spec §5.1 and with the read-only
+  set. The `booqable-proxy` Edge Function **is deployed and ACTIVE** on the project (checked
+  16 Aug), so the route exists; whether `BOOQABLE_TOKEN`/`BOOQABLE_SLUG` are set, and whether
+  there is a Booqable account behind them, is unverified. Makes Confirm depend on a third
+  party being reachable, which the offline-first laws sit awkwardly with.
+- **(a2) Make the OS the authority** — drop `inventory_reservations` from the read-only set
+  and have Confirm write it, keeping the GiST constraint as the enforcement. Contradicts spec
+  §5.1 and needs that contradiction ruled, not ignored. Closest to what the OS schema was
+  clearly designed for, and the only option where **the database refuses a double-booking**
+  rather than the app trying to.
+- **(a3) Add the same exclusion to `booking_line_units`** and assign only there. Needs a
+  period on the row (it has none) or a trigger joining to `bookings`, so it is a real
+  migration — and it leaves two tables modelling the same fact.
+
+**Recommendation: (a2)**, because it is the only one where Law 4 is enforced by a constraint
+rather than by hope, and because `inventory_reservations` carries four `TRIGGER REQUIRED`
+comments describing precisely the Confirm-time behaviour the OS wants. But §5.1 is a written
+spec and overriding it is a product call, not an engineering one.
+
+### (b) Does a window that ends at 18:00 free the unit for one starting at 18:00?
+
+`inventory_reservations.period` is a `tstzrange` and the table has **zero rows**, so no live
+row reveals which bound convention a writer used. The schema disagrees with itself elsewhere:
+`crew_bookings` and `crew_leaves` both chose `daterange(…, '[]')` — **closed**, touching
+conflicts — while Postgres's own `tstzrange` default is `[)`. Turnaround, cleaning and
+inspection time are a real argument for closed that no spec here states.
+
+`lib/availability.ts` takes `bounds: 'half-open' | 'closed'` with no default, and
+`availability.test.ts` pins **both** answers for the touching case, so ruling this is a
+one-line change against a test that already states the consequence.
+
+### Already open and needed by the same feature
+
+**§4.14** — which `inventory_state` values remove a unit from the pool. `disqualifyingStates`
+is a required parameter for the same reason. `0045` took the loose bound for its capacity
+*ceiling*, reasoning that too-permissive can only fail to reject a legal hold; **that
+reasoning does not transfer to assignment**, where too-permissive puts a unit that is in
+Maintenance onto a shoot. The engine will not pick it on a caller's behalf, and a test pins
+the honest consequence of passing an empty set.
+
+## 4.29 ⬅ OPEN ×2 — the residue of closing the capability matrix, 16 Aug 2026
+
+**Raised applying `CAPABILITY_MAPPING_2026-08-16.md`.** 24 declared-but-unhandled capability
+strings were closed by the §4.20 method — mirror the RLS policy on the table the action
+writes. Twenty-one derived cleanly and are live in `actions/core.ts`. Two things did not, and
+neither may be answered by inventing a role set.
+
+### (a) `inspection.create` · `inspection.pass` · `inspection.fail` — nothing to mirror
+
+**There is no write target.** No table in the schema matches `inspect`, and
+`operation_session_type` is `Packing | Handover | Return | Reset | Cleaning` — Inspection is
+not a member. So the mirroring rule has no input, and any role set assigned here would be
+invented, which `CLAUDE.md` forbids.
+
+**TODO(decision) — where does an inspection write?** Either
+
+- **(a)** add `Inspection` to `operation_session_type` and mirror `operation_sessions`
+  (which would make it the floor set: Owner · Admin · Manager · Warehouse), or
+- **(b)** give inspections their own table with its own policy.
+
+All three actions are stubs, so **this blocks nobody until one is built** — and all three
+now fail closed *by name*, which is the correct state for an unbuildable verb. It becomes
+urgent the moment someone writes a body.
+
+### (b) `purchase.approve` is broad because the RLS policy is broad
+
+`purchase_requests_all` is `auth_is_staff()` on the live project, so mirroring it faithfully
+**admits Driver and Technician to approving a purchase request** — a spend-authorising verb.
+That is probably not intended.
+
+`crew.assign` (`crew_assignments_all`) is the same shape and is plausible for shared triage.
+`case.resolve` (`cases_all`) is consistent with the shared-triage lock and is likely correct.
+
+**TODO(decision) — should `purchase.approve` be narrower, and if so, at what rank?**
+
+⚠ **If it should be, fix the RLS policy first and let the capability follow.** Tightening only
+`lib/rbac.canWriteSharedTriage` would put the app and the database back out of step, which is
+the exact failure the mirroring rule exists to prevent — and the app would then forbid in the
+UI something the row still permits to a crafted request. The broad behaviour is **pinned by a
+test in both `rbac.test.ts` and `core.test.ts`**, each carrying a note that says so: when the
+policy is tightened those two tests are *meant* to fail, and that failure is the signal to
+split the set.
+
+### Not open — recorded so it is not re-derived
+
+- The mapping document counted **32** declared capability strings; the real number is **31**.
+  It scanned `src/actions/**` including `__tests__`, and `money.view` is declared only by a
+  probe in `core.test.ts`. `money.view` is an app-level rule (the Law 6 read gate) that no
+  action declares, by design. The off-by-one changed no mapping.
+- A regression guard now reads both files and asserts every declared capability resolves
+  (`core.test.ts`, "every declared capability resolves to a rule"). Both previous gaps were
+  found by a person grepping; this is the first thing that finds the next one. It was
+  mutation-tested — commenting out a `case` must make it fail, and at first it did not,
+  because `// case 'x':` still matched the pattern. Both scans strip comments now.
+
+## 4.28 ⬅ OPEN — how Law 6 gets enforced, now that we know `0019` never enforced it
+
+**Raised 16 Aug 2026 by re-running the Phase 1 gate as a Warehouse session.** Law 6 —
+"Warehouse sees no money — enforced by RLS, not the UI" — **does not hold at the database**.
+A Warehouse session reads `bookings.deposit_required` (Rs 13,65,000), `booking_lines.rate`
+(Rs 6,64,695) and `products.daily_rate` (Rs 1,78,755) straight off the base tables, which
+PostgREST exposes. Full evidence in the Phase 1 gate verdict.
+
+The cause is not drift and not a regression: `0019`'s `revoke select (col) … from
+authenticated` is a **no-op while `authenticated` holds table-level SELECT**, which it does.
+The masking views are fine; the guard beside them was never armed.
+
+**Why this needs a ruling rather than a patch.** The repair is a one-line-per-table migration:
+
+```sql
+revoke select on booking_lines from authenticated;
+grant  select (id, client_uuid, booking_id, line_type, qty, days, …) on booking_lines to authenticated;
+```
+
+— but the moment it applies, **every base-table read of those tables breaks for every role**,
+Owner included, because `select *` and any projection naming a money column now fails with
+`42501`. So this is a migration **plus** a call-site change, and the two must land together or
+the app goes down.
+
+**The inventory is small — measured 16 Aug, and it contradicts this file's older claim that
+"zero `_v` views are queried anywhere in `src/`".** That is no longer so:
+
+- **9 `_v` reads already exist**: `products_v`, `product_units_v` (`lib/queries/inventory.ts`),
+  `client_directory_v` ×4, `membership_plans_v`, `clients_v` (`lib/queries/clients.ts`),
+  `booking_lines_v` (`data/rentals.ts:514`). The pattern is established and working.
+- **Only 10 base-table reads remain** across 5 files on the four money-bearing tables:
+  `lib/booqable/sync.ts` (2), `lib/bookingQuery.ts` (1), `actions/rentals/floorVerb.ts` (2),
+  `actions/rentals/confirmRental.ts` (3), `lib/queries/bookings.ts` (2).
+
+Three of those ten (`confirmRental`) name no money column at all and would survive a column
+grant untouched. So (a) is roughly **seven call sites**, not a rewrite.
+
+**The three ways out, and what each costs:**
+
+- **(a) Column grants + move every call site to `_v`.** The design `0019` intended. Correct and
+  complete; the largest change. Needs an inventory of every base-table read first.
+- **(b) Row-level policies predicated on `auth_can_view_money()`, as `invoices` and `payments`
+  already use.** Cheapest and consistent with what demonstrably works — but RLS is row-level:
+  it would hide whole bookings and lines from Warehouse, not just the money, and Warehouse must
+  see bookings to pack them. **Viable only if a second money-blind policy pair is written so
+  the money-bearing columns come from a view while the rows stay visible** — which collapses
+  back into (a).
+- **(c) Accept it and enforce Law 6 in the UI only.** Contradicts Law 6's own wording ("enforced
+  by RLS, not the UI") and PLAN.md §0. Recorded because it is what the code does *today*, not
+  because it is recommended.
+
+**Recommendation: (a), sequenced** — inventory the base-table reads, add `_v` reads behind the
+existing query layer, then apply the grant migration last. Do not apply the migration first.
+
+**Until it is ruled, Law 6 is a UI convention.** `lib/moneyVisibility` and `canViewMoney` do
+hold in the app; nothing stops a crafted request.
+
+## 4.20 ✅ RULED 15 Aug 2026 — `client.block`, `client.create`, `rental.confirm` **and `inventory.create`**
+
+**Raised 13 Aug 2026 by the post-rebuild sweep; ruled 15 Aug by mirroring the
+database.** Actions flipped to `implemented: true` during the 11-section rebuild
+carried real bodies but declared capability strings that
+`src/actions/core.ts:checkCapability` did not handle. An unhandled capability
 returns `undefined`, which the dispatcher reads as a denial **for every role,
-Owner included**.
+Owner included** — so those controls were *permission-denied* rather than
+*not-implemented*: a different error for the same non-outcome.
 
-That is fail-closed and therefore safe; it is not correct. Today Create Client,
-Bulk Block and Confirm Rental are *permission-denied* rather than
-*not-implemented* — a different error for the same non-outcome, and
-`ClientDetail.tsx` now says so where the control stands.
+**There was a fourth, and this register did not have it.** `inventory.create`
+(`inventory/createBundle.ts:25`) fell through the same way. It surfaced by
+checking every `permissions:` string in `src/actions/` against the switch instead
+of reading this section — worth repeating whenever an action is implemented.
 
-**Needs a ruling, not a guess:** which of Foundation §11's six system roles may
-block a client, create a client, and confirm a rental. Once ruled, add the three
-cases to `checkCapability` beside `operations.perform`. Nothing in `src/` may map
-them on its own (CLAUDE.md hard rule).
+**The ruling: each capability takes the role set of the RLS policy on the table
+its action actually writes.** This is not a guess and not an invention — the rule
+had already been ruled, in SQL, on the live project. Read 15 Aug 2026:
+
+| Capability | Action | Table written | Live policy | Roles |
+|---|---|---|---|---|
+| `rental.confirm` | `rentals/confirmRental.ts` | `booking_stage_transitions` | `booking_stage_transitions_insert` | Owner, Admin, Manager, Coordinator, Warehouse |
+| `client.create` | `clients/createClient.ts` | `clients` | `clients_insert` | Owner, Admin, Manager, Coordinator, Warehouse |
+| `client.block` | `clients/blockClient.ts` | `client_flags` | `client_flags_insert`, `flag_type = 'Blocked'` branch | Owner, Admin, Manager |
+| `inventory.create` | `inventory/createBundle.ts` | `bundles` + `bundle_items` | `bundles_manage` ∩ `bundle_items_all` | Owner, Admin, Manager |
+
+Two are worth stating because they are not symmetric:
+
+- **`client.block` is narrower than `client.create` by the database's own hand.**
+  `client_flags_insert` splits on the flag: Owner/Admin/Manager for `Blocked`,
+  and additionally Coordinator/Warehouse for every other flag type. A Coordinator
+  may take a walk-in client's details and may not block them.
+- **`inventory.create` is an intersection.** `bundle_items_all` admits Warehouse
+  and `bundles_manage` does not, so Warehouse may add items to a bundle that
+  exists and may not create one. Granting the wider set would pass the check and
+  fail at the first insert — the shape Law 6 exists to prevent.
+
+`rental.confirm` deliberately does **not** reuse `operations.perform`: that one
+admits Technician (whom the policy excludes) and excludes Coordinator (the
+booking desk, whose job this is). The two sets differ in both directions and
+`lib/rbac` now states both.
+
+**Landed in:** `lib/rbac.ts` (`canConfirmRental`, `canCreateClient`,
+`canBlockClient`, `canCreateBundle`, plus the shared `BOOKING_DESK` set),
+`actions/core.ts:checkCapability`, and the three action suites whose
+"denies every role" tests were rewritten to assert the ruled lists rather than
+deleted, as each of them instructed.
+
+**Still open, and deliberately:** every other capability string in
+`src/actions/` — `rental.create`, `rental.draft`, `rental.cancel`,
+`inspection.*`, `maintenance.*` and the rest. Each belongs to an action whose
+`implemented` flag is false, so the dispatcher refuses it a step earlier and the
+question is not yet live. Answer each the same way when its body is written.
 
 ## 4.0 ✅ RESOLVED — the design source
 
@@ -968,7 +1361,7 @@ schema** (the real catalogue is `products` / `product_units` / `bundles`), and
 `products.asset_code` carries a `^EQ[0-9]{6}$` CHECK a raw Booqable SKU cannot satisfy. Both are
 mapping-target questions the spec author should confirm, not defects in either system.
 
-## 4.14 Which `inventory_state` values remove a unit from the availability pool — 11 Aug 2026
+## 4.14 ✅ RULED 16 Aug 2026 (in §4.30c) — which `inventory_state` values remove a unit from the availability pool
 
 Raised while closing Phase 1's "exclusion constraint so double-booking is impossible" item.
 `0045_reservation_capacity_ceiling.sql` caps concurrent holds at stock on hand.
@@ -984,9 +1377,13 @@ only ever be too permissive and can never reject a legal hold, and it still remo
 unbounded case (500 held against a three-unit product is now rejected). Tightening it is one
 `where` clause in `enforce_inventory_reservation_capacity()` once this is ruled.
 
-**Needs deciding:** the exact subset of the locked ten that counts toward availability.
-Not taken here — picking it is a product call, and PLAN.md §0 does not let a migration invent
-one.
+**✅ Decided 16 Aug 2026 — see §4.30(c).** The disqualifying subset is `Maintenance`,
+`Missing`, `Retired`, and it lives in `lib/availability.ts` as `DISQUALIFYING_UNIT_STATES`.
+The four booking-lifecycle states are handled by the date-overlap check instead, because they
+are facts about today rather than about a future window.
+
+The `where` clause this section says would tighten `enforce_inventory_reservation_capacity()`
+is now writable, but is **not** applied — that is a live migration and needs its own approval.
 
 **Related, and also unruled:** whether a **model-level** hold (`product_id` set, `asset_id`
 null) against a *Serialised* product is legal at all, or whether every serialised hold must
@@ -1166,6 +1563,40 @@ renders its empty state rather than rows. The conversions themselves are unaffec
 written against the real schema, which the rename does not touch. What is blocked is
 *verification by driving the app*, which `CLAUDE.md` requires before any of this is called done.
 Not a reason to stop wiring; a reason not to claim it is verified.
+
+> ### ✅ CLOSED 12 Aug 2026, confirmed live 15 Aug 2026
+>
+> Everything above this line is history. `0055_ruled_identifier_formats` **was** written and
+> applied, and the sub-decision was answered by migrating the surviving row: `CL-2026-0102` →
+> `C-102`. Read from project `sxguwvgoserhdolewibb` on 15 Aug: `booking_no ~ '^B-[0-9]+$'`
+> and `client_code ~ '^C-[0-9]+$'`; 121 bookings `B-715`…`B-917` with **0** in the retired
+> shape; `number_sequences` booking `B-` · client `C-` · invoice `INV-`, padding 1,
+> `include_year false`. The operational tables are not empty — see PROGRESS.md 15 Aug.
+>
+> The related worry that `next_document_number()` would re-issue `B-1` every January is also
+> closed by the same migration: its reset branch is now guarded by `if v_rec.include_year and
+> …`, so a year-less sequence cannot reset. Verified against the live function body.
+
+**TODO(decision) — EQ's format string does not match any equipment code that exists.**
+`data/numbering.ts`'s `EQ` row declares `format: 'EQ-CAT-NNNNNN'`, and `numbering.test.ts:112`
+pins `buildNumber('EQ-CAT-NNNNNN', …) === 'EQ-CAT-000824'`. Live, all **126** `products.asset_code`
+values are bare six-digit `EQ000234`…`EQ001025` — **0** in the `EQ-CAT-` form — and
+`next_document_number` emits `prefix || lpad(val, 6)`, i.e. `EQ000824`, which `0055`'s own
+comment calls "its separator-less six-digit form". The cost is not cosmetic: `isIssuedBy` tests
+the whole **format**, so `isIssuedBy('EQ', 'EQ000824')` returns **`false`** — verified by
+running it against three real live codes. That is exactly the silent-failure mode
+`numbering.ts`'s own comment says prefix/format matching exists to prevent. Either the format
+string should be `EQNNNNNN`, or the minting function and 126 rows are wrong. **Not guessed.**
+
+**TODO(decision) — Settings ▸ Numbering shows counters that are not the database's.**
+`SEQUENCES` carries `counter: '4861'` for booking (and `LAST_SEQUENCE_USED === 'B-4861'`,
+pinned at `numbering.test.ts:78`), `'492'` for invoice, `'2481'` for client. Live
+`number_sequences.current_value` is **917**, **120**, **73**. So the screen offers an operator
+"Current 4861 / Next `B-4862`" when the database would actually issue `B-918`.
+`NumberingSequences.tsx:75` names this exact hazard in its own header — *"A wrong counter mints
+duplicate IDs"* — and `:91` hardcodes the `B-4862` claim into a comment. The fix is to source
+counters from `number_sequences` rather than the seed array; whether the screen should read
+live or stay static until that wiring exists is the call. **Not guessed.**
 
 Unrelated to the rename but found in the same attempt, and already fixed: the seed inserted each
 invoice as `Sent` and *then* its `invoice_lines`, so `recalculate_invoice_totals()` (0010) fired

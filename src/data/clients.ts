@@ -1,4 +1,6 @@
-import { rupees, type Paisa } from '../lib/money'
+import { rupees, formatMoney, type Paisa } from '../lib/money'
+import { kathmanduCivil } from '../lib/bs'
+import { getSetting } from '../lib/settingsStore'
 import type { StatusKey } from '../lib/status'
 
 export type ClientType = 'Organisation' | 'Individual' | 'Unassigned'
@@ -148,7 +150,19 @@ export interface ClientRecord {
    */
   standingDiscountPercent?: number
   discountSource?: 'Type Rule' | 'Membership' | 'Named Client'
-  /** §1 Credit control. Richer than `isBlocked`/`blockReason` — carries who and when, per Current RMS's On-Stop model this spec adopts. */
+  /**
+   * ⚠ **Not the source of truth for On Stop.** Rulings §11.2 (13 Aug 2026) made
+   * On Stop a *derived* state — see `evaluateCreditStop` below, which is the
+   * only place the question is answered. This field is the older manual
+   * annotation from HIS v2.1 §1 Credit control (Current RMS's On-Stop model),
+   * kept because Law 3 deletes nothing and because it carries a **who** and a
+   * **when** that no derivation can produce.
+   *
+   * It is deliberately **not** an input to the predicate: feeding it back in
+   * would restore exactly the stale flag the ruling removed — one that keeps
+   * saying "on stop" after the client has paid. `lib/queries/clients.ts` never
+   * sets it, so it exists on seed records only.
+   */
   onStop?: { reason: string; setBy: string; setAd: string }
   /** §1 Reliability [NEW] — absent everywhere in the schema and this mock layer until now. Counts only; no ₨-recovered figure is modelled yet. */
   reliability?: { lateReturns: number; totalReturns: number; damageCases: number; missingCases: number; avgDaysLateOverall: number }
@@ -972,7 +986,7 @@ export const CLIENTS_DATA: ClientRecord[] = [
  * disjoint client *names* for the same booking — so a Job/Case's own
  * `client`/`counterpartyName` string is not a reliable way to find the real
  * client record. The one thing genuinely shared is the booking number
- * itself: every `ClientRecord.activeBookings` entry is a real `BK-...`
+ * itself: every `ClientRecord.activeBookings` entry is a real `B-...`
  * number, so resolving through that instead of through name-matching finds
  * the correct client whenever the two seed sets happen to reference the same
  * booking, and returns `undefined` — never a guessed or partial match —
@@ -996,6 +1010,250 @@ export function clientMetrics(rows: ClientRecord[]) {
     outstandingPaisa: rows.reduce((sum, c) => (sum + c.outstandingPaisa) as Paisa, rupees(0)),
     depositHeldPaisa: rows.reduce((sum, c) => (sum + c.depositHeldPaisa) as Paisa, rupees(0)),
   }
+}
+
+/* ── On Stop — RULING §11.2, 13 Aug 2026 ───────────────────────────────── */
+
+/**
+ * # On Stop is DERIVED, and this is the one place it is derived.
+ *
+ * Spec 08 draws an `(On Stop)` chip twice. `client_flag_type` is
+ * `VIP | Blocked | Upgrade Candidate` and there is no fourth member — Rulings
+ * §11.2 settles it: **a client is On Stop when either**
+ *
+ *   1. their outstanding balance exceeds their credit limit, **or**
+ *   2. they hold an invoice more than *N* days past its due date,
+ *
+ * where *N* is read from Settings ▸ Financial (`overdueStopDays`, default 30)
+ * and never written into a module.
+ *
+ * ## Why one exported function and not three predicates
+ *
+ * The directory chip, the client record's credit box and any KPI all call
+ * `evaluateCreditStop`. Two screens computing "on stop" their own way is the
+ * same failure `clientIntel.ts` demonstrates today: its `isOnStop` at line 29
+ * is `client.isBlocked || client.onStop`, which conflates a block with a credit
+ * state and answers a different question from this one. **That file is not this
+ * pass's to edit; the divergence is reported, not silently forked.**
+ *
+ * ## Blocked and On Stop intersect, they are not siblings of Active
+ *
+ * `0005_clients.sql`: *"Deactivated is terminal… Blocked is never written here
+ * — it is a flag on `client_flags`"* and *"Flags coexist with the client's
+ * state."* A client is routinely Active **and** on stop. Nothing in this module
+ * folds the two together, and `ClientsDirectory` renders them as two
+ * independent overlay toggles for that reason.
+ *
+ * ## A limb that cannot be evaluated is not a limb that passed
+ *
+ * Every field this reads can be genuinely absent, and each absence is reported
+ * rather than defaulted:
+ *
+ *  · `lib/queries/clients.ts:toClientRecord` maps the directory view's **withheld**
+ *    money (`null`, for a money-blind session) to `0`. So a zero outstanding
+ *    read by a Warehouse session is not a zero — it is "not shown to you".
+ *    `creditStopFactsOf` therefore reports both money facts as `null` for a
+ *    money-blind session instead of pretending the client owes nothing.
+ *  · The same mapping turns an absent `approved_credit_limit` into `0`. A limit
+ *    of zero would put every client with a rupee outstanding over their limit,
+ *    so a non-positive limit is read as **no limit recorded** and the limb
+ *    reports itself unavailable.
+ *  · `ClientRecord` carries no invoice due dates at all, so limb 2 is
+ *    unavailable on a bare directory row and only becomes answerable where the
+ *    invoices query has actually run (the client record's Payments data).
+ *
+ * When no limb could run, `indeterminate` is true and the caller must say the
+ * check did not run. It must not render "clear".
+ */
+export type CreditStopLimb = 'credit-limit' | 'overdue-invoice'
+
+export interface CreditStopFacts {
+  /** Outstanding on issued invoices, or `null` when this session/record cannot supply it. */
+  outstandingPaisa: Paisa | null
+  /** Approved credit limit, or `null` when none is recorded or it is withheld. */
+  creditLimitPaisa: Paisa | null
+  /**
+   * Whole days past due on the client's most overdue **unpaid, issued** invoice
+   * — `0` when they hold none, and `null` when no invoice data was read.
+   * `0` and `null` are different answers and are never collapsed.
+   */
+  daysPastDueOnOldestUnpaidInvoice: number | null
+}
+
+export interface CreditStopLimbVerdict {
+  limb: CreditStopLimb
+  label: string
+  /** `true` fired · `false` clear · `null` the check could not run. */
+  fired: boolean | null
+  /**
+   * Why it fired, or why it could not run.
+   *
+   * **Law 6** — this string never carries a rupee figure, so it is safe to put
+   * in front of a money-blind role. The figures live in `detail`, which callers
+   * render only behind `useCanViewMoney()`.
+   */
+  reason: string
+  /** The same statement with the amounts in it. `null` unless money is visible. */
+  detail: string | null
+}
+
+export interface CreditStopVerdict {
+  onStop: boolean
+  /** No limb could be evaluated. Say so — never render this as "clear". */
+  indeterminate: boolean
+  limbs: CreditStopLimbVerdict[]
+  /** Figure-free reasons for the limbs that fired, in order. Empty when clear. */
+  reasons: string[]
+  /** With-figures reasons for the limbs that fired. Empty for a money-blind session. */
+  details: string[]
+  /** Why each limb that could not run did not run. */
+  unavailable: string[]
+}
+
+export interface CreditStopOptions {
+  /** From Settings ▸ Financial. Never a literal — see `readOverdueStopDays`. */
+  overdueStopDays: number
+  /** `useCanViewMoney()`. Decides whether `detail` is populated at all (Law 6). */
+  canViewMoney: boolean
+}
+
+const LIMB_LABEL: Record<CreditStopLimb, string> = {
+  'credit-limit': 'Over credit limit',
+  'overdue-invoice': 'Invoice overdue',
+}
+
+export function evaluateCreditStop(facts: CreditStopFacts, opts: CreditStopOptions): CreditStopVerdict {
+  const limbs: CreditStopLimbVerdict[] = []
+
+  /* ── limb 1 — outstanding over the approved credit limit ─────────────── */
+  const outstanding = facts.outstandingPaisa
+  const limit = facts.creditLimitPaisa
+  if (outstanding === null || limit === null) {
+    limbs.push({
+      limb: 'credit-limit',
+      label: LIMB_LABEL['credit-limit'],
+      fired: null,
+      reason:
+        'The credit-limit check did not run — the outstanding balance and the approved limit are not both readable on this record.',
+      detail: null,
+    })
+  } else if (limit <= 0) {
+    limbs.push({
+      limb: 'credit-limit',
+      label: LIMB_LABEL['credit-limit'],
+      fired: null,
+      reason:
+        'The credit-limit check did not run — no approved credit limit is recorded for this client, and a limit of zero cannot be told apart from a limit that was never set.',
+      detail: null,
+    })
+  } else {
+    const over = outstanding > limit
+    limbs.push({
+      limb: 'credit-limit',
+      label: LIMB_LABEL['credit-limit'],
+      fired: over,
+      reason: over
+        ? 'Outstanding is over the approved credit limit.'
+        : 'Outstanding is within the approved credit limit.',
+      detail: opts.canViewMoney
+        ? `Outstanding ${formatMoney(outstanding)} against an approved limit of ${formatMoney(limit)}.`
+        : null,
+    })
+  }
+
+  /* ── limb 2 — an invoice past due by more than N days ────────────────── */
+  const days = facts.daysPastDueOnOldestUnpaidInvoice
+  if (days === null) {
+    limbs.push({
+      limb: 'overdue-invoice',
+      label: LIMB_LABEL['overdue-invoice'],
+      fired: null,
+      reason:
+        'The overdue-invoice check did not run — no invoice due dates were read for this client, so how late they are is unknown.',
+      detail: null,
+    })
+  } else {
+    const late = days > opts.overdueStopDays
+    limbs.push({
+      limb: 'overdue-invoice',
+      label: LIMB_LABEL['overdue-invoice'],
+      fired: late,
+      /* Days are not a rupee figure, so this stays whole for every role. */
+      reason: late
+        ? `An invoice is ${days} days past its due date — the limit set in Settings ▸ Financial is ${opts.overdueStopDays} days.`
+        : days > 0
+          ? `The oldest unpaid invoice is ${days} days past due, inside the ${opts.overdueStopDays}-day limit.`
+          : 'No unpaid invoice is past its due date.',
+      detail: null,
+    })
+  }
+
+  const fired = limbs.filter((l) => l.fired === true)
+  const unknown = limbs.filter((l) => l.fired === null)
+
+  return {
+    onStop: fired.length > 0,
+    indeterminate: fired.length === 0 && unknown.length === limbs.length,
+    limbs,
+    reasons: fired.map((l) => l.reason),
+    details: fired.map((l) => l.detail).filter((d): d is string => d !== null),
+    unavailable: unknown.map((l) => l.reason),
+  }
+}
+
+/**
+ * The facts a `ClientRecord` can honestly supply.
+ *
+ * `daysPastDueOnOldestUnpaidInvoice` is passed in because the record does not
+ * carry it — only a surface that has actually run the invoices query can answer
+ * it, and one that has not must pass `null` rather than `0`.
+ */
+export function creditStopFactsOf(
+  client: ClientRecord,
+  opts: { canViewMoney: boolean; daysPastDueOnOldestUnpaidInvoice?: number | null },
+): CreditStopFacts {
+  const money = opts.canViewMoney
+  return {
+    outstandingPaisa: money ? client.outstandingPaisa : null,
+    /*
+     * A zero limit is passed THROUGH rather than folded into `null` here, so
+     * that `evaluateCreditStop` can tell an operator *"no approved credit limit
+     * is recorded for this client"* instead of the vaguer "not readable". Both
+     * end in the same verdict — the limb cannot run — but only one of them says
+     * what to go and fix. Folding it here made the specific message
+     * unreachable, which the mock corpus (`lib/mock/corpus.ts:149`, every
+     * `approved_credit_limit: null`) surfaced immediately.
+     */
+    creditLimitPaisa: money ? client.creditLimitPaisa : null,
+    daysPastDueOnOldestUnpaidInvoice: opts.daysPastDueOnOldestUnpaidInvoice ?? null,
+  }
+}
+
+/**
+ * Whole days between an invoice's `due_date` and today, in the Kathmandu civil
+ * day — the same truncation `queries/bookings.ts` uses, so the day this counts
+ * from is the day a screen would label.
+ *
+ * `null` for an unparseable date: an invoice whose due date cannot be read is
+ * not an invoice that is on time. Never negative — an invoice due next week is
+ * `0` days past due, not −7.
+ */
+export function daysPastDue(dueDateAd: string, now: Date = new Date()): number | null {
+  const due = Date.parse(`${dueDateAd}T00:00:00Z`)
+  if (Number.isNaN(due)) return null
+  return Math.max(0, Math.round((kathmanduCivil(now) - due) / 86_400_000))
+}
+
+/**
+ * *N*, from Settings ▸ Financial. The single reader of `overdueStopDays`.
+ *
+ * A module may not write `30`; it calls this. `getSetting` re-reads storage per
+ * call and falls back to the registry default when the stored value stopped
+ * validating, so a hand-edited `localStorage` cannot put a nonsense threshold
+ * in front of an operator.
+ */
+export function readOverdueStopDays(): number {
+  return Number(getSetting('overdueStopDays'))
 }
 
 /* ── left filter rail (render `Clients - Directory A`) ─────────────────── */

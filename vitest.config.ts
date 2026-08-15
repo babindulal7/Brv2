@@ -22,6 +22,12 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    /* `src/archive` holds screens ruled out of the application. Their suites
+       are kept with them (Law 3 — nothing is deleted) but not run: they assert
+       the behaviour of code that is no longer mounted, so a failure there would
+       report a defect in something nobody can reach. Restoring a screen means
+       moving it back and its suite comes with it. */
+    exclude: ['node_modules/**', 'src/archive/**'],
     // Explicit imports from 'vitest' in every file — no ambient globals, so
     // `tsc --noEmit` typechecks the suites with the same strictness as `src/`.
     globals: false,

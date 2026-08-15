@@ -17,7 +17,7 @@ import { runFloorVerb, validateFloorVerb, type FloorVerbResult } from './floorVe
  * That is why this takes unit ids and its three siblings take booking lines.
  */
 export type CompleteResetInput = {
-  /** `bookings.id` (uuid) or `bookings.booking_no` (`BK-YYYY-NNNN`). */
+  /** `bookings.id` (uuid) or `bookings.booking_no` (`B-` + digits — corrected 15 Aug 2026, see `confirmRental.ts`). */
   id: string;
   /**
    * `cleaning_queue_entries.unit_id` for each item whose reset was completed.

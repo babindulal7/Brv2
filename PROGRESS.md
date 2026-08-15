@@ -2,6 +2,574 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-08-16 — Phase 1 gate re-run: two exploits closed, a Law 6 breach found and half-fixed
+
+**Phase:** 1 (Schema) — still CURRENT · **Status:** `tsc --noEmit` exit 0 · my slice 239/239 ·
+`0061` applied with approval and verified live as two roles
+
+### 1. The 11 Aug gate verdict was stale in both directions
+
+Re-ran Phase 1's gate against the live database instead of reading it. `0044`/`0045`/`0046`
+were recorded as "written and unapplied" — **they were applied on 11 Aug** (`20260811213239`,
+`…213329`, `…213413`), the same day the verdict was written. So:
+
+- **Law 10 exploit — CLOSED.** `trg_booking_discounts_stacking` fires `INSERT UPDATE` now.
+- **Law 3 exploit — CLOSED twice.** No DELETE grant for `authenticated`/`anon` on any priced
+  table, plus `reject_delete` triggers. Payment immutability is a trigger now, not just a
+  grant. Live trigger count 36 (was 13); policies 231 (was 219); zero-policy tables 3 (was 6).
+- **Outstanding** — still open, still deliberately (needs §4.17's formula).
+
+### 2. NEW — Law 6 does not hold at the database (the clause 11 Aug listed as passing)
+
+Executed as `warehouse@babinrentals.com` in a rolled-back transaction:
+`auth_can_view_money()` = **false**, `payments`/`invoices` = 0 rows ✅ — and
+`bookings.deposit_required` = **Rs 13,65,000**, `booking_lines.rate` = **Rs 6,64,695**,
+`products.daily_rate` = **Rs 1,78,755**, all read straight off the base tables.
+
+**`0019`'s masking never worked.** `revoke select (col)` cannot subtract from the table-level
+SELECT that `authenticated` holds; Postgres does not even record it (`attacl` null on all
+four tables). `0019:140-143` asserts the opposite in writing. The `_v` views were always
+correct — `booking_lines_v.rate` reads null for Warehouse — but nothing forced their use.
+
+### 3. Fixed the half that can be fixed without breaking the app
+
+Ruled by the owner (PLAN.md §4.28): column grants + move the call sites, sequenced so the app
+is never down between the two.
+
+- **`0061_bookings_deposit_masking_view.sql` — APPLIED with explicit approval.** Creates
+  `bookings_deposit_v (id, deposit_required)`, `security_invoker = on` so the row policy still
+  applies. Verified live: Owner 121 rows / Rs 13,65,000; Warehouse 121 rows / `null`.
+- **Both call sites moved.** `lib/queries/bookings.ts` and `lib/bookingQuery.ts` no longer name
+  `deposit_required` on the base table at all — `withDeposit` now triggers a second, id-keyed
+  read of the view. This closed the `TODO(persistence)` that stood in BOTH files asking for
+  exactly this view ("one fix closes both").
+- **`0062_law6_column_grants_arm_the_mask.sql` — WRITTEN, NOT APPLIED.** The breaking half:
+  revoke table-level SELECT, grant the non-money columns (27/19/35/29, generated from
+  `information_schema`, not typed). Dry-run in a rolled-back transaction confirms it makes
+  money unreadable on the base tables while `stage`/`qty` stay readable.
+
+Tests rewritten rather than deleted: the pair that asserted `withDeposit` ADDS the column now
+asserts the stronger property — **this module never names it, whatever the caller asks** — plus
+that the view is queried only when asked, and skipped entirely for an empty page.
+
+### What is now blocked, and on whom
+
+1. **Apply `0062` — but only after this call-site change has shipped.** Until then Law 6 is a
+   UI convention: no module names the column, and a crafted request still reaches it.
+2. **`0062` makes `alter table … add column` a two-file change** on those four tables. A new
+   column is unreadable until granted. Fail-closed and deliberate, but it is a real obligation.
+3. Everything from the 15 Aug entry below still stands — redirect URLs, the four staff rows
+   with no auth account, and the repo's inability to rebuild the live database.
+
+### Not mine, noted in passing
+
+`src/actions/__tests__/core.test.ts` fails on `inventory.transfer` — the concurrent session's
+16 Aug capability mapping added the test ahead of the `case` in `checkCapability`. Left alone;
+that file was being rewritten while this ran. `ReportCatalog.dedup` timed out at 5 s in one
+run and passed in the next — the same load flakiness as `numberingPreview` /
+`ExpenseReports.toolbar`. **A `testTimeout` bump is overdue.**
+
+## 2026-08-16 (later) — capability matrix closed; Auto Assign Serials built and wired
+
+**Phase:** unblocking the action layer · **Status:** `tsc --noEmit` exit 0 · confirmRental 47/47,
+availability 29/29, queries/availability 10/10, rbac 48/48, core 60/60 · **no browser verification —
+see "What was NOT verified"**
+
+### 1. B1 — the 24 unhandled capability strings, closed BEFORE the bodies
+
+`CAPABILITY_MAPPING_2026-08-16.md` was written and unapplied. Applied it: two role sets
+(`FLOOR`, `BACK_OFFICE`) and four predicates in `lib/rbac.ts`, 21 cases in `actions/core.ts`.
+Measured before and after: **11 cases → 32**, and the only capabilities still unresolved are the
+three `inspection.*`, which have no table to mirror.
+
+Done *ahead of* the bodies rather than behind them. The 15 Aug four were ruled after their
+actions shipped, and that gap denied them to every role including Owner for three days.
+
+**Two corrections to the mapping document, both found by executing rather than reading:**
+
+- It says **32** capability strings are declared under `src/actions/`. The real number is **31**.
+  It scanned `__tests__` too, and `money.view` is declared only by a probe in `core.test.ts` — it
+  is an app-level rule that no action declares, by design. The off-by-one changed no mapping.
+- Its §7 flags `purchase.approve` as suspiciously broad, and it is right: `purchase_requests_all`
+  is `auth_is_staff()`, so mirroring it lets a **Driver approve a purchase request**. Mirrored
+  faithfully anyway — fix the RLS policy first and let the capability follow is the ruled method —
+  and **pinned by a test in both suites**, each carrying a note that those tests are *meant* to
+  fail when the policy is tightened. PLAN.md §4.29.
+
+**A regression guard now exists** (`core.test.ts`, "every declared capability resolves to a
+rule"). Both previous gaps were found by a person grepping; this is the first thing that will
+find the next one. It reads both files as text via `import.meta.glob` — `@types/node` is not a
+dependency, and adding it to satisfy a test would widen the whole program's global scope.
+
+⭐ **It was mutation-tested, and the first version did not work.** Commenting out
+`case 'inventory.transfer':` left the guard green, because `// case 'x':` still matches the
+pattern — so the one mutation most likely to happen in practice was the one it could not see.
+Both scans strip comments now, and the mutation was re-run to confirm the guard fails and names
+the right capability. A guard that cannot fail is worse than no guard, because it is believed.
+
+### 2. B2 — Auto Assign Serials: the engine, the rulings, the write
+
+This morning's entry named this as the blocker sitting under Packing, Handover, Return, Reset and
+Evidence equally. It is now built.
+
+**The measurement that reframed it.** `booking_line_units` — the table the floor screens read —
+has **no overlap protection of any kind** (live: only `qty > 0`, two CHECKs, FKs). The GiST
+exclusion everyone assumed was guarding assignments is on **`inventory_reservations`**, and that
+table sat in `BOOQABLE_READ_ONLY_TABLES`. **The protected table could not be written and the
+writable one was not protected** — an unrecorded conflict between the OS schema and bridge spec
+§5.1, and the real reason this had never been built.
+
+**Also corrected:** the 15 Aug entry says the live corpus leaves `booking_line_units.asset_id`
+null — *"18 unit rows against 419 lines"* — and concludes Serial-at-Pack is already what the data
+does. Counted 16 Aug: **all 18 rows carry `asset_id`**; `with_asset` is 18, `without_asset` is 0.
+The null half of that claim is wrong.
+
+**Ruled — PLAN.md §4.30, which also closes §4.14, open since 11 Aug:**
+
+| | Ruling |
+|---|---|
+| Where a Confirm-time assignment writes | **`inventory_reservations`**, written by the OS directly, deliberately overriding bridge spec §5.1. The only option where the *database* refuses a double-booking rather than the app trying not to make one. |
+| Window bounds | **`half-open`** — an 18:00 return frees the unit for an 18:00 pickup. Taken against the recommendation, which argued `closed` on turnaround grounds; recorded so it is not re-litigated. |
+| §4.14 disqualifying states | **`Maintenance`, `Missing`, `Retired`.** The four booking-lifecycle states are deliberately absent — they are facts about *today*, and the date-overlap check already answers per-window. |
+
+⚠ **No migration was needed and none was applied.** `inventory_reservations_all` is already the
+booking-desk five — the same set as `rental.confirm`. The database had been ready for this write
+the whole time; only `dataAccess.ts` refused it.
+
+**Built:** `lib/availability.ts` (pure — the rule, Law 1) and `lib/queries/availability.ts` (the
+IO). Confirm now plans, reserves, *then* moves the stage — that order because `0003:1478` says
+*"If reservation fails on any line, Confirm is rejected with the conflicting line named"*, and a
+failure has to leave the booking at Quote rather than produce a Booked booking with no gear
+behind it.
+
+⭐ **Two real defects were caught by tests, both in code written minutes earlier:**
+
+1. `windowsOverlap` guarded with `Number.isNaN(Date.parse(...))` alone. That catches neither
+   `'16 Aug'` (which parses, to a valid instant in **2001**) nor an offset-less string (which
+   parses as the **device's local** time — 5h45m out on a tablet set to Auckland, silently
+   shifting every boundary comparison). It now uses the same `ISO_INSTANT_RE` that
+   `confirmRental.ts` already carried, for exactly the same reason.
+2. The release-on-failure path covered the engine-refusal branch but **not the persistence-check
+   branch** — the one `idempotentInsert` takes when a write is queued offline or swallowed by its
+   `'Failed to fetch'` / 408 branch, i.e. the *more* likely failure. Without it, a confirm that
+   visibly failed would leave every unit on the booking held against a Quote, invisibly.
+
+### 3. B3 (§4.28, Law 6) — NOT touched, deliberately
+
+A concurrent session is working it and has chosen path (a), the recommended one: `0061` (the
+masking view) is **applied**; `0062` (the grant migration) is written and correctly held back
+until the call sites move. Left alone rather than duplicated. `queries/availability.ts` reads
+`product_units_v` rather than the base table specifically so it survives `0062`.
+
+One artefact of that session cost a false alarm here: a full `vitest run` reported a failure in
+`queries/__tests__/bookings.test.ts` that vanished on re-run. That file's mtime was **five minutes
+after my run started** — it was being edited mid-run. Not a real failure. Expect this.
+
+### What was NOT verified
+
+**None of this was driven in a browser, and the reservation write has never executed against the
+live database.** CLAUDE.md's standing rule is to verify by driving the app; that has not happened
+here. Specifically unproven:
+
+- that `insertViaSourceSwitch('inventory_reservations', …)` is accepted by RLS in a real session —
+  the policy was *read*, not exercised;
+- that PostgREST returns `period` in the text shape `parseTstzRange` expects. The parser is tested
+  against the documented form and against its own round-trip, not against a real response;
+- the compensating release, against real rows.
+
+`inventory_reservations` holds **0 rows**, so the first confirm through this path is also its
+first real test. Drive it before trusting it.
+
+### Blocked / next
+
+- **PLAN.md §4.29** — `inspection.*` has no write target anywhere in the schema;
+  `purchase.approve` is broader than it should be and the fix belongs in the RLS policy.
+- **The four floor rulings are now ALL RULED** (PLAN.md §4.31), late in the session and NOT yet
+  implemented: packing tree `group` is `bundles.name` falling back to category (which also
+  unblocks bundle-line expansion in `planAssignment`, currently skipped); Reset's
+  demand/vip/rush flags are dropped; the three empty-state copies are to be drafted against the
+  Packing/Evidence pattern and marked drafted-not-ruled; and the packing `case` is **dissolved**
+  — the gate is one photo per BOOKING, so no case model and no migration. Separately ruled: a
+  packing photo's image file expires on a retention schedule while its `evidence_files` row is
+  kept, which is what keeps it inside Law 0. **No retention schedule or job exists, so nothing
+  expires today** — that ruling is intent, not behaviour, and must not be logged as done.
+- `booking_line_units` is still written by nothing. Reserving is the half the database protects;
+  the floor rows are a projection of it and need the two packing rulings first.
+- §4.14's tightening of `enforce_inventory_reservation_capacity()` is now writable and **not
+  applied** — a live migration needing its own approval.
+
+## 2026-08-16 — floor-lines read built; the real floor blocker identified
+
+**Phase:** unblocking the action layer · **Status:** `tsc --noEmit` exit 0 · read driven in a
+browser against the mock corpus for B-848, B-715 and a non-existent booking
+
+### 1. `fetchFloorBooking()` — the read `BookingNotLoaded` names
+
+Added to `lib/queries/bookings.ts` (the file the empty state itself names), with
+`groupFloorLines()` beside it. Returns booking head + lines + nested physical units, resolving
+either `bookings.id` or `booking_no` via the same branch `floorVerb.readBooking` uses, so a
+screen and the verb it dispatches resolve a URL identically.
+
+**Verified in the browser, not by reading it:** `B-848` → real head (Dhaulagiri Weddings,
+"Sagarmatha Music Video", stage Packed) + 2 real lines. `B-99999` → `null`. `B-715` → 6 lines /
+18 units with real serials and asset tags. `groupFloorLines` → 6 entries, no duplicate
+`bookingLineId`, and the 4-unit battery line correctly collapses to ONE entry carrying 4
+`unitIds` — the shape `validateFloorVerb` demands and the reason a naive unit→line map is
+refused.
+
+Three fidelity rules are honoured deliberately: `linesPresence`/`unitsPresence` distinguish
+"embed absent" from "genuinely empty" (`bookingQuery.ts:110-113` records an absent unit embed
+once reading as a PASSED pack); `.is('booking_lines.voided_at', null)` for Law 3; and columns
+are named, never `*`.
+
+### 2. The blocker is upstream of all five screens
+
+**B-848 has 2 lines and ZERO units, and that is correct behaviour.** `seed.ts:762-770` refuses
+to assign units to generated bookings because index-assignment would put one physical unit on
+two date-overlapping bookings — "a lie the floor screens would render as fact". Exactly **1 of
+120** corpus bookings has unit rows.
+
+Live is worse: **nothing in the app writes `booking_line_units` at all.** `floorVerb` writes
+`packing_lines` / `handover_lines` / `return_lines` / `session_line_movements` only, and
+`confirmRental` does not populate it.
+
+So wiring the workspaces to this read would turn "not loaded yet" into "loaded — no items to
+pack". The real prerequisite is a **unit-assignment step at confirm time (Auto Assign
+Serials)**. That is a missing feature, not a wiring gap, and it blocks Packing, Handover,
+Return, Reset and Evidence equally.
+
+`booking_line_units` was added to the mock corpus (`lib/mock/corpus.ts`) with the same honesty
+note seed.ts carries — synthesising assignments is a mock-only trade, and no assignment made
+there may be read as an availability fact.
+
+### 3. Security finding — Law 6 is not enforced at the column level
+
+`bookingQuery.ts:918-928` asserts `rate`, `discount_amount`, `supplier_cost` and
+`markup_amount` are REVOKED from `authenticated` on `booking_lines`. **That is false against the
+live project.** Verified 16 Aug 2026 via `information_schema.column_privileges`: both
+`authenticated` AND `anon` hold SELECT on all four. Law 6 says "Warehouse sees no money —
+enforced by RLS, not the UI"; RLS is row-level, so a Warehouse session can read rates directly
+through PostgREST. Not fixed here — a live grant change needs explicit approval.
+
+### Needs a ruling (also marked TODO(decision) in `queries/bookings.ts`)
+
+1. Packing's per-booking `case` — `product_units.container_id` is a unit's home container, not a
+   per-booking assignment, and the completion gate is one photo per PACKED case.
+2. The packing tree `group` — `bundles.name` vs `inventory_categories.name` give different trees.
+3. Reset's `demand` / `vip` / `rush` priority flags have no column anywhere.
+4. Empty-state copy for Handover, Return and Cleaning & Reset — only Packing and Evidence have a
+   ruled Empty-and-Error section.
+
+## 2026-08-15 (night) — mock data source added; administrative cut applied
+
+**Phase:** unblocking the action layer · **Status:** `tsc --noEmit` exit 0 · `vitest run`
+**1826 passed / 73 files, 0 failed** · `vite build` exit 0, precache **136** entries (was 147)
+· both changes driven in a browser on the mock dev server
+
+### 1. `VITE_DATA_SOURCE=mock` — the app runs with no Supabase project
+
+`npm run dev:mock` (`--mode mock`, `.env.mock`) swaps `lib/supabase.ts`'s export for
+`lib/mock/client.ts`: a PostgREST-shaped engine (`lib/mock/engine.ts`) over rows derived from
+`seed.ts`'s `buildCorpus()` (`lib/mock/corpus.ts`). No network, no credentials — a fresh clone
+runs without anyone's keys. Default is `live`, so a build cannot ship mock data by omission.
+
+**This is not the dev bypass removed on 12 Aug.** That one faked the React `user` while queries
+still went out as `anon`, so RLS denied them and the app showed "Owner" over empty lists. Here
+the whole backend is local and data genuinely arrives. A non-dismissible amber `MockBanner`
+sits above every screen, and the login screen lists the three accounts — `auth.tsx` records that
+a `console.warn` was not enough.
+
+**Verified by driving the app's own query modules**, not by reading the new code: bookings 120,
+clients 40 (full `client_directory_v` with all six aggregates), products 56, invoices 120,
+payments 93, product_units 192. `count`-before-`range`, to-one and to-many embeds, `!inner`
+semi-joins, both ilike dialects and both embed spellings all behave. Three bugs the browser
+caught that review would not have: invented category codes (real ones are lowercase `camera`,
+`lens`, …), an invented unit status (`Available`; the stored vocabulary is `In Stock`), and
+dotted filters matching against *projected* rather than source child rows — which silently made
+every `!inner` semi-join drop all rows and every non-inner prune keep all rows.
+
+**Not served** (`UNSERVED` in `lib/mock/corpus.ts`): expenses, membership_plans,
+operation_sessions, cleaning_queue_entries, client_flags, payment_reversals, the sync tables.
+Finance ▸ Expenses and Clients ▸ Credit are empty in mock mode, deliberately and visibly.
+
+### 2. The administrative cut, applied from `admin cuts.zip`
+
+Routes **73 → 68**; Settings tabs 8 → 4 (Business · People · Branches · System) with
+`LEGACY_TAB` preserving `?tab=` bookmarks. `/admin/*` is canonical; the four `/tools/*` admin
+paths are now redirects. Archived to `src/archive/` (excluded in `tsconfig`/`vitest.config`):
+`ai`, `automation`, `notifications`, `system`, `wall`, `BusinessHours.tsx`,
+`CommunicationSettings.tsx`, `sections/Overview.tsx`. Deleted: `sections/AppsApi.tsx`,
+`sections/Security.tsx`.
+
+**Law 6 gate confirmed in the browser:** `FINANCIAL_SECTIONS` (3 sections) is kept out of
+`FIELD_SECTIONS`, so the CSV export does not start carrying VAT rates and payment terms to a
+money-blind session. This is the one thing the package's APPLY.md says must not be changed.
+
+**The package's `App.tsx` and `PROGRESS.md` were NOT copied.** Both predate this evening's work
+and a wholesale copy would have reverted three things: the `/forgot-password` + `/reset-password`
+routes built earlier today, mock mode, and `/wall`. `App.tsx` was hand-merged — package version
+as the base, with the auth-reset routes and `MockBanner` re-added and marked as such in comments.
+The route count is 68 rather than the package's predicted 66 for exactly that reason.
+
+### Two questions the cut raised — both RULED 15 Aug 2026
+
+- **`/wall` stays archived.** The package asked for confirmation because it is a kiosk rather
+  than an administration page. Ruled: the packing-bench TV is not in use, so it stays in
+  `src/archive/wall/` and `/wall` no longer resolves. Reversal remains a move plus one route.
+- **`SystemMonitor` stays archived** — it was one of the six screens named in the 12 Aug ruling,
+  and that ruling stands. Consequence, recorded deliberately: it was the ONLY UI for the offline
+  queue (the "Force Sync Queue" button and the pending/dead-letter counters), and
+  `offlineQueue.ts:246` still says surfacing a drain failure "is `SystemMonitor`'s job". **The
+  offline queue now has no observable surface at all.** That is accepted on the basis that the
+  Offline & Mobile Floor spec's build-order item 3 — queued/held states plus a `⇅ N queued`
+  header counter — replaces this surface rather than restoring it. Until that is built, a queued
+  or dead-lettered write is invisible to everyone.
+
+### Follow-up left open
+
+- `data/today.ts:41` states its seed exists because `modules/wall/WallDisplay.tsx` reads it. With
+  `/wall` archived that seed is dead code; it can be removed in a later cleanup.
+
+## 2026-08-15 (evening) — §4.20 ruled from the database; password reset built; two audits corrected
+
+**Phase:** unblocking the action layer · **Status:** `tsc --noEmit` exit 0 · `vitest run`
+**1826 passed / 73 files, 0 failed** · request path driven in a browser against the live project
+
+### 1. Two audits reached the wrong conclusion, from stale file headers
+
+`PROBLEMS_15Aug2026.md` and its follow-up both concluded the live database was empty and
+that `createRental` was blocked on three unapplied migrations. Checked against the project
+rather than the files:
+
+| Claim | Measured 15 Aug |
+|---|---|
+| "the live database is empty" | **121 bookings · 419 booking_lines · 76 clients · 126 products · 120 invoices · 93 payments · 2,102 audit_events.** Stages: Booked 31, On Rent 24, Quote 18, Packed 17, Closed 16, Returned 15 |
+| "`0055` NOT APPLIED" | applied, version `20260812150509` |
+| "`0058_late_fee` NOT APPLIED" | applied, version `20260812165503` — its own header still says otherwise |
+| "the `booking_no` CHECK is `^BK-[0-9]{4}-[0-9]{4}$`, so no value can satisfy both layers" | live CHECK is `^B-[0-9]+$`; live rows are `B-715`…`B-917`. **The contradiction does not exist** |
+| "`booking_line_units.asset_id` has no source, so creation is blocked" | that column is **nullable**, and the live corpus leaves it null — 18 unit rows against 419 lines. Serial-at-Pack is already what the data does |
+
+Both were written without a route to Supabase and read headers as if they were the database.
+`0047_seed_reference_corpus.sql` said NOT APPLIED, and **its rows are live** — its first
+client, `client_uuid a8c85792-…c5f7`, is `C-34` "Sagarmatha Pictures Pvt. Ltd.", created
+12 Aug. It went in by a route that records no migration row (`scripts/execute-generated-sql.mjs`).
+Its header now says so. **Check `supabase_migrations.schema_migrations` AND the rows; never
+the header.**
+
+What survives from those reports: `booking_discounts.audit_event_id` really is NOT NULL, and
+PostgREST really cannot give a browser a transaction — so the recommendation to write
+`create_booking(jsonb)` as a Postgres function still stands.
+
+### 2. PLAN.md §4.20 — RULED, and it had a fourth member
+
+`checkCapability` resolved seven capability strings; four implemented actions declared
+strings that were not among them, and an unresolved capability is denied **for every role,
+Owner included**. §4.20 named three. `inventory.create` (`createBundle`) was a fourth that
+no document had logged — found by checking every `permissions:` array against the switch.
+
+Each is now the role set of the RLS policy on the table its action writes — a rule already
+ruled, in SQL:
+
+| Capability | Table | Roles |
+|---|---|---|
+| `rental.confirm` | `booking_stage_transitions` | Owner, Admin, Manager, Coordinator, Warehouse |
+| `client.create` | `clients` | Owner, Admin, Manager, Coordinator, Warehouse |
+| `client.block` | `client_flags`, `Blocked` branch | Owner, Admin, Manager |
+| `inventory.create` | `bundles` ∩ `bundle_items` | Owner, Admin, Manager |
+
+Landed in `lib/rbac.ts` (four predicates + the shared `BOOKING_DESK` set) and
+`actions/core.ts`. **Every capability declared by an implemented action now resolves**; the
+rest belong to stubs the dispatcher refuses a step earlier.
+
+The three suites that pinned the denial were **rewritten to assert the ruled lists**, as each
+of them instructed rather than deleted. `confirmRental.ts`'s header and its `implemented`
+note were corrected: they claimed the tables were empty, and there are 18 Quotes to press
+Confirm on.
+
+### 3. Duplicate migration numbers, renumbered by applied order
+
+`0057_users_self_read_accepts_auth_uid` → **0059**, `0058_staff_row_for_the_current_owner_identity`
+→ **0060**, via `git mv`, provenance note in each header. All four collided files are
+applied, so "rename only the unapplied ones" would have renamed nothing. Filename order now
+reproduces the sequence that built the live database (versions `…163615`, `…165503`,
+`…170827`, `…170856`); under the old names a replay ran users before late_fee. The project
+records migrations by timestamp, so the rename is invisible to it.
+
+### 4. Forgot password — built, and it works
+
+`ForgotPassword.tsx`, `ResetPassword.tsx`, shared `AuthCard.tsx`, routes outside `<Shell>`,
+`requestPasswordReset` / `updatePassword` / `isPasswordRecovery` in `lib/auth.tsx`. The
+login screen's disabled "Send OTP" button is a live link.
+
+**Email, not the OTP the render draws** — SMS still needs the gateway and shared-device
+rulings (§4). Email needed none: every staff row already carries the address.
+
+**The screen may not say "check your inbox."** `resetPasswordForEmail` answers identically
+for an address with no account (anti-enumeration). It says *"If <address> has an account, a
+reset link is on its way"* — true in both branches. A test pins the wording, not just the
+behaviour, because the confident sentence would be a fresh success-fabrication three days
+after that register closed.
+
+**No client-side password minimum** — strength is a Supabase project setting; a second copy
+in the client is the one nobody updates.
+
+### How it was verified
+
+- `tsc --noEmit` exit 0. `vitest run` **1826/1826, 73 files, 0 failed** (219 s).
+  Three component suites — `numberingPreview`, `ExpenseReports.toolbar`, `calendar.kpiBand` —
+  time out at 5 s under parallel load and pass in isolation and in a quiet full run. **Load
+  flakiness, not regressions**, but worth a `testTimeout` before it wastes another session.
+- Every database claim above is a query against `sxguwvgoserhdolewibb`, not a file reading.
+- **Driven in a browser, not read**: submitting `/forgot-password` fired
+  `POST /auth/v1/recover` (813 ms) to the project — confirmed in `performance` resource
+  timings, not inferred from the UI. `/reset-password` with no recovery session refuses and
+  renders no password field; loaded with an expired-link fragment it reads "That reset link
+  has expired" and strips the token from the address bar. `/clients` renders 76 live clients
+  through `/rest/v1/client_directory_v` under a real session.
+
+### What is now blocked, and on whom
+
+1. **`http://localhost:3000/reset-password` and the deployed origin must be added to Auth →
+   URL Configuration → Redirect URLs.** Not settable from code or a migration. Until then an
+   unlisted redirect falls back to the Site URL — the operator lands elsewhere holding a
+   valid token. **The reset flow is incomplete without this.**
+2. **Only `babindulal7@gmail.com` can sign in.** `owner@babinrentals.com`, `manager@`,
+   `warehouse@` and `billing@` have staff rows and **no `auth.users` account**. The §4.20
+   ruling gives Coordinator and Warehouse different answers from Owner, and RLS answers to
+   the JWT — so those paths cannot be seen without real accounts.
+3. **`rental.create` / `rental.draft` are still unresolved capabilities**, correctly: they
+   belong to stubs. They become live questions the moment `createRental` gets a body, and the
+   answering rule is now established — mirror the RLS policy on `bookings` (Owner, Admin,
+   Manager, Coordinator, Warehouse, per `bookings_insert`).
+4. **The repo cannot rebuild the live database.** `0056_auth_role_falls_back_to_auth_uid` is
+   applied with **no source file**, and the seed corpus went in outside the migration table.
+
+## 2026-08-15 (later) — The year-reset worry is closed; two adjacent numbering bugs are not
+
+**Phase:** follow-up to the entry below · **Status:** read-only verification against the live
+project; **no code changed**, two `TODO(decision)` filed in `PLAN.md` §4
+
+### Closed — `next_document_number()` does not reset a year-less sequence
+
+The one item the previous entry left open. `0055` did not only move the CHECKs; its §5
+rewrote the function, and the reset branch is now guarded:
+
+```sql
+-- A year-less sequence must never reset on a year change: it would re-issue
+-- a number it has already handed out.
+if v_rec.include_year and v_rec.current_year <> v_year then
+```
+
+`booking.include_year` is `false` live, so the branch cannot fire and `B-1` cannot be
+re-issued in January. Read from the live function body, not from the migration file. The
+repo's §5 and the live definition are semantically identical (live is missing one explanatory
+comment added to the file after it was applied — comment-only drift, no logic difference).
+The stale `Blocked` bullet in the 12 Aug entry and the matching `TODO(decision)` in `PLAN.md`
+§4 are both marked closed.
+
+### Found while verifying — two real numbering bugs, NOT fixed
+
+Both are `TODO(decision)` per `CLAUDE.md`, because each has two defensible answers:
+
+1. **`isIssuedBy('EQ', …)` returns `false` for every equipment code that exists.**
+   `numbering.ts` declares `format: 'EQ-CAT-NNNNNN'`; live, all **126** `products.asset_code`
+   are bare `EQ000234`…`EQ001025`, **0** in the `EQ-CAT-` form. `patternOf` anchors the whole
+   format, so the recogniser rejects the real codes. **Verified by executing the real module
+   against three live codes** — `EQ000234` `false`, `EQ000824` `false`, `EQ001025` `false`
+   (throwaway probe, deleted; `git status` clean). This is precisely the silent failure
+   `numbering.ts:473` says format-matching exists to prevent.
+2. **Settings ▸ Numbering displays counters the database does not hold.** `SEQUENCES` says
+   booking `4861` / invoice `492` / client `2481`; live `current_value` is `917` / `120` /
+   `73`. The screen would tell an operator the next booking is `B-4862` when it is `B-918`.
+   `NumberingSequences.tsx:75` warns about exactly this in its own header.
+
+### How it was verified
+
+Live reads over MCP `execute_sql` (read-only, no migration applied): `pg_get_functiondef` for
+`next_document_number`, all 7 `number_sequences` rows, and an `asset_code` shape census over
+`products`. The `isIssuedBy` result was produced by running the real `src/data/numbering.ts`
+under vitest. Nothing in `src/` was modified by this entry.
+
+## 2026-08-15 — `BK-YYYY-NNNN` deleted from the repo's own account of itself
+
+**Phase:** documentation correctness, no behaviour change · **Status:** gate-verified —
+`tsc --noEmit` exit 0; the four affected test files 263/263 green
+
+### What was wrong
+
+`BK-YYYY-NNNN` was quoted as the **live** booking-number rule in a dozen doc comments and
+two operator-facing error strings. It has not been the live rule since
+`0055_ruled_identifier_formats` was applied on 12 Aug. The comments cost real time: two
+separate audits on 15 Aug read them and concluded the booking-number format was in conflict
+with itself and that `createRental` was blocked. There was no conflict. The comments were
+stale, and one of them was the migration's own header.
+
+### Read from the live project (`sxguwvgoserhdolewibb`) on 15 Aug 2026
+
+Every section of 0055 is present in the live schema — it is applied, not pending:
+
+| | |
+|---|---|
+| `bookings_booking_no_format` | `CHECK (booking_no ~ '^B-[0-9]+$')` |
+| `bookings` | 121 rows, `B-715` … `B-917` — 121 match the ruled shape, **0** match the retired one |
+| `clients_client_code_format` | `CHECK (client_code ~ '^C-[0-9]+$')` |
+| `number_sequences` | booking `B-` · client `C-` · invoice `INV-`, all `padding 1`, `include_year false` |
+
+### Corrected
+
+- **`0055_ruled_identifier_formats.sql`'s header** — the root cause. It still ended
+  "⚠ NOT APPLIED … Written and reviewed, not executed", a line that outlived its own apply
+  and is the most authoritative-looking source in the repo. Now records the apply, the live
+  read above, and the two independent PROGRESS.md entries that already contradicted it
+  (`"found by applying it … It applied cleanly after that"`, and `C-102` "rewritten from
+  `CL-2026-0102` by 0055"). **The SQL is untouched — comment only.**
+- **Doc comments** — `floorVerb.ts` (×2), `packRental.ts`, `handoverRental.ts`,
+  `returnRental.ts`, `completeReset.ts`, `bookingQuery.ts`, `booqable/map/orders.ts`.
+  `orders.ts` additionally *reported* the app and the constraint as being in conflict
+  ("which the constraint rejects — reported, not migrated here"); that conclusion was false
+  and is now recorded as such.
+- **Two operator-facing strings** — `floorVerb.ts` and `confirmRental.ts` both told the
+  operator to "pass the booking uuid or its BK- number", naming a format no booking has
+  carried since 12 Aug. Now `B-`. These are the only non-comment source changes.
+- **Two sites not on the original list**, found by sweeping — `confirmRental.ts`'s
+  `readBooking` header, and `data/clients.ts`, which claimed every
+  `ClientRecord.activeBookings` entry is "a real `BK-...` number" when they are `B-715`,
+  `B-718`, …
+- **Test fixtures** — `BK-2026-0715` → `B-715`, `BK-2026-9999` → `B-9999` across
+  `bookingQuery.test.ts`, `floorVerbs.test.ts`, `confirmRental.test.ts`.
+- **The stale `Blocked` bullet** in the 12 Aug rebuild entry is marked superseded in place.
+
+### Deliberately NOT changed
+
+- `lib/seed.ts:103` and `data/numbering.ts:473` name `'BK-'` to argue **against** hardcoding
+  it — prefix sniffing is the thing they exist to remove. Correct as written.
+- `data/settings.ts:831` and `data/documents.ts:197` are past-tense history ("used to say",
+  "that was legible while"). `numbering.test.ts`'s three `BK-` strings are **negative**
+  assertions (`.not.toBe`, `toBe(false)`) and must keep the retired literal.
+- The same `Blocked` bullet's second claim — `next_document_number()` resetting the counter
+  to 1 on year change — is **closed**, see the follow-up entry below.
+
+### How it was verified
+
+`npx tsc --noEmit` exit 0. `npx vitest run` on the four affected files —
+`bookingQuery` · `confirmRental` · `floorVerbs` · `numbering` — 263/263 passed. The live
+constraint, row-shape and sequence figures above were read over MCP with `execute_sql`
+(read-only; no migration applied).
+
+⚠ **The full `vitest run` was 12 failed / 1831 passed**, and those 12 are **not** clean.
+All 12 are `Test timed out in 5000ms` in render suites this change does not touch
+(`rentalsList.render`, `ExpenseReports.toolbar`, `Settings.edit`, +6 files). Evidence they
+are contention, not regression: the run took 1009s while `tsc` was competing for CPU, and
+`Settings.edit.test.tsx` run **alone** passes 13/13 — including the two tests that timed
+out — with individual tests at 0.5–1.6s against a 5s budget. Not proven for the other 6
+files, only inferred.
+
+⚠ **The working tree carries another session's in-flight edits** — `lib/rbac.ts` (+111),
+`actions/core.ts` (+58/-18), `components/ui/Icon.tsx`, `PLAN.md`,
+`0047_seed_reference_corpus.sql`, and migrations `0057`/`0058` renamed to `0059`/`0060`.
+None of that is this session's work and none of it was stashed or reverted. A full-suite
+baseline attributable to this change alone was therefore not obtainable.
+
 ## 2026-08-13 — Post-rebuild sweep, second pass
 **Phase:** cross-cutting UI/IA restructure (task #6) · **Status:** gate-verified —
 `tsc --noEmit` exit 0, `vitest run` 1800 passed / 73 files, `vite build` exit 0
@@ -207,6 +775,10 @@ here rests on reading the code and on jsdom assertions, **not on looking at it.*
   which now carries 38 `B-<n>` literals and would abort on the old CHECK; and
   `next_document_number()` still resets the counter to 1 on year change, which under a
   no-year scheme would re-issue `B-1` every January.
+  > **The apply status above is superseded — 0055 was applied on 12 Aug 2026** (see the
+  > "database is no longer empty" entry below, and the 15 Aug 2026 entry at the top of this
+  > file). The CHECK is `^B-[0-9]+$`. The `next_document_number()` year-reset note is a
+  > separate question and was **not** re-checked on 15 Aug — treat it as still open.
 - **Calendar's four-card KPI band was removed** without prose authority (figures preserved in
   Full View's bottom strip). Outside the layout ruling — flagged for a keep/drop call.
 - Thirteen items in Rulings §9 are deliberately unresolved. Do not resolve them while

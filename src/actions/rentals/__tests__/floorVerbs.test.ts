@@ -155,7 +155,7 @@ const LINE_B = 'bbbbbbbb-0000-4000-8000-000000000002'
 function bookingAt(stage: string): Record<string, unknown> {
   return {
     id: BOOKING_ID,
-    booking_no: 'BK-2026-0715',
+    booking_no: 'B-715',
     branch_id: BRANCH_ID,
     stage,
     delivery_type: 'Babin Delivery',
@@ -204,7 +204,7 @@ describe('each verb runs at exactly one stage — JOBS[j].runsAt, not a re-typed
       const wrong = JOB_ORDER.map((j) => JOBS[j].runsAt).find((s) => s !== JOBS[job].runsAt)
       db.state.responses['bookings'] = [[bookingAt(wrong as string)]]
 
-      await expect(call[job]('BK-2026-0715')).rejects.toThrow(
+      await expect(call[job]('B-715')).rejects.toThrow(
         new RegExp(`${job} runs at stage ${JOBS[job].runsAt}`),
       )
       expect(writes.state.ops).toHaveLength(0)
@@ -213,13 +213,13 @@ describe('each verb runs at exactly one stage — JOBS[j].runsAt, not a re-typed
 
   it('refuses a cancelled booking, and a Closed one, before any write', async () => {
     db.state.responses['bookings'] = [[{ ...bookingAt('Booked'), cancelled_at: '2026-08-01T00:00:00Z' }]]
-    await expect(packRental({ id: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A }] }, OWNER)).rejects.toThrow(
+    await expect(packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A }] }, OWNER)).rejects.toThrow(
       /was cancelled/,
     )
 
     db.reset()
     db.state.responses['bookings'] = [[{ ...bookingAt('Booked'), closed_at: '2026-08-02T00:00:00Z' }]]
-    await expect(packRental({ id: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A }] }, OWNER)).rejects.toThrow(
+    await expect(packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A }] }, OWNER)).rejects.toThrow(
       /Closed is final/,
     )
 
@@ -228,13 +228,13 @@ describe('each verb runs at exactly one stage — JOBS[j].runsAt, not a re-typed
 
   it('refuses a booking reference that resolves to nothing', async () => {
     db.state.responses['bookings'] = [[]]
-    await expect(packRental({ id: 'BK-2026-9999', lines: [{ bookingLineId: LINE_A }] }, OWNER)).rejects.toThrow(
-      /No booking matches BK-2026-9999/,
+    await expect(packRental({ id: 'B-9999', lines: [{ bookingLineId: LINE_A }] }, OWNER)).rejects.toThrow(
+      /No booking matches B-9999/,
     )
     expect(writes.state.ops).toHaveLength(0)
   })
 
-  it('resolves a uuid by id and a BK- number by booking_no', async () => {
+  it('resolves a uuid by id and a B- number by booking_no', async () => {
     db.state.responses['bookings'] = [[bookingAt('Returned')]]
     db.state.responses['cleaning_queue_entries'] = [
       [{ id: 'cq-1', unit_id: 'unit-1', requires_reset: true, reset_completed_at: null }],
@@ -248,8 +248,8 @@ describe('each verb runs at exactly one stage — JOBS[j].runsAt, not a re-typed
     db.state.responses['cleaning_queue_entries'] = [
       [{ id: 'cq-1', unit_id: 'unit-1', requires_reset: true, reset_completed_at: null }],
     ]
-    await completeReset({ id: 'BK-2026-0715', unitIds: ['unit-1'] }, OWNER)
-    expect(db.state.calls[0]?.ops[0]).toEqual(['eq', 'booking_no', 'BK-2026-0715'])
+    await completeReset({ id: 'B-715', unitIds: ['unit-1'] }, OWNER)
+    expect(db.state.calls[0]?.ops[0]).toEqual(['eq', 'booking_no', 'B-715'])
   })
 })
 
@@ -269,7 +269,7 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
   it('opens the session In Progress, fills it, closes it, and only then moves the stage', async () => {
     const result = await packRental(
       {
-        id: 'BK-2026-0715',
+        id: 'B-715',
         clientUuid: 'action-key-1',
         lines: [{ bookingLineId: LINE_A, unitIds: ['unit-1', 'unit-2'] }],
       },
@@ -298,7 +298,7 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
 
   it('carries the caller action key onto operation_sessions.client_uuid — Law 8', async () => {
     await packRental(
-      { id: 'BK-2026-0715', clientUuid: 'action-key-1', lines: [{ bookingLineId: LINE_A, unitIds: ['unit-1', 'unit-2'] }] },
+      { id: 'B-715', clientUuid: 'action-key-1', lines: [{ bookingLineId: LINE_A, unitIds: ['unit-1', 'unit-2'] }] },
       OWNER,
     )
     expect(insertsOn('operation_sessions')[0]?.payload['client_uuid']).toBe('action-key-1')
@@ -308,7 +308,7 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
   })
 
   it('writes a Packing session, never a Reset or Cleaning one, and no delivery_method', async () => {
-    await packRental({ id: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] }, OWNER)
+    await packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] }, OWNER)
     const session = insertsOn('operation_sessions')[0]?.payload
     expect(session?.['operation']).toBe('Packing')
     // CHECK 0003:91 is an equivalence — a non-Handover session must carry none.
@@ -318,7 +318,7 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
   })
 
   it('leaves resulting_item_state NULL on packing movements — packing moves nothing out', async () => {
-    await packRental({ id: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] }, OWNER)
+    await packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] }, OWNER)
     for (const movement of insertsOn('session_line_movements')) {
       expect(movement.payload['resulting_item_state']).toBeNull()
     }
@@ -328,7 +328,7 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
     db.state.responses['packing_lines'] = [[], [{ id: 'pl-1', booking_line_id: LINE_A, state: 'Partial' }]]
 
     const result = await packRental(
-      { id: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, unitIds: ['unit-1'] }] },
+      { id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['unit-1'] }] },
       OWNER,
     )
 
@@ -342,7 +342,7 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
     db.state.responses['packing_lines'] = [[], [{ id: 'pl-1', booking_line_id: LINE_A, state: 'Partial' }]]
 
     const result = await packRental(
-      { id: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, unitIds: ['unit-1'] }] },
+      { id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['unit-1'] }] },
       OWNER,
     )
 
@@ -363,7 +363,7 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
     ]
 
     const result = await packRental(
-      { id: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, unitIds: ['unit-1', 'unit-2'] }] },
+      { id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['unit-1', 'unit-2'] }] },
       OWNER,
     )
 
@@ -389,7 +389,7 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
 
     await packRental(
       {
-        id: 'BK-2026-0715',
+        id: 'B-715',
         notes: 'second pass: the last one',
         lines: [{ bookingLineId: LINE_A, unitIds: ['unit-1', 'unit-2'] }],
       },
@@ -404,7 +404,7 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
   })
 
   it('records the entered count on a non-serialised line and NULL on a serialised one', async () => {
-    await packRental({ id: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, qty: 2 }] }, OWNER)
+    await packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, qty: 2 }] }, OWNER)
     expect(insertsOn('packing_lines')[0]?.payload['qty_packed_entered']).toBe(2)
     // One quantity movement, no unit resolved (0003:238).
     const movements = insertsOn('session_line_movements')
@@ -418,20 +418,20 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
     db.state.responses['operation_sessions'] = [[]]
     db.state.responses['packing_lines'] = [[], [{ id: 'pl-1', booking_line_id: LINE_A, state: 'Packed' }]]
 
-    await packRental({ id: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] }, OWNER)
+    await packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] }, OWNER)
     expect(insertsOn('packing_lines')[0]?.payload['qty_packed_entered']).toBeNull()
   })
 
   it('refuses a line that is not a live line of this booking', async () => {
     await expect(
-      packRental({ id: 'BK-2026-0715', lines: [{ bookingLineId: LINE_B }] }, OWNER),
-    ).rejects.toThrow(/not live lines of BK-2026-0715/)
+      packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_B }] }, OWNER),
+    ).rejects.toThrow(/not live lines of B-715/)
     // The session is opened only after the line check, so nothing was written.
     expect(writes.state.ops).toHaveLength(0)
   })
 
   it('reads only live lines — a voided line is not packed (Law 3)', async () => {
-    await packRental({ id: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] }, OWNER)
+    await packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] }, OWNER)
     const lineRead = db.state.calls.find((c) => c.table === 'booking_lines')
     expect(lineRead?.ops).toContainEqual(['is', 'voided_at', null])
   })
@@ -446,7 +446,7 @@ describe('the stage moves through the transition trigger and nothing else', () =
     db.state.responses['operation_sessions'] = [[]]
     db.state.responses['handover_lines'] = [[], [{ id: 'hl-1', booking_line_id: LINE_A, state: 'Picked Up' }]]
 
-    await handoverRental({ bookingId: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] }, OWNER)
+    await handoverRental({ bookingId: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] }, OWNER)
 
     expect(opsOn('bookings')).toHaveLength(0)
 
@@ -484,7 +484,7 @@ describe('Law 6 — the floor verbs touch no money', () => {
     db.state.responses['return_lines'] = [[], [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Returned' }]]
 
     await completeReturn(
-      { rentalId: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'], condition: 'Good' }] },
+      { rentalId: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'], condition: 'Good' }] },
       OWNER,
     )
 
@@ -527,7 +527,7 @@ describe('Handover', () => {
     ]
     await handoverRental(
       {
-        bookingId: 'BK-2026-0715',
+        bookingId: 'B-715',
         lines: [
           { bookingLineId: LINE_A, unitIds: ['u1', 'u2'] },
           { bookingLineId: LINE_B, unitIds: ['u3'] },
@@ -550,7 +550,7 @@ describe('Handover', () => {
     ]
     await handoverRental(
       {
-        bookingId: 'BK-2026-0715',
+        bookingId: 'B-715',
         lines: [
           { bookingLineId: LINE_A, unitIds: ['u1', 'u2'], serials: ['SN-1', 'SN-2'] },
           { bookingLineId: LINE_B, unitIds: ['u3'] },
@@ -576,7 +576,7 @@ describe('Handover', () => {
     ]
 
     const result = await handoverRental(
-      { bookingId: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] },
+      { bookingId: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] },
       OWNER,
     )
 
@@ -606,7 +606,7 @@ describe('Handover', () => {
 
     const result = await handoverRental(
       {
-        bookingId: 'BK-2026-0715',
+        bookingId: 'B-715',
         lines: [
           { bookingLineId: LINE_A, unitIds: ['u1', 'u2'] },
           { bookingLineId: LINE_B, unitIds: ['u3'] },
@@ -637,7 +637,7 @@ describe('Handover', () => {
 
     await handoverRental(
       {
-        bookingId: 'BK-2026-0715',
+        bookingId: 'B-715',
         lines: [
           { bookingLineId: LINE_A, unitIds: ['u1', 'u2'] },
           { bookingLineId: LINE_B, unitIds: ['u3'] },
@@ -671,7 +671,7 @@ describe('Return', () => {
 
     await completeReturn(
       {
-        rentalId: 'BK-2026-0715',
+        rentalId: 'B-715',
         occurredAt: '2026-08-12T04:15:00.000Z',
         lines: [{ bookingLineId: LINE_A, unitIds: ['u1'], condition: 'Damaged' }],
       },
@@ -705,7 +705,7 @@ describe('Return', () => {
 
     await completeReturn(
       {
-        rentalId: 'BK-2026-0715',
+        rentalId: 'B-715',
         lines: [
           { bookingLineId: LINE_A, unitIds: ['u1'], condition: 'Good' },
           { bookingLineId: LINE_B, unitIds: ['u2'] },
@@ -724,7 +724,7 @@ describe('Return', () => {
 
     const result = await completeReturn(
       {
-        rentalId: 'BK-2026-0715',
+        rentalId: 'B-715',
         lines: [
           {
             bookingLineId: LINE_A,
@@ -751,7 +751,7 @@ describe('Return', () => {
     db.state.responses['return_lines'] = [[], [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Outstanding' }]]
 
     const result = await completeReturn(
-      { rentalId: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] },
+      { rentalId: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] },
       OWNER,
     )
     expect(insertsOn('return_lines')[0]?.payload['state']).toBe('Outstanding')
@@ -764,11 +764,11 @@ describe('Return', () => {
 
 describe('validate refuses what Postgres would reject, before anything is written', () => {
   it('refuses an empty line list on all three session verbs', async () => {
-    await expect(packRental({ id: 'BK-2026-0715', lines: [] }, OWNER)).rejects.toThrow(/needs the booking lines/)
-    await expect(handoverRental({ bookingId: 'BK-2026-0715', lines: [] }, OWNER)).rejects.toThrow(
+    await expect(packRental({ id: 'B-715', lines: [] }, OWNER)).rejects.toThrow(/needs the booking lines/)
+    await expect(handoverRental({ bookingId: 'B-715', lines: [] }, OWNER)).rejects.toThrow(
       /needs the booking lines/,
     )
-    await expect(completeReturn({ rentalId: 'BK-2026-0715', lines: [] }, OWNER)).rejects.toThrow(
+    await expect(completeReturn({ rentalId: 'B-715', lines: [] }, OWNER)).rejects.toThrow(
       /needs the booking lines/,
     )
     expect(writes.state.ops).toHaveLength(0)
@@ -777,13 +777,13 @@ describe('validate refuses what Postgres would reject, before anything is writte
   })
 
   it('refuses an empty unit list on Reset — the queue is per item, not per booking', async () => {
-    await expect(completeReset({ id: 'BK-2026-0715', unitIds: [] }, OWNER)).rejects.toThrow(/per item, not per booking/)
+    await expect(completeReset({ id: 'B-715', unitIds: [] }, OWNER)).rejects.toThrow(/per item, not per booking/)
     expect(db.state.calls).toHaveLength(0)
   })
 
   it('refuses a missing line whose reason is under ten characters', async () => {
     await expect(
-      packRental({ id: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, outcome: 'missing', reason: 'lost' }] }, OWNER),
+      packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, outcome: 'missing', reason: 'lost' }] }, OWNER),
     ).rejects.toThrow(/at least 10 characters/)
   })
 
@@ -791,7 +791,7 @@ describe('validate refuses what Postgres would reject, before anything is writte
     await expect(
       completeReturn(
         {
-          rentalId: 'BK-2026-0715',
+          rentalId: 'B-715',
           lines: [{ bookingLineId: LINE_A, outcome: 'missing', reason: 'Never came back with the van' }],
         },
         OWNER,
@@ -802,7 +802,7 @@ describe('validate refuses what Postgres would reject, before anything is writte
   it('refuses the same booking line twice — each line table holds one row per line', async () => {
     await expect(
       handoverRental(
-        { bookingId: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A }, { bookingLineId: LINE_A }] },
+        { bookingId: 'B-715', lines: [{ bookingLineId: LINE_A }, { bookingLineId: LINE_A }] },
         OWNER,
       ),
     ).rejects.toThrow(/appears twice/)
@@ -810,7 +810,7 @@ describe('validate refuses what Postgres would reject, before anything is writte
 
   it('refuses a condition anywhere but Return', async () => {
     await expect(
-      packRental({ id: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, condition: 'Good' }] }, OWNER),
+      packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, condition: 'Good' }] }, OWNER),
     ).rejects.toThrow(/condition is recorded at Return inspection only/)
   })
 })
@@ -831,7 +831,7 @@ describe('Reset — the verb that opens no session and moves no stage', () => {
     ]
 
     const result = await completeReset(
-      { id: 'BK-2026-0715', unitIds: ['unit-1', 'unit-2'], occurredAt: '2026-08-12T05:00:00.000Z' },
+      { id: 'B-715', unitIds: ['unit-1', 'unit-2'], occurredAt: '2026-08-12T05:00:00.000Z' },
       OWNER,
     )
 
@@ -854,8 +854,8 @@ describe('Reset — the verb that opens no session and moves no stage', () => {
     db.state.responses['cleaning_queue_entries'] = [
       [{ id: 'cq-1', unit_id: 'unit-1', requires_reset: true, reset_completed_at: null }],
     ]
-    await expect(completeReset({ id: 'BK-2026-0715', unitIds: ['unit-1', 'unit-9'] }, OWNER)).rejects.toThrow(
-      /not in BK-2026-0715's reset queue — unit-9/,
+    await expect(completeReset({ id: 'B-715', unitIds: ['unit-1', 'unit-9'] }, OWNER)).rejects.toThrow(
+      /not in B-715's reset queue — unit-9/,
     )
     expect(writes.state.ops).toHaveLength(0)
   })
@@ -864,7 +864,7 @@ describe('Reset — the verb that opens no session and moves no stage', () => {
     db.state.responses['cleaning_queue_entries'] = [
       [{ id: 'cq-1', unit_id: 'unit-1', requires_reset: false, reset_completed_at: null }],
     ]
-    await expect(completeReset({ id: 'BK-2026-0715', unitIds: ['unit-1'] }, OWNER)).rejects.toThrow(
+    await expect(completeReset({ id: 'B-715', unitIds: ['unit-1'] }, OWNER)).rejects.toThrow(
       /do not require a reset/,
     )
     expect(writes.state.ops).toHaveLength(0)
@@ -874,7 +874,7 @@ describe('Reset — the verb that opens no session and moves no stage', () => {
     db.state.responses['cleaning_queue_entries'] = [
       [{ id: 'cq-1', unit_id: 'unit-1', requires_reset: true, reset_completed_at: '2026-08-11T00:00:00Z' }],
     ]
-    await expect(completeReset({ id: 'BK-2026-0715', unitIds: ['unit-1'] }, OWNER)).rejects.toThrow(
+    await expect(completeReset({ id: 'B-715', unitIds: ['unit-1'] }, OWNER)).rejects.toThrow(
       /already reset/,
     )
     expect(writes.state.ops).toHaveLength(0)
@@ -894,23 +894,23 @@ describe('the dispatcher — implemented, and gated on a capability that actuall
   it('lets Warehouse perform the floor verbs — canPerformOperations, not a local matrix', async () => {
     setUpPack()
     await expect(
-      packRental({ id: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] }, { userId: 'w-1', role: 'Warehouse' }),
+      packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] }, { userId: 'w-1', role: 'Warehouse' }),
     ).resolves.toMatchObject({ success: true })
   })
 
   it('refuses Coordinator — operations.perform does not reach the booking desk', async () => {
     setUpPack()
     await expect(
-      packRental({ id: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A }] }, { userId: 'c-1', role: 'Coordinator' }),
+      packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A }] }, { userId: 'c-1', role: 'Coordinator' }),
     ).rejects.toBeInstanceOf(ActionPermissionError)
     expect(writes.state.ops).toHaveLength(0)
   })
 
   it('refuses every verb called without a session context — no default identity', async () => {
-    await expect(packRental({ id: 'BK-2026-0715' })).rejects.toThrow(/session context/)
-    await expect(handoverRental({ bookingId: 'BK-2026-0715' })).rejects.toThrow(/session context/)
-    await expect(completeReturn({ rentalId: 'BK-2026-0715' })).rejects.toThrow(/session context/)
-    await expect(completeReset({ id: 'BK-2026-0715' })).rejects.toThrow(/session context/)
+    await expect(packRental({ id: 'B-715' })).rejects.toThrow(/session context/)
+    await expect(handoverRental({ bookingId: 'B-715' })).rejects.toThrow(/session context/)
+    await expect(completeReturn({ rentalId: 'B-715' })).rejects.toThrow(/session context/)
+    await expect(completeReset({ id: 'B-715' })).rejects.toThrow(/session context/)
   })
 
   it('no verb is still a stub — none throws ActionNotImplementedError', async () => {
@@ -918,7 +918,7 @@ describe('the dispatcher — implemented, and gated on a capability that actuall
     // A successful Pack proves the flag for the shape all four share; the other
     // three reach `validate` (asserted above), which a stub never would.
     await expect(
-      packRental({ id: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] }, OWNER),
+      packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] }, OWNER),
     ).resolves.toMatchObject({ success: true })
   })
 })
@@ -928,9 +928,9 @@ describe('the dispatcher — implemented, and gated on a capability that actuall
 describe('one shape, four verbs', () => {
   it('every session verb writes its own line table and no other', async () => {
     const cases: Array<{ job: Exclude<JobName, 'Reset'>; run: () => Promise<unknown> }> = [
-      { job: 'Pack', run: () => packRental({ id: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] }, OWNER) },
-      { job: 'Handover', run: () => handoverRental({ bookingId: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] }, OWNER) },
-      { job: 'Return', run: () => completeReturn({ rentalId: 'BK-2026-0715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] }, OWNER) },
+      { job: 'Pack', run: () => packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] }, OWNER) },
+      { job: 'Handover', run: () => handoverRental({ bookingId: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] }, OWNER) },
+      { job: 'Return', run: () => completeReturn({ rentalId: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] }, OWNER) },
     ]
 
     for (const { job, run } of cases) {

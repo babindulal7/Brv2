@@ -280,30 +280,37 @@ describe('CREATE_CLIENT — the ways it refuses', () => {
   })
 })
 
-describe('CREATE_CLIENT — the dispatcher still refuses it', () => {
+describe('CREATE_CLIENT — the dispatcher, ruled 15 Aug 2026', () => {
   /**
-   * ⚠ **This test is the blocker, in executable form.**
+   * **This block used to be the blocker in executable form**, asserting that
+   * `client.create` resolved to no rule and was therefore denied to EVERY role,
+   * Owner included. Its own note said what to do when the matrix was ruled: not
+   * delete it, rewrite it to assert the ruled role list. That is this.
    *
-   * `actions/core.ts:105-126` resolves seven capability strings and
-   * `client.create` is not one of them, so `checkCapability` returns `undefined`
-   * and the dispatcher denies the action for EVERY role, Owner included — before
-   * `validate` or `execute` runs. The rule is not unknown: the live project
-   * carries `policy clients_insert with check (auth_user_role() = any (array[
-   * 'Owner','Admin','Manager','Coordinator','Warehouse']))`. It simply has no
-   * mirror in `lib/rbac`, and writing one is a change to files this task was not
-   * given.
-   *
-   * When the matrix is ruled, this test fails. That is the point: it should not
-   * be deleted, it should be rewritten to assert the ruled role list.
+   * The list is not a new opinion. It is `policy clients_insert with check
+   * (auth_user_role() = any (array['Owner','Admin','Manager','Coordinator',
+   * 'Warehouse']))`, read off the live project and mirrored in
+   * `lib/rbac.canCreateClient`. So this suite and the database now answer the
+   * same question the same way, which is the property `lib/rbac`'s header claims.
    */
-  it('denies every role by name, because client.create has no rule in lib/rbac', async () => {
-    await expect(createClient(INPUT, CTX)).rejects.toThrow(/requires client\.create/)
+  const ALLOWED = ['Owner', 'Admin', 'Manager', 'Coordinator', 'Warehouse'] as const
+  const REFUSED = ['Technician', 'Accounts', 'Driver', 'Client'] as const
+
+  it.each(ALLOWED)('lets %s through the gate and reaches the write', async (role) => {
+    await expect(createClient(INPUT, { ...CTX, role })).resolves.toBeDefined()
+    expect(access.inserts).toHaveLength(1)
+  })
+
+  it.each(REFUSED)('denies %s by name, and writes nothing', async (role) => {
+    await expect(createClient(INPUT, { ...CTX, role })).rejects.toThrow(/requires client\.create/)
     expect(access.inserts).toHaveLength(0)
   })
 
-  it('is implemented — the refusal is the permission gate, not an unbuilt body', async () => {
+  it('is implemented — a refusal here is the permission gate, never an unbuilt body', async () => {
     // If `implemented` were false the message would be "is not connected to the
-    // database yet". It is connected; the capability is what stops it.
-    await expect(createClient(INPUT, CTX)).rejects.not.toThrow(/not connected to the database/)
+    // database yet", for every role including the four above.
+    await expect(createClient(INPUT, { ...CTX, role: 'Driver' })).rejects.not.toThrow(
+      /not connected to the database/,
+    )
   })
 })

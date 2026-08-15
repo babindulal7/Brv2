@@ -26,13 +26,42 @@ import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { BookingListRow } from '../../../lib/queries/bookings'
 
+/**
+ * The sub-rented lines the mocked `booking_lines_v` returns.
+ *
+ * §11.1's chip and row marker both read `subRentalBookingIds()`, which is the
+ * one query this screen makes outside `listBookings`. Driving it from here is
+ * what lets a test say "this booking has a sub-rented line" and then assert the
+ * gold outline — the whole point of a derived flag is that it follows the lines.
+ */
+const lines = vi.hoisted(() => ({ rows: [] as { booking_id: string; line_type: string }[] }))
+
 /* `data/rentals.ts` reaches `queries/bookings.ts` for its named filter sets,
    and that module holds the supabase client. Replaced wholesale, exactly as the
-   sibling suite does — nothing here touches a database. */
-vi.mock('../../../lib/supabase', () => ({
-  supabase: { from: () => ({ select: () => ({}) }) },
-  newClientUuid: () => '00000000-0000-4000-8000-000000000000',
-}))
+   sibling suite does — nothing here touches a database.
+
+   The builder is chainable and thenable because `subRentalBookingIds` calls
+   `.select().in().is().order().range()` and awaits the result; a bare `{}` would
+   throw inside a promise and surface as an unrelated failure three tests later.
+
+   `order` and `range` joined the chain when that function was paged to
+   exhaustion — an unpaged read stops at PostgREST's 1000-row cap and reports the
+   bookings past it as carrying no external gear, which is a fabricated "no". The
+   fixture is far short of one page, so the loop breaks after the first call and
+   `range` can ignore its arguments here; a fixture that ever crosses 1000 rows
+   would need this double to honour them. */
+vi.mock('../../../lib/supabase', () => {
+  const build = () => {
+    const chain: Record<string, unknown> = {}
+    for (const method of ['select', 'in', 'is', 'eq', 'order', 'range']) chain[method] = () => chain
+    chain['then'] = (resolve: (value: unknown) => unknown) => resolve({ data: lines.rows, error: null })
+    return chain
+  }
+  return {
+    supabase: { from: () => build() },
+    newClientUuid: () => '00000000-0000-4000-8000-000000000000',
+  }
+})
 
 const ROW: BookingListRow = {
   id: '8f1d1a56-0b6a-4f0e-9d3c-2f4b6c7a9e11',
@@ -125,6 +154,7 @@ afterEach(async () => {
   if (root) await act(async () => root.unmount())
   container?.remove()
   stub.total = 1
+  lines.rows = []
 })
 
 const text = () => container.textContent ?? ''
@@ -161,15 +191,44 @@ describe('§4.1 — one list, no tabs', () => {
   })
 })
 
-describe('Sub-Rental — the chip that replaced the tab', () => {
-  it('is present, disabled, and says why in its accessible name', async () => {
+describe('Sub-Rental — the chip that replaced the tab, live since rulings §11.1', () => {
+  it('is a real, selectable chip once the derived set has arrived', async () => {
     await mount(1280)
-    const sub = allButtons().find((b) => b.getAttribute('aria-label')?.startsWith('Sub-Rental'))
+    const sub = button('Sub-Rental')
     expect(sub).toBeDefined()
-    expect(sub?.disabled).toBe(true)
-    // Not "not built yet" — the sentence has to be actionable.
-    expect(sub?.getAttribute('aria-label')).toContain('line_type')
-    expect(sub?.getAttribute('aria-label')).toContain('TODO(decision)')
+    // ⛔ It used to ship `disabled` with a TODO(decision). §11.1 closed that.
+    expect(sub?.disabled).toBe(false)
+    expect(sub?.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('carries an icon beside its word, like every other chip (Law 11)', async () => {
+    await mount(1280)
+    expect(button('Sub-Rental')?.querySelector('svg')).not.toBeNull()
+  })
+
+  it('writes itself into the URL, so a refresh keeps the filter (§18)', async () => {
+    await mount(1280)
+    await act(async () => {
+      button('Sub-Rental')?.click()
+    })
+    expect(search).toContain('sub=on')
+  })
+
+  it('marks a row whose booking has a sub-rented line — outline, icon AND label', async () => {
+    lines.rows = [{ booking_id: ROW.id, line_type: 'Sub-rental' }]
+    await mount(1280)
+    // Law 11 — the gold outline is never the only carrier. The word is what a
+    // screen reader and a monochrome print get.
+    expect(text()).toContain('Sub-rented')
+    const marked = [...container.querySelectorAll('[aria-label]')].find((el) =>
+      el.getAttribute('aria-label')?.startsWith('Sub-rented'),
+    )
+    expect(marked).toBeDefined()
+  })
+
+  it('marks nothing when no line is sub-rented — never a fabricated “no”', async () => {
+    await mount(1280)
+    expect(text()).not.toContain('Sub-rented')
   })
 })
 

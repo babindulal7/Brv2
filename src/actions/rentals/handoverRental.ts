@@ -23,7 +23,7 @@ import {
  * is read from the booking's existing sessions (`0003:85`), not passed in.
  */
 export type HandoverRentalInput = {
-  /** `bookings.id` (uuid) or `bookings.booking_no` (`BK-YYYY-NNNN`). */
+  /** `bookings.id` (uuid) or `bookings.booking_no` (`B-` + digits — corrected 15 Aug 2026, see `confirmRental.ts`). */
   bookingId: string;
   /**
    * The booking lines this session handed over, each naming a `booking_lines.id`

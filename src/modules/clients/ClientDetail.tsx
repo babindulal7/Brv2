@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
+import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, FooterNote, SummaryRows } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { EditableRows } from '../../components/ui/EditableRows'
@@ -25,7 +26,14 @@ import { useAuth } from '../../lib/auth'
 import { gateContext, canViewPII, canViewOnStopReason, moneyScope } from '../../lib/fieldGating'
 import { STATUS } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
-import { TIER_TONE, type ClientRecord } from '../../data/clients'
+import {
+  TIER_TONE,
+  creditStopFactsOf,
+  daysPastDue,
+  evaluateCreditStop,
+  readOverdueStopDays,
+  type ClientRecord,
+} from '../../data/clients'
 import { INVOICE_TOKEN } from '../../data/invoiceIntel'
 
 /**
@@ -73,13 +81,27 @@ const TAB_DEFS: TabDef[] = [
   { key: 'activity', label: 'Activity' },
 ]
 
-function Tone({ text, tone }: { text: string; tone: keyof typeof STATUS }) {
+function Tone({
+  text,
+  tone,
+  icon,
+  reason,
+}: {
+  text: string
+  tone: keyof typeof STATUS
+  /** Law 11 — a chip whose colour carries meaning also carries a glyph. */
+  icon?: IconName
+  /** Shown as the accessible name and the hover text, so the reason is not hover-only. */
+  reason?: string
+}) {
   const c = STATUS[tone]
   return (
     <span
+      {...(reason ? { title: reason, 'aria-label': `${text} — ${reason}` } : {})}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
+        gap: icon ? 4 : 0,
         height: 21,
         padding: '0 8px',
         borderRadius: 5,
@@ -91,6 +113,7 @@ function Tone({ text, tone }: { text: string; tone: keyof typeof STATUS }) {
         whiteSpace: 'nowrap',
       }}
     >
+      {icon && <Icon name={icon} size={11} />}
       {text}
     </span>
   )
@@ -327,6 +350,63 @@ export default function ClientDetail() {
     { isFilteredOverride: false },
   )
 
+  /* ── On Stop — RULING §11.2 ─────────────────────────────────────────────
+   *
+   * This is the ONE surface that can answer both limbs, because it is the only
+   * one that runs the invoices query. The directory can evaluate the credit
+   * limb alone and says so; here the overdue limb becomes answerable too.
+   *
+   * The predicate itself lives in `data/clients.ts` and is shared with the
+   * directory — §11.2.3: one function, so the chip on the row and the block on
+   * this page cannot disagree about the same client. *N* comes from Settings ▸
+   * Financial; no threshold is written here.
+   */
+  const stopThresholdDays = useMemo(() => readOverdueStopDays(), [])
+
+  /**
+   * Days past due on the client's most overdue **issued, unpaid** invoice.
+   *
+   * `0` means they hold none — a real answer. `null` means the question could
+   * not be asked, and the three ways that happens are all reported rather than
+   * flattened into `0` (§11.2.7):
+   *
+   *  · a money-blind session: `invoices` has no `_v` masking view, RLS gates it
+   *    whole-row, and a withheld list arrives as `[]` with HTTP 200 —
+   *    indistinguishable from "never invoiced". `financeRestriction` already
+   *    makes that point about the table below; the same ambiguity would make an
+   *    "on stop: no" here into a claim nobody checked.
+   *  · the query is still in flight, or it failed.
+   *  · a `due_date` that will not parse. One unreadable date makes the *worst*
+   *    overdue unknown, so the limb reports unknown rather than the best case.
+   *
+   * Draft invoices are excluded: a draft has not been issued to anybody, so it
+   * cannot be late. `invoicesForClient` already excludes voided rows.
+   */
+  const overdueDays = useMemo<number | null>(() => {
+    if (!money) return null
+    if (invoices.loading || invoices.error) return null
+    let worst = 0
+    for (const inv of invoices.rows) {
+      if (inv.status === 'Draft') continue
+      if (inv.outstandingAmount <= 0) continue
+      const late = daysPastDue(inv.dueDateAd)
+      if (late === null) return null
+      if (late > worst) worst = late
+    }
+    return worst
+  }, [money, invoices.loading, invoices.error, invoices.rows])
+
+  const creditStop = useMemo(
+    () =>
+      client
+        ? evaluateCreditStop(
+            creditStopFactsOf(client, { canViewMoney: money, daysPastDueOnOldestUnpaidInvoice: overdueDays }),
+            { overdueStopDays: stopThresholdDays, canViewMoney: money },
+          )
+        : null,
+    [client, money, overdueDays, stopThresholdDays],
+  )
+
   if (!client) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
@@ -374,7 +454,13 @@ export default function ClientDetail() {
                 the field and other surfaces set it, not because this page can
                 reach it. */}
             {client.isVip && <Tone text="VIP" tone="progress" />}
-            {client.isBlocked && <Tone text="Blocked" tone="danger" />}
+            {client.isBlocked && <Tone text="Blocked" tone="danger" icon="alert_triangle" />}
+            {/* Rulings §11.2.4 — beside Blocked, never instead of it: a client
+                is routinely Active AND blocked AND on stop, and folding the
+                three into one badge is how a real state disappears. */}
+            {creditStop?.onStop && (
+              <Tone text="On Stop" tone="danger" icon="lock" reason={creditStop.reasons.join(' ')} />
+            )}
             {edit.editing ? (
               <>
                 <Button
@@ -638,11 +724,122 @@ export default function ClientDetail() {
                   : []),
               ]}
             />
-            {(client.isBlocked || client.onStop) && canViewOnStopReason(gctx) && (
+            {/*
+              ── ⛔ ON STOP ──────────────────────────────────────────────────
+              Rulings §11.2 — derived here, never read off a flag, and stated
+              inside the CREDIT box the ruling names because that is where an
+              operator looks when a booking is refused.
+
+              **Law 6.** `reasons` is figure-free by construction and safe for
+              any role that reaches this page; `details` carries the amounts and
+              `evaluateCreditStop` only populates it when money was visible at
+              the point the verdict was computed. There is no second gate to
+              forget.
+
+              **§11.2.7.** A limb that could not run is listed as such — under
+              the verdict when the other limb fired, and on its own when neither
+              could. It never reads as "clear".
+            */}
+            {creditStop?.onStop && (
+              <div
+                role="alert"
+                style={{
+                  marginTop: 'var(--sp-sm)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 10,
+                  padding: '11px 12px',
+                  borderRadius: 'var(--r-sm)',
+                  background: 'var(--st-danger-bg)',
+                  color: 'var(--st-danger-fg)',
+                }}
+              >
+                {/* Law 11 — icon + label + colour. */}
+                <Icon name="lock" size={15} fill style={{ flexShrink: 0, marginTop: 2 }} />
+                <span style={{ minWidth: 0, fontSize: 'var(--t-meta)', lineHeight: 1.5 }}>
+                  <span style={{ display: 'block', fontWeight: 700 }}>On stop</span>
+                  {creditStop.reasons.map((r) => (
+                    <span key={r} style={{ display: 'block', marginTop: 2 }}>
+                      {r}
+                    </span>
+                  ))}
+                  {creditStop.details.map((d) => (
+                    <span key={d} className="figure" style={{ display: 'block', marginTop: 2, opacity: 0.85 }}>
+                      {d}
+                    </span>
+                  ))}
+                  {creditStop.unavailable.map((u) => (
+                    <span key={u} style={{ display: 'block', marginTop: 2, opacity: 0.85 }}>
+                      {u}
+                    </span>
+                  ))}
+                  <span style={{ display: 'block', marginTop: 6, opacity: 0.85 }}>
+                    On Stop is worked out from the credit state each time this page is read, so it clears itself the moment
+                    the balance is settled. It is not a flag anybody has to remember to lift.
+                  </span>
+                </span>
+              </div>
+            )}
+
+            {/*
+              §11.2.7 again, and the edge that only showed up on a real screen:
+              this used to render only when EVERY limb was unavailable. On the
+              mock corpus — `lib/mock/corpus.ts:149`, no client carries an
+              approved credit limit — the overdue limb evaluates cleanly while
+              the credit limb cannot run, so the verdict was "not on stop" and
+              the card said nothing at all. A reader takes silence for "both
+              checks passed". One unavailable limb is enough to say so.
+            */}
+            {creditStop && !creditStop.onStop && creditStop.unavailable.length > 0 && (
+              <div
+                style={{
+                  marginTop: 'var(--sp-sm)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 'var(--sp-sm)',
+                  padding: '10px 12px',
+                  borderRadius: 'var(--r-sm)',
+                  border: '1px dashed var(--border)',
+                  background: 'var(--card2)',
+                  fontSize: 'var(--t-meta)',
+                  color: 'var(--text2)',
+                }}
+              >
+                <Icon name="info" size={14} style={{ flexShrink: 0, marginTop: 2, color: 'var(--muted)' }} />
+                <span>
+                  <span style={{ display: 'block', fontWeight: 600, color: 'var(--text)' }}>
+                    {creditStop.indeterminate
+                      ? 'The on-stop check could not run.'
+                      : 'Part of the on-stop check could not run.'}
+                  </span>
+                  {creditStop.unavailable.map((u) => (
+                    <span key={u} style={{ display: 'block', marginTop: 2 }}>
+                      {u}
+                    </span>
+                  ))}
+                  <span style={{ display: 'block', marginTop: 4 }}>
+                    {creditStop.indeterminate
+                      ? 'This is not a statement that the client is clear — it is a statement that nothing here could check.'
+                      : 'The other limb ran and did not fire. This client is not reported as on stop, but they have not been cleared on the limb above.'}
+                  </span>
+                </span>
+              </div>
+            )}
+
+            {/*
+              The legacy manual annotation, kept and clearly labelled as such.
+              `ClientRecord.onStop` predates §11.2 and carries a **who** and a
+              **when** that no derivation can produce, so Law 3 keeps it — but
+              it is not what puts a client on stop any more, and it is not fed
+              back into the predicate: a stored flag is exactly what goes stale
+              after the client pays.
+            */}
+            {client.onStop && canViewOnStopReason(gctx) && (
               <SummaryRows
                 rows={[
-                  { label: 'On-Stop set by', value: client.onStop?.setBy ?? '—' },
-                  { label: 'On-Stop set on', value: client.onStop?.setAd ?? '—' },
+                  { label: 'Earlier manual on-stop — set by', value: client.onStop.setBy },
+                  { label: 'Earlier manual on-stop — set on', value: client.onStop.setAd },
+                  { label: 'Recorded reason', value: client.onStop.reason },
                 ]}
               />
             )}

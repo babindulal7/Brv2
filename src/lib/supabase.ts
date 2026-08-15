@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { mockSupabase } from './mock/client'
 
 /**
  * Supabase client.
@@ -17,25 +18,54 @@ import { createClient } from '@supabase/supabase-js'
  * its default here because this entry point is the browser build.
  */
 
-const url = import.meta.env['VITE_SUPABASE_URL']
-const anonKey = import.meta.env['VITE_SUPABASE_ANON_KEY']
+/**
+ * DATA SOURCE — `live` (default) or `mock`.
+ *
+ * `mock` swaps this module's export for a local corpus served by
+ * `lib/mock/client.ts`: no network, no project, no credentials. It exists so
+ * the app can be driven offline and so a fresh clone runs without anyone's
+ * keys. Set `VITE_DATA_SOURCE=mock` in `.env.local` and restart Vite.
+ *
+ * ⚠ This is NOT the dev auth bypass removed on 12 Aug 2026 (see `auth.tsx`).
+ * That one faked the React `user` while queries still went out as `anon`, so
+ * RLS denied them and the app showed "Owner" over empty lists. Here the whole
+ * backend is local, so data genuinely arrives — and `MockBanner` states on
+ * every screen that it is mock data, because a `console.warn` was already
+ * proven insufficient.
+ *
+ * The switch is deliberately ABOVE the credential guard below: mock mode must
+ * not require `VITE_SUPABASE_URL`, and that guard throws during module
+ * evaluation — before React mounts and outside any error boundary.
+ *
+ * Default is `live` so a production build can never ship mock data by omission.
+ */
+export const IS_MOCK = import.meta.env['VITE_DATA_SOURCE'] === 'mock'
 
-if (!url || !anonKey) {
-  throw new Error(
-    'Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY. Copy .env.example to .env.local and fill it in.',
-  )
+function createLiveClient() {
+  const url = import.meta.env['VITE_SUPABASE_URL']
+  const anonKey = import.meta.env['VITE_SUPABASE_ANON_KEY']
+
+  if (!url || !anonKey) {
+    throw new Error(
+      'Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY. Copy .env.example to .env.local and fill it in — or set VITE_DATA_SOURCE=mock to run against the local corpus.',
+    )
+  }
+
+  return createClient(url, anonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+    global: {
+      headers: { 'x-application-name': 'babin-rentals-os' },
+    },
+  })
 }
 
-export const supabase = createClient(url, anonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-  },
-  global: {
-    headers: { 'x-application-name': 'babin-rentals-os' },
-  },
-})
+export const supabase: ReturnType<typeof createLiveClient> = IS_MOCK
+  ? (mockSupabase as unknown as ReturnType<typeof createLiveClient>)
+  : createLiveClient()
 
 /**
  * Idempotency key for every write.

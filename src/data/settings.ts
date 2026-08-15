@@ -4,7 +4,6 @@ import type { StatusKey } from '../lib/status'
 import { rupees, formatMoney, roundHalfUp, grouped } from '../lib/money'
 import type { Paisa } from '../lib/money'
 import { BRANCH, FOOTER_NOTE } from './nav'
-import { prefixTokenOf } from './numbering'
 import { WAREHOUSES } from './warehouse'
 import type { Warehouse } from './warehouse'
 import { PLANS } from './membership'
@@ -78,14 +77,10 @@ export type Dest =
  * rejects it and the page falls back to Overview rather than 404ing (Law 3).
  */
 export type TabKey =
-  | 'overview'
-  | 'organization'
+  | 'business'
+  | 'people'
   | 'branches'
-  | 'users'
-  | 'financial'
   | 'system'
-  | 'integrations'
-  | 'security'
 
 export interface TabDef {
   key: TabKey
@@ -101,55 +96,92 @@ export interface TabDef {
  * **Branches & Warehouses** is the new home for Warehouse Management
  * (`07_INVENTORY.md` line 4, `11_SETTINGS.md` §11.3). Nothing else moved.
  */
+/**
+ * **Four tabs, ruled 15 Aug 2026.** Down from eight.
+ *
+ * The eight were counted before this cut: 100 rows across them, of which 18
+ * were an actual editable setting and 12 existed only to say "not built". The
+ * rest were doors to other pages. Settings had become a directory of the
+ * application rather than a place to change something.
+ *
+ * What went where:
+ *
+ *   · `overview`     → deleted. A stat panel nobody could act on (uptime,
+ *                      active sessions) plus a second copy of the
+ *                      administration links that already live under System.
+ *   · `organization` ┐
+ *   · `financial`    ┘ → **Business**. One place for what this company is and
+ *                      what it charges, instead of two tabs to guess between.
+ *   · `users`        → **People**.
+ *   · `integrations` → deleted outright. Nine rows: seven said "not built",
+ *                      one pointed at the now-archived Automation Center, one
+ *                      pointed at Finance. Nothing built lost a door.
+ *   · `security`     → folded into **System** as its own two cards.
+ *
+ * **Law 6 moved down a level, it did not weaken.** `financial` used to be a
+ * money-gated TAB; its content is now money-gated SECTIONS inside Business, so
+ * a money-blind session gets Business with the organisation cards and no
+ * financial cards at all — removed, never rendered disabled. `Settings.tsx`
+ * owns that filter: it renders `FinancialPane` only when `useCanViewMoney()`
+ * is true, the same test that used to drop the whole tab.
+ *
+ * Old `?tab=` links still work: `LEGACY_TAB` maps every retired key onto its
+ * new home rather than dropping the user on a fallback.
+ */
 export const TABS: TabDef[] = [
-  { key: 'overview', label: 'Overview', money: false },
-  { key: 'organization', label: 'Organisation', money: false },
-  { key: 'branches', label: 'Branches & Warehouses', money: false },
-  { key: 'users', label: 'Users & Roles', money: false },
-  /* Law 6 — money end to end. Filtered OUT of the strip for a money-blind
-     session, never rendered disabled inside it. §11.1's phone wireframe draws
-     seven rows unconditionally; Rulings §7 says build the phone list from the
-     filtered set, so a Warehouse session gets six. */
-  { key: 'financial', label: 'Financial', money: true },
+  { key: 'business', label: 'Business', money: false },
+  { key: 'people', label: 'People', money: false },
+  { key: 'branches', label: 'Branches', money: false },
   { key: 'system', label: 'System', money: false },
-  { key: 'integrations', label: 'Apps & API', money: false },
-  { key: 'security', label: 'Security', money: false },
 ]
+
+/**
+ * Retired tab keys, and where each now lands.
+ *
+ * A deep link is a contract: Administration Modules rows, the phone section
+ * list and any bookmark a user made all carry `?tab=`. Mapping them is a few
+ * lines; letting them fall back to the default silently sends someone looking
+ * for VAT to the wrong page.
+ */
+export const LEGACY_TAB: Record<string, TabKey> = {
+  overview: 'business',
+  organization: 'business',
+  financial: 'business',
+  users: 'people',
+  security: 'system',
+  integrations: 'system',
+  /* Parked well before this cut — kept here so their links resolve too. */
+  communication: 'system',
+  automation: 'system',
+  ai: 'system',
+}
+
+/** The default when no `?tab=` is present, and the fallback for an unknown one. */
+export const DEFAULT_TAB: TabKey = 'business'
 
 /** Short label for the phone list and the tablet strip, where width is scarce. */
 export const TAB_SHORT_LABEL: Record<TabKey, string> = {
-  overview: 'Overview',
-  organization: 'Organisation',
+  business: 'Business',
+  people: 'People',
   branches: 'Branches',
-  users: 'Users',
-  financial: 'Financial',
   system: 'System',
-  integrations: 'Apps & API',
-  security: 'Security',
 }
 
 export const TAB_ICON: Record<TabKey, IconName> = {
-  overview: 'home',
-  organization: 'briefcase',
+  business: 'briefcase',
+  people: 'users',
   branches: 'box',
-  users: 'users',
-  financial: 'card',
   system: 'settings',
-  integrations: 'plug',
-  security: 'lock',
 }
 
 /** One line under each row of the phone section list, so a tap is not a guess. */
 export const TAB_SUMMARY: Record<TabKey, string> = {
-  overview: 'Who you are, this branch, the build, and every administration module.',
-  organization: 'Name, VAT, description · languages, calendar, timezone, number format, units.',
+  business: 'Name, VAT and language \u00b7 tax, terms, deposits and memberships.',
+  people: 'User list, role assignment, and the nine-role permissions matrix.',
   branches: 'Branch list, and the warehouses, racks and zones under each one.',
-  users: 'User list, role assignment, and the nine-role permissions matrix.',
-  financial: 'Tax & fiscal year, currency & terms, deposits, memberships, cancellation tiers.',
-  system: 'Appearance, notifications and system preferences.',
-  integrations: 'Integrations, keys and payment gateways.',
-  security: 'Access, controls & logs, session lock.',
+  system: 'Appearance, notifications, preferences, security and the admin tools.',
 }
+
 
 export function isTabKey(v: string | null): v is TabKey {
   return TABS.some((t) => t.key === v)
@@ -494,7 +526,7 @@ const ALERTS_SEED: SystemAlert[] = [
     text: '3 staff roles have excessive permissions',
     priority: 'High',
     icon: 'error',
-    dest: { kind: 'tab', tab: 'users' },
+    dest: { kind: 'tab', tab: 'people' },
   },
   {
     text: '2 numbering sequences running low',
@@ -502,7 +534,7 @@ const ALERTS_SEED: SystemAlert[] = [
     icon: 'timer',
     dest: { kind: 'route', to: '/admin/numbering' },
   },
-  { text: 'VAT return due in 15 days', priority: 'Medium', icon: 'receipt', dest: { kind: 'tab', tab: 'financial' } },
+  { text: 'VAT return due in 15 days', priority: 'Medium', icon: 'receipt', dest: { kind: 'tab', tab: 'business' } },
   /*
    * "WhatsApp token expires in 7 days" → tab `communication` used to be the
    * fourth row. §11.2 parks Channels / Communication, which takes its only
@@ -684,238 +716,28 @@ export const SYSTEM_STATS_UNAVAILABLE = {
   activeSessions: 'No session store is read',
 } as const
 
-/* ── quick access ──────────────────────────────────────────────────────── */
+/* ── quick access · administration modules · rail actions — REMOVED ─────── */
 
-export interface QuickAccessCard {
-  label: string
-  icon: IconName
-  dest: Dest
-}
-
-/**
- * §Quick Access — twelve shortcut cards in the render's order, now **ten**:
- * "Email & SMS Settings" and "WhatsApp Integration" both pointed at the
- * `communication` tab §11.2 parks, and are deleted rather than re-pointed at
- * an unrelated section. The Notification, SMS and Inbox *screens* keep their
- * door — System ▸ System still links every one of them by route.
+/*
+ * `QUICK_ACCESS` (10 cards), `MODULE_GROUPS` (the administration modules grid)
+ * and `RAIL_ACTIONS` lived here to feed the Overview tab. Overview was deleted
+ * on 15 Aug: it was a stat panel nobody could act on plus a second copy of the
+ * administration links that already sit under System, and every one of these
+ * rows pointed either at a tab a user could reach from the tab strip or at a
+ * route they could reach from the System card.
+ *
+ * They are removed rather than kept unused — an exported list nothing renders
+ * is read by the next person as a live surface. The Overview pane itself is at
+ * `src/archive/SettingsOverview.tsx` (Law 3: nothing is deleted).
  */
-export const QUICK_ACCESS: QuickAccessCard[] = [
-  { label: 'Branch Management', icon: 'home', dest: { kind: 'tab', tab: 'branches' } },
-  /* §11.3 — Warehouses moved out of Inventory and into this tab. The route
-     still resolves (Law 3); the tab is now where it is administered. */
-  { label: 'Warehouse Management', icon: 'box', dest: { kind: 'tab', tab: 'branches' } },
-  { label: 'Staff & Roles', icon: 'users', dest: { kind: 'tab', tab: 'users' } },
-  { label: 'Permissions Matrix', icon: 'crew', dest: { kind: 'tab', tab: 'users' } },
-  {
-    label: 'Approval Workflows',
-    icon: 'checklist',
-    dest: { kind: 'none', why: 'Approval workflows have no screen in this build.' },
-  },
-  { label: 'Numbering Sequences', icon: 'invoice', dest: { kind: 'route', to: '/admin/numbering' } },
-  {
-    label: 'Business Hours & Holidays',
-    icon: 'timer',
-    dest: { kind: 'none', why: 'The holiday calendar has no screen in this build.' },
-  },
-  { label: 'Taxes (VAT)', icon: 'receipt', dest: { kind: 'tab', tab: 'financial' } },
-  { label: 'Payment Gateways', icon: 'card', dest: { kind: 'tab', tab: 'integrations' } },
-  { label: 'Backup & Restore', icon: 'download', dest: { kind: 'route', to: '/admin/backup' } },
-]
-
-/* ── administration modules grid ───────────────────────────────────────── */
-
-export interface ModuleRow {
-  label: string
-  dest: Dest
-}
-
-export interface ModuleGroup {
-  title: string
-  icon: IconName
-  rows: ModuleRow[]
-}
-
-const NO = (why: string): Dest => ({ kind: 'none', why })
-const TO = (to: string): Dest => ({ kind: 'route', to })
-const TAB = (tab: TabKey): Dest => ({ kind: 'tab', tab })
-
-/**
- * §Administration Modules — sixteen groups of five, exactly the render's grid
- * and exactly its ordering. Rows whose screen does not exist are **not links**:
- * they render as a stated `Not built` row, because a control that silently does
- * nothing is worse than one that says it cannot.
- */
-export const MODULE_GROUPS: ModuleGroup[] = [
-  {
-    title: 'Organization',
-    icon: 'briefcase',
-    rows: [
-      { label: 'Organization Profile', dest: TAB('organization') },
-      { label: 'Company Information', dest: TAB('organization') },
-      { label: 'Logo & Branding', dest: NO('There is no brand-asset manager in this build.') },
-      { label: 'Document Settings', dest: TO('/documents') },
-      { label: 'Business Description', dest: TAB('organization') },
-    ],
-  },
-  {
-    title: 'Branch Management',
-    icon: 'home',
-    rows: [
-      { label: 'All Branches', dest: TAB('branches') },
-      { label: 'Add New Branch', dest: TAB('branches') },
-      { label: 'Branch Settings', dest: TAB('branches') },
-      { label: 'Branch Users', dest: TAB('users') },
-      { label: 'Branch Documents', dest: TO('/documents') },
-    ],
-  },
-  {
-    title: 'Warehouse Management',
-    icon: 'box',
-    rows: [
-      { label: 'All Warehouses', dest: TO('/inventory/warehouses') },
-      { label: 'Add New Warehouse', dest: NO('Warehouses are created by an Owner in the facility tree; no form exists yet.') },
-      { label: 'Warehouse Zones', dest: TO('/inventory/warehouses') },
-      { label: 'Warehouse Users', dest: TO('/inventory/warehouses') },
-      { label: 'Stock Transfer Rules', dest: NO('Transfer rules have no screen in this build.') },
-    ],
-  },
-  {
-    title: 'Users & Roles',
-    icon: 'users',
-    rows: [
-      { label: 'All Users', dest: TAB('users') },
-      { label: 'Add New User', dest: NO('User provisioning needs the auth backend, which is not connected.') },
-      { label: 'User Roles', dest: TAB('users') },
-      { label: 'Role Management', dest: TAB('users') },
-      { label: 'Role Hierarchy', dest: TAB('users') },
-    ],
-  },
-  {
-    title: 'Permissions & Security',
-    icon: 'crew',
-    rows: [
-      { label: 'Permissions Matrix', dest: TAB('users') },
-      { label: 'Module Permissions', dest: TAB('users') },
-      { label: 'Data Access Levels', dest: TAB('security') },
-      { label: 'IP Access Control', dest: NO('IP allow-listing is enforced server side; no console exists yet.') },
-      { label: 'Two-Factor Authentication', dest: TAB('security') },
-    ],
-  },
-  {
-    title: 'Teams & Departments',
-    icon: 'users',
-    rows: [
-      { label: 'All Teams', dest: TO('/crew') },
-      { label: 'All Departments', dest: NO('Departments have no screen in this build.') },
-      { label: 'Team Members', dest: TO('/crew') },
-      { label: 'Department Heads', dest: NO('Departments have no screen in this build.') },
-      { label: 'Reporting Structure', dest: TAB('users') },
-    ],
-  },
-  {
-    title: 'Approval Workflows',
-    icon: 'checklist',
-    rows: [
-      { label: 'Workflow List', dest: NO('Approval workflows have no screen in this build.') },
-      { label: 'Create Workflow', dest: NO('Approval workflows have no screen in this build.') },
-      { label: 'Workflow Stages', dest: NO('Approval workflows have no screen in this build.') },
-      { label: 'Approval Levels', dest: NO('Approval workflows have no screen in this build.') },
-      { label: 'Escalation Rules', dest: TO('/automation') },
-    ],
-  },
-  {
-    title: 'Numbering Sequences',
-    icon: 'invoice',
-    rows: [
-      /* Prefixes read from the registry, never typed here — ruling §2.2. This
-         row list used to say "(BK-)" and "(EQ-)", which is a second place a
-         reader would have to update after editing Settings ▸ Numbering. */
-      { label: `Booking Numbers (${prefixTokenOf('BK')})`, dest: TO('/admin/numbering') },
-      { label: `Equipment Codes (${prefixTokenOf('EQ')})`, dest: TO('/admin/numbering') },
-      { label: `Maintenance (${prefixTokenOf('MT')})`, dest: TO('/admin/numbering') },
-      { label: `Cases (${prefixTokenOf('CASE')})`, dest: TO('/admin/numbering') },
-      { label: `Invoices (${prefixTokenOf('INV')})`, dest: TO('/admin/numbering') },
-    ],
-  },
-  {
-    title: 'System Configuration',
-    icon: 'settings',
-    rows: [
-      { label: 'System Preferences', dest: TAB('system') },
-      { label: 'General Settings', dest: TAB('organization') },
-      { label: 'Date & Time Formats', dest: TAB('organization') },
-      { label: 'Decimal & Currency', dest: TAB('organization') },
-      { label: 'System Maintenance', dest: TO('/system') },
-    ],
-  },
-  {
-    title: 'Financial Settings',
-    icon: 'card',
-    rows: [
-      { label: 'Taxes (VAT)', dest: TAB('financial') },
-      { label: 'Fiscal Year', dest: TAB('financial') },
-      { label: 'Currencies', dest: TAB('financial') },
-      { label: 'Payment Terms', dest: TAB('financial') },
-      { label: 'Late Payment Penalties', dest: TAB('financial') },
-    ],
-  },
-  /*
-   * The `Communication Settings` group used to sit here. Three of its five rows
-   * pointed at the `communication` tab §11.2 parks; the other two duplicated
-   * `System ▸ System`'s Notification Center and SMS Center route links, which
-   * survive. The group is deleted rather than re-pointed — §11.2 removes the
-   * section, and a "WhatsApp Settings" row that lands on Security is a worse
-   * answer than no row. Same reasoning removed the `AI & Automation` group
-   * below `Localization`: its `/automation` and `/ai` routes are still reachable
-   * from System ▸ System, so nothing routed was orphaned by the deletion.
-   */
-  {
-    title: 'Backup & Restore',
-    icon: 'download',
-    rows: [
-      { label: 'Backup Settings', dest: TO('/admin/backup') },
-      { label: 'Manual Backup', dest: TO('/admin/backup') },
-      { label: 'Backup History', dest: TO('/admin/backup') },
-      { label: 'Restore Data', dest: TO('/admin/backup') },
-      { label: 'Disaster Recovery', dest: TO('/admin/backup') },
-    ],
-  },
-  {
-    title: 'Integrations',
-    icon: 'plug',
-    rows: [
-      { label: 'Payment Gateways', dest: TAB('integrations') },
-      { label: 'Accounting Integrations', dest: TAB('integrations') },
-      { label: 'Calendar Integrations', dest: TAB('integrations') },
-      { label: 'Third Party Apps', dest: TAB('integrations') },
-      { label: 'API & Webhooks', dest: TAB('integrations') },
-    ],
-  },
-  {
-    title: 'Audit & Logs',
-    icon: 'file',
-    rows: [
-      { label: 'Audit Settings', dest: TO('/admin/audit') },
-      { label: 'Audit Logs', dest: TO('/admin/audit') },
-      { label: 'Login History', dest: NO('Login history needs the auth backend, which is not connected.') },
-      { label: 'Data Change Logs', dest: TO('/admin/audit') },
-      { label: 'User Activity Logs', dest: TO('/admin/audit') },
-    ],
-  },
-  {
-    title: 'Localization',
-    icon: 'calendar',
-    rows: [
-      { label: 'Languages', dest: TAB('organization') },
-      { label: 'Translations', dest: NO('The translation catalogue has no screen in this build.') },
-      { label: 'Nepali (BS) Calendar', dest: TAB('organization') },
-      { label: 'Regional Settings', dest: TAB('organization') },
-      { label: 'Units & Measurements', dest: TAB('organization') },
-    ],
-  },
-]
 
 /* ── rail quick actions ────────────────────────────────────────────────── */
+
+/* Local `Dest` constructors. They used to sit above the administration modules
+   grid that this file no longer carries; the two quick-action lists below are
+   the only remaining users. */
+const TO = (to: string): Dest => ({ kind: 'route', to })
+const NO = (why: string): Dest => ({ kind: 'none', why })
 
 export interface QuickAction {
   label: string

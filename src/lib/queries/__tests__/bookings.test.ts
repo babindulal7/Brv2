@@ -30,8 +30,14 @@ import { BOOKING_STATUS } from '../../workflow'
 
 const db = vi.hoisted(() => {
   interface State {
-    /** The table `from()` was called with. */
+    /** The table `from()` was called with — the LAST one, if there were several. */
     table: string
+    /**
+     * Every table `from()` was called with, in order. `listBookings({ withDeposit })`
+     * makes two calls now — `bookings`, then `bookings_deposit_v` (0061) — and a
+     * single `table` field cannot show the second one happening at all.
+     */
+    tables: string[]
     /** The literal string handed to `.select()` — the thing a dropped column disappears from. */
     columns: string
     /** `.select()`'s second argument: `{ count: 'exact' }` or `undefined`. */
@@ -46,6 +52,7 @@ const db = vi.hoisted(() => {
 
   const state: State = {
     table: '',
+    tables: [],
     columns: '',
     selectOptions: undefined,
     calls: [],
@@ -56,6 +63,7 @@ const db = vi.hoisted(() => {
 
   function reset(): void {
     state.table = ''
+    state.tables = []
     state.columns = ''
     state.selectOptions = undefined
     state.calls = []
@@ -121,6 +129,7 @@ const db = vi.hoisted(() => {
   const supabase = {
     from(table: string) {
       state.table = table
+      state.tables.push(table)
       return builder
     },
   }
@@ -193,18 +202,50 @@ describe('BASE_COLUMNS — the select string', () => {
     expect(db.state.columns).toContain('booking_lines ( id, qty )')
   })
 
-  it('does NOT name deposit_required unless the caller opted in', async () => {
-    // Law 6. `deposit_required` is unmasked on the base table and
-    // `bookings_select` is `auth_is_staff()`, which includes the three
-    // money-blind roles — so the default select is the only thing standing
-    // between a Warehouse session and a rupee figure.
+  /*
+   * Rewritten 16 Aug 2026. This pair used to assert that `withDeposit` ADDED
+   * `deposit_required` to the base select. It no longer does: the column comes
+   * from `bookings_deposit_v` (0061), which masks it per role, so the property
+   * worth pinning is now the stronger one — **this module never names the column
+   * on the base table, whatever the caller asks for.**
+   *
+   * That matters because until `0062` is applied the base column is still
+   * readable by any staff session, Warehouse included (`bookings_select` is
+   * `auth_is_staff()`). "No module names it" is the live protection, and a test
+   * is the only thing that keeps it true.
+   */
+  it('never names deposit_required on the base table — not even with withDeposit', async () => {
     await listBookings()
+    expect(db.state.columns).not.toContain('deposit_required')
+
+    db.reset()
+    await listBookings({ withDeposit: true })
     expect(db.state.columns).not.toContain('deposit_required')
   })
 
-  it('adds deposit_required once, and disturbs nothing else, when withDeposit is set', async () => {
+  it('reads the deposit from bookings_deposit_v, and only when asked', async () => {
+    /* A row is required: the second query is skipped for an empty page, since
+       there would be no ids to ask about. */
+    const page = [{ id: 'b-1', booking_no: 'B-715', clients: null, booking_lines: null }]
+
+    db.state.rows = page
+    await listBookings()
+    expect(db.state.tables).not.toContain('bookings_deposit_v')
+
+    db.reset()
+    db.state.rows = page
     await listBookings({ withDeposit: true })
-    expect(occurrences('deposit_required')).toBe(1)
+    expect(db.state.tables).toContain('bookings_deposit_v')
+  })
+
+  it('skips the deposit query entirely for an empty page', async () => {
+    db.state.rows = []
+    await listBookings({ withDeposit: true })
+    expect(db.state.tables).toEqual(['bookings'])
+  })
+
+  it('leaves every other column undisturbed when withDeposit is set', async () => {
+    await listBookings({ withDeposit: true })
     for (const column of NEW_COLUMNS) {
       expect(occurrences(column)).toBe(1)
     }

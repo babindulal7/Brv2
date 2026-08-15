@@ -11,6 +11,14 @@ import {
   canRecordPayment,
   canOverrideCreditLimit,
   canManageSettings,
+  canConfirmRental,
+  canCreateClient,
+  canBlockClient,
+  canCreateBundle,
+  canWriteBookingDesk,
+  canWriteFloor,
+  canMergeClients,
+  canWriteSharedTriage,
 } from '../rbac'
 
 /**
@@ -246,5 +254,192 @@ describe('canApproveLateFeeWaiver', () => {
     expect(canApproveLateFeeWaiver('Admin')).toBe(false)
     expect(canApproveLateFeeWaiver('Accounts')).toBe(false)
     expect(canVoidInvoice('Accounts')).toBe(true)
+  })
+})
+
+/* -- the four ruled 15 Aug 2026 by mirroring live RLS -- PLAN.md 4.20 -------- */
+
+/*
+ * Each of these asserts a role set that was READ OFF THE DATABASE, not chosen.
+ * If one of them ever fails, the question to ask is whether the RLS policy it
+ * mirrors was changed -- because a rule granted here and denied at the row is
+ * the exact failure lib/rbac's header says it exists to prevent.
+ */
+
+describe('canConfirmRental', () => {
+  it('is the booking desk and the floor, mirroring booking_stage_transitions_insert', () => {
+    const allowed = ALL_ROLES.filter((r) => canConfirmRental(r))
+    expect(allowed).toEqual(['Owner', 'Admin', 'Manager', 'Coordinator', 'Warehouse'])
+  })
+
+  /*
+   * The contrast that made borrowing `operations.perform` wrong, stated as a
+   * test so it cannot be quietly re-merged later. The two sets differ in BOTH
+   * directions.
+   */
+  it('is not canPerformOperations: it admits Coordinator and excludes Technician', () => {
+    expect(canConfirmRental('Coordinator')).toBe(true)
+    expect(canPerformOperations('Coordinator')).toBe(false)
+
+    expect(canConfirmRental('Technician')).toBe(false)
+    expect(canPerformOperations('Technician')).toBe(true)
+  })
+
+  it('excludes Accounts, Driver and the external Client', () => {
+    expect(canConfirmRental('Accounts')).toBe(false)
+    expect(canConfirmRental('Driver')).toBe(false)
+    expect(canConfirmRental('Client')).toBe(false)
+  })
+})
+
+describe('canCreateClient', () => {
+  it('mirrors clients_insert -- the same five as confirm', () => {
+    const allowed = ALL_ROLES.filter((r) => canCreateClient(r))
+    expect(allowed).toEqual(['Owner', 'Admin', 'Manager', 'Coordinator', 'Warehouse'])
+  })
+
+  it('includes Coordinator, whose job is taking a walk-in client details', () => {
+    expect(canCreateClient('Coordinator')).toBe(true)
+  })
+})
+
+describe('canBlockClient', () => {
+  it('mirrors the Blocked branch of client_flags_insert -- narrower than creating one', () => {
+    const allowed = ALL_ROLES.filter((r) => canBlockClient(r))
+    expect(allowed).toEqual(['Owner', 'Admin', 'Manager'])
+  })
+
+  /*
+   * The database itself draws this line: client_flags_insert splits on
+   * flag_type, so Coordinator and Warehouse may raise every OTHER flag on a
+   * client and not this one.
+   */
+  it('is strictly narrower than canCreateClient', () => {
+    const blockers = ALL_ROLES.filter((r) => canBlockClient(r))
+    const creators = ALL_ROLES.filter((r) => canCreateClient(r))
+    expect(blockers.every((r) => creators.includes(r))).toBe(true)
+    expect(blockers.length).toBeLessThan(creators.length)
+
+    expect(canCreateClient('Coordinator')).toBe(true)
+    expect(canBlockClient('Coordinator')).toBe(false)
+    expect(canBlockClient('Warehouse')).toBe(false)
+  })
+})
+
+describe('canCreateBundle', () => {
+  it('mirrors bundles_manage, not bundle_items_all', () => {
+    const allowed = ALL_ROLES.filter((r) => canCreateBundle(r))
+    expect(allowed).toEqual(['Owner', 'Admin', 'Manager'])
+  })
+
+  /*
+   * createBundle writes bundles AND bundle_items. bundle_items_all admits
+   * Warehouse; bundles_manage does not. Granting the wider set would pass this
+   * check and then fail at the first insert -- forbidden must be absent, not
+   * attempted and refused.
+   */
+  it('excludes Warehouse, who may add items to a bundle that already exists', () => {
+    expect(canCreateBundle('Warehouse')).toBe(false)
+  })
+})
+
+/* ── The four role sets ruled 16 Aug 2026 ────────────────────────────────────
+ *
+ * Same method and same warning as the block above: each list is an RLS policy
+ * read off the live project, not a preference. A failure here means either the
+ * policy moved or someone edited the predicate -- and the two must not drift.
+ *
+ * These four cover 21 capability strings between them. Derivation:
+ * CAPABILITY_MAPPING_2026-08-16.md §4.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+describe('canWriteBookingDesk', () => {
+  it('mirrors bookings_insert / booking_lines_all / clients_update', () => {
+    const allowed = ALL_ROLES.filter((r) => canWriteBookingDesk(r))
+    expect(allowed).toEqual(['Owner', 'Admin', 'Manager', 'Coordinator', 'Warehouse'])
+  })
+
+  /* It is the same set BOOKING_DESK was named for, so the three 15 Aug rules
+     built on it must agree exactly. If they ever diverge, one of them was
+     edited without its policy moving. */
+  it('is the same set as canConfirmRental and canCreateClient', () => {
+    for (const role of ALL_ROLES) {
+      expect(canWriteBookingDesk(role)).toBe(canConfirmRental(role))
+      expect(canWriteBookingDesk(role)).toBe(canCreateClient(role))
+    }
+  })
+})
+
+describe('canWriteFloor', () => {
+  it('mirrors operation_sessions_all -- the desk minus Coordinator', () => {
+    const allowed = ALL_ROLES.filter((r) => canWriteFloor(r))
+    expect(allowed).toEqual(['Owner', 'Admin', 'Manager', 'Warehouse'])
+  })
+
+  /*
+   * The A/B split is the whole point of having two sets: taking a booking is
+   * desk work, moving the gear is not. Coordinator is in exactly one of them.
+   */
+  it('excludes Coordinator, who canWriteBookingDesk admits', () => {
+    expect(canWriteBookingDesk('Coordinator')).toBe(true)
+    expect(canWriteFloor('Coordinator')).toBe(false)
+  })
+
+  /*
+   * And it is NOT canPerformOperations, which admits Technician. Writing the
+   * session row and working a session someone else opened are different acts;
+   * collapsing them is the mistake this pins shut.
+   */
+  it('excludes Technician, who canPerformOperations admits', () => {
+    expect(canPerformOperations('Technician')).toBe(true)
+    expect(canWriteFloor('Technician')).toBe(false)
+  })
+})
+
+describe('canMergeClients', () => {
+  it('mirrors client_merges_all -- Owner, Admin, Manager', () => {
+    const allowed = ALL_ROLES.filter((r) => canMergeClients(r))
+    expect(allowed).toEqual(['Owner', 'Admin', 'Manager'])
+  })
+
+  /* Merging is irreversible in a way editing is not, and the database says so
+     itself: client_merges_all is three roles, clients_update is five. */
+  it('is strictly narrower than canWriteBookingDesk', () => {
+    const mergers = ALL_ROLES.filter((r) => canMergeClients(r))
+    const writers = ALL_ROLES.filter((r) => canWriteBookingDesk(r))
+    expect(mergers.every((r) => writers.includes(r))).toBe(true)
+    expect(mergers.length).toBeLessThan(writers.length)
+  })
+})
+
+describe('canWriteSharedTriage', () => {
+  it('mirrors auth_is_staff() -- every staff role, Client excluded', () => {
+    const allowed = ALL_ROLES.filter((r) => canWriteSharedTriage(r))
+    expect(allowed).toEqual([
+      'Owner',
+      'Admin',
+      'Manager',
+      'Coordinator',
+      'Warehouse',
+      'Technician',
+      'Accounts',
+      'Driver',
+    ])
+    expect(canWriteSharedTriage('Client')).toBe(false)
+  })
+
+  /*
+   * ⚠ This test PINS A KNOWN-BROAD RULE, deliberately. purchase_requests_all is
+   * auth_is_staff() on the live project, so mirroring it admits Driver and
+   * Technician to `purchase.approve` -- a spend-authorising verb.
+   *
+   * It is asserted rather than quietly narrowed because the fix belongs in the
+   * RLS policy, not here (PLAN.md §4.29). When that policy is tightened, THIS
+   * TEST SHOULD FAIL -- that failure is the signal to split the set, and is the
+   * only thing standing between a policy change and a silent app/DB drift.
+   */
+  it('admits Driver and Technician -- the known-broad case, pinned on purpose', () => {
+    expect(canWriteSharedTriage('Driver')).toBe(true)
+    expect(canWriteSharedTriage('Technician')).toBe(true)
   })
 })

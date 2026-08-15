@@ -17,7 +17,7 @@
 
 import { createElement } from 'react'
 import type { ClientRecord } from './clients'
-import { TIER_TONE } from './clients'
+import { TIER_TONE, creditStopFactsOf, evaluateCreditStop, readOverdueStopDays } from './clients'
 import { formatMoney } from '../lib/money'
 import type { GateContext } from '../lib/fieldGating'
 import { canViewMoneyField, canViewPII, canViewDocuments, canViewNotes, canViewOnStopReason, moneyScope } from '../lib/fieldGating'
@@ -25,8 +25,56 @@ import type { IntelGlance, IntelGroup, IntelField } from '../components/ui/Intel
 import { STATUS } from '../lib/status'
 import type { StatusKey } from '../lib/status'
 
-function isOnStop(client: ClientRecord): boolean {
-  return Boolean(client.isBlocked || client.onStop)
+/**
+ * **Blocked and On Stop are two different facts, and the hover card used to
+ * conflate them.**
+ *
+ * This file previously carried its own `isOnStop(client)` returning
+ * `client.isBlocked || client.onStop` — a *stored* flag, ORed with a block.
+ * Rulings §11.2 replaced that with a **derived** credit state
+ * (`evaluateCreditStop` in `./clients`), and `ClientsDirectory` was moved onto
+ * it while this file was not. The result was visible: one row could read
+ * "On Stop" in the directory and "On-Stop: Clear" in its own hover card at the
+ * same time, because the two were answering different questions.
+ *
+ * Now there is one predicate. The two facts are reported separately, because
+ * they intersect rather than nest (`0005_clients.sql`: *"Flags coexist with the
+ * client's state"*):
+ *
+ *  · **Blocked** — a `client_flags` row. Someone decided this client may not book.
+ *  · **On Stop** — derived from credit: over the approved limit, or holding an
+ *    invoice more than `overdueStopDays` past due. Nobody set it; it is computed.
+ *
+ * `indeterminate` is deliberately *not* folded into `false`. A limb that could
+ * not run is not a limb that passed — a Warehouse session cannot read the money,
+ * so it must be told the check did not run rather than shown "clear".
+ */
+interface StopState {
+  /** A `client_flags` block — someone set this. */
+  blocked: boolean
+  /** Derived credit stop — computed, never stored. */
+  onStop: boolean
+  /** No limb could run. Never render this as "clear". */
+  indeterminate: boolean
+  /** Figure-free, already gated. Empty when nothing fired. */
+  reasons: string[]
+}
+
+function stopStateOf(client: ClientRecord, gctx: GateContext): StopState {
+  const canViewMoney = canViewMoneyField(gctx, 'client-balance')
+  const verdict = evaluateCreditStop(creditStopFactsOf(client, { canViewMoney }), {
+    overdueStopDays: readOverdueStopDays(),
+    canViewMoney,
+  })
+  return {
+    blocked: Boolean(client.isBlocked),
+    onStop: verdict.onStop,
+    indeterminate: verdict.indeterminate,
+    /* §4.4 — the *reason* is PII-gated even where the *state* is not, so a floor
+       role sees that a client is on stop without seeing why. `reasons` is the
+       figure-free set; `details` (which carries rupees) is never read here. */
+    reasons: canViewOnStopReason(gctx) ? verdict.reasons : [],
+  }
 }
 
 /**
@@ -108,7 +156,11 @@ function riskField(label: string, text: string, atRisk: boolean): IntelField {
 }
 
 export function clientGlance(client: ClientRecord, gctx: GateContext): IntelGlance {
-  const onStop = isOnStop(client)
+  const stop = stopStateOf(client, gctx)
+  /* Either fact withholds the booking action. They are still reported
+     separately below — "blocked" and "over credit limit" call for different
+     conversations with the client. */
+  const barred = stop.blocked || stop.onStop
 
   const badges = [
     { label: client.membership, tone: TIER_TONE[client.membership] },
@@ -125,15 +177,28 @@ export function clientGlance(client: ClientRecord, gctx: GateContext): IntelGlan
         : `No balance due · deposit ${formatMoney(client.depositHeldPaisa)} held`,
     )
   }
-  if (onStop) {
-    lines.push('On-Stop — blocked from new bookings')
+  if (stop.blocked) {
+    lines.push('Blocked — no new bookings')
+  }
+  if (stop.onStop) {
+    /* The reasons are figure-free and already role-gated in `stopStateOf`, so a
+       floor session gets "On Stop" with no rupee figure rather than nothing. */
+    lines.push(stop.reasons.length ? `On Stop — ${stop.reasons.join(' · ')}` : 'On Stop — credit')
+  } else if (stop.indeterminate && !stop.blocked) {
+    /* Law 12 and the §11.2 rule that an unevaluable limb is not a passing one:
+       say the check did not run. Rendering nothing here reads as "clear". */
+    lines.push('Credit check did not run on this record')
   }
 
   return {
     avatarLabel: client.name.slice(0, 2).toUpperCase(),
     avatarTone: TIER_TONE[client.membership],
     title: client.name,
-    statusDot: onStop ? 'danger' : 'in',
+    /* `neutral`, not `in`, when the check could not run. There is no `warn` in
+       `StatusKey` and inventing one would be wrong anyway: an unevaluated credit
+       state is not a warning, it is an absence of information, and `neutral` is
+       the only token that claims nothing. `in` would claim health. */
+    statusDot: barred ? 'danger' : stop.indeterminate ? 'neutral' : 'in',
     subtitle: `${client.clientType}${client.company ? ` · ${client.company}` : ''}`,
     badges,
     lines,
@@ -141,13 +206,13 @@ export function clientGlance(client: ClientRecord, gctx: GateContext): IntelGlan
     // status dot and the On-Stop line above; the action itself is simply
     // absent when blocked, the same "forbidden things are absent" rule the
     // rest of the app follows rather than a disabled button with no reason.
-    ...(onStop ? {} : { primaryAction: { label: 'New booking', to: '/rentals/new' } }),
+    ...(barred ? {} : { primaryAction: { label: 'New booking', to: '/rentals/new' } }),
   }
 }
 
 export function clientDetailGroups(client: ClientRecord, gctx: GateContext): IntelGroup[] {
   const groups: IntelGroup[] = []
-  const onStop = isOnStop(client)
+  const stop = stopStateOf(client, gctx)
 
   groups.push({
     title: 'Identity',
@@ -213,17 +278,36 @@ export function clientDetailGroups(client: ClientRecord, gctx: GateContext): Int
   }
   if (moneyFields.length > 0) groups.push({ title: 'Money', fields: moneyFields })
 
-  // §4.4 — the block itself is never gated, only its reason/setter.
+  /*
+   * §4.4 — the state itself is never gated, only its reason.
+   *
+   * Two rows, because Blocked and On Stop are two facts (Rulings §11.2).
+   * Blocked is a `client_flags` row somebody set, so it still has a reason, a
+   * setter and a date. **On Stop has none of those** — it is derived from credit
+   * state, nobody sets it, and asking "set by whom" of a computed value is how
+   * the old stored flag got here. Its explanation is the limb that fired.
+   */
   groups.push({
     title: 'Credit control',
     fields: [
-      { label: 'On-Stop', value: onStop ? 'Blocked from new bookings' : 'Clear' },
-      ...(onStop && canViewOnStopReason(gctx)
+      { label: 'Blocked', value: stop.blocked ? 'Blocked from new bookings' : 'No' },
+      ...(stop.blocked && canViewOnStopReason(gctx)
         ? ([
-            { label: 'Reason', value: client.onStop?.reason ?? client.blockReason ?? '—' },
-            { label: 'Set by', value: client.onStop?.setBy ?? '—' },
-            { label: 'Set on', value: client.onStop?.setAd ?? '—' },
+            { label: 'Block reason', value: client.blockReason ?? '—' },
           ] as IntelField[])
+        : []),
+      {
+        label: 'On-Stop',
+        /* Never "Clear" when no limb could run — that is the claim §11.2
+           forbids, and it is what a money-blind session would otherwise read. */
+        value: stop.onStop
+          ? 'On Stop — no new bookings'
+          : stop.indeterminate
+            ? 'Check did not run on this record'
+            : 'Clear',
+      },
+      ...(stop.onStop && stop.reasons.length
+        ? ([{ label: 'Why', value: stop.reasons.join(' · ') }] as IntelField[])
         : []),
     ],
   })

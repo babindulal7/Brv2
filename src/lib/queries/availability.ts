@@ -1,0 +1,442 @@
+import { supabase } from '../supabase'
+import { insertViaSourceSwitch } from '../dataAccess'
+import { newClientUuid } from '../supabase'
+import {
+  selectUnitsForLine,
+  explainShortfall,
+  DISQUALIFYING_UNIT_STATES,
+  RENTAL_WINDOW_BOUNDS,
+  type RentalWindow,
+  type UnitCandidate,
+  type UnitHold,
+  type AssignmentOutcome,
+} from '../availability'
+
+/**
+ * # Auto Assign Serials — the read, the plan, and the reservation
+ *
+ * The IO half of `lib/availability.ts`. That module decides; this one fetches
+ * what it decides over and writes what it decided. The split is Law 1: the rule
+ * is testable by execution without a database, and this file holds no rule.
+ *
+ * ## Why this exists
+ *
+ * PROGRESS.md 16 Aug: nothing in the app wrote `booking_line_units` or any
+ * assignment at all, so wiring the five floor workspaces to a working read
+ * would have turned *"not loaded yet"* into *"loaded — nothing to pack"*.
+ * Exactly **1 of 120** corpus bookings had unit rows. The missing piece was a
+ * unit-assignment step at confirm time, and it blocked Packing, Handover,
+ * Return, Reset and Evidence equally.
+ *
+ * ## Where it writes, and why that took a ruling
+ *
+ * `inventory_reservations` — ruled 16 Aug 2026, PLAN.md §4.30(a). It is the only
+ * table in the schema carrying a double-booking defence:
+ *
+ *     exclude using gist (asset_id with =, period with &&)
+ *       where (released_at is null and asset_id is not null)
+ *
+ * `booking_line_units`, which the floor screens read, has **no overlap
+ * protection of any kind** — so writing assignments only there would reproduce
+ * the lie `seed.ts:762-770` refused to generate, at runtime, where an operator
+ * would act on it. The check below is therefore a courtesy that produces a
+ * readable sentence; **the database is the arbiter and cannot be talked past**,
+ * the same relationship `confirmRental.ts` has with the stage trigger.
+ *
+ * ## What this file does NOT do
+ *
+ * It does not write `booking_line_units`. Those rows carry the floor's working
+ * state (packed, condition, session ids) and their shape depends on rulings
+ * still open — the per-booking `case` and the packing tree `group`. Reserving is
+ * the part that is ruled and that the database protects; the floor rows are a
+ * projection of it and are built where those questions are answered.
+ */
+
+/** A booking line that needs physical units. */
+export interface AssignableLine {
+  readonly lineId: string
+  readonly productId: string
+  /** `booking_lines.description` — what the operator sees in a conflict message. */
+  readonly label: string
+  readonly qty: number
+}
+
+export interface AssignmentPlanLine {
+  readonly line: AssignableLine
+  readonly outcome: AssignmentOutcome
+  /** Law 12: the inline, specific sentence. `null` when the line is fully covered. */
+  readonly problem: string | null
+}
+
+export interface AssignmentPlan {
+  readonly bookingId: string
+  readonly bookingNo: string
+  readonly window: RentalWindow
+  readonly lines: readonly AssignmentPlanLine[]
+  /** True when every line found every unit it needs. */
+  readonly complete: boolean
+  /**
+   * Lines carrying no `product_id` — bundles, services, manual items and
+   * sub-rentals. Counted and named rather than silently dropped: a plan that
+   * says "complete" while having skipped half the booking is the failure this
+   * whole module exists to avoid.
+   */
+  readonly skipped: readonly { readonly lineId: string; readonly label: string; readonly reason: string }[]
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+interface BookingWindowRow {
+  id: string
+  booking_no: string
+  pickup_at: string
+  return_at: string
+}
+
+/**
+ * The booking's window. Columns are named and **none of them is money** —
+ * `bookings.deposit_required` sits on this table, so a `select('*')` would hand
+ * a rupee figure to any session that can confirm a booking, Warehouse included
+ * (Law 6, and the same reasoning as `confirmRental.ts`'s `readBooking`).
+ */
+async function readWindow(ref: string): Promise<BookingWindowRow> {
+  const column = UUID_RE.test(ref) ? 'id' : 'booking_no'
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('id, booking_no, pickup_at, return_at')
+    .eq(column, ref)
+    .maybeSingle()
+
+  if (error) throw new Error(`Could not read booking ${ref}, so nothing was assigned: ${error.message}`)
+  if (!data) throw new Error(`No booking matches ${ref}. Nothing was assigned.`)
+  return data as unknown as BookingWindowRow
+}
+
+/**
+ * Live lines only — Law 3. A removed line is `voided_at`, never deleted, and a
+ * voided line reserves nothing.
+ */
+async function readLines(bookingId: string): Promise<{
+  assignable: AssignableLine[]
+  skipped: AssignmentPlan['skipped']
+}> {
+  const { data, error } = await supabase
+    .from('booking_lines')
+    .select('id, product_id, qty, line_type, description')
+    .eq('booking_id', bookingId)
+    .is('voided_at', null)
+
+  if (error) throw new Error(`Could not read the booking's lines, so nothing was assigned: ${error.message}`)
+
+  const rows = (data ?? []) as unknown as Array<{
+    id: string
+    product_id: string | null
+    qty: number
+    line_type: string
+    description: string | null
+  }>
+
+  const assignable: AssignableLine[] = []
+  const skipped: Array<{ lineId: string; label: string; reason: string }> = []
+
+  for (const row of rows) {
+    const label = row.description ?? row.line_type
+    if (row.product_id === null) {
+      /* `product_id` is nullable and a bundle line carries `bundle_id` instead.
+         Expanding a bundle into its member products needs the packing tree
+         `group` ruling (bundles.name vs inventory_categories.name), which is
+         open — so bundles are reported, not guessed at. */
+      skipped.push({
+        lineId: row.id,
+        label,
+        reason: `${row.line_type} lines name no product, so no serial can be assigned to them here.`,
+      })
+      continue
+    }
+    assignable.push({ lineId: row.id, productId: row.product_id, label, qty: row.qty })
+  }
+
+  return { assignable, skipped }
+}
+
+/**
+ * Candidate units for a set of products, read through **`product_units_v`**
+ * rather than the base table.
+ *
+ * The view is the sanctioned path (`lib/queries/inventory.ts` already reads it)
+ * and it is the one that survives `0062_law6_column_grants_arm_the_mask.sql`,
+ * which revokes table-level SELECT on `product_units`. None of the columns here
+ * is money, but reading the base table would still break the moment that
+ * migration lands — see PLAN.md §4.28.
+ */
+async function readCandidates(productIds: readonly string[]): Promise<Map<string, UnitCandidate[]>> {
+  const byProduct = new Map<string, UnitCandidate[]>()
+  if (productIds.length === 0) return byProduct
+
+  const { data, error } = await supabase
+    .from('product_units_v')
+    .select('id, asset_tag, serial_no, product_id, status, retired_at')
+    .in('product_id', [...new Set(productIds)])
+    .order('asset_tag', { ascending: true })
+
+  if (error) throw new Error(`Could not read the equipment units, so nothing was assigned: ${error.message}`)
+
+  for (const row of (data ?? []) as unknown as Array<{
+    id: string
+    asset_tag: string
+    serial_no: string | null
+    product_id: string
+    status: string
+    retired_at: string | null
+  }>) {
+    const list = byProduct.get(row.product_id) ?? []
+    list.push({
+      unitId: row.id,
+      assetTag: row.asset_tag,
+      serialNo: row.serial_no,
+      productId: row.product_id,
+      state: row.status,
+      retiredAt: row.retired_at,
+    })
+    byProduct.set(row.product_id, list)
+  }
+
+  return byProduct
+}
+
+/**
+ * Live holds on any of those units.
+ *
+ * `released_at is null` is the same predicate the GiST exclusion uses in its
+ * `where`, so this asks the database the question the constraint will ask —
+ * rather than a similar one that could disagree at the edges. `asset_id` is
+ * nullable (a quantity hold names a product instead), and a hold with no unit
+ * cannot collide with a named one, so those are filtered out here too, again
+ * matching the constraint's `asset_id is not null`.
+ */
+async function readHolds(bookingIdToExclude: string): Promise<UnitHold[]> {
+  const { data, error } = await supabase
+    .from('inventory_reservations')
+    .select('asset_id, booking_id, period, bookings ( booking_no )')
+    .is('released_at', null)
+    .not('asset_id', 'is', null)
+    .neq('booking_id', bookingIdToExclude)
+
+  if (error) throw new Error(`Could not read existing reservations, so nothing was assigned: ${error.message}`)
+
+  const holds: UnitHold[] = []
+  for (const row of (data ?? []) as unknown as Array<{
+    asset_id: string | null
+    booking_id: string
+    period: string
+    bookings: { booking_no: string } | null
+  }>) {
+    const window = parseTstzRange(row.period)
+    if (row.asset_id === null || window === null) continue
+    holds.push({
+      unitId: row.asset_id,
+      bookingId: row.booking_id,
+      bookingNo: row.bookings?.booking_no ?? row.booking_id,
+      window,
+    })
+  }
+  return holds
+}
+
+/**
+ * PostgREST hands a `tstzrange` back as its text form —
+ * `["2026-08-16 03:15:00+00","2026-08-18 12:15:00+00")`. Postgres's text output
+ * uses a space rather than `T` and `+00` rather than `Z`, neither of which
+ * `Date.parse` accepts reliably across engines, so both are normalised here.
+ *
+ * An unbounded or unparseable range returns `null` and the caller drops the
+ * hold. That is the **unsafe direction** — a dropped hold is a unit that looks
+ * free — so it is deliberately narrow: the app is the only writer of this
+ * column and always writes both ends. The GiST constraint remains the actual
+ * defence, and it sees the real range whatever this function makes of the text.
+ */
+export function parseTstzRange(text: string): RentalWindow | null {
+  const match = /^[[(]"?([^",]+)"?,"?([^",)\]]+)"?[)\]]$/.exec(text.trim())
+  const rawFrom = match?.[1]
+  const rawTo = match?.[2]
+  if (rawFrom === undefined || rawTo === undefined) return null
+
+  const iso = (value: string): string => {
+    const withT = value.replace(' ', 'T')
+    /* `+00` → `+00:00`; a bare `+0545` → `+05:45`. */
+    return withT
+      .replace(/([+-]\d{2})$/, '$1:00')
+      .replace(/([+-]\d{2})(\d{2})$/, '$1:$2')
+  }
+
+  const fromAd = iso(rawFrom)
+  const toAd = iso(rawTo)
+  if (Number.isNaN(Date.parse(fromAd)) || Number.isNaN(Date.parse(toAd))) return null
+  return { fromAd, toAd }
+}
+
+/** Postgres literal for the window, in the ruled bound convention. */
+export function toTstzRangeLiteral(window: RentalWindow, bounds = RENTAL_WINDOW_BOUNDS): string {
+  const close = bounds === 'closed' ? ']' : ')'
+  return `[${window.fromAd},${window.toAd}${close}`
+}
+
+/**
+ * What Confirm *would* reserve. **Reads only — writes nothing.**
+ *
+ * Also the query behind the booking workspace's inline conflict check (Booking
+ * Workflow §8.5), which is why it is a plan rather than a side effect: the same
+ * answer has to be showable before anyone commits to it.
+ */
+export async function planAssignment(bookingRef: string): Promise<AssignmentPlan> {
+  const booking = await readWindow(bookingRef)
+  const window: RentalWindow = { fromAd: booking.pickup_at, toAd: booking.return_at }
+
+  const { assignable, skipped } = await readLines(booking.id)
+  const [candidatesByProduct, holds] = await Promise.all([
+    readCandidates(assignable.map((line) => line.productId)),
+    readHolds(booking.id),
+  ])
+
+  /* Units taken by an earlier line in THIS plan are not available to a later
+     one. Two lines for the same product on one booking must not both be handed
+     the same camera — and nothing in the database would catch that until the
+     second reservation hit the exclusion. */
+  const claimed = new Set<string>()
+  const lines: AssignmentPlanLine[] = []
+
+  for (const line of assignable) {
+    const pool = (candidatesByProduct.get(line.productId) ?? []).filter((unit) => !claimed.has(unit.unitId))
+    const outcome = selectUnitsForLine({
+      needed: line.qty,
+      window,
+      candidates: pool,
+      holds,
+      disqualifyingStates: DISQUALIFYING_UNIT_STATES,
+      bounds: RENTAL_WINDOW_BOUNDS,
+    })
+    for (const unit of outcome.assigned) claimed.add(unit.unitId)
+    lines.push({ line, outcome, problem: explainShortfall(outcome, line.label) })
+  }
+
+  return {
+    bookingId: booking.id,
+    bookingNo: booking.booking_no,
+    window,
+    lines,
+    complete: lines.every((entry) => entry.outcome.shortfall === 0),
+    skipped,
+  }
+}
+
+/**
+ * Thrown when a plan cannot cover every line. Carries the plan so a screen can
+ * render the per-line detail rather than re-deriving it from a string.
+ */
+export class AssignmentIncompleteError extends Error {
+  readonly plan: AssignmentPlan
+  constructor(plan: AssignmentPlan) {
+    const problems = plan.lines
+      .map((entry) => entry.problem)
+      .filter((problem): problem is string => problem !== null)
+    super(
+      `${plan.bookingNo} cannot be confirmed: not every line has units free for these dates. ${problems.join(' ')}`,
+    )
+    this.name = 'AssignmentIncompleteError'
+    this.plan = plan
+  }
+}
+
+export interface ReservationResult {
+  readonly reservationIds: readonly string[]
+  readonly units: number
+}
+
+/**
+ * Writes the plan as `inventory_reservations` rows.
+ *
+ * **Refuses an incomplete plan outright.** `0003:1478` states the rule this
+ * implements: *"If reservation fails on any line, Confirm is rejected with the
+ * conflicting line named."* Reserving three of four units and letting Confirm
+ * proceed would put a booking into Booked — *"Committed. Gear reserved,
+ * calendar held, serials assigned"* — while a line has no gear behind it.
+ *
+ * ## ⚠ This is not one transaction, and cannot be from a browser
+ *
+ * PostgREST gives a client no transaction, so the rows go in one at a time. If
+ * the exclusion rejects one — another operator reserving the same unit in the
+ * seconds since the plan was read, which the plan *cannot* prevent and is
+ * exactly why the constraint is the arbiter — the rows already written are
+ * **released** (`released_at` + reason, never deleted: Law 3) and the whole
+ * assignment is reported as not made.
+ *
+ * That compensation is honest but it is not atomicity: a failure *during* the
+ * release leaves live holds behind. `released_reason` names them so they are
+ * findable rather than mysterious. The real fix is the same one PLAN.md already
+ * records for booking creation — a Postgres function doing this server-side in
+ * one transaction. TODO(decision) is not the right marker here: nothing is
+ * unruled, it is simply unbuilt.
+ */
+export async function reserveAssignedUnits(
+  plan: AssignmentPlan,
+  ctx: { userId: string },
+): Promise<ReservationResult> {
+  if (!plan.complete) throw new AssignmentIncompleteError(plan)
+
+  const period = toTstzRangeLiteral(plan.window)
+  const written: string[] = []
+
+  try {
+    for (const entry of plan.lines) {
+      for (const unit of entry.outcome.assigned) {
+        const { data, error } = await insertViaSourceSwitch('inventory_reservations', {
+          client_uuid: newClientUuid(),
+          booking_id: plan.bookingId,
+          booking_line_id: entry.line.lineId,
+          asset_id: unit.unitId,
+          qty: 1,
+          period,
+          created_by: ctx.userId,
+        } as never)
+
+        if (error) {
+          throw new Error(
+            `${unit.assetTag} could not be reserved for ${plan.bookingNo}: ${error.message}. ` +
+              'Another booking may have taken it since this plan was read.',
+          )
+        }
+        const id = (data as { id?: unknown } | null)?.id
+        if (typeof id === 'string') written.push(id)
+      }
+    }
+  } catch (failure) {
+    await releaseReservations(written, `Rolled back: ${plan.bookingNo} assignment failed part-way.`)
+    throw failure
+  }
+
+  return { reservationIds: written, units: written.length }
+}
+
+/**
+ * Law 3 — a reservation is released, never deleted. `0003:1485`: *"Set by
+ * Cancel. The row remains — released, never deleted."*
+ *
+ * Best-effort by construction: it is called from a failure path, and throwing
+ * here would replace the real error with a second one. Each failure is logged
+ * with the row id so a live hold left behind is findable.
+ */
+export async function releaseReservations(reservationIds: readonly string[], reason: string): Promise<void> {
+  for (const id of reservationIds) {
+    const { error } = await supabase
+      .from('inventory_reservations')
+      .update({ released_at: new Date().toISOString(), released_reason: reason })
+      .eq('id', id)
+
+    if (error) {
+      console.error(
+        `[availability] Reservation ${id} could not be released (${error.message}). ` +
+          'It is still live and will block that unit until released by hand.',
+      )
+    }
+  }
+}

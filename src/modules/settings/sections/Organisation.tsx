@@ -1,12 +1,18 @@
 import { LANGUAGE_LABEL, coverage } from '../../../lib/i18n'
 import { BRANCH } from '../../../data/nav'
-import type { Dest } from '../../../data/settings'
 import type { Section } from './shared'
 
 /**
  * **Settings ▸ Organisation** — §11.2: *"name, VAT, description · languages,
  * calendar, timezone, number format, units"*. Every one of those eight is a row
  * below; nothing was added and nothing was dropped.
+ *
+ * ⚠ 15 Aug — the "Translations" row was DELETED, not moved. It carried no
+ * value and no destination; its whole content was that the string catalogue
+ * has no screen. Twelve rows like it across the old eight tabs were the single
+ * largest reason Settings read as heavy: a row that exists to report its own
+ * absence is one the reader must process and then discard. The catalogue is no
+ * less missing for the row being gone.
  *
  * Four of them are **product laws, not settings**. Foundation fixes each, no
  * other branch is implemented anywhere in the app, and the select that used to
@@ -16,8 +22,6 @@ import type { Section } from './shared'
 
 /** Computed once — the Language row reports the real gap rather than a claim. */
 const NE_COVERAGE = coverage('ne')
-
-const N = (why: string): Dest => ({ kind: 'none', why })
 
 export const ORGANISATION_SECTIONS: Section[] = [
   {
@@ -80,11 +84,6 @@ export const ORGANISATION_SECTIONS: Section[] = [
         note: 'Weights on gate passes and transport dockets.',
         value: 'Metric (kg, cm)',
         readOnlyWhy: 'No imperial rendering is implemented anywhere in the app.',
-      },
-      {
-        label: 'Translations',
-        note: 'The Nepali string catalogue.',
-        dest: N('The translation catalogue has no screen in this build.'),
       },
     ],
   },

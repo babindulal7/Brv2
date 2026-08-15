@@ -19,12 +19,35 @@
 -- number sequences) and every reference below resolves through those rows'
 -- natural keys, never through 0012's literal UUIDs.
 --
--- NOT APPLIED. CLAUDE.md: "Never apply a migration to a live Supabase project
--- without explicit approval." This file has been generated and reviewed, not
--- executed — no local Postgres instance exists in this repo.
+-- ⚠ SUPERSEDED 15 Aug 2026 — the header below said NOT APPLIED, and its ROWS
+-- ARE IN THE LIVE DATABASE. Read the next paragraph before believing either.
 --
--- Re-applying is a no-op: every insert carries a derived client_uuid (Law 8)
--- and conflicts on its natural key.
+-- This file was never applied AS A MIGRATION: `supabase_migrations.schema_
+-- migrations` has no row for it, and the entry it does carry at 0047 is a
+-- different, 811-character file named `0047_seed_tail_b917_equipment_line`. But
+-- the corpus itself went in by another route on 12 Aug — almost certainly
+-- `scripts/execute-generated-sql.mjs`, which writes rows without recording a
+-- migration. Proof: this file's first client, `client_uuid`
+-- a8c85792-2135-6d5a-33b3-fb88e6a4c5f7, is live as `C-34` "Sagarmatha Pictures
+-- Pvt. Ltd.", created 2026-08-12. Counted the same day: 121 bookings, 419
+-- booking_lines, 76 clients, 126 products, 120 invoices, 93 payments.
+--
+-- **This status line cost real work.** Two separate audits on 15 Aug read
+-- "NOT APPLIED" here, concluded the live database was empty, and built their
+-- central recommendation on it — one of them advising against converting screens
+-- because they would render blank. They would not have; the rows are there. A
+-- status comment in a migration is a claim about a database, and this repo now
+-- has two proofs that such a claim goes stale silently. Check
+-- `supabase_migrations.schema_migrations` AND the rows, never the header.
+--
+-- Leave it unapplied. Applying it would be a no-op by design — every insert
+-- carries a derived client_uuid (Law 8) and conflicts on its natural key — so
+-- there is nothing to gain and a needless write against live data to lose.
+--
+-- The original note, kept because the reasoning was correct at the time:
+--   NOT APPLIED. CLAUDE.md: "Never apply a migration to a live Supabase project
+--   without explicit approval." This file has been generated and reviewed, not
+--   executed — no local Postgres instance exists in this repo.
 -- =============================================================================
 
 begin;

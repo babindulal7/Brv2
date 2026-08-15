@@ -83,16 +83,16 @@ const GROUPS: ToolGroup[] = [
       },
     ],
   },
-  {
-    heading: 'Admin',
-    desktopColumns: 3,
-    cards: [
-      { label: 'Audit Log', hint: 'Append-only — view-only for every role', icon: 'lock', to: '/tools/audit-log' },
-      { label: 'Activity Log', hint: 'Who did what, where — newest first', icon: 'activity', to: '/tools/activity-log' },
-      { label: 'Numbering', hint: 'Prefix, padding, current, preview', icon: 'id_card', to: '/tools/numbering' },
-      { label: 'Backup & Restore', hint: 'Back up now · restore is typed-confirm', icon: 'download', to: '/tools/backup' },
-    ],
-  },
+  /*
+   * The **Admin** group was removed on 15 Aug. Audit Log, Activity Log,
+   * Numbering and Backup & Restore now live in one place — Settings ▸ System ▸
+   * Administration — instead of two.
+   *
+   * They were never two screens, only two URLs: `/tools/audit-log` and
+   * `/admin/audit-log` both resolved to the same component, four pages behind
+   * eight routes. `/admin/*` is now the only spelling, and Tools is what its
+   * name says — calculators.
+   */
   {
     heading: 'Cinematography suite',
     desktopColumns: 2,

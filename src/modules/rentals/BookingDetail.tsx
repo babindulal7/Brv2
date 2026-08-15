@@ -57,7 +57,67 @@ import {
   NOTES_AT,
   ALERTS,
   TIMELINE,
+  isSubRentedLine,
+  isSubRentalBooking,
 } from '../../data/booking'
+
+/**
+ * ## Sub-rented gear — rulings §11.1, and Law 11 beside it
+ *
+ * §4.2's Notes draw a gold outline on a sub-rented **line**; §4.1 draws one on
+ * a sub-rental **row**. §11.1 ruled both from one fact: the line carries it, the
+ * booking derives it. So this marker renders in two places on this screen — on
+ * each sub-rented line, and once in the header where
+ * `isSubRentalBooking(ITEMS)` says the booking as a whole is one — and it is the
+ * SAME component reading the SAME rule, not two treatments that could drift.
+ *
+ * **Law 11 — never colour alone.** The gold is one of four carriers: the
+ * outline, `STATUS.ext`'s `external_link` icon, the word "Sub-rented", and an
+ * accessible name that says the same thing. A screen reader, a monochrome print
+ * and a colour-blind operator each get the fact without the hue.
+ *
+ * §4.2 also says gold is an **outline, never a fill** — hence
+ * `STATUS.ext.bg === 'transparent'` plus `STATUS.ext.border`.
+ *
+ * ⚠ Spec 04 §4.2's "that is the only gold in the page" is **already false in
+ * dark mode**, independently of this: `styles/theme.css:223-227` paints the
+ * primary button gold there, so a gold Save sits beside a gold sub-rental mark.
+ * Reported, not fixed — the theme is outside this pass and changing a brand
+ * colour is not an implementer's call.
+ */
+const SUB_RENTED_LABEL = 'Sub-rented — external gear borrowed in for this booking'
+
+function SubRentedMark({ label = 'Sub-rented' }: { label?: string }) {
+  return (
+    <span
+      aria-label={SUB_RENTED_LABEL}
+      title={SUB_RENTED_LABEL}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        height: 17,
+        padding: '0 6px',
+        borderRadius: 4,
+        background: STATUS.ext.bg,
+        color: STATUS.ext.fg,
+        border: `1px solid ${STATUS.ext.border ?? 'var(--border)'}`,
+        fontSize: 'var(--t-meta)',
+        fontWeight: 700,
+        flexShrink: 0,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <Icon name="external_link" size={10} />
+      {label}
+    </span>
+  )
+}
+
+/** The line's own gold outline. Fires only where the line says so. */
+function subRentedRowStyle(line: { subRental?: boolean }) {
+  return isSubRentedLine(line) ? { boxShadow: `inset 0 0 0 1px ${STATUS.ext.border ?? 'var(--border)'}` } : {}
+}
 
 /**
  * The signed-in session as an `ActionContext`, or nothing at all.
@@ -1048,6 +1108,15 @@ export default function BookingDetail() {
             >
               {BOOKING.status}
             </span>
+            {/*
+              §11.1 — the booking-level answer, COMPUTED from the lines on every
+              render. There is no `BOOKING.subRental` and there must not be one:
+              a stored copy goes stale the moment a line is added or voided, and
+              "storing the same fact twice is how the two disagree". It reads the
+              same `ITEMS` the table below renders, so the header chip and the
+              gold-outlined lines cannot contradict each other.
+            */}
+            {isSubRentalBooking(ITEMS) && <SubRentedMark label="Sub-rental" />}
             {BOOKING.status === 'Quote' && <Button icon="arrow_right" variant="primary">Send Quote</Button>}
             {/* §1.4 — the retired `Draft` is now status Quote carrying a Draft flag. */}
             {BOOKING.flags.includes('Draft') && (
@@ -1397,7 +1466,12 @@ export default function BookingDetail() {
                 </thead>
                 <tbody>
                   {ITEMS.map((it, i) => (
-                    <tr key={`${it.name}-${i}`} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <tr
+                      key={`${it.name}-${i}`}
+                      /* §4.2's Notes — the gold outline sits on the sub-rented
+                         LINE. §11.1 confirmed that is where the fact lives. */
+                      style={{ borderBottom: '1px solid var(--border)', ...subRentedRowStyle(it) }}
+                    >
                       <td style={{ ...td, paddingLeft: 10 + it.depth * 18 }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           {/* Depth is shown by a disclosure caret plus indent, not indent alone. */}
@@ -1408,6 +1482,8 @@ export default function BookingDetail() {
                           />
                           <span style={{ fontWeight: it.depth === 0 ? 700 : it.depth === 1 ? 600 : 500 }}>{it.name}</span>
                           {it.badge && <ItemBadge {...it.badge} />}
+                          {/* Law 11 — the outline above never travels alone. */}
+                          {isSubRentedLine(it) && <SubRentedMark />}
                         </span>
                         {it.serial && it.depth === 0 && (
                           <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2, paddingLeft: 19 }}>

@@ -33,6 +33,17 @@
 -- ⚠ If the auth account is ever recreated it gets a NEW uuid and this row stops
 -- matching. The symptom is the one above — signed in, everything empty — and
 -- the fix is to re-point `id`, not to add a second row.
+--
+-- ## Renumbered 0058 → 0060 on 15 Aug 2026
+--
+-- It shared `0058` with `0058_late_fee_rank_and_approver_is_actor.sql`, and its
+-- companion shared `0057`. See the same note in
+-- `0059_users_self_read_accepts_auth_uid.sql` — this file follows 0059 because
+-- that is the order the two were applied live (versions 20260812170827 then
+-- 20260812170856). No SQL below changed and nothing was re-applied.
+--
+-- ⚠ The live project recorded this migration under its earlier name,
+-- `0058_staff_row_for_babindulal7`. Same SQL; the file was renamed afterwards.
 -- =============================================================================
 
 begin;

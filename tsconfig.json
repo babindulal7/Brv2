@@ -26,5 +26,10 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  /* `src/archive` holds screens ruled out of the application (12 Aug, executed
+     15 Aug). Law 3 keeps the files; excluding them from the program keeps them
+     from being compiled, bundled or counted as live code. Restoring one is a
+     move back into `src/modules` plus its route. */
+  "exclude": ["src/archive"]
 }

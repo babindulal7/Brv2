@@ -1524,7 +1524,7 @@ export default function NewRental() {
      *
      * `'bk-new'` is not a booking. This screen holds the whole booking in local
      * state and has never persisted a row — `saveDraft` and `createRental` are
-     * both still stubs — so there is no `bookings.id` and no `BK-YYYY-NNNN` to
+     * both still stubs — so there is no `bookings.id` and no `B-` number to
      * name. CONFIRM_RENTAL is now a real write (`actions/rentals/confirmRental.ts`):
      * it resolves the reference against `bookings` and moves the stage
      * `Quote → Booked` by inserting a `booking_stage_transitions` row. Sent a

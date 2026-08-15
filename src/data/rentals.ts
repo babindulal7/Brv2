@@ -10,6 +10,12 @@ import type { GateContext } from '../lib/fieldGating'
 import type { IntelField, IntelGlance, IntelGroup } from '../components/ui/IntelCard'
 import { overdue, todaysIncoming, todaysOutgoing, type BookingListRow } from '../lib/queries/bookings'
 import type { ListFilters } from '../lib/queries/listQuery'
+import { supabase } from '../lib/supabase'
+/*
+ * §11.1 — the sub-rental rule is `data/booking.ts`'s, not a second copy written
+ * here. This module only asks it of a LIST; the rule itself stays in one place.
+ */
+import { SUB_RENTAL_LINE_TYPES, isSubRentalBooking, type SubRentedLine } from './booking'
 import {
   ACTIVE_RENTALS_FILTERS,
   NOW_AD,
@@ -436,40 +442,146 @@ export interface RentalChip {
 export const PAYMENT_DUE_UNAVAILABLE =
   'Payment Due needs an outstanding balance. bookings carries none — deposit_required is the deposit required, payments (0006:176) is not joined by listBookings, and rental total minus payments is the Financial Engine’s figure, deliberately kept off the list row (Law 1).'
 
+/* ═══════════════════════════════════════════════════════════════════════
+ * THE SUB-RENTAL CHIP — rulings §11.1, ruled 13 Aug 2026
+ *
+ * ⛔ This block used to be `SUB_RENTAL_UNAVAILABLE`, a sentence explaining why
+ * the chip shipped `disabled`. §11.1 closed the question it was waiting on:
+ *
+ *   > A line is sub-rented. A booking counts as sub-rental **if any of its
+ *   > lines is**. `LineItem` gains the field. `RentalRow` does **not**: the
+ *   > booking-level answer is computed from its lines, never written.
+ *
+ * So the rule now lives in exactly one place — `data/booking.ts`'s
+ * {@link isSubRentalBooking} over {@link SUB_RENTAL_LINE_TYPES} — and this
+ * module's job is to answer it for a **list** rather than for one booking.
+ *
+ * ## Why it is a set of ids and not a filter on `bookings`
+ *
+ * There is no sub-rental column on `bookings` and there must not be one (that
+ * is the ruling). The fact lives on `booking_lines.line_type`
+ * (`0001_enums.sql:301`, `0002_bookings.sql:129`). Selecting bookings by it in
+ * ONE round trip needs `booking_lines!inner(...)` plus a `referencedTable`
+ * -scoped filter — `listBookings`' select string does not carry `!inner` and
+ * `applyListFilters` builds unscoped clauses only.
+ *
+ * So the question is asked of `booking_lines_v` directly, and its answer — a
+ * set of `bookings.id` — is handed to `listBookings` as an ordinary
+ * `chips: { id: [...] }` group, which `applyListFilters` turns into
+ * `id in (…)`. That keeps the narrowing **server-side**, which is the property
+ * that matters: `withCount` still counts the matching set, and the pager still
+ * walks pages the predicate saw. A client-side narrow of the fetched page —
+ * the thing the old comment correctly refused — would leave "Showing 1 to 8 of
+ * 214" over three rows.
+ *
+ * ## Two honest limits, stated rather than hidden
+ *
+ * 1. **It is two round trips, and the id list rides in the URL.** At a few
+ *    hundred sub-rental bookings that is fine; at tens of thousands PostgREST
+ *    would answer 414. That failure is loud, not silent, and the structural fix
+ *    is one column: add `line_type` to `listBookings`' `booking_lines ( id, qty )`
+ *    embed and make it `!inner` for this chip. That file is another pass's;
+ *    fold this into it when it lands.
+ * 2. **The live corpus currently holds zero sub-rental lines** — verified
+ *    16 Aug 2026: `select line_type, count(*) from booking_lines` returns
+ *    `Equipment 419` and nothing else. So the chip selects and honestly
+ *    reports no matches. It is **not** back-filled from a hand-written array
+ *    of booking numbers to make the screen look busier: that would paint
+ *    "Sub-rented — external gear" on live bookings nobody computed it for,
+ *    which is the fabricated-figure rule, not a cosmetic one. Seeding real
+ *    lines is a migration (`lib/seed.ts` → `supabase/migrations`) and needs
+ *    approval; see the report.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
 /**
- * ## The Sub-Rental chip — drawn by the spec, unbuildable against this schema
+ * Which bookings carry at least one live sub-rented line.
  *
- * `04_RENTALS.md` line 3 and §4.1 line 40 make Sub-Rental a **filter chip, not a
- * tab**, so the tab is gone. The chip it becomes is rendered `disabled` carrying
- * this sentence, because nothing in the data model can answer it:
+ * Returns `null` when the question could not be asked — **"cannot answer",
+ * never "no"**, the same convention `RentalListRow.deposit` uses. A `null` here
+ * leaves every row's `isExternal` at `null` and the gold outline unfired,
+ * rather than asserting that no booking carries external gear.
  *
- *  - `bookings` has **no sub-rental column** — verified against
- *    `0002_bookings.sql`'s `create table bookings` and the generated
- *    `types/supabase.ts`;
- *  - the only real backing is `booking_lines.line_type = 'Sub-rental'`
- *    (`0001_enums.sql:301`, `0002_bookings.sql:129`), which is **line-level**;
- *  - selecting bookings by it needs `booking_lines!inner(...)` plus a
- *    `referencedTable`-scoped filter, and `applyListFilters` builds unscoped
- *    `in`/`or` clauses only — the same limitation `queries/bookings.ts:326-334`
- *    already documents for client-name search;
- *  - there is no `sub_rentals` table to read instead (`PLAN.md §6.27` records
- *    that the phantom FK was repointed at `booking_lines` for exactly this
- *    reason).
+ * Law 6: the select names `booking_id` and `line_type` only. `supplier_cost`
+ * and `markup_amount` are the money on this table and 0019 revokes both; the
+ * two columns asked for here are not money, so a Warehouse session gets an
+ * answer rather than a 403 — and gets no rupee figure with it.
  *
- * Filtering the fetched page client-side is **not** an acceptable substitute:
- * the list is server-paged with `withCount`, so a client-side narrow would
- * leave "Showing 1 to 8 of 214" over three rows and a pager that walks pages
- * the predicate never saw.
- *
- * TODO(decision) — `WIREFRAME_RULINGS_2026-08-12.md` §9.1, still open: Sub-Rental
- * is specified three incompatible ways (a booking-level chip in §4.1, a
- * line-level gold outline in §4.2's Notes, and a row property in §4.1's table
- * legend). Deriving the booking flag from its lines satisfies both drawings but
- * is an inference, not a ruling, and `/operations/sub-rental` exists as a
- * separate register whose survival is also unruled. Not resolved here.
+ * Law 3: `voided_at is null`. A removed line is voided, never deleted
+ * (`0002:139`), and a voided sub-rental must not keep marking its booking.
  */
-export const SUB_RENTAL_UNAVAILABLE =
-  'Sub-Rental cannot be filtered from this list yet. A sub-rental is a booking_lines row with line_type = ‘Sub-rental’ — line-level, not booking-level — and selecting bookings by it needs an inner join scoped to the embedded table, which ListFilters cannot express. Narrowing the fetched page instead would leave the count and the pager describing a different set. TODO(decision): rulings §9.1.'
+/**
+ * PostgREST caps an unpaged response — 1000 rows on a default Supabase project,
+ * as this repo already records at `modules/finance/Finance.tsx:310`. An unpaged
+ * select here would not fail at that ceiling; it would **succeed with fewer rows
+ * than exist**, and every booking whose lines fell past the cut would be
+ * reported as carrying no external gear.
+ *
+ * That is precisely the fabricated "no" the doc above forbids — and worse than
+ * the error case, because `null` at least says "unknown". So the read is paged
+ * to exhaustion: a short page means the end, a full page means there may be more.
+ */
+const SUB_RENTAL_PAGE = 1000
+
+/**
+ * A ceiling on the loop, not on the data. At 1000 rows a page this is 200,000
+ * sub-rental lines — far beyond any plausible corpus, so reaching it means a
+ * bug (a filter that stopped filtering, a cursor that stopped advancing) rather
+ * than a big customer. Returning `null` there keeps the "unknown, never no"
+ * convention instead of silently handing back a partial set.
+ */
+const SUB_RENTAL_MAX_PAGES = 200
+
+export async function subRentalBookingIds(): Promise<readonly string[] | null> {
+  const data: { booking_id: string | null; line_type: string | null }[] = []
+
+  for (let page = 0; page < SUB_RENTAL_MAX_PAGES; page++) {
+    const from = page * SUB_RENTAL_PAGE
+    const { data: rows, error } = await supabase
+      .from('booking_lines_v')
+      .select('booking_id, line_type')
+      .in('line_type', [...SUB_RENTAL_LINE_TYPES])
+      .is('voided_at', null)
+      .order('booking_id', { ascending: true })
+      .range(from, from + SUB_RENTAL_PAGE - 1)
+
+    if (error || !rows) return null
+    data.push(...rows)
+    /* A short page is the end of the set. A full one is not proof of more, but
+       asking again costs one round trip and guessing costs correctness. */
+    if (rows.length < SUB_RENTAL_PAGE) break
+    if (page === SUB_RENTAL_MAX_PAGES - 1) return null
+  }
+
+  /*
+   * The `.in()` above is the same vocabulary pushed to the server so the
+   * payload stays small; the predicate below is what DECIDES. Both read
+   * `SUB_RENTAL_LINE_TYPES`, so widening the rule (a second line type counting
+   * as external, say) changes the filter and the verdict together. That is the
+   * "one predicate" §11.1 asks for — not two rules that agree today.
+   */
+  const byBooking = new Map<string, SubRentedLine[]>()
+  for (const row of data) {
+    if (row.booking_id === null) continue
+    const lines = byBooking.get(row.booking_id)
+    const line: SubRentedLine = { lineType: row.line_type ?? undefined }
+    if (lines) lines.push(line)
+    else byBooking.set(row.booking_id, [line])
+  }
+
+  return [...byBooking].filter(([, lines]) => isSubRentalBooking(lines)).map(([id]) => id)
+}
+
+/** What the footer says about the chip, so the sentence has one home. */
+export const SUB_RENTAL_NOTE =
+  'Sub-Rental is a line-level fact (booking_lines.line_type) — a booking counts as sub-rental when any of its lines does, and the chip narrows the query server-side on that derived set'
+
+/** While the derived set is still in flight. Short-lived, but never silent. */
+export const SUB_RENTAL_PENDING =
+  'Reading which bookings carry sub-rented lines. The chip cannot narrow until that answer arrives — selecting it now would return the unfiltered list under a Sub-Rental label.'
+
+/** Shown instead of a figure when the sub-rental question could not be asked. */
+export const SUB_RENTAL_UNANSWERED =
+  'Which bookings carry sub-rented lines could not be read from booking_lines. The chip is left unselectable rather than answering “none”, and no row is marked.'
 
 /**
  * Twelve chips, and exactly one of them (`On Rent`) is a canonical stage.
@@ -691,8 +803,49 @@ function narrowStages(base: ListFilters, statuses: readonly BookingStatus[]): Re
 }
 
 /**
- * The Rentals list's whole filter set: one chip, the Status accordion, and
- * nothing else. Pagination is added by the screen (`ListFilters.page`).
+ * The `(Sub-Rental)` chip's state, as the query layer needs it.
+ *
+ * `bookingIds` is the answer from {@link subRentalBookingIds}: an array when
+ * the question was asked and answered, `null` when it has not been asked yet or
+ * could not be. `null` is **never** "no bookings" — see `narrowSubRental`.
+ */
+export interface SubRentalNarrowing {
+  readonly on: boolean
+  readonly bookingIds: readonly string[] | null
+}
+
+export const SUB_RENTAL_OFF: SubRentalNarrowing = { on: false, bookingIds: null }
+
+/**
+ * Narrow to the derived sub-rental set — §11.1's chip, as a server predicate.
+ *
+ * ⚠ Both the `null` and the empty-array cases report `impossible` rather than
+ * sending the group, and for the same reason `narrowStages` does:
+ * `applyListFilters` reads an empty `in ()` as **"no constraint"**, so a chip
+ * that matched nothing would return the WHOLE list under a label saying
+ * "Sub-Rental". The screen renders its empty state instead — and, while the
+ * answer is still `null`, keeps its skeleton up rather than claiming a result.
+ */
+function narrowSubRental(query: RentalsQuery, sub: SubRentalNarrowing): RentalsQuery {
+  if (!sub.on) return query
+  if (sub.bookingIds === null || sub.bookingIds.length === 0) {
+    return { filters: query.filters, impossible: true }
+  }
+  return {
+    filters: { ...query.filters, chips: { ...query.filters.chips, id: [...sub.bookingIds] } },
+    impossible: query.impossible,
+  }
+}
+
+/**
+ * The Rentals list's whole filter set: one chip, the Status accordion, the
+ * Sub-Rental toggle, and nothing else. Pagination is added by the screen
+ * (`ListFilters.page`).
+ *
+ * The three AND together, which is how the chip row reads: `(Sub-Rental)` sits
+ * on its own line beside the view toggle in §4.1's drawing, not inside the
+ * twelve quick filters, so it narrows *whatever* they selected rather than
+ * replacing it.
  *
  * `nowAd` is a parameter rather than a `Date.now()` call so the mapping stays
  * pure and testable; the screen passes `data/today.ts`'s `NOW_AD`, which is
@@ -704,8 +857,9 @@ export function rentalsQuery(
   custom: CustomRange,
   statuses: readonly BookingStatus[],
   nowAd: string = NOW_AD,
+  subRental: SubRentalNarrowing = SUB_RENTAL_OFF,
 ): RentalsQuery {
-  return narrowStages(chipFilters(chip, custom, nowAd), statuses)
+  return narrowSubRental(narrowStages(chipFilters(chip, custom, nowAd), statuses), subRental)
 }
 
 /* ── the KPI strip, as four counts ─────────────────────────────────────── */
@@ -812,24 +966,22 @@ export interface RentalListRow {
   /**
    * Does this booking carry externally-sourced (sub-rented) gear?
    *
-   * **Always `null` today, and `null` means "this query cannot answer" — never
-   * "no".** Same convention as `deposit` above.
+   * **Derived, never stored** — rulings §11.1. There is no booking-level column
+   * and there must not be one; this is `data/booking.ts`'s
+   * `isSubRentalBooking` applied to the booking's lines, delivered as the id
+   * set {@link subRentalBookingIds} returns.
+   *
+   * `null` still means **"this query cannot answer" — never "no"**, the same
+   * convention as `deposit` above. It is what a row carries before the id set
+   * has arrived, and what every row carries if reading `booking_lines` failed.
+   * Coalescing it to `false` would assert "carries no external gear" about
+   * every booking in the database from a question nobody asked.
    *
    * §4.1 draws a gold-outlined row for external gear and §4.2's Notes put the
-   * outline on the *line*. `listBookings` embeds `booking_lines ( id, qty )`
-   * and nothing else, so the only column that could answer —
-   * `booking_lines.line_type` — is not selected, and even selecting it would
-   * only narrow the fetched page rather than the query (see
-   * `SUB_RENTAL_UNAVAILABLE`). Rendering `false` would be a fabricated figure:
-   * the screen would be asserting "no external gear" on every row in the
-   * database, which is a claim nobody computed.
-   *
-   * The row treatment IS built (`ExternalGearMark` in `RentalsList.tsx`: gold
-   * outline **plus** `STATUS.ext`'s `external_link` icon **plus** the label
-   * "Sub-rented", per Law 11 — colour never alone). It simply has nothing to
-   * fire on until the predicate above is ruled.
-   *
-   * TODO(decision) — rulings §9.1.
+   * outline on the *line*; §11.1 says both, from one fact. The row treatment is
+   * `ExternalGearMark` in `RentalsList.tsx` — gold outline **plus**
+   * `STATUS.ext`'s `external_link` icon **plus** the label "Sub-rented", per
+   * Law 11, colour never alone — and it fires on `true` only.
    */
   isExternal: boolean | null
 }
@@ -852,7 +1004,16 @@ function stampOf(instantAd: string): { date: string; time: string } {
  * one puts an amber badge on a booking for a reason nobody chose. `VIP` needs a
  * client attribute the schema does not have at all.
  */
-export function toRentalListRow(row: BookingListRow, nowAd: string = NOW_AD): RentalListRow {
+export function toRentalListRow(
+  row: BookingListRow,
+  nowAd: string = NOW_AD,
+  /**
+   * The derived sub-rental set, or `null` while it is unknown. Passed in rather
+   * than fetched here so the mapping stays pure — and so the one answer the
+   * screen holds is the one both the chip and the row marker read.
+   */
+  subRentedBookingIds: ReadonlySet<string> | null = null,
+): RentalListRow {
   const isOverdue =
     row.stage === 'On Rent' && row.actualReturnAtAd === null && Date.parse(row.returnAtAd) < Date.parse(nowAd)
   const lateDays = isOverdue ? civilDaysBetween(row.returnAtAd, nowAd) : 0
@@ -896,11 +1057,33 @@ export function toRentalListRow(row: BookingListRow, nowAd: string = NOW_AD): Re
     deliveryType: row.deliveryType,
     quoteExpires: row.quoteExpiresAtAd ? formatAd(new Date(row.quoteExpiresAtAd)) : null,
     deposit: row.depositRequired,
-    // Not derived, and deliberately not defaulted to `false` — see the field's
-    // own doc comment. The list query does not select `booking_lines.line_type`,
-    // so there is no answer to give and `null` is the one honest value.
-    isExternal: null,
+    // §11.1 — derived from the lines, never a column. `null` while the set is
+    // unknown; deliberately NOT defaulted to `false`, which would assert "no
+    // external gear" from a question nobody asked. See the field's own comment.
+    isExternal: subRentalOf(subRentedBookingIds, row.id),
   }
+}
+
+/** The derived answer for one booking, or `null` while the set is unknown. */
+function subRentalOf(ids: ReadonlySet<string> | null, bookingId: string): boolean | null {
+  return ids === null ? null : ids.has(bookingId)
+}
+
+/**
+ * The same derivation applied to a row that is already mapped.
+ *
+ * The screen needs this because the id set and the page of rows arrive from two
+ * independent requests: whichever lands second must still be able to mark the
+ * rows. Written here rather than inline in `RentalsList.tsx` so the rule has
+ * one home — a page re-deriving "is this booking sub-rental" from anything else
+ * is exactly the second opinion §11.1 forbids.
+ *
+ * Returns the row unchanged when the answer has not moved, so the render memo
+ * downstream of it does not churn on identity alone.
+ */
+export function withSubRental(row: RentalListRow, subRentedBookingIds: ReadonlySet<string> | null): RentalListRow {
+  const isExternal = subRentalOf(subRentedBookingIds, row.id)
+  return row.isExternal === isExternal ? row : { ...row, isExternal }
 }
 
 /* ── Hover Intel — built from the queried row, not from the seed ───────── */

@@ -134,7 +134,7 @@ const LINE_EQUIPMENT: RawLine = {
 function rawBooking(over: Partial<RawBooking> = {}): RawBooking {
   return {
     id: BOOKING_ID,
-    booking_no: 'BK-2026-0715',
+    booking_no: 'B-715',
     client_id: CLIENT.id,
     project: 'FX3 Documentary',
     stage: 'Booked',
@@ -282,10 +282,10 @@ describe('filters', () => {
     ])
   })
 
-  it('looks up by booking_no when given a BK- reference', async () => {
+  it('looks up by booking_no when given a B- reference', async () => {
     db.state.row = rawBooking()
-    await fetchCanonicalBooking('BK-2026-0715')
-    expect(db.state.calls).toContainEqual(['eq', 'booking_no', 'BK-2026-0715'])
+    await fetchCanonicalBooking('B-715')
+    expect(db.state.calls).toContainEqual(['eq', 'booking_no', 'B-715'])
     expect(db.state.calls.map((c) => c[1])).not.toContain('id')
   })
 })
@@ -297,7 +297,7 @@ describe('booking header → CanonicalBooking', () => {
     const b = await fetchOne(rawBooking())
     expect(b).toMatchObject({
       id: BOOKING_ID,
-      bookingNo: 'BK-2026-0715',
+      bookingNo: 'B-715',
       stage: 'Booked',
       stageNumber: BOOKING_STATUS.Booked.order + 1,
       project: 'FX3 Documentary',

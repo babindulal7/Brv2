@@ -1,9 +1,11 @@
 import React, { useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { Card, Button, Input } from '../../components/ui'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { useAuth } from '../../lib/auth'
+import { IS_MOCK } from '../../lib/supabase'
+import { MOCK_LOGINS } from '../../lib/mock/client'
 
 /**
  * **Staff sign-in.**
@@ -139,6 +141,32 @@ export default function Login() {
             </div>
           )}
 
+          {/* Mock mode only. This screen is mounted OUTSIDE Shell (App.tsx), so
+              the global MockBanner does not reach it — and without the account
+              list there is no way to discover a working sign-in. */}
+          {IS_MOCK && (
+            <div
+              role="status"
+              style={{
+                textAlign: 'left',
+                background: 'var(--st-progress-bg)',
+                color: 'var(--st-progress-fg)',
+                padding: '9px 12px',
+                borderRadius: 'var(--r-btn)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: 600,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+              }}
+            >
+              <span>Mock data — local corpus, no Supabase project.</span>
+              <span style={{ fontWeight: 500 }}>
+                Sign in as {MOCK_LOGINS.map((l) => l.email).join(' · ')} with any password.
+              </span>
+            </div>
+          )}
+
           <Button type="submit" variant="primary" disabled={busy} style={{ height: 44, fontSize: 16 }}>
             {busy ? 'Signing in…' : 'Sign In'}
           </Button>
@@ -167,26 +195,32 @@ export default function Login() {
             </button>
           </Unavailable>
 
-          <Unavailable reason="OTP sign-in is not built: no SMS gateway is wired and the shared-device identity rule is undecided (PLAN.md §4).">
-            <button
-              type="button"
-              disabled
-              style={{
-                width: '100%',
-                minHeight: 44,
-                borderRadius: 'var(--r-btn)',
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--muted)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 500,
-                fontFamily: 'inherit',
-                cursor: 'not-allowed',
-              }}
-            >
-              Forgot password? Send OTP
-            </button>
-          </Unavailable>
+          {/*
+            Was a disabled button reading "Forgot password? Send OTP", because
+            the render draws an SMS code and SMS is undecided. Built 15 Aug 2026
+            as an EMAIL reset instead — see `ForgotPassword.tsx`. The OTP half is
+            still unbuilt and still says so, one screen further in; what changed
+            is that being locked out is no longer a dead end.
+          */}
+          <Link
+            to="/forgot-password"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '100%',
+              minHeight: 44,
+              borderRadius: 'var(--r-btn)',
+              border: 'none',
+              background: 'transparent',
+              color: 'var(--primary-text)',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 600,
+              textDecoration: 'none',
+            }}
+          >
+            Forgot password?
+          </Link>
         </div>
       </Card>
     </div>

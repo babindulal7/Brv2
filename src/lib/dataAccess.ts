@@ -198,7 +198,38 @@ const BOOQABLE_READ_ONLY_TABLES: ReadonlySet<string> = new Set([
   'bundle_items',
   'product_units', // Booqable stock_items/barcodes
   'external_invoices', // Booqable documents — Booqable is sole issuer, spec §5.3
-  'inventory_reservations', // Booqable plannings — "indirectly via order writes only", spec §5.1
+  /*
+   * ⚠ `inventory_reservations` WAS here, and was REMOVED 16 Aug 2026 by an
+   * explicit ruling — PLAN.md §4.30(a). Do not restore it without re-reading
+   * that section; its absence is a decision, not an omission.
+   *
+   * Spec §5.1 called it Booqable-mastered, writable "indirectly via order
+   * writes only". Holding to that made Confirm-time serial assignment
+   * unbuildable, and that in turn blocked Packing, Handover, Return, Reset and
+   * Evidence equally — nothing in the app could write an assignment anywhere
+   * safe. The two candidate tables, measured live:
+   *
+   *   - `inventory_reservations` — carries the ONLY double-booking defence in
+   *     the schema, `exclude using gist (asset_id with =, period with &&)
+   *     where (released_at is null and asset_id is not null)` — but was refused
+   *     to the OS by this very set;
+   *   - `booking_line_units` — writable, and has NO overlap protection at all.
+   *
+   * So the protected table could not be written and the writable one was not
+   * protected. The ruling took the option where the DATABASE refuses a
+   * double-booking rather than the app trying not to make one.
+   *
+   * The OS schema was plainly designed for this all along:
+   * `inventory_reservations.reserved_at` is documented as *"Written by the
+   * Confirm transaction, never earlier"* (`0003:1483`), and the table carries
+   * four `TRIGGER REQUIRED` comments describing Confirm-time behaviour. RLS was
+   * already open to it too — `inventory_reservations_all` is the booking-desk
+   * five, the same set as `rental.confirm`.
+   *
+   * This DOES override a written spec, and that is the point of recording it
+   * here rather than quietly deleting a line. If the Booqable bridge is ever
+   * switched on, §5.1 and §4.30(a) must be reconciled deliberately.
+   */
 ])
 
 /**

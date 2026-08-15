@@ -19,9 +19,9 @@ import {
   BRANCHES,
   TABS,
   SEED_ERRORS,
-  QUICK_ACCESS,
   SYSTEM_ALERTS,
-  MODULE_GROUPS,
+  LEGACY_TAB,
+  DEFAULT_TAB,
   MEMBERSHIP_MATRIX,
   WAREHOUSE_BRANCH_ID,
   isTabKey,
@@ -32,7 +32,7 @@ import { WAREHOUSES } from '../../../data/warehouse'
 import { PLANS } from '../../../data/membership'
 import { FEE_PER_CREW_DAY_PAISA } from '../../../data/crew'
 import { rupees } from '../../../lib/money'
-import { FIELD_SECTIONS } from '../sections'
+import { FIELD_SECTIONS, FINANCIAL_SECTIONS } from '../sections'
 
 describe('§11.3 — the branch ▸ warehouse join', () => {
   it('reconciles per branch, not merely in total', () => {
@@ -65,35 +65,95 @@ describe('§11.3 — the branch ▸ warehouse join', () => {
   })
 })
 
-describe('§11.2 — the eight sections, and the three that were parked', () => {
-  it('is exactly the spec’s eight, in its order', () => {
-    expect(TABS.map((t) => t.label)).toEqual([
-      'Overview',
-      'Organisation',
-      'Branches & Warehouses',
-      'Users & Roles',
-      'Financial',
-      'System',
-      'Apps & API',
-      'Security',
-    ])
+describe('the four tabs — ruled 15 Aug 2026, down from eight', () => {
+  it('is exactly the four, in order', () => {
+    expect(TABS.map((t) => t.label)).toEqual(['Business', 'People', 'Branches', 'System'])
   })
 
-  it('no longer resolves the parked tab keys, so a stale link falls back rather than 404s', () => {
-    expect(isTabKey('communication')).toBe(false)
-    expect(isTabKey('ai')).toBe(false)
-    /* The keys that ARE live are the URL contract — renaming one breaks every
-       deep link and every Administration Modules row that points at it. */
-    for (const key of ['overview', 'organization', 'branches', 'users', 'financial', 'system', 'integrations', 'security']) {
+  it('translates every retired key instead of dropping it on the default', () => {
+    /*
+     * A `?tab=` value is a URL contract — bookmarks and deep links carry one.
+     * The four tabs that were merged away must LAND SOMEWHERE SENSIBLE, not on
+     * whatever the default happens to be: someone who bookmarked the VAT rate
+     * has to arrive at the VAT rate.
+     */
+    expect(LEGACY_TAB.financial).toBe('business')
+    expect(LEGACY_TAB.organization).toBe('business')
+    expect(LEGACY_TAB.overview).toBe('business')
+    expect(LEGACY_TAB.users).toBe('people')
+    expect(LEGACY_TAB.security).toBe('system')
+    expect(LEGACY_TAB.integrations).toBe('system')
+    /* Parked long before this cut, and still resolvable. */
+    expect(LEGACY_TAB.communication).toBe('system')
+    expect(LEGACY_TAB.ai).toBe('system')
+  })
+
+  it('no longer resolves a retired key as a live tab', () => {
+    for (const key of ['overview', 'organization', 'financial', 'users', 'integrations', 'security', 'communication', 'ai']) {
+      expect(isTabKey(key)).toBe(false)
+    }
+    for (const key of ['business', 'people', 'branches', 'system']) {
       expect(isTabKey(key)).toBe(true)
     }
+    expect(isTabKey(DEFAULT_TAB)).toBe(true)
+  })
+
+  it('every legacy key points at a tab that exists', () => {
+    for (const [from, to] of Object.entries(LEGACY_TAB)) {
+      expect(isTabKey(to), `${from} → ${to} is not a tab`).toBe(true)
+    }
+  })
+
+  it('carries no row whose only content is that it is not built', () => {
+    /*
+     * Twelve such rows across the old eight tabs were the single largest reason
+     * Settings read as heavy — a row that exists to report its own absence is
+     * one the reader must process and then discard. Seven were in Apps & API,
+     * which is gone entirely.
+     */
+    const inert = Object.values(FIELD_SECTIONS)
+      .flat()
+      .flatMap((s) => (s ? s.fields : []))
+      .filter((f) => f.dest?.kind === 'none')
+    expect(inert.map((f) => f.label)).toEqual([])
+  })
+
+  it('points at no screen that was archived', () => {
+    /*
+     * The 12 Aug ruling archived six screens. Their Settings *sections* were
+     * removed then, but the System card kept LINKING to them, so the doors
+     * moved one level deeper instead of closing. This asserts they are closed.
+     */
+    const routes = new Set(
+      [...Object.values(FIELD_SECTIONS).flat(), ...FINANCIAL_SECTIONS]
+        .flatMap((s) => (s ? s.fields : []))
+        .map((f) => f.dest)
+        .filter((d) => d && d.kind === 'route')
+        .map((d) => (d as { kind: 'route'; to: string }).to),
+    )
+    for (const gone of ['/automation', '/notifications', '/notifications/sms', '/notifications/inbox', '/ai', '/system', '/wall']) {
+      expect(routes.has(gone), `${gone} is archived but still linked`).toBe(false)
+    }
+  })
+
+  it('reaches the administration screens at one URL, not two', () => {
+    /* `/tools/audit-log` and `/admin/audit-log` both used to mount the same
+       component — four pages behind eight routes. `/admin/*` is the spelling. */
+    const routes = Object.values(FIELD_SECTIONS)
+      .flat()
+      .flatMap((s) => (s ? s.fields : []))
+      .map((f) => f.dest)
+      .filter((d) => d && d.kind === 'route')
+      .map((d) => (d as { kind: 'route'; to: string }).to)
+    for (const admin of ['/admin/audit-log', '/admin/activity-log', '/admin/numbering', '/admin/backup', '/admin/audit']) {
+      expect(routes).toContain(admin)
+    }
+    expect(routes.filter((r) => r.startsWith('/tools/'))).toEqual([])
   })
 
   it('deleted the orphaned destinations instead of re-pointing them', () => {
     const dests = [
-      ...QUICK_ACCESS.map((q) => ({ label: q.label, dest: q.dest })),
       ...SYSTEM_ALERTS.map((a) => ({ label: a.text, dest: a.dest })),
-      ...MODULE_GROUPS.flatMap((g) => g.rows),
       ...Object.values(FIELD_SECTIONS)
         .flat()
         .flatMap((s) => (s ? s.fields : []))
@@ -106,41 +166,45 @@ describe('§11.2 — the eight sections, and the three that were parked', () => 
     for (const label of ['WhatsApp', 'Email & SMS Settings', 'AI Settings', 'AI Models', 'AI permissions']) {
       expect(dests.filter((d) => d.label.includes(label))).toEqual([])
     }
-    expect(MODULE_GROUPS.map((g) => g.title)).not.toContain('Communication Settings')
-    expect(MODULE_GROUPS.map((g) => g.title)).not.toContain('AI & Automation')
   })
 
-  it('keeps every routed screen reachable — parking a section orphaned no page', () => {
-    const routes = new Set(
-      Object.values(FIELD_SECTIONS)
-        .flat()
-        .flatMap((s) => (s ? s.fields : []))
-        .map((f) => f.dest)
-        .filter((d) => d && d.kind === 'route')
-        .map((d) => (d as { kind: 'route'; to: string }).to),
-    )
-    for (const route of ['/automation', '/notifications', '/notifications/sms', '/notifications/inbox', '/ai', '/system']) {
-      expect(routes.has(route), `${route} lost its only door`).toBe(true)
-    }
-  })
-
-  it('deleted the AI Branch Insights card’s data with it (Law 16)', () => {
+  it('deleted the AI Branch Insights card\u2019s data with it (Law 16)', () => {
     expect('BRANCH_INSIGHTS' in settings).toBe(false)
+  })
+
+  it('dropped the Overview-only exports rather than leaving them unrendered', () => {
+    /* An exported list nothing renders reads as a live surface to the next
+       person. The pane itself is at `src/archive/SettingsOverview.tsx`. */
+    expect('QUICK_ACCESS' in settings).toBe(false)
+    expect('MODULE_GROUPS' in settings).toBe(false)
   })
 })
 
-describe('Law 6 — the money tab is removed, and so is anything pointing at it', () => {
-  it('marks Financial as the one money tab', () => {
-    expect(TABS.filter((t) => t.money).map((t) => t.key)).toEqual(['financial'])
+describe('Law 6 — the money gate moved down a level, it did not weaken', () => {
+  it('no longer needs a money-gated TAB, because no tab is money-only', () => {
+    expect(TABS.filter((t) => t.money)).toEqual([])
   })
 
-  it('drops a row aimed at a tab this session cannot see', () => {
-    const blind = TABS.filter((t) => !t.money)
-    expect(isDestVisible({ kind: 'tab', tab: 'financial' }, blind)).toBe(false)
-    expect(isDestVisible({ kind: 'tab', tab: 'users' }, blind)).toBe(true)
-    /* A route or an inert row is unaffected — this filter is about tabs only. */
-    expect(isDestVisible({ kind: 'route', to: '/finance' }, blind)).toBe(true)
-    expect(isDestVisible({ kind: 'none', why: 'x' }, blind)).toBe(true)
+  it('keeps the financial sections OUT of FIELD_SECTIONS, so the CSV export cannot leak them', () => {
+    /*
+     * The old `financial` tab was filtered out of `tabs` for a money-blind
+     * session, and `exportConfig` walks `tabs` — so the gate covered the export
+     * for free. Folding Financial into Business must not lose that: it reaches
+     * the page through `FinancialPane` and the export through an explicit
+     * `if (money)` in `Settings.tsx`.
+     */
+    const keys = Object.values(FIELD_SECTIONS).flat().map((s) => (s ? s.key : ''))
+    for (const financial of FINANCIAL_SECTIONS) {
+      expect(keys).not.toContain(financial.key)
+    }
+  })
+
+  it('still drops a row aimed at a tab this session cannot see', () => {
+    /* The helper is unchanged and still guards `kind: 'tab'` destinations. */
+    expect(isDestVisible({ kind: 'tab', tab: 'people' }, TABS)).toBe(true)
+    expect(isDestVisible({ kind: 'tab', tab: 'business' }, [])).toBe(false)
+    expect(isDestVisible({ kind: 'route', to: '/finance' }, [])).toBe(true)
+    expect(isDestVisible({ kind: 'none', why: 'x' }, [])).toBe(true)
   })
 })
 
@@ -171,7 +235,7 @@ describe('§11.4 Financial — one fee definition, no invented figures', () => {
   })
 
   it('names the screens that read the VAT rate, so “none is hardcoded” is checkable', () => {
-    const vat = FIELD_SECTIONS.financial?.flatMap((s) => s.fields).find((f) => f.settingKey === 'vatRatePercent')
+    const vat = FINANCIAL_SECTIONS.flatMap((s) => s.fields).find((f) => f.settingKey === 'vatRatePercent')
     expect(vat?.readBy).toMatch(/New Rental/)
   })
 })

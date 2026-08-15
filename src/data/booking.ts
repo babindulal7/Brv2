@@ -177,6 +177,76 @@ export interface LineItem {
    * would double-count against the bundle row and break that reconciliation.
    */
   days?: string
+  /**
+   * §11.1 (rulings, 13 Aug 2026) — **sub-rental is a LINE property.**
+   *
+   * `true` iff this line is `booking_lines.line_type = 'Sub-rental'`
+   * (`0001_enums.sql:301`, `0002_bookings.sql:129`): gear borrowed in from
+   * outside for this booking rather than pulled off our own shelf.
+   *
+   * The booking-level answer is **not** stored anywhere. It is
+   * {@link isSubRentalBooking} over these lines — see that function's header
+   * for why storing it twice is the failure mode the ruling names.
+   *
+   * ⚠ **No supplier and no supplier cost are seeded.** The real columns are
+   * `booking_lines.supplier_id` and `supplier_cost` (the latter is required by
+   * `booking_lines_subrental_needs_cost`), but `supplier_cost` is money — 0019
+   * revokes it — and the live corpus holds **no `suppliers` rows at all**
+   * (verified 16 Aug 2026). Naming a vendor or a rupee figure here would be a
+   * fabricated figure, so the flag carries the fact and nothing else.
+   */
+  subRental?: boolean
+}
+
+/* ── §11.1 — the one place the sub-rental question is answered ────────────
+ *
+ * A **line** is sub-rented. A **booking** is sub-rental if any of its lines is.
+ * That is one rule, written once, and both surfaces read it: Booking Detail's
+ * line table and header chip call the two functions directly, and the Rentals
+ * list's `(Sub-Rental)` chip narrows on the same vocabulary
+ * (`data/rentals.ts`'s `subRentalBookingIds`, which sends
+ * {@link SUB_RENTAL_LINE_TYPES} to Postgres and then applies
+ * {@link isSubRentalBooking} to what comes back).
+ *
+ * ⛔ There is deliberately **no `RentalRow.subRental` and no
+ * `bookings.is_sub_rental`.** The ruling's own words: "Storing the same fact
+ * twice is how the two disagree." A row-level copy would go stale the moment a
+ * line is added, voided or converted.
+ */
+
+/**
+ * The `booking_line_type` members that make a line sub-rented (`0001:296-303`).
+ *
+ * An array rather than a bare literal because it is BOTH halves of the rule:
+ * the predicate below tests membership of it, and `data/rentals.ts` sends the
+ * same array to Postgres as an `in (…)`. One vocabulary, so the server filter
+ * and the client predicate cannot drift apart.
+ */
+export const SUB_RENTAL_LINE_TYPES = ['Sub-rental'] as const
+
+/**
+ * Either shape a line arrives in — the seeded {@link LineItem} above, or a
+ * `booking_lines` row carrying its `line_type`. Both answer the same question.
+ */
+export interface SubRentedLine {
+  /** Seed shape — {@link LineItem.subRental}. */
+  subRental?: boolean | undefined
+  /** Query shape — `booking_lines.line_type`. */
+  lineType?: string | undefined
+}
+
+/** Is this line external gear borrowed in for the booking? */
+export function isSubRentedLine(line: SubRentedLine): boolean {
+  if (line.subRental === true) return true
+  return line.lineType !== undefined && (SUB_RENTAL_LINE_TYPES as readonly string[]).includes(line.lineType)
+}
+
+/**
+ * **The derived booking-level answer.** Never stored, never written, never a
+ * column — computed from the lines every time it is asked for.
+ */
+export function isSubRentalBooking(lines: readonly SubRentedLine[]): boolean {
+  return lines.some(isSubRentedLine)
 }
 
 export const ITEMS: LineItem[] = [
@@ -187,9 +257,21 @@ export const ITEMS: LineItem[] = [
   { depth: 2, name: 'NP-FZ100 Battery', badge: { text: 'Required', kind: 'required' }, serial: '—', qty: '4', packed: 'Packed', availability: { text: 'Available', key: 'in' }, location: 'B1-04', rate: 'Rs 500', total: 'Rs 2,000', days: '3' },
   { depth: 1, name: 'Cards', badge: { text: '2', kind: 'count' }, qty: '' },
   { depth: 2, name: '256GB CFexpress Type A', badge: { text: 'Required', kind: 'required' }, serial: '—', qty: '2', packed: 'Packed', availability: { text: 'Available', key: 'in' }, location: 'B1-07', rate: 'Rs 750', total: 'Rs 1,500', days: '3' },
-  { depth: 1, name: 'Lens Set – NISI Athena Prime Set (3 Lenses)', badge: { text: 'Required', kind: 'required' }, qty: '3', packed: 'Packed', availability: { text: 'Reserved', key: 'primary' }, location: 'C1-02', rate: 'Rs 4,000', total: 'Rs 12,000', days: '3' },
+  /*
+   * §11.1 seed — a realistic minority, two of the eleven lines, not half the
+   * corpus. Both are depth-1 lines whose money is left exactly as it was: a
+   * sub-rented line still bills the client the same rate, so marking one
+   * changes no figure in `MONEY`, `EQUIPMENT_SUBTOTAL` or `TOTALS`.
+   *
+   * The lens set is the coherent one: `ALERTS` below already says "NISI Athena
+   * set – only 2 left this week", which is precisely why a booking borrows a
+   * set in rather than pulling one off the shelf. `availability` keeps meaning
+   * "is this unit ready for this booking" — for external gear that is the
+   * partner's confirmation, not our stock level.
+   */
+  { depth: 1, name: 'Lens Set – NISI Athena Prime Set (3 Lenses)', badge: { text: 'Required', kind: 'required' }, qty: '3', packed: 'Packed', availability: { text: 'Reserved', key: 'primary' }, location: 'C1-02', rate: 'Rs 4,000', total: 'Rs 12,000', days: '3', subRental: true },
   { depth: 1, name: 'Monitor Kit – Portkeys', badge: { text: 'Bundle', kind: 'bundle' }, serial: '(3 Items)', qty: '1', packed: 'Packed', availability: { text: 'Available', key: 'in' }, location: 'D1-03', rate: 'Rs 1,500', total: 'Rs 1,500', days: '3' },
-  { depth: 1, name: 'Support & Rigging', serial: '(3 Items)', qty: '1', packed: 'Partial', availability: { text: 'Low Stock', key: 'low' }, location: 'E1-01', rate: 'Rs 1,750', total: 'Rs 1,750', days: '3' },
+  { depth: 1, name: 'Support & Rigging', serial: '(3 Items)', qty: '1', packed: 'Partial', availability: { text: 'Low Stock', key: 'low' }, location: 'E1-01', rate: 'Rs 1,750', total: 'Rs 1,750', days: '3', subRental: true },
   { depth: 1, name: 'Audio Kit', serial: '(3 Items)', qty: '1', packed: 'Packed', availability: { text: 'Available', key: 'in' }, location: 'F1-02', rate: 'Rs 1,200', total: 'Rs 1,200', days: '3' },
   { depth: 1, name: 'Accessories & Cables', serial: '(6 Items)', qty: '1', packed: 'Packed', availability: { text: 'Available', key: 'in' }, location: 'G1-05', rate: 'Rs 650', total: 'Rs 650', days: '3' },
 ]
