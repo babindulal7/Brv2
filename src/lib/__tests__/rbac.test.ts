@@ -113,6 +113,26 @@ describe('canApproveDiscount — Law 10', () => {
     for (const role of ALL_ROLES) expect(canApproveDiscount(role, 0)).toBe(true)
   })
 
+  /*
+   * R3-1, fixed 16 Aug 2026. The guard was `if (percent <= 0) return true`,
+   * ABOVE every role check — so a negative percent was approvable by anyone,
+   * the external Client included. A negative discount is a price increase, and
+   * `lib/discount.ts` plus the database's `booking_discounts_hard_cap` already
+   * refused it; this function was one of two that did not.
+   */
+  it('refuses a NEGATIVE discount for every role — it is a price increase, not a discount', () => {
+    for (const role of ALL_ROLES) {
+      expect(canApproveDiscount(role, -5)).toBe(false)
+      expect(canApproveDiscount(role, -0.01)).toBe(false)
+    }
+  })
+
+  it('does not let a negative percent short-circuit the role check', () => {
+    // The specific regression: Client is external and holds no approval anywhere.
+    expect(canApproveDiscount('Client', -5)).toBe(false)
+    expect(canApproveDiscount('Driver', -100)).toBe(false)
+  })
+
   it('blocks approval offline for every role, including Owner', () => {
     for (const role of ALL_ROLES) expect(canApproveDiscount(role, 5, false)).toBe(false)
     expect(canApproveDiscount('Owner', 0, false)).toBe(false)

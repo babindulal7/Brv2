@@ -128,6 +128,85 @@ export const RENTAL_WINDOW_BOUNDS: BoundConvention = 'half-open'
  */
 export const DISQUALIFYING_UNIT_STATES: ReadonlySet<string> = new Set(['Maintenance', 'Missing', 'Retired'])
 
+/* ── Settings-driven rules ───────────────────────────────────────────────────
+ *
+ * Both rulings above became Settings keys on 16 Aug 2026 (`unitAvailabilityRule`,
+ * `rentalTurnaround`), so the owner can change them without a release. The
+ * *mapping* from a stored label to what this engine does lives HERE and not in
+ * `lib/settingsStore.ts`, because it is business logic and Law 1 keeps that out
+ * of a registry as firmly as it keeps it out of a page.
+ *
+ * This file still imports nothing and touches no storage. It exposes the
+ * lookups; `lib/queries/availability.ts` — which is already the IO layer — reads
+ * the setting and calls them. That is what lets the engine stay drivable by
+ * execution in a test with no `window`, no localStorage and no stubbing.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * What each `unitAvailabilityRule` option means, as a state set.
+ *
+ * The three presets are the three that were reasoned about when §4.30(c) was
+ * ruled, kept in that form so the setting reads as a decision rather than as
+ * ten tick-boxes over an enum:
+ *
+ *  - **Condition only** (ruled default) — a unit is out only if it is broken,
+ *    lost or retired. Inspection and Cleaning stay assignable, on the stated
+ *    assumption those queues clear before a future pickup.
+ *  - **Condition and turnaround** — also holds back units in Inspection or
+ *    Cleaning. For a floor where those queues genuinely run long.
+ *  - **Only In Stock** — the strictest reading. Note it double-counts the
+ *    date-overlap check: a unit On Rent *today* becomes unassignable for a
+ *    booking three months out, so utilisation drops sharply. Offered because it
+ *    is a defensible choice, not because it is recommended.
+ *
+ * ⚠ No preset contains `Reserved`, `Packed`, `On Rent` or `Returning` except
+ * the strict one, and that is the whole design — see `DISQUALIFYING_UNIT_STATES`.
+ */
+export const UNIT_AVAILABILITY_PRESETS: Readonly<Record<string, ReadonlySet<string>>> = {
+  'Condition only': DISQUALIFYING_UNIT_STATES,
+  'Condition and turnaround': new Set(['Maintenance', 'Missing', 'Retired', 'Inspection', 'Cleaning']),
+  'Only In Stock': new Set([
+    'Reserved',
+    'Packed',
+    'On Rent',
+    'Returning',
+    'Inspection',
+    'Cleaning',
+    'Maintenance',
+    'Missing',
+    'Retired',
+  ]),
+}
+
+/**
+ * Resolves a stored `unitAvailabilityRule` label to its state set.
+ *
+ * **Falls back to the ruled default rather than to an empty set.** An unknown
+ * label — a spec renamed, a hand-edited localStorage, a setting written by an
+ * older build — must not silently mean "nothing disqualifies a unit", which
+ * would put gear in Maintenance onto a shoot. Failing to the ruled answer is
+ * the safe direction and the honest one.
+ */
+export function unitStatesForRule(label: string): ReadonlySet<string> {
+  return UNIT_AVAILABILITY_PRESETS[label] ?? DISQUALIFYING_UNIT_STATES
+}
+
+/**
+ * Resolves a stored `rentalTurnaround` label to a bound convention.
+ *
+ * `'Turnaround required'` is the *cautious* option, so it is the one an unknown
+ * label must NOT fall through to silently — but neither may an unknown label
+ * quietly tighten availability either. It falls back to `RENTAL_WINDOW_BOUNDS`,
+ * the ruled answer, for the same reason `unitStatesForRule` does: the ruling is
+ * the defined behaviour, and an unrecognised string is a bug to be surfaced by
+ * behaviour matching the spec, not a third silent mode.
+ */
+export function boundsForTurnaround(label: string): BoundConvention {
+  if (label === 'Turnaround required') return 'closed'
+  if (label === 'Same-instant handover allowed') return 'half-open'
+  return RENTAL_WINDOW_BOUNDS
+}
+
 /** An existing hold on one physical unit, for a window. */
 export interface UnitHold {
   /** `product_units.id`. */

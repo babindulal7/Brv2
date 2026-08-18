@@ -1,3 +1,10 @@
+> ⛔ **SUPERSEDED — 10 Aug 2026 measurement.** Its verdict ("7/20, not shippable") and its
+> compile baseline ("28 tsc errors, 12+ files carrying `@ts-nocheck`") both predate the
+> 11 Aug fix wave. As of 16 Aug: `tsc --noEmit` exit 0, `vitest run` 1,982 passed / 78 files,
+> `vite build` exit 0. The P0 money and permission findings were closed and re-verified on
+> 15 Aug — see `SUCCESS_FABRICATION_REGISTER_2026-08-12.md`. The P2/P3 tail was never
+> individually re-checked and may still hold; re-verify any row before working it.
+
 # BUG_SWEEP_REGISTER_v1.0
 
 **Target:** Babin Rentals OS — full static sweep per BUG_SWEEP_PROTOCOL_v1.0

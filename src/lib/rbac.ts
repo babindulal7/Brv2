@@ -256,10 +256,25 @@ export function canWriteSharedTriage(role: SystemRole): boolean {
   return isStaff(role)
 }
 
-/** Check if user can approve a given discount percentage */
+/**
+ * Check if user can approve a given discount percentage.
+ *
+ * ⚠ **`percent < 0` is refused, and this used to grant it to everyone.** The
+ * guard read `if (percent <= 0) return true`, which sits *above* every role
+ * check — so `canApproveDiscount('Client', -5)` returned **true**, as did the
+ * offline-adjacent path for any role. Fixed 16 Aug 2026 (`R3-1`, PLAN.md §4.35).
+ *
+ * Zero still needs no approval — there is nothing to approve. A NEGATIVE percent
+ * is not a small discount, it is a **price increase**, and nothing in this
+ * product may raise a price through the discount path. This is not a new rule:
+ * `lib/discount.ts:validateDiscount` already rejects it and so does the database
+ * (`booking_discounts_hard_cap`, `0002_bookings.sql`). This function and
+ * `money.ts:discountGate` were the two that disagreed.
+ */
 export function canApproveDiscount(role: SystemRole, percent: number, isOnline: boolean = true): boolean {
   if (!isOnline) return false // Approval action blocked offline
-  if (percent <= 0) return true
+  if (percent < 0) return false // A negative discount is a price rise. Never approvable.
+  if (percent === 0) return true // Nothing to approve.
   if (percent > 25) return false // 25% hard cap (Law 10)
   if (role === 'Owner') return true
   if ((role === 'Admin' || role === 'Manager') && percent <= 15) return true

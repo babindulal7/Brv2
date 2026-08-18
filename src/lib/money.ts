@@ -146,7 +146,23 @@ export const calculatePrice = price
 export const DISCOUNT_CAP = 25
 export const DISCOUNT_APPROVAL_THRESHOLD = 10
 
+/**
+ * ⚠ **A negative percent is refused, and this used to allow it.** `-5` fell
+ * straight through `percent <= DISCOUNT_APPROVAL_THRESHOLD` and returned
+ * `{ ok: true }`. That reached an operator: the Discount calculator on
+ * Settings ▸ Tools (`Tools.tsx:783`) renders a green tick on `gate.ok`, and its
+ * input is `type="number"` with no `min`. So typing `-5` produced an approving
+ * tick for a **price increase**, on the screen that quotes Foundation §2.5 in
+ * its own formula block. Fixed 16 Aug 2026 (`R3-1`, PLAN.md §4.35).
+ *
+ * Not a new rule — `lib/discount.ts:validateDiscount` and the database's
+ * `booking_discounts_hard_cap` both rejected it already. This function and
+ * `rbac.ts:canApproveDiscount` were the two implementations that disagreed, out
+ * of seven that state Law 10. §4.35 records the class: duplication between
+ * engines, every copy in the right architectural layer, each right in isolation.
+ */
 export function discountGate(percent: number, reason: string, approver: string | null) {
+  if (percent < 0) return { ok: false as const, why: 'A discount cannot be negative — that is a price increase' }
   if (percent > DISCOUNT_CAP) return { ok: false as const, why: `Discount is capped at ${DISCOUNT_CAP}%` }
   if (percent <= DISCOUNT_APPROVAL_THRESHOLD) return { ok: true as const }
   if (reason.trim().length < 10) return { ok: false as const, why: 'A discount above 10% needs a reason of at least 10 characters' }

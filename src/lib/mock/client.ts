@@ -234,12 +234,174 @@ const SEQ_PREFIX: Record<string, string> = {
   CL: 'C', BK: 'B', EQ: 'EQ', PAY: 'PAY', DEP: 'DEP',
 }
 
+/**
+ * Sequences whose identifiers are constrained by a database CHECK, and the
+ * pattern each must satisfy.
+ *
+ * ⛔ Every identifier this function minted used to carry a year segment —
+ * `B-2026-0001`. **That is rejected by the live database.** `0055` ruled
+ * `bookings_booking_no_format` to `^B-[0-9]+$` and `clients_client_code_format`
+ * to `^C-[0-9]+$`, and both are applied (all 121 live bookings conform).
+ * `B-2026-0001` fails the booking pattern on the hyphen.
+ *
+ * That did not matter while the mock was a display fixture. It matters now that
+ * the local store is the source of truth and the stated plan is to rebuild the
+ * same data in Supabase later: every booking and client created locally would
+ * have been rejected on the way in, discovered only at migration time with real
+ * operating data behind it.
+ *
+ * Ruled sequences mint the bare `PREFIX-N` form. Everything else keeps the
+ * year segment, because nothing constrains those and `INV-2026-0001` is the
+ * form the invoice screens already render.
+ */
+const RULED_FORMAT: Record<string, RegExp> = {
+  booking: /^B-[0-9]+$/,
+  BK: /^B-[0-9]+$/,
+  client: /^C-[0-9]+$/,
+  CL: /^C-[0-9]+$/,
+}
+
 function nextDocumentNumber(key: string): string {
   const next = (overlay.seq[key] ?? 0) + 1
   overlay.seq[key] = next
   saveOverlay(overlay)
   const prefix = SEQ_PREFIX[key] ?? key.toUpperCase()
-  return `${prefix}-2026-${String(next).padStart(4, '0')}`
+
+  const ruled = RULED_FORMAT[key]
+  const value = ruled ? `${prefix}-${next}` : `${prefix}-2026-${String(next).padStart(4, '0')}`
+
+  if (ruled && !ruled.test(value)) {
+    // Unreachable by construction; here so a future edit to the format above
+    // cannot quietly start minting identifiers Postgres will refuse.
+    throw new Error(`[mock] minted "${value}" for sequence "${key}", which violates ${String(ruled)}`)
+  }
+  return value
+}
+
+/**
+ * `create_booking(jsonb)` — the local half of migration 0063.
+ *
+ * The real function exists so that a booking header, its lines, and any
+ * discount (whose `audit_event_id` is NOT NULL, so it needs an audit row
+ * written and read back first) all land in **one transaction**. The reason is
+ * different here — there is no network to half-fail across — but the OUTCOME
+ * must be identical, because `createRental` calls one `.rpc('create_booking')`
+ * in both modes and there must not be two implementations of what a booking is.
+ *
+ * Kept deliberately in step with `supabase/migrations/0063_create_booking_function.sql`:
+ * same payload shape, same return shape, same Law 8 replay behaviour. If one
+ * changes, both change.
+ *
+ * Prices nothing (Law 1 — `lib/money.ts` owns the order). Sets no stage: a new
+ * booking is a Quote, and Confirm is a separate act.
+ */
+function createBooking(payload: Record<string, unknown>): { data: Row | null; error: PgError | null } {
+  const clientUuid = payload['client_uuid'] as string | undefined
+  if (!clientUuid) {
+    return { data: null, error: { code: '23502', message: 'create_booking: client_uuid is required (Law 8)', details: '', hint: '' } }
+  }
+  const actor = payload['created_by'] as string | undefined
+  if (!actor) {
+    return { data: null, error: { code: '23502', message: 'create_booking: created_by is required; there is no system actor', details: '', hint: '' } }
+  }
+
+  // Law 8 replay check, before any write and before the counter moves.
+  const existing = (store['bookings'] ?? []).find((r) => r['client_uuid'] === clientUuid)
+  if (existing) {
+    return {
+      data: {
+        booking_id: existing['id'],
+        booking_no: existing['booking_no'],
+        stage: existing['stage'],
+        replayed: true,
+      } as Row,
+      error: null,
+    }
+  }
+
+  const bookingNo = nextDocumentNumber('booking')
+  const bookingId = crypto.randomUUID()
+  const now = new Date().toISOString()
+
+  const header: Row = {
+    id: bookingId,
+    client_uuid: clientUuid,
+    booking_no: bookingNo,
+    branch_id: payload['branch_id'] ?? null,
+    client_id: payload['client_id'] ?? null,
+    contact_id: payload['contact_id'] ?? null,
+    project: payload['project'] ?? null,
+    stage: 'Quote',
+    pickup_at: payload['pickup_at'] ?? null,
+    return_at: payload['return_at'] ?? null,
+    delivery_type: payload['delivery_type'] ?? null,
+    pickup_location: payload['pickup_location'] ?? null,
+    return_location: payload['return_location'] ?? null,
+    quote_expires_at: payload['quote_expires_at'] ?? null,
+    deposit_required: payload['deposit_required'] ?? 0,
+    version: 1,
+    created_at: now,
+    created_by: actor,
+    updated_at: now,
+    updated_by: actor,
+  }
+
+  const lines = Array.isArray(payload['lines']) ? (payload['lines'] as Array<Record<string, unknown>>) : []
+  const built: Row[] = []
+  for (const [i, line] of lines.entries()) {
+    if (!line['client_uuid']) {
+      return { data: null, error: { code: '23502', message: 'create_booking: every line needs its own client_uuid (one per ROW, not per action)', details: '', hint: '' } }
+    }
+    if (line['days'] === undefined || line['days'] === null) {
+      return { data: null, error: { code: '23502', message: `create_booking: line ${String(line['client_uuid'])} has no days; Law 9 requires it stated, not defaulted`, details: '', hint: '' } }
+    }
+    built.push({
+      id: crypto.randomUUID(),
+      client_uuid: line['client_uuid'],
+      booking_id: bookingId,
+      line_type: line['line_type'] ?? 'Equipment',
+      parent_line_id: line['parent_line_id'] ?? null,
+      product_id: line['product_id'] ?? null,
+      bundle_id: line['bundle_id'] ?? null,
+      description: line['description'] ?? null,
+      qty: line['qty'] ?? 1,
+      days: line['days'],
+      rate: line['rate'] ?? 0,
+      discount_amount: line['discount_amount'] ?? 0,
+      is_included: line['is_included'] ?? false,
+      service_basis: line['service_basis'] ?? null,
+      supplier_id: line['supplier_id'] ?? null,
+      supplier_cost: line['supplier_cost'] ?? null,
+      markup_amount: line['markup_amount'] ?? null,
+      line_note: line['line_note'] ?? null,
+      sort_order: line['sort_order'] ?? i,
+      voided_at: null,
+      created_at: now,
+      created_by: actor,
+    })
+  }
+
+  // Nothing is committed to the store until every line has validated, so a bad
+  // line cannot leave a header with no lines behind it — the local stand-in for
+  // the transaction the real function gets from Postgres.
+  ;(store['bookings'] ??= []).push(header)
+  overlay.inserts.push({ table: 'bookings', row: header })
+  for (const row of built) {
+    ;(store['booking_lines'] ??= []).push(row)
+    overlay.inserts.push({ table: 'booking_lines', row })
+  }
+  saveOverlay(overlay)
+
+  return {
+    data: {
+      booking_id: bookingId,
+      booking_no: bookingNo,
+      stage: 'Quote',
+      line_count: built.length,
+      replayed: false,
+    } as Row,
+    error: null,
+  }
 }
 
 /* ── The client ────────────────────────────────────────────────────────── */
@@ -253,9 +415,21 @@ export const mockSupabase = {
       const key = String(args?.['p_sequence_key'] ?? 'doc')
       return Promise.resolve({ data: nextDocumentNumber(key), error: null })
     }
+    if (name === 'create_booking') {
+      const payload = (args?.['p_payload'] ?? {}) as Record<string, unknown>
+      return Promise.resolve(createBooking(payload))
+    }
+    /* ⛔ Was `{ data: null, error: null }` — a silent null that every caller
+     * would read as success with an empty result. That is the
+     * success-fabrication class this repo has a register for, sitting in the
+     * one place a missing RPC should be loudest. An unimplemented function is
+     * now an ERROR, so a caller fails visibly instead of continuing on null. */
     // eslint-disable-next-line no-console
-    console.warn(`[mock] rpc("${name}") is not implemented — returning null`)
-    return Promise.resolve({ data: null, error: null })
+    console.warn(`[mock] rpc("${name}") is not implemented`)
+    return Promise.resolve({
+      data: null,
+      error: { code: '42883', message: `[mock] rpc("${name}") is not implemented in the local store`, details: '', hint: 'Implement it in src/lib/mock/client.ts beside create_booking.' } as PgError,
+    })
   },
   auth,
   functions: {

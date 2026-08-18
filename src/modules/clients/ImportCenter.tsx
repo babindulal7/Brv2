@@ -130,13 +130,29 @@ export default function ImportCenter() {
       .text()
       .then((text) => {
         const parsed = parseCsv(text)
-        if (parsed.length === 0) {
+
+        /*
+         * ⛔ A file the parser could not read must not reach the mapping step.
+         *
+         * `parseCsv` returned a bare `string[][]` until 16 Aug 2026 (`R3-6`),
+         * so an unterminated quote — or a stray inch mark like `6" Pipe` —
+         * produced rows indistinguishable from good ones. They mapped cleanly,
+         * validated with `errors.length === 0`, and this screen showed a green
+         * "Ready" badge over a file whose rows had silently collapsed into each
+         * other. Refusing here is the point: the operator sees WHY, and fixes
+         * the file, instead of importing a blob under a client's name.
+         */
+        if (!parsed.ok) {
+          setParseError(parsed.errors.join(' '))
+          return
+        }
+        if (parsed.rows.length === 0) {
           setParseError('That file has no rows.')
           return
         }
         setFileName(file.name)
-        setRawRows(parsed)
-        const first = parsed[0]!
+        setRawRows(parsed.rows)
+        const first = parsed.rows[0]!
         const guesses: Record<number, ImportTargetField> = {}
         first.forEach((h, i) => {
           guesses[i] = guessTargetField(h)

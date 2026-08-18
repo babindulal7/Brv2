@@ -28,7 +28,6 @@ import {
   SEED_READY,
   tasksFor,
   allTasksFor,
-  isPriority,
   queueTimeTone,
   defaultQcBy,
 } from '../../data/reset'
@@ -59,7 +58,14 @@ import { BookingNotLoaded } from '../operations/BookingNotLoaded'
  * `JOBS.Reset.runsAt` ("Returned"), not a value this screen can change.
  *
  * §0 corrections carried from the render:
- *  · Priority chip kept out of the state sum (§3.2) — see `data/reset.ts`.
+ *  · **Priority is gone entirely** — removed 16 Aug 2026, PLAN.md §4.31(3).
+ *    §0's correction here used to read "Priority chip kept out of the state
+ *    sum (§3.2)". There is no chip, no filter toggle, no row flag and no
+ *    `Next Priority Items` card now: three of the four inputs (`demand`,
+ *    `vip`, `rush`) had no column anywhere in the schema and were hand-typed
+ *    per unit, and the fourth was `waitingMinutes > 240` — which every row
+ *    already carries as Queue Time. Urgency did not leave the screen; the
+ *    duplicate control did.
  *  · One checklist per category, not one shared list for every category
  *    (§6.1) — a lens here is never asked to `Charge Batteries`.
  *  · `Mark Clean & Move to QC` is disabled at 0 qualifying items, and names
@@ -69,8 +75,6 @@ import { BookingNotLoaded } from '../operations/BookingNotLoaded'
  *  · The "Any Problems?" quad is **per item** (§7.1); each selected unit gets
  *    its own quad in the right panel instead of the render's single control
  *    for the whole batch.
- *  · `Next Priority Items` lists `Waiting` items only (§4.3) — an item
- *    already `Cleaning` cannot offer a `Start` no-op.
  *  · `Total Queue Time` becomes `Longest wait` (§13.2); the summary panel's
  *    two counts are derived from the same population so they always
  *    reconcile (§13.1).
@@ -227,7 +231,6 @@ export default function ResetWorkspace() {
   const [selected, setSelected] = useState<Set<string>>(() => new Set(SEED_CLEANING))
   const [mode, setMode] = useState<'Clean' | 'Reset'>('Clean')
   const [filter, setFilter] = useState<(typeof QUEUE_FILTERS)[number]>('All')
-  const [priorityOnly, setPriorityOnly] = useState(false)
   const [query, setQuery] = useState('')
   const [note, setNote] = useState('')
   const [problemDraft, setProblemDraft] = useState<Record<string, ProblemDraft>>({})
@@ -252,12 +255,11 @@ export default function ResetWorkspace() {
 
   const set = (uid: string, patch: Partial<LineRec>) => setLines((p) => ({ ...p, [uid]: { ...(p[uid] as LineRec), ...patch } }))
 
-  /* ── §3.1 / §3.2 — chip counts, Priority kept out of the sum ────────────── */
+  /* ── §3.1 — chip counts. The five queue states, and they sum. ───────────── */
   const active = UNITS.filter((u) => (lines[u.id] as LineRec).problem === 'No Problems')
   const exceptions = UNITS.filter((u) => (lines[u.id] as LineRec).problem !== 'No Problems')
   const counts: Record<QueueState, number> = { Waiting: 0, Cleaning: 0, QC: 0, Ready: 0 }
   active.forEach((u) => { counts[(lines[u.id] as LineRec).queueState] += 1 })
-  const priorityCount = UNITS.filter(isPriority).length
 
   /* §1.5 — Reset job state, derived from the queue, never hand-set and never written to the booking. */
   const untouched = counts.Cleaning + counts.QC + counts.Ready + exceptions.length === 0
@@ -266,15 +268,6 @@ export default function ResetWorkspace() {
   const remainingCount = counts.Waiting + counts.Cleaning + counts.QC
   const completeReason = remainingCount > 0 ? `${remainingCount} item${remainingCount > 1 ? 's' : ''} not yet Ready` : readOnly ? 'This booking is closed — read only' : null
   const canCompleteJob = completeReason === null && jobCompletedAt === null
-
-  /* §4.3 — Next Priority lists Waiting items only; a started item is not "next". */
-  const nextPriority = useMemo(
-    () =>
-      UNITS.filter((u) => isPriority(u) && (lines[u.id] as LineRec).problem === 'No Problems' && (lines[u.id] as LineRec).queueState === 'Waiting')
-        .sort((a, b) => b.waitingMinutes - a.waitingMinutes)
-        .slice(0, 3),
-    [lines],
-  )
 
   /* §13.2 — one honest number instead of a sum of independent waits. */
   const longestWaitMinutes = Math.max(
@@ -290,12 +283,11 @@ export default function ResetWorkspace() {
     () =>
       UNITS.filter((u) => {
         const rec = lines[u.id] as LineRec
-        if (priorityOnly && !isPriority(u)) return false
         if (filter !== 'All' && (rec.problem !== 'No Problems' || rec.queueState !== filter)) return false
         if (query && !`${u.name} ${u.serial}`.toLowerCase().includes(query.toLowerCase())) return false
         return true
       }),
-    [lines, filter, priorityOnly, query],
+    [lines, filter, query],
   )
 
   const selUnits = UNITS.filter((u) => selected.has(u.id))
@@ -560,10 +552,10 @@ export default function ResetWorkspace() {
         ))}
       </div>
 
-      {/* §3.2 — chip tiles. Priority is styled apart and does not enter the state sum. */}
-      <div style={{ display: 'grid', gridTemplateColumns: phone ? 'repeat(2, minmax(0,1fr))' : 'repeat(5, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+      {/* §3.1 — chip tiles, one per queue state. Four since Priority was
+          dropped (§4.31(3)); the grid count below follows the array. */}
+      <div style={{ display: 'grid', gridTemplateColumns: phone ? 'repeat(2, minmax(0,1fr))' : 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
         {([
-          { key: 'priority', label: 'PRIORITY', sub: 'Older than 4 hrs or urgent', value: priorityCount, icon: 'flag' as const, tone: 'danger' as StatusKey },
           { key: 'Waiting', label: 'WAITING', sub: 'Not started', value: counts.Waiting, icon: 'timer' as const, tone: TONE.Waiting },
           { key: 'Cleaning', label: 'CLEANING', sub: 'In progress', value: counts.Cleaning, icon: 'refresh' as const, tone: TONE.Cleaning },
           { key: 'QC', label: 'QC', sub: 'Quality check', value: counts.QC, icon: 'eye' as const, tone: TONE.QC },
@@ -580,7 +572,12 @@ export default function ResetWorkspace() {
         ))}
       </div>
 
-      {/* filters — Priority is a separate flag toggle, never a sixth state chip (§3.2). */}
+      {/* filters — the five queue states, and nothing else.
+
+          The Priority toggle that sat beside these was removed 16 Aug 2026
+          (PLAN.md §4.31(3)): three of its four inputs had no column anywhere,
+          and the fourth was `waitingMinutes > 240`, which every row already
+          shows as Queue Time. See `data/reset.ts` for the full reasoning. */}
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center' }}>
         <input
           value={query}
@@ -607,21 +604,6 @@ export default function ResetWorkspace() {
             </button>
           )
         })}
-        <button
-          type="button"
-          onClick={() => setPriorityOnly((p) => !p)}
-          aria-pressed={priorityOnly}
-          title="Priority is a flag, not a queue state — filters on top of whichever state chip is active"
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5, height: 28, padding: '0 10px', borderRadius: 'var(--r-badge)',
-            border: `1px solid ${priorityOnly ? 'var(--st-danger-fg)' : 'var(--border)'}`,
-            background: priorityOnly ? STATUS.danger.bg : 'transparent', color: priorityOnly ? STATUS.danger.fg : 'var(--text2)',
-            fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-          }}
-        >
-          <Icon name="flag" size={12} />
-          Priority {priorityCount}
-        </button>
       </div>
 
       {/* §3.5 draws Reset as one column at desktop AND tablet and a single stack
@@ -696,7 +678,6 @@ export default function ResetWorkspace() {
                               Required
                             </span>
                           )}
-                          {isPriority(u) && <Icon name="flag" size={11} style={{ color: 'var(--st-danger-fg)' }} label="Priority" />}
                           <span style={{ display: 'inline-flex', alignItems: 'center', height: 20, padding: '0 8px', borderRadius: 'var(--r-badge)', background: tone.bg, color: tone.fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
                             {isException ? rec.problem : rec.queueState}
                           </span>
@@ -748,7 +729,7 @@ export default function ResetWorkspace() {
                 <EmptyState
                   title="No items match these filters"
                   actionLabel="Clear filters"
-                  onAction={() => { setFilter('All'); setPriorityOnly(false); setQuery('') }}
+                  onAction={() => { setFilter('All'); setQuery('') }}
                 />
               )}
             </div>
@@ -789,7 +770,6 @@ export default function ResetWorkspace() {
                               Required
                             </span>
                           )}
-                          {isPriority(u) && <Icon name="flag" size={11} style={{ color: 'var(--st-danger-fg)' }} label="Priority" />}
                         </span>
                         {isException && (
                           <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--danger-text)', marginTop: 2 }}>
@@ -840,7 +820,7 @@ export default function ResetWorkspace() {
                       <EmptyState
                         title="No items match these filters"
                         actionLabel="Clear filters"
-                        onAction={() => { setFilter('All'); setPriorityOnly(false); setQuery('') }}
+                        onAction={() => { setFilter('All'); setQuery('') }}
                       />
                     </td>
                   </tr>
@@ -1109,7 +1089,7 @@ export default function ResetWorkspace() {
 
       {/* §13 — metrics, reconciled against the same population they describe.
           Below 768 they stack rather than squeeze into two columns (Law 14). */}
-      <div style={{ display: 'grid', gridTemplateColumns: phone ? '1fr' : '1fr 1fr', gap: 'var(--sp-md)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 'var(--sp-md)' }}>
         <Card title="Today's Reset Summary">
           <div style={{ display: 'grid', gridTemplateColumns: phone ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 10 }}>
             {[
@@ -1129,25 +1109,6 @@ export default function ResetWorkspace() {
           </p>
         </Card>
 
-        <Card title="Next Priority Items">
-          {nextPriority.length === 0 ? (
-            <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-              {priorityCount > 0 ? 'All priority items are already in progress.' : 'No priority items in this queue.'}
-            </p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
-              {nextPriority.map((u, i) => (
-                <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
-                  <Icon name="flag" size={12} style={{ color: 'var(--st-danger-fg)' }} />
-                  <span className="figure" style={{ color: 'var(--muted)' }}>{i + 1}</span>
-                  <span style={{ flex: 1, minWidth: 0, color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name}</span>
-                  <span className="figure" style={{ color: STATUS[queueTimeTone(u.waitingMinutes)].fg }}>{fmtMinutes(u.waitingMinutes)}</span>
-                  <RowAction label="Start" onClick={() => start(u.id)} disabled={readOnly} />
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
       </div>
 
       {/* footer — job-level completion. Ungated by money or any booking condition (§1.7). */}

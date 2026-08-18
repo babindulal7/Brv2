@@ -51,6 +51,13 @@ one at zero engineering cost.
       inbound Booqable order mapper (`src/lib/booqable/map/orders.ts:295`).
       *Not in `OPEN-DECISIONS.md`. Never ruled anywhere.*
 
+- [x] **B1 — ✅ CLOSED 16 Aug 2026.** Applied from `CAPABILITY_MAPPING_2026-08-16.md`;
+      `checkCapability` went from 11 cases to 32. A regression guard now exists in
+      `core.test.ts` ("every declared capability resolves to a rule"), and it was
+      mutation-tested — the first version could not see a commented-out `case`. Only the three
+      `inspection.*` remain unmapped, deliberately: no table exists to mirror.
+      *Original finding below, kept as the derivation record.*
+
 - [ ] **B1 · Close the capability switch before writing any action body.**
       32 capability strings are declared across actions; `checkCapability`
       ([core.ts:116-161](src/actions/core.ts:116)) handles 11, of which 3 (`invoice.void`,
@@ -75,6 +82,12 @@ one at zero engineering cost.
       sync_outbox itself, and nothing invokes it." Live table has 0 rows. Every OS→Booqable
       push queues into a consumer that does not exist — including `pushOrderCreate`'s last
       act, so B2 silently depends on this.
+
+- [x] **B4 — ⚠ SUPERSEDED 16 Aug 2026 by `PLAN.md` §4.30.** Confirm-time assignment now writes
+      `inventory_reservations` from the OS directly, deliberately overriding bridge spec §5.1.
+      No migration was needed. ⚠ **The table still holds 0 rows**, so the first confirm through
+      that path is also its first real test — treat it as unproven, not as done.
+      *Original finding below.*
 
 - [ ] **B4 · Nothing reserves inventory.** 121 bookings, 0 reservations, live.
       `inventory_reservations` is Booqable-mastered and in `BOOQABLE_READ_ONLY_TABLES`
@@ -106,6 +119,14 @@ one at zero engineering cost.
       surfaces, so `bookingQuery.ts` passing `vatPercent: null` at **:475 and :2149** is a
       bug, not a principled refusal. Fix after B5.
 
+- [~] **B8 — ⚠ HALF CLOSED 16 Aug 2026.** `0061_bookings_deposit_masking_view.sql` is applied
+      and verified live (Owner 121 rows / Rs 13,65,000; Warehouse 121 rows / `null`). Both call
+      sites moved — `lib/queries/bookings.ts` and `lib/bookingQuery.ts` no longer name the
+      column on the base table. `0062_law6_column_grants_arm_the_mask.sql` is written and
+      correctly held back until this ships. **Until 0062 applies, Law 6 on these columns is a
+      UI convention:** no module names the column, and a crafted request still reaches it.
+      `PLAN.md` §4.28 carries the full status. *Original finding below.*
+
 - [ ] **B8 · Close the Law 6 hole — `bookings.deposit_required`.**
       **⚠ PROVEN AGAINST PRODUCTION, 16 Aug.** Impersonating the live Warehouse user
       (`…0103`) via `request.jwt.claims` with `set local role authenticated`, so RLS is
@@ -130,6 +151,12 @@ one at zero engineering cost.
       per gear category ([settings.ts:630](src/data/settings.ts:630)), and data import
       (opening balances, existing clients, live bookings, pre-OS earnings). The delivery pack
       calls these "the last things standing between the build and real use."
+
+- [ ] **B10 — ⏰ NOW DATED. It breaks TOMORROW.** Re-checked 16 Aug 2026: `bs.ts` anchors
+      1 Shrawan 2083 = 16 Jul 2026 and knows 32 days, so the last convertible date is
+      **16 Aug 2026 — today**. From **17 Aug 2026** `toBs()` returns `null` for every date and
+      every BS rendering in the app goes with it. This is no longer "eleven months of the year
+      are unreachable"; it is a same-week outage of a Law 7 surface. `PLAN.md` §4.34.
 
 - [ ] **B10 · BS calendar — one month of data.** `src/lib/bs.ts:50` `SHRAWAN_2083_DAYS = 32`
       is the only month-length datum, so Nepali fiscal years, quarters and **VAT filing

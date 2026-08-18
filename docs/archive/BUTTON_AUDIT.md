@@ -1,3 +1,9 @@
+> 🗄 **ARCHIVED 16 Aug 2026 — unfinished and pre-cut.** Every row reads `TBD`, and it
+> inventories a screen set three rounds of administrative cuts have since changed
+> (routes 73 → 66 → 54). It was never a build target and is not one now. Moved out of the
+> repo root so it stops appearing beside the live governance documents.
+> Current route table: `src/App.tsx`. Current plan: `PLAN.md`.
+
 # BUTTON AUDIT (Phase 1)
 
 This document maps all identified UI buttons to the proposed Global Action Registry.

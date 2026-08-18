@@ -1,11 +1,13 @@
 import { supabase } from '../supabase'
 import { insertViaSourceSwitch } from '../dataAccess'
 import { newClientUuid } from '../supabase'
+import { getSetting } from '../settingsStore'
 import {
   selectUnitsForLine,
   explainShortfall,
-  DISQUALIFYING_UNIT_STATES,
-  RENTAL_WINDOW_BOUNDS,
+  unitStatesForRule,
+  boundsForTurnaround,
+  type BoundConvention,
   type RentalWindow,
   type UnitCandidate,
   type UnitHold,
@@ -72,6 +74,20 @@ export interface AssignmentPlan {
   readonly bookingId: string
   readonly bookingNo: string
   readonly window: RentalWindow
+  /**
+   * The bound convention this plan was COMPUTED under, carried so the write
+   * uses the same one.
+   *
+   * Not a cosmetic field. `reserveAssignedUnits` turns the window into a
+   * `tstzrange` literal, and the bracket it closes with is what the GiST
+   * exclusion will compare future holds against. If the plan were computed as
+   * half-open and the row written as closed, the app would have checked a
+   * different question from the one the database goes on to enforce — and the
+   * disagreement would only ever show up as a back-to-back booking being
+   * mysteriously rejected. Reading the setting twice is exactly how that
+   * happens, so it is read once and travels with the plan.
+   */
+  readonly bounds: BoundConvention
   readonly lines: readonly AssignmentPlanLine[]
   /** True when every line found every unit it needs. */
   readonly complete: boolean
@@ -85,6 +101,32 @@ export interface AssignmentPlan {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * The two availability rules, read from Settings at the moment they are used.
+ *
+ * **This is the boundary that keeps `lib/availability.ts` pure.** The engine
+ * takes `disqualifyingStates` and `bounds` as required parameters and knows
+ * nothing about where they came from; this module — which is already the IO
+ * layer — is the only place that reads storage. So the engine stays drivable in
+ * a test with no `window` and no stubbing, and the rule stays changeable by the
+ * owner without a release.
+ *
+ * Read **per call**, not captured at module load, matching how
+ * `data/clients.ts:readOverdueStopDays()` and every other `getSetting` consumer
+ * behaves: a rule changed in Settings must apply to the next confirm, not to
+ * the next page refresh. The cost is a `localStorage` read per assignment,
+ * which is not measurable next to the four network round trips beside it.
+ *
+ * Both resolvers fall back to the ruled default on an unrecognised label rather
+ * than to something permissive — see their doc comments in `lib/availability`.
+ */
+function availabilityRules(): { disqualifyingStates: ReadonlySet<string>; bounds: BoundConvention } {
+  return {
+    disqualifyingStates: unitStatesForRule(String(getSetting('unitAvailabilityRule'))),
+    bounds: boundsForTurnaround(String(getSetting('rentalTurnaround'))),
+  }
+}
 
 interface BookingWindowRow {
   id: string
@@ -275,8 +317,23 @@ export function parseTstzRange(text: string): RentalWindow | null {
   return { fromAd, toAd }
 }
 
-/** Postgres literal for the window, in the ruled bound convention. */
-export function toTstzRangeLiteral(window: RentalWindow, bounds = RENTAL_WINDOW_BOUNDS): string {
+/**
+ * Postgres literal for the window.
+ *
+ * ⚠ `bounds` is **required and has no default**, deliberately. It briefly
+ * defaulted to `RENTAL_WINDOW_BOUNDS` — the module constant — which was safe
+ * only because the one caller happened to pass `plan.bounds` explicitly. Since
+ * `rentalTurnaround` became a Settings key that default was one careless call
+ * away from a genuine defect: the period would be WRITTEN under the ruled
+ * default while the availability check that produced it RAN under the owner's
+ * choice, and the two would disagree silently at the bracket.
+ *
+ * That bracket is not cosmetic. It is stored in `inventory_reservations.period`
+ * and the GiST exclusion compares it with `&&`, so it decides whether a
+ * back-to-back booking is refused — by the database, hours later, with no way
+ * to tell from the UI which convention the row was written under.
+ */
+export function toTstzRangeLiteral(window: RentalWindow, bounds: BoundConvention): string {
   const close = bounds === 'closed' ? ']' : ')'
   return `[${window.fromAd},${window.toAd}${close}`
 }
@@ -305,6 +362,11 @@ export async function planAssignment(bookingRef: string): Promise<AssignmentPlan
   const claimed = new Set<string>()
   const lines: AssignmentPlanLine[] = []
 
+  /* Read ONCE per plan, not once per line: a rule that changed mid-loop would
+     assign the first two lines under one policy and the rest under another, and
+     the resulting booking would be explicable by nothing. */
+  const rules = availabilityRules()
+
   for (const line of assignable) {
     const pool = (candidatesByProduct.get(line.productId) ?? []).filter((unit) => !claimed.has(unit.unitId))
     const outcome = selectUnitsForLine({
@@ -312,8 +374,8 @@ export async function planAssignment(bookingRef: string): Promise<AssignmentPlan
       window,
       candidates: pool,
       holds,
-      disqualifyingStates: DISQUALIFYING_UNIT_STATES,
-      bounds: RENTAL_WINDOW_BOUNDS,
+      disqualifyingStates: rules.disqualifyingStates,
+      bounds: rules.bounds,
     })
     for (const unit of outcome.assigned) claimed.add(unit.unitId)
     lines.push({ line, outcome, problem: explainShortfall(outcome, line.label) })
@@ -323,6 +385,7 @@ export async function planAssignment(bookingRef: string): Promise<AssignmentPlan
     bookingId: booking.id,
     bookingNo: booking.booking_no,
     window,
+    bounds: rules.bounds,
     lines,
     complete: lines.every((entry) => entry.outcome.shortfall === 0),
     skipped,
@@ -383,7 +446,8 @@ export async function reserveAssignedUnits(
 ): Promise<ReservationResult> {
   if (!plan.complete) throw new AssignmentIncompleteError(plan)
 
-  const period = toTstzRangeLiteral(plan.window)
+  /* The plan's own convention, not a fresh settings read — see `AssignmentPlan.bounds`. */
+  const period = toTstzRangeLiteral(plan.window, plan.bounds)
   const written: string[] = []
 
   try {

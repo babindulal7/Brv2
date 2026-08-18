@@ -79,11 +79,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq('id', authId)
       .maybeSingle()
 
-    if (error || !data) {
+    /*
+     * ⛔ THE READ FAILED. This is NOT the same fact as "there is no staff row",
+     * and until 16 Aug 2026 this function treated them identically
+     * (`if (error || !data)`), which silently demoted the signed-in Owner to
+     * `Client`.
+     *
+     * Found by driving the app, not by reading it. `loadProfile` runs again on
+     * every `onAuthStateChange` — including `TOKEN_REFRESHED`, roughly hourly.
+     * When that re-read failed, the header changed from "Babin Dulal · Owner" to
+     * "babindulal7@gmail.com · Client" mid-session and `/finance` began saying
+     * *"Access restricted. Your role (Client) does not have access to this
+     * module."* to the owner of the business. A page reload restored Owner,
+     * which is what makes it so hard to report: it looks like a fluke.
+     *
+     * The demotion also explains the shape of the two `PROGRESS.md` incidents on
+     * 12 Aug — "signed in, everything empty" — and migrations 0056/0059 were
+     * both written chasing that symptom at the RLS layer. This is the same
+     * symptom arriving from the client side.
+     *
+     * A failed read tells us NOTHING about who this session is, so it must not
+     * answer the question. Keep whatever identity we had already resolved: the
+     * role is a fact about the staff row, not about the health of one request,
+     * and it cannot have changed because a fetch timed out. If nothing was
+     * resolved yet, stay `null` — `Shell` sends an unresolved session to /login,
+     * which is honest, rather than rendering a Client UI over an Owner account.
+     */
+    if (error) {
+      console.error(
+        `[auth] Could not re-read the staff row for ${authId}; keeping the previously resolved ` +
+          `identity rather than assuming a role. ${error.message}`,
+      )
+      setUser((previous) => previous)
+      return
+    }
+
+    if (!data) {
       // Authenticated against Supabase but carrying no staff row — a real state
-      // (an auth user created outside the staff table). Deliberately NOT
-      // defaulted to a working role: an unknown identity gets `Client`, the
-      // portal-only role every staff policy already excludes.
+      // (an auth user created outside the staff table), and now genuinely
+      // distinguishable from the branch above. Deliberately NOT defaulted to a
+      // working role: an unknown identity gets `Client`, the portal-only role
+      // every staff policy already excludes.
       setUser({
         id: authId,
         // Empty, NOT 'Unknown user'. See the note below.

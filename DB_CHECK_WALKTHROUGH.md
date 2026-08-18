@@ -1,3 +1,23 @@
+> 📌 **Two of this file's open questions were answered on 16 Aug 2026.**
+>
+> - *"Something else populated this database, and no session here knows what."* — Answered.
+>   The seed corpus went in **outside the migration table**, and the recorded `0047` is a
+>   different 811-character tail patch. Related and worse:
+>   `0056_auth_role_falls_back_to_auth_uid` is applied **with no source file**, its SQL
+>   existing only in `schema_migrations`. **A fresh environment built from this directory does
+>   not reproduce production.** A live blocker, not a footnote — `PLAN.md` §4.33(3).
+> - *"26 unmapped capabilities."* — Closed 16 Aug. Only the three `inspection.*` remain, and
+>   deliberately: no table exists to mirror.
+>
+> The per-page walkthrough is still the right shape, but the count moved: the 16 Aug sweep
+> drove **52 of 52** routes. Booking Detail still renders the seeded `B-715` record for every
+> booking number — though it now *discloses* that, which is materially better than passing
+> seed off as real.
+>
+> This file's correction block is sound and stays. Its central lesson — that a dated
+> measurement repeated as present tense produces destructive advice — is now `PLAN.md` §4.33's
+> reason for existing.
+
 # Checking the app against the database, one page at a time
 
 There are **54 routed screens**. Fourteen of them touch the database; the other

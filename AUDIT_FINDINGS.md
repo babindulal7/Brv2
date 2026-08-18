@@ -1,3 +1,8 @@
+> ✅ **CLOSED — kept as history.** Seven of nine P0s were fixed in-file on 9 Aug. #9 (142
+> dangling `references users (id)`) was closed by `0042_deferred_cross_file_fks.sql`.
+> #1 (`NewRental.tsx` bypassing `lib/money.ts`) — verify against the current file before
+> re-opening; that screen has been rewritten twice since.
+
 # Bug Audit Findings — Part A
 
 **Status: audit complete and fully verified; fixes now in progress.** All 19 finder groups ran,

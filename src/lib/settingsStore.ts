@@ -44,6 +44,17 @@ export type SettingKey =
   | 'decimalPlaces'
   | 'weekStarts'
   | 'language'
+  /* ── Operations rules, added 16 Aug 2026 ──────────────────────────────────
+   * Each of these was a hardcoded constant carrying a PLAN.md ruling. They are
+   * here because they are genuinely variable business rules rather than
+   * arithmetic — the ruled answer becomes the `default`, so nothing changes
+   * behaviour on the day this shipped, and the owner can change it without a
+   * developer. See the doc comment on each spec for which ruling it carries. */
+  | 'unitAvailabilityRule'
+  | 'rentalTurnaround'
+  | 'packingTreeGrouping'
+  | 'packingPhotosRequired'
+  | 'evidenceRetentionDays'
 
 export type SettingValue = string | number
 
@@ -178,6 +189,115 @@ export const SETTING_SPECS: Record<SettingKey, SettingSpec> = {
    * `lib/i18n.ts` owns the coverage gate; this only stores the choice.
    */
   language: { default: 'English', kind: 'select', options: ['English', 'नेपाली'] },
+
+  /* ── Operations rules ──────────────────────────────────────────────────────
+   *
+   * Five rulings that used to be constants. The rule each one carries is stated
+   * on its spec; the *mapping* from the label to what the engine does lives in
+   * `lib/availability.ts` (Law 1 — a page, and a settings registry, may not
+   * hold business logic). This file stores a choice; it does not interpret one.
+   *
+   * Every default is the answer that was ruled on 16 Aug 2026, so introducing
+   * these changed no behaviour on the day they shipped. That is deliberate: a
+   * setting whose default differs from the ruling would silently re-rule it.
+   */
+
+  /**
+   * **PLAN.md §4.30(c), closing §4.14** — which units are out of the pool.
+   *
+   * Offered as three named presets rather than ten tick-boxes over
+   * `inventory_state`, because the question an owner is actually answering is
+   * "how cautious should assignment be", not "is Returning a disqualifying
+   * state". The three are the three that were reasoned about when it was ruled;
+   * `lib/availability.ts` holds what each maps to.
+   *
+   * ⚠ The lifecycle states (Reserved / Packed / On Rent / Returning) are absent
+   * from every preset by design — they are facts about *today*, and the
+   * date-overlap check already answers per-window. A preset that disqualified
+   * them would make a camera out on rent this week unassignable for a shoot
+   * three months away.
+   */
+  unitAvailabilityRule: {
+    default: 'Condition only',
+    kind: 'select',
+    options: ['Condition only', 'Condition and turnaround', 'Only In Stock'],
+  },
+
+  /**
+   * **PLAN.md §4.30(b)** — whether a booking ending at 18:00 frees its unit for
+   * one starting at 18:00.
+   *
+   * Labelled in warehouse terms rather than as `half-open` / `closed`, because
+   * the person setting it is deciding whether gear needs time between jobs, not
+   * picking a range convention. `lib/availability.ts` maps it back.
+   *
+   * Ruled *"Same-instant handover allowed"* against a recommendation for the
+   * other one — which is exactly why it is a setting now: if same-instant
+   * turnaround proves wrong on the floor, it is one dropdown rather than a
+   * release.
+   */
+  rentalTurnaround: {
+    default: 'Same-instant handover allowed',
+    kind: 'select',
+    options: ['Same-instant handover allowed', 'Turnaround required'],
+  },
+
+  /** **PLAN.md §4.31(2)** — how the packing tree is grouped on the bench. */
+  packingTreeGrouping: {
+    default: 'Bundle, then category',
+    kind: 'select',
+    options: ['Bundle, then category', 'Category only'],
+  },
+
+  /**
+   * **PLAN.md §4.31(1)** — Complete Packing's evidence gate.
+   *
+   * The ruling dissolved the per-case model: the gate is photos per BOOKING.
+   * The count is a setting because "one" was ruled as a floor, not as a law —
+   * a business wanting front-and-back of a loaded van sets two.
+   *
+   * Zero is allowed and means the gate is off. That is a real configuration
+   * (a business that does not photograph packing), so it is permitted rather
+   * than validated away — but it removes the evidence trail, which is why it
+   * is not the default.
+   */
+  packingPhotosRequired: {
+    default: 1,
+    kind: 'number',
+    suffix: ' per booking',
+    validate: (v) => {
+      const n = Number(v)
+      if (!Number.isInteger(n) || n < 0) return 'A photo count is a whole number, zero or more.'
+      if (n > 20) return 'More than twenty photos per booking is a workflow problem, not a setting.'
+      return null
+    },
+  },
+
+  /**
+   * **PLAN.md §4.31(1b)** — how long a packing/evidence photo's IMAGE FILE is
+   * kept after a booking completes. The `evidence_files` row is kept either
+   * way; that is what keeps the ruling inside Law 0.
+   *
+   * **Zero means never expire, and is the default deliberately.** The ruling
+   * said retention exists but *nobody stated a period*, and this is where a
+   * period gets stated. Defaulting to any positive number would be inventing
+   * the one part of that ruling that was never given — and it would start
+   * destroying evidence on a schedule nobody chose.
+   */
+  evidenceRetentionDays: {
+    default: 0,
+    kind: 'number',
+    suffix: ' days after completion (0 = keep)',
+    validate: (v) => {
+      const n = Number(v)
+      if (!Number.isInteger(n) || n < 0) return 'A retention period is a whole number of days, or 0 to keep them.'
+      if (n > 0 && n < 30) {
+        return 'Under 30 days risks deleting a photo before a damage dispute is raised. Use 0 to keep them.'
+      }
+      if (n > 3650) return 'Beyond ten years, use 0 (keep) rather than a number nobody will revisit.'
+      return null
+    },
+  },
 }
 
 /** Maps the stored label to the code `lib/i18n.ts` works in. */
@@ -215,8 +335,33 @@ export function readSettings(): SettingsRecord {
     if (raw === null) continue
     const spec = SETTING_SPECS[key]
     const parsed: SettingValue = spec.kind === 'number' ? Number(raw) : raw
-    if (spec.kind === 'number' && !Number.isFinite(parsed as number)) continue
-    if (validateSetting(key, parsed) !== null) continue
+    /*
+     * ⚠ A stored value that no longer validates is DISCARDED and the default
+     * substituted. That is the right call — a hand-edited localStorage must not
+     * reach an invoice — but until 16 Aug 2026 it happened in total silence,
+     * and the operations rules made that dangerous rather than merely untidy.
+     *
+     * The case: an owner sets `unitAvailabilityRule` to 'Only In Stock'; a
+     * later build renames that option; the stored value stops validating and
+     * this loop quietly restores 'Condition only'. Availability LOOSENS, gear
+     * that was being held back becomes bookable again, and nothing anywhere
+     * says so. A VAT rate reverting is visible on the next invoice; a
+     * disqualifying-state set reverting is visible nowhere.
+     *
+     * Warning rather than throwing, because refusing to load settings at all
+     * would take the app down over one bad key. This does not make it safe — it
+     * makes it observable, which is the difference between a bug someone can
+     * find and one nobody can.
+     */
+    const invalid = spec.kind === 'number' && !Number.isFinite(parsed as number) ? 'not a number' : validateSetting(key, parsed)
+    if (invalid !== null) {
+      console.warn(
+        `[settings] Stored value for "${key}" was rejected (${invalid}) and the default ` +
+          `${JSON.stringify(spec.default)} is being used instead. Stored: ${JSON.stringify(raw)}. ` +
+          'If this is an operations rule, the behaviour it governs has just reverted to its default.',
+      )
+      continue
+    }
     out[key] = parsed
   }
   return out

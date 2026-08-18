@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest'
+/* R3-1: the cross-engine agreement check below compares money.ts's gate with
+   rbac.ts's rank rule. They disagreed on the sign until 16 Aug 2026. */
+import { canApproveDiscount } from '../rbac'
 import {
   type Paisa,
   type PriceInput,
@@ -308,6 +311,29 @@ describe('discountGate — Law 10 / §2.5', () => {
     expect(discountGate(0, '', null).ok).toBe(true)
     expect(discountGate(10, '', null).ok).toBe(true)
     expect(DISCOUNT_APPROVAL_THRESHOLD).toBe(10)
+  })
+
+  /*
+   * R3-1, fixed 16 Aug 2026. `-5` fell through `percent <= 10` and returned
+   * `{ok:true}`, which the Settings ▸ Tools calculator rendered as a green tick
+   * (`Tools.tsx:783`, `:817`; the input is `type="number"` with no `min`). A
+   * negative discount is a price increase. `lib/discount.ts:validateDiscount`
+   * and the DB's `booking_discounts_hard_cap` already refused it.
+   */
+  it('refuses a NEGATIVE percent — a price increase is not a discount', () => {
+    const neg = discountGate(-5, '', null)
+    expect(neg.ok).toBe(false)
+    expect(neg.ok === false && neg.why).toMatch(/negative|price increase/i)
+
+    expect(discountGate(-0.01, 'a long enough reason', 'user-1').ok).toBe(false)
+    // The boundary stays open: zero is allowed, there is nothing to approve.
+    expect(discountGate(0, '', null).ok).toBe(true)
+  })
+
+  it('agrees with the other implementations of Law 10 on the sign', () => {
+    // The point of R3-1 was disagreement between engines, not the rule itself.
+    expect(discountGate(-5, '', null).ok).toBe(false)
+    expect(canApproveDiscount('Owner', -5)).toBe(false)
   })
 
   it('refuses above the 25% hard cap', () => {

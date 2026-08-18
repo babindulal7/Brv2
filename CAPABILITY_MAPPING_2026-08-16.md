@@ -1,3 +1,13 @@
+> ✅ **APPLIED 16 Aug 2026 — kept as the derivation record.** `checkCapability` went from 11
+> cases to 32, and `core.test.ts` now carries a regression guard ("every declared capability
+> resolves to a rule") that was mutation-tested — its first version could not see a
+> commented-out `case`. Only the three `inspection.*` remain unmapped, deliberately: no table
+> exists to mirror. `ARCHIVE_AUDIT` B1 is closed against this file.
+>
+> Its method is the one `PLAN.md` §4.20 established and should be reused: **a capability takes
+> the role set of the RLS policy on the table its action writes.** That is not inventing a
+> product decision — it is reading one already made, in SQL.
+
 # Closing B1 — the 24 unmapped capability strings
 
 **Status:** ready to apply. No source files touched by this document.

@@ -1,3 +1,14 @@
+> ⛔ **STALE — 16 Aug 2026. Do not act on this file.** All three headline findings are
+> disproven. (1) W-B1 records `0044`/`0045`/`0046` as unapplied; they were applied on
+> 11 Aug, the same day this was written — `20260811213239`, `…213329`, `…213413`, verified
+> against `supabase_migrations.schema_migrations` on 16 Aug. (2) W-B2 states every
+> operational table is empty; the live database holds 121 bookings, 419 booking lines,
+> 76 clients, 126 products, 120 invoices, 93 payments. (3) W-F1 states no screen is
+> connected; 52 of 52 routes were driven in a browser on 16 Aug and Rentals reports
+> "24 On Rent", matching the database exactly. Acting on this file today means re-applying
+> applied migrations against a populated production database.
+> Retained as history. Current state: `PROGRESS.md`, entries of 16 Aug.
+
 # Backend / frontend wiring audit — 11 Aug 2026
 
 **Method:** live Supabase project `sxguwvgoserhdolewibb` (`babindulal7's Project`,

@@ -2,6 +2,518 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-08-17 — `docs/pages/`: 55 page documents written from the code, not the specs
+
+**Did.** Built the route list from `src/App.tsx` (68 entries → 55 distinct components) and wrote
+one document per page under `docs/pages/`, plus `INDEX.md`. Every file over 1,000 lines was read
+in full; every statement carries a `file:line`. Nothing was taken from `PLAN.md`, the wireframe
+MDs or any spec — where a code comment cited a spec and the code did otherwise, the doc records
+the code and names the disagreement. **No application code was changed.**
+
+**Found.** The headline is the status split: **4 Live · 16 Partial · 33 Seed-only · 2 Stub.**
+The four Live pages are two password screens and two calculators. **No page that reads or writes
+business data is fully Live.**
+
+Five findings that change what is believed about this build:
+
+1. **The floor loop cannot write, and this log has said otherwise.** Pack / Handover / Return /
+   Reset are `implemented: true` with `operations.perform` mapped — but all four screens dispatch
+   with `lines: []` / `unitIds: []`, which `validateFloorVerb` (`floorVerb.ts:380-394`) refuses
+   before any Supabase call. The workspaces are seed-only and hold no true ids to send;
+   `ResetWorkspace.tsx:1140-1146` says the emptiness is deliberate and
+   `PackingWorkspace.tsx:778-782` says the write is "today, always failing". Earlier entries
+   called the floor loop "fully implemented" and "one ruling away from drivable". **That was
+   wrong**: the action layer is real and the UI cannot reach it.
+2. **Success fabrication is not closed.** `CasesWorkspace.tsx:211` and `:217` toast success for
+   an export and a case-creation that do not happen, on a screen the 12 Aug sweep never covered.
+   That register was bannered CLOSED earlier the same day; it is **reopened**. The lesson is
+   about method — the sweep enumerated *sites* and was closed when the list cleared, but the list
+   was never the population.
+3. **Four pages run on a frozen clock.** `TODAY = 31 Jul 2026` (`lib/bs.ts:153`) drives Today,
+   Rentals List, Calendar and Operations. On Operations the day scope uses the constant while
+   past-due uses the real clock, so it opens on a fixed past day with every row flagged red.
+4. **Three inventory writes are stubs by omission** — `createEquipment`, `createStockTransfer`,
+   `approvePurchaseRequest` never set `implemented`, so `core.ts:223` fails them closed even
+   though all three capabilities resolve. A missing one-word flag is the entire gap.
+5. **Every report page is invented.** Docs 31–40 each report "every figure invented", including
+   Cash Flow, Working Capital and Pulse — whose ledger is generated in the browser at module load
+   (`src/data/pulse.ts:260-304`).
+
+**Verified.** `node node_modules/typescript/bin/tsc --noEmit` at every checkpoint: **0 errors,
+unchanged from baseline**, final run included. 56 files in `docs/pages/` (55 + INDEX). The
+read-only rule held under audit: every dirty file under `src/` and `supabase/` has an mtime at or
+before 21:30, and this pack's first artifact was created at 22:39 — no agent touched application
+code. Three claims were re-verified by hand against the source rather than taken from an agent:
+the empty-array floor dispatches, the two Cases toasts, and `purchase.approve` resolving to
+`isStaff` (already flagged in `rbac.ts:243-253` and logged as §4.29).
+
+**Next.** The pack is a baseline, not a plan. The two items it makes urgent are (1) the floor
+workspaces — giving them real `booking_line` ids is what turns four implemented actions into a
+working loop, and (2) the Cases toasts, which are two lines. Everything else it found is now
+written down where the next session will see it before starting. Still open from earlier and
+untouched by this pass: §4.34 (the BS month table — as of today `toBs()` returns null for every
+date, so the AD-tagged fallback shipped yesterday is now what the whole app renders), §4.36, the
+local-stack reboot, and `0062`.
+
+## 2026-08-16 (late, 4) — Phase 6 reachability audit: no page is missing, two PLAN claims were false
+
+**Status:** no code changed · `PLAN.md` Phase 6 corrected in place with the stale claims left
+visible · reachability inventory added · **the remaining Phase 6 work is executing two 12 Aug
+rulings, not drawing new screens**
+
+### The question was "what pages remain to build". The answer is: none, in that sense
+
+All 72 `.tsx` files under `src/modules` exist, every one of `data/nav.ts`'s eleven targets
+resolves to a route in `App.tsx`, and `comm -23` of nav targets against routes is empty. What
+remains splits three ways, and only one of them is a build.
+
+### Two claims in Phase 6 were checked and found false
+
+Both had been true on 11 Aug and were quietly overtaken.
+
+- **"`BookingDetail` uses 6 `alert()` calls"** — it uses **zero**. Across all of `src/modules`
+  only 3 mentions of `alert(` survive and **every one is a comment forbidding it**
+  (`AddClientModal.tsx:76,697`, `NewRental.tsx:2284`).
+- **"Not one module draws its five states"** — **42 of 72** module files now reference
+  `StateViews`/`EmptyState`/`ErrorState`/`LoadingState`. The per-module audit was NOT redone,
+  so the detail below that line stays unverified rather than corrected; the count only
+  disproves the blanket claim.
+
+Recorded as strikethrough beside the originals rather than silently rewritten — this file's own
+§2 warns that a stale "done" has already cost a session once.
+
+### One claim was mis-framed, which matters more than the two that were wrong
+
+Phase 6 lists ~4,400 lines of unreachable Settings UI as a **reachability defect**. It is
+mostly a **ruling**: `WIREFRAME_RULINGS_2026-08-12` §1 removed Settings' Automation ·
+Channels/Communication · AI sections ("Removed and parked", spec 11 §11.2). Their data modules
+— `businessHours.ts` (30 KB), `communicationSettings.ts` (25 KB), `inbox.ts`, `sms.ts`,
+`broadcast.ts`, `triggers.ts`, **~92 KB, all with zero importers** — are the residue of screens
+that were **cut**, not screens left unbuilt. Anyone reading that line as a to-do would rebuild
+something already ruled out.
+
+### Verified: ~98 KB of screens built with no way in
+
+Each checked for a route **and** for any importer, not just for a route:
+
+| Screen | Size | Why unreachable |
+|---|---|---|
+| `operations/CasesQueue.tsx` | 58 KB | `/operations/cases` renders `CasesWorkspace`; `CasesQueue` appears only inside comments |
+| `reports/ProductReports.tsx` | 24 KB | no route, no importer — three files cite `:452` in prose |
+| `reports/CasesReports.tsx` | 13 KB | no route, no importer, no mention |
+| `settings/Timesheet.tsx` | 2.7 KB | the only file under `src/modules` with zero references of any kind |
+
+### The actual remaining Phase 6 work: two rulings that were never executed
+
+1. **Warehouses** was ruled out of Inventory into Settings ▸ Branches & Warehouses. **Both
+   still exist** — `/inventory/warehouses` (110 KB) and `BranchesPane` (55 KB). The duplication
+   the ruling existed to end is still live, and `Warehouses` is also one of the two
+   ≤1-chart violators Phase 6 already lists.
+2. **Purchase Requests** was ruled "archived" (table and auto-draft rule stay in the schema).
+   The screen is still built and still routed at `/inventory/purchase-requests` (29 KB).
+
+**TODO(decision)** filed for the ~190 KB total: wire, archive, or delete. Note the house
+mechanism is `src/archive` — tsconfig's own comment says *"Law 3 keeps the files"* — so
+"remove" means move.
+
+### A source conflict that will mislead the next session if left unflagged
+
+`SCREENS.md` names a **15-section "Generation C"** sidebar as "the build target".
+`data/nav.ts:67-79` declares the **fixed eleven** as "the wireframe's order — the order is the
+specification", and is four days newer. Building from `SCREENS.md` would add Automation Center,
+Notification Center, AI Assistant and System Monitor — the same family the wireframe rulings
+**cut**. Flagged in Phase 6; `data/nav.ts` + the rulings treated as authoritative.
+
+### How it was verified
+
+`App.tsx` route extraction (68 paths) diffed against `data/nav.ts` targets; per-file importer
+check across every `.ts`/`.tsx` under `src/modules`; `grep -c "alert("`; `StateViews` reference
+count; the rulings table read from `WIREFRAME_RULINGS_2026-08-12.md:32-46`. **No code was
+changed and nothing was run** — this is a static audit, and the per-module five-states detail
+remains unverified.
+
+### Blocked / next
+
+Unchanged and owner-only: **§4.34** (NCDC BS month lengths), **§4.33(1)** (Supabase redirect
+URLs), **§4.33(2)** (four staff rows have no auth account), **§4.36** (failed audit write),
+**§4.35a(b)** (is a same-day rental one day?). New: the ~190 KB wire/archive/delete call above.
+
+---
+
+## 2026-08-16 (late, 3) — `R3-2`: the prescribed fix was wrong, and there is a Law 1 violation under it
+
+**Status:** nothing deleted · `lib/validation.ts` documented in place · two new open items filed
+as §4.35a(a) and (b) · **no behaviour changed anywhere**
+
+### The instruction was checked before it was followed, and it did not survive
+
+§4.35's fix order said `R3-2` = "delete the dead function (free)". Verifying "zero callers"
+first — because this file has carried stale claims before — turned up more than the sweep did.
+
+**The sweep understated it.** Not just `validateHandoverReadiness`: a grep of **every `.ts` and
+`.tsx` under `src/` outside `archive/` — 201 files — found not one import of
+`lib/validation.ts` at all.** `validateRentalDates` and `DateRangeValidation` are dead too. The
+whole Validation Engine is unreferenced.
+
+**And the delete is not free.** Three reasons, all verified in the tree:
+
+1. `validateHandoverReadiness` is the only written statement of what the Handover gate is, and
+   the gate is unbuilt. Confirmed: `floorVerb.ts:979` calls `applyBookingTransition` with **no
+   `flags`**, so `planTransition`'s `flags ?? []` is empty and `'Deposit Pending'` /
+   `'Payment Due'` — both `blocks: BLOCKS_HANDOVER` at `workflow.ts:221-222` — never fire. The
+   only live gate is four `useState(false)` checkboxes (`HandoverWorkspace.tsx:151-154`).
+2. The gate cannot move to the screen. Handover is warehouse-facing, Warehouse is money-blind,
+   and `HandoverWorkspace.tsx:945` says so in its own comment: *"no Outstanding, no Deposit
+   Pending here (§13.1)"*. A deposit gate is expressible **only** in an engine — Law 1.
+3. Deleting the file would have buried the finding below.
+
+So nothing was deleted. The reasoning is recorded in the file's own header, and §4.35's `R3-2`
+row is rewritten to say **DO NOT delete**. If the owner still wants it gone, `src/archive` is
+the house mechanism, not `rm`.
+
+### The finding underneath: Law 1 is violated on the booking date rule
+
+`validateRentalDates` is dead while `NewRental.tsx:1283` re-derives the same rule inline — a
+page implementing business logic, which Law 1 forbids. This is §4.35's closing observation one
+level worse: not duplication between engines, but an engine bypassed by a page.
+
+**They disagree.** Engine: `Math.max(1, ceil(diff / DAY))`. Screen: `Math.max(0, round(diff /
+DAY))`, with Confirm blocked on `days === 0`.
+
+`round` vs `ceil` is dormant — `pickup`/`ret` are date-only, time is separate state, so the
+difference is always whole days. **The floor is not.** A same-day rental is **1 day** to the
+engine and to the database (Law 9, `days >= 1`, DB-enforced on six priced-line tables) and an
+**error** on the screen: "Return must be later than pickup". It cannot be booked at all.
+
+Filed as §4.35a(b) rather than fixed. Law 9 and the engine already say a same-day rental is one
+day, so this may be the screen contradicting a ruled law rather than an open question — but the
+fix makes same-day bookings bookable, which has money consequences, so it is not being taken
+unilaterally. **Worth an early answer: for a gear-rental business, same-day is not an edge case.**
+
+### How it was verified
+
+Every claim above is a grep or a line read in the current tree, not a sweep quotation:
+
+- Zero references: `grep -rn "validateHandoverReadiness\|validateRentalDates\|lib/validation\|
+  DateRangeValidation"` across 201 files, one hit per definition line and nothing else.
+- The unwired flags: read `floorVerb.ts:979-988` (no `flags` key), `workflow.ts:326` (`req.flags
+  ?? []`), `workflow.ts:221-222` (`blocks: BLOCKS_HANDOVER`).
+- The checkbox gate: `HandoverWorkspace.tsx:151-154`.
+- The duplicate rule: `NewRental.tsx:1283-1288`, and its error strings at `:2419` and `:2436`.
+- The date-ordering message is unique to `validation.ts`, so the screen's copy is an
+  independent re-derivation rather than a shared helper.
+
+**Not swept:** `src/archive` (excluded from the program by tsconfig, so a reference there is not
+a live caller), `src/marketing`, `src/lib/mock`, `src/lib/booqable`, and ~14 component/module
+test files. None can create a live caller; a test import would matter only if the file were
+being deleted, which it is not.
+
+**No code behaviour changed this session** — one file header, two plan entries.
+
+### Blocked / next
+
+New: **§4.35a(b)** — is a same-day rental a one-day booking? Still open and owner-only:
+**§4.34** (NCDC BS month lengths), **§4.33(1)** (Supabase redirect URLs), **§4.33(2)** (four
+staff rows have no auth account), **§4.36** (does a failed audit write stop the business verb).
+`R3-2`'s remaining half — wiring the flags into `applyBookingTransition` — stays blocked on the
+deposit-waiver ruling. Next unblocked item in §4.35's order is `R3-6`, the CSV parser, which
+must be fixed **before** a client-import action is built.
+
+---
+
+## 2026-08-16 (late, 2) — `R3-5`'s mechanical half applied; §4.36 still unruled
+
+**Status:** `logAuditEvent` returns `{ ok, error }` and never throws · the audit write no longer
+requires a SELECT the role does not hold · 7 tests pass, **4 proven to fail against the pre-fix
+engine** · `tsc --strict` exit 0 on both changed `lib` files · **the ruling in §4.36 is
+untouched and every caller still proceeds on failure, exactly as before**
+
+### The defect, re-confirmed against the tree rather than taken from the sweep
+
+`audit.ts` caught every failure into `console.error` and returned `Promise<void>`. The live
+path is `idempotentInsert`'s `.insert().select().single()` — **two permissions, not one**.
+PostgREST runs the `RETURNING` clause as the same role, and `audit_events` grants INSERT to all
+staff but SELECT to Owner/Admin/Manager only. So a **Warehouse** actor's audit row *committed*
+and then the read-back was denied, the error described the read, and the catch swallowed it.
+
+Traced to the exact call sites rather than assumed: `logAuditEvent` has **two** callers in the
+whole tree, both in `actions/rentals/floorVerb.ts` (`:609` session row, `:906` per-entry reset
+row). `operation_sessions` carries no audit trigger, so `:609` is the only record that a
+session happened and who closed it — which is why `R3-5` is the one defect whose damage is both
+unrecoverable and invisible.
+
+### What changed — and what deliberately did not
+
+- `dataAccess.ts` — `idempotentInsert` grew `InsertOptions.returnRow` (default `true`, so no
+  existing caller changes). When `false` it skips `.select().single()`, and on a `23505`
+  idempotency duplicate it returns success **without re-reading** — re-reading would
+  reintroduce the very SELECT the option exists to avoid.
+- `audit.ts` — returns `AuditWriteResult` (`{ok: true, error: null} | {ok: false, error}`),
+  passes `returnRow: false`, wraps non-`Error` rejections, keeps the `console.error`. It never
+  throws: turning an audit outage into an unhandled rejection inside a business verb would be
+  as wrong as swallowing it.
+- `floorVerb.ts` — both call sites capture the result, log a specific message naming the
+  booking/session, and **still proceed**. Each carries `TODO(decision) §4.36`.
+
+**Nothing here answers §4.36.** Whether a failed audit write should stop the business verb is
+still the owner's call; this only makes the failure *knowable*, which it was not before.
+
+### A wrinkle the ruling now has to cover, and did not before
+
+The per-entry call site sits inside a loop whose earlier `safeUpdate` calls have **already
+committed**. "Fail the verb with it" cannot mean a clean refusal there — it means stopping
+part-way through a batch that is already partly written. Added to §4.36 rather than resolved.
+
+### How it was verified
+
+The device's Linux VM is still down, so `audit.ts` plus the new suite were run in a throwaway
+vitest harness with `../dataAccess` mocked.
+
+- **7/7 pass** against the fixed engine.
+- **Run against the pre-fix engine, 4 failed** — the `returnRow` assertion and all three
+  outcome assertions. The 3 that still passed are the payload defaults, which the fix did not
+  touch; that is the correct split and confirms the suite is not tautological.
+- `tsc --strict --noUnusedLocals --exactOptionalPropertyTypes` exit 0 on `audit.ts`, and on
+  `dataAccess.ts` against stub types.
+- **The regression this could plausibly have caused was checked explicitly:** adding a
+  `data: null` branch could have narrowed `idempotentInsert`'s inferred union and broken every
+  existing `const { data } = await idempotentInsert(...); data.id` caller. A probe asserting
+  exactly that still typechecks — the union stays `any` on `data`.
+
+**⚠ Not verified:** `floorVerb.ts` was **not** typechecked — its dependency graph does not fit
+the harness, and the repo's own `tsc --noEmit` could not be run from here. The edit is two
+`const` captures and two `if` blocks, but that is an argument, not evidence. **Run
+`npx tsc --noEmit` and `npm test` before trusting this session's floorVerb change.**
+
+### Blocked / next
+
+Unchanged and still owner-only: **§4.34** (NCDC BS month lengths — the app degrades honestly as
+of today but still cannot render BS from 17 Aug), **§4.33(1)** (Supabase redirect URLs),
+**§4.33(2)** (four staff rows have no auth account — which is also why `returnRow: false` is
+asserted on the *call* rather than proven against a real Warehouse session), **§4.36** (the
+ruling above). Per §4.35's order, `R3-2` is next: delete the dead `validateHandoverReadiness`,
+then the deposit-waiver ruling.
+
+---
+
+## 2026-08-16 (late) — `E-P0-1` render half closed, one day before the cliff
+
+**Status:** `BsAdDate` no longer presents a Gregorian date as the BS answer · 14 tests pass,
+**6 proven to fail against the pre-fix component** · `tsc --noEmit` exit 0 · the component fix
+landed from a **concurrent session**, this one contributed the test and the record · **§4.34 itself is untouched and still blocks** — the month-length data is still
+not in this workspace
+
+### What was wrong
+
+`components/ui/BsAdDate.tsx` rendered `bsFormatted || adFormatted` in three of its four
+layouts (`stacked`, `inline`, `bs-only`) and suppressed the AD parenthetical when the
+conversion failed. `lib/bs.ts` converts only inside Shrawan 2083 — **last valid day 16 Aug
+2026, which is today** — so from tomorrow every BS-primary slot in the app would have filled
+with an untagged AD date. A Nepali reader would have been handed "17 Aug 2026" where the
+screen promises Bikram Sambat, with nothing on screen saying the conversion had failed.
+
+Confirmed by reading `bs.ts:43,50,97` rather than trusting `PLAN.md`: `ANCHOR_BS` is
+1 Shrawan 2083 = 16 Jul 2026, `SHRAWAN_2083_DAYS = 32`, `toBs` returns null outside it.
+
+### A concurrent session was fixing the same thing — theirs won, and this corrects an earlier draft of this entry
+
+Two commit attempts were **rejected on an mtime guard**: `BsAdDate.tsx` was being rewritten on
+disk while this work was in flight. Re-staged and read each time rather than forced.
+
+An earlier draft of this entry claimed the other pass left the `stacked` branch broken and that
+this session completed it. **That was true when written and is false now** — by the second
+re-stage they had finished all four branches and gone further, adding an explicit
+`BS unavailable` second line where this session's version left it blank. Their component is
+what is on disk; nothing here overwrote it. Only the test file is this session's.
+
+Recorded because §0's rule is to log what was verified, not what was intended, and a stale
+"I fixed it" is the exact failure mode this file has already carried once.
+
+### The test had to be corrected too, and the correction is the interesting part
+
+The first version asserted `expect(text).not.toContain('BS')` for a post-cliff date — meaning
+"no BS date was invented". Against their component it **failed**, because the honest second
+line reads `BS unavailable`. The assertion forbade the cure along with the disease. It now
+checks for a *fabricated BS date* — `/\d+\s+\w+\s+20\d\d\s*BS/` plus every name in
+`BS_MONTHS` — which is what was actually meant. Worth keeping in mind as a class: an assertion
+written against one implementation can encode that implementation's shape rather than the rule.
+
+### What changed
+
+The AD value is still shown — blanking it loses information the operator needs — but it now
+carries an explicit `AD` tag, and the element carries a `title` naming the reason. Per Law 11
+the signal is a word, not a colour. `ad-only` is untouched: the caller asked for AD there, so
+tagging it would be noise.
+
+**This does not close §4.34 and must not be read as closing it.** BS dates are still `null`
+from 17 Aug; the app now says so honestly instead of lying. The NCDC month lengths for 2083
+and 2084 are still the blocker, still owner-supplied, still must be transcribed and never
+inferred.
+
+### How it was verified
+
+Not by reading the code I wrote. The device's Linux VM would not start (`device_bash`:
+"Workspace unavailable"), so `bs.ts`, the component and the new test were copied into a
+throwaway harness — React 19 + vitest + jsdom, real `lib/bs.ts`, nothing mocked — and run.
+
+- **14/14 pass** against the component as it now stands on disk.
+- **Run against the pre-fix component, 6 failed** — the three bare-Gregorian assertions and the
+  three `title` assertions. A test that passes against both versions proves nothing.
+- **Reverting the `stacked` branch alone fails 2 of the 14**, so the branch that `layout`
+  defaults to is pinned independently of the other three.
+- `tsc --noEmit --strict` exit 0 on `BsAdDate.tsx` with `@types/react` present.
+
+`components/ui/__tests__/BsAdDate.test.tsx` is written around the cliff deliberately: one date
+each side of 16/17 Aug. **When the month-length table lands, the second group starts failing** —
+that is the intended signal that conversion now reaches further. Update the dates; do not
+delete the assertion.
+
+### Blocked / next
+
+Unchanged and still owner-only: **§4.34** (NCDC month lengths), **§4.33(1)** (Supabase redirect
+URLs), **§4.33(2)** (four staff rows have no auth account), **§4.36** (does a failed audit write
+stop the business verb). Per §4.35's fix order, `R3-5`'s mechanical half — return `{ok, error}`
+from `audit.ts` and drop the `.select()` on `audit_events` — needs no ruling and is next.
+
+---
+
+## 2026-08-16 (night) — Local Supabase stack: everything built, blocked on one reboot
+
+**Status:** `tsc --noEmit` exit 0 · scaffolding complete and dry-run verified · **⚠ a Windows
+restart is required before the stack can start** · the live project is untouched
+
+### What was decided
+
+Ruled by the owner: **local Supabase stack via Docker**, cloud project **left running and
+untouched**. Rejected on the way: a bare local Postgres (no PostgREST or GoTrue — every
+`supabase-js` call would break and the auth bridge would be lost) and treating the existing
+mock source as the answer (it is a UI fixture with no RLS; `PLAN.md` §0 makes RLS the security
+boundary, so it cannot reproduce the class of bug this project keeps finding).
+
+### Half of §4.33(3) is closed — the missing migration was recovered
+
+`0056_auth_role_falls_back_to_auth_uid` was applied to production on 12 Aug **with no source
+file**; its SQL existed only inside `supabase_migrations.schema_migrations`. Copied out
+verbatim to `0056_0_auth_role_falls_back_to_auth_uid.sql` — nothing reconstructed or inferred.
+
+It is **superseded sixty seconds later** by `0056_auth_role_resolves_without_pre_request_hook`,
+which is a `create or replace` of the same function adding `SECURITY DEFINER`, a pinned
+`search_path` and revoked EXECUTE. So a rebuild does not need it; the repo simply no longer
+contains a migration it cannot explain. The `_0_` in the filename sorts it ahead of
+`0056_auth…` (`_` < `a`), preserving the filename-order-equals-applied-order property the
+0057–0060 renumbering established. **Verified** in the script's `--list` output.
+
+### Built
+
+- `scripts/apply-migrations-local.mjs` — applies all 63 migrations in filename order through
+  `psql` inside the stack's container. **It cannot be pointed at a remote project**: no flag,
+  env var or argument exists for that. Needed because the CLI only recognises
+  `<timestamp>_name.sql` and this repo's numbering is load-bearing — renaming 63 files to
+  satisfy `supabase db reset` would discard `0055`'s stated apply-order dependency, the
+  0057–0060 renumbering, and every code comment citing a migration by number.
+  `0062` is skipped by default (§4.28) unless `--include-held-back`.
+- `.env.localdb.local` + `npm run dev:local` (Vite `--mode localdb`). Vite's precedence
+  (`.env.[mode].local` > `.env.local`) means this overrides the cloud values for that one
+  command and **leaves `.env.local` untouched** — `npm run dev` still points at the live
+  project.
+- `db:start` / `db:stop` / `db:apply` / `db:list` / `db:rebuild` scripts.
+- `docs/LOCAL_DATABASE.md` — the whole path, including what the local DB will **not** contain.
+- Supabase CLI pinned as a devDependency (`^2.114.0`) rather than installed globally.
+
+### ⚠ Blocked on a reboot, and why
+
+Docker Desktop 4.86.0 installed, but its daemon never came up:
+`DockerDesktop/Wsl/ExecError: wsl.exe --version: exit status 1`.
+
+**Diagnosed rather than guessed:** `wsl.exe --version` is not a valid argument on this machine
+— the usage banner lists only `--install`, `--list`, `--status`, `--help`, which is the
+**legacy inbox WSL**. Modern WSL2 adds `--version`/`--update`/`--shutdown` and Docker requires
+it. Checked and already correct: Windows 10 Home 19045, `Microsoft-Windows-Subsystem-Linux`
+**Enabled**, `VirtualMachinePlatform` **Enabled**. Only the modern package was missing.
+
+`winget install --id Microsoft.WSL` → **WSL 2.7.11 installed**. After it, `wsl --version`
+prints a proper version block — **and that is not the same as WSL working.** Docker still
+failed; `wsl --list --verbose` gave the real reason:
+
+```
+WSL_E_WSL_OPTIONAL_COMPONENT_REQUIRED
+Install it by running: wsl.exe --install --no-distribution
+```
+
+`Get-WindowsOptionalFeature` had reported that component **Enabled** throughout — enabled for
+the *legacy inbox* WSL; the Store package needs its own registration. Running
+`wsl.exe --install --no-distribution` drove DISM to 100% and ended with:
+
+> *"The requested operation is successful. Changes will not be effective until the system is
+> rebooted."*
+
+**⚠ A REBOOT IS REQUIRED.** Not attempted from here — restarting the machine is the owner's
+call and would end the session mid-flight.
+
+⚠ **A wrong call was made and corrected in between:** on seeing `wsl --version` succeed, this
+session briefly reported that no reboot was needed. That was wrong — the version check tests
+the *tool*, not the *subsystem*. `wsl --list --verbose` is the command that answers the real
+question, and DISM's own message settles it.
+
+### Seed data — what the local database will not have
+
+The live rows went in **outside the migration table**, so no replay of `supabase/migrations/`
+reproduces them. `0047_seed_reference_corpus.sql` IS applied locally and is the local corpus —
+generated through the real engines, and only ever held back because `CLAUDE.md` forbids
+applying it to production. Copying live data down was deliberately not done: it would put 76
+real clients' names, phones and emails on a laptop, which is a decision, not a default.
+
+## 2026-08-16 (late) — Whole-app sweep: 52 routes driven, one silent Owner→Client demotion fixed
+
+**Status:** `tsc --noEmit` exit 0 · `vitest run` **1982 passed / 78 files, 0 failed** ·
+`vite build` exit 0 (1m29s, PWA precache 136 entries / 3243 KiB) · **52/52 routes driven**
+
+### The bug the sweep found — Law 6 inverted, silently
+
+`/finance` told the owner of the business *"Access restricted. Your role (**Client**) does not
+have access to this module."* The header had changed from "Babin Dulal · Owner" to the bare
+email. A page reload restored Owner, which is what makes it read as a fluke.
+
+**Cause: `lib/auth.tsx:loadProfile` ran `if (error || !data) → role: 'Client'`.** A failed
+request and an absent staff row are different facts and were producing the same answer.
+`loadProfile` re-runs on every `onAuthStateChange` — including `TOKEN_REFRESHED`, roughly
+hourly — so one failed re-read demoted the session permanently, with no error on screen.
+
+This is very likely the same symptom the 12 Aug incidents chased ("signed in, everything
+empty"); `0056` and `0059` were both written hunting it at the RLS layer. It was arriving
+from the client side as well.
+
+**Fixed:** the two branches are now separate. An `error` keeps the previously resolved
+identity (a fetch failure cannot change who you are) and logs loudly; a genuine `!data`
+still resolves to `Client`, as documented. If nothing was resolved yet, the session stays
+`null` and the shell sends it to /login — honest, rather than a Client UI over an Owner
+account. Five tests in `lib/__tests__/auth.identity.test.tsx` pin it, including recovery when
+a later read succeeds.
+
+### Route sweep — all 52, driven in the browser
+
+- **Renders on real data:** Today, Rentals (reports "24 On Rent", matching the database
+  exactly), New Rental, Calendar, Clients, Client Detail, Add Client, Memberships, Import,
+  Duplicates, Referral, Inventory + 5 sub-screens, Documents, Operation, Cases, Sub-Rental,
+  Crew, Finance + 3, all 10 report pages, Settings, Tools + 6.
+- **Client Detail IS wired** — `/clients/C-34` and `/clients/C-102` render different real
+  clients. It is merely slow (>5.5 s), not broken.
+- **Booking Detail is NOT** — `/rentals/B-799` renders *"Showing the seeded record for
+  B-715."* The audit's P0 stands, but the screen **discloses** it rather than passing seed
+  off as real, which is materially better than the audit described.
+- **The five floor workspaces** (packing / handover / return / reset / evidence) each render
+  *"…is not loaded yet. This workspace has no per-booking query behind it yet."* Honest,
+  consistent, unwired.
+
+### Method note, because it nearly produced a false report
+
+Two of my own sweep harnesses were wrong before one was right: the first captured the
+previous route's DOM (off-by-one — `/clients` appeared to show Calendar), the second had two
+loops racing after a restart. Only the third run, which waits for the DOM to actually change
+and carries a generation guard, is reported. **A hidden browser pane also freezes the tab**,
+so a detached loop only advances while being polled — route sweeps here must be synchronous
+batches of ~4.
+
 ## 2026-08-16 — Phase 1 gate re-run: two exploits closed, a Law 6 breach found and half-fixed
 
 **Phase:** 1 (Schema) — still CURRENT · **Status:** `tsc --noEmit` exit 0 · my slice 239/239 ·
@@ -68,6 +580,272 @@ that the view is queried only when asked, and skipped entirely for an empty page
 that file was being rewritten while this ran. `ReportCatalog.dedup` timed out at 5 s in one
 run and passed in the next — the same load flakiness as `numberingPreview` /
 `ExpenseReports.toolbar`. **A `testTimeout` bump is overdue.**
+
+## 2026-08-16 (evening) — `db.zip` applied: the local-first write seam
+
+**Phase:** unblocking the action layer · **Status:** `tsc --noEmit` exit 0 · `vitest run`
+**78 files / 1999 passed / 0 failed** · all three behaviour changes **driven in the mock app**
+
+### What arrived and what was done with it
+
+`COMPLETE/db.zip`, four files. Two copied, one parked, per its own `APPLY.md`:
+
+| File | Action |
+|---|---|
+| `dataAccess.ts` → `src/lib/dataAccess.ts` | copied (39-line diff, purely additive) |
+| `client.ts` → `src/lib/mock/client.ts` | copied |
+| `0063_create_booking_function.sql` → `supabase/migrations/` | **parked, NOT applied** |
+
+**The revert risk was checked first and did not exist.** The standing rule from the 15 Aug
+admin-cut package is that a handoff zip may carry files predating the current tree — that one
+would have reverted three things. This one was built *after* today's §4.30(a) change and its
+`dataAccess.ts` still carries the `inventory_reservations` removal block verbatim. Diffed before
+copying; the only change is the addition of `shouldQueueOffline()` and two call sites.
+
+**Its gate numbers are not this repo's, as usual.** `APPLY.md` claims "79 files / 2,035 passed"
+and "tsc clean (the 9 remaining errors…)" — internally contradictory, and measured on a
+different tree. Re-run here: **78 files / 1999 passed**, `tsc` exit 0 with **zero** errors.
+
+### The three fixes, each verified against a source of truth rather than the document
+
+**1. The offline queue is off the local write path.** `dataAccess` diverted every write into the
+Dexie outbox on `!navigator.onLine`, without knowing which store it was writing to. The local
+corpus is in-memory plus a localStorage overlay — **always reachable, no network in between** —
+so a dropped wifi connection would have pushed a booking into a queue destined for a Supabase
+that is not currently the source of truth, and returned optimistic success. `shouldQueueOffline()`
+returns `false` whenever `IS_MOCK`.
+
+⚠ **This does not fix the queue, and its docblock says so.** E-P1-1 (`enqueueMutation` dedupes
+and returns `false`, which `safeUpdate` discards — one action writing five booking lines
+enqueues one and silently drops four) and E-P1-2 (a mutation left `'syncing'` when a tab closes
+is never selected by any drain again) are still open. **When Supabase becomes the writer again,
+`IS_MOCK` goes false and the queue comes back onto the path — those must be closed before that
+switch, not after.**
+
+**2. Local booking numbers would have been rejected by Postgres.** Verified in both directions
+rather than taken on trust: `mock/client.ts:242` minted `` `${prefix}-2026-${padStart(4,'0')}` ``
+→ `B-2026-0001`; and read live off the project, `bookings_booking_no_format` is
+`CHECK (booking_no ~ '^B-[0-9]+$')` with `clients_client_code_format` the same shape. **The
+hyphenated year fails that pattern.** Harmless while the mock was a display fixture; not harmless
+once local data is meant to be rebuilt in Supabase later, where every locally-created booking
+would have been refused *at migration time*, with months of operating data behind it.
+
+Driven: `next_document_number` now returns **`B-1`** and **`C-1`**, both matching the live CHECK,
+while `INV-2026-0001` keeps its year — nothing constrains invoice numbers and that is the form
+the invoice screens render.
+
+**3. A missing RPC returned silent success.** `mock.rpc()` answered `{ data: null, error: null }`
+for every name but one — the success-fabrication class, in the one place a missing function
+should be loudest. Driven: an unknown name now returns **`42883`**.
+
+### `create_booking` works locally — driven, with row counts as the evidence
+
+The local implementation mirrors `0063` exactly, so `createRental` can call one
+`.rpc('create_booking')` and work in both modes. Exercised in the browser against the mock
+store, watching the booking count either side of each call:
+
+| Call | Result | Bookings |
+|---|---|---|
+| First | `B-2`, 1 line, stage `Quote`, `replayed: false` | 120 → **121** |
+| Replay, same `client_uuid` | **same `booking_id`**, `replayed: true` | **121** — wrote nothing |
+| Line with no `days` | `23502`, "Law 9 requires it stated, not defaulted" | **121** — no orphan header |
+
+The counts are the point. Law 8 replay returning the same booking is easy to fake; returning it
+*without incrementing the row count* is the actual property. Same for the rejected line: the
+header was not left behind, which is the local stand-in for the transaction Postgres gives the
+real function.
+
+⚠ The signature is `create_booking(p_payload jsonb)`, so the call is
+`.rpc('create_booking', { p_payload: … })` — a first attempt passing the payload directly was
+correctly refused with "client_uuid is required". The mock matches the migration's signature,
+not a convenience shape.
+
+The test booking was written to the localStorage overlay and the overlay was cleared afterwards.
+
+### `0063` is parked, deliberately
+
+It is the Supabase half and it is correct, but it is not needed while the store is local, and
+applying it against a database holding 121 real bookings needs explicit approval. It costs
+nothing unapplied and uncalled — and it is the reason the local `create_booking` has the shape it
+does: the local version was written to match the migration, so "build the same in Supabase later"
+becomes applying a file that already exists.
+
+### Next
+
+`createRental` is still a `console.log` stub and `/rentals/new` writes nothing. With this seam in
+place that job now **finishes inside the repo** — no migration and no approval needed to complete
+and drive it.
+
+## 2026-08-16 (late, cont.) — the Confirm reservation path proven against the live database
+
+**Phase:** unblocking the action layer · **Status:** executed against project
+`sxguwvgoserhdolewibb` inside a transaction rolled back by `raise exception` — **nothing
+committed**, re-checked after: `inventory_reservations` still 0 rows, B-800 still `Quote`
+
+### Why this ran
+
+Everything built earlier today — `planAssignment`, `reserveAssignedUnits`, the compensating
+release — had **never executed**. `inventory_reservations` held 0 rows, so the first real Confirm
+would also have been its first test. Three claims were logged as unproven; this closes all three
+and adds two nobody had claimed.
+
+The technique is the one `confirmRental.ts`'s header already records for the stage move: a `DO`
+block that accumulates results into a text variable and ends with
+`raise exception '… %', v_log`, so the findings come back in the error message and the
+transaction rolls back regardless of outcome.
+
+### The subject, and what it accidentally demonstrated
+
+**B-800** — a real Quote, 2 live Equipment lines, 1 unit each. Its two candidate units:
+
+| Unit | Status | Assignable under the ruled preset? |
+|---|---|---|
+| `EQ000247-U01` | `In Stock` | yes |
+| `EQ000234-U01` | **`Packed`** | **yes** |
+
+That second row is §4.30(c) working in the wild. `Packed` is a booking-lifecycle state, and the
+ruling deliberately excludes those from `DISQUALIFYING_UNIT_STATES` because they are facts about
+*today* while the date-overlap check answers per-window. Under the `Only In Stock` preset this
+booking would be unassignable; under the ruled `Condition only` it assigns. The rule is not
+academic — it decides this booking.
+
+### Results
+
+| Check | Result |
+|---|---|
+| `auth_user_role()` under `set local role authenticated` + `app.current_user_id` | `Owner` |
+| Both `inventory_reservations` inserts, same column list the app sends | **accepted by RLS** |
+| `period::text` read straight back | `["2026-08-03 00:15:00+00","2026-08-05 00:15:00+00")` |
+| Second **overlapping** hold on the same unit | **rejected** by the GiST exclusion |
+| **Back-to-back** window (touching, non-overlapping) | **accepted** — half-open behaving as ruled |
+| `released_at` / `released_reason` update | ok |
+
+**The last two were not on the list and matter most.** The exclusion rejecting a double-book is
+the whole reason §4.30(a) chose `inventory_reservations` over `booking_line_units` — it proves
+the database is the arbiter rather than the app trying not to make the mistake. And the
+back-to-back acceptance is §4.30(b) demonstrated *at the database*, not just in the engine: the
+bracket the app writes and the bracket the constraint compares agree.
+
+### The round trip does not preserve text, and that is the point
+
+The literal written was `[2026-08-03T00:15:00+00:00,…)` — `T` separator, `+00:00` offset.
+Postgres normalised both to a space and `+00`. Same instants, different text. `parseTstzRange`
+was designed for that shape and is now pinned against **the actual returned string**, labelled in
+the test as captured from the live database rather than composed. The difference is not
+cosmetic: a hold that fails to parse is silently **dropped**, so the unit reads as free — the one
+failure direction that double-books.
+
+### Still not done
+
+A real Confirm has still not been pressed. This proves every database-side behaviour the path
+depends on; it does not prove the TypeScript call chain end to end, because the writes were made
+as SQL rather than through `insertViaSourceSwitch`. That last step commits data to a live booking
+and needs its own approval.
+
+## 2026-08-16 (late) — the operations rules moved into Settings; Reset's priority dropped
+
+**Phase:** unblocking the action layer · **Status:** `tsc --noEmit` exit 0 · 126 tests pass across
+the six affected suites · Settings card and the Reset workspace both **driven in a browser**
+
+### 1. Five rulings became Settings keys — the owner can change them without a release
+
+`unitAvailabilityRule`, `rentalTurnaround`, `packingTreeGrouping`, `packingPhotosRequired`,
+`evidenceRetentionDays` in `lib/settingsStore.ts`, rendered as **Settings ▸ System ▸ Operations
+rules**. **Every default is the ruled answer**, so surfacing them changed no behaviour — a
+setting whose default differed from its ruling would silently re-rule it.
+
+**The design question worth recording: how a settings-driven rule reaches a PURE engine.**
+`lib/availability.ts` still imports nothing and still takes `disqualifyingStates` and `bounds`
+as required parameters with no default. What it gained is two pure resolvers —
+`unitStatesForRule(label)` and `boundsForTurnaround(label)` — because the label→behaviour
+mapping *is* business logic, and Law 1 keeps that out of a settings registry as firmly as it
+keeps it out of a page. `lib/queries/availability.ts`, already the IO layer, is the only thing
+that reads storage. The engine stays drivable in a test with no `window` and no stubbing.
+
+`unitAvailabilityRule` is **three named presets**, not ten tick-boxes over `inventory_state` —
+the question an owner answers is "how cautious should assignment be". That avoided widening
+`SettingValue` or adding a `multiselect` kind, which a first design pass had thought necessary.
+
+**Driven in the mock app, not asserted from code:** the card renders all five with their ruled
+defaults; unlocking produces real `<select>`/`<input>` controls with the right options; changing
+Turnaround to "Turnaround required" and pressing Save wrote
+`br.settings.rentalTurnaround = 'Turnaround required'` to localStorage. Reset afterwards.
+
+### 2. Two defects in that work, found by an adversarial pass and fixed
+
+- **`toTstzRangeLiteral`'s `bounds` had a default** (the module constant). Safe only because the
+  single caller passed `plan.bounds` explicitly — and one careless call away from writing a
+  period under the *ruled* default while the check that produced it ran under the *owner's*
+  choice. That bracket is stored in `inventory_reservations.period` and the GiST exclusion
+  compares it with `&&`, so the disagreement would surface as a mysterious rejection hours
+  later. Parameter is now required; four call sites updated.
+- **`readSettings()` discarded an invalid stored value in silence.** Correct for a VAT rate,
+  which shows up on the next invoice. Wrong for an operations rule: an owner who chose
+  `Only In Stock` would be silently returned to `Condition only` after a spec rename —
+  availability *loosens*, gear held back becomes bookable, and nothing anywhere says so. It now
+  warns with the key and the substituted default.
+
+### 3. Ruling §4.31(3) implemented — Reset's priority is gone
+
+`priorityTier` had **four** inputs and the ruling named three. The fourth, `waitingMinutes > 240`,
+is exactly `queueTimeTone(m) === 'danger'` — already on every row as Queue Time. So the flag
+reduced to its one surviving clause would have been a second control saying what the first says.
+All of it went: chip tile, filter toggle, both row flag icons, the `Next Priority Items` card,
+`PriorityTier`/`priorityTier`/`isPriority`, the `Demand` type and 54 hand-typed literals across
+18 seed units. **Urgency did not leave the screen** — "Longest wait" and the per-row Queue Time
+tone are untouched.
+
+Both hardcoded grid counts were changed with the arrays they lay out (`repeat(5,…)` →
+`repeat(4,…)`, `'1fr 1fr'` → `'1fr'`), which the pass named as the most likely way this ships
+looking broken.
+
+**Verified by driving `/rentals/B-715/reset`:** four chip tiles, zero occurrences of "priorit" in
+the rendered text, no `[aria-label="Priority"]` node, no `Next Priority Items` card.
+
+### 4. Three findings recorded rather than patched — PLAN.md §4.32
+
+- **`rentalTurnaround` is written into the database as data**, not merely read. Flipping it does
+  not rewrite live holds, so the table would hold mixed conventions and the exclusion would
+  enforce per-row history — including the case where **the database rejects a booking the app
+  just told the operator was fine**. Latent today (`inventory_reservations` = 0 rows), which is
+  exactly why it is cheap to rule now.
+- **`evidenceRetentionDays` cannot stay in localStorage.** `readSettings()` returns the defaults
+  when `typeof window === 'undefined'`, so a server-side expiry job reads **0 = keep forever**
+  whatever the owner set — silently, in the safe direction, which is the kind that survives
+  testing.
+- **Moving settings to `system_settings` has three blockers**: `insertViaSourceSwitch` cannot
+  type the write (`types/database.ts` is hand-maintained for migrations 0001–0012 and lists 24
+  tables, without it); `canManageSettings` is Owner-only while the live policy is
+  Owner|Admin|Manager — per §4.20 the **app** is the wrong side of that drift; and every
+  operations rule must be written `is_public = true` or it is invisible to exactly the Warehouse
+  and Coordinator sessions it governs.
+
+### What was NOT done
+
+Three of the four §4.31 rulings are still **recorded but unimplemented**, and an adversarial pass
+found a landmine under one of them:
+
+- **(d) packing tree grouping** — `data/packing.ts:83-86` **throws at module load** if group
+  counts do not reconcile with `TOTAL_ITEMS`, and `operationRoutes.test.tsx` imports all five
+  workspaces. Replacing the hand-typed `group` with a derived label takes that 24-test file down
+  at *collection*, not at an assertion. Worse, the ruled primary path matches no live row:
+  **`bundle_id` is set on 0 of 419 `booking_lines`, and `bundles`/`bundle_items` are empty**, so
+  everything would fall to the category branch — and `inventory_categories.name` is a 17-value
+  enum with only 6 rows live, which can never produce a label like "Lens Set — NISI Athena
+  Prime". The ruling is not wrong; the data is not there yet.
+- **(g) packing gate per booking** — the gate has **nowhere to write in either form**. No
+  `supabase.storage` call, no bucket, and `evidence_files` has 0 rows. Switching from per-case to
+  per-booking moves which `useState` counter the gate reads and changes nothing about
+  persistence. It must not be logged as implemented on that basis.
+- **(f) empty-state copy** — and the ruling's premise is wrong for one of its three screens:
+  Cleaning & Reset **already** renders `EmptyState` correctly at both breakpoints. An implementer
+  working from the ruling text alone would rewrite a working screen.
+- **(1b) photo retention** — no schedule, no job, no infrastructure. Nothing expires today.
+
+Also unresolved and newly named: a **third case model** exists in `data/bundles.ts`, where cases
+are priced catalogue items (`Pelican 1610 Hard Case` and eleven more carry a rate). "There is no
+case model" is true of packing lines and false of the catalogue — and `product_units.container_id`
+is not dormant either, it is in a live production SELECT at `queries/inventory.ts:631`.
 
 ## 2026-08-16 (later) — capability matrix closed; Auto Assign Serials built and wired
 
@@ -165,20 +943,25 @@ One artefact of that session cost a false alarm here: a full `vitest run` report
 `queries/__tests__/bookings.test.ts` that vanished on re-run. That file's mtime was **five minutes
 after my run started** — it was being edited mid-run. Not a real failure. Expect this.
 
-### What was NOT verified
+### What was NOT verified — ✅ **RESOLVED 16 Aug 2026, see the entry below**
 
-**None of this was driven in a browser, and the reservation write has never executed against the
-live database.** CLAUDE.md's standing rule is to verify by driving the app; that has not happened
-here. Specifically unproven:
+This section listed three unproven claims. **All three were executed against the live project
+later the same day** (project `sxguwvgoserhdolewibb`, inside a transaction rolled back by
+`raise exception`, nothing committed) and all three passed. The original text is kept because
+the discipline of listing them is what made the check cheap to run:
 
-- that `insertViaSourceSwitch('inventory_reservations', …)` is accepted by RLS in a real session —
-  the policy was *read*, not exercised;
-- that PostgREST returns `period` in the text shape `parseTstzRange` expects. The parser is tested
-  against the documented form and against its own round-trip, not against a real response;
-- the compensating release, against real rows.
+- ~~that `insertViaSourceSwitch('inventory_reservations', …)` is accepted by RLS in a real
+  session — the policy was *read*, not exercised;~~ → **accepted**, `auth_user_role()` resolved
+  `Owner`, both inserts landed.
+- ~~that PostgREST returns `period` in the text shape `parseTstzRange` expects;~~ → it returns
+  `["2026-08-03 00:15:00+00","2026-08-05 00:15:00+00")`, which the parser reads. That exact
+  string is now a test case, labelled as captured from the database.
+- ~~the compensating release, against real rows.~~ → **works.**
 
-`inventory_reservations` holds **0 rows**, so the first confirm through this path is also its
-first real test. Drive it before trusting it.
+Two further properties were proven in the same pass and had not been claimed at all: the GiST
+exclusion **rejects** a second overlapping hold on the same unit (so the database really is the
+arbiter, not the app), and a **back-to-back** window is **accepted** under the ruled half-open
+convention — §4.30(b) behaving at the database exactly as it was ruled in the engine.
 
 ### Blocked / next
 

@@ -606,7 +606,18 @@ export async function runFloorVerb(
     )
   }
 
-  await logAuditEvent({
+  /* TODO(decision) §4.36 — this is THE call site the ruling is about.
+   *
+   * `operation_sessions` carries no audit trigger, so this row is the only
+   * record that the session happened and who closed it. Until 16 Aug 2026 a
+   * failure here was invisible: `logAuditEvent` returned void and swallowed it,
+   * so a Warehouse actor finished a return, saw success, and left no trace.
+   *
+   * It is now reportable. What to DO about a failure is the open ruling — fail
+   * the verb with it, or proceed and surface a banner until the row drains. The
+   * verb deliberately still PROCEEDS, exactly as before, so nothing here
+   * pre-empts the answer. When §4.36 is ruled, this branch is where it lands. */
+  const sessionAudit = await logAuditEvent({
     eventClass: 'session',
     category: 'Rentals',
     module: 'Operations',
@@ -620,6 +631,12 @@ export async function runFloorVerb(
     // The state the session is actually in, not the one the verb was aiming at.
     newValues: { operation, state: closed ? 'Completed' : 'In Progress', lines: lines.length, movements },
   })
+  if (!sessionAudit.ok) {
+    console.error(
+      `[floorVerb] ${operation} on ${booking.booking_no} completed with NO audit row for session ${sessionId}.`,
+      sessionAudit.error,
+    )
+  }
 
   /* 8 — the stage, through the transition trigger and nothing else. */
   const stage = complete ? await advanceStage(job, booking, ctx, actionUuid, occurredAt) : null
@@ -886,7 +903,12 @@ async function completeResetQueue(
   for (const entry of pending) {
     await safeUpdate('cleaning_queue_entries', entry.id, { reset_completed_at: at, updated_at: at }, actionUuid)
     // Per item, never per batch (`0003:911`) — and so is its audit row.
-    await logAuditEvent({
+    // TODO(decision) §4.36, same ruling as the session row above. Note the extra
+    // wrinkle here: the `safeUpdate` on the line before has already committed,
+    // so "fail the verb with it" would have to mean failing PART WAY THROUGH a
+    // loop that has written earlier entries. Whoever rules §4.36 should rule
+    // this shape too rather than let it be inferred at the call site.
+    const entryAudit = await logAuditEvent({
       eventClass: 'session',
       category: 'Rentals',
       module: 'Operations',
@@ -899,6 +921,12 @@ async function completeResetQueue(
       branchId: booking.branch_id,
       newValues: { reset_completed_at: at, unit_id: entry.unit_id },
     })
+    if (!entryAudit.ok) {
+      console.error(
+        `[floorVerb] Reset committed on cleaning_queue_entries ${entry.id} with NO audit row.`,
+        entryAudit.error,
+      )
+    }
   }
 
   return pending.length

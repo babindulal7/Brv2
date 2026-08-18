@@ -1,3 +1,16 @@
+> 📌 **NOW TRACKED — 16 Aug 2026. `PLAN.md` §4.35.** For five days these 14 findings were
+> referenced nowhere in `PLAN.md` or `PROGRESS.md`, which by this repo's own rule means they
+> were not tracked at all. They are now.
+>
+> ⚠ **This sweep was READ, NOT RUN** — the sandbox failed to start that session, and the tree
+> has moved a great deal since. **Re-verify every row against the current tree before working
+> it.** `E-P0-3` (`createAction` never checking permissions, defaulting the caller to `admin`)
+> was already closed incidentally by the 11 Aug wave.
+>
+> ⏰ `E-P0-1` is no longer a future problem: `toBs()` stops converting on **17 Aug 2026**, and
+> the only month-length table in the workspace is marked "DO NOT SEED — arithmetically
+> impossible" by its own author. See `PLAN.md` §4.34 — it needs published data from the owner.
+
 # BUG_SWEEP_ENGINES_v1.1 — the `lib/` engine layer
 
 **Date:** 2026-08-11 · **Scope:** `src/lib/**`, `src/actions/core.ts`, `src/actions/payments/**`

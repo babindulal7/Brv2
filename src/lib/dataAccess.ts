@@ -10,6 +10,36 @@
 import { supabase } from './supabase'
 import type { Database } from '../types/database'
 import { enqueueMutation } from './offlineQueue'
+import { IS_MOCK } from './supabase'
+
+/**
+ * Whether a write should be diverted into the Dexie outbox instead of being
+ * sent now.
+ *
+ * ⛔ This used to be a bare `!navigator.onLine`, which was wrong the moment the
+ * product went local-first (16 Aug 2026). The local corpus in `lib/mock/` is
+ * **always reachable** — it is an in-memory store plus a localStorage overlay,
+ * with no network between the caller and the data. Diverting a write into the
+ * outbox because the laptop's wifi dropped would strand it in a queue destined
+ * for a Supabase that is not currently the source of truth, and hand the caller
+ * an optimistic success for a row the store never received.
+ *
+ * That is not theoretical. `BUG_SWEEP_ENGINES_v1.1` E-P1-1 records that
+ * `enqueueMutation` dedupes on `table+action+clientUuid` and returns `false`,
+ * which `safeUpdate` discards — so one action writing five booking lines
+ * enqueues the first and silently drops four. E-P1-2 records that a mutation
+ * left in `'syncing'` when a tab closes is never selected by any drain again.
+ *
+ * Those findings are still open, and this guard does not fix them. It takes the
+ * queue **off the write path entirely** while the store is local, which is
+ * cheaper and safer than fixing a mechanism nothing currently needs. When
+ * Supabase becomes the writer again, `IS_MOCK` goes false, the queue comes back
+ * onto the path, and E-P1-1/2/3 must be closed **before** that happens.
+ */
+function shouldQueueOffline(): boolean {
+  if (IS_MOCK) return false
+  return typeof navigator !== 'undefined' && !navigator.onLine
+}
 
 /** Generates standard UUIDv4 in browser/node */
 export function generateClientUuid(): string {
@@ -23,26 +53,52 @@ export function generateClientUuid(): string {
   })
 }
 
+export interface InsertOptions {
+  /**
+   * Read the inserted row back and return it. Defaults to `true`.
+   *
+   * ⛔ Pass `false` when the caller has INSERT on the table but not SELECT.
+   * `.insert().select().single()` is **two permissions, not one**: PostgREST
+   * runs the `RETURNING` clause as the same role, so a table that grants INSERT
+   * broadly and SELECT narrowly makes every write by a narrow role *look* like
+   * a failure — the row commits, the read-back is denied, and the error that
+   * comes back describes the read.
+   *
+   * That is live on `audit_events`: INSERT is granted to all staff, SELECT to
+   * Owner/Admin/Manager only, so a **Warehouse** actor's audit write threw on
+   * the read-back and was swallowed (`PLAN.md` §4.36 / `BUG_SWEEP_ENGINES`
+   * `R3-5`). The row is append-only and its id is never used by the caller, so
+   * reading it back bought nothing and cost the audit trail.
+   *
+   * Not the default, because every other caller genuinely wants the row: the
+   * DB assigns ids, record numbers and defaults the client cannot compute.
+   */
+  returnRow?: boolean
+}
+
 /** Inserts a record with mandatory `client_uuid` injection for idempotency */
 export async function idempotentInsert<
   TTable extends keyof Database['public']['Tables'],
   TInsert extends Database['public']['Tables'][TTable]['Insert']
 >(
   table: TTable,
-  payload: Omit<TInsert, 'client_uuid'> & { client_uuid?: string }
+  payload: Omit<TInsert, 'client_uuid'> & { client_uuid?: string },
+  options: InsertOptions = {}
 ) {
+  const returnRow = options.returnRow !== false
   const finalPayload = {
     ...payload,
     client_uuid: payload.client_uuid || generateClientUuid(),
   }
 
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+  if (shouldQueueOffline()) {
     console.warn(`[DataAccess] Device offline. Queuing insert for ${String(table)}.`)
     await enqueueMutation(String(table), 'insert', finalPayload, finalPayload.client_uuid)
     return { data: finalPayload, error: null } // Optimistic response
   }
 
-  const { data, error } = await (supabase.from(table as string) as any).insert(finalPayload).select().single()
+  const insert = (supabase.from(table as string) as any).insert(finalPayload)
+  const { data, error } = returnRow ? await insert.select().single() : await insert
 
   if (error) {
     // If it's a network error from Supabase, queue it instead
@@ -55,12 +111,17 @@ export async function idempotentInsert<
     // Detect duplicate idempotency violation
     if (error.code === '23505' && error.message.includes('client_uuid')) {
       console.warn(`[DataAccess] Idempotent request duplicate detected for table ${String(table)}. Fetching existing record.`)
+      /* A duplicate means the row is already committed — which, for a caller
+         that never wanted the row, is success and nothing more. Re-reading it
+         would reintroduce the exact SELECT this option exists to avoid, and
+         turn a satisfied idempotency guarantee back into a swallowed error. */
+      if (!returnRow) return { data: null, error: null }
       return await (supabase.from(table as string) as any).select().eq('client_uuid', finalPayload.client_uuid).single()
     }
     throw new Error(`[DataAccess] Insert failed on ${String(table)}: ${error.message}`)
   }
 
-  return { data, error: null }
+  return { data: returnRow ? data : null, error: null }
 }
 
 /**
@@ -111,7 +172,7 @@ export async function safeUpdate<
     console.warn(`[DataAccess] safeUpdate('${String(table)}') was called without a client_uuid — this write has no replay protection (Law 8). Pass the action key from the point the user acted.`)
   }
 
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+  if (shouldQueueOffline()) {
     console.warn(`[DataAccess] Device offline. Queuing update for ${String(table)} id=${id}.`)
     await enqueueMutation(String(table), 'update', { ...payload, id }, actionUuid)
     return { data: { ...payload, id }, error: null } // Optimistic response

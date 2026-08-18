@@ -5,10 +5,16 @@ import {
   selectUnitsForLine,
   isRetired,
   explainShortfall,
+  unitStatesForRule,
+  boundsForTurnaround,
+  UNIT_AVAILABILITY_PRESETS,
+  DISQUALIFYING_UNIT_STATES,
+  RENTAL_WINDOW_BOUNDS,
   type RentalWindow,
   type UnitCandidate,
   type UnitHold,
 } from '../availability'
+import { SETTING_SPECS } from '../settingsStore'
 
 /*
  * The reference window: 16–18 Aug 2026, Kathmandu (+05:45), expressed in the
@@ -38,7 +44,16 @@ const hold = (unitId: string, window: RentalWindow, bookingNo = 'B-901'): UnitHo
   window,
 })
 
-/** §4.14 is unruled, so every test states its own set rather than importing one. */
+/**
+ * An empty set, used so the `selectUnitsForLine` cases below isolate the
+ * date-overlap and retirement logic from the state rule.
+ *
+ * §4.14 is now RULED (§4.30c) and the real set is `DISQUALIFYING_UNIT_STATES` —
+ * but these tests deliberately do NOT import it. A suite that passes the
+ * production set is testing two rules at once, and would start failing for the
+ * wrong reason the day someone re-rules which states disqualify a unit. The
+ * ruled set has its own tests at the bottom of this file.
+ */
 const NO_STATES: ReadonlySet<string> = new Set<string>()
 
 describe('windowsOverlap', () => {
@@ -70,11 +85,13 @@ describe('windowsOverlap', () => {
    * required parameter rather than a default. Gear back at 18:00 and out again
    * at 18:00: legal under `[)`, a conflict under `[]`.
    *
-   * PLAN.md §4.30 is open on which this product wants. Both behaviours are
-   * pinned so that ruling it is a one-line change with a test that already
-   * states both answers — not a discovery.
+   * ✅ Ruled `half-open` (§4.30b) and then made a Settings key
+   * (`rentalTurnaround`), so an owner can flip it without a release. BOTH
+   * behaviours stay pinned here for exactly that reason: the setting means the
+   * other branch is reachable in production, not hypothetical, so it has to be
+   * tested rather than merely possible.
    */
-  describe('the touching-endpoint case — PLAN.md §4.30', () => {
+  describe('the touching-endpoint case — PLAN.md §4.30(b)', () => {
     const backToBack: RentalWindow = { fromAd: '2026-08-18T18:00:00+05:45', toAd: '2026-08-20T18:00:00+05:45' }
 
     it('half-open lets the next booking start exactly when this one ends', () => {
@@ -300,5 +317,112 @@ describe('explainShortfall', () => {
   it('uses the singular for a shortfall of one', () => {
     const out = selectUnitsForLine({ ...base, needed: 1, candidates: [], holds: [] })
     expect(explainShortfall(out, 'Sony FX6')).toContain('1 more unit needed')
+  })
+})
+
+/* ── The Settings-driven rules ───────────────────────────────────────────────
+ *
+ * Both rulings became Settings keys on 16 Aug 2026. The engine stays pure — it
+ * takes the resolved values as required parameters — so what needs pinning here
+ * is the MAPPING from a stored label to engine behaviour, and above all the
+ * fallback: an unrecognised label must not mean "nothing disqualifies a unit".
+ */
+describe('settings-driven availability rules', () => {
+  describe('unitStatesForRule', () => {
+    it('resolves the ruled default to the ruled set', () => {
+      expect(unitStatesForRule('Condition only')).toBe(DISQUALIFYING_UNIT_STATES)
+      expect([...unitStatesForRule('Condition only')].sort()).toEqual(['Maintenance', 'Missing', 'Retired'])
+    })
+
+    it('adds the turnaround queues on the middle preset, and nothing else', () => {
+      const states = unitStatesForRule('Condition and turnaround')
+      expect(states.has('Inspection')).toBe(true)
+      expect(states.has('Cleaning')).toBe(true)
+      /* Still not the lifecycle four — that is the strict preset's job. */
+      expect(states.has('On Rent')).toBe(false)
+      expect(states.has('Reserved')).toBe(false)
+    })
+
+    it('disqualifies everything but In Stock on the strict preset', () => {
+      const states = unitStatesForRule('Only In Stock')
+      for (const state of ['Reserved', 'Packed', 'On Rent', 'Returning', 'Inspection', 'Cleaning', 'Maintenance', 'Missing', 'Retired']) {
+        expect(states.has(state)).toBe(true)
+      }
+      expect(states.has('In Stock')).toBe(false)
+    })
+
+    /*
+     * THE safety property. A renamed spec, a hand-edited localStorage or a value
+     * written by an older build must not resolve to an empty set — that would
+     * mean nothing disqualifies a unit, and gear in Maintenance would go out on
+     * a shoot. Failing to the ruled answer is the safe direction.
+     */
+    it('falls back to the ruled set on an unknown label — NEVER to empty', () => {
+      for (const junk of ['', 'Anything', 'condition only', 'Condition Only']) {
+        const states = unitStatesForRule(junk)
+        expect(states.size).toBeGreaterThan(0)
+        expect(states).toBe(DISQUALIFYING_UNIT_STATES)
+      }
+    })
+
+    it('never returns a preset that would let a Maintenance unit through', () => {
+      for (const preset of Object.values(UNIT_AVAILABILITY_PRESETS)) {
+        expect(preset.has('Maintenance')).toBe(true)
+        expect(preset.has('Missing')).toBe(true)
+      }
+    })
+  })
+
+  describe('boundsForTurnaround', () => {
+    it('maps the two labels to the two conventions', () => {
+      expect(boundsForTurnaround('Same-instant handover allowed')).toBe('half-open')
+      expect(boundsForTurnaround('Turnaround required')).toBe('closed')
+    })
+
+    it('falls back to the ruled convention on an unknown label', () => {
+      expect(boundsForTurnaround('nonsense')).toBe(RENTAL_WINDOW_BOUNDS)
+    })
+
+    /* The ruled default and the setting's default must agree, or the app
+       behaves one way and PLAN.md §4.30(b) says another. */
+    it("agrees with the setting spec's own default", () => {
+      expect(boundsForTurnaround(String(SETTING_SPECS.rentalTurnaround.default))).toBe(RENTAL_WINDOW_BOUNDS)
+    })
+  })
+
+  /*
+   * The registry and the engine are two files that must not drift. A preset
+   * added to one and not the other is silently unreachable, or silently
+   * unresolvable — and the second falls back, which hides it.
+   */
+  describe('the setting spec and the engine agree', () => {
+    it('every unitAvailabilityRule option has a preset', () => {
+      const options = SETTING_SPECS.unitAvailabilityRule.options ?? []
+      expect(options.length).toBeGreaterThan(0)
+      for (const option of options) {
+        expect(Object.hasOwn(UNIT_AVAILABILITY_PRESETS, option)).toBe(true)
+      }
+    })
+
+    it('every preset is offered as an option — no unreachable presets', () => {
+      const options = SETTING_SPECS.unitAvailabilityRule.options ?? []
+      for (const preset of Object.keys(UNIT_AVAILABILITY_PRESETS)) {
+        expect(options).toContain(preset)
+      }
+    })
+
+    it('every rentalTurnaround option maps to a distinct convention', () => {
+      const options = SETTING_SPECS.rentalTurnaround.options ?? []
+      const mapped = options.map((o) => boundsForTurnaround(o))
+      expect(new Set(mapped).size).toBe(options.length)
+    })
+
+    it("the ruled defaults are the specs' defaults, so shipping these changed nothing", () => {
+      expect(unitStatesForRule(String(SETTING_SPECS.unitAvailabilityRule.default))).toBe(DISQUALIFYING_UNIT_STATES)
+      expect(SETTING_SPECS.packingPhotosRequired.default).toBe(1)
+      /* 0 = keep forever. The retention ruling never stated a period, so any
+         positive default would be inventing the one part nobody gave. */
+      expect(SETTING_SPECS.evidenceRetentionDays.default).toBe(0)
+    })
   })
 })

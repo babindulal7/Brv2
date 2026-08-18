@@ -1520,32 +1520,44 @@ export default function NewRental() {
       return
     }
     /*
-     * ⛔ This used to dispatch `confirmRental({ id: 'bk-new' }, ctx)`.
+     * ⛔ Still not dispatched, and the reason CHANGED on 16 Aug 2026.
      *
-     * `'bk-new'` is not a booking. This screen holds the whole booking in local
-     * state and has never persisted a row — `saveDraft` and `createRental` are
-     * both still stubs — so there is no `bookings.id` and no `B-` number to
-     * name. CONFIRM_RENTAL is now a real write (`actions/rentals/confirmRental.ts`):
-     * it resolves the reference against `bookings` and moves the stage
-     * `Quote → Booked` by inserting a `booking_stage_transitions` row. Sent a
-     * placeholder, it refuses with "No booking matches bk-new" — truthful, but
-     * it reports a reference the operator never typed and hides the actual gap.
+     * It used to send `confirmRental({ id: 'bk-new' }, ctx)` — `'bk-new'` is not
+     * a booking — and then, once that was removed, the message said CREATE_RENTAL
+     * "is not built yet". **CREATE_RENTAL is now built** and drives against the
+     * local store: `actions/rentals/createRental.ts` calls one
+     * `.rpc('create_booking')`, which writes the header, its lines and its
+     * discounts under a single commit.
      *
-     * So the gap is stated instead, and no fabricated id is sent. Confirm is a
-     * transition on a SAVED Quote; this page's job is to create one first.
-     * TODO: when CREATE_RENTAL persists a booking, dispatch it here and pass the
-     * returned `bookings.id` (or its `booking_no`) straight into `confirmRental`
-     * with a `clientUuid` minted at this press — see `BookingDetail.tsx`'s
-     * `confirmBooking`, which is the wired version of exactly that call.
+     * What blocks THIS screen is one layer lower, and it is the Phase 2 gap:
+     *
+     *   - `clientPool` comes from `data/clients.ts`, whose ids are **`'C-1'`,
+     *     `'C-2'`** — client CODES, not `clients.id` uuids.
+     *   - `EQUIPMENT_CATALOGUE` is built from `PARENTS` in `data/inventory.ts`,
+     *     seed rows whose ids are not `products.id` uuids either.
+     *
+     * `createRental.validate` refuses both by name rather than letting a `C-1`
+     * fail an FK three layers down — so wiring this button today would produce a
+     * guaranteed, well-explained refusal, not a booking. The screen has to
+     * select its client and its catalogue from `lib/queries/*` first; that is
+     * the same "screens read seed arrays" gap PLAN.md Phase 2 names as the
+     * single largest correctness problem in the app.
+     *
+     * When that lands: dispatch `createRental` here with a `clientUuid` minted
+     * at THIS press (Law 8), map the delivery label through
+     * `deliveryTypeFromLabel` (the UI says "Client Pickup"; the enum stores
+     * "Customer Pickup"), then pass the returned `bookings.id` straight into
+     * `confirmRental` — see `BookingDetail.tsx`'s `confirmBooking`, which is the
+     * wired version of that second call.
      *
      * `navigate('/rentals')` is deliberately not called: landing on the rentals
-     * list is this app's universal "the write landed" signal, and nothing
-     * landed.
+     * list is this app's universal "the write landed" signal, and nothing landed.
      */
     setActionError(
-      'Not confirmed — this booking has not been saved yet, so there is nothing to confirm. Confirm moves a ' +
-        'SAVED quote from Quote to Booked; creating the booking row is CREATE_RENTAL, which is not built yet ' +
-        '(src/actions/rentals/createRental.ts). Nothing was written, and nothing entered here has been lost.',
+      'Not confirmed — this booking has not been saved yet, so there is nothing to confirm. Creating the row ' +
+        'is built now, but this screen still picks its client and equipment from sample data rather than from ' +
+        'the database, so it has no real client or product to save against. Nothing was written, and nothing ' +
+        'entered here has been lost.',
     )
   }, [confirmBlocked, dispatchContext])
 

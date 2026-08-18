@@ -31,6 +31,25 @@ export default defineConfig({
     // Explicit imports from 'vitest' in every file — no ambient globals, so
     // `tsc --noEmit` typechecks the suites with the same strictness as `src/`.
     globals: false,
+    /*
+     * Raised from vitest's 5000ms default, 16 Aug 2026, after the same failure
+     * shape appeared four separate times: `numberingPreview`,
+     * `ExpenseReports.toolbar`, `calendar.kpiBand` and `ReportCatalog.dedup`
+     * each timed out at exactly 5000ms during a full parallel run and passed in
+     * isolation seconds later.
+     *
+     * The cause is not a slow test, it is contention. A `jsdom` component suite
+     * pays ~3.5s just to build its environment before its first assertion, and
+     * with several running in parallel on a loaded machine that leaves under two
+     * seconds of real budget. The failures were never reproducible, which cost
+     * two sessions distinguishing them from regressions.
+     *
+     * 20s is chosen to be far above the contention band and still low enough to
+     * catch a genuine hang. It is NOT a licence for slow tests: the engine
+     * suites in `src/lib` run in single-digit milliseconds and should stay there.
+     */
+    testTimeout: 20_000,
+    hookTimeout: 20_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

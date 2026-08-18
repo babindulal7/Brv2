@@ -90,6 +90,59 @@ export const SYSTEM_SECTIONS: Section[] = [
       { label: 'Session timeout', note: 'Signed out after this long idle.', settingKey: 'sessionTimeoutMinutes' },
     ],
   },
+  /**
+   * **Operations rules** — added 16 Aug 2026.
+   *
+   * Five rulings (PLAN.md §4.30, §4.31) that were constants in the engines
+   * until now. They are here because each is a genuine business decision an
+   * owner may need to change without a release — and two of them were ruled
+   * close enough that they may well be revisited: the turnaround one was taken
+   * *against* the recommendation put with it.
+   *
+   * Every default is the ruled answer, so surfacing these changed no behaviour.
+   * `readBy` names the module that reads each one live, per §11.4 — *"Every
+   * value here is read by a screen. None is hardcoded."*
+   *
+   * ⚠ This card is the one place in Settings where a change alters what the
+   * **warehouse** can physically do with gear, not how a number is displayed.
+   */
+  {
+    key: 'operations',
+    title: 'Operations rules',
+    icon: 'box',
+    fields: [
+      {
+        label: 'Unit availability',
+        note: 'Which units Auto Assign Serials will not pick. Gear already booked for the dates is excluded either way — this is about condition.',
+        settingKey: 'unitAvailabilityRule',
+        readBy: 'lib/queries/availability.ts (every Confirm)',
+      },
+      {
+        label: 'Turnaround between rentals',
+        note: 'Whether gear returning at 18:00 can go out again at 18:00, or needs time in between.',
+        settingKey: 'rentalTurnaround',
+        readBy: 'lib/queries/availability.ts (every Confirm)',
+      },
+      {
+        label: 'Packing tree grouping',
+        note: 'How the packing bench groups a booking — by the bundle it was sold as, or by category.',
+        settingKey: 'packingTreeGrouping',
+        readBy: 'modules/rentals/PackingWorkspace.tsx',
+      },
+      {
+        label: 'Packing photos required',
+        note: 'Photos of the packed booking before Complete Packing is allowed. Zero turns the gate off.',
+        settingKey: 'packingPhotosRequired',
+        readBy: 'modules/rentals/PackingWorkspace.tsx',
+      },
+      {
+        label: 'Evidence photo retention',
+        note: 'How long a photo file is kept after a booking completes. The record of who took it, and when, is always kept.',
+        settingKey: 'evidenceRetentionDays',
+        readBy: 'modules/rentals/EvidenceWorkspace.tsx',
+      },
+    ],
+  },
   { key: 'admin', title: 'Administration', icon: 'activity', fields: ADMIN_LINKS },
   {
     key: 'access',

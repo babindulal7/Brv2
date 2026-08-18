@@ -1,3 +1,15 @@
+> 📌 **NOW TRACKED — 16 Aug 2026. `PLAN.md` §4.35.** These 10 findings were referenced nowhere
+> in `PLAN.md` or `PROGRESS.md` for five days. `R3-1`, `R3-2`, `R3-4`, `R3-5` and `R3-6` are
+> named in §4.35 as the highest-value re-checks.
+>
+> ⚠ **READ, NOT RUN.** Re-verify against the current tree before working any row.
+>
+> This file's closing observation has been carried into `PLAN.md` §4.35 because it is the more
+> useful finding: Law 1 has been followed well, and the failure mode that replaced
+> logic-in-pages is **duplication between engines** — every copy in the correct architectural
+> layer, each right in isolation. `R3-1` (four discount implementations) and `R3-2` (two
+> answers on deposit-vs-credit-limit) are both that shape, not four separate bugs.
+
 # BUG_SWEEP_ENGINES_v1.2 — second engine pass
 
 **Date:** 2026-08-11 · **Scope:** the `lib/` files not covered by `v1.1`, plus

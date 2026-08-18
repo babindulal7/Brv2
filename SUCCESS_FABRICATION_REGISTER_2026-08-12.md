@@ -1,3 +1,27 @@
+> ⚠ **REOPENED 16 Aug 2026 — two live sites found, on a screen this register never covered.**
+>
+> This banner said "CLOSED … the site list is spent" earlier on 16 Aug. That was wrong, and the
+> page-documentation pass found it within hours. `src/modules/operations/CasesWorkspace.tsx`:
+>
+> - `:211` — **Export** calls `showSuccessToast('Exporting', 'Generating cases report...')`.
+>   Nothing is generated; there is no export path on this screen.
+> - `:217` — **Log Incident** calls `showSuccessToast('New Case', 'Opening case logging
+>   workspace')`. Nothing opens; case creation is not built.
+>
+> `src/data/cases.ts:983` already holds the honest sentence for exactly this
+> (`NEW_CASE_UNAVAILABLE_REASON`) and the page does not use it. `src/actions/core.ts:9-18` names
+> the failure in the words this register was opened with: *"A UI that reports success for work it
+> did not do is worse than one that is visibly unbuilt."*
+>
+> **The lesson is about the register, not the two buttons.** The original sweep enumerated sites
+> and was declared closed when that list was cleared — but the list was never the population. A
+> screen nobody swept can hold the defect indefinitely, and "the site list is spent" says nothing
+> about screens the sweep did not reach. Evidence: `docs/pages/26_cases.md` §7.
+>
+> The three sites below ARE fixed and re-verified: `RefundPaymentModal` caps at
+> `currentPaidPaisa`, `CreateInvoiceModal` holds Paisa rather than a formatted string, and
+> `ImportCenter` no longer reports imports it did not perform.
+
 # Success-Fabrication Register — 12 Aug 2026
 
 **The defect class:** a screen tells the operator a write succeeded when nothing was
