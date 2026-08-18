@@ -7,7 +7,7 @@ import { Card, PageHeader, Button, Rail, FooterNote, cardStyle, SummaryRows } fr
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { STATUS, BRAND, BRAND_ON } from '../../lib/status'
 import type { StatusKey, BrandKey } from '../../lib/status'
-import { TODAY, toBs, formatBs, formatAd, isWeekend } from '../../lib/bs'
+import { getBusinessToday, toBs, formatBs, formatAd, isWeekend } from '../../lib/bs'
 import { useTabularLayout } from '../../lib/device'
 import {
   // clock
@@ -64,6 +64,14 @@ import {
 } from '../../data/businessHours'
 import type { Dest, Hours, Shift, CalException, ExceptionKind, Scope, CalendarView, ScopeRow } from '../../data/businessHours'
 import { BRANCHES, totalsOf } from '../../data/settings'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * **Administration ▸ Business Hours & Holidays** — built against

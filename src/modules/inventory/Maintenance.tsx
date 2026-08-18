@@ -10,7 +10,7 @@ import { Unavailable } from '../../components/ui/Unavailable'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { formatMoney, rupees, type Paisa } from '../../lib/money'
-import { toBs, formatBs, formatAd, TODAY } from '../../lib/bs'
+import { toBs, formatBs, formatAd, getBusinessToday } from '../../lib/bs'
 import { useViewport } from '../../lib/device'
 import { DamageTab } from './DamageTab'
 import {
@@ -27,6 +27,14 @@ import { useAuth } from '../../lib/auth'
 import { gateContext } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
 import { maintenanceGlance, maintenanceDetailGroups } from '../../data/maintenanceIntel'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * **Maintenance** — the Inventory workspace's fourth tab (Foundation §5.1).

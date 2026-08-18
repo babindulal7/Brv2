@@ -6,7 +6,7 @@ import type { IconName } from '../../components/ui/Icon'
 import { Input, Select, EmptyState } from '../../components/ui'
 import { Card, PageHeader, Button, FooterNote, cardStyle, Rail } from '../../components/ui/Page'
 import { BRAND } from '../../lib/status'
-import { TODAY, toBs, formatBs, formatAd, eachDay, isWeekend, BS_MONTHS } from '../../lib/bs'
+import { getBusinessToday, toBs, formatBs, formatAd, eachDay, isWeekend, BS_MONTHS } from '../../lib/bs'
 import { canViewMoney } from '../../lib/rbac'
 import { isIssuedBy } from '../../data/numbering'
 import type { Role as SystemRole } from '../../lib/rbac'
@@ -39,6 +39,14 @@ import {
   dayDiff,
 } from '../../data/calendar'
 import type { Bar, BarKind, LayerName, ResourceRow, RowType, ViewName } from '../../data/calendar'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * **Calendar Workspace** — built against `03 Core Modules/Calendar.PNG` and

@@ -67,9 +67,22 @@ import {
 import { overdue, todaysIncoming, todaysOutgoing, type BookingListRow } from '../../../lib/queries/bookings'
 import type { ListFilters } from '../../../lib/queries/listQuery'
 import { NOW_AD, TODAY_DAY_AD } from '../../../data/today'
+import { getBusinessToday } from '../../../lib/bs'
 import { gateContext } from '../../../lib/fieldGating'
 import { rupees } from '../../../lib/money'
 import { BOOKING_STATUS, type BookingStatus } from '../../../lib/workflow'
+
+/**
+ * A Kathmandu calendar day, `n` days from the operating day, as `YYYY-MM-DD`.
+ *
+ * These expectations used to be written as literals — `'2026-07-31'`,
+ * `'2026-08-01'` — which passed only while `lib/bs.ts` froze the operating day
+ * at 31 Jul 2026. A test that names a date cannot tell a chip that anchors on
+ * today from one that anchors on a day in the past; it just goes red when the
+ * product is fixed. What the chips actually promise is a relationship to
+ * today, so that is what is asserted.
+ */
+const day = (n: number) => new Date(getBusinessToday().getTime() + n * 86_400_000).toISOString().slice(0, 10)
 
 const CANONICAL_SIX = Object.keys(BOOKING_STATUS)
 
@@ -216,23 +229,24 @@ describe('the date chips — Kathmandu day boundaries, read off the named sets',
     // "tomorrow" would lose the early shift's pickups to today's list.
     expect(q('Tomorrow').filters.dateRange).toEqual({
       column: 'pickup_at',
-      fromAd: '2026-08-01T00:00:00.000+05:45',
-      toAd: '2026-08-01T23:59:59.999+05:45',
+      fromAd: `${day(1)}T00:00:00.000+05:45`,
+      toAd: `${day(1)}T23:59:59.999+05:45`,
     })
   })
 
   it('Next 7 Days is today plus the next six, on pickup_at', () => {
     expect(q('Next 7 Days').filters.dateRange).toEqual({
       column: 'pickup_at',
-      fromAd: '2026-07-31T00:00:00.000+05:45',
-      toAd: '2026-08-06T23:59:59.999+05:45',
+      fromAd: `${day(0)}T00:00:00.000+05:45`,
+      toAd: `${day(6)}T23:59:59.999+05:45`,
     })
   })
 
   it('anchors on lib/bs.ts’s single operating day, not on the wall clock', () => {
     // The app once held three opinions about what day it was. Rentals reads the
-    // same anchor Today, the Calendar and Pulse read.
-    expect(TODAY_DAY_AD).toBe('2026-07-31')
+    // same anchor Today, the Calendar and Pulse read — and since 19 Aug 2026
+    // that anchor is the clock in Kathmandu rather than a frozen constant.
+    expect(TODAY_DAY_AD).toBe(day(0))
     expect(q('Next 7 Days').filters.dateRange?.fromAd?.slice(0, 10)).toBe(TODAY_DAY_AD)
   })
 
@@ -274,7 +288,7 @@ describe('the return-side chips', () => {
     expect(q('Returning').filters).toEqual({
       chips: { stage: ['On Rent'] },
       presence: { cancelled_at: false, actual_return_at: false },
-      dateRange: { column: 'return_at', toAd: '2026-08-01T23:59:59.999+05:45' },
+      dateRange: { column: 'return_at', toAd: `${day(1)}T23:59:59.999+05:45` },
       sort: { column: 'return_at', ascending: true },
     })
   })

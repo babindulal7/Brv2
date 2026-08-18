@@ -84,6 +84,35 @@ function need<T extends HTMLElement>(label: string): T {
   return el
 }
 
+/**
+ * Set one of the Custom range's date inputs.
+ *
+ * The narrowing tests below used to reach for the `last7` preset, whose window
+ * ends on the operating day. That worked only while `lib/bs.ts` froze the
+ * operating day at 31 Jul 2026, inside the seeded expenses' own July dates:
+ * against the real clock `last7` is a window with no seeded row in it, and the
+ * suite went red for a product that was behaving correctly. The seed corpus is
+ * fixed in July, so the window that exercises the toolbar is stated outright.
+ */
+async function typeDate(el: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+  if (!setter) throw new Error('no value setter')
+  await act(async () => {
+    setter.call(el, value)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+    el.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+
+/** 25–31 Jul 2026 — the window `last7` covered on the day this suite was written. */
+const SEEDED_WEEK = { from: '2026-07-25', to: '2026-07-31' }
+
+async function pickSeededWeek() {
+  await change(need<HTMLSelectElement>('Date range'), 'custom')
+  await typeDate(need<HTMLInputElement>('From date'), SEEDED_WEEK.from)
+  await typeDate(need<HTMLInputElement>('To date'), SEEDED_WEEK.to)
+}
+
 async function change(el: HTMLSelectElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
   if (!setter) throw new Error('no value setter')
@@ -112,8 +141,7 @@ describe('ExpenseReports · the shared toolbar drives the ledger', () => {
 
   it('narrows the rows when the date range narrows', async () => {
     await mount()
-    // Last 7 days ends on `bs.ts`'s TODAY (31 Jul 2026), so it selects 25–31 Jul.
-    await change(need<HTMLSelectElement>('Date range'), 'last7')
+    await pickSeededWeek()
     expect(rowCount()).toBe(10)
 
     // …and widening it again brings every row back, rather than latching.
@@ -137,7 +165,7 @@ describe('ExpenseReports · the shared toolbar drives the ledger', () => {
     // pass this suite's other tests and fail this one.
     await mount()
     await change(need<HTMLSelectElement>('Branch'), 'Thamel Branch')
-    await change(need<HTMLSelectElement>('Date range'), 'last7')
+    await pickSeededWeek()
     const both = rowCount()
     expect(both).toBeLessThanOrEqual(3)
 

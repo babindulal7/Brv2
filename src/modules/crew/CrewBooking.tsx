@@ -17,7 +17,7 @@ import { crewGlance, crewDetailGroups } from '../../data/crewIntel'
 import { STATUS, STATUS_ICON } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { useViewport } from '../../lib/device'
-import { TODAY } from '../../lib/bs'
+import { getBusinessToday } from '../../lib/bs'
 import {
   CREW_DATA,
   CREW_ROSTER,
@@ -36,6 +36,14 @@ import {
   fillRate,
 } from '../../data/crew'
 import type { CrewAssignment, PayoutStatus, RosterChip, CrewMember } from '../../data/crew'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /** §11.1 — Tentative and Confirmed share one tone (blue); "on shoot today" is the derived solid-green override. */
 function assignmentTone(a: CrewAssignment, onShootToday: boolean): StatusKey {

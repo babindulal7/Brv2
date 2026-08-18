@@ -8,7 +8,7 @@ import { Donut, Legend } from '../../components/ui/Charts'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { STATUS, BRAND, BRAND_ON } from '../../lib/status'
 import type { StatusKey, BrandKey } from '../../lib/status'
-import { TODAY, toBs, formatBs, formatAd } from '../../lib/bs'
+import { getBusinessToday, toBs, formatBs, formatAd } from '../../lib/bs'
 import { useTabularLayout } from '../../lib/device'
 import {
   CHANNELS,
@@ -48,6 +48,14 @@ import {
   SEED_ERRORS,
 } from '../../data/communicationSettings'
 import type { Dest, Channel, Template, TemplateCategory } from '../../data/communicationSettings'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * **Administration ▸ Communication Settings** — built against

@@ -11,7 +11,7 @@ import { BRAND, BRAND_ON, STATUS } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
 import { formatMoney, grouped, toRupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
-import { TODAY, toBs, formatBs, formatAd } from '../../lib/bs'
+import { getBusinessToday, toBs, formatBs, formatAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useViewport } from '../../lib/device'
@@ -32,6 +32,14 @@ import {
   dueStatus,
 } from '../../data/pulse'
 import type { ChartView, PeriodFigures, EquipmentRow } from '../../data/pulse'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * **Finance ▸ Reports ▸ Pulse** — built against `03 Core Modules/Reports.PNG`

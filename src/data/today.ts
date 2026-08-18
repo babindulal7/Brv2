@@ -2,11 +2,19 @@ import type { AlertRow, Movement, MovementKind } from '../types/today'
 import type { BrandKey, StatusKey } from '../lib/status'
 import { statusToken, STATUS_ORDER } from '../lib/workflow'
 import type { BookingStatus, Flag } from '../lib/workflow'
-import { TODAY, toBs, formatBs, formatAd, eachDay, kathmanduCivil, NPT_OFFSET_MIN } from '../lib/bs'
+import { getBusinessToday, toBs, formatBs, formatAd, eachDay, kathmanduCivil, NPT_OFFSET_MIN } from '../lib/bs'
 import { clockPad } from '../lib/format'
 import { formatMoney, rupees } from '../lib/money'
 import { todaysIncoming, todaysOutgoing, type BookingListRow } from '../lib/queries/bookings'
 import type { ListFilters } from '../lib/queries/listQuery'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * Today Operations seed data.

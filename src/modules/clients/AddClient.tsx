@@ -10,7 +10,7 @@ import { ErrorBanner } from '../../components/ui/StateViews'
 import { useToast } from '../../components/ui/Toast'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { formatMoney, parseMoney } from '../../lib/money'
-import { toBs, formatBs, formatAd, TODAY } from '../../lib/bs'
+import { toBs, formatBs, formatAd, getBusinessToday } from '../../lib/bs'
 import { useViewport } from '../../lib/device'
 /* The phone rule is `lib/phone`'s, not this screen's — see that module's header
    for the CHECK it mirrors and why three screens may not each own a copy.
@@ -23,6 +23,7 @@ import { useNetwork } from '../../lib/network'
 import { newClientUuid } from '../../lib/supabase'
 import type { ActionContext } from '../../actions/core'
 import {
+
   CLIENTS_DATA,
   CLIENT_SOURCES,
   PAYMENT_TERMS_OPTIONS,
@@ -36,6 +37,14 @@ import {
   type Profession,
   type Segment,
 } from '../../data/clients'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * Add Client — full-page creation workflow, replacing the old "Register New

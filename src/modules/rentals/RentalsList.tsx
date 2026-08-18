@@ -10,7 +10,7 @@ import { STATUS, STATUS_ICON, BRAND } from '../../lib/status'
 import type { IconName } from '../../components/ui/Icon'
 import type { StatusKey, BrandKey } from '../../lib/status'
 import { formatMoney } from '../../lib/money'
-import { formatAd, TODAY } from '../../lib/bs'
+import { formatAd, getBusinessToday } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import type { Role as SystemRole } from '../../lib/rbac'
 import { STATUS_ORDER, statusToken } from '../../lib/workflow'
@@ -45,6 +45,14 @@ import {
   withSubRental,
 } from '../../data/rentals'
 import type { ChipKey, OptionalColumn, RentalListRow } from '../../data/rentals'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * ## No tabs, and no Productions — `04_RENTALS.md` line 3

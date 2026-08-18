@@ -8,7 +8,7 @@ import { ErrorBanner } from '../../components/ui/StateViews'
 import { Donut, Legend } from '../../components/ui/Charts'
 import type { Slice } from '../../components/ui/Charts'
 import { STATUS } from '../../lib/status'
-import { TODAY, toBs, formatBs, formatAd } from '../../lib/bs'
+import { getBusinessToday, toBs, formatBs, formatAd } from '../../lib/bs'
 import { rupees, formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { useAuth } from '../../lib/auth'
@@ -44,6 +44,14 @@ import Payments from './Payments'
 import Expenses from './Expenses'
 import Documents from '../documents/Documents'
 import { ReportCatalog } from '../reports/ReportCatalog'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * **Finance dashboard and Invoices** — now read from Postgres through

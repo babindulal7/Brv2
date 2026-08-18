@@ -144,13 +144,45 @@ export function eachDay(startAd: Date, days: number): Date[] {
 }
 
 /**
- * §4.3 — one `today`, resolved once per render. The Today marker, the summary
- * heading, every countdown and every "days left" chip read this single value.
+ * §4.3 — **the operating day, from the real clock.** The Today marker, the
+ * summary heading, every countdown, every "days left" chip and every overdue
+ * comparison read this one function. Nothing computes its own today.
  *
- * Fixed to the seeded operating day so the static build stays self-consistent;
- * it becomes the real clock when data is wired.
+ * ## What it returns
+ *
+ * Midnight UTC of the civil date it is **now in Kathmandu** — the same shape
+ * `kathmanduCivil` returns, so a value from here is directly comparable with
+ * `kathmanduCivil(someInstant)` and with the `+05:45` day boundaries
+ * `queries/bookings.ts` builds. It is a day marker, not an instant: for "now"
+ * as a timestamp, use `new Date()` and store it as UTC (Law 7).
+ *
+ * ## Why it is a function and not a constant
+ *
+ * This was `export const TODAY = new Date(Date.UTC(2026, 6, 31))` — the
+ * operating day frozen at 31 Jul 2026 so the static build stayed
+ * self-consistent while every figure on screen came from `src/data`. A
+ * constant cannot be the real clock: it is evaluated once when the module
+ * loads and can never be anything else, and every overdue chip, ageing count
+ * and "days left" figure derived from it was measuring distance from a day in
+ * the past rather than from today.
+ *
+ * A function also lets a test decide what today is — `getBusinessToday(d)` or
+ * `vi.setSystemTime(d)` — instead of the product carrying a fixed date so its
+ * tests can assert against one.
+ *
+ * ## The timezone is Kathmandu, deliberately
+ *
+ * Not the browser's. A tablet whose clock is set to another zone, or a laptop
+ * that travelled, must still agree with the warehouse about which day it is:
+ * the business day is Nepal's day. `NPT_OFFSET_MIN` above is the single copy
+ * of that offset.
+ *
+ * @param now Override for tests and for "what would this have been on X".
+ *            Defaults to the real clock.
  */
-export const TODAY = new Date(Date.UTC(2026, 6, 31))
+export function getBusinessToday(now: Date = new Date()): Date {
+  return new Date(kathmanduCivil(now))
+}
 
 /** Nepal's weekend is Saturday. `Calendar.md` §0 — Saturday shaded, not Sunday. */
 export function isWeekend(ad: Date): boolean {

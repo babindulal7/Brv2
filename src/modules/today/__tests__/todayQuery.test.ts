@@ -27,7 +27,7 @@ vi.mock('../../../lib/supabase', () => ({
   newClientUuid: () => '00000000-0000-4000-8000-000000000000',
 }))
 
-import { NPT_OFFSET_MIN } from '../../../lib/bs'
+import { NPT_OFFSET_MIN, getBusinessToday } from '../../../lib/bs'
 import {
   FILTER_SUPPORT,
   MORE_FILTERS,
@@ -52,6 +52,13 @@ import { todaysIncoming, todaysOutgoing, type BookingListRow } from '../../../li
 type Raw = BookingListRow
 
 /** A booking that leaves 31 Jul at 09:00 NPT and is due back 2 Aug at 06:00 NPT. */
+/**
+ * A Kathmandu calendar day, `n` days from the operating day, as `YYYY-MM-DD`.
+ * The period chips promise a relationship to today, not a fixed date; written
+ * as literals these expectations only held while the operating day was frozen.
+ */
+const day = (n: number) => new Date(getBusinessToday().getTime() + n * 86_400_000).toISOString().slice(0, 10)
+
 function raw(over: Partial<Raw> = {}): Raw {
   return {
     id: 'b1',
@@ -140,7 +147,12 @@ describe('toMovementRow · Overdue, and the flags that are not derived', () => {
   })
 
   it('does not flag one still in the future', () => {
-    expect(toMovementRow(raw(), 'incoming', NOW_AD).flags).toEqual([])
+    /* An instant BEFORE the fixture's 2 Aug return, stated here rather than
+       taken from `NOW_AD`. `NOW_AD` is the real operating day now that
+       `lib/bs.ts` reads the clock, so on any day after 2 Aug 2026 this fixture
+       is overdue and the test was asserting the opposite of what it says. */
+    const NOW_1_AUG = '2026-08-01T00:00:00.000Z'
+    expect(toMovementRow(raw(), 'incoming', NOW_1_AUG).flags).toEqual([])
   })
 
   it('says "Late today" rather than "0 days late"', () => {
@@ -332,13 +344,13 @@ describe('pickupsQuery / returnsQuery · the filter set that reaches Postgres', 
     expect(range?.column).toBe('pickup_at')
     // Both bounds carry Nepal's offset, taken from the named set rather than
     // rebuilt here — a UTC-bounded "today" runs 05:45 to 05:45.
-    expect(range?.fromAd).toBe('2026-07-31T00:00:00.000+05:45')
-    expect(range?.toAd).toBe('2026-08-06T23:59:59.999+05:45')
+    expect(range?.fromAd).toBe(`${day(0)}T00:00:00.000+05:45`)
+    expect(range?.toAd).toBe(`${day(6)}T23:59:59.999+05:45`)
   })
 
   it('returns are ranged on return_at, pickups on pickup_at', () => {
     expect(returnsQuery('Tomorrow', []).filters.dateRange?.column).toBe('return_at')
-    expect(returnsQuery('Tomorrow', []).filters.dateRange?.fromAd).toBe('2026-08-01T00:00:00.000+05:45')
+    expect(returnsQuery('Tomorrow', []).filters.dateRange?.fromAd).toBe(`${day(1)}T00:00:00.000+05:45`)
   })
 
   it('All drops the date range and keeps everything else', () => {
@@ -390,7 +402,7 @@ describe('Status chips · intersection, never replacement', () => {
   })
 
   it('does not disturb the period range', () => {
-    expect(pickupsQuery('Tomorrow', ['Packed']).filters.dateRange?.fromAd).toBe('2026-08-01T00:00:00.000+05:45')
+    expect(pickupsQuery('Tomorrow', ['Packed']).filters.dateRange?.fromAd).toBe(`${day(1)}T00:00:00.000+05:45`)
   })
 })
 

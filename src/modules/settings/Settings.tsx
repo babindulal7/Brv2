@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, FooterNote, cardStyle, SummaryRows } from '../../components/ui/Page'
 import { ErrorBanner, LoadingSkeleton } from '../../components/ui/StateViews'
-import { toBs, formatBs, formatAd, TODAY } from '../../lib/bs'
+import { toBs, formatBs, formatAd, getBusinessToday } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useViewport } from '../../lib/device'
 import { useEditMode } from '../../lib/edit/useEditMode'
@@ -47,6 +47,7 @@ import {
   NotBuilt,
 } from './sections/shared'
 import {
+
   FIELD_SECTIONS,
   FINANCIAL_SECTIONS,
   ORGANISATION_SECTIONS,
@@ -56,6 +57,14 @@ import {
   UsersPane,
   branchCsvRows,
 } from './sections'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * # Settings — the shell

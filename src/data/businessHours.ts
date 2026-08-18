@@ -1,9 +1,17 @@
 import type { IconName } from '../components/ui/Icon'
 import type { StatusKey } from '../lib/status'
-import { TODAY, toBs, formatBs, formatAd, isWeekend, eachDay, BS_MONTHS } from '../lib/bs'
+import { getBusinessToday, toBs, formatBs, formatAd, isWeekend, eachDay, BS_MONTHS } from '../lib/bs'
 import { BRANCHES, totalsOf } from './settings'
 import { HOLIDAYS, adDay, dayDiff } from './calendar'
 import { WAREHOUSES } from './warehouse'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * **Business Hours & Holidays** seed —

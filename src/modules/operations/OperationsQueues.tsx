@@ -23,7 +23,15 @@ import {
   type Queue,
 } from '../../data/operations'
 import { useViewport } from '../../lib/device'
-import { kathmanduCivil, NPT_OFFSET_MIN, TODAY } from '../../lib/bs'
+import { kathmanduCivil, NPT_OFFSET_MIN, getBusinessToday } from '../../lib/bs'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 const th = {
   textAlign: 'left' as const,

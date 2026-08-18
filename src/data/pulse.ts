@@ -1,8 +1,16 @@
 import { rupees, roundHalfUp, toRupees, formatMoney } from '../lib/money'
 import type { Paisa } from '../lib/money'
-import { TODAY, toBs, formatBs, formatAd, isWeekend } from '../lib/bs'
+import { getBusinessToday, toBs, formatBs, formatAd, isWeekend } from '../lib/bs'
 import { UTILIZATION_PCT, REVENUE_TODAY_PAISA, COUNTS } from './today'
 import { PARENTS } from './inventory'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * **Reports ▸ Pulse — the seed ledger.**

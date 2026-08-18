@@ -4,8 +4,16 @@ import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows, FooterNote, card
 import type { Kpi } from '../../components/ui/Page'
 import { BRAND_TEXT, STATUS } from '../../lib/status'
 import { catColor } from '../../components/ui/Charts'
-import { TODAY, toBs, formatBs, formatAd } from '../../lib/bs'
+import { getBusinessToday, toBs, formatBs, formatAd } from '../../lib/bs'
 import { getPendingMutations, getDeadLetterMutations, drainQueue } from '../../lib/offlineQueue'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * **System Monitor** — spec-derived. No render covers this screen.

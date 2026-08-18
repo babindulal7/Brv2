@@ -23,7 +23,15 @@
  */
 
 import type { IconName } from '../components/ui/Icon'
-import { TODAY } from '../lib/bs'
+import { getBusinessToday } from '../lib/bs'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /* ── time ──────────────────────────────────────────────────────────────── */
 

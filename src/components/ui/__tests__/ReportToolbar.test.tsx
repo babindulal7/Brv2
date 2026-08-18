@@ -29,7 +29,7 @@ import {
   type ReportFilters,
   type ReportToolbarProps,
 } from '../ReportToolbar'
-import { NPT_OFFSET_MIN, TODAY, kathmanduCivil } from '../../../lib/bs'
+import { NPT_OFFSET_MIN, getBusinessToday } from '../../../lib/bs'
 
 ;(globalThis as Record<string, unknown>)['IS_REACT_ACT_ENVIRONMENT'] = true
 
@@ -40,7 +40,10 @@ const OFFSET = `${NPT_OFFSET_MIN < 0 ? '-' : '+'}${String(Math.floor(Math.abs(NP
   '0',
 )}:${String(Math.abs(NPT_OFFSET_MIN) % 60).padStart(2, '0')}`
 
-const TODAY_DAY = new Date(kathmanduCivil(TODAY)).toISOString().slice(0, 10)
+/* The operating day the toolbar itself resolved, from the same function it
+   calls — so this suite cannot pass a toolbar that read the runner's local
+   date instead of Kathmandu's. */
+const TODAY_DAY = getBusinessToday().toISOString().slice(0, 10)
 
 const DAY_MS = 86_400_000
 const shift = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00.000Z`) + n * DAY_MS).toISOString().slice(0, 10)
@@ -221,7 +224,7 @@ describe('ReportToolbar date range', () => {
     expect(emitted?.dateRange?.toAd?.slice(0, 10)).toBe(TODAY_DAY)
   })
 
-  it('ends every window on the app-wide TODAY, not the system clock', async () => {
+  it('ends every window on the app-wide operating day, in Kathmandu', async () => {
     // Reading `Date.now()` here would put the toolbar on a different day from
     // every other date the app renders.
     await mount({ ...BASE, dateColumn: 'expense_date' })

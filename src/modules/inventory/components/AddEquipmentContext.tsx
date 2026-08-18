@@ -8,7 +8,7 @@ import { useAuth } from '../../../lib/auth'
 import { useCanViewMoney } from '../../../lib/moneyVisibility'
 import { parseMoney, rupees, toRupees } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
-import { toBs, formatBs, formatAd, TODAY } from '../../../lib/bs'
+import { toBs, formatBs, formatAd, getBusinessToday } from '../../../lib/bs'
 import {
   NEXT_ASSET_CODE,
   assetTagFor,
@@ -25,6 +25,14 @@ import {
 import type { TrackingMode, LocationChoice } from '../../../data/addEquipment'
 import { Chip, DraftStatusBadge, countOf, formatBytes } from './EquipmentShared'
 import type { UnitDraft, ContainedDraft, FileDraft } from './EquipmentShared'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * **Inventory ▸ Add Equipment** — built against `06 Inventory/Add Equipment.PNG`

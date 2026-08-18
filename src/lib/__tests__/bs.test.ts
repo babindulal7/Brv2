@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { BS_MONTHS, TODAY, toBs, formatBs, formatAd, eachDay, isWeekend } from '../bs'
+import { BS_MONTHS, getBusinessToday, kathmanduCivil, toBs, formatBs, formatAd, eachDay, isWeekend } from '../bs'
 
 const ad = (y: number, m: number, d: number, h = 0, min = 0) => new Date(Date.UTC(y, m - 1, d, h, min))
 
@@ -14,9 +14,8 @@ describe('toBs — the anchor pair', () => {
     expect(toBs(ad(2026, 7, 26))).toEqual({ year: 2083, month: 4, day: 11 })
   })
 
-  it('and the seeded operating day, 31 Jul 2026, at 16 Shrawan', () => {
-    expect(toBs(TODAY)).toEqual({ year: 2083, month: 4, day: 16 })
-    expect(TODAY.toISOString()).toBe('2026-07-31T00:00:00.000Z')
+  it('and 31 Jul 2026 — the day this build was frozen at — at 16 Shrawan', () => {
+    expect(toBs(ad(2026, 7, 31))).toEqual({ year: 2083, month: 4, day: 16 })
   })
 
   it('advances one BS day per AD day, with no drift across the month', () => {
@@ -161,5 +160,31 @@ describe('isWeekend', () => {
   it('marks exactly one day in seven', () => {
     const week = eachDay(ad(2026, 7, 26), 7)
     expect(week.filter(isWeekend)).toHaveLength(1)
+  })
+})
+
+/* ── the operating day comes from the clock, in Kathmandu ───────────────── */
+
+describe('getBusinessToday', () => {
+  it('is the civil day in Kathmandu, as a midnight-UTC marker', () => {
+    expect(getBusinessToday(ad(2026, 7, 31, 6, 0)).toISOString()).toBe('2026-07-31T00:00:00.000Z')
+  })
+
+  it('is already tomorrow after 18:15 UTC, because Nepal is UTC+05:45', () => {
+    expect(getBusinessToday(ad(2026, 7, 31, 18, 14)).toISOString()).toBe('2026-07-31T00:00:00.000Z')
+    expect(getBusinessToday(ad(2026, 7, 31, 18, 15)).toISOString()).toBe('2026-08-01T00:00:00.000Z')
+  })
+
+  it('agrees with kathmanduCivil, which is the one truncation in the product', () => {
+    const instant = ad(2026, 8, 3, 20, 30)
+    expect(getBusinessToday(instant).getTime()).toBe(kathmanduCivil(instant))
+  })
+
+  it('reads the real clock when given no argument, and moves with it', () => {
+    const now = new Date()
+    expect(getBusinessToday().getTime()).toBe(kathmanduCivil(now))
+    /* Not a fixed date: a day chosen years from the frozen 31 Jul 2026 still
+       resolves to itself, which `export const TODAY` could never do. */
+    expect(getBusinessToday(ad(2031, 3, 9, 12, 0)).toISOString()).toBe('2031-03-09T00:00:00.000Z')
   })
 })

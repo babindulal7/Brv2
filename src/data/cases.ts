@@ -2,7 +2,15 @@ import type { IconName } from '../components/ui/Icon'
 import type { StatusKey } from '../lib/status'
 import { rupees, formatMoney } from '../lib/money'
 import type { Paisa } from '../lib/money'
-import { toBs, formatBs, TODAY } from '../lib/bs'
+import { toBs, formatBs, getBusinessToday } from '../lib/bs'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * Cases (Incident Management) seed data — `04 Operations/Cases.md` v1.1

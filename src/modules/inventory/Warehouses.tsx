@@ -13,7 +13,7 @@ import type { Slice } from '../../components/ui/Charts'
 import { STATUS, BRAND, BRAND_ON } from '../../lib/status'
 import type { BrandKey, StatusKey } from '../../lib/status'
 import { grouped } from '../../lib/money'
-import { TODAY, toBs, formatBs, formatAd } from '../../lib/bs'
+import { getBusinessToday, toBs, formatBs, formatAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
 import { gateContext } from '../../lib/fieldGating'
@@ -51,6 +51,14 @@ import type {
   AlertKey,
 } from '../../data/warehouse'
 import type { ActionContext } from '../../actions/core'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * **Inventory ▸ Warehouse Management** — built against

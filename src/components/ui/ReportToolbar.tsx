@@ -2,8 +2,16 @@ import { useMemo, type CSSProperties, type ReactNode } from 'react'
 import Icon from './Icon'
 import { Button } from './Page'
 import { csvCell } from '../../lib/csv'
-import { NPT_OFFSET_MIN, TODAY, kathmanduCivil, toBs, formatBs, formatAd } from '../../lib/bs'
+import { NPT_OFFSET_MIN, getBusinessToday, kathmanduCivil, toBs, formatBs, formatAd } from '../../lib/bs'
 import type { ListFilters } from '../../lib/queries/listQuery'
+
+/*
+ * The operating day, resolved once when this module loads, from the real
+ * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
+ * imported `TODAY` constant frozen at 31 Jul 2026.
+ */
+const TODAY = getBusinessToday()
+
 
 /**
  * # The one report toolbar — `date range · branch · compare · CSV · print`

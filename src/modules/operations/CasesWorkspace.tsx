@@ -18,19 +18,25 @@ import {
   exposurePaisa,
   recoveredThisMonthPaisa,
   outstandingOf,
+  ageDays,
   type Case,
   type CaseStatus,
   type CasePriority,
 } from '../../data/cases'
 import { IconSearch, IconPlus, IconDownload } from '@tabler/icons-react'
 
-/** Age in whole days from openedAd to today (lib/bs TODAY is fixed to 31 Jul 2026). */
+/**
+ * Age in whole days from `openedAd` to the operating day.
+ *
+ * ⛔ This used to carry its own clock — `Date.UTC(2026, 6, 31)`, the frozen
+ * `TODAY` hand-copied out of `lib/bs.ts` into this file — so the screen held a
+ * second today that no longer moved with the first. `data/cases.ts` already
+ * exports `ageDays`, computed against the one operating day, and §11 of
+ * Foundation exists to stop exactly this: the age a case shows here and the
+ * age the escalation rules read must be the same number.
+ */
 function ageDaysOf(c: Case): number {
-  const MS_PER_DAY = 86_400_000
-  // TODAY from lib/bs is 2026-07-31 UTC-midnight; use it via the module-level CASES constant
-  // which already imports it. We just compare against the same epoch.
-  const todayMs = Date.UTC(2026, 6, 31) // 31 Jul 2026 — matches lib/bs TODAY
-  return Math.floor((todayMs - c.openedAd.getTime()) / MS_PER_DAY)
+  return ageDays(c.openedAd)
 }
 
 function createdBsOf(c: Case): string {
