@@ -149,14 +149,12 @@ export default function PurchaseRequests() {
    * the moment the register reads `purchase_requests`, these buttons record
    * real decisions with no further change here.
    *
-   * ⚠ **The permission is mapped, and broad** — the old TODO here claimed
-   * `lib/rbac` had no rule for `purchase.approve`; both halves went stale.
-   * `core.ts:213` maps it to `canWriteSharedTriage` = `isStaff()`, faithfully
-   * mirroring the live `purchase_requests_all` policy (`auth_is_staff()`) —
-   * which admits Driver and Technician to a spend-authorising verb. Per the
-   * mirroring rule the RLS policy must be narrowed FIRST and the app follows
-   * (rbac.ts:246-253, PLAN.md §4.29); these buttons are deliberately not
-   * re-gated here on a narrower set nobody has ruled.
+   * The permission is mapped and finance-tier: `purchase.approve` →
+   * `canApprovePurchase` (Owner, Admin, Manager, Coordinator, Accounts),
+   * mirroring `purchase_requests_approval_rank` since 0064 went live on
+   * 23 Aug 2026 — the dispatcher refuses Driver/Technician/Warehouse before
+   * anything observable, and the database refuses them independently. The
+   * §4.29 breadth this comment used to document is closed.
    */
   const handleStatusChange = (id: string, newStatus: PRDecision) => {
     const verb = newStatus.toLowerCase()

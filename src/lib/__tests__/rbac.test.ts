@@ -19,6 +19,7 @@ import {
   canWriteFloor,
   canMergeClients,
   canWriteSharedTriage,
+  canApprovePurchase,
 } from '../rbac'
 
 /**
@@ -449,17 +450,40 @@ describe('canWriteSharedTriage', () => {
   })
 
   /*
-   * ⚠ This test PINS A KNOWN-BROAD RULE, deliberately. purchase_requests_all is
-   * auth_is_staff() on the live project, so mirroring it admits Driver and
-   * Technician to `purchase.approve` -- a spend-authorising verb.
-   *
-   * It is asserted rather than quietly narrowed because the fix belongs in the
-   * RLS policy, not here (PLAN.md §4.29). When that policy is tightened, THIS
-   * TEST SHOULD FAIL -- that failure is the signal to split the set, and is the
-   * only thing standing between a policy change and a silent app/DB drift.
+   * Driver and Technician remain CORRECTLY admitted here: this predicate backs
+   * cases, crew, and the non-deciding purchase-request verbs, all still
+   * `auth_is_staff()` live. The spend-authorising verb this breadth used to
+   * leak into (`purchase.approve`) split off to `canApprovePurchase` on
+   * 23 Aug 2026 when 0064's restrictive policy landed -- see that describe.
    */
-  it('admits Driver and Technician -- the known-broad case, pinned on purpose', () => {
+  it('admits Driver and Technician -- correct for the non-deciding triage verbs', () => {
     expect(canWriteSharedTriage('Driver')).toBe(true)
     expect(canWriteSharedTriage('Technician')).toBe(true)
+  })
+})
+
+describe('canApprovePurchase', () => {
+  it('mirrors purchase_requests_approval_rank (0064) -- the finance/admin five', () => {
+    const allowed = ALL_ROLES.filter((r) => canApprovePurchase(r))
+    expect(allowed).toEqual(['Owner', 'Admin', 'Manager', 'Coordinator', 'Accounts'])
+  })
+
+  /* The whole point of 0064: the tier that cannot READ estimated_unit_cost
+     (Law 6 money-blind) no longer decides the spend it describes. */
+  it('denies the money-blind staff roles and the external Client', () => {
+    for (const role of ['Warehouse', 'Technician', 'Driver', 'Client'] as const) {
+      expect(canApprovePurchase(role)).toBe(false)
+    }
+  })
+
+  it('is exactly canWriteSharedTriage minus the money-blind staff', () => {
+    const triage = ALL_ROLES.filter((r) => canWriteSharedTriage(r))
+    const approvers = ALL_ROLES.filter((r) => canApprovePurchase(r))
+    expect(approvers.every((r) => triage.includes(r))).toBe(true)
+    expect(triage.filter((r) => !approvers.includes(r))).toEqual([
+      'Warehouse',
+      'Technician',
+      'Driver',
+    ])
   })
 })

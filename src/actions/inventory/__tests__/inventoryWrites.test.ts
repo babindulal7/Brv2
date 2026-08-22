@@ -15,9 +15,10 @@
  * actions' own logic is stubbed.
  *
  * `validate`/`execute` are driven through the exported configs; the role gate
- * is pinned separately through each dispatched action — including the
- * DELIBERATE breadth of `purchase.approve` (PLAN.md §4.29), so narrowing the
- * RLS policy later makes a test here fail and say so.
+ * is pinned separately through each dispatched action. `purchase.approve` is
+ * pinned at the 0064 narrowing (finance/admin five, applied 23 Aug 2026) —
+ * the deliberate §4.29 breadth pin this header used to describe did its job
+ * and was flipped the day the policy landed.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { rupees } from '../../../lib/money'
@@ -642,12 +643,21 @@ describe('the dispatcher — capability gates, as mapped (never widened here)', 
     ).rejects.toThrow(/cannot perform "APPROVE_PURCHASE_REQUEST"/i)
   })
 
-  it('ADMITS Driver to purchase.approve — pinning the §4.29 breadth so an RLS narrowing must come back here', async () => {
-    /* This is not an endorsement: canWriteSharedTriage mirrors the live
-       purchase_requests_all = auth_is_staff() policy, which rbac.ts:246-253
-       itself flags as probably unintended. When the RLS is narrowed and rbac
-       follows, THIS test fails on purpose and names the ruling to update. */
-    const result = await approvePurchaseRequest(PR_INPUT, { userId: 'u-1', role: 'Driver', isOnline: true })
+  it('DENIES Driver, Technician and Warehouse purchase.approve — 0064 applied 23 Aug 2026', async () => {
+    /* The old pin here ADMITTED Driver on purpose, to fail loudly the day the
+       RLS narrowed. That day was 23 Aug 2026: purchase_requests_approval_rank
+       (0064, RESTRICTIVE) is live, purchase.approve moved to
+       canApprovePurchase (the finance/admin five), and this test now pins the
+       narrow rule the same way the old one pinned the broad one. */
+    for (const role of ['Driver', 'Technician', 'Warehouse'] as const) {
+      await expect(
+        approvePurchaseRequest(PR_INPUT, { userId: 'u-1', role, isOnline: true }),
+      ).rejects.toThrow(/cannot perform "APPROVE_PURCHASE_REQUEST"/i)
+    }
+  })
+
+  it('ADMITS the finance/admin five to purchase.approve — mirroring 0064', async () => {
+    const result = await approvePurchaseRequest(PR_INPUT, { userId: 'u-1', role: 'Accounts', isOnline: true })
     expect(result.status).toBe('Approved')
   })
 

@@ -241,29 +241,44 @@ export function canMergeClients(role: SystemRole): boolean {
 }
 
 /**
- * Shared-triage surfaces: `cases`, `crew_assignments`, `purchase_requests`.
+ * Shared-triage surfaces: `cases`, `crew_assignments`, `purchase_requests`
+ * (raising, editing, submitting, cancelling, and post-approval legwork).
  * Mirrors `auth_is_staff()` — every staff role, Client excluded.
  *
- * ⚠ **The database rule here is broad, and mirroring it faithfully produces a
- * broad answer.** `purchase_requests_all` is `auth_is_staff()`, so this admits
- * Driver and Technician to `purchase.approve` — a spend-authorising verb.
- * That is probably not intended. If it should be narrower, **change the RLS
- * policy first and let this follow**; tightening only the TypeScript would put
- * the app and the database back out of step, which is the failure the mirroring
- * rule exists to prevent. Logged in PLAN.md §4.29.
- *
- * 22 Aug 2026 — that narrowing is now WRITTEN but NOT APPLIED:
- * `supabase/migrations/0064_narrow_purchase_approval.sql` adds a restrictive
- * UPDATE policy so only `auth_is_finance_or_admin()` (Owner, Admin, Manager,
- * Coordinator, Accounts) can land a purchase request on Approved/Rejected.
- * Per the mirror rule above this predicate DOES NOT change until that policy
- * is live on the project. When it is: split `purchase.approve` off this set
- * onto a finance-tier predicate mirroring 0064, and leave the rest of the
- * shared-triage verbs (cases, crew, raising/editing PRs) here on
- * `auth_is_staff()`, which 0064 deliberately does not touch.
+ * `purchase.approve` no longer lives here. It did until 23 Aug 2026, when
+ * migration 0064 (`purchase_requests_approval_rank`, RESTRICTIVE) went live on
+ * the project and the verb moved to `canApprovePurchase` below, per the
+ * mirror rule this file works by. 0064 deliberately left everything else on
+ * `purchase_requests_all` = `auth_is_staff()`, which is what this predicate
+ * continues to mirror for the non-deciding verbs. History: PLAN.md §4.29.
  */
 export function canWriteSharedTriage(role: SystemRole): boolean {
   return isStaff(role)
+}
+
+/**
+ * Deciding a purchase request — landing it on Approved or Rejected.
+ *
+ * Mirrors `purchase_requests_approval_rank` (0064, applied 23 Aug 2026): a
+ * RESTRICTIVE UPDATE policy gating any update whose RESULTING row is Approved
+ * or Rejected on `auth_is_finance_or_admin()` — Owner, Admin, Manager,
+ * Coordinator, Accounts (0018:20). Exactly `auth_is_staff()` minus the three
+ * money-blind staff roles: the tier that can READ the costs is the tier that
+ * may authorise them (Law 6 coherence — the incoherence this fixes was a
+ * Driver approving spend it could not see).
+ *
+ * Rejected is gated alongside Approved because refusing spend is deciding
+ * spend, and the enum allows Rejected from Approved — an ungated Reject would
+ * let a money-blind role revoke a finance decision.
+ */
+export function canApprovePurchase(role: SystemRole): boolean {
+  return (
+    role === 'Owner' ||
+    role === 'Admin' ||
+    role === 'Manager' ||
+    role === 'Coordinator' ||
+    role === 'Accounts'
+  )
 }
 
 /**

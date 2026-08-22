@@ -146,7 +146,19 @@ describe('createAction — fails closed', () => {
    * all the work and a flat list of 21 would hide that.
    */
   describe('the 21 capabilities ruled 16 Aug 2026', () => {
-    const probe = (capability: string, role: 'Owner' | 'Coordinator' | 'Warehouse' | 'Driver' | 'Client') => {
+    const probe = (
+      capability: string,
+      role:
+        | 'Owner'
+        | 'Admin'
+        | 'Manager'
+        | 'Coordinator'
+        | 'Accounts'
+        | 'Warehouse'
+        | 'Technician'
+        | 'Driver'
+        | 'Client',
+    ) => {
       const execute = vi.fn(async () => ({ result: { ok: true }, events: [] }))
       const action = createAction({
         name: `PROBE_${capability}`,
@@ -216,13 +228,23 @@ describe('createAction — fails closed', () => {
     })
 
     /*
-     * ⚠ Pinned known-broad, matching lib/rbac's note. purchase_requests_all is
-     * auth_is_staff() live, so mirroring it lets a Driver approve a purchase
-     * request. Tighten the RLS policy first and let this test fail — that
-     * failure is the intended signal, not a defect in this file. PLAN.md §4.29.
+     * The old pin here admitted Driver on purpose so an RLS narrowing would
+     * fail loudly. It did: purchase_requests_approval_rank (0064, RESTRICTIVE)
+     * went live 23 Aug 2026 and purchase.approve moved to canApprovePurchase —
+     * the finance/admin five. Same pinning discipline, new rule.
      */
-    it('admits Driver to purchase.approve — broad because the RLS policy is', async () => {
-      await expect(probe('purchase.approve', 'Driver').run()).resolves.toEqual({ ok: true })
+    it('denies Driver, Technician and Warehouse purchase.approve — 0064 live since 23 Aug 2026', async () => {
+      for (const role of ['Driver', 'Technician', 'Warehouse'] as const) {
+        const { run, execute } = probe('purchase.approve', role)
+        await expect(run()).rejects.toBeInstanceOf(ActionPermissionError)
+        expect(execute).not.toHaveBeenCalled()
+      }
+    })
+
+    it('admits the finance/admin five to purchase.approve — mirroring 0064', async () => {
+      for (const role of ['Owner', 'Admin', 'Manager', 'Coordinator', 'Accounts'] as const) {
+        await expect(probe('purchase.approve', role).run()).resolves.toEqual({ ok: true })
+      }
     })
 
     it('still denies inspection.* to Owner — nothing in the schema to mirror', async () => {

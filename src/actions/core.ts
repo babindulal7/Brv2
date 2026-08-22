@@ -210,8 +210,13 @@ async function checkCapability(capability: string, ctx: ActionContext): Promise<
 
     case 'case.resolve':
     case 'crew.assign':
-    case 'purchase.approve':
       return rbac.canWriteSharedTriage(ctx.role);
+
+    // Split off shared triage 23 Aug 2026 when 0064's restrictive policy went
+    // live — the finance/admin five decide purchases; the mirror rule moved
+    // this the same day the database did.
+    case 'purchase.approve':
+      return rbac.canApprovePurchase(ctx.role);
     default:
       return undefined;
   }

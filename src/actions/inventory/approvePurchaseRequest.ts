@@ -39,16 +39,15 @@ import { logAuditEvent } from '../../lib/audit'
  *    reason; the column is left NULL rather than invented. TODO(decision):
  *    a Reject dialog that collects the ruled reasons.
  *
- * ## ⚠ Permission — mapped, broad, and NOT widened here (PLAN.md §4.29)
+ * ## Permission — the finance/admin five (0064, applied 23 Aug 2026)
  *
- * `purchase.approve` → `rbac.canWriteSharedTriage` = `isStaff()` (core.ts:213,
- * rbac.ts:255), faithfully mirroring the live `purchase_requests_all` policy
- * (`auth_is_staff()`, 0036:171). That admits **Driver and Technician to a
- * spend-authorising verb**, which rbac's own comment flags as probably
- * unintended. Per the mirroring rule, the RLS policy must be narrowed FIRST
- * and the TypeScript follows — tightening only the app puts the two out of
- * step, and widening anything here is out of the question. Left as mapped;
- * the RLS-first fix is the open item.
+ * `purchase.approve` → `rbac.canApprovePurchase` — Owner, Admin, Manager,
+ * Coordinator, Accounts — mirroring `purchase_requests_approval_rank`
+ * (0064, RESTRICTIVE): any UPDATE whose resulting row is Approved or Rejected
+ * requires `auth_is_finance_or_admin()`. The §4.29 breadth (Driver/Technician
+ * admitted to a spend-authorising verb via `purchase_requests_all`) is closed;
+ * raising, editing, submitting, cancelling, and Ordered/Received legwork stay
+ * on the broad policy and are not this action's business.
  *
  * ## Offline
  *
