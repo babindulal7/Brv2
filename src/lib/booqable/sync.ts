@@ -400,7 +400,12 @@ async function deterministicClientUuid(table: string, key: string): Promise<stri
  * unusable here.
  */
 async function writeBooqableRow<T extends object>(table: string, payload: T): Promise<{ id: string } | null> {
-  const result = await idempotentInsert(table as never, payload as never)
+  /* `returningColumns: 'id'` — this helper only ever consumes `data.id`, and a
+     bare echo is RETURNING *, which 42501s on the four 0062-locked tables the
+     pull phase writes (bookings, booking_lines, products, product_units) the
+     moment the mask is armed — with the failure misread as a sync conflict
+     (AUDIT_0062.md). `id` is granted on every table this file writes. */
+  const result = await idempotentInsert(table as never, payload as never, { returningColumns: 'id' })
   const data = result.data as { id?: unknown } | null
   if (!data || typeof data.id !== 'string') {
     // Either an offline-queued optimistic response (no DB-generated id yet —
@@ -416,7 +421,10 @@ async function writeBooqableRow<T extends object>(table: string, payload: T): Pr
 }
 
 async function updateBooqableRow<T extends object>(table: string, id: string, payload: T): Promise<void> {
-  await safeUpdate(table as never, id, payload as never)
+  /* `returnRow: false` — the echo was always discarded here, and under 0062 a
+     bare RETURNING * on the locked tables would turn every pull-phase update
+     into a phantom failure (AUDIT_0062.md). */
+  await safeUpdate(table as never, id, payload as never, undefined, { returnRow: false })
 }
 
 /** Plain `supabase.from(table)` insert for the sync-bridge/mirror tables that carry NO `client_uuid` at all (`external_invoices`, and — separately — `sync_conflicts`/`external_refs` via their own dedicated helpers above) — these are not "user-written" mutation rows Law 9 targets, so routing them through `idempotentInsert`'s Law-9 machinery would be attaching an idempotency key to a table that has no column for one. */
@@ -1815,12 +1823,17 @@ export async function pushOrderCreate(
   if (lines.some((l) => l.days < 1)) return { ok: false, reason: 'Every line needs days >= 1 (Law 15).' }
 
   const clientUuid = newClientUuid()
-  const result = await idempotentInsert('bookings' as never, { ...fields, booking_no: bookingNo, client_uuid: clientUuid } as never)
+  const result = await idempotentInsert(
+    'bookings' as never,
+    { ...fields, booking_no: bookingNo, client_uuid: clientUuid } as never,
+    { returningColumns: 'id' }, // 0062: bare echo = RETURNING *, names ungranted deposit_required
+  )
   const localId = (result.data as { id?: string } | null)?.id
   if (localId === undefined) return { ok: false, reason: 'Local booking write did not return an id (likely offline-queued).' }
 
   for (const line of lines) {
-    await idempotentInsert('booking_lines' as never, { ...line, booking_id: localId } as never)
+    // Echo discarded; under 0062 a bare RETURNING * on booking_lines names ungranted rate columns.
+    await idempotentInsert('booking_lines' as never, { ...line, booking_id: localId } as never, { returnRow: false })
   }
 
   await enqueueOutbox('orders', localId, 'create_order', { ...fields, lines }, clientUuid)

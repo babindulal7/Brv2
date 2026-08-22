@@ -446,7 +446,13 @@ export const createEquipmentConfig: ActionConfig<CreateEquipmentInput, CreateEqu
          `types/database.ts`, whose `products` entry describes columns this
          table does not have. `ProductInsertPayload` above is what actually
          typechecks the payload. */
-      productResult = await idempotentInsert('products' as never, payload as never)
+      /* Explicit RETURNING list: products is one of the four tables 0062 locks
+         down, and a bare echo is RETURNING * — which names ungranted money
+         columns and throws AFTER the row commits (AUDIT_0062.md). This caller
+         consumes exactly id + asset_code. */
+      productResult = await idempotentInsert('products' as never, payload as never, {
+        returningColumns: 'id, asset_code',
+      })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       throw new Error(describeProductInsertFailure(message, assetCode as string))
@@ -517,7 +523,10 @@ export const createEquipmentConfig: ActionConfig<CreateEquipmentInput, CreateEqu
         created_by: ctx.userId,
       }
       try {
-        const unitResult = await idempotentInsert('product_units' as never, unitPayload as never)
+        /* Same 0062 rule as the products insert above: explicit granted list. */
+        const unitResult = await idempotentInsert('product_units' as never, unitPayload as never, {
+          returningColumns: 'id',
+        })
         const savedUnit = unitResult.data as unknown as { id?: string } | null
         if (unitResult.error || !savedUnit || typeof savedUnit.id !== 'string') {
           throw new Error('the database did not confirm the row')

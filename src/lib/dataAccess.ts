@@ -74,6 +74,26 @@ export interface InsertOptions {
    * DB assigns ids, record numbers and defaults the client cannot compute.
    */
   returnRow?: boolean
+  /**
+   * Column list for the read-back (`RETURNING`), e.g. `'id, asset_code'`.
+   * Omitted = `*`, which is fine on most tables but a landmine on the four
+   * 0062 locks down (`bookings`, `booking_lines`, `products`, `product_units`):
+   * once table-level SELECT is revoked and only non-money columns are granted,
+   * a `RETURNING *` names ungranted money columns and the echo throws 42501
+   * AFTER the row commits — a phantom write dressed as a failure
+   * (`AUDIT_0062.md`). Every caller writing those four tables must pass an
+   * explicit granted list. The masking `_v` views stay definer-rights + row
+   * predicate (0048 pattern) — do not "fix" the linter warning on them.
+   */
+  returningColumns?: string
+}
+
+/** Read-back options for {@link safeUpdate} — same 0062 rationale as `InsertOptions`. */
+export interface UpdateOptions {
+  /** `false` skips the echo entirely; `data` comes back `null`. Defaults to `true`. */
+  returnRow?: boolean
+  /** Column list for the echo when `returnRow` is on. Omitted = `*` — see `InsertOptions.returningColumns`. */
+  returningColumns?: string
 }
 
 /** Inserts a record with mandatory `client_uuid` injection for idempotency */
@@ -98,7 +118,9 @@ export async function idempotentInsert<
   }
 
   const insert = (supabase.from(table as string) as any).insert(finalPayload)
-  const { data, error } = returnRow ? await insert.select().single() : await insert
+  const { data, error } = returnRow
+    ? await insert.select(options.returningColumns).single()
+    : await insert
 
   if (error) {
     // If it's a network error from Supabase, queue it instead
@@ -116,7 +138,10 @@ export async function idempotentInsert<
          would reintroduce the exact SELECT this option exists to avoid, and
          turn a satisfied idempotency guarantee back into a swallowed error. */
       if (!returnRow) return { data: null, error: null }
-      return await (supabase.from(table as string) as any).select().eq('client_uuid', finalPayload.client_uuid).single()
+      return await (supabase.from(table as string) as any)
+        .select(options.returningColumns)
+        .eq('client_uuid', finalPayload.client_uuid)
+        .single()
     }
     throw new Error(`[DataAccess] Insert failed on ${String(table)}: ${error.message}`)
   }
@@ -153,8 +178,10 @@ export async function safeUpdate<
   table: TTable,
   id: string,
   payload: TUpdate,
-  clientUuid?: string
+  clientUuid?: string,
+  options: UpdateOptions = {}
 ) {
+  const returnRow = options.returnRow !== false
   // `booking_stage_transitions` joins the list on the same grounds as the other
   // three: `0002_bookings.sql:485` revokes update and delete on it for everyone
   // including Owner — "a wrong transition is corrected by inserting a reversal
@@ -178,7 +205,10 @@ export async function safeUpdate<
     return { data: { ...payload, id }, error: null } // Optimistic response
   }
 
-  const { data, error } = await (supabase.from(table as string) as any).update(payload).eq('id', id).select().single()
+  const update = (supabase.from(table as string) as any).update(payload).eq('id', id)
+  const { data, error } = returnRow
+    ? await update.select(options.returningColumns).single()
+    : await update
 
   if (error) {
     if (error.message === 'Failed to fetch' || error.code === '408') {
@@ -189,7 +219,7 @@ export async function safeUpdate<
     throw new Error(`[DataAccess] Update failed on ${String(table)}: ${error.message}`)
   }
 
-  return { data, error: null }
+  return { data: returnRow ? data : null, error: null }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════

@@ -371,9 +371,14 @@ export interface BookingListOptions extends ListFilters {
   withCount?: boolean
   /**
    * Include `deposit_required`. **Money.** Read the DEPOSIT block above before
-   * setting this: the column is unmasked on the base table, so asking for it on
-   * a Warehouse / Technician / Driver session breaches Law 6 and nothing in the
-   * database will object. Gate on `useCanViewMoney()` at the call site.
+   * setting this. The figure rides `bookings_deposit_v` — after migration 0065
+   * a definer-rights view with the `auth_is_staff()` row predicate (0048
+   * pattern), and once 0062 arms the mask it is the ONLY path to the column
+   * (the base-table read 42501s for every role). Still gate on
+   * `useCanViewMoney()` at the call site: the view nulls the figure for
+   * money-blind roles, but omission — not a blank cell — is the Law 6 shape.
+   * Do not "fix" the security-invoker linter warning on the masking views;
+   * definer-rights is what keeps them working under 0062 (AUDIT_0062.md).
    */
   withDeposit?: boolean
 }
