@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 import { Modal } from './Modal'
 import { Button } from './Page'
 import Icon from './Icon'
-import { DomainEvents, EVENT_TYPES } from '../../events/eventBus'
 
 export interface ScannableItem {
   id: string
@@ -17,10 +16,34 @@ export interface BarcodeScannerModalProps {
   isOpen: boolean
   onClose: () => void
   mode: 'pack' | 'handover' | 'return' | 'reset'
+  /** Booking context for the subtitle and no-match copy. Omitted on
+   *  non-booking surfaces (Stock Check) — there is NO default booking. */
   bookingId?: string
   items: ScannableItem[]
   onItemScanned: (item: ScannableItem) => void
+  /**
+   * What a successful match MEANS on the consuming screen, appended after
+   * the item identity in the feedback banner and session log. The default
+   * describes the floor workspaces truthfully: a scan is a local mark, and
+   * the write happens when the session closes. A consumer whose scan means
+   * something else (Stock Check copies the code into its scan field) MUST
+   * pass its own wording — this modal never claims work it did not do.
+   */
+  matchLabel?: string
 }
+
+/**
+ * Scan-match feedback tells the truth (Law: never fabricate success).
+ * A match here is a LOCAL mark handed to the consumer via onItemScanned —
+ * no dispatch has run, no domain event may be emitted from this component.
+ * The action layer emits INVENTORY_* events after the write lands.
+ */
+const DEFAULT_MATCH_LABEL = 'marked — recorded at session close, nothing saved yet'
+
+/** Why "Enable Camera" cannot claim an active camera scanner: permission is
+ *  requested, but no decode pipeline is attached to the stream yet. */
+const REASON_CAMERA_DECODE_NOT_WIRED =
+  'Camera permission granted, but live camera decoding is not wired yet — use a hardware laser or type the code.'
 
 /** Web Audio Beep Feedback */
 function playAudioFeedback(type: 'success' | 'error') {
@@ -52,9 +75,10 @@ export function BarcodeScannerModal({
   isOpen,
   onClose,
   mode,
-  bookingId = 'B-710',
+  bookingId,
   items,
   onItemScanned,
+  matchLabel = DEFAULT_MATCH_LABEL,
 }: BarcodeScannerModalProps) {
   const [query, setQuery] = useState('')
   const [scanType, setScanType] = useState<'Barcode' | 'Serial' | 'QR'>('Serial')
@@ -83,19 +107,22 @@ export function BarcodeScannerModal({
     setQuery('')
     const timeStr = new Date().toLocaleTimeString('en-US', { hour12: false })
 
-    // 1. Search for matching item in current booking list
+    // 1. Identity match ONLY — id, serial or asset tag. A barcode is an
+    //    identity; a name substring is not ("battery" must never resolve to
+    //    whichever of four identical batteries sorts first).
     const matchedItem = items.find(
       (i) =>
         i.id.toLowerCase() === code.toLowerCase() ||
         (i.serial && i.serial.toLowerCase() === code.toLowerCase()) ||
-        (i.assetTag && i.assetTag.toLowerCase() === code.toLowerCase()) ||
-        i.name.toLowerCase().includes(code.toLowerCase()),
+        (i.assetTag && i.assetTag.toLowerCase() === code.toLowerCase()),
     )
 
     if (!matchedItem) {
       // Unknown item
       playAudioFeedback('error')
-      const msg = `Item "${code}" is not in this booking (${bookingId}).`
+      const msg = bookingId
+        ? `"${code}" does not match any scannable item in this booking (${bookingId}).`
+        : `"${code}" does not match any scannable item in this list.`
       setLastScanResult({ success: false, message: msg })
       setSessionScanLog((prev) => [
         { id: Date.now().toString(), time: timeStr, text: msg, success: false },
@@ -116,20 +143,13 @@ export function BarcodeScannerModal({
       return
     }
 
-    // 3. Success scan
+    // 3. Match. Report ONLY what happened: the item was identified and is
+    //    being handed to the consuming screen as a local mark. No "Successfully
+    //    packed/handed over/returned" — that work has not happened yet — and
+    //    no domain event: the action layer emits INVENTORY_* after the write
+    //    actually lands (see src/actions/inventory/packEquipment.ts).
     playAudioFeedback('success')
-    const verb =
-      mode === 'pack'
-        ? 'Packed'
-        : mode === 'handover'
-        ? 'Handed Over'
-        : mode === 'return'
-        ? 'Returned'
-        : 'Reset'
-
-    const successMsg = `Successfully ${verb.toLowerCase()}: ${matchedItem.name} (${
-      matchedItem.serial || matchedItem.id
-    })`
+    const successMsg = `${matchedItem.name} (${matchedItem.serial || matchedItem.id}) ${matchLabel}`
 
     setLastScanResult({
       success: true,
@@ -141,21 +161,6 @@ export function BarcodeScannerModal({
       { id: Date.now().toString(), time: timeStr, text: successMsg, success: true },
       ...prev,
     ])
-
-    // Emit domain event
-    const eventType =
-      mode === 'pack'
-        ? EVENT_TYPES.INVENTORY_PACKED
-        : mode === 'handover'
-        ? EVENT_TYPES.INVENTORY_CHECKED_OUT
-        : EVENT_TYPES.INVENTORY_RETURNED
-
-    DomainEvents.emit(eventType, {
-      itemId: matchedItem.id,
-      serial: matchedItem.serial,
-      bookingId,
-      timestamp: new Date().toISOString(),
-    })
 
     onItemScanned(matchedItem)
   }
@@ -174,7 +179,11 @@ export function BarcodeScannerModal({
       isOpen={isOpen}
       onClose={onClose}
       title={modeTitle}
-      subtitle={`Booking ${bookingId} · Point hardware laser or type serial/barcode.`}
+      subtitle={
+        bookingId
+          ? `Booking ${bookingId} · Point hardware laser or type serial/barcode.`
+          : 'Point hardware laser or type serial/barcode.'
+      }
       size="md"
       footer={
         <Button variant="secondary" onClick={onClose}>
@@ -215,8 +224,11 @@ export function BarcodeScannerModal({
                     setLastScanResult({ success: false, message: 'Camera API is not supported in this browser environment.' })
                     return
                   }
-                  await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-                  setLastScanResult({ success: true, message: 'Camera permission granted. Camera scanner active.' })
+                  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+                  // No decoder consumes this stream yet — release the camera
+                  // instead of leaving its indicator lit over a dead feed.
+                  stream.getTracks().forEach((t) => t.stop())
+                  setLastScanResult({ success: false, message: REASON_CAMERA_DECODE_NOT_WIRED })
                 } catch (err: any) {
                   playAudioFeedback('error')
                   const errorName = err?.name || 'Error'

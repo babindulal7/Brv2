@@ -1,4 +1,4 @@
-import { PageHeader, Card, ReflowRail, SideRail, cardStyle, useBandColumns } from '../../components/ui/Page'
+import { PageHeader, ReflowRail, KpiStrip, cardStyle, useRailGridColumns } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
@@ -7,17 +7,6 @@ import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { METRICS, RETURN_ON_PROMOTION, IMPACT, COUPON_DONUT, CLIENT_USAGE, TOP_COUPONS, BUNDLE_ANALYSIS, DISCOUNT_TYPES } from '../../data/promotionsReports'
-
-function PromoKpiCard({ label, value, accent, note }: any) {
-  // Mock KpiCard implementation to match ExpenseReports
-  return (
-    <Card style={{ padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', background: `var(--${accent}-bg, var(--card))` }}>
-      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: '24px', fontWeight: 700, color: `var(--${accent})` }}>{value}</div>
-      <div style={{ fontSize: 'var(--t-meta)', color: `var(--${note.tone})` }}>{note.text}</div>
-    </Card>
-  )
-}
 
 /** The export body — the headline block, both tables and the two rail lists. */
 function promotionsCsv(totalIssued: number): ReportCsvRow[] {
@@ -54,9 +43,9 @@ function promotionsCsv(totalIssued: number): ReportCsvRow[] {
 }
 
 export default function PromotionsReports() {
-  /* KpiStrip's clamp, applied to this screen's hand-rolled key-figure grid:
-     four or six cards side by side is unreadable below 1180. */
-  const bandCols = useBandColumns()
+  /* Rulings §7 — the rail track goes away below 1180 so `ReflowRail`'s
+     inline column is not squeezed by a rail column that is still there. */
+  const railGridColumns = useRailGridColumns()
   const money = useCanViewMoney()
 
   // Law 6 — promotion revenue, discounts given and net impact are all rupees.
@@ -92,39 +81,54 @@ export default function PromotionsReports() {
       */}
       <ReportToolbar title="Promotions & Discounts" csv={{ filename: 'promotions', build: () => promotionsCsv(totalIssued) }} />
 
-      <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: `repeat(${bandCols(4)}, minmax(0,1fr))`, gap: 'var(--sp-md)' }}>
-        <PromoKpiCard
-          label="Promotion Revenue"
-          value={formatMoney(METRICS.promotionRevenue as Paisa)}
-          icon="tag"
-          accent="primary"
-          note={{ text: `Generated from ${totalIssued} issued coupons`, tone: 'neutral' }}
-        />
-        <PromoKpiCard
-          label="Discounts Given"
-          value={formatMoney(METRICS.discountsGiven as Paisa)}
-          icon="dollar"
-          accent="warning"
-          note={{ text: `${RETURN_ON_PROMOTION}x Return on Promotion (ROP)`, tone: 'success' }}
-        />
-        <PromoKpiCard
-          label="Net Impact"
-          value={formatMoney(IMPACT.net as Paisa)}
-          icon="chart"
-          accent="success"
-          note={{ text: `From ${formatMoney(IMPACT.gained as Paisa)} gained`, tone: 'success' }}
-        />
-        <PromoKpiCard
-          label="Redemption Rate"
-          value={`${METRICS.redemptionRate}%`}
-          icon="refresh"
-          accent="progress"
-          note={{ text: 'Of total issued', tone: 'neutral' }}
-        />
-      </section>
+      {/* The shared strip — typed items, icon tile drawn, viewport clamp built
+          in. The old hand-rolled `PromoKpiCard` was `any`-typed and silently
+          dropped its `icon` prop ("tag" was not even a registry name — never
+          caught, because nothing rendered it). */}
+      <KpiStrip
+        columns={4}
+        items={[
+          {
+            label: 'Promotion Revenue',
+            value: formatMoney(METRICS.promotionRevenue as Paisa),
+            icon: 'dollar',
+            accent: 'primary',
+            note: `Generated from ${totalIssued} issued coupons`,
+          },
+          {
+            label: 'Discounts Given',
+            value: formatMoney(METRICS.discountsGiven as Paisa),
+            icon: 'receipt',
+            accent: 'progress',
+            note: `${RETURN_ON_PROMOTION}x Return on Promotion (ROP)`,
+          },
+          {
+            label: 'Net Impact',
+            value: formatMoney(IMPACT.net as Paisa),
+            icon: 'chart',
+            accent: 'success',
+            note: `From ${formatMoney(IMPACT.gained as Paisa)} gained`,
+          },
+          {
+            label: 'Redemption Rate',
+            value: `${METRICS.redemptionRate}%`,
+            icon: 'refresh',
+            accent: 'progress',
+            note: 'Of total issued',
+          },
+        ]}
+      />
 
-      <ReflowRail>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+      {/*
+        Rulings §7 — `content | rail`, the documented shape (`ExpenseReports`,
+        `CashFlowReport`, `ClientReports`). This page used to pass its WHOLE
+        body — tables and a nested left `SideRail` — into `ReflowRail`, which
+        at desktop is a 288px sticky collapsible box, so the entire report
+        rendered inside one self-scrolling rail. The tables are the content
+        column now, and the three summary cards are the rail.
+      */}
+      <div style={{ display: 'grid', gridTemplateColumns: railGridColumns, gap: 'var(--sp-md)', alignItems: 'start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <section aria-label="Discount Impact" style={cardStyle}>
             <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Discount Impact Must Net Out</div>
             <div style={{ display: 'flex', flexDirection: 'row', gap: 'var(--sp-xl)', padding: 'var(--sp-md)' }}>
@@ -199,7 +203,7 @@ export default function PromotionsReports() {
 
         </div>
 
-        <SideRail>
+        <ReflowRail>
           <section aria-label="Coupon Donut" style={cardStyle}>
             <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Coupon Status</div>
             <div style={{ padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', alignItems: 'center' }}>
@@ -233,8 +237,8 @@ export default function PromotionsReports() {
               ))}
             </div>
           </section>
-        </SideRail>
-      </ReflowRail>
+        </ReflowRail>
+      </div>
     </div>
   )
 }

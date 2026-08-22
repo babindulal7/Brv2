@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { EquipmentProvider, useEquipmentContext } from './components/AddEquipmentContext'
 import { SectionIdentity } from './components/SectionIdentity'
 import { SectionStockUnits } from './components/SectionStockUnits'
@@ -12,15 +12,36 @@ import { ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { Modal } from '../../components/ui/Modal'
 import { PageHeader, Button, FooterNote, Rail, cardStyle } from '../../components/ui/Page'
-import Icon from '../../components/ui/Icon'
 import { Link, useNavigate } from 'react-router-dom'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+import { useNetwork } from '../../lib/network'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-import { SEED_ERRORS, SAVE_UNAVAILABLE_REASON, PREVIEW_UNAVAILABLE_REASON } from '../../data/addEquipment'
+import { useToast } from '../../components/ui/Toast'
+import { newClientUuid } from '../../lib/supabase'
+import { parseMoney } from '../../lib/money'
+import type { Paisa } from '../../lib/money'
+import { SEED_ERRORS, PREVIEW_UNAVAILABLE_REASON } from '../../data/addEquipment'
+import { WAREHOUSES } from '../../data/warehouse'
+import type { CreateEquipmentInput } from '../../actions/inventory/createEquipment'
 
+
+/** Blank → absent; otherwise a finite number or absent. */
+function num(s: string): number | undefined {
+  const t = s.trim()
+  if (!t) return undefined
+  const n = Number(t)
+  return Number.isFinite(n) ? n : undefined
+}
+
+/** Blank/unparseable → absent; otherwise Paisa. Money crosses to rupees inside the action (Law 6). */
+function paisa(s: string): Paisa | undefined {
+  const p = parseMoney(s)
+  return p == null ? undefined : p
+}
 
 function AddEquipmentLayout() {
+  const ctx = useEquipmentContext()
   const {
     assetCode,
     name,
@@ -34,10 +55,16 @@ function AddEquipmentLayout() {
     isDirty,
     handleSubmit,
     railContent,
-  } = useEquipmentContext()
+    serialised,
+    units,
+    rentable,
+    chosenLocation,
+  } = ctx
   const navigate = useNavigate()
   const viewport = useViewport()
   const money = useCanViewMoney()
+  const online = useNetwork()
+  const { showSuccessToast } = useToast()
   /** The one identity a dispatch on this screen may act as. No fallback. */
   const { user } = useAuth()
   /**
@@ -46,26 +73,108 @@ function AddEquipmentLayout() {
    * and seed failures, and `useToast()` carries successes only.
    */
   const [dispatchError, setDispatchError] = useState<string | null>(null)
+  /** A write is in flight — both submit buttons hold until it reports. */
+  const [saving, setSaving] = useState(false)
 
   /**
-   * ⭐ 12 Aug 2026 — both submit buttons dispatched like this:
-   *
-   *   import('../../actions/inventory/createEquipment').then(m =>
-   *     m.createEquipment({ name: name || 'New Equipment', isDraft: true }))
-   *
-   * No `ActionContext`, so `actions/core.ts` refused the call before `execute`;
-   * no `.catch()`, so the refusal was an unhandled promise. The page's own
-   * report ("Draft validated — nothing was stored") is honest about the write,
-   * which kept the harm low, but the failing dispatch itself was invisible —
-   * and the moment CREATE_EQUIPMENT is implemented, an invisible failure
-   * becomes an invisible *missing record*.
-   *
-   * `handleSubmit` still runs first: it is this screen's validation pass, it
-   * scrolls to the first section with a problem, and its report says in its own
-   * title that nothing was stored. It is not a claim that a write happened.
+   * Law 8 — the idempotency keys for THIS record, minted on the first submit
+   * and reused across every retry of it (`blockKeys` ref pattern,
+   * `clients/ClientsDirectory.tsx:325`). One key for the `products` row, one
+   * per unit row keyed on the draft row's stable id — so a resubmit after a
+   * partial failure conflicts on `client_uuid` and resolves to the rows that
+   * already landed instead of writing seconds.
+   */
+  const writeKeys = useRef<{ product: string | null; units: Map<string, string> }>({ product: null, units: new Map() })
+
+  /** Everything the form collected that has a column behind it, in one payload. */
+  const buildInput = (mode: 'draft' | 'create'): CreateEquipmentInput => {
+    const keys = writeKeys.current
+    if (!keys.product) keys.product = newClientUuid()
+    const unitInputs = serialised
+      ? units.map((u) => {
+          let key = keys.units.get(u.id)
+          if (!key) {
+            key = newClientUuid()
+            keys.units.set(u.id, key)
+          }
+          return {
+            serial: u.serial.trim(),
+            condition: u.condition,
+            purchaseDateIso: u.purchaseIso || undefined,
+            clientUuid: key,
+          }
+        })
+      : undefined
+    return {
+      clientUuid: keys.product,
+      name: name.trim(),
+      shortName: ctx.shortName || undefined,
+      category: ctx.category,
+      brand: ctx.brand,
+      model: ctx.modelNo || undefined,
+      // The form's own rule: Manufacturer exists only when it differs from Brand.
+      manufacturer: ctx.manufacturerDiffers ? ctx.manufacturer || undefined : undefined,
+      description: ctx.description || undefined,
+      tracking: ctx.tracking,
+      units: unitInputs,
+      quantity: serialised ? undefined : ctx.quantity,
+      reorderLevel: serialised ? undefined : ctx.reorderLevel,
+      quantityUnit: serialised ? undefined : (ctx.quantityUnit as 'piece' | 'metre' | 'roll' | 'pack'),
+      warehouseName: WAREHOUSES.find((w) => w.id === ctx.warehouseId)?.name,
+      location: chosenLocation
+        ? { rack: chosenLocation.rack, shelf: chosenLocation.shelf, bin: chosenLocation.bin }
+        : undefined,
+      /*
+       * `products.status` — Draft on Save Draft; Create publishes Active only
+       * when this page's own Ready-to-Rent gate cleared (`rentable`), which is
+       * exactly what the validation report has always told the operator.
+       */
+      status: mode === 'create' && rentable ? 'Active' : 'Draft',
+      /* Money — Paisa here, rupees only inside the action (Law 6). A
+         money-blind session never rendered these sections, so the fields are
+         absent from its payload entirely, never zeroed. */
+      ...(money
+        ? {
+            purchaseDateIso: ctx.purchaseIso || undefined,
+            purchasePricePaisa: paisa(ctx.purchasePrice),
+            replacementValuePaisa: paisa(ctx.replacementValue),
+            dailyRatePaisa: paisa(ctx.dailyRate),
+            weeklyRatePaisa: paisa(ctx.weeklyRate),
+            monthlyRatePaisa: paisa(ctx.monthlyRate),
+            hourlyRatePaisa: paisa(ctx.hourlyRate),
+            weekendRatePaisa: paisa(ctx.weekendRate),
+            ...(ctx.depositKind === 'percent'
+              ? { depositPercent: num(ctx.depositPercent) }
+              : { depositFixedPaisa: paisa(ctx.depositFixed) }),
+            warrantyMonths: num(ctx.warrantyMonths),
+            insuranceExpiryIso: ctx.insuranceExpiryIso || undefined,
+          }
+        : {}),
+      minRentalDays: num(ctx.minRentalDays),
+      rentalEnabled: ctx.rentalEnabled,
+      prepMinutes: num(ctx.prepMinutes),
+      cleaningMinutes: num(ctx.cleaningMinutes),
+      inspectionRequired: ctx.inspectionRequired,
+      packingRequired: ctx.packingRequired,
+      internalNotes: ctx.internalNotes || undefined,
+      warehouseNotes: ctx.warehouseNotes || undefined,
+    }
+  }
+
+  /**
+   * ⭐ 12 Aug 2026 — both submit buttons dispatched `{ name, isDraft }` with no
+   * `ActionContext` and no `.catch()`; the other ~40 collected fields had no
+   * path into the action at all (audit gaps 2 and 3). Now: `handleSubmit` is
+   * still this screen's validation pass, and its boolean gates the dispatch —
+   * an invalid record scrolls to its first problem and sends NOTHING. On the
+   * resolved path the app's "the write landed" signal is the navigation to
+   * `/inventory`; the toast carries the asset code the database issued.
    */
   const submit = (mode: 'draft' | 'create') => {
-    handleSubmit(mode)
+    if (!handleSubmit(mode)) {
+      setDispatchError(null)
+      return
+    }
     if (!user) {
       setDispatchError(
         'You are not signed in, so this equipment cannot be created against anyone. Nothing was written; your entries are still on the page.',
@@ -73,12 +182,19 @@ function AddEquipmentLayout() {
       return
     }
     setDispatchError(null)
+    setSaving(true)
     void import('../../actions/inventory/createEquipment')
-      .then((m) =>
-        m.createEquipment({ name: name || 'New Equipment', isDraft: mode === 'draft' }, { userId: user.id, role: user.role }),
-      )
+      .then((m) => m.createEquipment(buildInput(mode), { userId: user.id, role: user.role, isOnline: online }))
+      .then((res) => {
+        showSuccessToast(
+          mode === 'draft' ? 'Draft saved' : 'Equipment created',
+          `${res.assetCode} · ${res.status}${res.unitCount ? ` · ${res.unitCount} unit${res.unitCount === 1 ? '' : 's'}` : ''}`,
+        )
+        navigate('/inventory')
+      })
       .catch((err: unknown) => {
         console.error('createEquipment failed:', err)
+        setSaving(false)
         setDispatchError(err instanceof Error ? err.message : String(err))
       })
   }
@@ -125,31 +241,20 @@ function AddEquipmentLayout() {
                 Preview
               </Button>
             </Unavailable>
-            <Button variant="secondary" onClick={() => submit('draft')}>
-              Save Draft (not stored)
+            <Button variant="secondary" onClick={() => submit('draft')} disabled={saving}>
+              {saving ? 'Saving…' : 'Save Draft'}
             </Button>
-            <Button variant="primary" icon="check" onClick={() => submit('create')}>
-              Create Equipment (not stored)
+            <Button variant="primary" icon="check" onClick={() => submit('create')} disabled={saving}>
+              {saving ? 'Saving…' : 'Create Equipment'}
             </Button>
           </>
         }
       />
 
-      {/* The submit buttons say what they do; this says why. */}
-      <div
-        role="note"
-        style={{
-          ...cardStyle,
-          padding: '10px 12px',
-          display: 'flex',
-          gap: 9,
-          alignItems: 'flex-start',
-          borderColor: 'var(--border)',
-        }}
-      >
-        <Icon name="info" size={15} style={{ color: 'var(--muted)', flexShrink: 0, marginTop: 2 }} />
-        <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.45 }}>{SAVE_UNAVAILABLE_REASON}</span>
-      </div>
+      {/* The "(not stored)" face labels and the SAVE_UNAVAILABLE_REASON note
+          card are gone WITH the gap they described: CREATE_EQUIPMENT now
+          writes `products` + `product_units` through lib/dataAccess, and a
+          label claiming otherwise would be the inverse fabrication. */}
 
       {/* Law 12 — the dispatch rejection, inline and persistent, above the
           validation report so the two are never mistaken for each other. */}
@@ -204,11 +309,14 @@ function AddEquipmentLayout() {
         />
       )}
 
-      {/* A report of what was validated is only true while it still validates. */}
-      {outcome && Object.keys(errors).length === 0 && (
+      {/* The validation report, shown while the write it describes is in
+          flight. On success the page navigates to /inventory (the app's "the
+          write landed" signal); on failure this hides and the banner above
+          carries the reason, so the two can never both claim the record. */}
+      {outcome && !dispatchError && Object.keys(errors).length === 0 && (
         <div role="status" style={{ ...cardStyle, padding: 'var(--sp-md)', borderColor: 'var(--success)', display: 'flex', flexDirection: 'column', gap: 5 }}>
           <strong style={{ fontSize: 'var(--t-ui)', color: 'var(--success-text)' }}>
-            {outcome.kind === 'validated' ? 'Record validated' : 'Draft validated'} — nothing was stored
+            {outcome.kind === 'validated' ? 'Record validated' : 'Draft validated'}
           </strong>
           {outcome.lines.map((l) => (
             <span key={l} style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
@@ -216,7 +324,9 @@ function AddEquipmentLayout() {
             </span>
           ))}
           <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 3 }}>
-            This is what would be written once equipment gains a data layer. Your entries are still on the page.
+            {saving
+              ? 'Saving to the database — you will land on Inventory once the write is confirmed.'
+              : 'Validated, not yet saved. Your entries are still on the page.'}
           </span>
         </div>
       )}

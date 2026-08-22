@@ -1,19 +1,23 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows, FooterNote } from '../../components/ui/Page'
+import { Card, PageHeader, Button, KpiStrip, ReflowRail, SummaryRows, FooterNote, useRailGridColumns } from '../../components/ui/Page'
+import { PageBody } from '../../components/ui/PageBody'
 import { Donut, Legend, catColor } from '../../components/ui/Charts'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { ErrorBanner } from '../../components/ui/StateViews'
-import { SystemRestoreModal } from './SystemRestoreModal'
 import { useAuth } from '../../lib/auth'
+import { canManageSettings } from '../../lib/rbac'
 import { useViewport } from '../../lib/device'
+import { toBs, formatBs, formatAdDateTime } from '../../lib/bs'
+import { useList } from '../../lib/queries/useList'
+import type { ListFilters } from '../../lib/queries/listQuery'
+import { listBackupLogs, backupRestriction, type BackupLogListRow } from '../../lib/queries/backup'
 import { BRAND, BRAND_TEXT, STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import {
   KPIS,
   OVERVIEW,
   SCHEDULE,
-  HISTORY,
   RESTORE_SCOPES,
   RESTORE_OPTIONS,
   RESTORE_POINT,
@@ -119,7 +123,7 @@ function Spark({ points, tone }: { points: number[]; tone: 'primary' | 'success'
  *
  * The wireframe draws one control — type the backup name, press Restore — and
  * says nothing about who may press it or what it targets. Four protections it
- * never mentions are enforced here and in `SystemRestoreModal.tsx`:
+ * never mentions are the ruling's, and they gate this page:
  *
  *  1. **Owner-only.** `Tools.tsx:77-80` already records why the render's own
  *     Backup button was removed: *"a Rental Officer can press it, against
@@ -131,6 +135,16 @@ function Spark({ points, tone }: { points: number[]; tone: 'primary' | 'success'
  *  4. **A pre-restore checkpoint is mandatory** — taken before anything is
  *     overwritten, not offered as an option.
  *
+ * **The restore flow itself is parked, honestly (Phase 2.7).** This build has
+ * no restore service, and the previous confirmation dialog
+ * (`SystemRestoreModal.tsx`, still in the tree, no longer mounted) staged a
+ * checkpoint that was a 2-second timer and a 2FA step that verified nothing —
+ * theatre in front of a stated failure. Until a real service exists, every
+ * restore trigger renders `Unavailable` with `RESTORE_UNAVAILABLE` as its
+ * named reason instead of opening that flow. Protections 2–4 are the CONTRACT
+ * the wired flow must honour when Phase 2.7 builds it, not claims about
+ * something that runs today.
+ *
  * **Download is gated identically, and this is the non-obvious half.** Law 6
  * hides money columns from Warehouse *at the database*, through RLS and twenty
  * masking views. A full backup file is the same data with no RLS in front of
@@ -138,20 +152,28 @@ function Spark({ points, tone }: { points: number[]; tone: 'primary' | 'success'
  * schema exists to withhold. The spec draws `[Download]` on every history row
  * with no gate at all; it gets the Owner gate here.
  *
- * The typed confirmation §10.7 *does* ask for is kept and sharpened: the modal
- * asks for **the backup's own name**, as the wireframe says, not a fixed word.
- * Typing `RESTORE` is muscle memory; typing `BKP-2026-0812-01` requires having
- * read which backup is about to overwrite the database.
+ * ## The history list is real
+ *
+ * Backup History reads `backup_logs` via `lib/queries/backup.ts` — the
+ * immutable record 0007 creates and 0046 backstops. The eight seeded rows
+ * (`data/backup.ts` `HISTORY`, with their hand-typed BS strings and invented
+ * operators) are gone from this card; dates render BS above AD through
+ * `lib/bs.ts`, paging is server-side with `id` as the tiebreak, and RLS admits
+ * **Owner and Admin only** (0031) — so the list spreads `backupRestriction()`
+ * into `PageBody` and a Manager/Coordinator/Accounts session reads
+ * "restricted", never a false "no backups yet". Every other card on this page
+ * is still the seed; converting them is later wiring, and none of them gains
+ * truth by being beside a real table.
  *
  * ## The error state
  *
  * §10.7: *"This page needs a real error state — a restore that fails silently
- * is the worst failure in the product."* There is no restore service in this
- * build, so the honest terminal state of the flow is a **failure that names
- * what is missing**, carried inline and persistently (Law 12). It is not a
- * success screen, and `SUCCESS_FABRICATION_REGISTER_2026-08-12.md` is the
- * reason: a screen that says a restore completed when nothing ran is the exact
- * defect that register exists to close. The same applies to Download.
+ * is the worst failure in the product."* There is no backup service in this
+ * build, so the honest response to Download is a **failure that names what is
+ * missing**, carried inline and persistently (Law 12). It is not a success
+ * screen, and `SUCCESS_FABRICATION_REGISTER_2026-08-12.md` is the reason: a
+ * screen that says a download completed when nothing ran is the exact defect
+ * that register exists to close.
  *
  * ## Removed under a law, not under a wireframe
  *
@@ -162,19 +184,53 @@ function Spark({ points, tone }: { points: number[]; tone: 'primary' | 'success'
  * card on a different page. Nothing else was removed: Rulings §1 keeps every
  * other panel the wireframe simply does not draw.
  */
+const HISTORY_PAGE_SIZE = 8
+
 export default function BackupRestore() {
   const viewport = useViewport()
+  const railGridColumns = useRailGridColumns()
   const { user } = useAuth()
   const [scope, setScope] = useState('Entire System')
   const [opts, setOpts] = useState(() => RESTORE_OPTIONS.map((o) => o.on))
 
-  /** Administration §25.2. Not a UI preference — the same gate the modal re-checks. */
-  const isOwner = user?.role === 'Owner'
+  /**
+   * Administration §25.2. Not a UI preference — the gate every restore trigger
+   * states. Routed through rbac's `canManageSettings` (the predicate IS
+   * `role === 'Owner'` today) so the role set lives in `rbac.ts` beside every
+   * other gate instead of as a literal here — the page doc's gap 12, closed.
+   * If that predicate ever moves, this page moves with it by construction.
+   */
+  const mayManage = canManageSettings(user?.role ?? 'Client')
   const OWNER_ONLY =
     'Owner-only, and two-factor gated. Administration §25.2 — a restore overwrites live data and a full backup file carries every money column Law 6 hides from the floor, with no RLS in front of it.'
 
-  /** The backup a restore has been requested for, or `null`. */
-  const [restoreFor, setRestoreFor] = useState<{ id: string; kind: string } | null>(null)
+  /**
+   * Phase 2.7's named reason. The previous trigger opened `SystemRestoreModal`,
+   * whose checkpoint was a timer and whose 2FA verified nothing — theatre. A
+   * stated absence is the honest control until a real restore service exists.
+   */
+  const RESTORE_UNAVAILABLE =
+    'No restore service exists in this build — pressing this would stage a checkpoint and a 2FA step that verify nothing. ' +
+    'The real flow arrives with the service (Phase 2.7): Owner-only, two-factor, sandbox-first, mandatory pre-restore checkpoint.'
+
+  /**
+   * Backup History — the real record. RLS on `backup_logs` admits Owner/Admin
+   * only (0031); everyone else who can reach this route gets zero rows —
+   * restricted, never empty (`lib/queries/backup.ts`).
+   */
+  const restriction = backupRestriction(user?.role)
+  const [histPage, setHistPage] = useState(0)
+  const fetchBackups = useCallback((f: ListFilters) => listBackupLogs({ ...f, withCount: true }), [])
+  const history = useList<BackupLogListRow>(fetchBackups, {
+    page: { index: histPage, size: HISTORY_PAGE_SIZE },
+  })
+
+  /* The net under the pager: a page past the end would ask for rows that do
+     not exist. */
+  const pageCount = history.total === null ? null : Math.max(1, Math.ceil(history.total / HISTORY_PAGE_SIZE))
+  useEffect(() => {
+    if (pageCount !== null && histPage > pageCount - 1) setHistPage(Math.max(0, pageCount - 1))
+  }, [pageCount, histPage])
 
   /**
    * Law 12 — inline and persistent. A download that produced no file must say
@@ -182,14 +238,14 @@ export default function BackupRestore() {
    */
   const [downloadError, setDownloadError] = useState<string | null>(null)
 
-  function requestDownload(id: string) {
+  function requestDownload(backupNo: string) {
     /* No backup service exists in this build, so this is the whole truth of
        what happens: nothing is fetched and the operator is told. Returning a
        fabricated "Download started" here would be a
        SUCCESS_FABRICATION_REGISTER entry on the most sensitive file in the
        product. */
     setDownloadError(
-      `No file was downloaded for ${id}. This build has no backup storage service, so there is nothing to fetch — and an ungated download of a full backup would carry every money column Law 6 withholds from the floor. Nothing was written, sent or exposed.`,
+      `No file was downloaded for ${backupNo}. This build has no backup storage service, so there is nothing to fetch — and an ungated download of a full backup would carry every money column Law 6 withholds from the floor. Nothing was written, sent or exposed.`,
     )
   }
 
@@ -205,7 +261,7 @@ export default function BackupRestore() {
           <>
             <Unavailable
               reason={
-                isOwner
+                mayManage
                   ? 'No backup service exists in this build, so pressing this would write nothing while saying it had.'
                   : OWNER_ONLY
               }
@@ -214,7 +270,7 @@ export default function BackupRestore() {
                 Back up now
               </Button>
             </Unavailable>
-            <Unavailable reason={isOwner ? 'Pick the backup to restore from a history row below.' : OWNER_ONLY}>
+            <Unavailable reason={mayManage ? RESTORE_UNAVAILABLE : OWNER_ONLY}>
               <Button icon="refresh" disabled>
                 Restore
               </Button>
@@ -224,11 +280,11 @@ export default function BackupRestore() {
                 Export
               </Button>
             </Unavailable>
-            <Unavailable reason="Nothing to refresh — this build reads a static seed, not a live backup service.">
-              <Button icon="refresh" disabled>
-                Refresh
-              </Button>
-            </Unavailable>
+            {/* Live: Backup History reads the real `backup_logs` table now, so
+                there is something to refresh. The other cards are still seed. */}
+            <Button icon="refresh" onClick={history.refetch}>
+              Refresh
+            </Button>
           </>
         }
       />
@@ -243,8 +299,12 @@ export default function BackupRestore() {
         style={{
           display: 'grid',
           /* Rulings §7 — below 1180 the rail reflows underneath, still visible.
-             It is not wrapped in CollapsibleAside and its defaults are untouched. */
-          gridTemplateColumns: viewport === 'desktop' ? 'minmax(0,1fr) auto' : 'minmax(0,1fr)',
+             `useRailGridColumns()` drops the rail track and `ReflowRail` below
+             renders the same children as a plain column — the previous build
+             paired this grid with plain `Rail` (which IS CollapsibleAside), so
+             the cards sat behind a 44px handle on the warehouse tablet while
+             this very comment claimed otherwise. Phase 3.1 made it true. */
+          gridTemplateColumns: railGridColumns,
           gap: 'var(--sp-md)',
           alignItems: 'start',
         }}
@@ -326,110 +386,133 @@ export default function BackupRestore() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.55fr) minmax(0,1fr)', gap: 'var(--sp-md)' }}>
-            <Card
-              title="Backup History"
-              action={
-                <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
-                  View all backups →
-                </span>
-              }
-              bodyStyle={{ padding: 0 }}
-            >
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
-                  <thead>
-                    <tr style={{ background: 'var(--th-bg)' }}>
-                      {['Backup ID', 'Type', 'Started (BS / AD)', 'Completed (BS / AD)', 'Duration', 'Size', 'Destination', 'Status', 'Created By', ''].map(
-                        (h, i) => (
-                          <th key={h || i} style={th}>
-                            {h}
-                          </th>
-                        ),
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {HISTORY.map((b) => (
-                      <tr key={b.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td className="identifier" style={{ ...td, color: 'var(--link)', fontWeight: 600 }}>{b.id}</td>
-                        <td style={td}>
-                          <Pill text={b.type} status={TYPE_OF[b.type] ?? 'neutral'} />
-                        </td>
-                        {/* BS leads, AD beneath — Foundation renders BS, stores AD. */}
-                        <td style={td}>
-                          <span className="figure" style={{ display: 'block' }}>{b.startedBs}</span>
-                          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{b.startedAd}</span>
-                        </td>
-                        <td style={td}>
-                          <span className="figure" style={{ display: 'block' }}>{b.completedBs}</span>
-                          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{b.completedAd}</span>
-                        </td>
-                        <td className="figure" style={{ ...td, color: 'var(--text2)' }}>{b.duration}</td>
-                        <td className="figure" style={{ ...td, color: 'var(--text2)' }}>{b.size}</td>
-                        <td style={{ ...td, color: 'var(--text2)' }}>{b.destination}</td>
-                        <td style={td}>
-                          <Pill text={b.status} status={STATUS_OF[b.status] ?? 'neutral'} />
-                        </td>
-                        <td style={{ ...td, color: 'var(--text2)' }}>{b.by}</td>
-                        {/* §10.7's `[Download] [Restore] ⋮` — the three the
-                            wireframe draws as bare glyphs, made real and gated. */}
-                        <td style={td}>
-                          <span style={{ display: 'flex', gap: 'var(--sp-xs)', alignItems: 'center' }}>
-                            <RowAction
-                              icon="download"
-                              label={`Download backup ${b.id}`}
-                              enabled={isOwner}
-                              reason={OWNER_ONLY}
-                              onClick={() => requestDownload(b.id)}
-                            />
-                            <RowAction
-                              icon="refresh"
-                              label={`Restore from backup ${b.id}`}
-                              enabled={isOwner}
-                              reason={OWNER_ONLY}
-                              onClick={() => setRestoreFor({ id: b.id, kind: `${b.type} · ${b.size}` })}
-                            />
-                            <Unavailable reason="The row menu (verify · duplicate · retention) is specified but not built yet.">
-                              <span style={rowActionStyle(false)}>
-                                <Icon name="more_vert" size={14} />
-                              </span>
-                            </Unavailable>
-                          </span>
-                        </td>
+            <Card title="Backup History" bodyStyle={{ padding: 0 }}>
+              {/* The real record — `backup_logs` via `lib/queries/backup.ts`.
+                  Restricted outranks everything: RLS admits Owner/Admin only,
+                  and a Manager reading "No backups yet" would be a lie. */}
+              <PageBody
+                {...restriction}
+                loading={history.loading}
+                error={history.error}
+                onRetry={history.refetch}
+                hasRows={history.rows.length > 0}
+                empty={history.isEmpty}
+                noun="backups"
+                skeleton="table"
+                skeletonRows={6}
+                emptyTitle="No backups recorded yet"
+                emptyMessage={
+                  'Every completed backup writes a row to backup_logs, and this list is that record. ' +
+                  'It is empty because no backup service has run yet — not because anything was removed.'
+                }
+              >
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
+                    <thead>
+                      <tr style={{ background: 'var(--th-bg)' }}>
+                        {['Backup ID', 'Type', 'Started (BS / AD)', 'Completed (BS / AD)', 'Duration', 'Size', 'Destination', 'Status', 'Initiated By', ''].map(
+                          (h, i) => (
+                            <th key={h || i} style={th}>
+                              {h}
+                            </th>
+                          ),
+                        )}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                <span>Showing 1 to 8 of 1,248 backups</span>
-                <span style={{ marginLeft: 'auto', display: 'flex', gap: 3 }}>
-                  {['‹', '1', '2', '3', '…', '156', '›'].map((p, i) => {
-                    const on = p === '1'
-                    return (
-                      <button
-                        key={`${p}-${i}`}
-                        type="button"
-                        aria-current={on ? 'page' : undefined}
-                        style={{
-                          minWidth: 24,
-                          height: 24,
-                          borderRadius: 'var(--r-xs)',
-                          border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
-                          background: on ? 'var(--btn-primary-bg)' : 'transparent',
-                          color: on ? 'var(--btn-primary-fg)' : 'var(--text2)',
-                          fontSize: 'var(--t-meta)',
-                          fontWeight: on ? 700 : 500,
-                          cursor: 'pointer',
-                          fontFamily: 'inherit',
-                        }}
-                      >
-                        {p}
-                      </button>
-                    )
-                  })}
-                </span>
-              </div>
+                    </thead>
+                    <tbody>
+                      {history.rows.map((b) => (
+                        <tr key={b.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td className="identifier" style={{ ...td, color: 'var(--link)', fontWeight: 600 }}>{b.backupNo}</td>
+                          <td style={td}>
+                            <Pill text={b.backupType} status={TYPE_OF[b.backupType] ?? 'neutral'} />
+                          </td>
+                          {/* BS leads, AD beneath — rendered through `lib/bs.ts`,
+                              never stored (Law 7). */}
+                          <td style={td}>
+                            <WhenCell iso={b.startedAtAd} />
+                          </td>
+                          <td style={td}>
+                            <WhenCell iso={b.completedAtAd} />
+                          </td>
+                          <td className="figure" style={{ ...td, color: 'var(--text2)' }}>{durationBetween(b.startedAtAd, b.completedAtAd)}</td>
+                          <td className="figure" style={{ ...td, color: 'var(--text2)' }}>{formatBytes(b.fileSizeBytes)}</td>
+                          <td style={{ ...td, color: 'var(--text2)' }}>{b.storageLocation}</td>
+                          {/* `error_message` rides the status cell — the row's own
+                              stated failure, straight from the record. */}
+                          <td style={td} title={b.errorMessage ?? undefined}>
+                            <Pill text={b.status} status={STATUS_OF[b.status] ?? 'neutral'} />
+                          </td>
+                          {/* `users` is self-scoped, so the uuid cannot honestly be
+                              resolved to a name — shown truncated, full id on hover.
+                              `null` means no session actor was recorded. */}
+                          <td
+                            className="identifier"
+                            style={{ ...td, color: 'var(--text2)' }}
+                            title={b.initiatedBy ?? undefined}
+                          >
+                            {shortId(b.initiatedBy)}
+                          </td>
+                          {/* §10.7's `[Download] [Restore] ⋮` — Download is real and
+                              Owner-gated; Restore states Phase 2.7 rather than
+                              opening the retired theatre flow. */}
+                          <td style={td}>
+                            <span style={{ display: 'flex', gap: 'var(--sp-xs)', alignItems: 'center' }}>
+                              <RowAction
+                                icon="download"
+                                label={`Download backup ${b.backupNo}`}
+                                enabled={mayManage}
+                                reason={OWNER_ONLY}
+                                onClick={() => requestDownload(b.backupNo)}
+                              />
+                              <RowAction
+                                icon="refresh"
+                                label={`Restore from backup ${b.backupNo}`}
+                                enabled={false}
+                                reason={mayManage ? RESTORE_UNAVAILABLE : OWNER_ONLY}
+                              />
+                              <Unavailable reason="The row menu (verify · duplicate · retention) is specified but not built yet.">
+                                <span style={rowActionStyle(false)}>
+                                  <Icon name="more_vert" size={14} />
+                                </span>
+                              </Unavailable>
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {/* Server-side paging over the real count — the seed's seven dead
+                    pager buttons and its "1,248 backups" caption are gone. */}
+                {pageCount !== null && pageCount > 1 && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 'var(--sp-md)',
+                      padding: '10px 14px',
+                    }}
+                  >
+                    <PagerButton
+                      label="Previous page"
+                      icon="chevron_left"
+                      disabled={histPage === 0}
+                      onClick={() => setHistPage((p) => Math.max(0, p - 1))}
+                    />
+                    <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                      Page {histPage + 1} of {pageCount}
+                      {history.total !== null ? ` · ${history.total} backups` : ''}
+                    </span>
+                    <PagerButton
+                      label="Next page"
+                      icon="chevron_right"
+                      disabled={histPage >= pageCount - 1}
+                      onClick={() => setHistPage((p) => p + 1)}
+                    />
+                  </div>
+                )}
+              </PageBody>
             </Card>
 
             <Card
@@ -516,58 +599,38 @@ export default function BackupRestore() {
               </div>
 
               {/*
-                Live for an Owner now that the confirmation flow exists —
-                warning, environment choice, mandatory checkpoint, 2FA, then the
-                typed backup name. For anybody else it is a stated reason, not a
-                dead button: Rulings §7 keeps the Owner-only + 2FA gate §10.7
-                never mentions.
+                Phase 2.7 — a stated absence for EVERY role, Owner included.
+                The previous Owner-only branch opened `SystemRestoreModal`,
+                whose checkpoint was a 2-second timer and whose 2FA compared a
+                code to nothing but its own length. An Owner reads why the
+                control is parked; everyone else reads the Owner gate that will
+                still apply when it arrives.
               */}
-              {isOwner ? (
-                <button
-                  type="button"
-                  onClick={() => setRestoreFor({ id: RESTORE_POINT.id, kind: `${RESTORE_POINT.kind} · ${scope}` })}
+              <Unavailable reason={mayManage ? RESTORE_UNAVAILABLE : OWNER_ONLY} style={{ marginTop: 'var(--sp-md)', width: '100%' }}>
+                <span
                   style={{
-                    marginTop: 'var(--sp-md)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
                     width: '100%',
                     /* Law 15 — 44×44 at every width, desktop included. */
                     minHeight: 44,
                     borderRadius: 'var(--r-btn)',
-                    border: '1px solid transparent',
-                    background: 'var(--btn-danger-bg)',
-                    color: 'var(--btn-danger-fg)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--card2)',
+                    color: 'var(--muted)',
                     fontSize: 'var(--t-meta)',
                     fontWeight: 700,
-                    fontFamily: 'inherit',
-                    cursor: 'pointer',
                   }}
                 >
+                  <Icon name="lock" size={14} />
                   Start Restore
-                </button>
-              ) : (
-                <Unavailable reason={OWNER_ONLY} style={{ marginTop: 'var(--sp-md)', width: '100%' }}>
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 6,
-                      width: '100%',
-                      minHeight: 44,
-                      borderRadius: 'var(--r-btn)',
-                      border: '1px solid var(--border)',
-                      background: 'var(--card2)',
-                      color: 'var(--muted)',
-                      fontSize: 'var(--t-meta)',
-                      fontWeight: 700,
-                    }}
-                  >
-                    <Icon name="lock" size={14} />
-                    Start Restore
-                  </span>
-                </Unavailable>
-              )}
+                </span>
+              </Unavailable>
               <p style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', textAlign: 'center', lineHeight: 1.45 }}>
-                Sandbox is the default target. A pre-restore checkpoint is taken first, and it is not optional.
+                Restores arrive with the restore service (Phase 2.7): Owner-only, two-factor, sandbox as the default
+                target, and a mandatory pre-restore checkpoint before anything is overwritten.
               </p>
             </Card>
           </div>
@@ -650,7 +713,9 @@ export default function BackupRestore() {
           </Card>
         </div>
 
-        <Rail>
+        {/* Rulings §7 (binding) — "reflow, not hide": below 1180 these four
+            cards land underneath as a plain column, never behind a handle. */}
+        <ReflowRail>
           <Card title="Backup Summary">
             <SummaryRows rows={SUMMARY} />
             <Meter pct={83} />
@@ -755,23 +820,16 @@ export default function BackupRestore() {
             is not this pass's file to edit, so ADVISOR stays exported and
             unused rather than being half-removed across an ownership boundary.
           */}
-        </Rail>
+        </ReflowRail>
       </div>
 
       {/*
-        The typed confirmation §10.7 asks for, plus the three protections it
-        does not: Owner-only, 2FA, sandbox-by-default and a mandatory
-        pre-restore checkpoint. The modal re-checks the role itself — this
-        page's gate is the first of two, never the only one.
+        `SystemRestoreModal` is deliberately NOT mounted here any more. Its
+        checkpoint step was a `setTimeout` and its 2FA step verified nothing —
+        every restore trigger on this page now states Phase 2.7 through
+        `Unavailable` instead of opening that theatre. The file stays in the
+        tree (Law 3) for the real flow to be rebuilt on.
       */}
-      {restoreFor && (
-        <SystemRestoreModal
-          isOpen
-          onClose={() => setRestoreFor(null)}
-          restorePointId={restoreFor.id}
-          restorePointKind={restoreFor.kind}
-        />
-      )}
 
       <FooterNote extra={['Backups are encrypted at rest and in transit']} />
     </div>
@@ -798,9 +856,11 @@ function rowActionStyle(enabled: boolean) {
 }
 
 /**
- * One history-row control. Enabled only for an Owner; otherwise it states the
- * gate rather than failing on press — `rbac.ts`'s rule is that a forbidden item
- * is absent or explained, never a button that quietly does nothing.
+ * One history-row control. Live only when enabled AND given a handler;
+ * otherwise it states the gate rather than failing on press — `rbac.ts`'s rule
+ * is that a forbidden item is absent or explained, never a button that quietly
+ * does nothing. `onClick` is optional so a control that is parked for every
+ * role (row Restore, Phase 2.7) does not have to carry a no-op handler.
  */
 function RowAction({
   icon,
@@ -813,9 +873,9 @@ function RowAction({
   label: string
   enabled: boolean
   reason: string
-  onClick: () => void
+  onClick?: () => void
 }) {
-  if (!enabled) {
+  if (!enabled || !onClick) {
     return (
       <Unavailable reason={reason}>
         <span aria-label={label} style={rowActionStyle(false)}>
@@ -827,6 +887,101 @@ function RowAction({
   return (
     <button type="button" aria-label={label} title={label} onClick={onClick} style={rowActionStyle(true)}>
       <Icon name={icon} size={14} />
+    </button>
+  )
+}
+
+/* ── history-row rendering helpers ─────────────────────────────────────── */
+
+/**
+ * BS above AD — the pair the footer promises ("All dates are shown in BS above
+ * AD"). `toBs` vouches for one month only and returns `null` outside it; a
+ * null becomes an omitted line rather than a wrong date (Law 7 — BS is
+ * rendered, never stored). The AD line, rendered in Kathmandu, is always
+ * present. Same cell as `AuditLog.tsx`'s.
+ */
+function WhenCell({ iso }: { iso: string }) {
+  const d = new Date(iso)
+  const bs = Number.isNaN(d.getTime()) ? null : toBs(d)
+  return (
+    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+      {bs && <span className="figure">{formatBs(bs)}</span>}
+      <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+        {formatAdDateTime(iso)}
+      </span>
+    </span>
+  )
+}
+
+/** First 8 hex characters of a uuid, full id on `title` at the call site. `null` → an em-dash, never an invented name. */
+function shortId(id: string | null): string {
+  return id ? `${id.slice(0, 8)}…` : '—'
+}
+
+/**
+ * `file_size_bytes` → words. Decimal units (1 GB = 10⁹ B), the convention
+ * storage vendors label capacity in. A byte count, never money — no
+ * `formatMoney` here.
+ */
+function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return '—'
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)} MB`
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)} KB`
+  return `${n} B`
+}
+
+/**
+ * `completed_at − started_at`, derived from the record's own timestamps — the
+ * seed carried a hand-typed duration string beside two hand-typed times, three
+ * copies of one fact. Malformed or negative input renders an em-dash rather
+ * than a fabricated figure.
+ */
+function durationBetween(fromIso: string, toIso: string): string {
+  const ms = new Date(toIso).getTime() - new Date(fromIso).getTime()
+  if (!Number.isFinite(ms) || ms < 0) return '—'
+  const totalSec = Math.round(ms / 1000)
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  const s = totalSec % 60
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`
+  if (m > 0) return `${m}m ${String(s).padStart(2, '0')}s`
+  return `${s}s`
+}
+
+/** Prev/Next — 44×44 (Law 15), disabled honestly rather than hidden. Same control as `AuditLog.tsx`'s. */
+function PagerButton({
+  label,
+  icon,
+  disabled,
+  onClick,
+}: {
+  label: string
+  icon: 'chevron_left' | 'chevron_right'
+  disabled: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: 44,
+        minHeight: 44,
+        borderRadius: 'var(--r-btn)',
+        border: '1px solid var(--border)',
+        background: 'var(--card)',
+        color: disabled ? 'var(--muted)' : 'var(--text)',
+        cursor: disabled ? 'default' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <Icon name={icon} size={16} />
     </button>
   )
 }

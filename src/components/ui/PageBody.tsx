@@ -43,22 +43,31 @@ import { LoadingSkeleton, ErrorBanner, EmptyState, RestrictedState } from './Sta
  * genuine first-load case, which is the case every one of these states was
  * written for.
  *
- * ## Two limitations the conversion waves must know about
+ * ## `hasRows` shapes the loading state the same way
  *
- * 1. **A `loading` refetch still blanks a good list.** The fix above covers the
- *    failed refresh, not the one still in flight: `loading` outranks `children`
- *    unconditionally, so a manual Retry over surviving rows swaps them for a
- *    skeleton for as long as the query runs. Making stale rows survive a
- *    refetch-in-progress needs an affordance this kit does not have (some
- *    "refreshing…" mark that is not a skeleton and not a toast, since toasts
- *    carry successes only), and choosing it is a design call.
- *    TODO(decision): what a refresh-in-progress looks like over rows that are
- *    already on screen. Until it is ruled, a refetch blanks the table for its
- *    duration — stated here rather than left to be discovered 34 times.
- * 2. **`skeletonRows` only affects `skeleton="table"`.** `LoadingSkeleton`
- *    hardcodes 4 tiles for `kpi` and one block for `card`; the prop is accepted
- *    and ignored for both. That is `StateViews`' behaviour, restated here so a
- *    screen does not tune a number that does nothing.
+ * The old limitation here — "a `loading` refetch still blanks a good list" —
+ * is resolved by the same discriminator. A `loading` that arrives while rows
+ * are on screen is by definition a refetch (`useList` keeps the previous rows
+ * for its whole duration, exactly as it does across a failed refresh), so:
+ *
+ *   - `hasRows` false → the skeleton. A first load has nothing else to show.
+ *   - `hasRows` true  → `children`, marked `aria-busy`. The rows are stale but
+ *     true; swapping a table someone is reading for a skeleton on every manual
+ *     Refresh (Rentals List, Inventory, Payments) told them less, not more.
+ *
+ * No visual "refreshing…" affordance is invented here — that is still an open
+ * design call (it must be neither a skeleton nor a toast, since toasts carry
+ * successes only). `aria-busy` on a box-less wrapper is the machine-readable
+ * placeholder until it is ruled. As with the error state, `hasRows` chooses
+ * the SHAPE, never the rank: restricted and error still outrank loading, and
+ * loading still outranks empty and children whenever nothing is on screen yet.
+ *
+ * ## One limitation the conversion waves must know about
+ *
+ * **`skeletonRows` only affects `skeleton="table"`.** `LoadingSkeleton`
+ * hardcodes 4 tiles for `kpi` and one block for `card`; the prop is accepted
+ * and ignored for both. That is `StateViews`' behaviour, restated here so a
+ * screen does not tune a number that does nothing.
  */
 export interface PageBodyProps {
   loading?: boolean
@@ -77,10 +86,11 @@ export interface PageBodyProps {
   /**
    * Whether `children` currently holds data — on a list screen, `rows.length > 0`.
    *
-   * Read only in the error state, where it decides whether the error replaces
-   * the content or sits above it. See the header. Default `false`, which is the
-   * conservative reading: a screen that has not said it has rows is assumed to
-   * have nothing to protect, and gets the old full-page behaviour.
+   * Read in the error and loading states, where it decides whether the state
+   * replaces the content (first load) or coexists with it (refresh). See the
+   * header. Default `false`, which is the conservative reading: a screen that
+   * has not said it has rows is assumed to have nothing to protect, and gets
+   * the old full-page behaviour.
    */
   hasRows?: boolean
   /** True only when a successful query returned nothing. */
@@ -180,7 +190,21 @@ export function PageBody({
   }
 
   if (loading) {
-    return <LoadingSkeleton type={skeleton} rows={skeletonRows} label={`Loading ${noun}…`} />
+    // First load: nothing is on screen yet, so the skeleton is the only honest
+    // render. Refetch (`hasRows`): the rows on screen survive for the query's
+    // duration — see the header. `empty` is skipped in the refetch shape on
+    // purpose: rows exist, so "nothing matched" would be a contradiction.
+    if (!hasRows) {
+      return <LoadingSkeleton type={skeleton} rows={skeletonRows} label={`Loading ${noun}…`} />
+    }
+    // `display: contents` so the wrapper contributes no box — children keep
+    // whatever layout their parent gave them; the div exists only to carry
+    // `aria-busy` over the stale rows.
+    return (
+      <div style={{ display: 'contents' }} aria-busy="true">
+        {children}
+      </div>
+    )
   }
 
   if (empty) {

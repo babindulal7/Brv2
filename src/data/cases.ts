@@ -989,5 +989,7 @@ export const ROWS_PER_PAGE_OPTIONS = [10, 25, 50] as const
 
 /** §9 — Case creation is a separate, undefined flow (only the queue+rail screen is in scope). */
 export const NEW_CASE_UNAVAILABLE_REASON = 'Case creation is not built yet — only the queue and rail are in scope for this pass.'
+/** No export pipeline exists — no cases report builder or CSV writer anywhere in the build. The old button toasted "Generating cases report…" while generating nothing (the exact fabrication src/actions/core.ts §1 names). */
+export const CASES_EXPORT_UNAVAILABLE_REASON = 'Export is not built yet — no cases report or CSV generator exists in this build, so nothing can be downloaded from here.'
 /** §10 — the workspace route has no field list yet; §12 checklist item "Case Workspace route defined and reachable" stays open until it does. */
 export const CASE_WORKSPACE_ROUTE = (id: string) => `/operations/cases/${id}`

@@ -883,6 +883,102 @@ export async function listUnits(
   return { rows: (data ?? []).map(toUnitRow), total: count ?? null }
 }
 
+/* ── One asset, by whatever reference a URL carries ────────────────────────── */
+
+/** What `/inventory/:assetId` resolves to: the product plus every unit row it has. */
+export interface AssetDetailRecord {
+  product: InventoryListRow
+  /** Every unit of the product, retired included, in `asset_tag` order. `[]` for a quantity SKU. */
+  units: InventoryUnitRow[]
+  /**
+   * Set when the ref named a UNIT (a manufacturer serial or an asset tag)
+   * rather than the product's own `asset_code` — the id of that unit, so the
+   * screen can open on the row the link meant.
+   */
+  matchedUnitId: string | null
+}
+
+export interface AssetDetailOptions {
+  /** Include the money columns. **Money.** Pass `useCanViewMoney()`, never a literal — see MONEY above. */
+  withMoney?: boolean
+}
+
+/**
+ * Resolves the reference in `/inventory/:assetId` to one product and its units.
+ *
+ * The links that land on this route carry THREE different vocabularies, all
+ * live today: `StockCheck.tsx` links `assetCode || serial`, every floor
+ * workspace and `BookingDetail` link a unit's serial, and the Inventory list's
+ * own rows link the `asset_code`. So the ref is tried as, in order:
+ *
+ *  1. `products.asset_code` — the route's own primary vocabulary (`EQ......`).
+ *  2. `product_units.serial_no` — nullable but unique (0004:194).
+ *  3. `product_units.asset_tag` — the NOT NULL unique unit key (0004:195, :233).
+ *
+ * The order cannot mis-resolve: `asset_code` is CHECK-constrained to
+ * `^EQ[0-9]{6}$` (0004:139-140) while an asset tag carries a suffix and a
+ * serial a different prefix entirely, so no single string matches two steps.
+ *
+ * ⚠ Deliberately NOT narrowed by `catalogue()`: that filter set exists for the
+ * list, where Archived means "left the catalogue". A DETAIL link from an old
+ * booking or a stock-check row must keep resolving after the product is
+ * archived — Law 3 keeps the row forever, and a page that 404s on it would
+ * read as deletion. Retired units are likewise returned (see RETIREMENT).
+ *
+ * Returns `null` only when a genuinely successful query matched nothing —
+ * a failed read THROWS, so "not found" and "could not load" stay two facts.
+ */
+export async function getAssetDetail(
+  ref: string,
+  opts: AssetDetailOptions = {},
+): Promise<AssetDetailRecord | null> {
+  const trimmed = ref.trim()
+  if (!trimmed) return null
+
+  const money = opts.withMoney ? { withMoney: true as const } : {}
+
+  // 1. The product's own asset code. `chips` → `in(asset_code, [ref])`;
+  //    `asset_code` is unique (0004:139), so this is zero rows or one.
+  const byCode = await listInventory({ chips: { asset_code: [trimmed] }, ...money })
+  let product = byCode.rows[0] ?? null
+  let matchedUnitId: string | null = null
+
+  // 2./3. A unit's serial, then its asset tag. Two `.eq` lookups rather than
+  // one `.or`, because both columns are unique and the mock engine's `.or()`
+  // only speaks ilike — and a lookup that silently skipped a clause there
+  // would resolve links in production that 404 in every demo.
+  if (!product) {
+    for (const column of ['serial_no', 'asset_tag'] as const) {
+      const { data, error } = (await supabase
+        .from('product_units_v')
+        .select('id, product_id')
+        .eq(column, trimmed)
+        .limit(1)) as unknown as {
+        data: Array<{ id: string; product_id: string }> | null
+        error: { message: string } | null
+      }
+      if (error) throw new Error(`getAssetDetail failed: ${error.message}`)
+      const hit = data?.[0]
+      if (hit) {
+        matchedUnitId = hit.id
+        const byId = await listInventory({ chips: { id: [hit.product_id] }, ...money })
+        product = byId.rows[0] ?? null
+        break
+      }
+    }
+  }
+
+  if (!product) return null
+
+  // The units ride along rather than being a second fetch from the screen:
+  // unlike the list's per-row expansion, this page renders every tab from the
+  // full unit set (availability figures, maintenance dates, the units table),
+  // so fetching them lazily would just serialise two round-trips.
+  const units = await listUnits(product.id, money)
+
+  return { product, units: units.rows, matchedUnitId }
+}
+
 /* ── Named filter sets ────────────────────────────────────────────────────────
  *
  * The screens differ only in which filters they pass. Naming them here rather

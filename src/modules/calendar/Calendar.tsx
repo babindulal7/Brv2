@@ -7,13 +7,12 @@ import { Input, Select, EmptyState } from '../../components/ui'
 import { Card, PageHeader, Button, FooterNote, cardStyle, Rail } from '../../components/ui/Page'
 import { BRAND } from '../../lib/status'
 import { getBusinessToday, toBs, formatBs, formatAd, eachDay, isWeekend, BS_MONTHS } from '../../lib/bs'
-import { canViewMoney } from '../../lib/rbac'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { isIssuedBy } from '../../data/numbering'
-import type { Role as SystemRole } from '../../lib/rbac'
-import { useAuth } from '../../lib/auth'
 import { useViewport } from '../../lib/device'
 import type { Viewport } from '../../lib/device'
 import {
+  VIEWS,
   VIEWS_BY_WIDTH,
   DEFAULT_VIEW,
   ROW_TYPES,
@@ -97,15 +96,6 @@ const TODAY = getBusinessToday()
  * band is now derived from `ROWS` or renders `NotTracked` (Rulings §8).
  */
 
-/**
- * `lib/auth.tsx` carries eight *shift* roles; `lib/rbac.ts` is written against
- * Foundation §11's six *system* roles, so this maps rather than casts — a cast
- * would hand `canViewMoney` a string it has no rule for and get `true`.
- *
- * TODO(decision): this table is now duplicated on Rentals and Calendar. It
- * belongs in `lib/rbac.ts`, which this screen does not own.
- */
-
 const LABEL_W = 212
 
 /** Law 15 — 44×44 at every width, desktop included. */
@@ -170,6 +160,52 @@ function requestedDay(raw: string | null): Date | null {
   // Rejects overflow like 2026-07-32, which Date would roll into August.
   if (ad.getUTCMonth() !== mo - 1 || ad.getUTCDate() !== d) return null
   return toBs(ad) ? ad : null
+}
+
+/* ── 3.7 · the other filters live in the URL too ─────────────────────────
+ * `?d=` made a *date* linkable; these make the rest of the filter state
+ * shareable the same way — `?view=` `?type=` `?client=` `?res=` `?kind=` `?q=`
+ * — per the house pattern (Inventory `?tab=`, OperationsQueues `patch()`).
+ * Every reader validates against the real vocabulary and falls back to the
+ * default, so a stale or hand-mangled parameter filters to "All" rather than
+ * rendering a blank grid or an impossible chip.
+ */
+
+/** `"Warehouse Bays"` → `"warehouse-bays"` — the URL spelling of a display name. */
+function urlSlug(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, '-')
+}
+
+/** `?view=` → a real ViewName. A stale value lands on the default, never a blank tab. */
+function viewFromParam(raw: string | null): ViewName {
+  return VIEWS.find((v) => urlSlug(v) === raw) ?? DEFAULT_VIEW
+}
+
+function rowTypeFromParam(raw: string | null): 'All' | RowType {
+  return ROW_TYPES.find((t) => urlSlug(t) === raw) ?? 'All'
+}
+
+/** `?kind=on-rent,conflict` → the valid subset, silently dropping what no longer exists. */
+function kindsFromParam(raw: string | null): Set<BarKind> {
+  if (!raw) return new Set()
+  const bits = raw.split(',')
+  return new Set(BAR_KINDS.filter((k) => bits.includes(urlSlug(k))))
+}
+
+/** The `?kind=` value for a set — `null` (delete the key) when nothing is selected. */
+function kindsToParam(next: ReadonlySet<BarKind>): string | null {
+  if (next.size === 0) return null
+  return BAR_KINDS.filter((k) => next.has(k)).map(urlSlug).join(',')
+}
+
+/** `?client=` carries the display name; anything not in the seed list is "All". */
+function clientFromParam(raw: string | null): string {
+  return raw && CLIENTS.includes(raw) ? raw : 'All'
+}
+
+/** `?res=` carries a row id; a stale id is "All" rather than an empty timeline. */
+function resourceFromParam(raw: string | null): string {
+  return raw && ROWS.some((r) => r.id === raw) ? raw : 'All'
 }
 
 /** Where the window starts so `day` is visible — one column in, as the render shows. */
@@ -1342,9 +1378,9 @@ function SelectedEventPanel({ bar, row, onClose }: { bar: Bar; row: ResourceRow;
 
 export default function Calendar() {
   const navigate = useNavigate()
-  const { user } = useAuth()
-  const role: SystemRole = user ? user.role : 'Client'
-  const money = canViewMoney(role)
+  /* §8.3 — the shared hook, same call site as every other screen. It omits the
+     money rows below; nothing here is masked. */
+  const money = useCanViewMoney()
 
   /* Law 13/14 — width decides, and it is measured once here. No component
      below this line asks what kind of device it is running on. */
@@ -1352,10 +1388,40 @@ export default function Calendar() {
   const desktop = viewport === 'desktop'
   const phone = viewport === 'phone'
 
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const dParam = params.get('d')
 
-  const [viewChoice, setViewChoice] = useState<ViewName>(DEFAULT_VIEW)
+  /* Merge-write one or more params; `null` deletes a key. `replace: true`
+   * keeps tab flicks and search keystrokes out of the history stack
+   * (OperationsQueues.tsx patch()). */
+  const patch = useCallback(
+    (next: Record<string, string | null>) => {
+      setParams(
+        (prev) => {
+          const merged = new URLSearchParams(prev)
+          for (const [k, v] of Object.entries(next)) {
+            if (v === null) merged.delete(k)
+            else merged.set(k, v)
+          }
+          return merged
+        },
+        { replace: true },
+      )
+    },
+    [setParams],
+  )
+
+  /* 3.7 — the view tab and every filter are read from the URL, validated, and
+     written back through `patch`. Local `useState` remains only for what is
+     genuinely not shareable state: the transient UI (Full View, the filters
+     panel, the day peek) and per-session view preferences (zoom, sort,
+     overlays). */
+  const viewChoice = viewFromParam(params.get('view'))
+  const setViewChoice = useCallback(
+    (v: ViewName) => patch({ view: v === DEFAULT_VIEW ? null : urlSlug(v) }),
+    [patch],
+  )
+
   const [fullChoice, setFullChoice] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [zoom, setZoom] = useState<number>(DEFAULT_ZOOM)
@@ -1371,11 +1437,13 @@ export default function Calendar() {
   const [start, setStart] = useState<Date>(() => anchorFor(requestedDay(dParam)))
   /** The day the peek / sheet / phone agenda is showing. */
   const [dayChoice, setDayChoice] = useState<Date | null>(() => requestedDay(dParam))
-  const [rowType, setRowType] = useState<'All' | RowType>('All')
-  const [client, setClient] = useState('All')
-  const [kinds, setKinds] = useState<Set<BarKind>>(new Set())
-  const [resource, setResource] = useState('All')
-  const [query, setQuery] = useState('')
+  const rowType = rowTypeFromParam(params.get('type'))
+  const client = clientFromParam(params.get('client'))
+  const kinds = useMemo(() => kindsFromParam(params.get('kind')), [params])
+  const resource = resourceFromParam(params.get('res'))
+  const query = params.get('q') ?? ''
+  /* The saved-view *label* stays local: the filters it applied are already in
+     the URL, and a shared link reproduces them without claiming the name. */
   const [savedView, setSavedView] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [sort, setSort] = useState<SortMode>('group')
@@ -1558,33 +1626,50 @@ export default function Calendar() {
     )
   }, [])
 
-  const clearAll = () => {
-    setRowType('All')
-    setClient('All')
-    setResource('All')
-    setKinds(new Set())
-    setQuery('')
+  /* Every filter write goes through `patch`, so each one is a URL edit —
+     shareable, reload-proof, and out of the history stack. */
+  const setQuery = (q: string) => patch({ q: q || null })
+
+  const pickRowType = (t: 'All' | RowType) => {
     setSavedView(null)
+    // Changing the row type always resets the single-resource filter, as the
+    // old paired `setRowType`/`setResource('All')` calls did.
+    patch({ type: t === 'All' ? null : urlSlug(t), res: null })
+  }
+
+  const pickClient = (c: string) => {
+    setSavedView(null)
+    patch({ client: c === 'All' ? null : c })
+  }
+
+  const pickResource = (id: string) => {
+    setSavedView(null)
+    patch({ res: id === 'All' ? null : id })
+  }
+
+  const clearAll = () => {
+    setSavedView(null)
+    patch({ type: null, client: null, res: null, kind: null, q: null })
   }
 
   const applySavedView = (name: string) => {
     const v = SAVED_VIEWS.find((s) => s.name === name)
     if (!v) return
     setSavedView(name)
-    setRowType(v.rowType)
-    setKinds(new Set(v.kinds))
-    setClient('All')
-    setResource('All')
+    patch({
+      type: v.rowType === 'All' ? null : urlSlug(v.rowType),
+      kind: kindsToParam(new Set(v.kinds)),
+      client: null,
+      res: null,
+    })
   }
 
   const toggleKind = (k: BarKind) => {
     setSavedView(null)
-    setKinds((prev) => {
-      const next = new Set(prev)
-      if (next.has(k)) next.delete(k)
-      else next.add(k)
-      return next
-    })
+    const next = new Set(kinds)
+    if (next.has(k)) next.delete(k)
+    else next.add(k)
+    patch({ kind: kindsToParam(next) })
   }
 
   const toggleLayer = (l: LayerName) => {
@@ -1598,8 +1683,7 @@ export default function Calendar() {
 
   const showConflicts = () => {
     setSavedView('Conflict View')
-    setRowType('All')
-    setKinds(new Set<BarKind>(['Conflict', 'Case Escalation']))
+    patch({ type: null, kind: kindsToParam(new Set<BarKind>(['Conflict', 'Case Escalation'])) })
     setShowFilters(true)
   }
 
@@ -1775,11 +1859,7 @@ export default function Calendar() {
       <span style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>Row Type</span>
       <Select
         value={rowType}
-        onChange={(e) => {
-          setSavedView(null)
-          setRowType(e.target.value as 'All' | RowType)
-          setResource('All')
-        }}
+        onChange={(e) => pickRowType(e.target.value as 'All' | RowType)}
         style={selectStyle}
         aria-label="Row type"
       >
@@ -1792,7 +1872,7 @@ export default function Calendar() {
   )
 
   const clientControl = (
-    <Select value={client} onChange={(e) => { setSavedView(null); setClient(e.target.value) }} style={selectStyle} aria-label="Client">
+    <Select value={client} onChange={(e) => pickClient(e.target.value)} style={selectStyle} aria-label="Client">
       <option value="All">All Clients</option>
       {CLIENTS.map((c) => (
         <option key={c} value={c}>{c}</option>
@@ -1843,7 +1923,7 @@ export default function Calendar() {
         )
       })}
       {kinds.size > 0 && (
-        <button type="button" onClick={() => setKinds(new Set())} style={{ ...chipBase, border: '1px solid var(--border)', background: 'transparent', color: 'var(--link)' }}>
+        <button type="button" onClick={() => patch({ kind: null })} style={{ ...chipBase, border: '1px solid var(--border)', background: 'transparent', color: 'var(--link)' }}>
           Clear event types
         </button>
       )}
@@ -1895,7 +1975,7 @@ export default function Calendar() {
         <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--text2)', marginBottom: 5 }}>Resource Type</span>
         <Select
           value={rowType}
-          onChange={(e) => { setSavedView(null); setRowType(e.target.value as 'All' | RowType); setResource('All') }}
+          onChange={(e) => pickRowType(e.target.value as 'All' | RowType)}
           style={{ ...selectStyle, width: '100%' }}
           aria-label="Resource type"
         >
@@ -1908,7 +1988,7 @@ export default function Calendar() {
 
       <label style={{ display: 'block' }}>
         <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--text2)', marginBottom: 5 }}>Resource</span>
-        <Select value={resource} onChange={(e) => { setSavedView(null); setResource(e.target.value) }} style={{ ...selectStyle, width: '100%' }} aria-label="Resource">
+        <Select value={resource} onChange={(e) => pickResource(e.target.value)} style={{ ...selectStyle, width: '100%' }} aria-label="Resource">
           <option value="All">All</option>
           {ROWS.filter((r) => rowType === 'All' || r.type === rowType).map((r) => (
             <option key={r.id} value={r.id}>{r.name}</option>

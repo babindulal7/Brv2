@@ -630,7 +630,14 @@ export function useEquipmentFormState() {
     return e
   }
 
-  function handleSubmit(mode: 'draft' | 'create') {
+  /**
+   * Returns whether the record validated. The page's submit handler used to
+   * ignore a `void` return and dispatch `createEquipment` regardless — harmless
+   * while the action was a stub, an invalid record written the day it was not
+   * (`docs/pages/17_add_equipment.md` gap 2). The boolean is that fix's other
+   * half: the caller now dispatches only on `true`.
+   */
+  function handleSubmit(mode: 'draft' | 'create'): boolean {
     setSubmitted(mode)
     const e = validate(mode)
     setOutcome(null)
@@ -651,7 +658,7 @@ export function useEquipmentFormState() {
                     : false,
       )
       if (firstSection) document.getElementById(firstSection.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      return
+      return false
     }
 
     const lines = [
@@ -672,6 +679,7 @@ export function useEquipmentFormState() {
         : 'Draft — excluded from booking search, availability and Inventory totals',
     ]
     setOutcome({ kind: mode === 'create' ? 'validated' : 'draft', lines })
+    return true
   }
 
   /* ── rail ────────────────────────────────────────────────────────────── */

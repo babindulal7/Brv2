@@ -1,116 +1,111 @@
-import { useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
 import { FloorAside } from '../operations/FloorAside'
-import { ErrorBanner } from '../../components/ui/StateViews'
-import { useViewport } from '../../lib/device'
-import { useAuth } from '../../lib/auth'
-import { thStyle as th } from '../../components/ui/TableHeaderCell'
+import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
+import { PageBody } from '../../components/ui/PageBody'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
-import type { BookingStatus, JobState, ItemState } from '../../lib/workflow'
+import type { BookingStatus, JobState } from '../../lib/workflow'
 import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
 import { Unavailable } from '../../components/ui/Unavailable'
+import { useViewport } from '../../lib/device'
+import { useAuth } from '../../lib/auth'
 import { toBs, formatBs, formatAd, formatAdDateTime } from '../../lib/bs'
 /* `lateBand` and its two formatters return no monetary value — that is the
    whole reason they exist. `lib/money.ts` stays unimported here (§8.3). */
 import { lateBand, formatOverage, bandConsequence } from '../../lib/lateFee'
-import { BOOKING, RETURN_AT, ACTUAL_RETURN_AT } from '../../data/booking'
-import {
-  UNITS as SEED_UNITS,
-  SESSIONS as SEED_SESSIONS,
-  TOTAL_ITEMS,
-  FILTERS,
-  ITEM_STATE_LABEL,
-  MISSING_EFFECT,
-  DAMAGED_EFFECT,
-  NOT_RETURNED_DECISIONS,
-  RETURN_TIMING,
-  routeFor,
-} from '../../data/returnInspection'
-import type {
-  ReturnUnit,
-  ReturnSession,
-  SessionId,
-  Condition,
-  DamageDetail,
-  NotReturnedDecision,
-  Sig,
-} from '../../data/returnInspection'
-import { BookingNotLoaded } from '../operations/BookingNotLoaded'
+import { newClientUuid } from '../../lib/supabase'
+import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/queries/bookings'
+import type { FloorLineInput } from '../../actions/rentals/floorVerb'
+import type { ItemCondition, NotReturnedDecision } from '../../types/database'
 
 /**
- * **Return & Inspection Workspace** — `Return Workflow.md` v2.1 (Build Locked)
- * + `Inspection Workflow.md`, one screen for both, per the latter's own words
- * ("Inspection is not a separate workspace").
+ * **Return & Inspection Workspace** — the floor-loop model
+ * (`PackingWorkspace.tsx`) applied to the third floor verb. One screen for
+ * receiving and inspecting, per `Inspection Workflow.md`'s own words
+ * ("Inspection is not a separate workspace"). Three moves, in order:
  *
- * Built from the specs' **corrections**, not the reference screenshot — and,
- * where the module spec itself disagrees with Foundation, from Foundation
- * (governing rule: "Where anything disagrees with Foundation, Foundation
- * wins"). `../../data/returnInspection.ts`'s file header carries the full
- * accounting; the two corrections that shape this component:
+ *  1. **Read** — `fetchFloorBooking` (`lib/queries/bookings.ts`, Law 2's one
+ *     floor read) resolves `:bookingNo` to the booking head plus its live
+ *     `booking_lines` / `booking_line_units` / `product_units`. Every row on
+ *     this screen is one of those rows; the 18-unit `data/returnInspection`
+ *     seed is gone, and with it the `B-715`-only `BookingNotLoaded` guard.
+ *  2. **Verify** — receipt, condition, damage detail, not-returned triage all
+ *     live in a `marks` map KEYED ON the real rows. Local until dispatch,
+ *     committed by the action, never the other way round.
+ *  3. **Dispatch** — Complete Session collapses the marks onto their parent
+ *     `booking_lines` (`buildReturnLines`) and dispatches `completeReturn`
+ *     with the REAL ids the operator verified — the write that lands
+ *     `operation_sessions`, `return_lines` and `session_line_movements`, and
+ *     moves the stage to Returned only when every live line is terminal
+ *     (`0003:399`). It used to send `lines: []`, which `validateFloorVerb`
+ *     refuses unconditionally, so the one write on this page always failed.
+ *     Navigation happens only on the resolved promise.
  *
- *  · The spec still speaks in retired "Stage 6–11" numbering and invents a
- *    `Partial Return` / `Late Return` flag Foundation's closed 17-flag
- *    registry (§1.9) does not contain. Neither appears here — this component
- *    holds a `BookingStatus` and a `JobState`, per `lib/workflow.ts`'s own
- *    comment: "every screen holds a `BookingStatus`", never a stage number.
- *  · Condition was shown Excellent *and* Damage at once on the render → a
- *    radio group, one value, never two (§6.3).
- *  · The render's `Missing 1` was an Allen key, an accessory — split into two
- *    counters that can never merge (§6.5).
- *  · Signatures rendered captured before the return was complete → this
- *    workspace only offers to capture a session's signatures once its gates
- *    (barring the signatures themselves) are otherwise satisfied, and a
- *    session, once closed, is not reopened (§9, §3 "Closing is irreversible").
- *  · §5.6's gate checklist is rendered in full — all six Session Gates, passing
- *    and failing alike, each with its blocking value — rather than collapsed
- *    to one summary line, because both `Return Workflow.md` §12 and
- *    `Inspection Workflow.md`'s "Gate: Complete Return" section ask for the
- *    full pattern explicitly, not just the footer note §5.6 minimally requires.
+ * **Engine constraints made explicit in code** (`FloorLineInput` carries one
+ * outcome / one condition / one decision per booking LINE):
+ *  · a MIXED line (some units received, some not) dispatches `done` with the
+ *    received units' movements — `moved < required` lands the row
+ *    `Outstanding` (`0003`, `return_line_state` has no partial member) — and
+ *    the missing units' reasons and decisions ride the session notes;
+ *  · a line whose received units carry DIFFERENT conditions is recorded at
+ *    the WORST of them (erring toward flagging, never toward clearing), with
+ *    the per-unit split carried on the session notes;
+ *  · a line whose missing units carry different decisions is BLOCKED by a
+ *    named gate rather than one decision being silently invented.
  *
- * **No money, anywhere.** Foundation §8.3: "Warehouse sees no monetary value
- * anywhere, including inside a gate checklist." This is a warehouse floor
- * screen. `lib/money.ts` is not imported; no Rs figure appears. The render's
- * Charges Summary panel and `Refund Deposit` / `Collect Balance` actions are
- * therefore omitted entirely, matching §13.1's own instruction for the
- * Warehouse role ("Charges Summary — hidden entirely") rather than merely
- * greying them out.
+ * **Return is multi-session by design** (`0003:129`, staggered collection;
+ * `CLOSES_WHILE_INCOMPLETE.Return = true`), so — unlike Packing — "every item
+ * resolved" is NOT a gate here. A session that received three of eighteen
+ * items completes honestly, the booking stays On Rent, and `runFloorVerb`
+ * reports the holding lines in `stageHeldBy`.
+ *
+ * **No money, anywhere.** Foundation §8.3 — this is a warehouse floor screen.
+ * `lib/money.ts` is not imported; the overrun renders through `lateBand`,
+ * which exists precisely to answer "how late" without a rupee figure.
+ *
+ * **Signatures** are captured here (returning person by typed name, warehouse
+ * staff as the signed-in operator, witness deliberately uncapturable — see
+ * `WITNESS_UNAVAILABLE`) and ride the dispatch inside
+ * `operation_sessions.notes`. No dedicated signature record exists on this
+ * write path yet, and the panel says so instead of implying one.
  */
 
 /** §13 sibling convention — the workspace primary is `--blue-600` in both themes, never green. */
 const BLUE_PRIMARY = { background: 'var(--cat-1)', color: '#fff', border: '1px solid transparent' } as const
 
-/**
- * ⭐ 12 Aug 2026 — spec 03's closing notes: *"Exactly one primary button per
- * workspace, and it is the completion gate."*
- *
- * This page shipped three filled blue buttons: `Scan Barcode`, `Save
- * Inspection` and `Complete Session`. Only the last is the gate, so the other
- * two take this treatment instead — the accent kept as an outline, so the
- * scan-first workflow stays as findable as it was on a warehouse tablet
- * without a second button claiming to be *the* action.
- */
+/** Spec 03 — one filled primary per workspace; the scan-first affordance keeps the accent as an outline. */
 const ACCENT_OUTLINE = { background: 'transparent', color: 'var(--cat-1)', border: '1px solid var(--cat-1)' } as const
 
 /**
- * The reason the Witness row cannot be signed — see `captureSignature`. Stated
- * on the control rather than solved with a name, because the name would be
- * invented.
+ * The reason the Witness row cannot be signed. Stated on the control rather
+ * than solved with a name, because the name would be invented — the fabricated
+ * `'Bikash Thapa'` witness this file once shipped is the precedent.
  */
 const WITNESS_UNAVAILABLE =
   'No witness identity is captured on this screen, so a witness signature cannot be attested here. §9 makes the witness optional — this return is recorded with no witness rather than with an invented one.'
 
-const ITEM_TONE: Record<ItemState, StatusKey> = {
-  Ready: 'neutral',
-  'Picked Up': 'out', // §4.2 — solid green, "still out" with the client.
+/**
+ * The three states a row can hold. `Outstanding` is the absence of a mark;
+ * `Returned` and `Not Returned` are the two outcomes `FloorLineOutcome` can
+ * carry ('done' | 'missing'). A unit the read reports as already `Returned`
+ * (an earlier session's receipt) renders as Returned with no controls and is
+ * excluded from this session's dispatch — received once, recorded once.
+ */
+type RowState = 'Outstanding' | 'Returned' | 'Not Returned'
+
+const FILTERS = ['All', 'Outstanding', 'Returned', 'Not Returned'] as const
+
+const ROW_TONE: Record<RowState, StatusKey> = {
+  Outstanding: 'out', // §4.2 — solid green, "still out" with the client.
   Returned: 'in', // soft green, "back in".
-  Missing: 'danger',
+  'Not Returned': 'danger',
 }
 
-const CONDITION_TONE: Record<Condition, StatusKey> = {
+const CONDITION_TONE: Record<ItemCondition, StatusKey> = {
   Excellent: 'in',
   Good: 'in',
   Fair: 'progress',
@@ -118,830 +113,1288 @@ const CONDITION_TONE: Record<Condition, StatusKey> = {
   Lost: 'danger',
 }
 
-const CONDITIONS: Condition[] = ['Excellent', 'Good', 'Fair', 'Damaged', 'Lost']
+/** Ordered mild → severe; `worstCondition` picks the highest index. */
+const CONDITIONS: readonly ItemCondition[] = ['Excellent', 'Good', 'Fair', 'Damaged', 'Lost']
 
-function cloneUnit(u: ReturnUnit): ReturnUnit {
-  return {
-    ...u,
-    ...(u.accessories ? { accessories: u.accessories.map((a) => ({ ...a })) } : {}),
-    ...(u.damage ? { damage: { ...u.damage } } : {}),
-    pickup: { ...u.pickup },
-    ...(u.ret ? { ret: { ...u.ret } } : {}),
+/** `0003:378` — mandatory on every Not Returned line. Members of `not_returned_decision`. */
+const DECISIONS: readonly NotReturnedDecision[] = [
+  'Still expected',
+  'Charge replacement',
+  'Insurance claim',
+  'Write off',
+]
+
+/** Law 10's floor: the DB CHECK behind every `not_returned_reason` in migration 0003. */
+const MIN_REASON = 10
+
+const th = { textAlign: 'left' as const, padding: '8px 9px', fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)', whiteSpace: 'nowrap' as const, borderBottom: '1px solid var(--border)' }
+const td = { padding: '8px 9px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
+
+/**
+ * One checklist row — one physical unit (`booking_line_units` row) on a
+ * serialised line, or the whole line for a quantity-tracked line with no unit
+ * assignments. `key` is the mark key; `lineId` is what the dispatch collapses
+ * onto; `assetId` is `product_units.id`, what `session_line_movements.unit_id`
+ * needs (null on quantity rows — a movement row is never invented for them).
+ */
+interface ReturnRow {
+  key: string
+  lineId: string
+  assetId: string | null
+  serial: string | null
+  name: string
+  /** Units this row stands for: 1 per physical unit, `booking_lines.qty` for a quantity row. */
+  qty: number
+  location: string | null
+  /**
+   * `booking_line_units.unit_state === 'Returned'` — this unit came back in an
+   * EARLIER session. Rendered as Returned, offered no controls, and excluded
+   * from this session's dispatch so a receipt is never recorded twice.
+   */
+  alreadyReturned: boolean
+}
+
+interface Mark {
+  state: 'Returned' | 'Not Returned'
+  returnedAtIso?: string
+  /** §6.3 — a radio group's single value; supplying it is what marks the line Inspected. */
+  condition?: ItemCondition
+  damageDescription?: string
+  /** A LOCAL tally — no file is uploaded from this screen; the Evidence Workspace owns the files. */
+  damagePhotos?: number
+  reason?: string
+  decision?: NotReturnedDecision
+}
+
+/**
+ * Flatten the booking's lines into checklist rows — the same shape
+ * `PackingWorkspace.buildRows` builds, minus the bundle tree (Return has no
+ * left rail; the list is the whole triage surface).
+ */
+function buildRows(floor: FloorBooking): ReturnRow[] {
+  const rows: ReturnRow[] = []
+  for (const line of floor.lines) {
+    const name = line.productName ?? line.description ?? `${line.lineType} line`
+    if (line.unitsPresence === 'present' && line.units.length > 0) {
+      line.units.forEach((u, i) => {
+        rows.push({
+          key: u.id,
+          lineId: line.id,
+          assetId: u.assetId,
+          serial: u.serial ?? u.assetTag,
+          name: line.units.length > 1 ? `${name} · unit ${i + 1}` : name,
+          qty: 1,
+          location: u.location,
+          alreadyReturned: u.unitState === 'Returned',
+        })
+      })
+    } else {
+      // A quantity-tracked line (or one whose units are simply unassigned):
+      // one row for the whole line, triaged as one. `unitsPresence === 'absent'`
+      // is handled before this function is called — an absent embed must never
+      // read as "no units" (the defect bookingQuery.ts:110-113 records).
+      rows.push({
+        key: `line:${line.id}`,
+        lineId: line.id,
+        assetId: null,
+        serial: null,
+        name,
+        qty: line.qty,
+        location: null,
+        alreadyReturned: false,
+      })
+    }
   }
+  return rows
 }
 
-function cloneSession(s: ReturnSession): ReturnSession {
-  return { ...s, signatures: { ...s.signatures } }
+/** The most severe of the given conditions, or null when none was recorded. */
+function worstCondition(conds: readonly ItemCondition[]): ItemCondition | null {
+  let worst: ItemCondition | null = null
+  for (const c of conds) {
+    if (worst === null || CONDITIONS.indexOf(c) > CONDITIONS.indexOf(worst)) worst = c
+  }
+  return worst
 }
 
-const td = { padding: '8px 9px', fontSize: 'var(--t-meta)', color: 'var(--text)' }
+/**
+ * Collapse the operator's marks back onto booking lines — the dispatch payload.
+ *
+ * One entry per line (`validateFloorVerb` refuses duplicates), and a line
+ * nobody touched is NOT named: absence is never converted into a state
+ * (0003:630). Rows already returned in an earlier session are excluded — their
+ * receipt is on record. Per line:
+ *
+ *  - only Not Returned marks → `outcome: 'missing'` with the reasons joined
+ *    (each already ≥ 10 chars by the gate) and the ONE decision the gate
+ *    guarantees the line's units share (`0003:378` demands one per line);
+ *  - any Returned marks → `outcome: 'done'` carrying the scanned
+ *    `product_units.id`s (one movement row each), the received quantity, and
+ *    the WORST condition among the received units — `return_lines` carries one
+ *    condition per line, and recording the worst errs toward flagging. A
+ *    MIXED line (some received, some not) lands `done` short of its required
+ *    qty — `return_lines.state = 'Outstanding'` — with the missing units'
+ *    reasons and decisions carried on the session notes so nothing is dropped;
+ *    the stage is held truthfully, which `runFloorVerb` reports in
+ *    `stageHeldBy`.
+ *
+ * Damage detail (description + local photo tally) also rides the notes: no
+ * damage-description column exists on `return_lines`, and pretending the local
+ * photo count uploaded something would fabricate evidence.
+ */
+function buildReturnLines(
+  lines: readonly FloorLine[],
+  rows: readonly ReturnRow[],
+  marks: Record<string, Mark>,
+): { payload: FloorLineInput[]; extraNotes: string[] } {
+  const byLine = new Map<string, ReturnRow[]>()
+  for (const r of rows) {
+    if (r.alreadyReturned) continue
+    const bucket = byLine.get(r.lineId)
+    if (bucket) bucket.push(r)
+    else byLine.set(r.lineId, [r])
+  }
 
-interface GateRow {
-  n: number
-  label: string
-  passing: boolean
-  blocking: string | null
-  resolve?: () => void
+  const payload: FloorLineInput[] = []
+  const extraNotes: string[] = []
+
+  for (const line of lines) {
+    const lineRows = byLine.get(line.id) ?? []
+    const returned = lineRows.filter((r) => marks[r.key]?.state === 'Returned')
+    const missing = lineRows.filter((r) => marks[r.key]?.state === 'Not Returned')
+    if (returned.length === 0 && missing.length === 0) continue
+
+    const lineName = line.productName ?? line.description ?? line.id
+
+    if (returned.length === 0) {
+      const decisions = [...new Set(missing.map((r) => marks[r.key]?.decision).filter((d): d is NotReturnedDecision => d !== undefined))]
+      payload.push({
+        bookingLineId: line.id,
+        outcome: 'missing',
+        reason: missing.map((r) => (marks[r.key]?.reason ?? '').trim()).join('; '),
+        // The gate blocks a mixed-decision line, so at most one arrives here.
+        ...(decisions[0] === undefined ? {} : { notReturnedDecision: decisions[0] }),
+      })
+      continue
+    }
+
+    const conds = returned
+      .map((r) => marks[r.key]?.condition)
+      .filter((c): c is ItemCondition => c !== undefined)
+    const worst = worstCondition(conds)
+    const scanned = returned.filter((r) => r.assetId !== null)
+
+    payload.push({
+      bookingLineId: line.id,
+      ...(scanned.length > 0
+        ? {
+            unitIds: scanned.map((r) => r.assetId as string),
+            serials: scanned.map((r) => r.serial ?? ''),
+          }
+        : {}),
+      qty: returned.reduce((n, r) => n + r.qty, 0),
+      ...(worst === null ? {} : { condition: worst }),
+    })
+
+    if (new Set(conds).size > 1) {
+      extraNotes.push(
+        `${lineName}: mixed conditions — the line is recorded at the worst (${worst}); per unit: ` +
+          returned.map((r) => `${r.serial ?? r.name}: ${marks[r.key]?.condition ?? '—'}`).join('; '),
+      )
+    }
+    if (missing.length > 0) {
+      extraNotes.push(
+        `${lineName}: ${missing.length} of ${lineRows.length} unit(s) not returned — ` +
+          missing
+            .map((r) => `${r.serial ?? r.name}: ${(marks[r.key]?.reason ?? '').trim()} (decision: ${marks[r.key]?.decision ?? 'none'})`)
+            .join('; '),
+      )
+    }
+  }
+
+  for (const r of rows) {
+    const m = marks[r.key]
+    if (!m || m.state !== 'Returned') continue
+    if (m.condition !== 'Damaged' && m.condition !== 'Lost') continue
+    extraNotes.push(
+      `${r.name}${r.serial ? ` (${r.serial})` : ''} returned ${m.condition}: ${(m.damageDescription ?? '').trim()} — ` +
+        `${m.damagePhotos ?? 0} photo(s) counted locally on the floor; none uploaded from this screen.`,
+    )
+  }
+
+  return { payload, extraNotes }
 }
 
+/** The AD span between two instants in whole days, floored at 1 (Law 9's days-explicit floor). */
+function rentalDays(pickupIso: string, returnIso: string): number {
+  const ms = Date.parse(returnIso) - Date.parse(pickupIso)
+  if (!Number.isFinite(ms)) return 1
+  return Math.max(1, Math.round(ms / 86_400_000))
+}
+
+/** BS above AD, and an honest dash outside `bs.ts`'s vouched range. */
+function bsLabel(iso: string | null): string {
+  if (!iso) return '—'
+  const bs = toBs(new Date(iso))
+  return bs ? formatBs(bs) : '—'
+}
+
+/** A local signature capture — name + instant. Rides the session notes on dispatch. */
+interface Sig {
+  name: string
+  atIso: string
+}
+
+/*
+ * ⭐ RULED 12 Aug 2026 (Rulings §3): operations are ROUTES.
+ * `/rentals/:bookingNo/return` is the only mount, and `bookingNo` comes off
+ * the route for ANY booking — resolved by `fetchFloorBooking`, not compared
+ * against a seed.
+ */
 export default function ReturnWorkspace() {
   const navigate = useNavigate()
   const { bookingNo } = useParams()
-  const id = bookingNo ?? BOOKING.no
-  /* Law 13/14 — width decides. §3.4's tablet layout is "scan column + triage
-     buttons; compare strip drops below", which is the right column REFLOWING
-     beneath the list — not collapsing to a handle (Rulings §7). */
+  const id = bookingNo ?? ''
+  /** The one identity every dispatch on this screen may act as. No fallback. */
+  const { user } = useAuth()
+  /* Law 13/14 — width decides, at Foundation's locked 768 / 1180. */
   const viewport = useViewport()
   const desktop = viewport === 'desktop'
   const phone = viewport === 'phone'
-  const { user } = useAuth()
-  /** Law 12 — the dispatch failure is shown inline and stays there. Never a toast. */
-  const [dispatchError, setDispatchError] = useState<string | null>(null)
 
-  const [units, setUnits] = useState<Record<string, ReturnUnit>>(() =>
-    Object.fromEntries(SEED_UNITS.map((u) => [u.id, cloneUnit(u)])),
-  )
-  const [sessions, setSessions] = useState<Record<SessionId, ReturnSession>>(() => ({
-    S1: cloneSession(SEED_SESSIONS.S1),
-    S2: cloneSession(SEED_SESSIONS.S2),
-  }))
-  const [expandedId, setExpandedId] = useState<string | null>('r11')
+  /* ── the read — fetchFloorBooking, same cancellation rule as BookingDetail ── */
+  const [floor, setFloor] = useState<FloorBooking | null>(null)
+  const [floorLoading, setFloorLoading] = useState(true)
+  const [floorError, setFloorError] = useState<string | null>(null)
+  const [reload, setReload] = useState(0)
+  useEffect(() => {
+    let cancelled = false
+    setFloorLoading(true)
+    setFloorError(null)
+    fetchFloorBooking(id)
+      .then((b) => {
+        if (cancelled) return
+        setFloor(b)
+        setFloorLoading(false)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setFloorError(err instanceof Error ? err.message : String(err))
+        setFloorLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [id, reload])
+
+  /* ── triage state, keyed on the real rows ────────────────────────────────
+   * `marks` holds only rows the operator touched; absence is Outstanding.
+   * Local until Complete Session dispatches — dispatch-then-commit, where
+   * "commit" is the navigation away on the resolved promise. */
+  const [marks, setMarks] = useState<Record<string, Mark>>({})
   const [showScanner, setShowScanner] = useState(false)
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('All')
-
-  /* Money-free by construction — `lateBand` returns minutes and a band name,
-     never a Paisa. See the import note and §8.3. */
-  const overrun = lateBand(RETURN_AT, ACTUAL_RETURN_AT)
   const [query, setQuery] = useState('')
   const [scanLog, setScanLog] = useState<string[]>([])
+  const [sessionNotes, setSessionNotes] = useState('')
+  /** §9 — captured on this screen, written into the session notes with the dispatch. */
+  const [returningName, setReturningName] = useState('')
+  const [sigReturning, setSigReturning] = useState<Sig | null>(null)
+  const [sigWarehouse, setSigWarehouse] = useState<Sig | null>(null)
+  /**
+   * Law 12 — a dispatch failure is inline and persistent, and navigation
+   * happens only on a resolved promise. A blocked gate is never a toast.
+   */
+  const [dispatchError, setDispatchError] = useState<string | null>(null)
+  const [dispatching, setDispatching] = useState(false)
+  /**
+   * Law 8 — the idempotency key for THIS return session, minted when the
+   * booking loads (the point the user starts acting), not at send time. A
+   * double-press replays the same key and resolves to the first write.
+   */
+  const [completionKey, setCompletionKey] = useState(() => newClientUuid())
 
-  const scannableUnits = SEED_UNITS.map((u) => ({
-    id: u.id,
-    name: u.name,
-    serial: u.serial,
-    isAccessory: !u.serial || u.serial === 'N/A' || u.name.toLowerCase().includes('cable') || u.name.toLowerCase().includes('cap'),
-  }))
-  const activeId: SessionId = 'S2'
-  const active = sessions[activeId]
+  const floorId = floor?.id ?? null
+  useEffect(() => {
+    // A different booking arrived: everything triaged belonged to the old one.
+    setMarks({})
+    setScanLog([])
+    setSessionNotes('')
+    setReturningName('')
+    setSigReturning(null)
+    setSigWarehouse(null)
+    setDispatchError(null)
+    setDispatching(false)
+    setCompletionKey(newClientUuid())
+  }, [floorId])
 
-  const list = SEED_UNITS.map((u) => units[u.id] as ReturnUnit)
-  const returned = list.filter((u) => u.state === 'Returned')
-  const outstanding = list.filter((u) => u.state === 'Picked Up')
-  const missing = list.filter((u) => u.state === 'Missing')
-  const damaged = list.filter((u) => u.condition === 'Damaged')
-  const accessoriesMissing = list.flatMap((u) => (u.accessories ?? []).filter((a) => a.present === false).map((a) => ({ item: u.name, accessory: a.name })))
-  const allResolved = outstanding.length === 0
-  const pct = Math.round((returned.length / TOTAL_ITEMS) * 100)
+  const rows = useMemo<ReturnRow[]>(() => (floor ? buildRows(floor) : []), [floor])
+  const actionable = useMemo(() => rows.filter((r) => !r.alreadyReturned), [rows])
+  const stateOf = (r: ReturnRow): RowState => (r.alreadyReturned ? 'Returned' : (marks[r.key]?.state ?? 'Outstanding'))
 
-  const returnJobState: JobState = allResolved ? 'Complete' : 'In Progress'
-  const bookingStatus: BookingStatus = allResolved ? 'Returned' : 'On Rent'
+  /* ── derived tallies, all unit-weighted over the real rows ─────────────── */
+  const totalUnits = rows.reduce((n, r) => n + r.qty, 0)
+  const returnedRows = actionable.filter((r) => marks[r.key]?.state === 'Returned')
+  const missingRows = actionable.filter((r) => marks[r.key]?.state === 'Not Returned')
+  const outstandingRows = actionable.filter((r) => marks[r.key] === undefined)
+  const backUnits = rows.filter((r) => stateOf(r) === 'Returned').reduce((n, r) => n + r.qty, 0)
+  const outstandingUnits = outstandingRows.reduce((n, r) => n + r.qty, 0)
+  const pct = totalUnits > 0 ? Math.round((backUnits / totalUnits) * 100) : 0
 
-  const set = (uid: string, patch: Partial<ReturnUnit>) => setUnits((p) => ({ ...p, [uid]: { ...(p[uid] as ReturnUnit), ...patch } }))
+  /*
+   * §1.5 — Return runs at status **On Rent**; the badge shows the CANONICAL
+   * stage (never a seventh name). Mid-return is the Return *job* being In
+   * Progress — a separate axis, a separate chip.
+   */
+  const stage = (floor?.stage ?? 'On Rent') as BookingStatus
+  const jobState: JobState =
+    returnedRows.length + missingRows.length === 0 ? 'Not Started' : outstandingRows.length === 0 ? 'Complete' : 'In Progress'
+  const allResolved = actionable.length > 0 && outstandingRows.length === 0
 
-  const setDamage = (uid: string, patch: Partial<DamageDetail>) =>
-    setUnits((p) => {
-      const u = p[uid] as ReturnUnit
-      const base: DamageDetail = u.damage ?? { description: '', photos: 0, routedForApproval: false }
-      return { ...p, [uid]: { ...u, damage: { ...base, ...patch } } }
+  /* ── the session gates — a checklist, every condition named ──────────────
+   * The conditions `validateFloorVerb` / the 0003 CHECKs enforce, evaluated
+   * here first so the refusal is readable before it is a rejection — plus the
+   * signature and damage-evidence gates §12.1 keeps on the workspace. "Every
+   * item resolved" is deliberately NOT among them: Return is multi-session
+   * (0003:129) and a partial session completes honestly. */
+  const anythingResolved = returnedRows.length > 0 || missingRows.length > 0
+  const conditionMissing = returnedRows.filter((r) => marks[r.key]?.condition === undefined)
+  const damagedRows = returnedRows.filter((r) => {
+    const c = marks[r.key]?.condition
+    return c === 'Damaged' || c === 'Lost'
+  })
+  const damageIncomplete = damagedRows.filter(
+    (r) => (marks[r.key]?.damageDescription ?? '').trim() === '' || (marks[r.key]?.damagePhotos ?? 0) === 0,
+  )
+  const shortReasons = missingRows.filter((r) => (marks[r.key]?.reason ?? '').trim().length < MIN_REASON)
+  const noDecision = missingRows.filter((r) => marks[r.key]?.decision === undefined)
+  const decisionsByLine = new Map<string, Set<NotReturnedDecision>>()
+  for (const r of missingRows) {
+    const d = marks[r.key]?.decision
+    if (d === undefined) continue
+    const set = decisionsByLine.get(r.lineId) ?? new Set<NotReturnedDecision>()
+    set.add(d)
+    decisionsByLine.set(r.lineId, set)
+  }
+  const mixedDecisionLines = [...decisionsByLine.entries()].filter(([, set]) => set.size > 1).map(([lineId]) => lineId)
+  const sigMissing: string[] = []
+  if (!sigReturning) sigMissing.push('Returning person')
+  if (!sigWarehouse) sigMissing.push('Warehouse staff')
+
+  const gates: Array<{ label: string; pass: boolean; detail: string | null }> = [
+    {
+      label: 'At least one item received or declared Not Returned',
+      pass: anythingResolved,
+      detail: anythingResolved ? null : 'Nothing has been triaged yet — a session claiming work on nothing is refused.',
+    },
+    {
+      label: 'Every received item carries a condition',
+      pass: conditionMissing.length === 0,
+      detail:
+        conditionMissing.length === 0
+          ? null
+          : `${conditionMissing.length} item${conditionMissing.length > 1 ? 's' : ''} received but not inspected — supplying the condition is what marks a line Inspected`,
+    },
+    {
+      label: 'Damaged or Lost items carry a description and a photo',
+      pass: damageIncomplete.length === 0,
+      detail:
+        damageIncomplete.length === 0
+          ? null
+          : `${damageIncomplete.length} damaged/lost item${damageIncomplete.length > 1 ? 's' : ''} without a description or a counted photo`,
+    },
+    {
+      label: `Not Returned items carry a reason (≥ ${MIN_REASON} characters)`,
+      pass: shortReasons.length === 0,
+      detail:
+        shortReasons.length === 0
+          ? null
+          : `${shortReasons.length} item${shortReasons.length > 1 ? 's need' : ' needs'} a fuller reason — that is a database CHECK, not a form rule`,
+    },
+    {
+      label: 'Not Returned items carry one decision per line',
+      pass: noDecision.length === 0 && mixedDecisionLines.length === 0,
+      detail:
+        noDecision.length > 0
+          ? `${noDecision.length} item${noDecision.length > 1 ? 's' : ''} without a decision (0003:378 demands one)`
+          : mixedDecisionLines.length > 0
+            ? `${mixedDecisionLines.length} line${mixedDecisionLines.length > 1 ? 's carry' : ' carries'} conflicting decisions — the engine records ONE decision per booking line, so its units must agree`
+            : null,
+    },
+    {
+      label: 'Returning person and warehouse staff signatures captured',
+      pass: sigMissing.length === 0,
+      detail: sigMissing.length === 0 ? null : `Missing: ${sigMissing.join(', ')}`,
+    },
+  ]
+  const firstBlockedGate = gates.find((g) => !g.pass) ?? null
+  const canComplete = firstBlockedGate === null && !dispatching
+
+  const visible = useMemo(
+    () =>
+      rows.filter((r) => {
+        const s = r.alreadyReturned ? 'Returned' : (marks[r.key]?.state ?? 'Outstanding')
+        if (filter !== 'All' && s !== filter) return false
+        if (query && !`${r.name} ${r.serial ?? ''}`.toLowerCase().includes(query.toLowerCase())) return false
+        return true
+      }),
+    [rows, marks, filter, query],
+  )
+
+  /* ── mark helpers ────────────────────────────────────────────────────── */
+  const markReturned = (key: string) =>
+    setMarks((p) => ({ ...p, [key]: { state: 'Returned', returnedAtIso: new Date().toISOString() } }))
+  const markNotReturned = (key: string) => setMarks((p) => ({ ...p, [key]: { state: 'Not Returned', reason: '' } }))
+  const clearMark = (key: string) =>
+    setMarks((p) => {
+      const next = { ...p }
+      delete next[key]
+      return next
+    })
+  const patchMark = (key: string, patch: Partial<Mark>) =>
+    setMarks((p) => {
+      const cur = p[key]
+      if (!cur) return p
+      return { ...p, [key]: { ...cur, ...patch } }
+    })
+  const addDamagePhoto = (key: string) =>
+    setMarks((p) => {
+      const cur = p[key]
+      if (!cur) return p
+      return { ...p, [key]: { ...cur, damagePhotos: (cur.damagePhotos ?? 0) + 1 } }
     })
 
-  const scan = (uid: string) => {
-    const u = units[uid] as ReturnUnit
-    if (u.state === 'Returned') {
-      setScanLog((p) => [`• ${u.name} already returned at ${u.ret?.at ?? '—'}`, ...p].slice(0, 5))
+  const receive = (key: string) => {
+    const row = rows.find((r) => r.key === key)
+    if (!row) return
+    if (row.alreadyReturned) {
+      setScanLog((p) => [`• ${row.name} was returned in an earlier session — nothing to record`, ...p].slice(0, 5))
       return
     }
-    set(uid, { state: 'Returned', sessionId: activeId, ret: { at: '19 Jul 2026, 10:16 AM', by: active.returningPerson, photos: 0 } })
-    setExpandedId(uid)
-    setScanLog((p) => [`✓ ${u.name} (${u.serial}) received — inspection opened`, ...p].slice(0, 5))
+    if (marks[key]?.state === 'Returned') {
+      setScanLog((p) => [`• ${row.name} already received in this session`, ...p].slice(0, 5))
+      return
+    }
+    markReturned(key)
+    /* Honest wording: received is a LOCAL mark until the session completes.
+       Nothing here claims a write that has not landed. */
+    setScanLog((p) =>
+      [`✓ ${row.name}${row.serial ? ` (${row.serial})` : ''} received — recorded when the session completes`, ...p].slice(0, 5),
+    )
   }
 
-  const markMissing = (uid: string) => {
-    const u = units[uid] as ReturnUnit
-    set(uid, { state: 'Missing' })
-    setScanLog((p) => [`✕ ${u.name} declared Not Returned — ${MISSING_EFFECT}`, ...p].slice(0, 5))
+  const declareNotReturned = (key: string) => {
+    const row = rows.find((r) => r.key === key)
+    if (!row || row.alreadyReturned) return
+    markNotReturned(key)
+    setScanLog((p) => [`✕ ${row.name} declared Not Returned — reason and decision required`, ...p].slice(0, 5))
   }
 
-  const undoMissing = (uid: string) =>
-    setUnits((p) => {
-      // exactOptionalPropertyTypes — clearing `decision` means *omitting* the
-      // key, never assigning it `undefined`, so it is dropped by destructuring.
-      const { decision: _decision, ...rest } = p[uid] as ReturnUnit
-      return { ...p, [uid]: { ...rest, state: 'Picked Up' } }
-    })
-
-  const setCondition = (uid: string, condition: Condition) => set(uid, { condition })
-
-  const setAccessory = (uid: string, name: string, present: boolean) =>
-    setUnits((p) => {
-      const u = p[uid] as ReturnUnit
-      const accessories = (u.accessories ?? []).map((a) => (a.name === name ? { ...a, present } : a))
-      return { ...p, [uid]: { ...u, accessories } }
-    })
-
-  const saveInspection = (uid: string) => {
-    const u = units[uid] as ReturnUnit
-    if (!u.condition) return
-    set(uid, { inspection: 'Inspected' })
-    setExpandedId(null)
+  const captureReturning = () => {
+    const name = returningName.trim()
+    if (name === '') return
+    setSigReturning({ name, atIso: new Date().toISOString() })
+  }
+  const captureWarehouse = () => {
+    if (!user || user.name.trim() === '') return
+    setSigWarehouse({ name: user.name.trim(), atIso: new Date().toISOString() })
   }
 
-  /**
-   * ⭐ 12 Aug 2026 — the witness is gone from here, and cannot come back by accident.
-   *
-   * `names.witness` was the literal `'Bikash Thapa'`. Pressing Capture on the
-   * Witness row therefore wrote a **named individual** onto the return
-   * attestation without that person being present, asked, or identified. A
-   * signature block is evidence: if a damage or missing-unit dispute ever turns
-   * on this return, that name is a fabricated witness sitting on it.
-   *
-   * This screen captures no witness identity anywhere — no field, no picker, and
-   * `ReturnSession` names only `returningPerson` and `receivingStaff` — so there
-   * is nothing true to put in the field. §9 already makes the witness OPTIONAL,
-   * so absent is the honest state ("no witness recorded"); a name, or a
-   * placeholder, is a claim. The role union below no longer admits `witness`, and
-   * the Witness row's Capture control is `Unavailable` with its reason attached.
-   *
-   * The two remaining names are NOT literals typed here: they are read off the
-   * session record this signature belongs to.
-   */
-  const captureSignature = (role: 'returningPerson' | 'warehouseStaff') => {
-    const names = { returningPerson: active.returningPerson, warehouseStaff: active.receivingStaff }
-    const roleLabel = { returningPerson: 'Client Representative', warehouseStaff: 'Warehouse' }
-    setSessions((p) => ({
-      ...p,
-      [activeId]: {
-        ...(p[activeId] as ReturnSession),
-        signatures: { ...(p[activeId] as ReturnSession).signatures, [role]: { name: names[role], role: roleLabel[role], at: '19 Jul 2026, 10:19 AM' } },
-      },
-    }))
-  }
+  const scannableUnits = rows.map((r) => ({
+    id: r.key,
+    name: r.name,
+    ...(r.serial ? { serial: r.serial } : {}),
+    // Quantity rows have no serial to scan — the modal treats them as accessories.
+    isAccessory: r.serial === null,
+  }))
 
-  const setDecision = (uid: string, decision: NotReturnedDecision) => set(uid, { decision })
-  const setNote = (uid: string, note: string) => set(uid, { note })
-
-  /* ── §12.1 — six Session Gates, shown in full per §5.6 and the module's own "Gate: Complete Return" section. ── */
-  const sessionUnits = list.filter((u) => u.sessionId === activeId)
-  const uninspected = sessionUnits.filter((u) => u.inspection !== 'Inspected')
-  const accessoryIncomplete = sessionUnits.filter((u) => (u.accessories ?? []).some((a) => a.present === null))
-  const damagedOrLost = sessionUnits.filter((u) => u.condition === 'Damaged' || u.condition === 'Lost')
-  const evidenceMissing = damagedOrLost.filter((u) => (u.damage?.photos ?? 0) === 0)
-  const approvalMissing = damagedOrLost.filter((u) => u.damage?.routedForApproval !== true)
-  const sigMissing: string[] = []
-  if (!active.signatures.returningPerson) sigMissing.push('Returning person')
-  if (!active.signatures.warehouseStaff) sigMissing.push('Warehouse staff')
-
-  // exactOptionalPropertyTypes — `resolve` is included only when there is
-  // somewhere to resolve *to*; never assigned an explicit `undefined`.
-  const gateRow = (n: number, label: string, passing: boolean, blocking: string | null, resolve?: () => void): GateRow => ({
-    n,
-    label,
-    passing,
-    blocking,
-    ...(resolve ? { resolve } : {}),
-  })
-
-  const gates: GateRow[] = [
-    gateRow(1, 'Every item received in this session scanned and serial-verified', sessionUnits.length > 0, sessionUnits.length > 0 ? null : 'No items received in this session yet'),
-    gateRow(
-      2,
-      'Every returned item inspected — condition set',
-      uninspected.length === 0,
-      uninspected.length === 0 ? null : `${uninspected.length} item(s) not yet saved — ${uninspected.map((u) => u.name).join(', ')}`,
-      uninspected[0] ? () => setExpandedId(uninspected[0]!.id) : undefined,
-    ),
-    gateRow(
-      3,
-      'Accessories checked on every inspected item',
-      accessoryIncomplete.length === 0,
-      accessoryIncomplete.length === 0 ? null : `${accessoryIncomplete.length} item(s) with an unchecked accessory — ${accessoryIncomplete.map((u) => u.name).join(', ')}`,
-      accessoryIncomplete[0] ? () => setExpandedId(accessoryIncomplete[0]!.id) : undefined,
-    ),
-    gateRow(
-      4,
-      'Evidence captured on every Damaged or Lost line',
-      evidenceMissing.length === 0,
-      evidenceMissing.length === 0 ? null : `${evidenceMissing.length} line(s) with no return photo — ${evidenceMissing.map((u) => u.name).join(', ')}`,
-      evidenceMissing[0] ? () => setExpandedId(evidenceMissing[0]!.id) : undefined,
-    ),
-    // §13.1 — "the damage-approval gate reads Damage approval required, with no amount."
-    gateRow(
-      5,
-      'Damage charges approved, or marked Absorb / Defer',
-      approvalMissing.length === 0,
-      approvalMissing.length === 0 ? null : 'Damage approval required',
-      approvalMissing[0] ? () => setExpandedId(approvalMissing[0]!.id) : undefined,
-    ),
-  ]
-  gates.push({
-    n: 6,
-    label: 'Required signatures captured for this session',
-    passing: sigMissing.length === 0,
-    blocking: sigMissing.length === 0 ? null : `Missing: ${sigMissing.join(', ')}`,
-  })
-  const canCompleteSession = active.state !== 'Complete' && gates.every((g) => g.passing)
-  const primaryLabel = allResolved ? 'Complete Return' : 'Complete Session'
-  const gateSummary = canCompleteSession ? null : active.state === 'Complete' ? 'This session is already closed' : (gates.find((g) => !g.passing)?.blocking ?? null)
-
-  /**
-   * **Complete Return — the write this screen exists to make.**
-   *
-   * It used to set React state, stamp a hardcoded `'19 Jul 2026, 10:20 AM'` and
-   * navigate away, dispatching nothing, while the footer beside it said "Saving
-   * is automatic" and "This will close the Return and set the booking to
-   * Returned". Neither happened: no `return_lines`, no `operation_sessions`, no
-   * `session_line_movements`, and `bookings.stage` left at `On Rent` — so the
-   * gear read as out indefinitely, the deposit was never released, and the
-   * booking stayed double-bookable while its own Return screen said it was
-   * closed.
-   *
-   * `completeReturn` (`actions/rentals/returnRental.ts`) is `implemented: true`
-   * on `operations.perform` and routes through `runFloorVerb`, so the write path
-   * exists and this caller was walking around it. Same caller shape as
-   * `PackingWorkspace`, `ResetWorkspace` and `HandoverWorkspace`:
-   *
-   *  - refuse inline when nobody is signed in — a floor record with no actor is
-   *    not a record;
-   *  - `lines: []`, deliberately, because this workspace's ids come from
-   *    `data/returnInspection`'s seed rather than `booking_lines`, so
-   *    `validateFloorVerb` refuses it *visibly* instead of the screen silently
-   *    claiming success;
-   *  - the session flip and the `navigate` both inside `.then()`, so a rejected
-   *    write cannot read as a closed return.
-   */
+  /* ── the dispatch — real line ids, dispatch-then-commit ────────────────── */
   const completeSession = () => {
-    if (!canCompleteSession) return
+    if (!canComplete || !floor) return
+    // The identity is the signed-in operator or there is no dispatch — never a
+    // made-up `{ userId: 'USR-001' }` on a floor record.
     if (!user) {
       setDispatchError('You are not signed in, so this return cannot be recorded against anyone. Nothing was written.')
       return
     }
     setDispatchError(null)
+    setDispatching(true)
+
     const occurredAt = new Date().toISOString()
-    import('../../actions/rentals')
-      .then((m) => m.completeReturn({ rentalId: id, lines: [], occurredAt }, { userId: user.id, role: user.role }))
-      .then(() => {
-        setSessions((p) => ({
-          ...p,
-          [activeId]: { ...(p[activeId] as ReturnSession), state: 'Complete', closedAt: formatAdDateTime(occurredAt) },
-        }))
-        navigate(`/rentals/${id}`)
-      })
+    const { payload, extraNotes } = buildReturnLines(floor.lines, rows, marks)
+    const sigNotes = [
+      sigReturning ? `Returning person signature: ${sigReturning.name} at ${formatAdDateTime(sigReturning.atIso)}` : null,
+      sigWarehouse ? `Warehouse staff signature: ${sigWarehouse.name} at ${formatAdDateTime(sigWarehouse.atIso)}` : null,
+    ].filter((n): n is string => n !== null)
+    const notes = [sessionNotes.trim(), ...sigNotes, ...extraNotes].filter((n) => n !== '').join('\n')
+
+    /*
+     * ⚠ `navigate` is INSIDE `.then`. This dispatch used to send `lines: []`,
+     * which `validateFloorVerb` refuses unconditionally, so the one write on
+     * this page always failed. It now carries the real booking-line ids the
+     * operator triaged, and leaving the workspace happens on success only.
+     */
+    import('../../actions/rentals/index')
+      .then((m) =>
+        m.completeReturn(
+          {
+            rentalId: floor.id,
+            lines: payload,
+            clientUuid: completionKey,
+            occurredAt,
+            ...(notes === '' ? {} : { notes }),
+          },
+          { userId: user.id, role: user.role },
+        ),
+      )
+      .then(() => navigate(`/rentals/${id}`))
       .catch((err: unknown) => {
         console.error('return failed:', err)
         setDispatchError(err instanceof Error ? err.message : String(err))
+        setDispatching(false)
       })
   }
 
-  const expected = toBs(new Date('2026-07-19'))
-  const actual = toBs(new Date('2026-07-19'))
+  /* ── honest degradations, before any workspace chrome ──────────────────── */
 
-  const visible = SEED_UNITS.filter((u) => {
-    const s = units[u.id] as ReturnUnit
-    if (filter !== 'All' && s.state !== filter) return false
-    if (query && !`${u.name} ${u.serial}`.toLowerCase().includes(query.toLowerCase())) return false
-    return true
-  })
+  const notFound = !floorLoading && floorError === null && floor === null
 
   /*
-   * Spec 03 Notes — "Routes are parameterised — these must work for any BR#,
-   * not one seeded booking." This workspace's items come from a single seeded
-   * booking, so any OTHER booking number gets the honest not-loaded state
-   * rather than that booking's gear wearing this number (Rulings §8). Placed
-   * after every hook, so the hook order is identical on both branches.
+   * Return runs at `On Rent` (`JOBS.Return.runsAt`) — `runFloorVerb` would
+   * refuse any other stage by name, so the workspace says so up front instead
+   * of letting the operator triage eighteen items into a guaranteed refusal.
+   * The `BookingNotLoaded` pattern, kept: an honest named state, not an error,
+   * and never another booking's gear under this number.
    */
-  if (bookingNo !== undefined && bookingNo !== BOOKING.no) {
-    return <BookingNotLoaded bookingNo={bookingNo} job="Return" seededBookingNo={BOOKING.no} />
-  }
+  const stageBlock =
+    floor === null
+      ? null
+      : floor.isCancelled
+        ? `${floor.bookingNo} is cancelled. Return does not run on a cancelled booking.`
+        : floor.isClosed
+          ? `${floor.bookingNo} is Closed. Closed is final — nothing further is recorded.`
+          : floor.stage !== 'On Rent'
+            ? `Return runs at stage On Rent; ${floor.bookingNo} is at ${floor.stage}. ` +
+              (floor.stage === 'Returned'
+                ? 'This booking is already returned.'
+                : floor.stage === 'Booked' || floor.stage === 'Packed'
+                  ? 'The gear has not been handed over yet, so there is nothing to receive.'
+                  : 'Nothing can be received here.')
+            : null
+
+  /* Money-free by construction — `lateBand` returns minutes and a band name,
+     never a Paisa (§8.3). Computed against the render instant: while the gear
+     is still out, "how late" is a question about now. */
+  const overrun = floor?.returnAtAd && stageBlock === null ? lateBand(new Date(floor.returnAtAd), new Date()) : null
 
   // Floor scale (DEVICES.md item 3) is applied automatically by route in App.tsx's Shell, not here.
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      {/* ── header ─────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-            <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
-              Return &amp; Inspection Workspace
-            </h1>
-            <span style={{ display: 'inline-flex', alignItems: 'center', height: 22, padding: '0 9px', borderRadius: 'var(--r-badge)', background: STATUS.in.bg, color: STATUS.in.fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}>
-              Equipment In
-            </span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', height: 22, padding: '0 9px', borderRadius: 'var(--r-badge)', background: STATUS[statusToken(bookingStatus)].bg, color: STATUS[statusToken(bookingStatus)].fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}>
-              {bookingStatus}
-            </span>
-          </div>
-          {/* §0 #9 — the corrected breadcrumb, not `Rentals › Booking › Return & Inspection › BR-2613`. */}
-          <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-            Rentals › Bookings ›{' '}
-            <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
-              {id}
-            </Link>
-            {' › Return · '}
-            {BOOKING.client}
-          </p>
-        </div>
-
-        <div style={{ minWidth: 260, flex: 1 }}>
-          <div style={{ display: 'flex', gap: 10, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-            <span>Return Progress</span>
-            <span className="figure" style={{ marginLeft: 'auto', fontWeight: 700, color: 'var(--text)' }}>
-              {returned.length} / {TOTAL_ITEMS} ({pct}%)
-            </span>
-          </div>
-          <div aria-hidden style={{ height: 8, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 6, overflow: 'hidden' }}>
-            <div style={{ width: '100%', height: '100%', background: 'var(--success)', borderRadius: 'var(--r-badge)', transform: `scaleX(${pct / 100})`, transformOrigin: 'left', transition: 'transform var(--dur) ease' }} />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, fontSize: 'var(--t-meta)', color: outstanding.length ? 'var(--progress-text)' : 'var(--success-text)', fontWeight: 600 }}>
-            <Icon name={outstanding.length ? 'alert_triangle' : 'checklist'} size={12} />
-            {outstanding.length ? `${outstanding.length} item${outstanding.length > 1 ? 's' : ''} still outstanding` : 'All items resolved'}
-            {missing.length > 0 && <span style={{ color: 'var(--danger-text)' }}>· {missing.length} not returned</span>}
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
-          <Button icon="file">Print Return Report</Button>
-          <Link to={`/rentals/${id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--btn-secondary-border)', background: 'var(--btn-secondary-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none' }}>
-            <Icon name="external_link" size={14} />
-            View Booking
-          </Link>
-        </div>
-      </div>
-
-      {/* ── §4 booking strip — read-only, no money (§8.3) ─────────────────── */}
-      <div style={{ ...cardStyle, display: 'flex', gap: 0, flexWrap: 'wrap', overflow: 'hidden' }}>
-        {[
-          { l: 'Client', v: BOOKING.client, big: true },
-          { l: 'Total Items', v: String(TOTAL_ITEMS) },
-          { l: 'Returned', v: String(returned.length), tone: 'var(--success-text)' },
-          { l: 'Outstanding', v: String(outstanding.length), tone: outstanding.length ? 'var(--progress-text)' : undefined },
-          { l: 'Not Returned', v: String(missing.length), tone: missing.length ? 'var(--danger-text)' : undefined },
-          { l: 'Expected Return', v: expected ? formatBs(expected) : RETURN_TIMING.expected.ad, s: `${formatAd(new Date('2026-07-19'))}, ${RETURN_TIMING.expected.time}` },
-          { l: 'Actual Return', v: actual ? formatBs(actual) : RETURN_TIMING.actual.ad, s: `${formatAd(new Date('2026-07-19'))}, ${RETURN_TIMING.actual.time}`, tone: 'var(--danger-text)' },
-          { l: 'Return job', v: returnJobState },
-          { l: 'Status', v: bookingStatus, big: true },
-        ].map((f) => (
-          <div key={f.l} style={{ padding: '11px 14px', borderRight: '1px solid var(--border)', minWidth: 0, flex: '1 1 auto' }}>
-            <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{f.l}</div>
-            <div className="figure" style={{ fontSize: f.big ? 'var(--t-h3)' : 'var(--t-body)', fontWeight: f.big ? 700 : 600, color: f.tone ?? 'var(--text)', marginTop: 3, whiteSpace: 'nowrap' }}>
-              {f.v}
-            </div>
-            {f.s && <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{f.s}</div>}
-          </div>
-        ))}
-      </div>
-      {/* §4 — overrun as informational text, never a fabricated "Late Return" flag (see file header).
-       *
-       * §4.2 — the overage and the band are now **computed** by `lib/lateFee`'s
-       * `lateBand`, not the hand-written string this used to print, so the floor
-       * and Finance can never disagree about how late a return was.
-       *
-       * `lateBand` returns no monetary value at all, which is why it exists:
-       * §8.3 keeps every Rs figure off this screen, and the rupees and the
-       * apply/waive decision live on Booking Detail behind `canBookingMoney`.
-       * "A full rental day is chargeable" is a unit of rental time, not a price. */}
-      {overrun.band !== 'None' && (
-        <p style={{ margin: '-6px 2px 0', fontSize: 'var(--t-meta)', color: 'var(--danger-text)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-          <Icon name="timer" size={12} />
-          {formatOverage(overrun.overageMinutes)} past expected return
-          <span style={{ fontWeight: 500, color: 'var(--text2)' }}>· {bandConsequence(overrun)}</span>
-        </p>
-      )}
-
-      {/* ── §5 scan bar ────────────────────────────────────────────────── */}
-      <Card>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <button type="button" onClick={() => setShowScanner(true)} style={{ ...bigScanBtn, ...ACCENT_OUTLINE }}>
-            <Icon name="queues" size={16} /> Scan Barcode
-          </button>
-          <button type="button" onClick={() => setShowScanner(true)} style={{ ...bigScanBtn, background: 'var(--btn-secondary-bg)', color: 'var(--text)', border: '1px solid var(--btn-secondary-border)' }}>
-            <Icon name="queues" size={16} /> Scan QR
-          </button>
-          <div style={{ flex: 1, minWidth: 180, display: 'flex', alignItems: 'center' }}>
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search Equipment"
-              aria-label="Search equipment"
-              style={{ width: '100%', height: 44, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-ui)', fontFamily: 'inherit', outline: 'none' }}
-            />
-          </div>
-        </div>
-        <p style={{ margin: '9px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Scan any item to mark as returned and start inspection</p>
-      </Card>
-
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: desktop ? 'minmax(0,1fr) auto' : '1fr',
-          gap: 'var(--sp-md)',
-          alignItems: 'start',
-        }}
+      <PageBody
+        loading={floorLoading}
+        error={floorError}
+        onRetry={() => setReload((n) => n + 1)}
+        empty={notFound}
+        noun={`booking ${id}`}
+        skeleton="card"
+        emptyTitle={`No booking matches ${id}`}
+        emptyMessage="Check the booking number — nothing with this number exists, so there is nothing to receive."
       >
-        {/* ── centre column ────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
-          <Card title="1 · Equipment Table" bodyStyle={{ padding: 0 }}>
-            <div style={{ display: 'flex', gap: 7, padding: '9px 12px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', alignItems: 'center' }}>
-              {FILTERS.map((f) => {
-                const on = filter === f
-                const label = f === 'All' ? 'All' : ITEM_STATE_LABEL[f]
-                return (
-                  <button
-                    key={f}
-                    type="button"
-                    onClick={() => setFilter(f)}
-                    aria-pressed={on}
+        {floor !== null && stageBlock !== null && (
+          <EmptyState
+            title={`Return is not available for ${floor.bookingNo}`}
+            description={stageBlock}
+            actionLabel={`Open booking ${floor.bookingNo}`}
+            onAction={() => navigate(`/rentals/${id}`)}
+          />
+        )}
+
+        {floor !== null && stageBlock === null && floor.linesPresence === 'absent' && (
+          /* An absent embed is NOT an empty booking — the two must never be
+             collapsed (bookingQuery.ts:110-113 records that defect). */
+          <ErrorBanner
+            title="Could not load this booking's lines"
+            message="The booking loaded but its lines did not come back with it, so the checklist cannot be trusted. Retry before receiving anything."
+            onRetry={() => setReload((n) => n + 1)}
+          />
+        )}
+
+        {floor !== null && stageBlock === null && floor.linesPresence === 'present' && rows.length === 0 && (
+          <EmptyState
+            title={`${floor.bookingNo} has no live lines`}
+            description="Every line on this booking is voided or none were added, so there is nothing to receive."
+            actionLabel={`Open booking ${floor.bookingNo}`}
+            onAction={() => navigate(`/rentals/${id}`)}
+          />
+        )}
+
+        {floor !== null && stageBlock === null && floor.linesPresence === 'present' && rows.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+            {/* ── header ─────────────────────────────────────────────────── */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+                  <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
+                    Return &amp; Inspection Workspace
+                  </h1>
+                  {/*
+                    ⭐ RULED (Rulings §7): the badge shows the CANONICAL stage —
+                    never a seventh name, and never the seed build's
+                    unconditional "Equipment In" chip. The mid-return signal is
+                    the *job* chip beside it. Two axes, two chips. Law 11 on
+                    both: icon + label + colour.
+                  */}
+                  <span
                     style={{
-                      height: 26,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 'var(--sp-xs)',
+                      height: 22,
                       padding: '0 9px',
-                      borderRadius: 7,
-                      border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                      background: on ? 'var(--nav-active-bg)' : 'transparent',
-                      color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
+                      borderRadius: 'var(--r-badge)',
+                      background: STATUS[statusToken(stage)].bg,
+                      color: STATUS[statusToken(stage)].fg,
                       fontSize: 'var(--t-meta)',
-                      fontWeight: on ? 600 : 500,
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
+                      fontWeight: 700,
                     }}
                   >
-                    {label}
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* §3.4 PHONE — "one serial card at a time, [OK] / [Flag] full width."
-                A 880px table on a 375px screen is a horizontal scrollbar hiding
-                the columns that matter (`lib/device.ts:139`); the same triage
-                panel renders inside the card, so the two layouts cannot drift. */}
-            {phone ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', padding: 'var(--sp-md)' }}>
-                {visible.length === 0 && (
-                  <div style={{ padding: 'var(--sp-lg)', textAlign: 'center', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                    No items match these filters.
-                  </div>
-                )}
-                {visible.map((seed) => {
-                  const u = units[seed.id] as ReturnUnit
-                  const isOpen = expandedId === u.id
-                  const itemTone = STATUS[ITEM_TONE[u.state]]
-                  return (
-                    <article key={u.id} style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      <div>
-                        <div style={{ fontWeight: 600, color: 'var(--text)' }}>{u.name}</div>
-                        <Link to={`/inventory/${u.serial}`} className="identifier" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', textDecoration: 'none' }}>
-                          {u.serial}
-                        </Link>
-                      </div>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 22, padding: '0 8px', borderRadius: 'var(--r-badge)', background: itemTone.bg, color: itemTone.fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
-                          <Icon name={u.state === 'Missing' ? 'alert_triangle' : u.state === 'Returned' ? 'return_arrow' : 'truck'} size={11} />
-                          {ITEM_STATE_LABEL[u.state]}
-                        </span>
-                        {u.condition && (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', height: 22, padding: '0 8px', borderRadius: 'var(--r-badge)', background: STATUS[CONDITION_TONE[u.condition]].bg, color: STATUS[CONDITION_TONE[u.condition]].fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
-                            {u.condition}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Full width, per the drawing. `Mark Returned` is the OK
-                          half; `Not Returned` is the Flag half. */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-sm)' }}>
-                        <button
-                          type="button"
-                          onClick={() => scan(u.id)}
-                          disabled={u.state === 'Returned'}
-                          style={{ minHeight: 44, borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: u.state === 'Returned' ? 'var(--card2)' : 'transparent', color: u.state === 'Returned' ? 'var(--muted)' : 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', cursor: u.state === 'Returned' ? 'not-allowed' : 'pointer' }}
-                        >
-                          Mark Returned
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => (u.state === 'Missing' ? undoMissing(u.id) : markMissing(u.id))}
-                          style={{ minHeight: 44, borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger-text)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer' }}
-                        >
-                          {u.state === 'Missing' ? 'Undo' : 'Not Returned'}
-                        </button>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => setExpandedId(isOpen ? null : u.id)}
-                        aria-expanded={isOpen}
-                        style={{ minHeight: 44, borderRadius: 'var(--r-btn)', border: 'none', background: 'transparent', color: 'var(--link)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer', textAlign: 'left' }}
-                      >
-                        {isOpen ? 'Hide inspection' : 'Inspect this item'}
-                      </button>
-
-                      {isOpen && (
-                        <UnitDetail
-                          u={u}
-                          onSetCondition={(c) => setCondition(u.id, c)}
-                          onSetAccessory={(name, present) => setAccessory(u.id, name, present)}
-                          onDamageField={(patch) => setDamage(u.id, patch)}
-                          onAddPhoto={() => setDamage(u.id, { photos: (u.damage?.photos ?? 0) + 1 })}
-                          onSendForApproval={() => setDamage(u.id, { routedForApproval: true })}
-                          onSaveInspection={() => saveInspection(u.id)}
-                          onCancel={() => setExpandedId(null)}
-                          onSetNote={(note) => setNote(u.id, note)}
-                          id={id}
-                        />
-                      )}
-                    </article>
-                  )
-                })}
-              </div>
-            ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
-                <thead>
-                  <tr style={{ background: 'var(--th-bg)' }}>
-                    {['#', 'Equipment', 'Serial', 'Expected', 'Returned', 'Condition', 'Inspection', 'Session #', ''].map((h, i) => (
-                      <th key={h || i} style={th}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.map((seed, i) => {
-                    const u = units[seed.id] as ReturnUnit
-                    const isOpen = expandedId === u.id
-                    return (
-                      <UnitRow
-                        key={u.id}
-                        index={i + 1}
-                        u={u}
-                        isOpen={isOpen}
-                        onToggle={() => setExpandedId(isOpen ? null : u.id)}
-                        onScan={() => scan(u.id)}
-                        onMarkMissing={() => markMissing(u.id)}
-                        onUndoMissing={() => undoMissing(u.id)}
-                        onSetCondition={(c) => setCondition(u.id, c)}
-                        onSetAccessory={(name, present) => setAccessory(u.id, name, present)}
-                        onDamageField={(patch) => setDamage(u.id, patch)}
-                        onAddPhoto={() => setDamage(u.id, { photos: (u.damage?.photos ?? 0) + 1 })}
-                        onSendForApproval={() => setDamage(u.id, { routedForApproval: true })}
-                        onSaveInspection={() => saveInspection(u.id)}
-                        onCancel={() => setExpandedId(null)}
-                        onSetNote={(note) => setNote(u.id, note)}
-                        id={id}
-                      />
-                    )
-                  })}
-                  {visible.length === 0 && (
-                    <tr>
-                      <td colSpan={9} style={{ padding: 'var(--sp-xl)', textAlign: 'center', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                        No items match these filters.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            )}
-
-            {/* §6.5 — two counters, never merged. */}
-            <div style={{ margin: 12, padding: '10px 12px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)', display: 'flex', gap: 'var(--sp-xl)', flexWrap: 'wrap', fontSize: 'var(--t-meta)' }}>
-              <span>
-                Items Not Returned: <b className="figure" style={{ color: missing.length ? 'var(--danger-text)' : 'var(--text)' }}>{missing.length}</b>
-              </span>
-              <span>
-                Accessories Missing:{' '}
-                <b className="figure" style={{ color: accessoriesMissing.length ? 'var(--danger-text)' : 'var(--text)' }}>{accessoriesMissing.length}</b>
-                {accessoriesMissing.length > 0 && ` — ${accessoriesMissing.map((a) => `${a.accessory} (${a.item})`).join(', ')}`}
-              </span>
-            </div>
-          </Card>
-
-          {/* ── §12.1 Session Gates — full checklist, §5.6 ─────────────────── */}
-          <Card title={`2 · Session Gates — ${active.id}`} action={<span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{active.state}</span>}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
-              {gates.map((g) => (
-                <div key={g.n} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '7px 9px', borderRadius: 'var(--r-sm)', background: g.passing ? 'var(--st-in-bg)' : 'var(--st-progress-bg)' }}>
-                  <Icon name={g.passing ? 'checklist' : 'alert_triangle'} size={14} style={{ color: g.passing ? 'var(--st-in-fg)' : 'var(--st-progress-fg)', marginTop: 2, flexShrink: 0 }} />
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: g.passing ? 'var(--st-in-fg)' : 'var(--text)' }}>{g.label}</div>
-                    {!g.passing && g.blocking && <div style={{ fontSize: 'var(--t-meta)', color: 'var(--st-progress-fg)', marginTop: 2 }}>{g.blocking}</div>}
-                  </div>
-                  {!g.passing && g.resolve && (
-                    <button type="button" onClick={g.resolve} style={{ border: 'none', background: 'transparent', color: 'var(--link)', fontWeight: 600, fontSize: 'var(--t-meta)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                      Resolve →
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* §12.2 Booking Conditions — information, not gates ("Items Returned is information, not a gate"). */}
-            <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Booking Conditions</div>
-              <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                {outstanding.length > 0
-                  ? `${outstanding.length} item(s) still outstanding — booking stays On Rent until the Return job completes.`
-                  : 'All items returned or resolved — Return job can complete, setting status Returned.'}
-              </div>
-              {missing.length > 0 && (
-                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--danger-text)', fontWeight: 600 }}>
-                  {missing.length} item(s) Not Returned — {MISSING_EFFECT}.
-                </div>
-              )}
-              {damaged.length > 0 && (
-                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--danger-text)', fontWeight: 600 }}>
-                  {damaged.length} item(s) Damaged — {DAMAGED_EFFECT}.
-                </div>
-              )}
-            </div>
-          </Card>
-        </div>
-
-        {/* ── right rail ────────────────────────────────────────────────── */}
-        <FloorAside collapsible={desktop} side="right" width={300} label="Return summary">
-          {/*
-            §3.4's BEFORE / AFTER compare strip. Both figures are REAL: every
-            unit carries `pickup.photos` (what Packing captured) and
-            `ret.photos` (what this session captured), and the expanded row
-            panel already links to each set. Nothing is invented here — a stage
-            with no photos reads `0 photos`, and the link goes to the Evidence
-            viewer, which is where the images actually live (spec 03 line 4 —
-            "Evidence is a viewer, not a verb").
-          */}
-          <Card title="Before / After">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-sm)' }}>
-              {([
-                ['Packing', list.reduce((n, u) => n + u.pickup.photos, 0)],
-                ['Return', list.reduce((n, u) => n + (u.ret?.photos ?? 0), 0)],
-              ] as const).map(([stage, n]) => (
-                <div key={stage} style={{ padding: 10, borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                    <Icon name="eye" size={12} />
+                    <Icon name="dot" size={9} />
                     {stage}
+                  </span>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 'var(--sp-xs)',
+                      height: 22,
+                      padding: '0 9px',
+                      borderRadius: 'var(--r-badge)',
+                      border: '1px solid var(--border)',
+                      background: 'var(--card2)',
+                      color: jobState === 'Complete' ? 'var(--success-text)' : jobState === 'In Progress' ? 'var(--progress-text)' : 'var(--text2)',
+                      fontSize: 'var(--t-meta)',
+                      fontWeight: 700,
+                    }}
+                  >
+                    <Icon name={jobState === 'Complete' ? 'checklist' : jobState === 'In Progress' ? 'refresh' : 'dot'} size={11} />
+                    Return job: {jobState}
+                  </span>
+                </div>
+                <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                  <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
+                    {floor.bookingNo}
+                  </Link>
+                  {floor.project ? ` · ${floor.project}` : ''}
+                  {floor.clientName ? ` · ${floor.clientName}` : ''}
+                </p>
+              </div>
+
+              <div style={{ minWidth: 260, flex: 1 }}>
+                <div style={{ display: 'flex', gap: 10, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                  <span>Return Progress</span>
+                  <span className="figure" style={{ marginLeft: 'auto', fontWeight: 700, color: 'var(--text)' }}>
+                    {backUnits} / {totalUnits} ({pct}%)
+                  </span>
+                </div>
+                <div aria-hidden style={{ height: 8, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 6, overflow: 'hidden' }}>
+                  <div style={{ width: '100%', height: '100%', background: 'var(--success)', borderRadius: 'var(--r-badge)', transform: `scaleX(${pct / 100})`, transformOrigin: 'left', transition: 'transform var(--dur) ease' }} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, fontSize: 'var(--t-meta)', color: outstandingUnits ? 'var(--progress-text)' : 'var(--success-text)', fontWeight: 600 }}>
+                  <Icon name={outstandingUnits ? 'alert_triangle' : 'checklist'} size={12} />
+                  {outstandingUnits ? `${outstandingUnits} unit${outstandingUnits > 1 ? 's' : ''} still outstanding` : 'All items resolved'}
+                  {missingRows.length > 0 && <span style={{ color: 'var(--danger-text)' }}>· {missingRows.length} not returned</span>}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
+                <Button icon="file">Print Return Report</Button>
+                <Link to={`/rentals/${id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--btn-secondary-border)', background: 'var(--btn-secondary-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none' }}>
+                  <Icon name="external_link" size={14} />
+                  View Booking
+                </Link>
+              </div>
+            </div>
+
+            {/* ── §4 booking strip — read-only, no money (§8.3). Every cell is
+                a real column off `fetchFloorBooking`; the seed build's
+                hardcoded 2026-07-19 dates and invented times are gone. ── */}
+            <div style={{ ...cardStyle, display: 'flex', gap: 0, flexWrap: 'wrap', overflow: 'hidden' }}>
+              {[
+                { l: 'Client', v: floor.clientName ?? '—', big: true },
+                { l: 'Pickup', v: bsLabel(floor.pickupAtAd), s: floor.pickupAtAd ? formatAd(new Date(floor.pickupAtAd)) : undefined },
+                { l: 'Expected Return', v: bsLabel(floor.returnAtAd), s: floor.returnAtAd ? formatAd(new Date(floor.returnAtAd)) : undefined },
+                {
+                  l: 'Actual Return',
+                  v: bsLabel(floor.actualReturnAtAd),
+                  s: floor.actualReturnAtAd ? formatAd(new Date(floor.actualReturnAtAd)) : 'not recorded yet',
+                },
+                {
+                  l: 'Days',
+                  v: floor.pickupAtAd && floor.returnAtAd ? String(rentalDays(floor.pickupAtAd, floor.returnAtAd)) : '—',
+                  s: 'Rental days',
+                },
+                { l: 'Status', v: floor.stage, big: true },
+                { l: 'Return job', v: jobState },
+                { l: 'Units', v: String(totalUnits) },
+                { l: 'Delivery', v: floor.deliveryType ?? '—' },
+              ].map((f) => (
+                <div key={f.l} style={{ padding: '11px 14px', borderRight: '1px solid var(--border)', minWidth: 0, flex: '1 1 auto' }}>
+                  <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{f.l}</div>
+                  <div style={{ fontSize: f.big ? 'var(--t-h3)' : 'var(--t-body)', fontWeight: f.big ? 700 : 600, color: 'var(--text)', marginTop: 3, whiteSpace: 'nowrap' }}>
+                    {f.v}
                   </div>
-                  <div className="figure" style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: n > 0 ? 'var(--text)' : 'var(--muted)', marginTop: 3 }}>
-                    {n} {n === 1 ? 'photo' : 'photos'}
-                  </div>
+                  {f.s && <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{f.s}</div>}
                 </div>
               ))}
             </div>
-            <Link
-              to={`/rentals/${id}/evidence`}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44, marginTop: 9, fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' }}
-            >
-              <Icon name="external_link" size={14} />
-              Compare in Evidence
-            </Link>
-          </Card>
 
-          <Card title="Sessions">
-            {(['S1', 'S2'] as SessionId[]).map((sid) => {
-              const s = sessions[sid]
-              const n = list.filter((u) => u.sessionId === sid).length
-              return (
-                <div key={sid} style={{ padding: '8px 0', borderBottom: sid === 'S1' ? '1px solid var(--border)' : undefined }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
-                    <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Session {sid.slice(1)}</span>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', height: 18, padding: '0 7px', borderRadius: 'var(--r-badge)', background: STATUS[s.state === 'Complete' ? 'in' : s.state === 'In Progress' ? 'progress' : 'neutral'].bg, color: STATUS[s.state === 'Complete' ? 'in' : s.state === 'In Progress' ? 'progress' : 'neutral'].fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
-                      {s.state}
-                    </span>
-                  </div>
-                  <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 3 }}>{n} item(s) received</div>
-                  <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{s.closedAt ? `Closed ${s.closedAt}` : `Started ${s.startedAt}`}</div>
-                </div>
-              )
-            })}
-            {allResolved === false && active.state === 'Complete' && (
-              <p style={{ margin: '9px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.4 }}>
-                Session 2 is closed. {outstanding.length} item(s) remain — start a new session to receive them.
+            {/* §4 — overrun as informational text, never a fabricated "Late
+                Return" flag. Computed by `lib/lateFee.lateBand` against the
+                booking's REAL expected-return instant, so the floor and
+                Finance can never disagree about how late a return is running.
+                No monetary value comes back — that is why `lateBand` exists. */}
+            {overrun !== null && overrun.band !== 'None' && (
+              <p style={{ margin: '-6px 2px 0', fontSize: 'var(--t-meta)', color: 'var(--danger-text)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                <Icon name="timer" size={12} />
+                {formatOverage(overrun.overageMinutes)} past expected return
+                <span style={{ fontWeight: 500, color: 'var(--text2)' }}>· {bandConsequence(overrun)}</span>
               </p>
             )}
-          </Card>
 
-          <Card title="Signatures" action={<span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Session {activeId.slice(1)}</span>}>
-            {/* §9 — captured at session close, never before. */}
-            <SigRow label="Returning person" sig={active.signatures.returningPerson} onCapture={() => captureSignature('returningPerson')} required disabled={active.state === 'Complete'} />
-            <SigRow label="Warehouse staff" sig={active.signatures.warehouseStaff} onCapture={() => captureSignature('warehouseStaff')} required disabled={active.state === 'Complete'} />
-            {/* §9 — optional, and uncapturable: there is no witness identity on this screen to sign as. */}
-            <SigRow label="Witness" sig={active.signatures.witness} required={false} disabled={active.state === 'Complete'} unavailable={WITNESS_UNAVAILABLE} />
-          </Card>
+            {/* ── §5 scan bar ──────────────────────────────────────────────── */}
+            <Card>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button type="button" onClick={() => setShowScanner(true)} style={{ ...bigScanBtn, ...ACCENT_OUTLINE }}>
+                  <Icon name="queues" size={16} /> Scan Barcode
+                </button>
+                <button type="button" onClick={() => setShowScanner(true)} style={{ ...bigScanBtn, background: 'var(--btn-secondary-bg)', color: 'var(--text)', border: '1px solid var(--btn-secondary-border)' }}>
+                  <Icon name="queues" size={16} /> Scan QR
+                </button>
+                <div style={{ flex: 1, minWidth: 180, display: 'flex', alignItems: 'center' }}>
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search Equipment"
+                    aria-label="Search equipment"
+                    style={{ width: '100%', height: 44, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-ui)', fontFamily: 'inherit', outline: 'none' }}
+                  />
+                </div>
+              </div>
+              <p style={{ margin: '9px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                Scan any item to mark it received and record its condition. Nothing is written until the session completes.
+              </p>
+            </Card>
 
-          <Card title="Items Not Returned">
-            {missing.length === 0 ? (
-              <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>No items are Not Returned.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {missing.map((u) => (
-                  <div key={u.id}>
-                    <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{u.name}</div>
-                    <div className="identifier" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{u.serial}</div>
-                    {/* §8.5 — a decision, never a dollar figure on this screen. */}
-                    <select
-                      value={u.decision ?? ''}
-                      onChange={(e) => setDecision(u.id, e.target.value as NotReturnedDecision)}
-                      aria-label={`Decision for ${u.name}`}
-                      style={{ width: '100%', height: 28, marginTop: 6, borderRadius: 'var(--r-input)', border: `1px solid ${u.decision ? 'var(--input-border)' : 'var(--danger)'}`, background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
-                    >
-                      <option value="" disabled>Choose a decision…</option>
-                      {NOT_RETURNED_DECISIONS.map((d) => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                    </select>
-                    <div style={{ marginTop: 6 }}>
-                      <Button icon="refresh" onClick={() => undoMissing(u.id)}>Undo — Mark Outstanding</Button>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: desktop ? 'minmax(0,1fr) auto' : '1fr',
+                gap: 'var(--sp-md)',
+                alignItems: 'start',
+              }}
+            >
+              {/* ── centre — the triage list over the real rows ─────────────── */}
+              <div style={{ minWidth: 0 }}>
+                <Card title="1 · Equipment Checklist" bodyStyle={{ padding: 0 }}>
+                  <div style={{ display: 'flex', gap: 7, padding: '9px 12px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', alignItems: 'center' }}>
+                    {FILTERS.map((f) => {
+                      const on = filter === f
+                      return (
+                        <button
+                          key={f}
+                          type="button"
+                          onClick={() => setFilter(f)}
+                          aria-pressed={on}
+                          style={{
+                            height: 26,
+                            padding: '0 9px',
+                            borderRadius: 7,
+                            border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+                            background: on ? 'var(--nav-active-bg)' : 'transparent',
+                            color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
+                            fontSize: 'var(--t-meta)',
+                            fontWeight: on ? 600 : 500,
+                            cursor: 'pointer',
+                            fontFamily: 'inherit',
+                          }}
+                        >
+                          {f}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {phone ? (
+                    /* Shell rule: tables become card rows below 768. One card
+                       per row: serial + status + full-width triage buttons. */
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', padding: 'var(--sp-sm)' }}>
+                      {visible.map((r) => {
+                        const s = stateOf(r)
+                        const mark = marks[r.key]
+                        const tone = STATUS[ROW_TONE[s]]
+                        return (
+                          <article key={r.key} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <div>
+                              <div style={{ fontWeight: 600, color: 'var(--text)' }}>
+                                {r.name}
+                                {r.qty > 1 && <span className="figure" style={{ fontWeight: 500, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}> ×{r.qty}</span>}
+                              </div>
+                              {r.serial && (
+                                <Link to={`/inventory/${r.serial}`} className="identifier" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', textDecoration: 'none' }}>
+                                  {r.serial}
+                                </Link>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 22, padding: '0 8px', borderRadius: 'var(--r-badge)', background: tone.bg, color: tone.fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
+                                <Icon name={s === 'Not Returned' ? 'alert_triangle' : s === 'Returned' ? 'return_arrow' : 'truck'} size={11} />
+                                {s}
+                              </span>
+                              {r.alreadyReturned && (
+                                <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', alignSelf: 'center' }}>earlier session</span>
+                              )}
+                              {mark?.condition && (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', height: 22, padding: '0 8px', borderRadius: 'var(--r-badge)', background: STATUS[CONDITION_TONE[mark.condition]].bg, color: STATUS[CONDITION_TONE[mark.condition]].fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
+                                  {mark.condition}
+                                </span>
+                              )}
+                            </div>
+
+                            {!r.alreadyReturned && s === 'Outstanding' && (
+                              /* Full width, per the drawing: Mark Returned is
+                                 the OK half; Not Returned is the Flag half. */
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-sm)' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => receive(r.key)}
+                                  style={{ minHeight: 44, borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer' }}
+                                >
+                                  Mark Returned
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => declareNotReturned(r.key)}
+                                  style={{ minHeight: 44, borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger-text)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer' }}
+                                >
+                                  Not Returned
+                                </button>
+                              </div>
+                            )}
+                            {!r.alreadyReturned && s !== 'Outstanding' && (
+                              <button
+                                type="button"
+                                onClick={() => clearMark(r.key)}
+                                style={{ minHeight: 44, borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer' }}
+                              >
+                                Undo
+                              </button>
+                            )}
+
+                            {mark?.state === 'Returned' && (
+                              <ConditionPicker
+                                value={mark.condition}
+                                onChange={(c) => patchMark(r.key, { condition: c })}
+                                name={r.name}
+                              />
+                            )}
+                            {mark?.state === 'Returned' && (mark.condition === 'Damaged' || mark.condition === 'Lost') && (
+                              <DamagePanel
+                                mark={mark}
+                                name={r.name}
+                                onDescription={(v) => patchMark(r.key, { damageDescription: v })}
+                                onAddPhoto={() => addDamagePhoto(r.key)}
+                              />
+                            )}
+                            {mark?.state === 'Returned' && mark.returnedAtIso && (
+                              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                                received {formatAdDateTime(mark.returnedAtIso)}
+                              </span>
+                            )}
+                          </article>
+                        )
+                      })}
+                      {visible.length === 0 && (
+                        <EmptyState
+                          title="No items match these filters"
+                          actionLabel="Clear all filters"
+                          onAction={() => { setFilter('All'); setQuery('') }}
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+                        <thead>
+                          <tr style={{ background: 'var(--th-bg)' }}>
+                            {['#', 'Item', 'Serial', 'Qty', 'Status', 'Condition', 'Location', ''].map((h, i) => (
+                              <th key={h || i} style={th}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visible.map((r, i) => {
+                            const s = stateOf(r)
+                            const mark = marks[r.key]
+                            const tone = STATUS[ROW_TONE[s]]
+                            const damaged = mark?.state === 'Returned' && (mark.condition === 'Damaged' || mark.condition === 'Lost')
+                            return (
+                              <Fragment key={r.key}>
+                                <tr style={{ borderBottom: damaged ? undefined : '1px solid var(--border)' }}>
+                                  <td className="figure" style={{ ...td, width: 26, color: 'var(--muted)' }}>{i + 1}</td>
+                                  <td style={td}>
+                                    <span style={{ fontWeight: 600 }}>{r.name}</span>
+                                  </td>
+                                  <td className="identifier" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                                    {r.serial ? (
+                                      <Link to={`/inventory/${r.serial}`} style={{ color: 'inherit', textDecoration: 'none' }}>{r.serial}</Link>
+                                    ) : (
+                                      <span style={{ color: 'var(--muted)' }}>—</span>
+                                    )}
+                                  </td>
+                                  <td className="figure" style={td}>{r.qty}</td>
+                                  <td style={td}>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 20, padding: '0 8px', borderRadius: 'var(--r-badge)', background: tone.bg, color: tone.fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
+                                      <Icon name={s === 'Not Returned' ? 'alert_triangle' : s === 'Returned' ? 'return_arrow' : 'truck'} size={11} />
+                                      {s}
+                                    </span>
+                                    {r.alreadyReturned && (
+                                      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>earlier session</div>
+                                    )}
+                                    {mark?.state === 'Returned' && mark.returnedAtIso && (
+                                      <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>
+                                        {formatAdDateTime(mark.returnedAtIso)}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td style={{ ...td, minWidth: 150 }}>
+                                    {mark?.state === 'Returned' ? (
+                                      <ConditionPicker
+                                        value={mark.condition}
+                                        onChange={(c) => patchMark(r.key, { condition: c })}
+                                        name={r.name}
+                                        compact
+                                      />
+                                    ) : (
+                                      <span style={{ color: 'var(--muted)' }}>—</span>
+                                    )}
+                                  </td>
+                                  <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{r.location ?? '—'}</td>
+                                  <td style={{ ...td, width: 170 }}>
+                                    <span style={{ display: 'flex', gap: 'var(--sp-xs)', justifyContent: 'flex-end' }}>
+                                      {!r.alreadyReturned && s === 'Outstanding' && (
+                                        <>
+                                          <RowAction label="Mark Returned" onClick={() => receive(r.key)} />
+                                          <RowAction label="Not Returned" onClick={() => declareNotReturned(r.key)} />
+                                        </>
+                                      )}
+                                      {!r.alreadyReturned && s !== 'Outstanding' && <RowAction label="Undo" onClick={() => clearMark(r.key)} />}
+                                    </span>
+                                  </td>
+                                </tr>
+                                {damaged && mark && (
+                                  <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                                    <td colSpan={8} style={{ padding: '0 9px 10px', background: 'var(--card2)' }}>
+                                      <DamagePanel
+                                        mark={mark}
+                                        name={r.name}
+                                        onDescription={(v) => patchMark(r.key, { damageDescription: v })}
+                                        onAddPhoto={() => addDamagePhoto(r.key)}
+                                      />
+                                    </td>
+                                  </tr>
+                                )}
+                              </Fragment>
+                            )
+                          })}
+                          {visible.length === 0 && (
+                            <tr>
+                              <td colSpan={8} style={{ padding: 'var(--sp-xl)', textAlign: 'center' }}>
+                                <EmptyState
+                                  title="No items match these filters"
+                                  actionLabel="Clear all filters"
+                                  onAction={() => { setFilter('All'); setQuery('') }}
+                                />
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* §6.5 — two counters, never merged: units are not accessories.
+                      The seed's accessory checklist had no real data source, so
+                      the second counter is gone rather than faked. */}
+                  <div style={{ margin: 12, padding: '10px 12px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)', display: 'flex', gap: 'var(--sp-xl)', flexWrap: 'wrap', fontSize: 'var(--t-meta)' }}>
+                    <span>
+                      Items Not Returned: <b className="figure" style={{ color: missingRows.length ? 'var(--danger-text)' : 'var(--text)' }}>{missingRows.length}</b>
+                    </span>
+                    <span>
+                      Damaged / Lost: <b className="figure" style={{ color: damagedRows.length ? 'var(--danger-text)' : 'var(--text)' }}>{damagedRows.length}</b>
+                    </span>
+                    <span style={{ color: 'var(--muted)' }}>
+                      {outstandingRows.length > 0
+                        ? `${outstandingRows.length} row(s) still outstanding — the booking stays On Rent until every line is terminal.`
+                        : 'All rows resolved — completing this session dispatches the Return.'}
+                    </span>
+                  </div>
+                </Card>
+              </div>
+
+              {/* ── right rail — progress, the gate checklist, the completion gate ── */}
+              <FloorAside collapsible={desktop} side="right" width={300} label="Return summary">
+                <Card title="Progress">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
+                    <Ring pct={pct} />
+                    <div style={{ minWidth: 0 }}>
+                      <div className="figure" style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--text)' }}>
+                        {totalUnits} units · {backUnits} back
+                      </div>
+                      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 2 }}>
+                        Return job: {jobState}
+                      </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </Card>
+                </Card>
 
-          <Card title="Quick Actions">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 7 }}>
-              {(['Print', 'Share', 'More'] as const).map((a, i) => (
+                {/*
+                  §12.1's session gates — every condition named, pass or fail,
+                  inline in the rail. A blocked gate is never a toast (Law 12);
+                  the reason stays on screen while the block lasts.
+                */}
+                <Card title="Session Gates">
+                  <div role="status" style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    {gates.map((g) => (
+                      <div key={g.label} style={{ display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 'var(--t-meta)', lineHeight: 1.45 }}>
+                        <Icon
+                          name={g.pass ? 'checklist' : 'alert_triangle'}
+                          size={13}
+                          style={{ color: g.pass ? 'var(--success-text)' : 'var(--progress-text)', flexShrink: 0, marginTop: 1 }}
+                        />
+                        <span style={{ minWidth: 0 }}>
+                          <span style={{ display: 'block', fontWeight: 600, color: g.pass ? 'var(--text2)' : 'var(--progress-text)' }}>
+                            {g.label}
+                          </span>
+                          {g.detail && <span style={{ display: 'block', color: 'var(--muted)' }}>{g.detail}</span>}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  {/* §12.2 — information, not a gate: Return is multi-session. */}
+                  <p style={{ margin: '9px 0 0', paddingTop: 9, borderTop: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
+                    {outstandingRows.length > 0
+                      ? `${outstandingRows.length} item(s) still outstanding — this session can complete without them; the booking stays On Rent for a later session.`
+                      : 'All items resolved — completing dispatches the Return and moves the booking to Returned if the write is accepted.'}
+                  </p>
+                </Card>
+
                 <button
-                  key={a}
                   type="button"
-                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '11px 4px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center' }}
+                  disabled={!canComplete}
+                  onClick={completeSession}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 7,
+                    width: '100%',
+                    minHeight: 44,
+                    padding: '0 16px',
+                    borderRadius: 'var(--r-btn)',
+                    fontSize: 'var(--t-ui)',
+                    fontWeight: 600,
+                    fontFamily: 'inherit',
+                    cursor: canComplete ? 'pointer' : 'not-allowed',
+                    ...(canComplete ? BLUE_PRIMARY : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
+                  }}
                 >
-                  <Icon name={i === 0 ? 'file' : i === 1 ? 'external_link' : 'more_vert'} size={16} style={{ color: 'var(--text2)' }} />
-                  {a}
+                  <Icon name="checklist" size={15} />
+                  {dispatching ? 'Recording…' : allResolved ? 'Complete Return' : 'Complete Session'}
                 </button>
-              ))}
+
+                {/* Law 12 — inline and persistent, never a toast. This is what
+                    the operator sees instead of being navigated away from a
+                    session that was never recorded. */}
+                {dispatchError && <ErrorBanner title="This return was not recorded" message={dispatchError} />}
+
+                <Card title="Items Not Returned">
+                  {missingRows.length === 0 ? (
+                    <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>No items are Not Returned.</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {missingRows.map((r) => {
+                        const mark = marks[r.key]
+                        const reason = mark?.reason ?? ''
+                        return (
+                          <div key={r.key}>
+                            <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{r.name}</div>
+                            {r.serial && <div className="identifier" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{r.serial}</div>}
+                            <input
+                              value={reason}
+                              onChange={(e) => patchMark(r.key, { reason: e.target.value })}
+                              placeholder={`Reason (min ${MIN_REASON} characters)`}
+                              aria-label={`Reason ${r.name} was not returned`}
+                              /* Law 15 — a typed field on a touch device, inside a
+                                 blocking gate: the Law 10 reason is entered here. */
+                              style={{ width: '100%', minHeight: 44, marginTop: 5, padding: '0 8px', borderRadius: 'var(--r-input)', border: `1px solid ${reason.trim().length < MIN_REASON ? 'var(--danger)' : 'var(--input-border)'}`, background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
+                            />
+                            {/* §8.5 — a decision, never a rupee figure, on this screen. */}
+                            <select
+                              value={mark?.decision ?? ''}
+                              onChange={(e) => {
+                                if (e.target.value === '') return
+                                patchMark(r.key, { decision: e.target.value as NotReturnedDecision })
+                              }}
+                              aria-label={`Decision for ${r.name}`}
+                              style={{ width: '100%', minHeight: 44, marginTop: 6, borderRadius: 'var(--r-input)', border: `1px solid ${mark?.decision ? 'var(--input-border)' : 'var(--danger)'}`, background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
+                            >
+                              <option value="" disabled>Choose a decision…</option>
+                              {DECISIONS.map((d) => (
+                                <option key={d} value={d}>{d}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </Card>
+
+                <Card title="Signatures">
+                  {/* §9 — captured before completion (gate 6); written into the
+                      session notes with the dispatch. */}
+                  <div style={{ paddingBottom: 7, borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Returning person</div>
+                    {sigReturning ? (
+                      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--success-text)' }}>
+                        Signed · {sigReturning.name} · {formatAdDateTime(sigReturning.atIso)}
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 'var(--sp-sm)', marginTop: 5 }}>
+                        <input
+                          value={returningName}
+                          onChange={(e) => setReturningName(e.target.value)}
+                          placeholder="Who is returning the gear?"
+                          aria-label="Returning person's name"
+                          style={{ flex: 1, minWidth: 0, minHeight: 44, padding: '0 8px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={captureReturning}
+                          disabled={returningName.trim() === ''}
+                          style={{ minHeight: 44, padding: '0 10px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card2)', color: returningName.trim() === '' ? 'var(--muted)' : 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', cursor: returningName.trim() === '' ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          Capture
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <SigRow
+                    label="Warehouse staff"
+                    sig={sigWarehouse}
+                    required
+                    {...(user && user.name.trim() !== ''
+                      ? { onCapture: captureWarehouse }
+                      : {
+                          unavailable:
+                            'The signed-in account carries no name, so a warehouse signature cannot be attested. The identity is the signed-in operator or there is no signature.',
+                        })}
+                  />
+                  {/* §9 — optional, and uncapturable: no witness identity exists on this screen to sign as. */}
+                  <SigRow label="Witness" sig={null} required={false} unavailable={WITNESS_UNAVAILABLE} />
+
+                  <p style={{ margin: '9px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
+                    Signatures are written into <span className="identifier">operation_sessions.notes</span> with the
+                    dispatch — no dedicated signature record exists on this write path yet, and nothing is saved
+                    until the session completes.
+                  </p>
+                </Card>
+
+                <Card title="Return Notes">
+                  <textarea
+                    value={sessionNotes}
+                    onChange={(e) => setSessionNotes(e.target.value)}
+                    placeholder="Notes for this return session (saved onto the session when it completes)…"
+                    aria-label="Return session notes"
+                    rows={3}
+                    style={{ width: '100%', minHeight: 64, padding: '8px 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none', resize: 'vertical' }}
+                  />
+                  <p style={{ margin: '7px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
+                    Written to <span className="identifier">operation_sessions.notes</span> with the dispatch —
+                    nothing is saved until the session completes.
+                  </p>
+                </Card>
+
+                {/* Evidence is a viewer, not a verb (spec 03). The damage photo
+                    counts on this screen are local tallies; the files live in
+                    the Evidence Workspace. */}
+                <Card title="Evidence">
+                  <Link
+                    to={`/rentals/${id}/evidence`}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44, fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' }}
+                  >
+                    <Icon name="external_link" size={14} />
+                    Compare in Evidence
+                  </Link>
+                  <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
+                    Damage photo counts on this screen are local to this session — no file is uploaded from here;
+                    capture, matching and storage live in the Evidence Workspace.
+                  </p>
+                </Card>
+
+                {scanLog.length > 0 && (
+                  <div style={{ ...cardStyle, padding: 11 }}>
+                    <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Scan log</div>
+                    {/* §8.3 — results are announced to screen readers. */}
+                    <div role="status" aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
+                      {scanLog.map((l, i) => (
+                        <span key={i} style={{ fontSize: 'var(--t-meta)', color: l.startsWith('✕') ? 'var(--danger-text)' : 'var(--text2)' }}>
+                          {l}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </FloorAside>
             </div>
-          </Card>
 
-          {scanLog.length > 0 && (
-            <div style={{ ...cardStyle, padding: 11 }}>
-              <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Scan log</div>
-              <div role="status" aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
-                {scanLog.map((l, i) => (
-                  <span key={i} style={{ fontSize: 'var(--t-meta)', color: l.startsWith('✕') ? 'var(--danger-text)' : 'var(--text2)' }}>{l}</span>
-                ))}
-              </div>
+            {/* §11 — footer. The single EXIT, and nothing else: the completion
+                gate lives in the rail beside its blockers (spec 03 — exactly
+                one primary per workspace). */}
+            <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '12px 14px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => navigate(`/rentals/${id}`)}
+                style={{ minHeight: 44, padding: '0 14px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger-text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                Cancel Return
+              </button>
+              {/* Was "Saving is automatic". Nothing on this screen autosaves —
+                  triage lives in React state until the session dispatches —
+                  and a false persistence claim beside a completion gate is the
+                  worst place for one. */}
+              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                {outstandingRows.length
+                  ? `${outstandingRows.length} item${outstandingRows.length > 1 ? 's' : ''} outstanding`
+                  : 'All items resolved'}
+                {' · Nothing is saved until the session completes — cancelling discards this triage'}
+              </span>
             </div>
-          )}
-        </FloorAside>
-      </div>
 
-      {/* Law 12 — the dispatch failure is inline and persistent, right where the
-          operator pressed. It replaces a session that used to flip to Complete
-          whether or not anything was written. */}
-      {dispatchError && <ErrorBanner title="This return was not recorded" message={dispatchError} />}
-
-      {/* ── §11 footer — two buttons, primary blue, no Save Draft ── */}
-      <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '12px 14px', flexWrap: 'wrap' }}>
-        <button
-          type="button"
-          onClick={() => navigate(`/rentals/${id}`)}
-          style={{ minHeight: 44, padding: '0 14px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger-text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-        >
-          Cancel Return
-        </button>
-        {/* Was "Saving is automatic". Nothing on this screen autosaves — triage
-            lives in React state until Complete Return dispatches it — and a
-            false persistence claim beside a completion gate is the worst place
-            for one. */}
-        <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Nothing is saved until you complete this session</span>
-        <span style={{ marginLeft: 'auto' }} title={gateSummary ?? undefined}>
-          <button
-            type="button"
-            disabled={!canCompleteSession}
-            onClick={completeSession}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 7,
-              height: 36,
-              padding: '0 16px',
-              borderRadius: 'var(--r-btn)',
-              fontSize: 'var(--t-ui)',
-              fontWeight: 600,
-              fontFamily: 'inherit',
-              cursor: canCompleteSession ? 'pointer' : 'not-allowed',
-              ...(canCompleteSession ? BLUE_PRIMARY : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
-            }}
-          >
-            <Icon name="checklist" size={15} />
-            {primaryLabel}
-          </button>
-        </span>
-      </div>
-      {gateSummary && (
-        <p style={{ margin: '-4px 2px 0', textAlign: 'right', fontSize: 'var(--t-meta)', color: 'var(--progress-text)', fontWeight: 600 }}>{gateSummary}</p>
-      )}
-      <p style={{ margin: '-4px 2px 0', textAlign: 'right', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-        {allResolved
-          ? 'This dispatches the Return; the booking moves to Returned only if the write is accepted.'
-          : `This closes Session ${activeId.slice(1)} only; ${outstanding.length} item(s) remain outstanding.`}
-      </p>
-
-      <BarcodeScannerModal
-        isOpen={showScanner}
-        onClose={() => setShowScanner(false)}
-        mode="return"
-        bookingId={id}
-        items={scannableUnits}
-        onItemScanned={(item) => {
-          scan(item.id)
-        }}
-      />
+            <BarcodeScannerModal
+              isOpen={showScanner}
+              onClose={() => setShowScanner(false)}
+              mode="return"
+              bookingId={id}
+              items={scannableUnits}
+              onItemScanned={(item) => {
+                receive(item.id)
+              }}
+            />
+          </div>
+        )}
+      </PageBody>
     </div>
   )
 }
@@ -949,20 +1402,125 @@ export default function ReturnWorkspace() {
 const bigScanBtn = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--sp-sm)', height: 44, padding: '0 18px', borderRadius: 'var(--r-btn)', fontSize: 'var(--t-ui)', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer' } as const
 
 /**
- * `unavailable` is the reason a row can never be signed on this screen (today:
- * Witness, which has no identity to capture). It takes precedence over
- * `onCapture`, which such a row is not given at all — the Capture control
- * renders through `Unavailable` so the reason is attached to it on hover AND on
- * a warehouse tablet's long-press, rather than the row silently signing someone.
+ * §6.3 — condition is a radio group, one value, never two. Supplying it is
+ * what marks the line Inspected on the write side (`return_lines` CHECK :382
+ * takes condition, inspector and time together).
  */
-function SigRow({ label, sig, onCapture, required, disabled, unavailable }: { label: string; sig: Sig | undefined; onCapture?: () => void; required: boolean; disabled: boolean; unavailable?: string }) {
-  const capture = { height: 26, padding: '0 9px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'var(--card2)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', whiteSpace: 'nowrap' } as const
+function ConditionPicker({
+  value,
+  onChange,
+  name,
+  compact,
+}: {
+  value: ItemCondition | undefined
+  onChange: (c: ItemCondition) => void
+  name: string
+  compact?: boolean
+}) {
+  return (
+    <div role="radiogroup" aria-label={`Condition of ${name}`} style={{ display: 'flex', flexWrap: 'wrap', gap: compact ? 4 : 6 }}>
+      {CONDITIONS.map((c) => {
+        const on = value === c
+        return (
+          <button
+            key={c}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => onChange(c)}
+            style={{
+              height: compact ? 24 : 30,
+              padding: compact ? '0 7px' : '0 10px',
+              borderRadius: 'var(--r-xs)',
+              border: `1px solid ${on ? STATUS[CONDITION_TONE[c]].fg : 'var(--border)'}`,
+              background: on ? STATUS[CONDITION_TONE[c]].bg : 'transparent',
+              color: on ? STATUS[CONDITION_TONE[c]].fg : 'var(--text2)',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            {c}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * Damage detail for a Damaged / Lost row. The description and the local photo
+ * tally ride the session notes on dispatch; no `evidence_files` write path
+ * exists on this screen, and the panel says so instead of dressing the counter
+ * up as an upload. The seed build's "Send for Manager Approval" flip is gone:
+ * nothing was routed anywhere, and a control that claims routing it does not
+ * perform fabricates success.
+ */
+function DamagePanel({
+  mark,
+  name,
+  onDescription,
+  onAddPhoto,
+}: {
+  mark: Mark
+  name: string
+  onDescription: (v: string) => void
+  onAddPhoto: () => void
+}) {
+  const photos = mark.damagePhotos ?? 0
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 0 0' }}>
+      <textarea
+        value={mark.damageDescription ?? ''}
+        onChange={(e) => onDescription(e.target.value)}
+        placeholder={`Describe the ${mark.condition === 'Lost' ? 'loss' : 'damage'}`}
+        aria-label={`Damage description for ${name}`}
+        style={{ width: '100%', minHeight: 46, padding: 7, borderRadius: 'var(--r-input)', border: `1px solid ${(mark.damageDescription ?? '').trim() === '' ? 'var(--danger)' : 'var(--input-border)'}`, background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
+      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+        <span className="figure" style={{ fontSize: 'var(--t-meta)', color: photos > 0 ? 'var(--success-text)' : 'var(--danger-text)' }}>
+          {photos} photo(s)
+        </span>
+        <RowAction label="Count a Photo" onClick={onAddPhoto} />
+        <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+          A local count — the file itself is captured in the Evidence Workspace.
+        </span>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * `unavailable` is the reason a row can never be signed on this screen (the
+ * Witness, which has no identity to capture; the Warehouse row when the staff
+ * record carries no name). It takes precedence over `onCapture`, which such a
+ * row is not given at all — the Capture control renders through `Unavailable`
+ * so the reason is attached on hover AND on a warehouse tablet's long-press,
+ * rather than the row silently signing someone.
+ */
+function SigRow({
+  label,
+  sig,
+  onCapture,
+  required,
+  unavailable,
+}: {
+  label: string
+  sig: Sig | null
+  onCapture?: () => void
+  required: boolean
+  unavailable?: string
+}) {
+  const capture = { minHeight: 44, padding: '0 10px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card2)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', whiteSpace: 'nowrap' } as const
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{label}</div>
         {sig ? (
-          <div style={{ fontSize: 'var(--t-meta)', color: 'var(--success-text)' }}>Signed · {sig.at}</div>
+          <div style={{ fontSize: 'var(--t-meta)', color: 'var(--success-text)' }}>
+            Signed · {sig.name} · {formatAdDateTime(sig.atIso)}
+          </div>
         ) : (
           // §9 — witness renders as "Optional", never as "Pending".
           <div style={{ fontSize: 'var(--t-meta)', color: required ? 'var(--progress-text)' : 'var(--muted)' }}>
@@ -978,12 +1536,7 @@ function SigRow({ label, sig, onCapture, required, disabled, unavailable }: { la
             </button>
           </Unavailable>
         ) : (
-          <button
-            type="button"
-            onClick={onCapture}
-            disabled={disabled}
-            style={{ ...capture, color: 'var(--text2)', cursor: disabled ? 'not-allowed' : 'pointer' }}
-          >
+          <button type="button" onClick={onCapture} style={{ ...capture, color: 'var(--text2)', cursor: 'pointer' }}>
             Capture
           </button>
         ))}
@@ -991,333 +1544,50 @@ function SigRow({ label, sig, onCapture, required, disabled, unavailable }: { la
   )
 }
 
-function UnitRow({
-  index,
-  u,
-  isOpen,
-  onToggle,
-  onScan,
-  onMarkMissing,
-  onUndoMissing,
-  onSetCondition,
-  onSetAccessory,
-  onDamageField,
-  onAddPhoto,
-  onSendForApproval,
-  onSaveInspection,
-  onCancel,
-  onSetNote,
-  id,
-}: {
-  index: number
-  u: ReturnUnit
-  isOpen: boolean
-  onToggle: () => void
-  onScan: () => void
-  onMarkMissing: () => void
-  onUndoMissing: () => void
-  onSetCondition: (c: Condition) => void
-  onSetAccessory: (name: string, present: boolean) => void
-  onDamageField: (patch: Partial<DamageDetail>) => void
-  onAddPhoto: () => void
-  onSendForApproval: () => void
-  onSaveInspection: () => void
-  onCancel: () => void
-  onSetNote: (note: string) => void
-  id: string
-}) {
-  const itemTone = STATUS[ITEM_TONE[u.state]]
-
-  return (
-    <>
-      <tr style={{ borderBottom: isOpen ? undefined : '1px solid var(--border)' }}>
-        <td className="figure" style={{ ...td, width: 26, color: 'var(--muted)' }}>{index}</td>
-        <td style={td}>
-          <span style={{ fontWeight: 600 }}>{u.name}</span>
-          <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{u.category}</span>
-        </td>
-        <td className="identifier" style={{ ...td, color: 'var(--text2)' }}>
-          <Link to={`/inventory/${u.serial}`} style={{ color: 'inherit', textDecoration: 'none' }}>{u.serial}</Link>
-        </td>
-        <td className="figure" style={td}>1</td>
-        <td style={td}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', height: 20, padding: '0 8px', borderRadius: 'var(--r-badge)', background: itemTone.bg, color: itemTone.fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
-            {ITEM_STATE_LABEL[u.state]}
-          </span>
-          {u.ret && <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>{u.ret.at.split(', ')[1] ?? u.ret.at}</div>}
-        </td>
-        <td style={td}>
-          {u.condition ? (
-            <span style={{ display: 'inline-flex', alignItems: 'center', height: 19, padding: '0 7px', borderRadius: 5, background: STATUS[CONDITION_TONE[u.condition]].bg, color: STATUS[CONDITION_TONE[u.condition]].fg, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
-              {u.condition}
-            </span>
-          ) : (
-            <span style={{ color: 'var(--muted)' }}>—</span>
-          )}
-        </td>
-        <td style={td}>
-          {u.state === 'Returned' ? (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', color: u.inspection === 'Inspected' ? 'var(--success-text)' : 'var(--progress-text)', fontWeight: 600 }}>
-              <Icon name={u.inspection === 'Inspected' ? 'checklist' : 'alert_triangle'} size={12} />
-              {u.inspection}
-            </span>
-          ) : (
-            <span style={{ color: 'var(--muted)' }}>—</span>
-          )}
-        </td>
-        {/* An internal ordinal, not a record number — ruling §2.1 leaves the
-            session model alone (it has its own gates, signatures and close) but
-            it must not read as an identifier. Was a raw `S1` in an `identifier`
-            cell; labelled now. */}
-        <td style={{ ...td, color: 'var(--muted)' }}>{u.sessionId ? `Session ${u.sessionId.slice(1)}` : '—'}</td>
-        <td style={{ ...td, width: 150 }}>
-          <span style={{ display: 'flex', gap: 'var(--sp-xs)', justifyContent: 'flex-end', alignItems: 'center' }}>
-            {u.state === 'Picked Up' && <RowAction label="Mark Returned" onClick={onScan} />}
-            {u.state === 'Picked Up' && <RowAction label="Not Returned" onClick={onMarkMissing} />}
-            {u.state === 'Missing' && <RowAction label="Mark Returned" onClick={onScan} />}
-            {u.state === 'Missing' && <RowAction label="Undo" onClick={onUndoMissing} />}
-            <button type="button" onClick={onToggle} aria-label={isOpen ? 'Collapse inspection panel' : 'Expand inspection panel'} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--muted)', display: 'flex', alignItems: 'center' }}>
-              <Icon name={isOpen ? 'chevron_up' : 'chevron_down'} size={16} />
-            </button>
-          </span>
-        </td>
-      </tr>
-
-      {isOpen && (
-        <tr style={{ borderBottom: '1px solid var(--border)' }}>
-          <td colSpan={9} style={{ padding: 0, background: 'var(--card2)' }}>
-            <UnitDetail
-              u={u}
-              onSetCondition={onSetCondition}
-              onSetAccessory={onSetAccessory}
-              onDamageField={onDamageField}
-              onAddPhoto={onAddPhoto}
-              onSendForApproval={onSendForApproval}
-              onSaveInspection={onSaveInspection}
-              onCancel={onCancel}
-              onSetNote={onSetNote}
-              id={id}
-            />
-          </td>
-        </tr>
-      )}
-    </>
-  )
-}
-
-/**
- * The inspection/triage panel, lifted out of `UnitRow` so the SAME panel serves
- * both layouts. Above 768 it is the expanded row inside a `<td colSpan>`; below
- * 768 the table is gone entirely (shell rule — "tables become card rows below
- * 768") and this renders inside the unit's card. One panel, so the phone and
- * the desktop can never drift into two different triage flows.
- */
-function UnitDetail({
-  u,
-  onSetCondition,
-  onSetAccessory,
-  onDamageField,
-  onAddPhoto,
-  onSendForApproval,
-  onSaveInspection,
-  onCancel,
-  onSetNote,
-  id,
-}: {
-  u: ReturnUnit
-  onSetCondition: (c: Condition) => void
-  onSetAccessory: (name: string, present: boolean) => void
-  onDamageField: (patch: Partial<DamageDetail>) => void
-  onAddPhoto: () => void
-  onSendForApproval: () => void
-  onSaveInspection: () => void
-  onCancel: () => void
-  onSetNote: (note: string) => void
-  id: string
-}) {
-  const needsDamagePanel = u.condition === 'Damaged' || u.condition === 'Lost'
-  const route = u.condition ? routeFor(u.condition) : null
-
-  return (
-    <div style={{ padding: 14 }}>
-      {u.state !== 'Returned' ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-          <Icon name="info" size={14} />
-          Pickup: {u.pickup.at} · {u.pickup.by} ·{' '}
-          <Link to={`/rentals/${id}/evidence`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }}>View Pickup Photos ({u.pickup.photos})</Link>
-          <span style={{ marginLeft: 'auto', color: 'var(--muted)' }}>Scan this item to begin inspection.</span>
-        </div>
-      ) : (
-        <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--sp-lg)' }}>
-            <div>
-              <div style={panelTitle}>Pickup Info</div>
-              <div style={panelLine}>{u.pickup.at}</div>
-              <div style={panelLine}>{u.pickup.by}</div>
-              <Link to={`/rentals/${id}/evidence`} style={panelLink}>View Pickup Photos ({u.pickup.photos})</Link>
-            </div>
-
-            <div>
-              <div style={panelTitle}>Return Info</div>
-              <div style={panelLine}>Returned by {u.ret?.by ?? '—'}</div>
-              <div style={panelLine}>{u.ret?.at ?? '—'}</div>
-              <Link to={`/rentals/${id}/evidence`} style={panelLink}>View Return Photos ({u.ret?.photos ?? 0})</Link>
-            </div>
-
-            <div>
-              <div style={panelTitle}>Condition</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {CONDITIONS.map((c) => {
-                  const on = u.condition === c
-                  return (
-                    <button
-                      key={c}
-                      type="button"
-                      aria-pressed={on}
-                      onClick={() => onSetCondition(c)}
-                      style={{
-                        height: 26,
-                        padding: '0 9px',
-                        borderRadius: 'var(--r-xs)',
-                        border: `1px solid ${on ? STATUS[CONDITION_TONE[c]].fg : 'var(--border)'}`,
-                        background: on ? STATUS[CONDITION_TONE[c]].bg : 'transparent',
-                        color: on ? STATUS[CONDITION_TONE[c]].fg : 'var(--text2)',
-                        fontSize: 'var(--t-meta)',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      {c}
-                    </button>
-                  )
-                })}
-              </div>
-              {route && <div style={{ marginTop: 7, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Routes to {route.queue} → {route.then}</div>}
-            </div>
-
-            <div>
-              <div style={panelTitle}>Accessories</div>
-              {u.accessories && u.accessories.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
-                  {u.accessories.map((a) => (
-                    <div key={a.name} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)' }}>
-                      <span style={{ flex: 1, color: a.present === false ? 'var(--danger-text)' : 'var(--text2)' }}>{a.name}</span>
-                      <button type="button" onClick={() => onSetAccessory(a.name, true)} style={miniToggle(a.present === true, 'in')}>Present</button>
-                      <button type="button" onClick={() => onSetAccessory(a.name, false)} style={miniToggle(a.present === false, 'danger')}>Missing</button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>No accessory checklist on this item.</p>
-              )}
-            </div>
-
-            <div>
-              <div style={panelTitle}>Damage Details</div>
-              {needsDamagePanel ? (
-                <>
-                  <textarea
-                    value={u.damage?.description ?? ''}
-                    onChange={(e) => onDamageField({ description: e.target.value })}
-                    placeholder="Describe the damage"
-                    aria-label={`Damage description for ${u.name}`}
-                    style={{ width: '100%', minHeight: 46, padding: 7, borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
-                  />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginTop: 6 }}>
-                    <span className="figure" style={{ fontSize: 'var(--t-meta)', color: (u.damage?.photos ?? 0) > 0 ? 'var(--success-text)' : 'var(--danger-text)' }}>
-                      {u.damage?.photos ?? 0} photo(s)
-                    </span>
-                    <RowAction label="Add Photo" onClick={onAddPhoto} />
-                  </div>
-                  {/* §13.1 — Warehouse routes it; no cost field, no amount. */}
-                  <div style={{ marginTop: 7 }}>
-                    {u.damage?.routedForApproval ? (
-                      <span style={{ fontSize: 'var(--t-meta)', color: 'var(--success-text)', fontWeight: 600 }}>Sent for Manager approval</span>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={(u.damage?.photos ?? 0) === 0}
-                        onClick={onSendForApproval}
-                        title={(u.damage?.photos ?? 0) === 0 ? 'Evidence required before routing for approval' : undefined}
-                        style={{ height: 26, padding: '0 9px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'var(--card2)', color: (u.damage?.photos ?? 0) === 0 ? 'var(--muted)' : 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: (u.damage?.photos ?? 0) === 0 ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
-                      >
-                        Send for Manager Approval
-                      </button>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>No damage recorded.</p>
-              )}
-            </div>
-          </div>
-
-          <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-            <label style={{ ...panelTitle, display: 'block' }} htmlFor={`note-${u.id}`}>Inspector Note</label>
-            <textarea
-              id={`note-${u.id}`}
-              value={u.note ?? ''}
-              onChange={(e) => onSetNote(e.target.value)}
-              placeholder="Notes for this inspection…"
-              style={{ width: '100%', minHeight: 36, padding: 7, borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
-            />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--sp-sm)', marginTop: 9 }}>
-              <button type="button" onClick={onCancel} style={{ height: 30, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!u.condition}
-                onClick={onSaveInspection}
-                style={{
-                  height: 30,
-                  padding: '0 14px',
-                  borderRadius: 'var(--r-btn)',
-                  fontSize: 'var(--t-meta)',
-                  fontWeight: 600,
-                  fontFamily: 'inherit',
-                  cursor: u.condition ? 'pointer' : 'not-allowed',
-                  ...(u.condition ? ACCENT_OUTLINE : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
-                }}
-              >
-                Save Inspection
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
-
-const panelTitle = { fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 6 } as const
-const panelLine = { fontSize: 'var(--t-meta)', color: 'var(--text2)' } as const
-const panelLink = { display: 'inline-block', marginTop: 4, fontSize: 'var(--t-meta)', color: 'var(--link)', fontWeight: 600, textDecoration: 'none' } as const
-
-function miniToggle(active: boolean, tone: 'in' | 'danger') {
-  return {
-    height: 22,
-    padding: '0 7px',
-    borderRadius: 5,
-    border: `1px solid ${active ? STATUS[tone].fg : 'var(--border)'}`,
-    background: active ? STATUS[tone].bg : 'transparent',
-    color: active ? STATUS[tone].fg : 'var(--muted)',
-    fontSize: 'var(--t-meta)',
-    fontWeight: 600,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-  } as const
-}
-
 function RowAction({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      style={{ height: 22, padding: '0 7px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
+      style={{
+        height: 22,
+        padding: '0 7px',
+        borderRadius: 'var(--r-xs)',
+        border: '1px solid var(--border)',
+        background: 'var(--card2)',
+        color: 'var(--text2)',
+        fontSize: 'var(--t-meta)',
+        fontWeight: 600,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        whiteSpace: 'nowrap',
+      }}
     >
       {label}
     </button>
+  )
+}
+
+function Ring({ pct }: { pct: number }) {
+  const r = 26
+  const c = 2 * Math.PI * r
+  return (
+    <svg width={64} height={64} role="img" aria-label={`${pct}% returned`} style={{ flexShrink: 0 }}>
+      <circle cx={32} cy={32} r={r} fill="none" stroke="var(--card2)" strokeWidth={7} />
+      <circle
+        cx={32}
+        cy={32}
+        r={r}
+        fill="none"
+        stroke="var(--success)"
+        strokeWidth={7}
+        strokeLinecap="round"
+        strokeDasharray={`${(pct / 100) * c} ${c}`}
+        transform="rotate(-90 32 32)"
+      />
+      <text x={32} y={36} textAnchor="middle" fontSize={13} fontWeight={700} fill="var(--text)">
+        {pct}%
+      </text>
+    </svg>
   )
 }

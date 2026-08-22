@@ -9,7 +9,7 @@ import ScannerFab from './components/shell/ScannerFab'
 import { ErrorBoundary } from './components/shell/ErrorBoundary'
 import { LoadingSkeleton, RestrictedState } from './components/ui/StateViews'
 import Placeholder from './modules/Placeholder'
-import { NAV, isMoneySurface } from './data/nav'
+import { NAV, isMoneySurface, isStaffSurface, FLOOR_ROUTE_SUFFIXES } from './data/nav'
 import { ToastProvider } from './components/ui/Toast'
 import { CommandPalette } from './components/shell/CommandPalette'
 import Login from './modules/auth/Login'
@@ -18,7 +18,7 @@ import ResetPassword from './modules/auth/ResetPassword'
 import ScreenLock from './modules/auth/ScreenLock'
 import { useAuth } from './lib/auth'
 import { useViewport } from './lib/device'
-import { canViewMoney } from './lib/rbac'
+import { canViewMoney, isStaff } from './lib/rbac'
 
 /* ── lazy-loaded route pages (code-splitting) ─────────────────────────── */
 const Today             = lazy(() => import('./modules/today/Today'))
@@ -744,51 +744,40 @@ export default function App() {
   )
 }
 
-/** Nav destinations that have a route but no screen yet. Derived, not hand-listed. */
-const BUILT = new Set([
-  '/today',
-  '/rentals',
-  '/reports/expenses',
-  '/admin/backup',
-  '/clients/memberships',
-  '/admin/audit',
-  '/reports/clients',
-  '/reports/inventory',
-  '/admin/numbering',
-  '/crew',
-  '/inventory',
-  '/calendar',
-  '/documents',
-  '/operations',
-  '/finance',
-  '/settings',
-  '/clients',
-  '/clients/new',
-  '/clients/C-1',
-  '/clients/duplicates',
-  '/clients/import',
-  '/clients/referral/new',
-  '/reports',
-  /* Nav item 10. Must be listed, or `UNBUILT` below derives a second `/tools`
-     route from NAV and mounts a Placeholder against the real landing page. */
-  '/tools',
-  '/tools/depreciation',
-  '/tools/pricing',
-  '/admin/audit-log',
-  '/admin/activity-log',
-  '/tools/cinematography',
-  '/settings/tools',
-  '/finance/documents',
-  '/reports/pulse',
-  '/reports/cash-flow',
-  '/reports/working-capital',
-  '/rentals/new',
-  '/rentals/B-715/packing',
-  '/rentals/B-715/handover',
-  '/rentals/B-715/return',
-  '/rentals/B-715/reset',
-  '/rentals/B-715/evidence',
-])
+/**
+ * Which of NAV's destinations already mount a real screen, so `UNBUILT` below
+ * knows not to shadow them with a Placeholder route.
+ *
+ * INVARIANT — an entry here is only meaningful if the `UNBUILT` derivation can
+ * produce its path. That derivation walks `NAV`, and `NAV` is **flat** (the
+ * fixed 11, no `children` anywhere — `data/nav.ts` keeps `NavChild` as a type
+ * only), so the only paths it can ever yield are the eleven top-level `to`s
+ * listed below. Nothing else belongs in this set.
+ *
+ * It held ~30 other entries until 22 Aug 2026 ('/clients/C-1',
+ * '/rentals/B-715/packing', '/reports/expenses', …) — fossils from when NAV
+ * had children. They could never match anything `UNBUILT` produces, but they
+ * read as routing config and invited the next author to "register" a new
+ * screen here to no effect. Audit item 3.5 cut the set to the producible
+ * eleven. All eleven are built today, so `UNBUILT` is empty; the machinery
+ * stays for the day a nav item ships before its screen — and if NAV ever
+ * regains children, their paths join this set the day their screens exist.
+ */
+const BUILT = new Set(
+  [
+    '/rentals/new', //  1  New Rental
+    '/today', //        2  Today
+    '/operations', //   3  Operation
+    '/rentals', //      4  Rentals
+    '/calendar', //     5  Calendar
+    '/crew', //         6  Crew Assist
+    '/inventory', //    7  Inventory
+    '/clients', //      8  Clients
+    '/finance', //      9  Finance
+    '/tools', //       10  Tools
+    '/settings', //    11  Settings
+  ],
+)
 
 const UNBUILT: Array<{ to: string; title: string; crumbs: Crumb[] }> = NAV.flatMap((s) => {
   const self = { to: s.to, title: s.label, crumbs: [{ label: s.label }] }
@@ -887,19 +876,13 @@ function MockBanner() {
   )
 }
 
-/**
- * DEVICES.md §7 build order item 3 — "apply `FLOOR_UI_SCALE` on Pack /
- * Handover / Return / Reset / Scanner rather than leaving it a manual
- * preference." These five suffixes are the one place that decides "is this a
- * floor screen" — previously each workspace hardcoded its own
- * `data-floor="true"` on its root div, which meant a screen renamed or a new
- * floor route added could silently lose the scale. Evidence carries it too:
- * it was already opted in from earlier work and belongs to the same
- * pack/return/reset family read at arm's length. Scanner needs no entry here
- * — `ScannerFab` is a single global component, not a route, and already
- * carries its own `data-floor="true"` correctly.
+/*
+ * FLOOR_ROUTE_SUFFIXES moved to `data/nav.ts` on 22 Aug 2026 — it gained a
+ * second reader (`isStaffSurface`, the Client route-reach guard) and two
+ * copies of the same five suffixes would drift. The DEVICES.md §7 rationale
+ * ("apply FLOOR_UI_SCALE on Pack/Handover/Return/Reset rather than leaving it
+ * a manual preference") travels with the constant.
  */
-const FLOOR_ROUTE_SUFFIXES = ['/packing', '/handover', '/return', '/reset', '/evidence']
 
 /**
  * **The crumb reads the route, not a literal.**
@@ -989,8 +972,18 @@ function Shell({
    * The report screens each drop their own figures via `useCanViewMoney()`, so
    * this is defence in depth rather than the only gate — but a money-blind role
    * should not reach a hollowed-out Finance report at all.
+   *
+   * The second clause is the same backstop for the external role (22 Aug 2026,
+   * audit theme 3 #7): a Client session typing a floor URL, /clients/import,
+   * /clients/duplicates or /crew used to get the screen with RLS-emptied data
+   * — reachable-but-hollowed, exactly what `lib/rbac.ts:isStaff`'s own doc
+   * ("guard every staff surface with this") forbids. Nav omission is handled
+   * in `permittedNav()` over the same `isStaffSurface()` list, so the two
+   * gates cannot disagree.
    */
-  const isForbidden = !canViewMoney(user.role) && isMoneySurface(pathname)
+  const isForbidden =
+    (!canViewMoney(user.role) && isMoneySurface(pathname)) ||
+    (!isStaff(user.role) && isStaffSurface(pathname))
 
   return (
     <div

@@ -653,22 +653,15 @@ export function payoutLedger(assignments: CrewAssignment[] = CREW_DATA): PayoutL
   }
 }
 
-export function crewBilling({
-  crewDays,
-  payoutsPaisa,
-  feePerCrewDayPaisa,
-  expensesPaisa,
-  rechargeExpenses = true,
-}: {
-  crewDays: number
-  payoutsPaisa: Paisa
-  feePerCrewDayPaisa: Paisa
-  expensesPaisa: Paisa
-  rechargeExpenses?: boolean
-}) {
-  const feeTotalPaisa = (feePerCrewDayPaisa * crewDays) as Paisa
-  const costPaisa = (payoutsPaisa + expensesPaisa) as Paisa
-  const marginPaisa = (feeTotalPaisa - (rechargeExpenses ? 0 : expensesPaisa)) as Paisa
-  const billedPaisa = (payoutsPaisa + feeTotalPaisa + (rechargeExpenses ? expensesPaisa : 0)) as Paisa
-  return { feeTotalPaisa, costPaisa, marginPaisa, netMarginPaisa: marginPaisa, billedPaisa }
-}
+/* ── ⛔ a second `crewBilling` was deleted here (item 3.6, 22 Aug 2026) ────
+ *
+ * This file carried its own `crewBilling()` under the same name as
+ * `lib/money.ts:crewBilling` — different field names (`feeTotalPaisa` vs
+ * `coordinationFeePaisa`), a required `feePerCrewDayPaisa` where the engine's
+ * is optional ("Not configured, never zero"), and no null path at all. Nothing
+ * imported it — `CrewBooking.tsx` and `lib/__tests__/money.test.ts` both use
+ * the engine's — so it was exactly the §4.35 class of defect: duplication
+ * between engines, each copy right in isolation, waiting for an importer to
+ * pick the wrong one by name. The Financial Engine's version in `lib/money.ts`
+ * is canonical; billing maths does not belong in a seed-data file.
+ */

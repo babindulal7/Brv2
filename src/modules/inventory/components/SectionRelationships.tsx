@@ -105,7 +105,11 @@ export function SectionRelationships() {
                             setContains((prev) => prev.map((x) => (x.id === c.id ? { ...x, quantity: Math.max(1, Number(e.target.value)) } : x)))
                           }
                           className="figure"
-                          style={{ ...inputStyle(), width: 62, height: 28 }}
+                          /* Law 15 — the `height: 28` override defeated inputStyle's
+                             `minHeight: 44` touch floor on the one control in this row
+                             that takes typing. Width stays 62: the floor is 44 and a
+                             quantity is at most a few digits. */
+                          style={{ ...inputStyle(), width: 62 }}
                         />
                       </label>
                       <button

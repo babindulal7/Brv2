@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Input } from '../../components/ui/Input'
@@ -12,7 +12,7 @@ import { Donut, Legend, catColor } from '../../components/ui/Charts'
 import { EmptyState } from '../../components/ui/StateViews'
 import { STATUS } from '../../lib/status'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
-import { canViewMoney } from '../../lib/rbac'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
 import type { Role as SystemRole } from '../../lib/rbac'
 import { useAuth } from '../../lib/auth'
 import { gateContext } from '../../lib/fieldGating'
@@ -46,14 +46,6 @@ import {
   summarySlices,
 } from '../../data/documents'
 import type { CategoryKey, DocRow, RelatedKind, SortKey } from '../../data/documents'
-
-/**
- * `lib/auth.tsx` carries eight *shift* roles; `lib/rbac.ts` is written against
- * Foundation §11's six *system* roles. Mapping rather than casting matters: a
- * cast hands `canViewMoney` a string it has no rule for and it answers `true`.
- * Same table as `RentalsList` — it belongs in `lib/rbac.ts`, which this pass
- * does not own.
- */
 
 const th = {
   textAlign: 'left' as const,
@@ -414,8 +406,11 @@ const CREATE_UNAVAILABLE =
  */
 export default function Documents({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth()
+  /* §8.3 — the shared hook, same call site as every other screen. `role` is
+     still read off the session below, but only for `gateContext`'s field-level
+     gating; the money answer itself has one owner. */
+  const money = useCanViewMoney()
   const role: SystemRole = user ? user.role : 'Client'
-  const money = canViewMoney(role)
   // `gateContext` returns a fresh object each call — memoized so it is a
   // stable dependency for the row-intel memo below instead of invalidating
   // it on every render.
@@ -430,7 +425,24 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   const quickActions = useMemo(() => quickActionsFor(money), [money])
   const total = useMemo(() => categories.reduce((a, c) => a + c.count, 0), [categories])
 
-  const [category, setCategory] = useState<CategoryKey | 'All'>('All')
+  /*
+   * 3.7 — the category selection (the tab strip and the rail's category list,
+   * one shared selection) lives in the URL as `?cat=`, per the house pattern
+   * (Inventory `?tab=`, OperationsQueues `patch()`): a category is linkable
+   * and survives a reload. `replace: true` keeps tab flicks out of the
+   * history stack.
+   *
+   * The key is `cat`, not `tab`, deliberately: this screen is also hosted as
+   * Finance's Documents tab (`embedded`), so its param must never collide
+   * with a `?tab=` that strip may claim.
+   *
+   * Validated against `categories` — the MONEY-FILTERED list — so a
+   * money-blind session pasting `?cat=finance` lands on All rather than being
+   * told a Finance category exists (§14 / Foundation §8.3).
+   */
+  const [params, setParams] = useSearchParams()
+  const catParam = params.get('cat')
+  const category: CategoryKey | 'All' = categories.find((c) => c.key.toLowerCase() === catParam)?.key ?? 'All'
   const [query, setQuery] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -480,7 +492,15 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   }
 
   function pickCategory(c: CategoryKey | 'All') {
-    setCategory(c)
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        if (c === 'All') next.delete('cat')
+        else next.set('cat', c.toLowerCase())
+        return next
+      },
+      { replace: true },
+    )
     setPage(1)
     setMenuFor(null)
   }

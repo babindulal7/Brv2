@@ -1,20 +1,9 @@
-import { PageHeader, Card, ReflowRail, cardStyle, useBandColumns } from '../../components/ui/Page'
+import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { INVENTORY_METRICS, ASSET_HEALTH, TOP_CATEGORIES } from '../../data/inventoryReports'
-import { formatMoney } from '../../lib/money'
-import type { Paisa } from '../../lib/money'
+import { formatMoney, rupees } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-
-function InventoryKpiCard({ label, value, accent, note }: any) {
-  return (
-    <Card style={{ padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', background: `var(--${accent}-bg, var(--card))` }}>
-      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: '24px', fontWeight: 700, color: `var(--${accent})` }}>{value}</div>
-      <div style={{ fontSize: 'var(--t-meta)', color: `var(--${note.tone})` }}>{note.text}</div>
-    </Card>
-  )
-}
 
 /**
  * The export body.
@@ -42,16 +31,17 @@ function inventoryCsv(money: boolean): ReportCsvRow[] {
           [],
           ['Top categories by value'],
           ['Category', 'Asset count', 'Total value'],
-          ...TOP_CATEGORIES.map((c): ReportCsvRow => [c.name, c.count, formatMoney(c.value as Paisa)]),
+          // `TOP_CATEGORIES[].value` is seeded in RUPEES (Rs 4,50,00,000 of
+          // cameras, not Rs 4,50,000). The old unchecked `as Paisa` cast made
+          // formatMoney divide by 100 and print every category 100× too small;
+          // `rupees()` is the sanctioned literal-amount conversion.
+          ...TOP_CATEGORIES.map((c): ReportCsvRow => [c.name, c.count, formatMoney(rupees(c.value))]),
         ] as ReportCsvRow[])
       : []),
   ]
 }
 
 export default function InventoryReports() {
-  /* KpiStrip's clamp, applied to this screen's hand-rolled key-figure grid:
-     four or six cards side by side is unreadable below 1180. */
-  const bandCols = useBandColumns()
   const money = useCanViewMoney()
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
@@ -68,40 +58,50 @@ export default function InventoryReports() {
       */}
       <ReportToolbar title="Inventory Reports" csv={{ filename: 'inventory-reports', build: () => inventoryCsv(money) }} />
 
-      <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: `repeat(${bandCols(4)}, minmax(0,1fr))`, gap: 'var(--sp-md)' }}>
-        <InventoryKpiCard
-          label="Total Assets"
-          value={INVENTORY_METRICS.totalAssets}
-          icon="box"
-          accent="primary"
-          note={{ text: 'Active fleet items', tone: 'neutral' }}
-        />
-        <InventoryKpiCard
-          label="Utilization"
-          value={`${INVENTORY_METRICS.utilization}%`}
-          icon="activity"
-          accent="progress"
-          note={{ text: 'Current deployment rate', tone: 'neutral' }}
-        />
-        <InventoryKpiCard
-          label="Available"
-          value={INVENTORY_METRICS.available}
-          icon="check"
-          accent="success"
-          note={{ text: 'Ready for rental', tone: 'success' }}
-        />
-        <InventoryKpiCard
-          label="Inventory Accuracy"
-          value={`${INVENTORY_METRICS.inventoryAccuracy}%`}
-          icon="check_circle"
-          accent="success"
-          note={{ text: 'Based on last audit', tone: 'neutral' }}
-        />
-      </section>
+      {/* The shared strip — typed items, icon tile drawn, viewport clamp built
+          in. The old hand-rolled `InventoryKpiCard` was `any`-typed and
+          silently dropped its `icon` prop ("check_circle" was not even a
+          registry name — never caught, because nothing rendered it). */}
+      <KpiStrip
+        columns={4}
+        items={[
+          {
+            label: 'Total Assets',
+            value: String(INVENTORY_METRICS.totalAssets),
+            icon: 'box',
+            accent: 'primary',
+            note: 'Active fleet items',
+          },
+          {
+            label: 'Utilization',
+            value: `${INVENTORY_METRICS.utilization}%`,
+            icon: 'activity',
+            accent: 'progress',
+            note: 'Current deployment rate',
+          },
+          {
+            label: 'Available',
+            value: String(INVENTORY_METRICS.available),
+            icon: 'check',
+            accent: 'success',
+            note: 'Ready for rental',
+          },
+          {
+            label: 'Inventory Accuracy',
+            value: `${INVENTORY_METRICS.inventoryAccuracy}%`,
+            icon: 'checklist',
+            accent: 'success',
+            note: 'Based on last audit',
+          },
+        ]}
+      />
 
-      <ReflowRail>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-          <section aria-label="Asset Health" style={cardStyle}>
+      {/* Rulings §7 — these tables are the report's CONTENT, not a rail. They
+          used to be passed into `ReflowRail`, which at desktop is a 288px
+          sticky collapsible box, so the whole report rendered inside one
+          self-scrolling rail. There is no aside content on this page, so there
+          is no rail at all. */}
+      <section aria-label="Asset Health" style={cardStyle}>
             <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Asset Health Distribution</div>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
               <thead>
@@ -139,15 +139,15 @@ export default function InventoryReports() {
                     <tr key={c.name} style={{ borderTop: '1px solid var(--border)' }}>
                       <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{c.name}</td>
                       <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.count}</td>
-                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{formatMoney(c.value as Paisa)}</td>
+                      {/* Seed values are rupees — `rupees()`, never a bare
+                          `as Paisa` cast, which printed these 100× too small. */}
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{formatMoney(rupees(c.value))}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </section>
           )}
-        </div>
-      </ReflowRail>
     </div>
   )
 }

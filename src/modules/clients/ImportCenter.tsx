@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -16,14 +16,21 @@ import {
   type ImportTargetField,
   type ImportRowResult,
 } from '../../lib/clientImport'
-import { CLIENTS_DATA } from '../../data/clients'
+import { findClientMatches } from '../../lib/queries/clients'
+import type { ClientRecord } from '../../data/clients'
 
 /**
  * Import Center — the last confirmed Clients gap from this session's audit
  * reconciliation (`PLAN.md §6.4`). Upload → map columns → preview & validate
- * → **stop**. Parsing, mapping-guesses, per-row validation and duplicate
- * matching are all real (`lib/csv.ts`, `lib/clientImport.ts`). The commit step
- * is not, and no longer pretends to be.
+ * → **stop**. Parsing, mapping-guesses and per-row validation are all real
+ * (`lib/csv.ts`, `lib/clientImport.ts`), and duplicate matching runs against
+ * the DATABASE: the file's phones and emails go to `client_directory_v` as a
+ * server-side filter (`findClientMatches`, Law 2) and `buildImportRow` then
+ * does the exact match over the candidates that came back. The 26-row
+ * `CLIENTS_DATA` seed this screen used to match against is gone from it —
+ * a CSV row duplicating a *real* client is now flagged, and the flag can only
+ * ever name a client that exists (docs/pages/42 §7.3). The commit step
+ * is not connected, and no longer pretends to be.
  *
  * ⛔ **What was removed and why** (`SUCCESS_FABRICATION_REGISTER_2026-08-12.md`,
  * section D — this screen was the worst entry in it). `runImport` called **no
@@ -90,6 +97,18 @@ export default function ImportCenter() {
   const [dragOver, setDragOver] = useState(false)
   const [skippedRows, setSkippedRows] = useState<Set<number>>(new Set())
 
+  /**
+   * The duplicate corpus: directory clients whose phone or email matches
+   * something in this file, fetched server-side. `null` means "no completed
+   * check for the current file+mapping" — distinct from `[]`, which is a
+   * completed check that found nothing. That distinction is what keeps the
+   * Possible Duplicates KPI honest: it reads '—' until a check has finished.
+   */
+  const [dupMatches, setDupMatches] = useState<ClientRecord[] | null>(null)
+  const [dupChecking, setDupChecking] = useState(false)
+  /** Law 12 — a check that could not run is stated inline, never skipped silently. */
+  const [dupCheckError, setDupCheckError] = useState<string | null>(null)
+
   const headers = useMemo(() => {
     if (rawRows.length === 0) return []
     const first = rawRows[0]!
@@ -103,6 +122,52 @@ export default function ImportCenter() {
   const phoneMapped = Array.from(mappedFields).includes('phone')
   const readyToPreview = nameMapped && phoneMapped
 
+  /**
+   * Fetch the duplicate corpus for the current file + mapping: every value in
+   * the columns mapped to Phone or Email, sent to `client_directory_v` as one
+   * chunked server-side filter. Re-runs when the file, the header toggle or
+   * the mapping changes; a stale in-flight response is cancelled so it cannot
+   * overwrite a newer one.
+   */
+  useEffect(() => {
+    if (!readyToPreview || dataRows.length === 0) {
+      setDupMatches(null)
+      setDupChecking(false)
+      setDupCheckError(null)
+      return
+    }
+    const phones: string[] = []
+    const emails: string[] = []
+    dataRows.forEach((row) => {
+      row.forEach((value, colIndex) => {
+        const target = mapping[colIndex]
+        if (target === 'phone') phones.push(value)
+        else if (target === 'email') emails.push(value)
+      })
+    })
+
+    let cancelled = false
+    setDupChecking(true)
+    setDupCheckError(null)
+    findClientMatches({ phones, emails })
+      .then((rows) => {
+        if (cancelled) return
+        setDupMatches(rows)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        // An unreachable directory must not read as "no duplicates found".
+        setDupMatches(null)
+        setDupCheckError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        if (!cancelled) setDupChecking(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [dataRows, mapping, readyToPreview])
+
   const results: ImportRowResult[] = useMemo(() => {
     if (!readyToPreview) return []
     return dataRows.map((row, i) => {
@@ -114,9 +179,13 @@ export default function ImportCenter() {
         const target = mapping[colIndex]
         if (target && target !== 'skip') raw[target] = value
       })
-      return buildImportRow(raw, i, CLIENTS_DATA)
+      // The duplicate corpus is the DIRECTORY MATCHES fetched above, not a
+      // seed array. While the check is in flight (or failed) it is empty and
+      // the page says so beside the preview — a row is never silently marked
+      // "Ready" as if the directory had been consulted when it had not.
+      return buildImportRow(raw, i, dupMatches ?? [])
     })
-  }, [dataRows, mapping, readyToPreview])
+  }, [dataRows, mapping, readyToPreview, dupMatches])
 
   const readyRows = results.filter((r) => r.errors.length === 0 && !skippedRows.has(r.rowIndex))
   const errorRows = results.filter((r) => r.errors.length > 0)
@@ -170,11 +239,15 @@ export default function ImportCenter() {
     setSkippedRows(new Set())
   }
 
+  // '—' until a directory check has actually completed for this file+mapping:
+  // a zero here must mean "checked, none found", never "not checked yet".
+  const dupCheckDone = dupMatches !== null
+
   const kpis: Kpi[] = readyToPreview
     ? [
         { label: 'Ready to Import', value: String(readyRows.length), icon: 'checklist', accent: 'success' },
         { label: 'Errors', value: String(errorRows.length), icon: 'alert_triangle', accent: errorRows.length ? 'danger' : 'neutral' },
-        { label: 'Possible Duplicates', value: String(duplicateRows.length), icon: 'users', accent: duplicateRows.length ? 'progress' : 'neutral' },
+        { label: 'Possible Duplicates', value: dupCheckDone ? String(duplicateRows.length) : '—', icon: 'users', accent: dupCheckDone && duplicateRows.length ? 'progress' : 'neutral' },
         { label: 'Total Rows', value: String(dataRows.length), icon: 'file', accent: 'primary' },
       ]
     : []
@@ -338,6 +411,38 @@ export default function ImportCenter() {
           {readyToPreview && (
             <>
               <KpiStrip items={kpis} columns={kpis.length} />
+
+              {/* The state of the directory check, stated beside the preview it
+                  qualifies. In-flight is a fact, not an error; a failed check is
+                  Law 12 — inline, persistent, never a toast. */}
+              {dupChecking && (
+                <p style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 7, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                  <Icon name="timer" size={14} style={{ flexShrink: 0 }} />
+                  Checking this file&rsquo;s phones and emails against the client directory…
+                </p>
+              )}
+              {dupCheckError && (
+                <p
+                  role="alert"
+                  style={{
+                    margin: 0,
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 7,
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: 600,
+                    color: 'var(--danger-text)',
+                    lineHeight: 1.45,
+                  }}
+                >
+                  <Icon name="error" size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span>
+                    Duplicate check could not run — {dupCheckError}. The rows below were validated, but{' '}
+                    <strong>not checked against the client directory</strong>, so a row marked Ready may still duplicate
+                    an existing client.
+                  </span>
+                </p>
+              )}
 
               <Card title="Preview & Validate" bodyStyle={{ padding: 0 }}>
                 <div style={{ overflowX: 'auto', maxHeight: 420, overflowY: 'auto' }}>

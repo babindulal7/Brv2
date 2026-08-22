@@ -1,29 +1,50 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  IconSearch,
-  IconCalendar,
-  IconPackage,
-  IconUsers,
-  IconReceipt,
-  IconSettings,
-  IconTruck,
-  IconBarcode,
-  IconPlus,
-  IconSun,
-  IconMoon,
-  IconX,
-  IconArrowRight,
-} from '@tabler/icons-react'
+import Icon from '../ui/Icon'
+import type { IconName } from '../ui/Icon'
+import { permittedNav } from '../../data/nav'
+import { useAuth } from '../../lib/auth'
 import { useTheme } from '../../lib/theme'
+import { toggleScanner } from './ScannerFab'
 
-export interface PaletteAction {
+/**
+ * The global ⌘K / Ctrl-K palette.
+ *
+ * Rewritten 22 Aug 2026 (audit item 3.5d) — this was the one shell component
+ * never migrated off Tailwind, so its `bg-slate-900 …` classes compiled to
+ * nothing and the palette rendered unstyled, hard-coded to a dark slate that
+ * ignored the theme system every other shell file uses. It now paints with
+ * inline styles over `theme.css` tokens like the rest of the shell.
+ *
+ * Two structural fixes landed with the restyle:
+ *
+ *  1. **Navigation comes from `data/nav.ts:permittedNav(role)`, not a hand
+ *     list.** The old list had drifted from the fixed 11 ('Dashboard' → `/`,
+ *     no Today, no Calendar, stale subtitles) and skipped role gating
+ *     entirely, so a money-blind role got Finance in the palette with only
+ *     the Shell guard behind it — the drift `permittedNav`'s own doc warns
+ *     about. One source, so the sidebar, the phone bar, the More sheet and
+ *     this palette cannot disagree.
+ *
+ *  2. **The fabricated shortcut chrome is gone.** 'G D', 'G B', '⌘ N', '⌘ B'
+ *     had no handlers anywhere — decorative keybindings are exactly the
+ *     "static literals presented as live state" the audit calls out on
+ *     Header.tsx. Only ⌘K survives, because only ⌘K works.
+ *
+ * The scanner action goes through `toggleScanner()` — the one way any surface
+ * opens the single scanner — instead of the old `document.querySelector` reach
+ * into the FAB's DOM.
+ *
+ * Signed-out sessions get nothing: the palette is navigation over a role's
+ * permitted nav, and without a session there is no role to permit anything.
+ */
+
+interface PaletteAction {
   id: string
   title: string
   subtitle?: string
-  category: 'Navigation' | 'Actions' | 'Operations' | 'Finance'
-  icon: React.ReactNode
-  shortcut?: string
+  category: 'Navigation' | 'Actions'
+  icon: IconName
   onSelect: () => void
 }
 
@@ -32,10 +53,11 @@ export const CommandPalette: React.FC = () => {
   const [search, setSearch] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const navigate = useNavigate()
+  const { user } = useAuth()
   const { theme, toggle } = useTheme()
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Listen for ⌘K or Ctrl+K
+  // Listen for ⌘K or Ctrl+K (Header's search button dispatches the same key)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -59,116 +81,48 @@ export const CommandPalette: React.FC = () => {
     }
   }, [isOpen])
 
-  const actions: PaletteAction[] = [
-    // Navigation
-    {
-      id: 'nav-dashboard',
-      title: 'Dashboard',
-      subtitle: 'Overview KPIs, activity feed, and fiscal metrics',
-      category: 'Navigation',
-      icon: <IconCalendar className="w-4 h-4" />,
-      shortcut: 'G D',
-      onSelect: () => navigate('/'),
-    },
-    {
-      id: 'nav-bookings',
-      title: 'Bookings & Quotes',
-      subtitle: 'Canonical booking list and pipeline',
-      category: 'Navigation',
-      icon: <IconCalendar className="w-4 h-4" />,
-      shortcut: 'G B',
-      onSelect: () => navigate('/rentals'),
-    },
-    {
-      id: 'nav-operations',
-      title: 'Operations Hub',
-      subtitle: 'Packing, Handover, Return, Reset queues',
-      category: 'Operations',
-      icon: <IconPackage className="w-4 h-4" />,
-      shortcut: 'G O',
-      onSelect: () => navigate('/operations'),
-    },
-    {
-      id: 'nav-inventory',
-      title: 'Inventory & Catalog',
-      subtitle: 'Serialised assets, consumables, bundles, and stock',
-      category: 'Navigation',
-      icon: <IconPackage className="w-4 h-4" />,
-      shortcut: 'G I',
-      onSelect: () => navigate('/inventory'),
-    },
-    {
-      id: 'nav-clients',
-      title: 'Clients & CRM',
-      subtitle: 'Client directory, credit limits, and document registry',
-      category: 'Navigation',
-      icon: <IconUsers className="w-4 h-4" />,
-      shortcut: 'G C',
-      onSelect: () => navigate('/clients'),
-    },
-    {
-      id: 'nav-finance',
-      title: 'Finance & Invoices',
-      subtitle: 'Invoices, immutable payments, security deposits, VAT',
-      category: 'Finance',
-      icon: <IconReceipt className="w-4 h-4" />,
-      shortcut: 'G F',
-      onSelect: () => navigate('/finance'),
-    },
-    {
-      id: 'nav-logistics',
-      title: 'Crew & Fleet Logistics',
-      subtitle: 'Technician schedules, vehicles, and trip logs',
-      category: 'Navigation',
-      icon: <IconTruck className="w-4 h-4" />,
-      onSelect: () => navigate('/crew'),
-    },
-    {
-      id: 'nav-settings',
-      title: 'Settings & Audit Logs',
-      subtitle: 'Branches, RBAC permissions, immutable audit logs',
-      category: 'Navigation',
-      icon: <IconSettings className="w-4 h-4" />,
-      onSelect: () => navigate('/settings'),
-    },
+  if (!user || !isOpen) return null
 
-    // Quick Actions
-    {
-      id: 'act-new-booking',
-      title: 'Create New Booking / Quote',
-      subtitle: 'Start a fresh quotation with causal dates',
-      category: 'Actions',
-      icon: <IconPlus className="w-4 h-4 text-emerald-400" />,
-      shortcut: '⌘ N',
-      onSelect: () => navigate('/rentals/new'),
-    },
+  /* The fixed 11 for this role — money surfaces dropped for money-blind
+     roles, staff surfaces dropped for Client, by the same filter the sidebar
+     and phone bar read. Rebuilt per open; permittedNav is a cheap filter. */
+  const actions: PaletteAction[] = [
+    ...permittedNav(user.role).map(
+      (s): PaletteAction => ({
+        id: `nav-${s.to}`,
+        title: s.label,
+        subtitle: s.to,
+        category: 'Navigation',
+        icon: s.icon,
+        onSelect: () => navigate(s.to),
+      }),
+    ),
     {
       id: 'act-scan',
-      title: 'Launch Scanner Focus',
-      subtitle: 'Focus continuous barcode/QR scanner',
+      title: 'Open Scanner',
+      subtitle: 'Scan a barcode or QR label',
       category: 'Actions',
-      icon: <IconBarcode className="w-4 h-4 text-blue-400" />,
-      shortcut: '⌘ B',
-      onSelect: () => {
-        const fab = document.querySelector('[data-scanner] button') as HTMLButtonElement | null
-        fab?.click()
-      },
+      /* 'search' is the Scan glyph everywhere — BottomBar's centre slot and
+         the FAB both draw it — so the palette matches rather than invents. */
+      icon: 'search',
+      onSelect: toggleScanner,
     },
     {
       id: 'act-toggle-theme',
       title: `Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`,
       subtitle: 'Toggle theme preference',
       category: 'Actions',
-      icon: theme === 'dark' ? <IconSun className="w-4 h-4 text-amber-400" /> : <IconMoon className="w-4 h-4 text-blue-400" />,
+      icon: theme === 'dark' ? 'sun' : 'moon',
       onSelect: toggle,
     },
   ]
 
+  const term = search.toLowerCase()
   const filtered = actions.filter(
     (a) =>
-      a.title.toLowerCase().includes(search.toLowerCase()) ||
-      (a.subtitle && a.subtitle.toLowerCase().includes(search.toLowerCase())) ||
-      a.category.toLowerCase().includes(search.toLowerCase())
+      a.title.toLowerCase().includes(term) ||
+      (a.subtitle && a.subtitle.toLowerCase().includes(term)) ||
+      a.category.toLowerCase().includes(term),
   )
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -185,16 +139,55 @@ export const CommandPalette: React.FC = () => {
     }
   }
 
-  if (!isOpen) return null
-
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-      <div className="fixed inset-0" onClick={() => setIsOpen(false)} />
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 'var(--z-modal)' as unknown as number,
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        padding: '80px 16px 16px',
+        /* Same scrim as Modal.tsx — the app's one dialog overlay tint. */
+        background: 'rgba(0, 0, 0, 0.6)',
+      }}
+    >
+      <div style={{ position: 'fixed', inset: 0 }} onClick={() => setIsOpen(false)} />
 
-      <div className="relative z-10 w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
-        {/* Search Header */}
-        <div className="flex items-center px-4 py-3.5 border-b border-slate-800 bg-slate-950/60">
-          <IconSearch className="w-5 h-5 text-slate-400 mr-3 shrink-0" />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+        style={{
+          position: 'relative',
+          zIndex: 1,
+          width: '100%',
+          maxWidth: 640,
+          maxHeight: '70vh',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          background: 'var(--modal)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--r-modal)',
+          boxShadow: 'var(--shadow-modal)',
+        }}
+      >
+        {/* Search header */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--sp-sm)',
+            padding: '6px 6px 6px var(--sp-lg)',
+            borderBottom: '1px solid var(--border)',
+            background: 'var(--card2)',
+          }}
+        >
+          <span style={{ color: 'var(--muted)', display: 'inline-flex', flexShrink: 0 }}>
+            <Icon name="search" size={18} />
+          </span>
           <input
             ref={inputRef}
             type="text"
@@ -204,21 +197,52 @@ export const CommandPalette: React.FC = () => {
               setSelectedIndex(0)
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Type a command, search bookings, clients, inventory, or invoices..."
-            className="flex-1 bg-transparent text-sm text-slate-100 placeholder-slate-500 outline-none font-medium"
+            placeholder="Type a command or destination…"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              height: 44, // Law 14 — 44px target
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              fontSize: 'var(--t-ui)',
+              fontWeight: 500,
+              color: 'var(--text)',
+              fontFamily: 'var(--font-body)',
+            }}
           />
           <button
+            type="button"
             onClick={() => setIsOpen(false)}
-            className="p-1 rounded-md text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-colors"
+            aria-label="Close command palette"
+            style={{
+              width: 44, // Law 14 — 44px target
+              height: 44,
+              display: 'grid',
+              placeItems: 'center',
+              flexShrink: 0,
+              background: 'transparent',
+              border: 'none',
+              borderRadius: 'var(--r-sm)',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+            }}
           >
-            <IconX className="w-4 h-4" />
+            <Icon name="close" size={16} />
           </button>
         </div>
 
-        {/* Results List */}
-        <div className="flex-1 overflow-y-auto p-2 divide-y divide-slate-800/40">
+        {/* Results list */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--sp-sm)' }}>
           {filtered.length === 0 ? (
-            <div className="p-8 text-center text-slate-500 text-sm">
+            <div
+              style={{
+                padding: 'var(--sp-2xl)',
+                textAlign: 'center',
+                color: 'var(--muted)',
+                fontSize: 'var(--t-ui)',
+              }}
+            >
               No results found for &ldquo;{search}&rdquo;
             </div>
           ) : (
@@ -227,52 +251,110 @@ export const CommandPalette: React.FC = () => {
               return (
                 <div
                   key={item.id}
+                  role="button"
+                  tabIndex={-1}
                   onClick={() => {
                     item.onSelect()
                     setIsOpen(false)
                   }}
                   onMouseEnter={() => setSelectedIndex(idx)}
-                  className={`flex items-center justify-between px-3.5 py-3 rounded-xl cursor-pointer transition-colors ${
-                    isSelected
-                      ? 'bg-blue-600/20 text-white border border-blue-500/40'
-                      : 'text-slate-200 hover:bg-slate-800/60 border border-transparent'
-                  }`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    minHeight: 48, // Law 14 — comfortably past the 44px floor
+                    padding: '6px var(--sp-md)',
+                    borderRadius: 'var(--r-sm)',
+                    cursor: 'pointer',
+                    background: isSelected ? 'var(--nav-active-bg)' : 'transparent',
+                    color: isSelected ? 'var(--nav-active-accent)' : 'var(--text)',
+                  }}
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className={`p-2 rounded-lg ${
-                        isSelected
-                          ? 'bg-blue-500 text-white'
-                          : 'bg-slate-800 text-slate-300'
-                      }`}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--sp-md)',
+                      minWidth: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 32,
+                        height: 32,
+                        display: 'grid',
+                        placeItems: 'center',
+                        flexShrink: 0,
+                        borderRadius: 'var(--r-sm)',
+                        background: isSelected ? 'var(--btn-primary-bg)' : 'var(--card2)',
+                        color: isSelected ? 'var(--btn-primary-fg)' : 'var(--nav-icon)',
+                      }}
                     >
-                      {item.icon}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold truncate">{item.title}</div>
+                      <Icon name={item.icon} size={16} />
+                    </span>
+                    <span style={{ minWidth: 0 }}>
+                      <span
+                        style={{
+                          display: 'block',
+                          fontSize: 'var(--t-ui)',
+                          fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {item.title}
+                      </span>
                       {item.subtitle && (
-                        <div className="text-xs text-slate-400 truncate">{item.subtitle}</div>
+                        <span
+                          style={{
+                            display: 'block',
+                            fontSize: 'var(--t-meta)',
+                            color: 'var(--muted)',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {item.subtitle}
+                        </span>
                       )}
-                    </div>
+                    </span>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0 ml-3">
-                    {item.shortcut && (
-                      <kbd className="px-2 py-0.5 text-[10px] font-mono bg-slate-800 border border-slate-700 text-slate-400 rounded">
-                        {item.shortcut}
-                      </kbd>
-                    )}
-                    {isSelected && <IconArrowRight className="w-4 h-4 text-blue-400" />}
-                  </div>
+                  {isSelected && (
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        flexShrink: 0,
+                        marginLeft: 'var(--sp-md)',
+                        color: 'var(--nav-active-accent)',
+                      }}
+                    >
+                      <Icon name="arrow_right" size={16} />
+                    </span>
+                  )}
                 </div>
               )
             })
           )}
         </div>
 
-        {/* Footer info */}
-        <div className="px-4 py-2.5 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-500 font-mono">
-          <div className="flex items-center gap-3">
+        {/* Footer — only keys that actually work are named here. */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '10px var(--sp-lg)',
+            background: 'var(--card2)',
+            borderTop: '1px solid var(--border)',
+            fontSize: 'var(--t-th)',
+            color: 'var(--muted)',
+            fontFamily: 'var(--font-id)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
             <span>↑↓ Navigate</span>
             <span>↵ Select</span>
             <span>ESC Close</span>

@@ -1,28 +1,39 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Button'
+import { Unavailable } from '../../../components/ui/Unavailable'
 
 /**
  * redesign v1 §5 — comms are draft-only, never auto-sent (21 Jul lock, cited
  * in the spec). Choosing "Email to client" opens this prefilled, editable
- * draft; nothing sends until Send is pressed here. No email backend exists
- * in this build (no comms action module, confirmed by search), so `onSend`
- * is the page's own stub — the same shape `saveDraft`/`confirmBooking`
- * already use for an unimplemented dispatch, not a new fabricated one.
+ * draft.
+ *
+ * ⛔ Send used to be a live-looking button raising an `onSend` callback that
+ * the page answered with an "Email queued" success toast — a success for a
+ * send that never happened. No email backend exists in this build (no comms
+ * action module, confirmed by search), so there is nothing true that control
+ * could do. Per the honesty convention (`Unavailable` + a named reason;
+ * Law 12 forbids the fake toast), the send control now states why it cannot
+ * act, and the drafting UI stays: the draft is still reviewable and editable.
+ * When a real comms action lands, it replaces `EMAIL_SEND_UNAVAILABLE_REASON`
+ * with a dispatch — not this modal.
  */
+
+/** The named reason the send control is unavailable — stated, never a fake toast. */
+export const EMAIL_SEND_UNAVAILABLE_REASON =
+  'No email backend exists in this build — there is no comms action to dispatch, so this draft cannot be sent or queued from here.'
 
 export interface DraftEmailModalProps {
   isOpen: boolean
   onClose: () => void
-  /** What is being sent — "Quote", "Rental Agreement", etc. */
+  /** What is being drafted — "Quote", "Rental Agreement", etc. */
   documentName: string
   toEmail: string
   subject: string
   body: string
-  onSend: (draft: { to: string; subject: string; body: string }) => void
 }
 
-export function DraftEmailModal({ isOpen, onClose, documentName, toEmail, subject, body, onSend }: DraftEmailModalProps) {
+export function DraftEmailModal({ isOpen, onClose, documentName, toEmail, subject, body }: DraftEmailModalProps) {
   const [to, setTo] = useState(toEmail)
   const [subjectText, setSubjectText] = useState(subject)
   const [bodyText, setBodyText] = useState(body)
@@ -43,21 +54,17 @@ export function DraftEmailModal({ isOpen, onClose, documentName, toEmail, subjec
       onClose={onClose}
       size="md"
       title={`Email ${documentName}`}
-      subtitle="Review before sending — nothing is sent until you press Send."
+      subtitle="Draft only — sending is not available in this build, so nothing leaves this screen."
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button
-            variant="primary"
-            icon="arrow_right"
-            disabled={to.trim().length === 0 || subjectText.trim().length === 0}
-            onClick={() => {
-              onSend({ to: to.trim(), subject: subjectText.trim(), body: bodyText })
-              onClose()
-            }}
-          >
-            Send
-          </Button>
+          <Button variant="ghost" onClick={onClose}>Close</Button>
+          {/* Not wired ≠ hidden: the control stays, disabled, carrying the named
+              reason (hover title on pointer devices, long-press popover on touch). */}
+          <Unavailable reason={EMAIL_SEND_UNAVAILABLE_REASON}>
+            <Button variant="primary" disabled>
+              Send
+            </Button>
+          </Unavailable>
         </>
       }
     >

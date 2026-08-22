@@ -1132,6 +1132,16 @@ function exportCsv(rows: InventoryListRow[], money: boolean) {
   URL.revokeObjectURL(url)
 }
 
+/**
+ * 3.7 — the `?chip=` spelling of a chip. The label is unique within
+ * `EQUIPMENT_CHIPS` (chipKey's caveat is about the two *dimensions* in
+ * general, not this fixed row) and reads well in a shared URL:
+ * `?chip=available`, `?chip=on-rent`, `?chip=damaged`.
+ */
+function chipSlug(c: EquipmentChip): string {
+  return c.label.toLowerCase().replace(/\s+/g, '-')
+}
+
 /* ── screen ────────────────────────────────────────────────────────────── */
 
 /**
@@ -1175,7 +1185,27 @@ export default function Inventory() {
     [params, setParams],
   )
 
-  const [chip, setChip] = useState<EquipmentChip>(EQUIPMENT_CHIPS[0]!)
+  /*
+   * 3.7 — the chip row is the Equipment pane's sibling-tab filter, so like the
+   * tab itself it lives in the URL (`?chip=available`), validated against the
+   * real row and falling back to All for anything stale. Same `replace: true`
+   * rule: flicking chips must not build a back stack. The facet rail stays
+   * local state — multi-set facets are a working selection, not an address.
+   */
+  const chipParam = params.get('chip')
+  const chip: EquipmentChip = useMemo(
+    () => EQUIPMENT_CHIPS.find((c) => chipSlug(c) === chipParam) ?? EQUIPMENT_CHIPS[0]!,
+    [chipParam],
+  )
+  const setChip = useCallback(
+    (next: EquipmentChip) => {
+      const p = new URLSearchParams(params)
+      if (next.kind === 'all') p.delete('chip')
+      else p.set('chip', chipSlug(next))
+      setParams(p, { replace: true })
+    },
+    [params, setParams],
+  )
   const [facets, setFacets] = useState<Facets>({})
   const [sort, setSort] = useState<SortKey>('Equipment A–Z')
   const [view, setView] = useState<'table' | 'grid'>('table')
@@ -1215,11 +1245,13 @@ export default function Inventory() {
     setPage(1)
   }
 
+  // `setChip` in the deps: it closes over the current search params, and a
+  // stale copy would write yesterday's URL back.
   const clearFilters = useCallback(() => {
     setFacets({})
     setChip(EQUIPMENT_CHIPS[0]!)
     setPage(1)
-  }, [])
+  }, [setChip])
 
   /*
    * §7.1's chip row spans **two dimensions**, so it resolves into two things

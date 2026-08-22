@@ -72,6 +72,61 @@ window.matchMedia = ((query: string) =>
   }) as unknown as MediaQueryList) as typeof window.matchMedia
 
 /*
+ * The four wired workspaces (21 Aug live conversion) read through
+ * `fetchFloorBooking` — the query seam is mocked here the same way
+ * `BookingDetail.edit.test.tsx` mocks it, so the assertions stay about the
+ * rendered arrangement and off the network. B-715 is the one known booking;
+ * every other number resolves to `null`, which is the honest "no such
+ * booking" answer the live query gives.
+ */
+const FLOOR_B715 = {
+  id: '11111111-1111-4111-8111-111111111111',
+  bookingNo: 'B-715',
+  stage: 'Booked',
+  clientName: 'Himalayan Films Pvt. Ltd.',
+  project: 'Documentary',
+  pickupAtAd: '2026-07-16T00:15:00.000Z',
+  returnAtAd: '2026-07-19T00:15:00.000Z',
+  actualReturnAtAd: null,
+  deliveryType: 'Customer Pickup',
+  isCancelled: false,
+  isClosed: false,
+  linesPresence: 'present' as const,
+  lines: [
+    {
+      id: 'l-1',
+      qty: 1,
+      lineType: 'Equipment',
+      description: 'Sony FX3',
+      productId: 'p-1',
+      productName: 'Sony FX3',
+      trackingMode: 'Serialised',
+      parentLineId: null,
+      sortOrder: 1,
+      unitsPresence: 'present' as const,
+      units: [
+        {
+          id: 'u-1',
+          assetId: 'a-1',
+          serial: 'SN102',
+          assetTag: 'EQ000001-U01',
+          unitState: 'Ready',
+          isRequired: true,
+          packed: false,
+          damaged: false,
+          location: 'A2-01',
+        },
+      ],
+    },
+  ],
+}
+
+vi.mock('../../../lib/queries/bookings', async (orig) => ({
+  ...(await orig<typeof import('../../../lib/queries/bookings')>()),
+  fetchFloorBooking: async (ref: string) => (ref === 'B-715' ? FLOOR_B715 : null),
+}))
+
+/*
  * The Floor's list and its four chip counts all go through `useList`. Mocking
  * the hook — rather than the Supabase client under it — keeps these assertions
  * about §3.1's *arrangement* ("queue chips filter one time-ordered list") and
@@ -132,6 +187,13 @@ async function mount(ui: ReactNode, initial = '/') {
       </MemoryRouter>,
     )
   })
+  /* The wired workspaces resolve `fetchFloorBooking` in an effect — the same
+     flush the BookingDetail suites use to let the mocked read land. */
+  for (let i = 0; i < 4; i++) {
+    await act(async () => {
+      await Promise.resolve()
+    })
+  }
 }
 
 /** Mount a workspace behind its real parameterised route, so `useParams` is live. */
@@ -276,49 +338,58 @@ describe('Rulings §3 — OperationsShell is a launcher, not a modal host', () =
  * FX3 Documentary Package's 18 seeded items underneath it, so a second booking
  * number produced another booking's packing list wearing that number. That is
  * the class Rulings §8 forbids: a screen asserting a subject it has no source
- * for. The number-from-the-route assertion is kept and **strengthened** with
- * the thing it was missing — that the seeded booking's own content is not what
- * is being shown.
+ * for.
  *
- * The Evidence case additionally used to require a link to
- * `/rentals/:bookingNo/packing`. That link belongs to the loaded workspace and
- * is still asserted at the seeded booking below; at a foreign number there is
- * no evidence set to cross-link, so requiring it there would be requiring the
- * defect.
+ * Since the 21 Aug live conversion the four verb workspaces resolve the route
+ * param through `fetchFloorBooking` (mocked above: only B-715 exists). An
+ * unknown number now gets the query's honest answer — the not-found empty
+ * state — and no other booking's identifier appears anywhere on the page.
+ * The old `BookingNotLoaded` wording ("… is not loaded yet", naming the seeded
+ * booking) died with the seed it described.
+ *
+ * Evidence is still seed-backed (not yet wired), so it keeps the
+ * `BookingNotLoaded` contract the seed build had.
  */
 describe('Spec 03 Notes — routes are parameterised, not one seeded booking', () => {
   const SECOND = 'B-9001'
-  /* The identifier the seed uses; no workspace may render its contents under
-     another booking's number. */
-  const SEED = 'B-715'
+  /* The one booking the mocked query knows; its content must never render
+     under another booking's number. */
+  const KNOWN = 'B-715'
 
-  const cases: Array<[string, ReactNode, string, string]> = [
+  const wired: Array<[string, ReactNode, string, string]> = [
     ['Packing', <PackingWorkspace key="p" />, '/rentals/:bookingNo/packing', 'packing'],
     ['Handover', <HandoverWorkspace key="h" />, '/rentals/:bookingNo/handover', 'handover'],
     ['Return', <ReturnWorkspace key="r" />, '/rentals/:bookingNo/return', 'return'],
     ['Reset', <ResetWorkspace key="x" />, '/rentals/:bookingNo/reset', 'reset'],
-    ['Evidence', <EvidenceWorkspace key="e" />, '/rentals/:bookingNo/evidence', 'evidence'],
   ]
 
-  for (const [name, element, pattern, segment] of cases) {
-    it(`${name} states the route's booking number and refuses to show the seed under it`, async () => {
+  for (const [name, element, pattern, segment] of wired) {
+    it(`${name} states the route's booking number and refuses to show another booking under it`, async () => {
       await mountAt(`/rentals/${SECOND}/${segment}`, element, pattern)
-      expect(text()).toContain(SECOND)
-      // The honest gap, not another booking's gear.
-      expect(text()).toContain('is not loaded yet')
-      expect(
-        [...container.querySelectorAll('a')].some((a) => a.getAttribute('href') === `/rentals/${SECOND}`),
-      ).toBe(true)
-      // Named only as "floor data exists for …", never as this page's subject.
-      expect(text().indexOf(SEED)).toBeGreaterThan(text().indexOf(SECOND))
+      // The honest gap: the query found nothing with this number.
+      expect(text()).toContain(`No booking matches ${SECOND}`)
+      // Not the known booking's gear, and not even its identifier.
+      expect(text()).not.toContain(KNOWN)
+      expect(text()).not.toContain('Sony FX3')
     })
   }
 
-  it('Evidence at the seeded booking still links across to its packing workspace', async () => {
-    await mountAt(`/rentals/${SEED}/evidence`, <EvidenceWorkspace />, '/rentals/:bookingNo/evidence')
-    expect(text()).toContain(SEED)
+  it('Evidence (still seed-backed) states the number and the honest gap', async () => {
+    await mountAt(`/rentals/${SECOND}/evidence`, <EvidenceWorkspace />, '/rentals/:bookingNo/evidence')
+    expect(text()).toContain(SECOND)
+    expect(text()).toContain('is not loaded yet')
     expect(
-      [...container.querySelectorAll('a')].some((a) => a.getAttribute('href') === `/rentals/${SEED}/packing`),
+      [...container.querySelectorAll('a')].some((a) => a.getAttribute('href') === `/rentals/${SECOND}`),
+    ).toBe(true)
+    // Named only as "floor data exists for …", never as this page's subject.
+    expect(text().indexOf(KNOWN)).toBeGreaterThan(text().indexOf(SECOND))
+  })
+
+  it('Evidence at the seeded booking still links across to its packing workspace', async () => {
+    await mountAt(`/rentals/${KNOWN}/evidence`, <EvidenceWorkspace />, '/rentals/:bookingNo/evidence')
+    expect(text()).toContain(KNOWN)
+    expect(
+      [...container.querySelectorAll('a')].some((a) => a.getAttribute('href') === `/rentals/${KNOWN}/packing`),
     ).toBe(true)
   })
 })

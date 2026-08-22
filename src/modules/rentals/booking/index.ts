@@ -119,8 +119,9 @@ export type { BundlePreviewProps } from './BundlePreview'
 export { DateTimeField, parseDateInput, parseTimeInput } from './DateTimeField'
 export type { DateTimeFieldProps } from './DateTimeField'
 
-/* redesign v1 §5 — draft-only, review-before-send email composer. Comms are
-   never auto-sent (21 Jul lock); nothing here dispatches to a real backend,
-   since none exists yet — `onSend` is the page's own stub. */
-export { DraftEmailModal } from './DraftEmailModal'
+/* redesign v1 §5 — draft-only email composer. Comms are never auto-sent
+   (21 Jul lock). No email backend exists in this build, so the send control
+   is Unavailable with the named reason below — the draft is reviewable and
+   editable, and nothing pretends to queue. */
+export { DraftEmailModal, EMAIL_SEND_UNAVAILABLE_REASON } from './DraftEmailModal'
 export type { DraftEmailModalProps } from './DraftEmailModal'

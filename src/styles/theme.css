@@ -151,6 +151,11 @@
   --success-text: #15803d;
   --blue-text: #1d4ed8;
 
+  /* Modal/drawer backdrop. AddBundle read `var(--scrim, rgba(0,0,0,0.55))` and
+     always got the fallback — a flat black scrim in a theme whose every other
+     shade of dark is slate. Same ink as --shadow-modal, per theme. */
+  --scrim: rgba(15, 23, 42, 0.45);
+
   /*
     charts — re-validated 5 Aug against §4.2's five-colour law.
 
@@ -269,6 +274,10 @@
   --success-text: #4ade80;
   --blue-text: #60a5fa;
 
+  /* See the light block. Deeper here — the dark surfaces need more separation
+     from their own backdrop, matching --shadow-modal's heavier ink. */
+  --scrim: rgba(0, 0, 0, 0.65);
+
   /*
     Dark is a *selected* set from the same hue order — not an automatic flip of
     the light values, since a hue that clears the light card at L 0.43–0.77
@@ -318,6 +327,58 @@
   --good: var(--success-text);
   --bad: var(--danger-text);
   --info: var(--primary-text);
+
+  /*
+    ---- alias registry, 22 Aug audit ----
+    Every remaining token referenced somewhere in src/ but defined nowhere. An
+    undefined custom property makes the whole declaration compute to `unset` —
+    the colour silently becomes the inherited one, the background becomes
+    transparent, the font-size becomes the parent's — so each of these was a
+    live rendering bug, not a style preference. Same policy as --good/--bad/
+    --info above: alias to the canonical token rather than migrating every
+    call site. Each alias resolves per-theme because the token it points at
+    does; none of these may gain a literal value later — fix the canonical
+    token instead.
+
+    Who reads what:
+      --hover       chip/tab/thead washes — PurchaseRequests, StockCheck,
+                    BundleItemsTable, BundleSummaryRail, archive/UnifiedInbox
+      --bg          recessed panel + in-card input fills — AddBundle,
+                    BundleItemsTable, BundleSummaryRail, InventoryTree
+      --warn        amber figures/priorities — CasesWorkspace, SubRental,
+                    CasesReports (the fourth member of --good/--bad/--info)
+      --orange-text PurchaseRequests, archive/SystemMonitor. "Orange" is this
+                    theme's warning family; a separate orange is banned (§4.2)
+      --danger-bg / --success-bg
+                    soft status fills behind status text — BarcodeScannerModal,
+                    SystemRestoreModal (no fallback there: the fills were
+                    TRANSPARENT), CreateInvoice/RecordPayment/RefundPayment
+                    modals. The st-* pairs are the same meaning, already themed
+      --text-1/-2/-3, --text3
+                    CashFlowReport/WorkingCapitalReport's hyphenated spelling
+                    and StaffReports' --text3 for the same three-step ramp
+      --fs-meta     CashFlow/WorkingCapital meta lines — the --t-meta step
+                    under its px-era name (resolves to rem; scales the same)
+      --shadow-sm   Today, AlertsPanel — the smallest elevation that exists
+      --on-accent   Finance.tsx ink-on-accent-fill (white in both themes)
+      --nav-active-accent-bg
+                    BarcodeScannerModal's selected scan-type — the intended
+                    token was the nav-active pair's bg half
+  */
+  --hover: var(--hover-card);
+  --bg: var(--app);
+  --warn: var(--warning-text);
+  --orange-text: var(--warning-text);
+  --danger-bg: var(--st-danger-bg);
+  --success-bg: var(--st-in-bg);
+  --text-1: var(--text);
+  --text-2: var(--text2);
+  --text-3: var(--muted);
+  --text3: var(--muted);
+  --fs-meta: var(--t-meta);
+  --shadow-sm: var(--shadow-card);
+  --on-accent: var(--on-brand);
+  --nav-active-accent-bg: var(--nav-active-bg);
 
   /* spacing */
   --sp-xs: 4px;
@@ -388,11 +449,23 @@ body,
   --t-h1: 2.1rem;    /* 31 / 36 */
   --t-h2: 1.45rem;   /* 22 / 25 */
   --t-h3: 1.2rem;    /* 18 / 20 */
+  /* Added 22 Aug: SystemRestoreModal and PricingCalculator were already asking
+     for a step between h3 and body — undefined, their font-size computed to
+     the inherited size, flattening modal headings into body copy. */
+  --t-h4: 1.1rem;    /* 17 / 19 */
   --t-kpi: 1.6rem;   /* 24 / 27 */
   --t-body: 1rem;    /* 15 / 17 */
   --t-ui: 0.93rem;   /* 14 / 16 */
   --t-meta: 0.85rem; /* 13 / 14 */
   --t-th: 0.75rem;   /* 11 / 13 — the floor; nothing renders below it */
+
+  /* Two spellings found in the wild for steps that already exist. Aliased for
+     the same reason as the registry above; the canonical names are the ones
+     new code should use. Re-declared in the floor/wall blocks below — an
+     alias's var() substitutes where the alias is DECLARED, so a :root-only
+     alias would freeze at the un-stepped value inside [data-floor]. */
+  --t-title: var(--t-h3); /* archive/UnifiedInbox */
+  --t-base: var(--t-body); /* auth/HandoverSheet */
 }
 
 /*
@@ -428,11 +501,17 @@ html {
   --t-h1: calc(2.1rem * var(--floor-step));
   --t-h2: calc(1.45rem * var(--floor-step));
   --t-h3: calc(1.2rem * var(--floor-step));
+  --t-h4: calc(1.1rem * var(--floor-step));
   --t-kpi: calc(1.6rem * var(--floor-step));
   --t-body: calc(1rem * var(--floor-step));
   --t-ui: calc(0.93rem * var(--floor-step));
   --t-meta: calc(0.85rem * var(--floor-step));
   --t-th: calc(0.75rem * var(--floor-step));
+  /* Aliases re-declared so they substitute the STEPPED values above — a
+     custom property's var() resolves where the property is declared, and the
+     :root declaration would hand this subtree the un-stepped h3/body. */
+  --t-title: var(--t-h3);
+  --t-base: var(--t-body);
   font-size: var(--t-body);
 }
 
@@ -445,11 +524,15 @@ html {
   --t-h1: calc(2.1rem * var(--wall-step));
   --t-h2: calc(1.45rem * var(--wall-step));
   --t-h3: calc(1.2rem * var(--wall-step));
+  --t-h4: calc(1.1rem * var(--wall-step));
   --t-kpi: calc(1.6rem * var(--wall-step));
   --t-body: calc(1rem * var(--wall-step));
   --t-ui: calc(0.93rem * var(--wall-step));
   --t-meta: calc(0.85rem * var(--wall-step));
   --t-th: calc(0.75rem * var(--wall-step));
+  /* Same re-declaration as [data-floor] — see the note there. */
+  --t-title: var(--t-h3);
+  --t-base: var(--t-body);
   font-size: var(--t-body);
 }
 

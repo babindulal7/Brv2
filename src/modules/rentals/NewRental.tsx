@@ -3127,8 +3127,12 @@ export default function NewRental() {
         }}
       />
 
-      {/* redesign v1 §5 — draft-only, review-before-send. Fired from the
-          Send Quote split button and each rail Documents tile's ✉ action. */}
+      {/* redesign v1 §5 — draft-only. Fired from the Send Quote split button
+          and each rail Documents tile's ✉ action. The modal's send control is
+          Unavailable with a named reason (no email backend exists in this
+          build), so this call site no longer answers a send that cannot
+          happen — the "Email queued" toast it used to fire here was a success
+          for a write that never landed. */}
       <DraftEmailModal
         isOpen={emailDraftDoc !== null}
         onClose={() => setEmailDraftDoc(null)}
@@ -3136,7 +3140,6 @@ export default function NewRental() {
         toEmail={client?.email ?? ''}
         subject={`${emailDraftDoc ?? 'Document'} — ${client?.name ?? 'New Rental'}`}
         body={`Dear ${client?.name ?? 'Client'},\n\nPlease find the ${emailDraftDoc ?? 'document'} for your booking attached.\n\nRegards,\nBabin Rentals`}
-        onSend={() => showSuccessToast('Email queued', `${emailDraftDoc} will be sent to ${client?.email ?? 'the client'}.`)}
       />
 
       {/*

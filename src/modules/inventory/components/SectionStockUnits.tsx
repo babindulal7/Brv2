@@ -128,7 +128,12 @@ export function SectionStockUnits() {
                                     return next
                                   })
                                 }
-                                style={{ ...inputStyle(Boolean(issue)), height: 31 }}
+                                /* Law 15 — no `height: 31` override here (nor on the two controls
+                                   below): `inputStyle`'s `minHeight: 44` IS the touch floor, and a
+                                   serial typed off a unit's body is exactly the kind of input that
+                                   gets tapped on a warehouse tablet. Density comes from the table's
+                                   own padding, not from shrinking its targets. */
+                                style={inputStyle(Boolean(issue))}
                               />
                               {issue && (
                                 <span style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-xs)', marginTop: 'var(--sp-xs)', fontSize: 'var(--t-th)', color: 'var(--danger-text)' }}>
@@ -160,7 +165,7 @@ export function SectionStockUnits() {
                               <select
                                 value={u.condition}
                                 onChange={(e) => patchUnit(u.id, { condition: e.target.value as IntakeCondition })}
-                                style={{ ...inputStyle(), height: 31 }}
+                                style={inputStyle()}
                               >
                                 {INTAKE_CONDITIONS.map((c) => (
                                   <option key={c} value={c}>
@@ -178,7 +183,7 @@ export function SectionStockUnits() {
                                 type="date"
                                 value={u.purchaseIso}
                                 onChange={(e) => patchUnit(u.id, { purchaseIso: e.target.value })}
-                                style={{ ...inputStyle(), height: 31, marginTop: 3 }}
+                                style={{ ...inputStyle(), marginTop: 3 }}
                               />
                             </td>
                             <td style={{ ...td, textAlign: 'center' }}>

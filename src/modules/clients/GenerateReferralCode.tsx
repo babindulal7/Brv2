@@ -1,11 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Input, Select } from '../../components/ui'
 import { Card, PageHeader, Button } from '../../components/ui/Page'
+import { ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-import { CLIENTS_DATA } from '../../data/clients'
+import { useList } from '../../lib/queries/useList'
+import { listReferrerOptions } from '../../lib/queries/clients'
 import { REFERRALS } from './Clients'
 import { parseMoney, formatMoney, type Paisa } from '../../lib/money'
 
@@ -18,6 +20,16 @@ import { parseMoney, formatMoney, type Paisa } from '../../lib/money'
  * redeems it, which is a separate, not-yet-built flow. So this screen collects
  * exactly what issuing a code requires: who it's for, the code itself, and
  * (money-gated, Law 5) the reward it carries.
+ *
+ * The referrer list is the DATABASE's — `client_directory_v` through
+ * `lib/queries/clients.listReferrerOptions` (Law 2), name-sorted server-side.
+ * The `CLIENTS_DATA` seed this dropdown used to render is gone from it: a
+ * client created through /clients/new appears here, and every name offered
+ * exists in the directory (docs/pages/44 §7.6). A blocked client is still
+ * listed — nothing has ruled that a blocked client may not refer — but is
+ * labelled "Blocked" instead of being indistinguishable (§7.5). The
+ * uniqueness check, by contrast, still runs against the four seeded
+ * `REFERRALS` codes, because no referral table exists anywhere to ask.
  *
  * ⛔ **What was removed and why** (`SUCCESS_FABRICATION_REGISTER_2026-08-12.md`,
  * section D). `handleCreate` called **no action**: `window.setTimeout(…, 600)`
@@ -47,7 +59,11 @@ const ISSUE_UNAVAILABLE_REASON =
 
 const inputStyle = {
   width: '100%',
-  height: 36,
+  /* No height here on purpose. This object is only ever spread into `Input`
+     and `Select`, both of which set `minHeight: 44` (Law 15) BEFORE spreading
+     `...style` — the `height: 36` this used to carry was inert on every
+     control it was passed to, and stating 36 next to controls that render at
+     44 only misleads the next reader. */
   padding: '0 10px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--input-border)',
@@ -80,20 +96,25 @@ export default function GenerateReferralCode() {
   const navigate = useNavigate()
   const money = useCanViewMoney()
 
-  const clientOptions = useMemo(() => [...CLIENTS_DATA].sort((a, b) => a.name.localeCompare(b.name)), [])
+  /** Active clients from the directory, name-ordered by the server — see the header. */
+  const fetchReferrers = useCallback(async () => ({ rows: await listReferrerOptions() }), [])
+  const referrers = useList(fetchReferrers)
+  const clientOptions = referrers.rows
+
   const existingCodes = useMemo(() => new Set(REFERRALS.map((r) => r.code.toUpperCase())), [])
 
+  /** `client_code` — the id every `/clients/:id` link is built from. */
   const [referrerId, setReferrerId] = useState('')
   const [code, setCode] = useState('')
   const [codeTouched, setCodeTouched] = useState(false)
   const [reward, setReward] = useState('')
 
-  const referrer = clientOptions.find((c) => c.id === referrerId) ?? null
+  const referrer = clientOptions.find((c) => c.clientCode === referrerId) ?? null
 
   const onReferrerChange = (id: string) => {
     setReferrerId(id)
     if (!codeTouched) {
-      const c = clientOptions.find((x) => x.id === id)
+      const c = clientOptions.find((x) => x.clientCode === id)
       if (c) setCode(suggestCode(c.name))
     }
   }
@@ -181,12 +202,33 @@ export default function GenerateReferralCode() {
                 referrer&rsquo;s commission would be unclaimable.
               </span>
             </p>
-            <Field label="Referrer" hint="Only existing clients can issue a referral code.">
-              <Select value={referrerId} onChange={(e) => onReferrerChange(e.target.value)} style={inputStyle}>
-                <option value="">Select a client…</option>
+            {/* The referrer list failing to load is stated inline (Law 12), and
+                the form stays refused — a code composed for a referrer this
+                session could not verify exists is exactly the fabrication this
+                screen was rewritten to prevent. */}
+            {referrers.error && (
+              <ErrorBanner title="Could not load clients" message={referrers.error} onRetry={referrers.refetch} />
+            )}
+            <Field label="Referrer" hint="Only existing clients can issue a referral code — this list is the client directory.">
+              <Select
+                value={referrerId}
+                onChange={(e) => onReferrerChange(e.target.value)}
+                disabled={referrers.loading || !!referrers.error}
+                style={inputStyle}
+              >
+                <option value="">
+                  {referrers.loading
+                    ? 'Loading clients…'
+                    : referrers.error
+                      ? 'Clients could not be loaded'
+                      : clientOptions.length === 0
+                        ? 'No clients in the directory yet'
+                        : 'Select a client…'}
+                </option>
                 {clientOptions.map((c) => (
-                  <option key={c.id} value={c.id}>
+                  <option key={c.clientCode} value={c.clientCode}>
                     {c.name}
+                    {c.isBlocked ? ' · Blocked' : ''}
                   </option>
                 ))}
               </Select>
@@ -212,8 +254,13 @@ export default function GenerateReferralCode() {
                   aria-label="Regenerate suggested code"
                   title="Regenerate suggested code"
                   style={{
-                    width: 36,
-                    height: 36,
+                    /* Law 15 — 44×44 on every device, desktop included; the
+                       shared Button names the same floor. The Input beside it
+                       already renders at 44 (its own minHeight), so this also
+                       levels the row instead of leaving a 36px button hanging
+                       under a 44px field. */
+                    width: 44,
+                    height: 44,
                     borderRadius: 'var(--r-btn)',
                     border: '1px solid var(--border)',
                     background: 'var(--card2)',

@@ -251,6 +251,16 @@ export function canMergeClients(role: SystemRole): boolean {
  * policy first and let this follow**; tightening only the TypeScript would put
  * the app and the database back out of step, which is the failure the mirroring
  * rule exists to prevent. Logged in PLAN.md §4.29.
+ *
+ * 22 Aug 2026 — that narrowing is now WRITTEN but NOT APPLIED:
+ * `supabase/migrations/0064_narrow_purchase_approval.sql` adds a restrictive
+ * UPDATE policy so only `auth_is_finance_or_admin()` (Owner, Admin, Manager,
+ * Coordinator, Accounts) can land a purchase request on Approved/Rejected.
+ * Per the mirror rule above this predicate DOES NOT change until that policy
+ * is live on the project. When it is: split `purchase.approve` off this set
+ * onto a finance-tier predicate mirroring 0064, and leave the rest of the
+ * shared-triage verbs (cases, crew, raising/editing PRs) here on
+ * `auth_is_staff()`, which 0064 deliberately does not touch.
  */
 export function canWriteSharedTriage(role: SystemRole): boolean {
   return isStaff(role)

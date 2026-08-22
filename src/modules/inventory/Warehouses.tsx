@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -16,6 +16,7 @@ import { grouped } from '../../lib/money'
 import { getBusinessToday, toBs, formatBs, formatAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
+import { newClientUuid } from '../../lib/supabase'
 import { gateContext } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
 import { rackGlance, rackDetailGroups } from '../../data/rackIntel'
@@ -523,8 +524,18 @@ export default function Warehouses() {
   /* Law 12 — a create that did not land says so, in the modal's own existing
      ErrorBanner slot, and persists there until the next attempt. */
   const [transferError, setTransferError] = useState<string | null>(null)
+  /**
+   * Law 8 — the idempotency keys for THIS transfer, minted when the modal
+   * opens and reused across every retry of it (`blockKeys` ref pattern,
+   * `clients/ClientsDirectory.tsx:325`): one for the `stock_transfers` header,
+   * one for its line row. A resubmit after a failure conflicts on
+   * `client_uuid` and resolves to what already landed instead of raising the
+   * transfer twice.
+   */
+  const transferKeys = useRef<{ header: string; line: string } | null>(null)
   const openTransferModal = () => {
     setTransferError(null)
+    transferKeys.current = { header: newClientUuid(), line: newClientUuid() }
     setModalOpen(true)
   }
 
@@ -699,17 +710,17 @@ export default function Warehouses() {
    * resolved path, and it carries the identifier the write itself reports back
    * rather than one this screen guessed.
    *
-   * `createStockTransfer` does not set `implemented: true`, so `actions/core.ts`
-   * refuses it and the modal stays open with the reason — no row, no number, no
-   * navigation. That is the correct outcome today.
+   * `createStockTransfer` writes the `stock_transfers` header and its line
+   * through `lib/dataAccess`, under the Law 8 keys minted when this modal
+   * opened. Everything the form collects is sent: the type, both facilities,
+   * the asset name, the serial and the notes — the old two-field dispatch
+   * that dropped them (the audit's TODO(decision) on this input) is closed.
    *
-   * TODO(decision) — `CreateStockTransferInput` carries source, target and an
-   * item count only. The transfer **type**, the asset's name and serial, the
-   * source/destination zones and the operator's reason/notes are collected by
-   * this form and are not sent, because there is nowhere declared to put them.
-   * Widening that input belongs to whoever owns the actions layer; the fields
-   * are left collected rather than removed so the fix is a schema change, not a
-   * re-collection from the floor.
+   * The action resolves the typed names against the DATABASE — warehouses by
+   * name, the asset against `products`, the serial against `product_units` —
+   * so on a store that does not hold this screen's seed rows the create
+   * refuses with the reason, the modal stays open, and no local row appears.
+   * That refusal is honest: this screen's facility list is still seed data.
    */
   const createTransfer = () => {
     if (formError) return
@@ -725,13 +736,24 @@ export default function Warehouses() {
       )
       return
     }
+    const keys = transferKeys.current ?? { header: newClientUuid(), line: newClientUuid() }
+    transferKeys.current = keys
     const from = WAREHOUSES.find((w) => w.name === form.source)
     const to = WAREHOUSES.find((w) => w.name === form.destination)
     setTransferError(null)
     void import('../../actions/inventory/createStockTransfer')
       .then((m) =>
         m.createStockTransfer(
-          { sourceWarehouse: form.source, targetWarehouse: form.destination, itemCount: 1 },
+          {
+            clientUuid: keys.header,
+            lineClientUuid: keys.line,
+            transferType: form.type,
+            sourceWarehouse: form.source,
+            destinationWarehouse: form.destination,
+            assetName: form.item.trim(),
+            serial: form.serial.trim() || undefined,
+            notes: form.notes.trim() || undefined,
+          },
           ctx,
         ),
       )
@@ -739,30 +761,10 @@ export default function Warehouses() {
         const created: StockTransfer = {
           /* A local React key, not an identifier anyone is shown. */
           id: `tr-${Date.now()}`,
-          /*
-           * ⚠ This is the reference the operator reads off the card and quotes
-           * between warehouses, and it is **not yet a real number**. This screen
-           * no longer mints it — that part was fixed — but the write it comes
-           * from does: `actions/inventory/createStockTransfer.ts` returns
-           * `TR-${Date.now().toString().slice(-4)}` when the caller supplies no
-           * id. Four digits off a clock collide (two transfers raised in the
-           * same 10ms window get the same reference, and the series restarts
-           * from wherever the clock happens to be), and nothing reserved it.
-           *
-           * The comment here used to say the reference "is the write's, not
-           * ours" and stop, which read as though something authoritative had
-           * assigned it. It is the write's, and the write is guessing.
-           *
-           * Numbering belongs to the database: `data/numbering.ts` +
-           * `issue()`/`prefixOf()` over the sequence tables. Fixing it is a
-           * change to the action (and its already-logged TODO(decision) on
-           * whether the Stock Transfer series is coded `TR` or `TRF`), not to
-           * this screen — a second numbering scheme built here would be the
-           * thing that guarantees the two disagree. Nothing is displayed today
-           * regardless: `createStockTransfer` is not `implemented`, so this
-           * resolved path does not run.
-           */
-          transferNo: res.transferId,
+          /* The number the DATABASE issued via next_document_number('transfer')
+             — allocated, not guessed. The clock-minted `TR-xxxx` this comment
+             used to warn about is gone with the stub. */
+          transferNo: res.transferNo,
           type: form.type,
           sourceWarehouse: form.source,
           sourceZone: zonesOf(from?.id ?? '')[0]?.zone ?? 'Unassigned',
@@ -798,6 +800,8 @@ export default function Warehouses() {
           notes: form.notes.trim(),
         }
         setTransfers((prev) => [created, ...prev])
+        /* This transfer landed — the next modal-open mints fresh Law 8 keys. */
+        transferKeys.current = null
         setModalOpen(false)
         /* Land on a profile the new row is actually visible in — the Transfer Center
            lists transfers touching the selected warehouse, so open the source. */

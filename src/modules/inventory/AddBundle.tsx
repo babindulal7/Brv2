@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
+import { newClientUuid } from '../../lib/supabase'
 import type { CSSProperties, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -456,6 +457,20 @@ export function AddBundle() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
+  /**
+   * **Law 8 — one key per row, minted where the operator acts** (the
+   * AddEquipment `writeKeys` pattern). The bundle key and each line's key are
+   * minted on the first press of a save button and reused by every retry of
+   * that press, so a network wobble retried resolves to the SAME bundle
+   * instead of minting a second one under a second code. Reset only after a
+   * save that succeeded: the next press is then a new bundle on purpose,
+   * which is what pressing Save Draft twice has always meant on this screen.
+   */
+  const writeKeys = useRef<{ bundle: string | null; lines: Map<string, string> }>({
+    bundle: null,
+    lines: new Map(),
+  })
+
   /*
    * ── derived, never typed ─────────────────────────────────────────────
    * ⛔ These four hooks must stay **above** the `if (!money) return` gate
@@ -560,15 +575,20 @@ export function AddBundle() {
    *
    * Now: a real session or a refusal; the dispatch is awaited; success reporting
    * and the navigation live *only* on the resolved path; and the rejection is
-   * surfaced inline where the operator can act on it. The toast quotes the id
+   * surfaced inline where the operator can act on it. The toast quotes the code
    * the action hands back — never one chosen here.
    *
-   * `TODO(decision)` — `createBundle`'s capability is `inventory.create`, and
-   * `actions/core.ts:109-125` maps no rule for that string, so an unmapped
-   * capability is denied fail-closed for every role. Who may create a bundle is
-   * unruled; it belongs in `PLAN.md` §4, not in this file. Until it is ruled and
-   * the action is implemented, every press of these buttons ends in the banner
-   * below — which is the honest outcome, and is why no toast may precede it.
+   * (An earlier revision of this comment recorded `inventory.create` as
+   * unmapped and the action as unimplemented. Both are stale since Phase 1:
+   * `actions/core.ts` maps it to `rbac.canCreateBundle` — Owner/Admin/Manager
+   * — and `createBundle.ts` carries `implemented: true` and really inserts.)
+   *
+   * What the payload now carries that it used to drop (item 2.6a): each line's
+   * MODEL NAME, which the action resolves to a real `products.id` uuid by
+   * SELECT (the seed id `'M-FX3-BODY'` is carried for the refusal message
+   * only); the category NAME, resolved to `inventory_categories.id` the same
+   * way; and `effectiveRatePaisa` — the rate every card on this screen shows —
+   * so the row's `daily_rate` is the figure the toast quotes, not zero.
    */
   const saveBundle = (isDraft: boolean) => {
     if (!user) {
@@ -577,39 +597,64 @@ export function AddBundle() {
       )
       return
     }
-    const items = lines.map((l) => ({
-      modelId: l.modelId,
-      qty: l.qty,
-      discountPct: l.discountPct,
-      discountReason: l.discountReason,
-      approvedBy: l.approvedBy,
-    }))
+    // Law 8: one key per press, per row, reused by every retry of that press.
+    const keys = writeKeys.current
+    if (!keys.bundle) keys.bundle = newClientUuid()
+    const items = lines.map((l) => {
+      let lineKey = keys.lines.get(l.key)
+      if (!lineKey) {
+        lineKey = newClientUuid()
+        keys.lines.set(l.key, lineKey)
+      }
+      return {
+        modelId: l.modelId,
+        /* The action resolves this to `bundle_items.product_id` by SELECT and
+           refuses by name when no products row matches — the seed id must
+           never reach a uuid column. */
+        productName: modelOf(l.modelId)?.name ?? l.modelId,
+        qty: l.qty,
+        discountPct: l.discountPct,
+        discountReason: l.discountReason,
+        approvedBy: l.approvedBy,
+        clientUuid: lineKey,
+      }
+    })
     setSaveError(null)
     setSaving(true)
     void import('../../actions/inventory/createBundle')
       .then((m) =>
         m.createBundle(
           {
+            clientUuid: keys.bundle as string,
             name: name.trim(),
             /* `exactOptionalPropertyTypes` — an unset category is absent from
                the payload, never the empty string, which would reach the action
                as a category nobody picked. Create Bundle cannot reach here with
                one unset (`blockingReason`); a draft can. */
             ...(category ? { category } : {}),
+            ...(description.trim() ? { description: description.trim() } : {}),
             items,
             itemCount: isDraft ? lines.length : breakdown.totalItems,
             isDraft,
+            /* Law 6 — Paisa here, rupees exactly once inside the action. This
+               is the same figure the Pricing Summary and the success toast
+               show, so the row can no longer read 0 while the toast quotes a
+               rate. This page is unreachable for money-blind roles (the
+               RestrictedState gate above), so the rate is always present. */
+            dailyRatePaisa: effectiveRatePaisa,
           },
           { userId: user.id, role: user.role },
         ),
       )
       .then((result) => {
+        // A landed save consumes its keys: the NEXT press is a new bundle.
+        writeKeys.current = { bundle: null, lines: new Map() }
         if (isDraft) {
-          showSuccessToast('Draft saved', `${result.bundleId} · ${lines.length} lines`)
+          showSuccessToast('Draft saved', `${result.bundleCode} · ${lines.length} lines`)
         } else {
           showSuccessToast(
             'Bundle created',
-            `${result.bundleId} · ${breakdown.totalItems} items · ${formatMoney(effectiveRatePaisa)} per day`,
+            `${result.bundleCode} · ${breakdown.totalItems} items · ${formatMoney(effectiveRatePaisa)} per day`,
           )
           /* Only a landed write leaves the page. Navigating on the failing path
              would discard everything the operator typed to show them a list

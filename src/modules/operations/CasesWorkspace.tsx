@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { EmptyState } from '../../components/ui/StateViews'
-import { useToast } from '../../components/ui/Toast'
+import { Unavailable } from '../../components/ui/Unavailable'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { toBs, formatBs } from '../../lib/bs'
@@ -19,25 +19,19 @@ import {
   recoveredThisMonthPaisa,
   outstandingOf,
   ageDays,
+  NEW_CASE_UNAVAILABLE_REASON,
+  CASES_EXPORT_UNAVAILABLE_REASON,
   type Case,
   type CaseStatus,
   type CasePriority,
 } from '../../data/cases'
 import { IconSearch, IconPlus, IconDownload } from '@tabler/icons-react'
 
-/**
- * Age in whole days from `openedAd` to the operating day.
- *
- * ⛔ This used to carry its own clock — `Date.UTC(2026, 6, 31)`, the frozen
- * `TODAY` hand-copied out of `lib/bs.ts` into this file — so the screen held a
- * second today that no longer moved with the first. `data/cases.ts` already
- * exports `ageDays`, computed against the one operating day, and §11 of
- * Foundation exists to stop exactly this: the age a case shows here and the
- * age the escalation rules read must be the same number.
- */
-function ageDaysOf(c: Case): number {
-  return ageDays(c.openedAd)
-}
+/* Age comes from the shared `ageDays` in `data/cases.ts`, computed against the
+ * one operating day (`getBusinessToday()` in `lib/bs.ts`). This file used to
+ * carry its own frozen clock — §11 of Foundation exists to stop exactly that:
+ * the age a case shows here and the age the escalation rules read must be the
+ * same number. */
 
 function createdBsOf(c: Case): string {
   const bs = toBs(c.openedAd)
@@ -47,14 +41,53 @@ function createdBsOf(c: Case): string {
 
 type FilterKey = CaseStatus | 'All'
 
+/* §5.1 — the URL is the state. `?status=` carries the chip and `?q=` the
+ * search, so a filtered view is linkable, shareable, and survives a reload —
+ * the OperationsQueues `patch()` pattern. `Cancelled` is mapped even though no
+ * chip renders it (a declared `CaseStatus` a bookmarked URL may still name);
+ * anything unrecognised falls back to All rather than silently matching
+ * nothing. */
+const STATUS_URL_KEY: Record<Exclude<FilterKey, 'All'>, string> = {
+  Open: 'open',
+  'In Progress': 'in-progress',
+  'Under Review': 'under-review',
+  'Awaiting Decision': 'awaiting-decision',
+  Resolved: 'resolved',
+  Closed: 'closed',
+  Cancelled: 'cancelled',
+}
+
+function statusFromParam(value: string | null): FilterKey {
+  if (!value) return 'All'
+  for (const [status, key] of Object.entries(STATUS_URL_KEY) as [Exclude<FilterKey, 'All'>, string][]) {
+    if (key === value) return status
+  }
+  return 'All'
+}
+
 export function CasesWorkspace() {
-  const { showSuccessToast } = useToast()
   const navigate = useNavigate()
   const money = useCanViewMoney()
 
-  const [searchQuery, setSearchQuery] = useState('')
-  const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
+  const [params, setParams] = useSearchParams()
+  const searchQuery = params.get('q') ?? ''
+  const activeFilter = statusFromParam(params.get('status'))
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
+
+  /* Merge-write one or more params; `null` deletes a key. `replace: true`
+   * keeps chip flicks and search keystrokes out of the history stack
+   * (OperationsQueues.tsx patch()). */
+  const patch = (next: Record<string, string | null>) => {
+    const merged = new URLSearchParams(params)
+    for (const [k, v] of Object.entries(next)) {
+      if (v === null) merged.delete(k)
+      else merged.set(k, v)
+    }
+    setParams(merged, { replace: true })
+  }
+
+  const setActiveFilter = (f: FilterKey) => patch({ status: f === 'All' ? null : STATUS_URL_KEY[f] })
+  const setSearchQuery = (q: string) => patch({ q: q || null })
 
   const filteredCases = useMemo(() => {
     return CASES.filter((c) => {
@@ -210,20 +243,19 @@ export function CasesWorkspace() {
               icon={<IconSearch size={16} />}
             />
           </div>
-          <Button
-            variant="secondary"
-            onClick={() => showSuccessToast('Exporting', 'Generating cases report...')}
-            icon={<IconDownload size={16} />}
-          >
-            Export
-          </Button>
-          <Button
-            variant="primary"
-            onClick={() => showSuccessToast('New Case', 'Opening case logging workspace')}
-            icon={<IconPlus size={16} />}
-          >
-            Log Incident
-          </Button>
+          {/* Both were success-toasts for work that never happened — the exact
+              fabrication src/actions/core.ts §1 names. Unbuilt renders as
+              Unavailable with the honest sentence, never as a fake success. */}
+          <Unavailable reason={CASES_EXPORT_UNAVAILABLE_REASON}>
+            <Button variant="secondary" icon={<IconDownload size={16} />} disabled>
+              Export
+            </Button>
+          </Unavailable>
+          <Unavailable reason={NEW_CASE_UNAVAILABLE_REASON}>
+            <Button variant="primary" icon={<IconPlus size={16} />} disabled>
+              Log Incident
+            </Button>
+          </Unavailable>
         </div>
       </div>
 
@@ -234,10 +266,7 @@ export function CasesWorkspace() {
             title="No cases found"
             description="Adjust your filters or search query to find incident cases."
             actionLabel="Clear Filters"
-            onAction={() => {
-              setActiveFilter('All')
-              setSearchQuery('')
-            }}
+            onAction={() => patch({ status: null, q: null })}
           />
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -335,8 +364,8 @@ export function CasesWorkspace() {
                       </td>
                     )}
                     <td style={{ padding: '12px 14px' }}>
-                      <div className="figure" style={{ fontWeight: 500, color: ageDaysOf(c) > 14 ? 'var(--warn)' : 'var(--text)' }}>
-                        {ageDaysOf(c)} Days
+                      <div className="figure" style={{ fontWeight: 500, color: ageDays(c.openedAd) > 14 ? 'var(--warn)' : 'var(--text)' }}>
+                        {ageDays(c.openedAd)} Days
                       </div>
                       <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                         {createdBsOf(c)}

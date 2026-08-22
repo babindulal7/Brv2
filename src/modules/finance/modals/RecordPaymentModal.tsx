@@ -4,6 +4,8 @@ import { Button } from '../../../components/ui/Page'
 import { rupees, formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import { recordPayment } from '../../../actions/finance/recordPayment'
+import { listBankAccounts } from '../../../lib/queries/bankAccounts'
+import type { BankAccountRow } from '../../../lib/queries/bankAccounts'
 import { useAuth } from '../../../lib/auth'
 import { useNetwork } from '../../../lib/network'
 import { newClientUuid } from '../../../lib/supabase'
@@ -83,6 +85,18 @@ export function RecordPaymentModal({
    */
   const [amount, setAmount] = useState<number>(initialAmount ?? 0)
   const [method, setMethod] = useState<'Bank Transfer' | 'Cash' | 'eSewa' | 'Khalti' | 'Card' | 'Cheque'>('Bank Transfer')
+  /*
+   * The ACCOUNT the money landed in — `bank_accounts.id`, the structured half
+   * of "how was this paid" (`recordPayment.ts`'s METHOD block). '' means "no
+   * account recorded", which is an ordinary state (`payments.bank_account_id`
+   * is nullable): the method label above is the operator's word, this picker
+   * is the ledger fact, and neither is derived from the other. Read through
+   * `queries/bankAccounts.ts` (Law 2), loaded per open so a newly added
+   * account appears without a reload.
+   */
+  const [bankAccountId, setBankAccountId] = useState('')
+  const [accounts, setAccounts] = useState<BankAccountRow[]>([])
+  const [accountsError, setAccountsError] = useState<string | null>(null)
   const [reference, setReference] = useState('')
   const [notes, setNotes] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -108,6 +122,36 @@ export function RecordPaymentModal({
     if (isOpen) {
       setClientUuid(newClientUuid())
       setError(null)
+      // A fresh open must not inherit the previous payment's account choice —
+      // an account is per-receipt, and a stale one silently credits it again.
+      setBankAccountId('')
+    }
+  }, [isOpen])
+
+  /*
+   * The account list, fetched while the modal is open. A failure here must not
+   * block the payment — an account is optional on the row — so it degrades to
+   * "no accounts to offer" with the reason stated inline, never a silent empty
+   * picker (mock mode genuinely serves zero `bank_accounts` rows, and a live
+   * desk may not have entered its accounts yet — both render the same honest
+   * way).
+   */
+  useEffect(() => {
+    if (!isOpen) return
+    let cancelled = false
+    setAccountsError(null)
+    listBankAccounts()
+      .then((rows) => {
+        if (!cancelled) setAccounts(rows)
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setAccounts([])
+          setAccountsError(err instanceof Error ? err.message : String(err))
+        }
+      })
+    return () => {
+      cancelled = true
     }
   }, [isOpen])
 
@@ -276,6 +320,9 @@ export function RecordPaymentModal({
           invoiceNo: invoiceId,
           amountPaisa: rupees(amount),
           paymentMethod: method,
+          // The chosen account's row id, or nothing at all — the action never
+          // infers an account from the method label (METHOD, recordPayment.ts).
+          bankAccountId: bankAccountId || undefined,
           reference: reference || undefined,
           notes: notes || undefined,
           clientUuid,
@@ -438,6 +485,50 @@ export function RecordPaymentModal({
               <option value="Cheque">Cheque</option>
             </select>
           </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+            Deposit To Account
+          </label>
+          {/*
+            `bank_accounts` picker — writes `payments.bank_account_id`, which is
+            what the Payments list's Method column and the Finance dashboard's
+            method breakdown read (`bank_accounts.channel_group` through the
+            embed). Optional: "No account recorded" is the honest row for cash
+            in hand or a desk with no accounts entered, and it is DIFFERENT
+            from the method label above — a label is the operator's word, this
+            is the ledger fact. Law 15's 44px floor on the new control; the
+            sibling 36px fields predate the rule and are not this edit's.
+          */}
+          <select
+            value={bankAccountId}
+            onChange={(e) => setBankAccountId(e.target.value)}
+            aria-label="Deposit to account"
+            style={{
+              minHeight: 44,
+              padding: '0 12px',
+              borderRadius: 'var(--r-btn)',
+              border: '1px solid var(--border)',
+              background: 'var(--card)',
+              color: 'var(--text)',
+              fontSize: 'var(--t-meta)',
+            }}
+          >
+            <option value="">No account recorded</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.bankName} — {a.accountName} ({a.channelGroup})
+              </option>
+            ))}
+          </select>
+          <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+            {accountsError
+              ? `Accounts could not be loaded (${accountsError}) — the payment can still be recorded with no account.`
+              : accounts.length === 0
+                ? 'No active accounts are on file, so this payment will carry no account. The method above is kept in the notes.'
+                : 'The real account the money landed in. Leave as "No account recorded" if none applies (e.g. cash in hand).'}
+          </span>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

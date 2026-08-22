@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -22,9 +22,8 @@ import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
 import { newClientUuid } from '../../lib/supabase'
 import type { ActionContext } from '../../actions/core'
+import { findClientsByPhoneTail } from '../../lib/queries/clients'
 import {
-
-  CLIENTS_DATA,
   CLIENT_SOURCES,
   PAYMENT_TERMS_OPTIONS,
   PREFERRED_CONTACT_METHODS,
@@ -59,8 +58,11 @@ const TODAY = getBusinessToday()
  * is the existing Membership Tier, which already drives credit/discount
  * policy elsewhere (Clients → Credit tab).
  *
- * No data layer exists yet (Phase 1), so Save simulates and navigates back to
- * /clients without persisting — the same contract AddEquipment already uses.
+ * Save dispatches the implemented `createClient` action and reports from its
+ * own outcome (see `handleSave`), and the duplicate warning asks the database
+ * — `client_directory_v` through `lib/queries/clients` (Law 2), not the
+ * retired `CLIENTS_DATA` seed array, so it can only ever name a client that
+ * actually exists.
  */
 
 const TYPE_OPTIONS: Array<{ value: ClientType; label: string; icon: IconName; blurb: string; example: string }> = [
@@ -254,6 +256,13 @@ export default function AddClient() {
 
   const [errors, setErrors] = useState<Record<string, string | null>>({})
   const [dismissedDuplicate, setDismissedDuplicate] = useState(false)
+  const [duplicateMatch, setDuplicateMatch] = useState<ClientRecord | null>(null)
+  /**
+   * Set when the duplicate lookup itself failed — a degraded check is stated,
+   * never silently skipped (Law 12: inline and persistent). The database's
+   * phone unique constraint remains the real backstop at Save.
+   */
+  const [dupCheckError, setDupCheckError] = useState<string | null>(null)
   const [showDiscard, setShowDiscard] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -271,11 +280,20 @@ export default function AddClient() {
    * same press, so a double-click or a "try again" after a network wobble
    * conflicts on `clients_client_uuid_key` and returns the client that already
    * exists, instead of creating a second one that then collides on the phone
-   * unique constraint. Cleared only when the form is edited into a genuinely
-   * different client — which it is not, on this screen, because a successful
-   * save navigates away.
+   * unique constraint.
+   *
+   * ⛔ **Keyed on the identity fields, not on the mount** (item 2.6c). The
+   * previous version minted once per page load and never again — so after a
+   * FAILED save, correcting the form into a genuinely different client
+   * (another name, another phone) replayed the first client's key:
+   * `idempotentInsert` read the 23505 on `client_uuid` as "already saved" and
+   * handed back the FIRST client, silently swallowing the second. The key is
+   * therefore paired with the identity (name/phone/email) it was minted for:
+   * a pure retry of the same client replays the same key; an edit into a
+   * different client mints a fresh one. Non-identity edits (address, notes)
+   * keep the key — correcting a typo in the city is still the same client.
    */
-  const saveKey = useRef<string | null>(null)
+  const saveKey = useRef<{ key: string; identity: string } | null>(null)
 
   const clearError = (key: string) => setErrors((prev) => (prev[key] ? { ...prev, [key]: null } : prev))
 
@@ -293,12 +311,46 @@ export default function AddClient() {
   const togglePreferred = (m: string) =>
     setPreferredMethods((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]))
 
-  const duplicateMatch = useMemo<ClientRecord | null>(() => {
-    if (dismissedDuplicate) return null
+  /**
+   * Duplicate detection, against the database. Debounced because it runs as
+   * the operator types; cancelled on every phone change so a slow older
+   * response cannot overwrite a newer one. The check queries
+   * `client_directory_v` server-side (`findClientsByPhoneTail`) — it never
+   * downloads the client table to match in the browser.
+   *
+   * A changed number is a fresh question, so a "Continue Anyway" dismissal is
+   * cleared here the moment the phone changes — previously the dismissal was
+   * permanent and a *second, different* duplicate typed after dismissing the
+   * first produced no warning at all (docs/pages/05 §7.8).
+   */
+  useEffect(() => {
+    setDismissedDuplicate(false)
     const digits = phone.replace(/\D/g, '')
-    if (digits.length < 7) return null
-    return CLIENTS_DATA.find((c) => c.phone.replace(/\D/g, '').endsWith(digits.slice(-9))) ?? null
-  }, [phone, dismissedDuplicate])
+    if (digits.length < 7) {
+      setDuplicateMatch(null)
+      setDupCheckError(null)
+      return
+    }
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      findClientsByPhoneTail(phone)
+        .then((matches) => {
+          if (cancelled) return
+          setDuplicateMatch(matches[0] ?? null)
+          setDupCheckError(null)
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return
+          // An unreachable check must not pretend it found nothing.
+          setDuplicateMatch(null)
+          setDupCheckError(err instanceof Error ? err.message : String(err))
+        })
+    }, 350)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [phone])
 
   const isDirty = Boolean(
     name.trim() ||
@@ -410,8 +462,14 @@ export default function AddClient() {
 
     setSaveError(null)
     setSaving(true)
-    // Law 8: one key for this press, reused by every retry of it.
-    if (!saveKey.current) saveKey.current = newClientUuid()
+    /* Law 8: one key per CLIENT, reused by every retry of the same client.
+       The identity is the canonical stored forms — the same strings the
+       payload below carries — so a whitespace or formatting edit does not
+       read as a different client, and a real identity edit does. */
+    const identity = `${name.trim()}|${canonicalPhone(phone)}|${email.trim().toLowerCase()}`
+    if (!saveKey.current || saveKey.current.identity !== identity) {
+      saveKey.current = { key: newClientUuid(), identity }
+    }
 
     try {
       const { createClient } = await import('../../actions/clients/createClient')
@@ -436,7 +494,7 @@ export default function AddClient() {
           country: country.trim(),
           panVat: pan.trim(),
           notes: notes.trim(),
-          clientUuid: saveKey.current,
+          clientUuid: saveKey.current.key,
         },
         ctx,
       )
@@ -581,7 +639,31 @@ export default function AddClient() {
           timer. It stays until the next Save attempt replaces it. */}
       {saveError && <ErrorBanner title="This client was not saved" message={saveError} />}
 
-      {duplicateMatch && (
+      {/* The duplicate lookup failing is stated, not swallowed — otherwise a
+          silent failure reads as "no duplicate exists". */}
+      {dupCheckError && (
+        <p
+          role="alert"
+          style={{
+            margin: 0,
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 7,
+            fontSize: 'var(--t-meta)',
+            fontWeight: 600,
+            color: 'var(--danger-text)',
+            lineHeight: 1.45,
+          }}
+        >
+          <Icon name="error" size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+          <span>
+            Duplicate check unavailable — {dupCheckError}. This phone number was not checked against the client
+            directory; if it already belongs to a client, Save will be refused by the database&rsquo;s unique phone rule.
+          </span>
+        </p>
+      )}
+
+      {duplicateMatch && !dismissedDuplicate && (
         <ErrorBanner
           title="Possible existing client"
           message={

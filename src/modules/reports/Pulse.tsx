@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { PageHeader, Card, Rail, FooterNote, Button, cardStyle } from '../../components/ui/Page'
+import { PageHeader, Card, ReflowRail, FooterNote, Button, cardStyle, useRailGridColumns } from '../../components/ui/Page'
 import { LineChart, GroupedBars } from '../../components/ui/Charts'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { ReportToolbar, reportDateRange } from '../../components/ui/ReportToolbar'
@@ -331,6 +331,10 @@ export default function Pulse() {
   const { user } = useAuth()
   const periodRef = useRef<HTMLSelectElement>(null)
   const viewport = useViewport()
+  /* Rulings §7 — the rail track goes away below 1180 so `ReflowRail`'s
+     inline column is not squeezed by a rail column that is still there.
+     Called here, above the no-period early return, because it is a hook. */
+  const railGridColumns = useRailGridColumns()
 
   const [periodKey, setPeriodKey] = useState<string>(DEFAULT_PERIOD)
   const [compareOn, setCompareOn] = useState(true)
@@ -741,11 +745,13 @@ export default function Pulse() {
         ? `repeat(${Math.min(cards.length, 2)}, minmax(0,1fr))`
         : '1fr'
 
-  // The content/rail split only has room on desktop; below that the rail
-  // (already collapsed to a handle by CollapsibleAside — see Rail's docstring
-  // in components/ui/Page.tsx) stacks under the content column instead of
-  // sharing a row with it.
-  const bodyCols = viewport === 'desktop' ? 'minmax(0,1fr) 300px' : '1fr'
+  // The content/rail split only has room on desktop; below 1180 the rail
+  // track goes away and `ReflowRail` renders its cards as a plain inline
+  // column under the content — Rulings §7's "reflow, not hide". This used to
+  // be `Rail` (CollapsibleAside), which put all four rail cards behind a 44px
+  // handle on the warehouse tablet, and a fixed `300px` track that could not
+  // shrink when the rail collapsed at desktop.
+  const bodyCols = railGridColumns
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
@@ -1085,7 +1091,7 @@ export default function Pulse() {
           )}
         </div>
 
-        <Rail>
+        <ReflowRail width={300}>
           <Card title="Report summary">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
               <RailRow label="Report period" value={label.bs ?? 'BS unavailable'} sub={label.ad} />
@@ -1207,7 +1213,7 @@ export default function Pulse() {
               today.
             </p>
           </Card>
-        </Rail>
+        </ReflowRail>
       </div>
 
       <FooterNote

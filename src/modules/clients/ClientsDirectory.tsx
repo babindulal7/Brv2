@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
@@ -56,6 +56,50 @@ import {
  * and lie about doing something. Reported rather than faked.
  */
 type FilterKey = 'all' | 'onRent' | 'paymentDue' | 'vip' | 'typeOrg' | 'typeInd' | 'typeUnassigned'
+
+/**
+ * §18 — the directory's filter state IS the query string, the same contract
+ * RentalsList and OperationsQueues keep: refresh keeps the filters, Back
+ * undoes one decision, and "every organisation with a payment due" is a link
+ * rather than a screenshot. `?filter=` carries the one exclusive chip,
+ * `?blocked=1` / `?stop=1` carry the two intersecting overlays (two params
+ * because they are two independent booleans, exactly as the chips render
+ * them), and `?q=` carries the search — the param other surfaces already
+ * hand in (the Membership tab's row action navigates to `/clients?q=<name>`).
+ *
+ * Wire values are lowercase words rather than the internal camelCase keys,
+ * mirroring `URL_KEY` in `data/operations.ts` — a URL is read and edited by
+ * people, and `?filter=organisation` survives that better than `?filter=typeOrg`.
+ */
+const FILTER_PARAM: Record<Exclude<FilterKey, 'all'>, string> = {
+  typeOrg: 'organisation',
+  typeInd: 'individual',
+  typeUnassigned: 'unassigned',
+  onRent: 'on-rent',
+  paymentDue: 'payment-due',
+  vip: 'vip',
+}
+
+/**
+ * A query string is user input in the most literal sense — a bookmark, a
+ * hand-edited URL — so it is validated, never trusted. An unknown value
+ * selects nothing (`all`), the same fallback `Clients.tsx` applies to `?tab=`.
+ *
+ * Law 6 — `payment-due` answers *who owes us money*. A money-blind session
+ * opening a bookmarked `?filter=payment-due` gets the unfiltered list, the
+ * same absence the chip itself keeps for that role: the filter must not run
+ * for a session that may not know the answer.
+ */
+function filterFromParam(raw: string | null, money: boolean): FilterKey {
+  if (!raw) return 'all'
+  const hit = (Object.entries(FILTER_PARAM) as Array<[Exclude<FilterKey, 'all'>, string]>).find(
+    ([, wire]) => wire === raw,
+  )
+  if (!hit) return 'all'
+  if (hit[0] === 'paymentDue' && !money) return 'all'
+  return hit[0]
+}
+
 type ViewKey = 'Table' | 'Cards'
 type SortKey = 'name' | 'type' | 'membership' | 'rentals' | 'outstanding' | 'deposit' | 'lastRental'
 type Density = 'comfortable' | 'compact'
@@ -269,7 +313,7 @@ export function ClientsDirectory({
   // Deposit, so a Warehouse or Technician session never receives the column.
   const pii = canViewPII(gctx)
   const { showSuccessToast } = useToast()
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   /* DEVICES.md §7 build order item 1 — below 768 the table can't be read even
      scrolled, so the phone gets the card view unconditionally (Law 13: branch
      on capability, not platform).
@@ -285,15 +329,29 @@ export function ClientsDirectory({
   /** Tablet keeps the table but not nine columns of it — see the `<table>` below. */
   const narrow = viewport === 'tablet'
 
-  const [activeFilter, setActiveFilter] = useState<FilterKey>('all')
-  /** Rulings §11.2.4 — Blocked and On Stop intersect the selection, never replace it. */
-  const [overlays, setOverlays] = useState<Overlays>(NO_OVERLAYS)
   /**
-   * `?q=` lets another surface hand this table a client — the Membership tab's
-   * row action uses it, so "find this member in the directory" lands on the
-   * member rather than on an unfiltered list.
+   * §18 — chip, overlays and search are DERIVED from the query string rather
+   * than mirrored into state, which is what makes Back work for free:
+   * react-router re-renders with new params on popstate and these recompute.
+   * A mirrored `useState` copy would need an effect to notice the navigation,
+   * and that effect is where the classic "Back moves the URL but not the UI"
+   * bug lives (the same reasoning as `useFilters`, which this in-browser
+   * directory cannot use because it holds no server-side `ListFilters`).
+   *
+   * ⛔ **What this replaced.** Three `useState`s — `activeFilter`, `overlays`
+   * and `searchQuery`, the last seeded from `?q=` once at mount and never
+   * written back — so a refresh dropped every chip, Back skipped over filter
+   * decisions, and a filtered list could not be handed to anyone as a link.
+   *
+   * `?q=` also stays the handoff other surfaces use — the Membership tab's
+   * row action navigates to `/clients?q=<name>`, so "find this member in the
+   * directory" lands on the member rather than on an unfiltered list.
+   *
+   * The overlays (`?blocked=` / `?stop=`) are derived the same way but
+   * further down, after `stopCheckRan` — validating `?stop=` needs it.
    */
-  const [searchQuery, setSearchQuery] = useState(() => params.get('q') ?? '')
+  const activeFilter = filterFromParam(params.get('filter'), money)
+  const searchQuery = params.get('q') ?? ''
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
   const [view, setView] = useState<ViewKey>('Table')
@@ -381,6 +439,21 @@ export function ClientsDirectory({
     () => [...stopVerdicts.values()][0]?.unavailable.join(' ') ?? 'No client records were read, so the on-stop check had nothing to run against.',
     [stopVerdicts],
   )
+
+  /**
+   * Rulings §11.2.4 — Blocked and On Stop intersect the selection, never
+   * replace it. Derived from the URL like the chip above, and declared HERE,
+   * after `stopCheckRan`, because `?stop=1` needs it: a bookmarked URL is user
+   * input like any other, and when the on-stop check could not run for this
+   * session (the ordinary money-blind case) the chip is disabled — so the URL
+   * must not do what the chip refuses. Filtering a list of indeterminate
+   * verdicts would yield zero rows and read as "nobody is on stop", the exact
+   * implication §11.2.7 exists to prevent (*do NOT default to false silently*).
+   */
+  const overlays: Overlays = {
+    blocked: params.get('blocked') === '1',
+    onStop: params.get('stop') === '1' && stopCheckRan,
+  }
 
   const filteredClients = useMemo(() => {
     const rows = clients.filter((client) => {
@@ -477,26 +550,65 @@ export function ClientsDirectory({
 
   const resetPage = () => setPage(1)
 
+  /**
+   * Merge-writes the params this directory owns, deleting a key handed `null`
+   * — `OperationsQueues.tsx`'s `patch()` helper, the named house pattern for
+   * multi-param URL state. Merging from the CURRENT params is what keeps
+   * `?tab=`, which `Clients.tsx` owns on this same URL, untouched: two owners,
+   * one query string, no clobbering.
+   *
+   * `replace` exists for one caller — the middle of a search burst — so a
+   * word of typing is one history entry, not twelve.
+   */
+  const patchParams = (next: Record<string, string | null>, replace = false) => {
+    const merged = new URLSearchParams(params)
+    for (const [k, v] of Object.entries(next)) {
+      if (v === null) merged.delete(k)
+      else merged.set(k, v)
+    }
+    setParams(merged, replace ? { replace: true } : undefined)
+  }
+
   const applyFilter = (f: FilterKey) => {
-    setActiveFilter(f)
+    patchParams({ filter: f === 'all' ? null : FILTER_PARAM[f] })
     setActiveSavedView(null)
-    resetPage()
   }
 
   const toggleOverlay = (which: keyof Overlays) => {
-    setOverlays((prev) => ({ ...prev, [which]: !prev[which] }))
+    patchParams({ [which === 'blocked' ? 'blocked' : 'stop']: overlays[which] ? null : '1' })
     setActiveSavedView(null)
-    resetPage()
+  }
+
+  const setSearch = (term: string) => {
+    /* The first keystroke pushes; the rest of the burst replaces — the same
+       rule `useFilters` keeps for RentalsList. Replacing every keystroke
+       would overwrite the entry BEFORE the search (a chip, usually), so Back
+       would skip past that decision too; pushing every one buries the page
+       the user came from. Starting to type and clearing the box are both
+       discrete decisions, so both push. */
+    const midBurst = Boolean(searchQuery) && Boolean(term)
+    patchParams({ q: term || null }, midBurst)
   }
 
   const clearAll = () => {
-    setActiveFilter('all')
-    setOverlays(NO_OVERLAYS)
-    setSearchQuery('')
+    /* Every owned param in ONE write — two navigations would make "Clear all"
+       take two presses of Back to undo, which is not one action. */
+    patchParams({ filter: null, blocked: null, stop: null, q: null })
     setSort({ key: 'name', dir: 'asc' })
     setActiveSavedView(null)
-    resetPage()
   }
+
+  /**
+   * Pagination is local state, so a filter arriving by Back/Forward — which
+   * never passes through the handlers above — must still reset it. Keyed on
+   * the derived values themselves rather than on the click sites: page 4 of a
+   * freshly-narrowed two-page list would render an empty table under a live
+   * pager. (`current` below also clamps, so the intermediate render is safe.)
+   */
+  const filterSignature = `${activeFilter}|${overlays.blocked}|${overlays.onStop}|${searchQuery}`
+  useEffect(() => {
+    setPage(1)
+  }, [filterSignature])
 
   const applySortKey = (k: SortKey) => {
     setSort((prev) => (prev.key === k ? { key: k, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key: k, dir: 'asc' }))
@@ -901,10 +1013,7 @@ export function ClientsDirectory({
             <input
               type="search"
               value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value)
-                resetPage()
-              }}
+              onChange={(e) => setSearch(e.target.value)}
               placeholder="Search client, phone, email, company, PAN…"
               aria-label="Search clients"
               style={{
@@ -1020,14 +1129,19 @@ export function ClientsDirectory({
                   key={v.label}
                   type="button"
                   onClick={() => {
-                    setActiveFilter(v.filter)
                     /* A saved view restores the WHOLE state, overlays included —
                        otherwise "Blocked Clients" would leave a stale On Stop
-                       overlay on and show a different list each time. */
-                    setOverlays({ ...NO_OVERLAYS, ...v.overlays })
+                       overlay on and show a different list each time. One
+                       `patchParams` call, so restoring a view is one history
+                       entry and one Back undoes it whole. */
+                    const restored = { ...NO_OVERLAYS, ...v.overlays }
+                    patchParams({
+                      filter: v.filter === 'all' ? null : FILTER_PARAM[v.filter],
+                      blocked: restored.blocked ? '1' : null,
+                      stop: restored.onStop ? '1' : null,
+                    })
                     setSort(v.sort)
                     setActiveSavedView(v.label)
-                    resetPage()
                   }}
                   aria-pressed={on}
                   style={{
@@ -1816,19 +1930,35 @@ export function ClientsDirectory({
                   return null
                 })()}
 
+                {/*
+                  HIS v2.1 §4.2 — Phone, Email, PAN, Address and the authorised
+                  contact sit behind the SAME `pii` gate the table's Contact
+                  column and the card view's phone/email block already honour.
+                  Absent, not masked, exactly as Law 6 treats money: a Warehouse
+                  or Technician session gets no cell to un-hide. This rail was
+                  the one surface on the screen still rendering all of it
+                  ungated — a money-blind role could not read a balance here but
+                  could read a phone number, which is the same class of leak.
+                  KYC and Type stay for every role: a status and a category,
+                  both already drawn ungated on the table itself.
+                */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)', fontSize: 'var(--t-meta)' }}>
-                  <span>
-                    <span style={{ color: 'var(--muted)', display: 'block' }}>Phone</span>
-                    <span className="figure" style={{ color: 'var(--text)', fontWeight: 600 }}>{selectedClient.phone}</span>
-                  </span>
-                  <span style={{ minWidth: 0 }}>
-                    <span style={{ color: 'var(--muted)', display: 'block' }}>Email</span>
-                    <span style={{ color: 'var(--text)', wordBreak: 'break-all' }}>{selectedClient.email}</span>
-                  </span>
-                  <span>
-                    <span style={{ color: 'var(--muted)', display: 'block' }}>PAN</span>
-                    <span className="figure" style={{ color: 'var(--text)' }}>{selectedClient.pan ?? 'Not on file'}</span>
-                  </span>
+                  {pii && (
+                    <>
+                      <span>
+                        <span style={{ color: 'var(--muted)', display: 'block' }}>Phone</span>
+                        <span className="figure" style={{ color: 'var(--text)', fontWeight: 600 }}>{selectedClient.phone}</span>
+                      </span>
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ color: 'var(--muted)', display: 'block' }}>Email</span>
+                        <span style={{ color: 'var(--text)', wordBreak: 'break-all' }}>{selectedClient.email}</span>
+                      </span>
+                      <span>
+                        <span style={{ color: 'var(--muted)', display: 'block' }}>PAN</span>
+                        <span className="figure" style={{ color: 'var(--text)' }}>{selectedClient.pan ?? 'Not on file'}</span>
+                      </span>
+                    </>
+                  )}
                   <span>
                     <span style={{ color: 'var(--muted)', display: 'block' }}>KYC</span>
                     <Tone
@@ -1846,22 +1976,26 @@ export function ClientsDirectory({
                     <span style={{ color: 'var(--muted)', display: 'block' }}>Type</span>
                     <span style={{ color: 'var(--text)' }}>{selectedClient.clientType}</span>
                   </span>
-                  <span style={{ minWidth: 0 }}>
-                    <span style={{ color: 'var(--muted)', display: 'block' }}>Address</span>
-                    <span style={{ color: 'var(--text)' }}>{selectedClient.address}</span>
-                  </span>
+                  {pii && (
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ color: 'var(--muted)', display: 'block' }}>Address</span>
+                      <span style={{ color: 'var(--text)' }}>{selectedClient.address}</span>
+                    </span>
+                  )}
                 </div>
 
-                <div style={{ fontSize: 'var(--t-meta)' }}>
-                  <span style={{ color: 'var(--muted)', display: 'block', marginBottom: 3 }}>Authorized contact</span>
-                  <span style={{ display: 'block', fontWeight: 600, color: 'var(--text)' }}>
-                    {selectedClient.contactPerson.name}
-                  </span>
-                  <span style={{ display: 'block', color: 'var(--text2)' }}>
-                    {selectedClient.contactPerson.designation} ·{' '}
-                    <span className="figure">{selectedClient.contactPerson.phone}</span>
-                  </span>
-                </div>
+                {pii && (
+                  <div style={{ fontSize: 'var(--t-meta)' }}>
+                    <span style={{ color: 'var(--muted)', display: 'block', marginBottom: 3 }}>Authorized contact</span>
+                    <span style={{ display: 'block', fontWeight: 600, color: 'var(--text)' }}>
+                      {selectedClient.contactPerson.name}
+                    </span>
+                    <span style={{ display: 'block', color: 'var(--text2)' }}>
+                      {selectedClient.contactPerson.designation} ·{' '}
+                      <span className="figure">{selectedClient.contactPerson.phone}</span>
+                    </span>
+                  </div>
+                )}
 
                 {/* §8.3 — credit and lifetime spend are rupee figures, so the whole
                     block is absent for Warehouse rather than blanked out. */}

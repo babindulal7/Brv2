@@ -455,6 +455,151 @@ export async function getClientRecordByCode(clientCode: string): Promise<ClientP
   }
 }
 
+/* ── duplicate detection against the directory ──────────────────────────────
+ *
+ * Three screens ask "does this client already exist?": Add Client (the phone
+ * the operator is typing), Import Center (every phone/email in an uploaded
+ * CSV) and the Duplicate & Merge Center (the whole directory). All three used
+ * to ask `CLIENTS_DATA` — the 26-row seed array — so a client that existed in
+ * the database produced no warning, and the banner could name a client that
+ * did not exist (docs/pages 05 §7.7, 42 §7.3, 43 §7.6). These functions are
+ * the Law 2 replacement: the matching is a server-side filter on
+ * `client_directory_v`, never a full-table download matched in the browser.
+ *
+ * Both use `.or(…ilike…)` rather than `.ilike()` deliberately: the mock
+ * PostgREST engine (`lib/mock/engine.ts`) implements ilike ONLY inside
+ * `.or()` clauses — a bare `.ilike()` builder method does not exist there and
+ * would crash mock mode outright.
+ */
+
+/**
+ * Directory clients whose phone ends with the digits typed so far — the Add
+ * Client duplicate warning. Matches on the last 9 digits (the same tail the
+ * old seed check compared), so a `+977`-prefixed stored phone still matches a
+ * bare local number as it is typed. Fewer than 7 digits is not enough of a
+ * phone to ask about; returns `[]` without a round trip.
+ *
+ * The tail is digits-only by construction, so it cannot break the `.or()`
+ * filter syntax. Deactivated clients are excluded (Law 3 — they are retained,
+ * but a closed account is not a duplicate-warning candidate; the phone unique
+ * constraint is the backstop either way).
+ */
+export async function findClientsByPhoneTail(phoneInput: string, limit = 3): Promise<ClientRecord[]> {
+  const digits = phoneInput.replace(/\D/g, '')
+  if (digits.length < 7) return []
+  const tail = digits.slice(-9)
+
+  const { data, error } = await supabase
+    .from('client_directory_v')
+    .select(DIRECTORY_COLUMNS)
+    .is('deactivated_at', null)
+    .or(`phone.ilike.%${tail}`)
+    .limit(limit)
+
+  if (error) throw new Error(`findClientsByPhoneTail failed: ${error.message}`)
+  return (data ?? []).map((r) => toClientRecord(r as unknown as DirectoryRow))
+}
+
+export interface ClientMatchKeys {
+  phones?: readonly string[]
+  emails?: readonly string[]
+}
+
+/**
+ * Directory clients matching ANY of the given phones (last-10-digit tail) or
+ * emails (exact, case-insensitive) — the Import Center's duplicate corpus.
+ *
+ * This is a *prefilter*, not the verdict: it returns candidate `ClientRecord`s
+ * and the caller's exact matcher (`buildImportRow`, which compares
+ * `normalizedPhone` / lowercased email) decides row by row. Over-matching is
+ * therefore harmless and under-matching is the only failure that matters,
+ * which is why:
+ *
+ *  - phone tails are digits-only suffix matches (`phone.ilike.%<tail>`) —
+ *    valid against the canonical `+977…` storage format the
+ *    `clients_phone_format` CHECK enforces;
+ *  - emails that contain characters able to break the PostgREST `.or()`
+ *    filter syntax (commas, parens, wildcards, whitespace) are skipped rather
+ *    than escaped-and-hoped; a skipped email only means that row's duplicate
+ *    flag falls back to its phone match.
+ *
+ * Clauses are chunked so a large CSV cannot build a URL longer than the
+ * server accepts; results are merged and de-duplicated on `id`.
+ */
+export async function findClientMatches(keys: ClientMatchKeys): Promise<ClientRecord[]> {
+  const clauses: string[] = []
+
+  const phoneTails = new Set<string>()
+  for (const p of keys.phones ?? []) {
+    const digits = p.replace(/\D/g, '')
+    if (digits.length >= 7) phoneTails.add(digits.slice(-10))
+  }
+  phoneTails.forEach((t) => clauses.push(`phone.ilike.%${t}`))
+
+  const emailKeys = new Set<string>()
+  for (const e of keys.emails ?? []) {
+    const cleaned = e.trim().toLowerCase()
+    // Conservative allow-list: anything outside it could split or wildcard the
+    // or() filter. `_` remains a single-char ilike wildcard — acceptable,
+    // because it can only widen the candidate set the exact matcher then culls.
+    if (cleaned && /^[a-z0-9._+@-]+$/.test(cleaned)) emailKeys.add(cleaned)
+  }
+  emailKeys.forEach((e) => clauses.push(`email.ilike.${e}`))
+
+  if (clauses.length === 0) return []
+
+  const CHUNK = 30
+  const byId = new Map<string, DirectoryRow>()
+  for (let i = 0; i < clauses.length; i += CHUNK) {
+    const { data, error } = await supabase
+      .from('client_directory_v')
+      .select(DIRECTORY_COLUMNS)
+      .is('deactivated_at', null)
+      .or(clauses.slice(i, i + CHUNK).join(','))
+      .limit(500)
+
+    if (error) throw new Error(`findClientMatches failed: ${error.message}`)
+    for (const row of (data ?? []) as unknown as DirectoryRow[]) byId.set(row.id, row)
+  }
+
+  return Array.from(byId.values()).map(toClientRecord)
+}
+
+/**
+ * The referrer dropdown on Generate Referral Code — every active client,
+ * ordered by name server-side (no client-side `.sort()`, per the wiring
+ * rules). Narrow on purpose: the screen needs a name to suggest a code from
+ * and the code every `/clients/:id` link is built from, nothing else.
+ *
+ * `isBlocked` is returned so the screen can SAY a client is blocked rather
+ * than either hiding them (an unruled product decision — nothing has ruled
+ * that a blocked client may not refer) or listing them indistinguishably
+ * (the failure docs/pages/44 §7.5 flags).
+ */
+export interface ReferrerOption {
+  /** `client_code` — the id every `/clients/:id` link uses. */
+  clientCode: string
+  name: string
+  isBlocked: boolean
+}
+
+export async function listReferrerOptions(): Promise<ReferrerOption[]> {
+  const { data, error } = await supabase
+    .from('client_directory_v')
+    .select('id, client_code, name, is_blocked')
+    .is('deactivated_at', null)
+    .order('name', { ascending: true })
+    .limit(1000)
+
+  if (error) throw new Error(`listReferrerOptions failed: ${error.message}`)
+
+  return ((data ?? []) as unknown as Array<Pick<DirectoryRow, 'client_code' | 'name' | 'is_blocked'>>).map((r) => ({
+    clientCode: r.client_code,
+    name: r.name,
+    isBlocked: r.is_blocked === true,
+  }))
+}
+
 /**
  * The membership plans, from `membership_plans_v`.
  *

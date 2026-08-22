@@ -877,13 +877,20 @@ function FavouriteButton({ on, name, onToggle }: { on: boolean; name: string; on
         onToggle()
       }}
       style={{
+        /* Law 15 — the chip stays 26px for the tile's proportions; the hit
+           area is 44×44 via content-box padding, which is what the law
+           actually measures. Negative margin keeps the chip optically where
+           the render puts it while the target grows outward — the same
+           pattern as Sidebar's CollapseButton. */
         width: 26,
         height: 26,
+        boxSizing: 'content-box',
+        padding: 9,
+        margin: -9,
         display: 'grid',
         placeItems: 'center',
-        borderRadius: 7,
-        border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-        background: on ? 'var(--nav-active-bg)' : 'var(--card)',
+        border: 'none',
+        background: 'transparent',
         color: on ? 'var(--nav-active-accent)' : 'var(--muted)',
         cursor: 'pointer',
         flexShrink: 0,
@@ -894,7 +901,20 @@ function FavouriteButton({ on, name, onToggle }: { on: boolean; name: string; on
         zIndex: 2,
       }}
     >
-      <Icon name="flag" size={13} fill={on} />
+      <span
+        aria-hidden
+        style={{
+          width: 26,
+          height: 26,
+          borderRadius: 7,
+          border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+          background: on ? 'var(--nav-active-bg)' : 'var(--card)',
+          display: 'grid',
+          placeItems: 'center',
+        }}
+      >
+        <Icon name="flag" size={13} fill={on} />
+      </span>
     </button>
   )
 }

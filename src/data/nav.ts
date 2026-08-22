@@ -1,6 +1,6 @@
 import type { IconName } from '../components/ui/Icon'
 import type { SystemRole } from '../types/database'
-import { canViewMoney } from '../lib/rbac'
+import { canViewMoney, isStaff } from '../lib/rbac'
 
 /**
  * The application's navigation tree — **the updated wireframes, "Shell —
@@ -109,10 +109,18 @@ export const SETTINGS_NAV: NavSection = SETTINGS_SECTION
  */
 export function permittedNav(role: SystemRole | undefined): NavSection[] {
   if (!role) return []
+  let nav = NAV
   if (!canViewMoney(role)) {
-    return NAV.filter((s) => !isMoneySurface(s.to))
+    nav = nav.filter((s) => !isMoneySurface(s.to))
   }
-  return NAV
+  /* Client is external (`lib/rbac.ts:isStaff`) — staff surfaces are omitted
+     for it, not shown-then-refused. Same shape as the money filter above:
+     the Shell guard reads {@link isStaffSurface} too, so nav and guard
+     cannot answer differently. Added 22 Aug 2026 (audit theme 3 #7). */
+  if (!isStaff(role)) {
+    nav = nav.filter((s) => !isStaffSurface(s.to))
+  }
+  return nav
 }
 
 /**
@@ -156,6 +164,75 @@ export const MONEY_ROUTES: readonly string[] = [
 export function isMoneySurface(path: string): boolean {
   const base = path.split('?')[0] ?? path
   return MONEY_ROUTES.some((r) => base === r || base.startsWith(r + '/'))
+}
+
+/**
+ * **The staff-only surfaces — `isStaff`'s route list, Law 6's sibling.**
+ *
+ * Added 22 Aug 2026 (audit theme 3 #7). `lib/rbac.ts` has said since the roles
+ * were drawn: *"Client is external. Guard every staff surface with this."* But
+ * until this list existed no route surface asked — an external Client session
+ * could reach the floor workspaces, `/clients/import`, `/clients/duplicates`
+ * and `/crew`, stopped only by RLS returning empty results. An empty screen is
+ * not a refusal: it reads as "nothing here today", leaks the surface's shape
+ * and labels, and contradicts the app's own rule that forbidden things are
+ * absent or refused, never hollowed out.
+ *
+ * Same discipline as {@link MONEY_ROUTES}: **one list, read by every gate.**
+ * `permittedNav()` filters `NAV` by it and `App.tsx`'s Shell guard refuses a
+ * typed URL by it, so nav and guard cannot answer differently.
+ *
+ * Entries are route **prefixes**, matched exactly like `MONEY_ROUTES`:
+ *
+ *  - `/crew` — nav item 6. Crew scheduling is staff coordination; a client
+ *    hiring crew goes through their booking, not the roster.
+ *  - `/clients/import`, `/clients/duplicates` — bulk intake and merge tooling
+ *    over the whole client book. `client_merges_all` is Owner/Admin/Manager in
+ *    the database; the surface itself is meaningless to the one client a
+ *    Client session can see.
+ *
+ * The floor workspaces are covered by {@link FLOOR_ROUTE_SUFFIXES} below —
+ * they are `/rentals/:bookingNo/<step>` routes, so a prefix cannot name them.
+ *
+ * ⚠ This list is a ROUTE gate for the external role only. It does not replace
+ * the per-capability predicates (`canWriteFloor`, `canMergeClients`, …) that
+ * decide which STAFF roles may act once inside — mirroring rule, Law 6.
+ */
+export const STAFF_ROUTES: readonly string[] = [
+  '/crew',
+  '/clients/import',
+  '/clients/duplicates',
+]
+
+/**
+ * The five floor-workspace suffixes under `/rentals/:bookingNo/…`.
+ *
+ * Moved here from `App.tsx` on 22 Aug 2026 so its two readers share one list:
+ * `App.tsx`'s Shell still reads it to apply the floor UI scale
+ * (`data-floor` — DEVICES.md §7 build order item 3), and `isStaffSurface()`
+ * reads it because the floor is staff ground (audit theme 3 #7). Two copies of
+ * the same five suffixes would drift exactly the way the money guard once did.
+ */
+export const FLOOR_ROUTE_SUFFIXES: readonly string[] = [
+  '/packing',
+  '/handover',
+  '/return',
+  '/reset',
+  '/evidence',
+]
+
+/**
+ * True when `path` is a staff-only surface an external Client session must be
+ * refused. Prefix match over {@link STAFF_ROUTES} (same rule as
+ * {@link isMoneySurface}), plus suffix match over {@link FLOOR_ROUTE_SUFFIXES}
+ * for the parameterised floor routes a prefix cannot express.
+ */
+export function isStaffSurface(path: string): boolean {
+  const base = path.split('?')[0] ?? path
+  return (
+    STAFF_ROUTES.some((r) => base === r || base.startsWith(r + '/')) ||
+    FLOOR_ROUTE_SUFFIXES.some((s) => base.endsWith(s))
+  )
 }
 
 /**

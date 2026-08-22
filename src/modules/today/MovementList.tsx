@@ -6,6 +6,7 @@ import type { StatusKey } from '../../lib/status'
 import { ROWS_PER_COLUMN, ROW_MENU, timeOf, statusKeyOf, has, type MovementRow } from '../../data/today'
 import { cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
+import { ErrorBanner } from '../../components/ui/StateViews'
 import type { ListResult } from '../../lib/queries/useList'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { canRecordPayment } from '../../lib/rbac'
@@ -115,17 +116,39 @@ function Pill({ text, status }: { text: string; status: StatusKey }) {
  * `return_lines` and its movements, and refuses in `validate` when — as here —
  * it is handed no lines. Either way the success toast fires only on a resolved
  * promise, so neither can report a write it did not make.
+ *
+ * ⛔ Both refusals used to land in `console.error` ONLY — the operator pressed
+ * Complete Return, the action refused it, and the screen said nothing. Law 12:
+ * a dispatch failure is inline and persistent, never a toast and never
+ * console-only. Every failure now goes through `onFail`, whose banner the list
+ * renders under its header; the action's own refusal sentence is the message,
+ * because it names the real reason ("no lines", "not signed in") instead of a
+ * generic apology.
  */
+
+/** Law 12 — what a failed dispatch surfaces inline: a title and the refusal's own sentence. */
+interface MovementActionFailure {
+  title: string
+  message: string
+}
+
+/** The list's dispatcher, passed into the hover card and the row menu. */
+type MovementDispatch = (kind: 'pickup' | 'return', bookingNo: string, onDone: () => void) => void
+
 function runMovementAction(
   kind: 'pickup' | 'return',
   bookingNo: string,
   user: { id: string; role: SystemRole } | null,
   onDone: () => void,
+  onFail: (failure: MovementActionFailure) => void,
 ) {
+  const title = `This ${kind} was not recorded`
+
   if (!user) {
-    console.error(
-      `[${kind}] not dispatched: no signed-in session. The dispatcher no longer substitutes a default identity.`,
-    )
+    onFail({
+      title,
+      message: `You are not signed in, so this ${kind} cannot be recorded against anyone. Nothing was written.`,
+    })
     return
   }
 
@@ -147,7 +170,11 @@ function runMovementAction(
           mod.completeReturn({ rentalId: bookingNo, lines: [] }, ctx),
         )
 
-  run.then(onDone).catch((err) => console.error(`complete ${kind} failed:`, err))
+  run.then(onDone).catch((err: unknown) => {
+    // The console line is a diagnostic; the operator's copy is the inline banner.
+    console.error(`complete ${kind} failed:`, err)
+    onFail({ title, message: err instanceof Error ? err.message : String(err) })
+  })
 }
 
 /** An explicit non-value. Never an empty string, which reads as "recorded blank". */
@@ -178,7 +205,7 @@ const NONE = '—'
  *  - **Staff** — `crew_bookings` (0003:1126) is the assignment table; not joined.
  *  - **Notes** — no notes column is selected by `listBookings`.
  */
-function HoverCard({ m }: { m: MovementRow }) {
+function HoverCard({ m, onMovement }: { m: MovementRow; onMovement: MovementDispatch }) {
   const { showSuccessToast } = useToast()
   const { user } = useAuth()
   const money = useCanViewMoney()
@@ -209,13 +236,13 @@ function HoverCard({ m }: { m: MovementRow }) {
     ...(money && user && canRecordPayment(user.role) ? ([{ label: 'Receive Payment', to: '/finance' }]) : []),
     ...(m.kind === 'Pickup' || m.kind === 'Delivery' ? [{
       label: 'Complete Pickup',
-      onClick: () => runMovementAction('pickup', m.bookingNo, user, () =>
+      onClick: () => onMovement('pickup', m.bookingNo, () =>
         showSuccessToast('Pickup Completed', `Booking ${m.bookingNo} handed over.`),
       )
     }] : []),
     ...(m.kind === 'Return' ? [{
       label: 'Complete Return',
-      onClick: () => runMovementAction('return', m.bookingNo, user, () =>
+      onClick: () => onMovement('return', m.bookingNo, () =>
         showSuccessToast('Return Completed', `Booking ${m.bookingNo} received & returned.`),
       )
     }] : []),
@@ -311,10 +338,9 @@ const ROW_MENU_H = 460
  * `clients(name)` and nothing else; inventing a number would put a fake one
  * behind a `tel:` link.
  */
-function RowMenu({ onClose, m, up }: { onClose: () => void; m: MovementRow; up: boolean }) {
+function RowMenu({ onClose, m, up, onMovement }: { onClose: () => void; m: MovementRow; up: boolean; onMovement: MovementDispatch }) {
   const navigate = useNavigate()
   const money = useCanViewMoney()
-  const { user } = useAuth()
   const { showSuccessToast } = useToast()
   const booking = `/rentals/${m.bookingNo}`
 
@@ -331,11 +357,11 @@ function RowMenu({ onClose, m, up }: { onClose: () => void; m: MovementRow; up: 
       showSuccessToast('Copied', `Booking number ${m.bookingNo} copied to clipboard.`)
     },
     'Complete Pickup': () =>
-      runMovementAction('pickup', m.bookingNo, user, () =>
+      onMovement('pickup', m.bookingNo, () =>
         showSuccessToast('Pickup Completed', `Booking ${m.bookingNo} handed over.`),
       ),
     'Complete Return': () =>
-      runMovementAction('return', m.bookingNo, user, () =>
+      onMovement('return', m.bookingNo, () =>
         showSuccessToast('Return Completed', `Booking ${m.bookingNo} received & returned.`),
       )
   }
@@ -452,10 +478,26 @@ export default function MovementList({
      `.movement-row` grid in `styles/theme.css` has no phone breakpoint and this
      file may not add one, so the arrangement branches here instead. */
   const phone = useViewport() === 'phone'
+  const { user } = useAuth()
   const [hover, setHover] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ id: string; up: boolean } | null>(null)
+  /**
+   * Law 12 — a dispatch failure is inline and persistent, never a toast and
+   * never console-only. This is where a refused Complete Pickup / Complete
+   * Return lands so the operator sees it happen; a new attempt clears it, and
+   * only a resolved promise fires the success toast.
+   */
+  const [actionError, setActionError] = useState<MovementActionFailure | null>(null)
   const press = useRef<number | null>(null)
   const suppress = useRef(false)
+
+  /* One dispatcher for the hover card and the row menu, so the failure state
+     lives here — beside the rows the banner renders over — instead of in two
+     overlay components that unmount on outside-tap. */
+  const dispatchMovement: MovementDispatch = (kind, bookingNo, onDone) => {
+    setActionError(null)
+    runMovementAction(kind, bookingNo, user, onDone, setActionError)
+  }
 
   const shown = list.rows.slice(0, ROWS_PER_COLUMN)
   const rest = list.rows.length - shown.length
@@ -530,6 +572,15 @@ export default function MovementList({
           View all
         </Link>
       </div>
+
+      {/* Law 12 — the failed dispatch, inline and persistent. It sits above the
+          rows rather than replacing them: the list is still true, the write is
+          what did not happen. */}
+      {actionError && (
+        <div style={{ padding: '12px 15px 0' }}>
+          <ErrorBanner title={actionError.title} message={actionError.message} />
+        </div>
+      )}
 
       <div style={{ flex: 1, ...(stateful ? { padding: '14px 15px' } : {}) }}>
         <PageBody
@@ -614,7 +665,9 @@ export default function MovementList({
                 >
                   <Icon name="more_vert" size={15} />
                 </button>
-                {menu?.id === r.id && <RowMenu m={r} onClose={() => setMenu(null)} up={menu.up} />}
+                {menu?.id === r.id && (
+                  <RowMenu m={r} onClose={() => setMenu(null)} up={menu.up} onMovement={dispatchMovement} />
+                )}
               </span>
             )
 
@@ -836,7 +889,7 @@ export default function MovementList({
                 {/* `menu` is `{ id, up } | null`, so the old `menu !== r.id` compared an
                     object to a string and was always true — the 520px hover card rendered
                     straight through the open row menu. Compare the id, not the object. */}
-                {hover === r.id && menu?.id !== r.id && <HoverCard m={r} />}
+                {hover === r.id && menu?.id !== r.id && <HoverCard m={r} onMovement={dispatchMovement} />}
               </div>
             )
           })}

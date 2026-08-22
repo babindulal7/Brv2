@@ -1,4 +1,4 @@
-import { PageHeader, Card, ReflowRail, cardStyle, useBandColumns } from '../../components/ui/Page'
+import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
@@ -6,16 +6,6 @@ import { FORECAST_METRICS, PURCHASE_FORECAST, MAINTENANCE_FORECAST, SEASONAL_DEM
 import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-
-function ForecastKpiCard({ label, value, accent, note }: any) {
-  return (
-    <Card style={{ padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', background: `var(--${accent}-bg, var(--card))` }}>
-      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: '24px', fontWeight: 700, color: `var(--${accent})` }}>{value}</div>
-      <div style={{ fontSize: 'var(--t-meta)', color: `var(--${note.tone})` }}>{note.text}</div>
-    </Card>
-  )
-}
 
 /** The export body — the headline block and all three forecast tables. */
 function forecastCsv(): ReportCsvRow[] {
@@ -41,9 +31,6 @@ function forecastCsv(): ReportCsvRow[] {
 }
 
 export default function ForecastingReports() {
-  /* KpiStrip's clamp, applied to this screen's hand-rolled key-figure grid:
-     four or six cards side by side is unreadable below 1180. */
-  const bandCols = useBandColumns()
   const money = useCanViewMoney()
 
   /*
@@ -84,40 +71,49 @@ export default function ForecastingReports() {
       */}
       <ReportToolbar title="Forecasting & AI" csv={{ filename: 'forecasting', build: forecastCsv }} />
 
-      <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: `repeat(${bandCols(4)}, minmax(0,1fr))`, gap: 'var(--sp-md)' }}>
-        <ForecastKpiCard
-          label="Forecast Revenue"
-          value={formatMoney(FORECAST_METRICS.forecastRevenue as Paisa)}
-          icon="dollar"
-          accent="primary"
-          note={{ text: 'Projected for next 30 days', tone: 'neutral' }}
-        />
-        <ForecastKpiCard
-          label="Expected Bookings"
-          value={FORECAST_METRICS.expectedBookings}
-          icon="calendar"
-          accent="success"
-          note={{ text: 'Upcoming reservations', tone: 'success' }}
-        />
-        <ForecastKpiCard
-          label="Predicted Shortages"
-          value={FORECAST_METRICS.predictedShortages}
-          icon="alert_triangle"
-          accent="danger"
-          note={{ text: 'High risk stockouts', tone: 'danger' }}
-        />
-        <ForecastKpiCard
-          label="Forecast Accuracy"
-          value={`${FORECAST_METRICS.forecastAccuracy}%`}
-          icon="check"
-          accent="progress"
-          note={{ text: 'Based on historical variance', tone: 'neutral' }}
-        />
-      </section>
+      {/* The shared strip — typed items, icon tile drawn, viewport clamp built
+          in. The old hand-rolled `ForecastKpiCard` was `any`-typed and
+          silently dropped its `icon` prop. */}
+      <KpiStrip
+        columns={4}
+        items={[
+          {
+            label: 'Forecast Revenue',
+            value: formatMoney(FORECAST_METRICS.forecastRevenue as Paisa),
+            icon: 'dollar',
+            accent: 'primary',
+            note: 'Projected for next 30 days',
+          },
+          {
+            label: 'Expected Bookings',
+            value: String(FORECAST_METRICS.expectedBookings),
+            icon: 'calendar',
+            accent: 'success',
+            note: 'Upcoming reservations',
+          },
+          {
+            label: 'Predicted Shortages',
+            value: String(FORECAST_METRICS.predictedShortages),
+            icon: 'alert_triangle',
+            accent: 'danger',
+            note: 'High risk stockouts',
+          },
+          {
+            label: 'Forecast Accuracy',
+            value: `${FORECAST_METRICS.forecastAccuracy}%`,
+            icon: 'check',
+            accent: 'progress',
+            note: 'Based on historical variance',
+          },
+        ]}
+      />
 
-      <ReflowRail>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-          <section aria-label="Inventory Purchase Forecast" style={cardStyle}>
+      {/* Rulings §7 — these tables are the report's CONTENT, not a rail. They
+          used to be passed into `ReflowRail`, which at desktop is a 288px
+          sticky collapsible box, so the whole report rendered inside one
+          self-scrolling rail. There is no aside content on this page, so there
+          is no rail at all. */}
+      <section aria-label="Inventory Purchase Forecast" style={cardStyle}>
             <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Inventory Purchase Forecast</div>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
               <thead>
@@ -190,8 +186,6 @@ export default function ForecastingReports() {
               </tbody>
             </table>
           </section>
-        </div>
-      </ReflowRail>
     </div>
   )
 }

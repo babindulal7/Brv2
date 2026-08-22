@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader } from '../../components/ui/Page'
@@ -15,6 +15,7 @@ import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
+import { newClientUuid } from '../../lib/supabase'
 import type { ActionContext } from '../../actions/core'
 
 /**
@@ -123,6 +124,15 @@ export default function PurchaseRequests() {
     user ? { userId: user.id, role: user.role, isOnline: online } : null
 
   /**
+   * Law 8 — one idempotency key per decision-on-a-request, minted on the first
+   * press and reused across every retry of it (`blockKeys` ref pattern,
+   * `clients/ClientsDirectory.tsx:325`), so a replayed Approve records once.
+   * Cleared when the decision lands; a later, different decision (Approve →
+   * Mark as Ordered) keys separately.
+   */
+  const decisionKeys = useRef(new Map<string, string>())
+
+  /**
    * ⛔ This used to write `newStatus` into `requestsList` **first**, then fire
    * `approvePurchaseRequest` with no `ActionContext`, no `.catch()` and no
    * rollback. A manager approving a Rs 1,200,000 request watched the row turn
@@ -130,21 +140,23 @@ export default function PurchaseRequests() {
    * never saw the decision, the manager considered it made and communicated,
    * and there was no error left behind to find later.
    *
-   * The row now moves **only** on the resolved path, and a failure lands in the
-   * inline error line beside the buttons. `approvePurchaseRequest` does not set
-   * `implemented: true`, so `actions/core.ts` refuses it before `execute` and
-   * the operator reads why instead of a green row. That refusal is the correct
-   * outcome today, not a regression to be papered over with a toast.
+   * The row still moves **only** on the resolved path, and a failure lands in
+   * the inline error line beside the buttons. `approvePurchaseRequest` now
+   * UPDATEs `purchase_requests` by `pr_no` — but this register is a seed array
+   * (`data/purchaseRequests.ts`) whose PR numbers exist in no database, so on
+   * today's data the action resolves nothing and refuses with a sentence
+   * saying exactly that. Honest refusal until a PR intake writes real rows;
+   * the moment the register reads `purchase_requests`, these buttons record
+   * real decisions with no further change here.
    *
-   * TODO(decision) — **the permission**. The action declares
-   * `permissions: ['purchase.approve']` and `lib/rbac` has no rule for it:
-   * `canApproveDiscount`, `canOverrideCreditLimit`, `canVoidInvoice` and
-   * `canRecordPayment` each carry a different authority, and mapping one of
-   * them onto purchase approval here would be inventing the rule. `core.ts`
-   * denies an unknown capability by name, so the dispatch already fails closed;
-   * the buttons are deliberately not gated on a rule that does not exist yet.
-   * Which roles may approve a purchase request — and above what value a second
-   * approval is required — is still unruled.
+   * ⚠ **The permission is mapped, and broad** — the old TODO here claimed
+   * `lib/rbac` had no rule for `purchase.approve`; both halves went stale.
+   * `core.ts:213` maps it to `canWriteSharedTriage` = `isStaff()`, faithfully
+   * mirroring the live `purchase_requests_all` policy (`auth_is_staff()`) —
+   * which admits Driver and Technician to a spend-authorising verb. Per the
+   * mirroring rule the RLS policy must be narrowed FIRST and the app follows
+   * (rbac.ts:246-253, PLAN.md §4.29); these buttons are deliberately not
+   * re-gated here on a narrower set nobody has ruled.
    */
   const handleStatusChange = (id: string, newStatus: PRDecision) => {
     const verb = newStatus.toLowerCase()
@@ -155,11 +167,20 @@ export default function PurchaseRequests() {
       )
       return
     }
+    const pr = requestsList.find((r) => r.id === id)
+    if (!pr) {
+      setActionError(`Not ${verb} — this request is no longer on the list.`)
+      return
+    }
+    const keyId = `${id}:${newStatus}`
+    const clientUuid = decisionKeys.current.get(keyId) ?? newClientUuid()
+    decisionKeys.current.set(keyId, clientUuid)
     setActionError(null)
     void import('../../actions/inventory/approvePurchaseRequest')
-      .then((m) => m.approvePurchaseRequest({ prId: id, status: newStatus }, ctx))
-      .then(() => {
-        setRequestsList((prev) => prev.map((pr) => (pr.id === id ? { ...pr, status: newStatus } : pr)))
+      .then((m) => m.approvePurchaseRequest({ prNo: pr.prNo, decision: newStatus, clientUuid }, ctx))
+      .then((res) => {
+        decisionKeys.current.delete(keyId)
+        setRequestsList((prev) => prev.map((r) => (r.id === id ? { ...r, status: res.status } : r)))
       })
       .catch((err: unknown) => {
         console.error('purchase request decision failed:', err)
