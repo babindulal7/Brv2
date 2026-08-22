@@ -20,3 +20,5 @@ supabase/.branches
 
 # scratch
 typecheck_output.txt
+coverage/
+docs/docs.zip
