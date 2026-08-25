@@ -192,7 +192,25 @@ async function main() {
 
   const rows = []
   for (const [table, used] of TARGETS) {
-    const { count, error } = await supabase.from(table).select('*', { count: 'exact', head: true })
+    /*
+     * Counted on `id`, NOT on `*` — and this is load-bearing from 0062 onward.
+     *
+     * `0062_law6_column_grants_arm_the_mask` revokes table-level SELECT on
+     * `bookings`, `booking_lines`, `products` and `product_units` and grants
+     * back only the non-money columns. A `select('*')` expands to every column
+     * including the ungranted ones, so on those four tables it is refused
+     * outright — for every role, Owner included.
+     *
+     * Verified against a local stack with 0062 applied on 25 Aug 2026: counting
+     * with `*` reported ERROR on `bookings` and `booking_lines` while every
+     * other table answered normally. That is this script reporting its own
+     * query shape as a database fault — in the one tool whose job is to prove
+     * 0062 landed cleanly. An operator reading that would reasonably conclude
+     * 0062 had broken bookings, and roll back a migration that was working.
+     *
+     * `id` is granted on every table in TARGETS and is all `head: true` needs.
+     */
+    const { count, error } = await supabase.from(table).select('id', { count: 'exact', head: true })
 
     let status, detail
     if (!error) {
