@@ -160,13 +160,27 @@ export const SETTING_SPECS: Record<SettingKey, SettingSpec> = {
     suffix: '% / month',
     validate: (v) => percent(v, 'Late payment interest'),
   },
+  /**
+   * The idle screen lock, in minutes. **`0` means off, and off is the default**
+   * (ruled by the owner 25 Aug 2026).
+   *
+   * It was `default: 30` with a `n < 1` refusal, which made "off" unrepresentable
+   * — every session got a 30-minute idle timer whether or not anyone asked for
+   * one. Zero is admitted as a value rather than added as a second boolean
+   * setting, so there is one number to read and no way for a flag and a duration
+   * to disagree.
+   *
+   * `lib/auth.tsx` locks the screen when this elapses **and a PIN exists**; it
+   * never signs anyone out. Read the ruling on that effect before widening this.
+   */
   sessionTimeoutMinutes: {
-    default: 30,
+    default: 0,
     kind: 'number',
-    suffix: ' minutes',
+    suffix: ' minutes (0 = off)',
     validate: (v) => {
       const n = Number(v)
-      if (!Number.isInteger(n) || n < 1) return 'A timeout is at least one minute.'
+      if (!Number.isInteger(n) || n < 0) return 'Use 0 to switch the idle lock off, or a whole number of minutes.'
+      if (n > 0 && n < 1) return 'A timeout is at least one minute.'
       if (n > 480) return 'A timeout beyond eight hours is not a timeout.'
       return null
     },

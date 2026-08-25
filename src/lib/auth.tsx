@@ -556,12 +556,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * "Signed out after this long idle" — was read by no code at all. So the
    * screen lock was unreachable and the timeout was decoration.
    *
-   * ## Lock or sign out, decided by whether a PIN exists
+   * ## It locks. It never signs out. And it is OFF unless switched on.
    *
-   * The setting promises a sign-out and that is the correct fallback: a session
-   * with no PIN cannot be reopened, so locking it would strand the operator at a
-   * curtain whose only exit is the sign-out they were going to get anyway. With
-   * a PIN, locking is strictly better — same protection, four taps back.
+   * **Ruled by the owner, 25 Aug 2026**, overriding the sign-out fallback this
+   * comment used to argue for. Two rules, both load-bearing:
+   *
+   *   1. **The idle lock is OFF by default.** `sessionTimeoutMinutes` stores `0`
+   *      for off, and an absent/NaN/nonsense value is read as off too. The
+   *      failure direction matters: a misread setting must not start
+   *      interrupting people who never asked for it.
+   *   2. **The PIN re-locks the screen; nothing here ever calls `logout()`.**
+   *      With no PIN there is nothing to unlock with, so the timer does nothing
+   *      at all rather than signing the operator out.
+   *
+   * The earlier reasoning — that a PIN-less session "cannot be reopened, so
+   * locking would strand the operator at a curtain whose only exit is the
+   * sign-out they were going to get anyway" — is sound about the curtain and
+   * wrong about the cost. A packer signed out mid-Handover loses the session's
+   * work; an unlocked screen in a warehouse does not. Given that trade the owner
+   * ruled for the unlocked screen.
+   *
+   * This was not academic. `staffPinStatus()` returns `hasPin: false` whenever
+   * the PIN RPCs are missing, which is the case on the live project today
+   * (`0066`–`0068` are unapplied). Shipping the old branch would have signed
+   * every production user out after 30 idle minutes — a behaviour nobody has
+   * today, arriving with no lock screen and no Lock button.
    *
    * ## A timestamp plus one interval, not a timer per event
    *
@@ -610,9 +629,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user || isLocked) return
 
     const minutes = Number(getSetting('sessionTimeoutMinutes'))
-    // The store validates 1..480, but this reads a value a user can edit, so a
-    // NaN or a nonsense number must not disable the lock silently.
-    const timeoutMs = (Number.isFinite(minutes) && minutes >= 1 ? minutes : 30) * 60_000
+    // 0 is how the store spells "off", and off is the default (ruled 25 Aug
+    // 2026). Anything unreadable is treated as off for the same reason: this
+    // reads a value a user can edit, and the safe direction for a misread is
+    // "do not start locking people out", not "fall back to 30 minutes".
+    if (!Number.isFinite(minutes) || minutes < 1) return
+    const timeoutMs = minutes * 60_000
 
     const note = () => {
       lastActivityAt.current = Date.now()
@@ -623,8 +645,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const id = window.setInterval(() => {
       if (Date.now() - lastActivityAt.current < timeoutMs) return
+      // Lock only. No `logout()` branch — see the ruling above. A PIN-less
+      // session simply keeps running; the alternative loses a packer's work.
       if (hasPin) setLocked(true)
-      else logout()
     }, 15_000)
 
     // Start the clock from now rather than from whenever the last event was, so

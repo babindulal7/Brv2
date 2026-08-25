@@ -88,8 +88,20 @@ describe('settingsStore — writing', () => {
     expect(() => writeSettings({ vatNumber: '601928473' })).not.toThrow()
   })
 
-  it('refuses a session timeout of zero — that is not a timeout', () => {
-    expect(() => writeSettings({ sessionTimeoutMinutes: 0 })).toThrow(/at least one minute/)
+  /*
+   * Inverted 25 Aug 2026. This read "refuses a session timeout of zero — that
+   * is not a timeout", which made OFF unrepresentable and handed every session
+   * a 30-minute idle timer nobody asked for. The owner ruled the lock off by
+   * default, and 0 is how off is stored.
+   */
+  it('accepts zero as OFF, and defaults to off', () => {
+    expect(() => writeSettings({ sessionTimeoutMinutes: 0 })).not.toThrow()
+    expect(readSettings().sessionTimeoutMinutes).toBe(0)
+  })
+
+  it('still refuses a negative or absurd timeout', () => {
+    expect(() => writeSettings({ sessionTimeoutMinutes: -1 })).toThrow()
+    expect(() => writeSettings({ sessionTimeoutMinutes: 481 })).toThrow(/eight hours/)
   })
 })
 

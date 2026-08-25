@@ -154,16 +154,27 @@ describe('idle lock — something draws the curtain', () => {
     expect(seen.user).toBe('Babin Dulal')
   })
 
-  it('SIGNS OUT an idle session that has no PIN, rather than stranding it', async () => {
+  /*
+   * This test asserted the OPPOSITE until 25 Aug 2026 — "SIGNS OUT an idle
+   * session that has no PIN, rather than stranding it". The owner overruled the
+   * sign-out: a packer signed out mid-Handover loses the session's work, and an
+   * unlocked warehouse screen does not. The invariant is kept rather than
+   * deleted, inverted to pin the ruling, because the sign-out path is exactly
+   * what must never come back — with `0066`-`0068` unapplied on live,
+   * `staffPinStatus()` returns `hasPin: false` for EVERY production user, so a
+   * regression here signs out the whole company at 30 minutes.
+   */
+  it('NEVER signs out a PIN-less idle session — it does nothing at all', async () => {
     db.state.hasPin = false
     await mount()
     expect(seen.hasPin).toBe(false)
 
     await goIdle(2)
 
-    expect(db.state.signedOut).toBe(true)
+    expect(db.state.signedOut).toBe(false)
     expect(seen.isLocked).toBe(false)
-    expect(seen.user).toBeNull()
+    // Still signed in, still working: the timer found no PIN and stood down.
+    expect(seen.user).toBe('Babin Dulal')
   })
 
   it('does not lock a session that is still being used', async () => {

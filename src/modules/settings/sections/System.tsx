@@ -88,7 +88,14 @@ export const SYSTEM_SECTIONS: Section[] = [
       /* Same key as Security ▸ Access's row below. The two used to be
          independent literals that both said "30 minutes" and could silently
          disagree the moment one was touched. One setting, two places. */
-      { label: 'Session timeout', note: 'Signed out after this long idle.', settingKey: 'sessionTimeoutMinutes' },
+      {
+        label: 'Idle screen lock',
+        /* Was "Session timeout / Signed out after this long idle." Both halves
+           were wrong as of the 25 Aug ruling: it locks rather than signing out,
+           and it is off unless someone sets a number. */
+        note: 'Locks the screen after this long idle, if a PIN is set. 0 = off. Never signs you out.',
+        settingKey: 'sessionTimeoutMinutes',
+      },
     ],
   },
   /**
