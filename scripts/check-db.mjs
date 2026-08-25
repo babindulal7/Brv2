@@ -59,8 +59,8 @@ import { createClient } from '@supabase/supabase-js'
 
 /* ── env ─────────────────────────────────────────────────────────────── */
 
-function readEnv() {
-  for (const f of ['.env.local', '.env']) {
+function readEnv(files) {
+  for (const f of files) {
     if (!existsSync(f)) continue
     const out = {}
     for (const line of readFileSync(f, 'utf8').split('\n')) {
@@ -72,16 +72,38 @@ function readEnv() {
   return {}
 }
 
-const env = readEnv()
+const args = process.argv.slice(2)
+
+/**
+ * `--local` — read `.env.localdb.local` instead of `.env.local`.
+ *
+ * Without it this script reads `.env.local`, and in this repo that is the LIVE
+ * project. The default is right for the script's main job — proving on
+ * production that `0062` closed the Law 6 hole — but it means an idle
+ * `npm run check:db --email … --password …` signs a real staff account into
+ * production to satisfy curiosity. The flag makes the rehearsal case one word
+ * instead of two exported variables somebody can forget.
+ */
+const wantsLocal = args.includes('--local')
+const env = readEnv(wantsLocal ? ['.env.localdb.local', '.env.local'] : ['.env.local', '.env'])
 const url = process.env.VITE_SUPABASE_URL || env.VITE_SUPABASE_URL
 const key = process.env.VITE_SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY
 
 if (!url || !key) {
-  console.error('No VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY in .env.local or the environment.')
+  console.error(
+    wantsLocal
+      ? 'No VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY in .env.localdb.local — is the local stack configured?'
+      : 'No VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY in .env.local or the environment.',
+  )
   process.exit(1)
 }
 
-const args = process.argv.slice(2)
+/* Loud about which database this is. The two look identical in a terminal and
+   only one of them is production; a verification tool that does not say what
+   it verified is a rumour. */
+if (!/127\.0\.0\.1|localhost/.test(url)) {
+  console.log('\n  \x1b[33m⚠ TARGET IS LIVE PRODUCTION\x1b[0m — pass --local to check the local stack instead.')
+}
 const argOf = (n) => {
   const i = args.indexOf(`--${n}`)
   return i >= 0 ? args[i + 1] : null

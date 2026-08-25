@@ -85,17 +85,17 @@ export const SYSTEM_SECTIONS: Section[] = [
     fields: [
       { label: 'Date format', note: 'AD line under every BS line.', settingKey: 'dateFormat' },
       { label: 'Decimal places', note: 'Whole rupees unless an amount carries paise.', settingKey: 'decimalPlaces' },
-      /* Same key as Security ▸ Access's row below. The two used to be
-         independent literals that both said "30 minutes" and could silently
-         disagree the moment one was touched. One setting, two places. */
-      {
-        label: 'Idle screen lock',
-        /* Was "Session timeout / Signed out after this long idle." Both halves
-           were wrong as of the 25 Aug ruling: it locks rather than signing out,
-           and it is off unless someone sets a number. */
-        note: 'Locks the screen after this long idle, if a PIN is set. 0 = off. Never signs you out.',
-        settingKey: 'sessionTimeoutMinutes',
-      },
+      /*
+       * The idle lock used to sit here as "Session timeout", and moved to
+       * Security ▸ Access on 25 Aug 2026 — it is the duration of the screen
+       * lock declared in that card, two rows above the PIN that reopens it.
+       *
+       * It is NOT duplicated back into this card. The comment that stood here
+       * described the row as living in both places deliberately ("one setting,
+       * two places"), but by then only this copy existed, and two inputs bound
+       * to one settingKey render two ids and two Save affordances for the same
+       * value — the FinancialPane double-Save shape.
+       */
     ],
   },
   /**
@@ -160,6 +160,26 @@ export const SYSTEM_SECTIONS: Section[] = [
       { label: 'Two-factor authentication', note: 'Required for Owner and Admin roles.', on: true },
       { label: 'Password policy', note: 'Min 12 chars, mixed case, number, symbol. 90-day expiry.', settingKey: 'passwordPolicy' },
       { label: 'Shared-device screen lock', note: 'Locks the tablet between operators.', on: true },
+      /*
+       * How long that lock waits — moved here from System preferences on
+       * 25 Aug 2026, by ruling. It reads as one idea in this order: the lock,
+       * its delay, and the PIN that reopens it.
+       *
+       * **Off is the default and 0 spells it.** The old row said "Session
+       * timeout / Signed out after this long idle", which was wrong twice
+       * over: `lib/auth.tsx` locks the screen and never signs anyone out, and
+       * the timer does nothing at all until someone puts a number here.
+       *
+       * The "if a PIN is set" clause is load-bearing rather than a caveat: with
+       * no PIN there is nothing to unlock with, so the timer stands down
+       * instead of stranding — or, as it used to, signing the operator out
+       * mid-Handover.
+       */
+      {
+        label: 'Idle screen lock',
+        note: 'Locks the screen after this long idle, if a PIN is set. 0 = off. Never signs you out.',
+        settingKey: 'sessionTimeoutMinutes',
+      },
       /*
        * Device PIN — added 24 Aug 2026, deliberately as a row in THIS card and
        * not a card of its own. It belongs beside the screen-lock toggle because
