@@ -86,15 +86,27 @@ function Tone({
   tone,
   icon,
   reason,
+  entity,
 }: {
   text: string
-  tone: keyof typeof STATUS
+  /** Omitted for an `entity` mark, which takes no hue at all. */
+  tone?: keyof typeof STATUS
   /** Law 11 — a chip whose colour carries meaning also carries a glyph. */
   icon?: IconName
+  /**
+   * This chip names an ENTITY ATTRIBUTE, not an operational state.
+   *
+   * v4.1 §2 gives each of the seven hues exactly one meaning, so spending one
+   * on a client property teaches the eye that the hue means nothing in
+   * particular. VIP forced this: it was yellow here, blue in the booking
+   * combobox and `neutral` in the canonical FLAGS map, all at once — and
+   * yellow ("being worked in-house") was the worst reading of the three.
+   */
+  entity?: boolean
   /** Shown as the accessible name and the hover text, so the reason is not hover-only. */
   reason?: string
 }) {
-  const c = STATUS[tone]
+  const c = entity || tone === undefined ? null : STATUS[tone]
   return (
     <span
       {...(reason ? { title: reason, 'aria-label': `${text} — ${reason}` } : {})}
@@ -104,12 +116,15 @@ function Tone({
         gap: icon ? 4 : 0,
         height: 21,
         padding: '0 8px',
-        borderRadius: 5,
-        background: c.bg,
-        color: c.fg,
-        border: c.border ? `1px solid ${c.border}` : undefined,
+        borderRadius: 'var(--r-chip)',
+        // An entity mark takes a recessed surface and no hue; a status takes
+        // its pair. Both keep the word, so §7.4 holds either way.
+        background: c ? c.bg : 'var(--surface-2)',
+        color: c ? c.fg : 'var(--text2)',
+        border: c ? (c.border ? `1px solid ${c.border}` : undefined) : '1px solid var(--border)',
         fontSize: 'var(--t-th)',
-        fontWeight: 600,
+        fontWeight: c ? 600 : 700,
+        letterSpacing: c ? undefined : '0.02em',
         whiteSpace: 'nowrap',
       }}
     >
@@ -453,7 +468,7 @@ export default function ClientDetail() {
                 on a database record — kept because `ClientRecord` still carries
                 the field and other surfaces set it, not because this page can
                 reach it. */}
-            {client.isVip && <Tone text="VIP" tone="progress" />}
+            {client.isVip && <Tone text="VIP" entity />}
             {client.isBlocked && <Tone text="Blocked" tone="danger" icon="alert_triangle" />}
             {/* Rulings §11.2.4 — beside Blocked, never instead of it: a client
                 is routinely Active AND blocked AND on stop, and folding the

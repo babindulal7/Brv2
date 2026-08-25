@@ -44,9 +44,9 @@ function Bar({ label, value, max, tone = 'var(--cat-1)' }: { label: string; valu
 
 export default function CasesReports() {
   /* KpiStrip's clamp, applied to this screen's hand-rolled key-figure grid:
-     six cards side by side is unreadable below 1180. */
+     six cards side by side is unreadable below 1280. */
   const bandCols = useBandColumns()
-  /* Rulings §7 — the rail track goes away below 1180 so `ReflowRail`'s
+  /* Rulings §7 — the rail track goes away below 1280 so `ReflowRail`'s
      inline column is not squeezed by a rail column that is still there. */
   const railGridColumns = useRailGridColumns()
   const viewport = useViewport()
@@ -72,7 +72,7 @@ export default function CasesReports() {
   const kpis: Array<[string, string, string, string]> = [
     ['Total Cases', String(figures.total), 'In the case register', 'var(--cat-1)'],
     ['Resolved / Closed', String(figures.settled), 'Settled, allocation complete', 'var(--good)'],
-    ['Open', String(figures.open), 'Open, under review, awaiting decision or in progress', 'var(--warn)'],
+    ['Open', String(figures.open), 'Open, under review, awaiting decision or in progress', 'var(--ready-text)'],
     // Rulings §8 — no target resolution date exists on `Case`, so "overdue"
     // cannot be selected for. Saying so beats a plausible 6.
     ['Overdue', NOT_TRACKED, 'No target resolution date is recorded on a case', 'var(--muted)'],

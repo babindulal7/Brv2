@@ -24,12 +24,12 @@ export const GROWTH = {
 }
 
 export const REVENUE_BY_CLIENT = [
-  { label: 'Aama Production', value: 485000, display: formatMoney(rupees(485000)) },
-  { label: 'Media Hub Pvt. Ltd.', value: 362500, display: formatMoney(rupees(362500)) },
-  { label: 'Wide Lens Studio', value: 295000, display: formatMoney(rupees(295000)) },
-  { label: 'Creative Frame', value: 248000, display: formatMoney(rupees(248000)) },
-  { label: 'Focus Films', value: 210000, display: formatMoney(rupees(210000)) },
-  { label: 'Kantipur Film Academy', value: 182000, display: formatMoney(rupees(182000)) },
+  { label: 'Sagarmatha Pictures Pvt. Ltd.', value: 485000, display: formatMoney(rupees(485000)) },
+  { label: 'Himalaya Films Pvt. Ltd.', value: 362500, display: formatMoney(rupees(362500)) },
+  { label: 'Annapurna Media Pvt. Ltd.', value: 295000, display: formatMoney(rupees(295000)) },
+  { label: 'Machhapuchhre Studios Pvt. Ltd.', value: 248000, display: formatMoney(rupees(248000)) },
+  { label: 'Gandaki Creatives Pvt. Ltd.', value: 210000, display: formatMoney(rupees(210000)) },
+  { label: 'Langtang College of Media', value: 182000, display: formatMoney(rupees(182000)) },
   { label: 'Everest Pictures', value: 165000, display: formatMoney(rupees(165000)) },
   { label: 'Ferry Tale Studios', value: 128000, display: formatMoney(rupees(128000)) },
   { label: 'Nepal Ad Works', value: 105000, display: formatMoney(rupees(105000)) },
@@ -94,27 +94,28 @@ export interface ClientRow {
 }
 
 /*
- * TODO(decision) — `CLI-` is a second client prefix, which ruling §2.1 forbids
- * (the client sequence is `C-`, `data/numbering.ts`). It is left standing on
- * purpose, and this is the judgement rather than an oversight:
+ * The six rows are seeded from the register the rest of the app actually
+ * resolves — `lib/seed.ts`'s corpus, the same forty clients `corpus.ts` serves
+ * as `client_directory_v` in mock mode and migration 0047 seeds into the
+ * database. `/clients/:id` looks its param up as `client_code`, so each `id`
+ * below is a real corpus code and every row link lands on that client's detail
+ * page in both modes.
  *
- * None of the six names below exists in `data/clients.ts`, whose register runs
- * `C-1` … `C-45`. Rewriting `CLI-0001` to `C-1` would not collapse a duplicate
- * identifier — it would point `ClientReports.tsx`'s row link at a *different,
- * real* client, replacing a dead link with a wrong one. Choosing which real
- * client each report row means is a data decision this pass does not own
- * (`CLAUDE.md`: never invent a product decision to unblock yourself).
+ * This replaces the invented `CLI-0001`…`CLI-0006` ids (a second client prefix
+ * ruling §2.1 forbids — the sequence is `C-`, `data/numbering.ts`) whose six
+ * names existed in no register, so every row link ended on "Client not found".
  *
- * The fix is to seed these six rows from `CLIENTS_DATA` — or to accept that
- * this report is not joinable and drop the link — not to rename the prefix.
+ * The activity figures (bookings, days, revenue, lifetime, dates, cases) remain
+ * seed decor, like every other number on this report — the register carries no
+ * per-period revenue to derive them from.
  */
 export const CLIENTS: ClientRow[] = [
-  { name: 'Aama Production', id: 'CLI-0001', membership: 'Platinum', membershipKey: 'progress', bookings: '18', days: '96', revenue: '4,85,000', outstanding: '35,000', hasOutstanding: true, lifetime: '12,85,600', lastAd: '2026-05-28', lastBs: '2083-02-15', lateReturns: '4', cases: '2' },
-  { name: 'Media Hub Pvt. Ltd.', id: 'CLI-0002', membership: 'Gold', membershipKey: 'progress', bookings: '14', days: '72', revenue: '3,62,500', outstanding: '0', hasOutstanding: false, lifetime: '9,35,200', lastAd: '2026-05-27', lastBs: '2083-02-14', lateReturns: '2', cases: '1' },
-  { name: 'Wide Lens Studio', id: 'CLI-0003', membership: 'Silver', membershipKey: 'neutral', bookings: '13', days: '54', revenue: '2,95,000', outstanding: '65,000', hasOutstanding: true, lifetime: '7,22,800', lastAd: '2026-05-25', lastBs: '2083-02-12', lateReturns: '3', cases: '0' },
-  { name: 'Creative Frame', id: 'CLI-0004', membership: '-', membershipKey: 'neutral', bookings: '11', days: '48', revenue: '2,48,000', outstanding: '0', hasOutstanding: false, lifetime: '5,32,100', lastAd: '2026-05-20', lastBs: '2083-02-07', lateReturns: '1', cases: '1' },
-  { name: 'Focus Films', id: 'CLI-0005', membership: 'Gold', membershipKey: 'progress', bookings: '10', days: '40', revenue: '2,10,000', outstanding: '20,000', hasOutstanding: true, lifetime: '4,85,600', lastAd: '2026-05-18', lastBs: '2083-02-05', lateReturns: '2', cases: '0' },
-  { name: 'Kantipur Film Academy', id: 'CLI-0006', membership: 'Student', membershipKey: 'primary', bookings: '9', days: '36', revenue: '1,82,000', outstanding: '0', hasOutstanding: false, lifetime: '3,25,000', lastAd: '2026-05-17', lastBs: '2083-02-04', lateReturns: '0', cases: '0' },
+  { name: 'Sagarmatha Pictures Pvt. Ltd.', id: 'C-34', membership: 'Platinum', membershipKey: 'progress', bookings: '18', days: '96', revenue: '4,85,000', outstanding: '35,000', hasOutstanding: true, lifetime: '12,85,600', lastAd: '2026-05-28', lastBs: '2083-02-15', lateReturns: '4', cases: '2' },
+  { name: 'Himalaya Films Pvt. Ltd.', id: 'C-35', membership: 'Gold', membershipKey: 'progress', bookings: '14', days: '72', revenue: '3,62,500', outstanding: '0', hasOutstanding: false, lifetime: '9,35,200', lastAd: '2026-05-27', lastBs: '2083-02-14', lateReturns: '2', cases: '1' },
+  { name: 'Annapurna Media Pvt. Ltd.', id: 'C-36', membership: 'Silver', membershipKey: 'neutral', bookings: '13', days: '54', revenue: '2,95,000', outstanding: '65,000', hasOutstanding: true, lifetime: '7,22,800', lastAd: '2026-05-25', lastBs: '2083-02-12', lateReturns: '3', cases: '0' },
+  { name: 'Machhapuchhre Studios Pvt. Ltd.', id: 'C-37', membership: '-', membershipKey: 'neutral', bookings: '11', days: '48', revenue: '2,48,000', outstanding: '0', hasOutstanding: false, lifetime: '5,32,100', lastAd: '2026-05-20', lastBs: '2083-02-07', lateReturns: '1', cases: '1' },
+  { name: 'Gandaki Creatives Pvt. Ltd.', id: 'C-38', membership: 'Gold', membershipKey: 'progress', bookings: '10', days: '40', revenue: '2,10,000', outstanding: '20,000', hasOutstanding: true, lifetime: '4,85,600', lastAd: '2026-05-18', lastBs: '2083-02-05', lateReturns: '2', cases: '0' },
+  { name: 'Langtang College of Media', id: 'C-40', membership: 'Student', membershipKey: 'primary', bookings: '9', days: '36', revenue: '1,82,000', outstanding: '0', hasOutstanding: false, lifetime: '3,25,000', lastAd: '2026-05-17', lastBs: '2083-02-04', lateReturns: '0', cases: '0' },
 ]
 
 export const SUMMARY = [
@@ -127,11 +128,11 @@ export const SUMMARY = [
 ]
 
 export const TOP_CLIENTS = [
-  { rank: 1, name: 'Aama Production', amount: formatMoney(rupees(1285600)) },
-  { rank: 2, name: 'Media Hub Pvt. Ltd.', amount: formatMoney(rupees(935200)) },
-  { rank: 3, name: 'Wide Lens Studio', amount: formatMoney(rupees(722800)) },
-  { rank: 4, name: 'Creative Frame', amount: formatMoney(rupees(532100)) },
-  { rank: 5, name: 'Focus Films', amount: formatMoney(rupees(485600)) },
+  { rank: 1, name: 'Sagarmatha Pictures Pvt. Ltd.', amount: formatMoney(rupees(1285600)) },
+  { rank: 2, name: 'Himalaya Films Pvt. Ltd.', amount: formatMoney(rupees(935200)) },
+  { rank: 3, name: 'Annapurna Media Pvt. Ltd.', amount: formatMoney(rupees(722800)) },
+  { rank: 4, name: 'Machhapuchhre Studios Pvt. Ltd.', amount: formatMoney(rupees(532100)) },
+  { rank: 5, name: 'Gandaki Creatives Pvt. Ltd.', amount: formatMoney(rupees(485600)) },
 ]
 
 export const HIGH_RISK = [

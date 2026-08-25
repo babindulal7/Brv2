@@ -88,7 +88,7 @@ export const BundleSummaryRail = memo(({ availability, equipmentCount, boxesCoun
             <span style={{ color: 'var(--success-text)', fontSize: 'var(--t-h3)', fontWeight: 700 }}>Rs {formatMoney(rupees(pricing.bundleRate))}</span>
           </div>
           
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(16, 185, 129, 0.1)', borderRadius: 'var(--r-xs)', marginTop: 'var(--sp-xs)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 16px', background: 'var(--st-in-bg)', borderRadius: 'var(--r-xs)', marginTop: 'var(--sp-xs)' }}>
             <span style={{ color: 'var(--success-text)', fontWeight: 500 }}>You Save</span>
             <span style={{ color: 'var(--success-text)', fontWeight: 700 }}>Rs {formatMoney(rupees(pricing.bundleDiscounts))} ({pricing.savingPct}%)</span>
           </div>
@@ -116,7 +116,7 @@ export const BundleSummaryRail = memo(({ availability, equipmentCount, boxesCoun
                 >
                   {item.inv.name}
                 </span>
-                <span style={{ fontSize: 'var(--t-th)', padding: '2px 6px', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger-text)', borderRadius: 4, fontWeight: 600, flexShrink: 0 }}>Short by {item.blocked}</span>
+                <span style={{ fontSize: 'var(--t-th)', padding: '2px 6px', background: 'var(--st-danger-bg)', color: 'var(--st-danger-fg)', borderRadius: 4, fontWeight: 600, flexShrink: 0 }}>Short by {item.blocked}</span>
               </div>
               <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Returns</div>
               <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', display: 'flex', justifyContent: 'space-between' }}>

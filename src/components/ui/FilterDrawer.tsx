@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import Icon from './Icon'
-import { useViewport } from '../../lib/device'
+import { useViewport, useCapability } from '../../lib/device'
 
 /**
  * # Filters as an overlay, not a column
@@ -59,9 +59,15 @@ const DRAWER_MS = 200
  * animation. Otherwise the panel would sit there, motionless and still
  * on-screen, for 200ms after they closed it.
  */
-function prefersReducedMotion(): boolean {
-  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
-}
+/*
+ * This was a private `prefersReducedMotion()` helper querying matchMedia
+ * directly. `lib/device.ts:useCapability()` is the module that exists to
+ * answer exactly this question, and it does so REACTIVELY — the private
+ * version was read once per close, so a person who changed their motion
+ * preference mid-session kept the old timer until a reload. Routed through the
+ * hook below; the reasoning above about WHY the timer needs the value in JS
+ * (rather than leaving it to the CSS block) still stands unchanged.
+ */
 
 export interface FilterDrawerProps {
   open: boolean
@@ -115,6 +121,9 @@ export function FilterDrawer({
 }: FilterDrawerProps) {
   const viewport = useViewport()
   const phone = viewport === 'phone'
+  // See the note above prefersReducedMotion's former home: the exit timer needs
+  // this in JS, and useCapability keeps it reactive.
+  const { reducedMotion } = useCapability()
   const panelRef = useRef<HTMLDivElement | null>(null)
   const restoreFocusTo = useRef<HTMLElement | null>(null)
 
@@ -142,7 +151,7 @@ export function FilterDrawer({
     }
     if (!mounted) return
     setClosing(true)
-    const ms = prefersReducedMotion() ? 0 : DRAWER_MS
+    const ms = reducedMotion ? 0 : DRAWER_MS
     const t = window.setTimeout(() => {
       setMounted(false)
       setClosing(false)

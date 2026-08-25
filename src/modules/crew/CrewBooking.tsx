@@ -15,6 +15,7 @@ import { IntelCard } from '../../components/ui/IntelCard'
 import type { IntelGlance, IntelGroup } from '../../components/ui/IntelCard'
 import { crewGlance, crewDetailGroups } from '../../data/crewIntel'
 import { STATUS, STATUS_ICON } from '../../lib/status'
+import { Badge } from '../../components/ui/Badge'
 import type { StatusKey } from '../../lib/status'
 import { useViewport } from '../../lib/device'
 import { getBusinessToday } from '../../lib/bs'
@@ -190,7 +191,7 @@ export function CrewBooking() {
   const canCrewMoney = canViewMoneyField(gctx, 'asset-finance')
 
   // Shell rule, repeated at the top of all eleven specs: tables become card
-  // rows below 768, right rails collapse below 1180 — and Rulings §7 reads
+  // rows below 768, right rails collapse below 1280 — and Rulings §7 reads
   // "collapse" as REFLOW, naming spec 06 explicitly. Both need the band, not a
   // phone/not-phone boolean, because the tablet layout differs from both.
   const viewport = useViewport()
@@ -295,7 +296,7 @@ export function CrewBooking() {
   }
 
   /**
-   * Rulings §7 — "right rails collapse below 1180" means **reflow**, not hide,
+   * Rulings §7 — "right rails collapse below 1280" means **reflow**, not hide,
    * and the ruling names spec 06 by number: its tablet drawing puts the day
    * strip and the payout ledger *below the list*, still visible. So the rail's
    * sections are hoisted into one variable and rendered either inside `Rail`
@@ -484,7 +485,7 @@ export function CrewBooking() {
           </div>
 
           {/* Calendar + tables (left) · rail (right).
-              One column below 1180 so the rail's sections reflow beneath the
+              One column below 1280 so the rail's sections reflow beneath the
               list rather than squeezing `minmax(0,1fr)` to nothing. */}
           <div style={{ display: 'grid', gridTemplateColumns: desktop ? 'minmax(0,1fr) auto' : '1fr', gap: 'var(--sp-md)', alignItems: 'start' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
@@ -593,7 +594,7 @@ export function CrewBooking() {
                           <th style={thStyle}>Crew Member</th>
                           {/* Tablet drops the three widest columns — §6.1's tablet
                               drawing is `name │ role │ [Book] ⋮`, and eight columns
-                              in 768–1179px is a sideways scroll, not a layout. */}
+                              in 768–1279px is a sideways scroll, not a layout. */}
                           {desktop && <th style={thStyle}>Production</th>}
                           <th style={thStyle}>Dates &amp; Duration</th>
                           {desktop && canCrewMoney && <th style={thStyle}>Financials (Cost)</th>}
@@ -697,7 +698,7 @@ export function CrewBooking() {
             </div>
 
             {/* Right rail — §12. Rulings §7: rendered as a rail only at desktop;
-                below 1180 the same sections reflow into the column beneath the
+                below 1280 the same sections reflow into the column beneath the
                 lists, still visible, never behind a handle. */}
             {desktop ? (
               <Rail width={320} label="Crew summary">
@@ -875,27 +876,27 @@ function MoneyStat({ label, value, tone }: { label: string; value: number | null
   )
 }
 
-/** Law 11 — CONFLICT was colour + word only; the glyph comes from the token so no call site can forget it. */
+/**
+ * Law 11 — colour + icon + label — now satisfied by delegating to <Badge>.
+ * DESIGN_DIRECTION_SPEC_v4.1 §8 step 2: "one component rendering the §4 map
+ * from lib/status; every screen inherits. No screen colours a status itself."
+ *
+ * The hand-rolled version read `STATUS[tone]` and then wrote its own anatomy
+ * over it: radius 4 where §3.3 says `--r-chip` (6), weight 700 where §4 says
+ * 800, sentence-case padding where §4 says 0.04em uppercase. It also indexed
+ * `STATUS_ICON`, typed `Record<StatusKey, string>`, and cast the result to
+ * `IconName` — two of that map's seven values name glyphs the `Icon` REGISTRY
+ * does not carry, so the cast compiles and renders `undefined`. <Badge>
+ * resolves its own glyph, so the cast goes away with the paint.
+ *
+ * The wrapper is KEPT and its call sites are untouched — STAFF and CONFLICT
+ * still read `<Tag label=… tone=… />` in both the card list and the row list.
+ * Note this file still has three other places that paint a status by hand
+ * (the assignment chip, the accent bar and the payout chip); they are outside
+ * this pass and are flagged rather than half-converted.
+ */
 function Tag({ label, tone }: { label: string; tone: StatusKey }) {
-  const c = STATUS[tone]
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 3,
-        fontSize: 'var(--t-th)',
-        fontWeight: 700,
-        padding: '1px 5px',
-        borderRadius: 4,
-        background: c.bg,
-        color: c.fg,
-      }}
-    >
-      <Icon name={STATUS_ICON[tone] as IconName} size={10} />
-      {label}
-    </span>
-  )
+  return <Badge tone={tone} label={label} size="sm" />
 }
 
 /* ── week calendar — §9, real assignment blocks, Week view only ─────────── */

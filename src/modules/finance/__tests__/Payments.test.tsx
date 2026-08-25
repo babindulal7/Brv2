@@ -478,8 +478,8 @@ describe('§9.3 — the deposits rail (Law 5)', () => {
     expect(text()).toContain('Outstanding')
   })
 
-  /* Rulings §7 — "right rails collapse below 1180" means reflow, not hide. */
-  it('keeps the rail on the page below 1180', async () => {
+  /* Rulings §7 — "right rails collapse below 1280" means reflow, not hide. */
+  it('keeps the rail on the page below 1280', async () => {
     await mount(1000)
     expect(text()).toContain('Deposits (separate)')
     await mount(420)
@@ -488,7 +488,7 @@ describe('§9.3 — the deposits rail (Law 5)', () => {
 })
 
 describe('the three layouts, from one width reading (Law 14)', () => {
-  it('desktop ≥1180 — the table, with the wireframe columns', async () => {
+  it('desktop ≥1280 — the table, with the wireframe columns', async () => {
     await mount(1280)
     const headers = [...container.querySelectorAll('th')].map((h) => h.textContent?.trim())
     expect(headers).toContain('Payment')
@@ -512,7 +512,7 @@ describe('the three layouts, from one width reading (Law 14)', () => {
     expect(text()).toContain('Advance Payment')
   })
 
-  it('tablet 768–1179 — still a table, scrolling horizontally', async () => {
+  it('tablet 768–1279 — still a table, scrolling horizontally', async () => {
     await mount(1000)
     expect(container.querySelector('table')).not.toBeNull()
     const scroller = container.querySelector('[data-table-scroll]') as HTMLElement | null

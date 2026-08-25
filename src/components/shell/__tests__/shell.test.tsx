@@ -84,7 +84,7 @@ describe('Sidebar — Law 13, width decides', () => {
 
   it('does not let a stored desktop collapse widen — or narrow — against the width band', async () => {
     /* The conflict Law 13 exists to settle: preference says "expanded", the
-       768–1179 band says 72. Width wins. */
+       768–1279 band says 72. Width wins. */
     collapsedPref = false
     viewport = 'tablet'
     await mount(<Sidebar active="/today" />)

@@ -463,9 +463,9 @@ describe('canWriteSharedTriage', () => {
 })
 
 describe('canApprovePurchase', () => {
-  it('mirrors purchase_requests_approval_rank (0064) -- the finance/admin five', () => {
+  it('mirrors purchase_requests_approval_rank (0069) -- Owner and Manager only', () => {
     const allowed = ALL_ROLES.filter((r) => canApprovePurchase(r))
-    expect(allowed).toEqual(['Owner', 'Admin', 'Manager', 'Coordinator', 'Accounts'])
+    expect(allowed).toEqual(['Owner', 'Manager'])
   })
 
   /* The whole point of 0064: the tier that cannot READ estimated_unit_cost
@@ -476,13 +476,23 @@ describe('canApprovePurchase', () => {
     }
   })
 
-  it('is exactly canWriteSharedTriage minus the money-blind staff', () => {
+  /*
+   * 0069 (25 Aug 2026) narrowed past the money-visibility tier: Admin,
+   * Coordinator and Accounts may SEE the cost and do every non-deciding verb,
+   * but committing the business to the spend is an owner/manager act. So the
+   * approvers are still a strict subset of triage, and the gap is now the
+   * three money-blind staff plus those three deciding-excluded roles.
+   */
+  it('is a strict subset of canWriteSharedTriage, excluding six roles', () => {
     const triage = ALL_ROLES.filter((r) => canWriteSharedTriage(r))
     const approvers = ALL_ROLES.filter((r) => canApprovePurchase(r))
     expect(approvers.every((r) => triage.includes(r))).toBe(true)
     expect(triage.filter((r) => !approvers.includes(r))).toEqual([
+      'Admin',
+      'Coordinator',
       'Warehouse',
       'Technician',
+      'Accounts',
       'Driver',
     ])
   })

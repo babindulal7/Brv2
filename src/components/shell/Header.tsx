@@ -41,7 +41,7 @@ const iconBtn = {
  * its own title without fighting the global chrome for space.
  */
 export default function Header({ crumbs, searchPlaceholder = 'Search…', actions }: HeaderProps) {
-  const { user, logout } = useAuth()
+  const { user, logout, lockNow, hasPin } = useAuth()
   const navigate = useNavigate()
   const [showHandover, setShowHandover] = useState(false)
 
@@ -154,15 +154,15 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
               fontWeight: 600,
               padding: '3px 8px',
               borderRadius: 'var(--r-xs)',
-              background: 'rgba(59, 130, 246, 0.12)',
-              color: '#60a5fa',
-              border: '1px solid rgba(59, 130, 246, 0.25)',
+              background: 'var(--surface-2)',
+              color: 'var(--text2)',
+              border: '1px solid var(--border)',
               display: 'inline-flex',
               alignItems: 'center',
               gap: 'var(--sp-xs)',
             }}
           >
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3b82f6' }} />
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--text-3)' }} />
             Kathmandu HQ
           </span>
           <span
@@ -171,9 +171,9 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
               fontWeight: 600,
               padding: '3px 8px',
               borderRadius: 'var(--r-xs)',
-              background: 'rgba(245, 158, 11, 0.12)',
-              color: '#fbbf24',
-              border: '1px solid rgba(245, 158, 11, 0.25)',
+              background: 'var(--surface-2)',
+              color: 'var(--text2)',
+              border: '1px solid var(--border)',
             }}
           >
             FY 2083/84
@@ -196,12 +196,20 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
               height: 16,
               borderRadius: 'var(--r-badge)',
               /*
-               * The AA-verified status pair, not raw `--danger`. Dark theme's
-               * `--danger` is #ef4444, and white on it measured 3.76:1 — under
-               * AA for 9.5px text. The damage pair passes in both themes.
+               * The status pair, read the right way round.
+               *
+               * These two were SWAPPED — background took `-fg` and colour took
+               * `-bg` — so the alert badge rendered as a white pill with red
+               * digits. Pre-v4.1 the danger pair was a soft wash and the swap
+               * was survivable; v4.1 §4 makes every pair a solid block, and
+               * white-on-red inverted to red-on-white.
+               *
+               * The old comment argued from `--danger` = #ef4444; v4.1's value
+               * is #C73A3A, measured at 5.13:1 against white (spec §10), so the
+               * pair is AA either way — it just has to be used in order.
                */
-              background: 'var(--st-danger-fg)',
-              color: 'var(--st-danger-bg)',
+              background: 'var(--st-danger-bg)',
+              color: 'var(--st-danger-fg)',
               fontSize: 'var(--t-meta)',
               fontWeight: 700,
               display: 'grid',
@@ -258,6 +266,28 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
             </span>
             <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{user?.role || ''}</span>
           </span>
+          {/*
+            Lock — shown only when this session actually holds a PIN.
+
+            Offering it without one would draw a curtain whose only exit is the
+            sign-out the operator was avoiding by locking. `hasPin` comes from
+            `AuthProvider`, which resolves it once per identity precisely so this
+            decision is synchronous.
+
+            Deliberately NOT styled as danger: locking is the safe, routine
+            action on a shared tablet — it is the one we want reached for on the
+            way to the tea room, and colouring it like Log Out invites the
+            heavier action by mistake.
+          */}
+          {hasPin && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); lockNow() }}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, marginLeft: 'var(--sp-sm)', minHeight: 44 }}
+            >
+              Lock
+            </button>
+          )}
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); handleLogoutRequest() }}

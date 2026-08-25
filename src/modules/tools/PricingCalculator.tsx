@@ -148,7 +148,7 @@ export default function PricingCalculator() {
       <div
         style={{
           display: 'grid',
-          /* Desktop: sheet beside the ladder. Below 1180 the ladder reflows
+          /* Desktop: sheet beside the ladder. Below 1280 the ladder reflows
              underneath — visible, not hidden behind a handle (Rulings §7). */
           gridTemplateColumns: stacked ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(300px, 340px)',
           gap: 'var(--sp-md)',

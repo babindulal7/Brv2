@@ -951,7 +951,24 @@ describe('one shape, four verbs', () => {
       for (const other of Object.values(LINE_TABLE)) {
         if (other !== LINE_TABLE[job]) expect(tables.has(other)).toBe(false)
       }
-      expect(tables.has('cleaning_queue_entries')).toBe(false)
+      /*
+       * The cleaning queue is RETURN's to fill, and only Return's.
+       *
+       * This asserted `false` for all three verbs until 25 Aug 2026, which was
+       * right when nothing raised queue rows at all. `floorVerb.ts` §5b then
+       * gave Return that job, for a stated reason: `completeResetQueue` has
+       * always required a queue row to exist before it will record a reset,
+       * nothing created one, so Complete Reset was refused on every real
+       * booking and a rental could not be closed. Gear coming back is what puts
+       * an item in the queue, so Return is where the row belongs — and the
+       * `queued` field on the verb's result documents it as "Return only".
+       *
+       * So the invariant is not "nobody writes it", it is "only Return does".
+       * Kept as a real guard rather than deleted: Pack and Handover raising a
+       * queue row would mean gear entering the cleaning queue before it has
+       * left the warehouse.
+       */
+      expect(tables.has('cleaning_queue_entries')).toBe(job === 'Return')
     }
   })
 })

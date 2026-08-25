@@ -314,7 +314,7 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
       >
         {bs ? formatBs(bs) : 'BS not available for this date'}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, border: '1px solid var(--input-border)', borderRadius: 'var(--r-input)', background: 'var(--input-bg)', padding: '0 4px 0 9px', minHeight: 40 }}>
+      <div className="focus-host" style={{ display: 'flex', alignItems: 'center', gap: 4, border: '1px solid var(--input-border)', borderRadius: 'var(--r-input)', background: 'var(--input-bg)', padding: '0 4px 0 9px', minHeight: 40 }}>
         <input
           value={dateText}
           onChange={(e) => setDateText(e.target.value)}
@@ -333,7 +333,7 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
             if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
           }}
           aria-label={`${label} time`}
-          style={{ width: 46, flexShrink: 0, border: 'none', borderLeft: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none', textAlign: 'center', paddingLeft: 7 }}
+          style={{ width: 46, flexShrink: 0, border: 'none', borderLeft: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', textAlign: 'center', paddingLeft: 7 }}
         />
         <button
           type="button"

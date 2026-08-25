@@ -6,7 +6,8 @@ import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ActiveFilterChips, FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import { Unavailable } from '../../components/ui/Unavailable'
-import { STATUS, STATUS_ICON, BRAND } from '../../lib/status'
+import { Badge } from '../../components/ui/Badge'
+import { STATUS, BRAND } from '../../lib/status'
 import type { IconName } from '../../components/ui/Icon'
 import type { StatusKey, BrandKey } from '../../lib/status'
 import { formatMoney } from '../../lib/money'
@@ -85,29 +86,29 @@ const TODAY = getBusinessToday()
  * candidates; they are flagged there, not deleted here.
  */
 
-/** Law 11 — colour + icon + label. The glyph comes from the token (`lib/status.ts:52`), so no call site can ship a bare colour chip. */
+/**
+ * Law 11 — colour + icon + label — now satisfied by delegating to <Badge>.
+ * DESIGN_DIRECTION_SPEC_v4.1 §8 step 2: "one component rendering the §4 map
+ * from lib/status; every screen inherits. No screen colours a status itself."
+ *
+ * The hand-rolled version read `STATUS[status]` straight and then invented its
+ * own anatomy on top: radius 5 (§3.3 says `--r-chip`, 6), weight 700 (§4 says
+ * 800) and sentence case (§4 says uppercase, 0.04em). None of that was wrong
+ * on purpose — it predates there being one component to inherit from, which is
+ * exactly how the product accumulated fifteen almost-identical chips.
+ *
+ * It also indexed `STATUS_ICON`, whose `Record<StatusKey, string>` typing the
+ * `ExternalGearMark` header below warns about: two of its seven values name
+ * glyphs the `Icon` REGISTRY does not have, so `as IconName` compiles and then
+ * renders `undefined`. <Badge> resolves its own glyph and never touches that
+ * map, so the cast — and the hazard — leave with it, and the `STATUS_ICON`
+ * import is gone from this file.
+ *
+ * The wrapper is KEPT: `Tag` is what the rows call for Overdue and Cancelled,
+ * and those call sites do not change. It loses the paint, not its place.
+ */
 function Tag({ text, status }: { text: string; status: StatusKey }) {
-  const c = STATUS[status]
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 3,
-        height: 18,
-        padding: '0 6px',
-        borderRadius: 5,
-        background: c.bg,
-        color: c.fg,
-        fontSize: 'var(--t-meta)',
-        fontWeight: 700,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      <Icon name={STATUS_ICON[status] as IconName} size={10} />
-      {text}
-    </span>
-  )
+  return <Badge tone={status} label={text} size="sm" />
 }
 
 /**
@@ -151,29 +152,25 @@ const STAGE_ICON: Record<BookingStatus, IconName> = {
   Closed: 'lock',
 }
 
+/**
+ * The gold mark, from `EXT_MARK` via `<Badge tone="ext">` — the same renderer
+ * `BookingDetail.tsx` and `SubRental.tsx` now use. All three hand-rolled it and
+ * all three drifted; this copy sat at radius 5 and weight 700 against §4's
+ * radius 6 and weight 600. The weight is not cosmetic: §4 gives the gold mark
+ * weight 600 and no uppercase precisely so it can never be read as a yellow
+ * status at a glance, and 700 eats into that margin. One renderer, one
+ * anatomy, three screens.
+ *
+ * The outer span stays because <Badge> takes no `aria-label` or `title`, and
+ * both are load-bearing here: `EXTERNAL_LABEL` is the sentence a screen reader
+ * gets, and `rentalsList.render.test.tsx` asserts on it by name. Wrapping keeps
+ * the accessible name exactly where it was rather than teaching <Badge> a prop
+ * for one caller.
+ */
 function ExternalGearMark() {
   return (
-    <span
-      aria-label={EXTERNAL_LABEL}
-      title={EXTERNAL_LABEL}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 4,
-        height: 18,
-        padding: '0 6px',
-        borderRadius: 5,
-        // §4.2 — gold is an outline, never a fill.
-        background: STATUS.ext.bg,
-        color: STATUS.ext.fg,
-        border: `1px solid ${STATUS.ext.border ?? 'var(--border)'}`,
-        fontSize: 'var(--t-meta)',
-        fontWeight: 700,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      <Icon name={EXTERNAL_ICON} size={11} />
-      Sub-rented
+    <span aria-label={EXTERNAL_LABEL} title={EXTERNAL_LABEL} style={{ display: 'inline-flex', flexShrink: 0 }}>
+      <Badge tone="ext" label="Sub-rented" icon={<Icon name={EXTERNAL_ICON} size={11} />} size="sm" />
     </span>
   )
 }
@@ -806,8 +803,8 @@ export default function RentalsList() {
    * The three layouts §4.1 draws, from one width reading (Law 14 — width
    * decides, never orientation; Law 13 — capability, never a platform name).
    *
-   *  - **desktop ≥1180** — the full table beside the Filters rail.
-   *  - **tablet 768–1179** — fewer columns (`BR# │ client │ dates │ badge │
+   *  - **desktop ≥1280** — the full table beside the Filters rail.
+   *  - **tablet 768–1279** — fewer columns (`BR# │ client │ dates │ badge │
    *    [prim]⋮`), chips in one scrolling row, and the Filters rail REFLOWED
    *    below the list rather than hidden (rulings §7: "collapse" means reflow).
    *  - **phone <768** — card rows, one primary action each.
@@ -992,7 +989,7 @@ export default function RentalsList() {
    * The Filters panel's card.
    *
    * ⚠ This block used to claim the card "can sit in the grid's left track on
-   * desktop and inline beneath the list below 1180". It cannot and does not:
+   * desktop and inline beneath the list below 1280". It cannot and does not:
    * `filtersCard` has exactly one render site, inside `<FilterDrawer>` near
    * the bottom of this file, which is `position: fixed` and opens from the
    * Filters button at **every** width. The accurate account is the earlier
@@ -1151,7 +1148,7 @@ export default function RentalsList() {
         intersection as `impossible` rather than sending `[]`, which
         `applyListFilters` reads as "no constraint".
 
-        Below 1180 the whole row scrolls horizontally instead of wrapping —
+        Below 1280 the whole row scrolls horizontally instead of wrapping —
         §4.1's tablet note is "filter chips in one scrolling row" and its
         phone note is "chips scroll".
       */}
@@ -1275,7 +1272,7 @@ export default function RentalsList() {
             fontFamily: 'inherit',
             whiteSpace: 'nowrap' as const,
             opacity: c.unavailable ? 0.65 : 1,
-            // The row scrolls rather than wraps below 1180 (§4.1 tablet and
+            // The row scrolls rather than wraps below 1280 (§4.1 tablet and
             // phone both say "chips scroll"), so a chip must not be squeezed.
             flexShrink: 0,
           }
@@ -1412,7 +1409,7 @@ export default function RentalsList() {
           display: 'grid',
           /* One track at every width now. The rail used to take a column here
              — `auto minmax(0,1fr)` on desktop, reflowing under the list below
-             1180 — and the drawer replaced both: it is `position: fixed`, so
+             1280 — and the drawer replaced both: it is `position: fixed`, so
              there is no track to give it and no reflow rule to write. */
           gridTemplateColumns: 'minmax(0,1fr)',
           gap: 'var(--sp-md)',
@@ -1566,26 +1563,15 @@ export default function RentalsList() {
                             {r.bookingNo}
                           </Link>
                         </IntelCard>
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            height: 20,
-                            padding: '0 8px',
-                            borderRadius: 'var(--r-badge)',
-                            gap: 4,
-                            background: STATUS[r.statusKey].bg,
-                            color: STATUS[r.statusKey].fg,
-                            fontSize: 'var(--t-meta)',
-                            fontWeight: 600,
-                          }}
-                        >
-                          {/* Law 11 — `STAGE_ICON` was declared for this and used
-                              only by the filter chips, so the row's own status
-                              was colour + word alone. */}
-                          <Icon name={STAGE_ICON[r.status]} size={11} />
-                          {r.status}
-                        </span>
+                        {/* §8 step 2 — the stage block belongs to <Badge>, not
+                            to this row. It was `--r-badge` (999, which §3.3
+                            reserves for numeric count badges) at weight 600,
+                            reading `STATUS[r.statusKey]` off the token wall
+                            directly. Handing <Badge> the `status` lets it
+                            resolve the §4 hue, the word and the glyph together,
+                            so Law 11 can no longer be half-satisfied by a call
+                            site forgetting one of the three. */}
+                        <Badge status={r.status} size="sm" />
                         {r.isOverdue && <Tag text="Overdue" status="danger" />}
                         {r.isCancelled && <Tag text="Cancelled" status="danger" />}
                         {/* Law 11 — the gold outline never travels alone. */}
@@ -1856,23 +1842,10 @@ export default function RentalsList() {
                             })}
 
                           <td style={{ ...td, minWidth: 116 }}>
-                            <span
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                height: 22,
-                                padding: '0 9px',
-                                borderRadius: 'var(--r-badge)',
-                                gap: 4,
-                                background: STATUS[r.statusKey].bg,
-                                color: STATUS[r.statusKey].fg,
-                                fontSize: 'var(--t-meta)',
-                                fontWeight: 600,
-                              }}
-                            >
-                              <Icon name={STAGE_ICON[r.status]} size={11} />
-                              {r.status}
-                            </span>
+                            {/* The table's copy of the same block — see the card
+                                row above. Two hand-rolled chips in one file is
+                                how they came to differ by 2px and a radius. */}
+                            <Badge status={r.status} size="sm" />
                             {/* The stage is one of Foundation's six; the only
                                 note that survives is the one `overdue()`
                                 defines. "Preparing" / "Ready for pickup" /
@@ -1991,7 +1964,7 @@ export default function RentalsList() {
         on desktop it covers the left third of it, so the header count is what
         makes live filtering legible while you cannot see the rows move.
 
-        Rulings §7 — "rails collapse below 1180" means reflow, not hide — is
+        Rulings §7 — "rails collapse below 1280" means reflow, not hide — is
         satisfied differently now and better: there is no rail to collapse, and
         the panel is reachable at every width from the same button.
       */}

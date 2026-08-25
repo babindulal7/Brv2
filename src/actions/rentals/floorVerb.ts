@@ -5,6 +5,8 @@ import { logAuditEvent } from '../../lib/audit'
 import { JOBS, type BookingStatus, type JobName } from '../../lib/workflow'
 import type { ActionContext } from '../core'
 import type {
+  CleaningProblemState,
+  Database,
   DeliveryMethod,
   HandoverLineState,
   ItemCondition,
@@ -14,6 +16,18 @@ import type {
   PackingLineState,
   ReturnLineState,
 } from '../../types/database'
+
+/**
+ * The update shape for one cleaning-queue entry.
+ *
+ * Added 25 Aug 2026. `CleaningQueueUpdate` was referenced at the `fields`
+ * declaration below but declared nowhere, and `Database` sat imported and
+ * unused directly above — the two halves of an alias that was never written.
+ * Derived from the generated table type rather than hand-listed, so a column
+ * added or renamed in a migration reaches this call site through `tsc` instead
+ * of through a runtime PostgREST error.
+ */
+type CleaningQueueUpdate = Database['public']['Tables']['cleaning_queue_entries']['Update']
 
 /**
  * # The four floor verbs, as one shape
@@ -129,6 +143,45 @@ export interface FloorLineInput {
   warehouseLocation?: string
 }
 
+/**
+ * One `cleaning_queue_entries` row as the reset floor resolved it.
+ *
+ * `unitIds` alone says *which* items were reset and nothing else, and the
+ * screen that dispatches Reset has always known more than that: who cleaned the
+ * unit, who checked it, whether the check was skipped and why, and whether the
+ * item carries a problem. Every one of those is a column on
+ * `cleaning_queue_entries` (`0003:859-887`), so it is carried here rather than
+ * collected on screen and dropped at the boundary.
+ *
+ * ⚠ `cleaned_by` and `qc_by` are `users.id` — uuids, not names. There is no
+ * text column for a person on this table, so a typed name has nowhere truthful
+ * to go and must not be sent.
+ */
+export interface ResetEntryInput {
+  /** `cleaning_queue_entries.unit_id` — a `product_units.id`. */
+  unitId: string
+  /** `users.id` of whoever ticked the cleaning checklist. Stamps `clean_completed_at` with it. */
+  cleanedBy?: string
+  /** `users.id` of whoever performed QC. */
+  qcBy?: string
+  /**
+   * `0003:887` — a self-approved check is not a check. QC by the cleaner is
+   * legal only when it is declared skipped and given a reason; anything else
+   * with `qc_by = cleaned_by` is rejected by the CHECK.
+   */
+  qcSkipped?: boolean
+  /** Mandatory when `qcSkipped`, and written to audit (`0003:882`). */
+  qcSkipReason?: string
+  /** The reason an earlier QC pass failed, carried onto the record that finally passed. */
+  qcFailReason?: string
+  /**
+   * `0003:881`. Anything other than `'No Problems'` routes the item out of the
+   * batch, so it records the problem and **no** `reset_completed_at` — the item
+   * was not reset, it was routed.
+   */
+  problemState?: CleaningProblemState
+}
+
 export interface FloorVerbInput {
   /**
    * `bookings.id` (uuid) or `bookings.booking_no` (`B-` + digits).
@@ -142,6 +195,13 @@ export interface FloorVerbInput {
   lines?: readonly FloorLineInput[]
   /** Reset only: `cleaning_queue_entries.unit_id` for each item that was reset. */
   unitIds?: readonly string[]
+  /**
+   * Reset only, and the fuller form of `unitIds`: the same items with the
+   * record the floor actually made. When both are given this one wins; a caller
+   * that passes only `unitIds` gets `{ unitId }` entries and stamps nothing but
+   * the reset time, which is exactly what it used to do.
+   */
+  resetEntries?: readonly ResetEntryInput[]
   /** Free text onto `operation_sessions.notes` (`0003:80`). Ignored by Reset, which has no session. */
   notes?: string
   /** Law 8 — the action key, minted where the user acted, not at send time. */
@@ -170,6 +230,12 @@ export interface FloorVerbResult {
   movements: number
   /** Queue entries whose `reset_completed_at` was set. Reset only. */
   unitsReset: number
+  /**
+   * `cleaning_queue_entries` rows raised by this call — Return only, one per
+   * serialised unit that actually came back. Zero on the other three verbs, and
+   * zero on a Return that re-received lines already queued.
+   */
+  queued: number
   /** The stage move that landed, or `null` when none was made. */
   stage: { from: BookingStatus; to: BookingStatus } | null
   /**
@@ -256,6 +322,16 @@ const MOVEMENT_STATE: Record<JobName, ItemQuantityState | null> = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MIN_REASON = 10
+
+/**
+ * `unitIds` and `resetEntries` are the same list at two levels of detail, so
+ * every Reset path reads it through here and none of them has to know which
+ * form the caller used.
+ */
+function resetEntriesOf(input: FloorVerbInput): readonly ResetEntryInput[] {
+  if (input.resetEntries !== undefined) return input.resetEntries
+  return (input.unitIds ?? []).map((unitId) => ({ unitId }))
+}
 
 type SessionJob = keyof typeof LINE_TABLE
 
@@ -377,11 +453,43 @@ export function validateFloorVerb(job: JobName, input: FloorVerbInput): void {
   }
 
   if (!isSessionJob(job)) {
-    if (!input.unitIds || input.unitIds.length === 0) {
+    const entries = resetEntriesOf(input)
+    if (entries.length === 0) {
       throw new Error(
         'Reset is recorded per item, not per booking (0003:899), so it needs the unit ids that were reset. ' +
           'None were supplied, so nothing was written.',
       )
+    }
+
+    const seenUnits = new Set<string>()
+    for (const entry of entries) {
+      if (!entry.unitId) throw new Error('Reset: every entry must name a product_units id.')
+      if (seenUnits.has(entry.unitId)) {
+        throw new Error(
+          `Reset: unit ${entry.unitId} appears twice. A unit holds one open queue entry per booking, ` +
+            'so the second would be written over the first.',
+        )
+      }
+      seenUnits.add(entry.unitId)
+
+      if (entry.qcSkipped === true) {
+        if ((entry.qcSkipReason ?? '').trim() === '') {
+          throw new Error(
+            `Reset: unit ${entry.unitId} declares a skipped QC with no reason. ` +
+              'CHECK cleaning_queue_entries_qc_is_a_second_pair_of_eyes (0003:887) rejects that row.',
+          )
+        }
+      } else if (
+        entry.qcBy !== undefined &&
+        entry.cleanedBy !== undefined &&
+        entry.qcBy === entry.cleanedBy
+      ) {
+        throw new Error(
+          `Reset: unit ${entry.unitId} was checked by the person who cleaned it. A self-approved check is ` +
+            'not a check (0003:887) — either a second person checks it, or record it as a skipped QC ' +
+            'with a reason. Nothing was written.',
+        )
+      }
     }
     return
   }
@@ -495,7 +603,7 @@ export async function runFloorVerb(
 
   /* 2 — Reset has no session. It is the queue, per item. */
   if (!isSessionJob(job)) {
-    const unitsReset = await completeResetQueue(booking, input.unitIds ?? [], ctx, occurredAt, actionUuid)
+    const unitsReset = await completeResetQueue(booking, resetEntriesOf(input), ctx, occurredAt, actionUuid)
     return {
       success: true,
       bookingId: booking.id,
@@ -504,6 +612,7 @@ export async function runFloorVerb(
       lines: 0,
       movements: 0,
       unitsReset,
+      queued: 0,
       stage: null,
       stageHeldBy: [],
     }
@@ -567,6 +676,7 @@ export async function runFloorVerb(
     lines.map((l) => l.bookingLineId),
   )
   let movements = 0
+  const queueCandidates: ResetQueueCandidate[] = []
 
   for (const line of lines) {
     const required = requiredByLine.get(line.bookingLineId) ?? 0
@@ -576,7 +686,19 @@ export async function runFloorVerb(
     if (job === 'Pack') await writePackingLine(sessionId, line, required, moved, ctx, occurredAt, priorId, actionUuid)
     else if (job === 'Handover')
       await writeHandoverLine(sessionId, line, required, moved, ctx, occurredAt, priorId, actionUuid)
-    else await writeReturnLine(sessionId, line, required, moved, ctx, occurredAt, priorId, actionUuid)
+    else {
+      const returnLineId = await writeReturnLine(
+        sessionId,
+        line,
+        required,
+        moved,
+        ctx,
+        occurredAt,
+        priorId,
+        actionUuid,
+      )
+      queueCandidates.push(...resetQueueCandidates(line, returnLineId))
+    }
 
     // Absence is never converted into a state (0003:630): a line marked missing,
     // or one nothing moved on, produces no movement row.
@@ -584,6 +706,16 @@ export async function runFloorVerb(
       movements += await writeMovements(job, sessionId, line, moved, ctx, occurredAt)
     }
   }
+
+  /* 5b — the reset queue, which nothing in this codebase used to fill.
+   *
+   *     `0003:855-857` calls a `cleaning_queue_entries` row "one item in the
+   *     cleaning/reset queue", and `completeResetQueue` below has always
+   *     required one to exist before it will record a reset. Nothing raised
+   *     them, so Complete Reset was refused on every real booking and a
+   *     rental could not be closed. Gear that comes back is what puts an item
+   *     in the queue, so Return is where the row belongs. */
+  const queued = await enqueueReturnedUnits(booking, queueCandidates, ctx, occurredAt)
 
   /* 6 — one question, asked once, answering two things: has every live line of
    *     the booking reached a state this verb calls terminal? It decides whether
@@ -649,6 +781,7 @@ export async function runFloorVerb(
     lines: lines.length,
     movements,
     unitsReset: 0,
+    queued,
     stage,
     stageHeldBy: heldBy,
   }
@@ -746,6 +879,13 @@ async function writeHandoverLine(
   })
 }
 
+/**
+ * Returns `return_lines.id`, because the reset queue hangs off it
+ * (`cleaning_queue_entries.return_line_id`, `0003:862`). On a fresh row the id
+ * is minted here rather than read back — the same reason the session's is
+ * (`runFloorVerb` step 4): on the offline path `idempotentInsert` queues the
+ * write and hands back the payload, never a server-assigned row.
+ */
 async function writeReturnLine(
   sessionId: string,
   line: FloorLineInput,
@@ -755,7 +895,7 @@ async function writeReturnLine(
   at: string,
   priorId: string | null,
   actionUuid: string,
-): Promise<void> {
+): Promise<string> {
   const outcome = line.outcome ?? 'done'
   // `return_line_state` has no partial member (`0001:74`), so a part-received
   // line is still Outstanding — which is exactly what it is.
@@ -785,14 +925,17 @@ async function writeReturnLine(
 
   if (priorId !== null) {
     await safeUpdate('return_lines', priorId, { ...fields, updated_at: at }, actionUuid)
-    return
+    return priorId
   }
+  const rowId = generateClientUuid()
   await idempotentInsert('return_lines', {
+    id: rowId,
     client_uuid: generateClientUuid(),
     booking_line_id: line.bookingLineId,
     created_by: ctx.userId,
     ...fields,
   })
+  return rowId
 }
 
 /**
@@ -840,42 +983,171 @@ async function writeMovements(
   return scans.length
 }
 
-/* ── Reset — the queue, per item, no session ────────────────────────────── */
+/* ── The reset queue: raised at Return, completed at Reset ──────────────── */
+
+interface ResetQueueCandidate {
+  unitId: string
+  returnLineId: string
+}
+
+/**
+ * Which units on one returned line belong in the reset queue.
+ *
+ * Three exclusions, each because the row would otherwise be a claim nobody
+ * made:
+ *
+ *  - a `'missing'` line — nothing came back, so nothing is waiting to be reset;
+ *  - `condition: 'Lost'` — same fact, recorded on the line rather than the
+ *    outcome, and `returnMovementState` already lands it in `'Missing'`;
+ *  - a unit-less scan, i.e. a quantity-tracked line. `cleaning_queue_entries.unit_id`
+ *    is NOT NULL (`0003:861`) and the queue is per item (`0003:899`), so a line
+ *    with no `product_units.id` has no row to write. It is not dropped in
+ *    silence: the Reset workspace lists these separately and says why.
+ *
+ * A `'Damaged'` unit IS queued. Damage routes the item afterwards; it still
+ * came back and it still has to be handled by the warehouse.
+ */
+function resetQueueCandidates(line: FloorLineInput, returnLineId: string): ResetQueueCandidate[] {
+  if ((line.outcome ?? 'done') === 'missing') return []
+  if (line.condition === 'Lost') return []
+
+  const out: ResetQueueCandidate[] = []
+  for (const scan of scannedUnits(line)) {
+    if (scan.unitId === null) continue
+    out.push({ unitId: scan.unitId, returnLineId })
+  }
+  return out
+}
+
+/**
+ * One queue entry per serialised unit this Return brought back.
+ *
+ * **`requires_reset` is set explicitly, and that is the whole point.** The
+ * column defaults to `false` (`0003:868`) and `completeResetQueue` refuses any
+ * entry carrying `false`, because CHECK `cleaning_queue_entries_reset_only_when_required`
+ * (`0003:895`) would reject the write anyway. An insert that leaned on the
+ * default would therefore fill the queue with rows that can never be completed
+ * — the same dead end, one step further along. Ruled: every returned serialised
+ * unit enters the queue requiring a reset, and `requires_clean` keeps the
+ * column's own default of `true` — stated here rather than inherited, so a
+ * later default change cannot silently retire the rule.
+ *
+ * **Idempotency.** Handover and Return are multi-session by design (`0003:129`,
+ * staggered collection), so this runs again on the same booking with some units
+ * already queued. Open entries for `(booking_id, unit_id)` are read first and
+ * those units are skipped, so a second collection queues only what it actually
+ * brought back and a replayed one queues nothing.
+ */
+async function enqueueReturnedUnits(
+  booking: BookingHead,
+  candidates: readonly ResetQueueCandidate[],
+  ctx: ActionContext,
+  at: string,
+): Promise<number> {
+  if (candidates.length === 0) return 0
+
+  // A unit can only be on one line of a booking, but a caller could still name
+  // it twice; first mention wins and the second is not a second row.
+  const byUnit = new Map<string, ResetQueueCandidate>()
+  for (const candidate of candidates) {
+    if (!byUnit.has(candidate.unitId)) byUnit.set(candidate.unitId, candidate)
+  }
+  const unitIds = [...byUnit.keys()]
+
+  const { data, error } = await supabase
+    .from('cleaning_queue_entries')
+    .select('id, unit_id')
+    .eq('booking_id', booking.id)
+    .in('unit_id', unitIds)
+
+  if (error) {
+    throw new Error(
+      `${booking.booking_no}'s return was recorded, but its reset queue could not be read: ${error.message}`,
+    )
+  }
+
+  const queued = new Set(((data ?? []) as Array<{ unit_id: string }>).map((r) => r.unit_id))
+  let written = 0
+
+  for (const unitId of unitIds) {
+    if (queued.has(unitId)) continue
+    const candidate = byUnit.get(unitId) as ResetQueueCandidate
+
+    await idempotentInsert('cleaning_queue_entries', {
+      client_uuid: generateClientUuid(),
+      unit_id: unitId,
+      booking_id: booking.id,
+      return_line_id: candidate.returnLineId,
+      state: 'Waiting',
+      requires_clean: true,
+      requires_reset: true,
+      entered_queue_at: at,
+      created_by: ctx.userId,
+    })
+    written += 1
+  }
+
+  return written
+}
+
+/* ── Reset — completing the queue, per item, no session ─────────────────── */
 
 /**
  * `0003:855-857` — "Reset and Cleaning are two modes of this one workspace,
- * which is why neither has a session." So Reset writes `reset_completed_at` on
- * the entries that were reset, and nothing else:
+ * which is why neither has a session." So Reset writes onto the entries the
+ * Return raised, and creates none: minting one here would be inventing the
+ * work, and `enqueueReturnedUnits` above already records it where it happened.
  *
- *  - it does not move `state` to `'Ready'`, which `0003:916` reaches only when
- *    every required checklist task is ticked, `problem_state` is clean and the
- *    required evidence exists — three facts this verb is not told;
- *  - it does not create queue entries. An entry is raised by the Return flow and
- *    carries `return_line_id`; minting one here would be inventing the work.
+ * What it writes, per item and never per batch (`0003:911`):
+ *
+ *  - `reset_completed_at` — the fact the verb is named after;
+ *  - `clean_completed_at` / `cleaned_by` — who ticked the checklist, when;
+ *  - `qc_by` / `qc_at` / `qc_skipped` / `qc_skip_reason` / `qc_fail_reason` —
+ *    the check, including the case where the cleaner was the only person on
+ *    shift, which `0003:887` admits only as a declared skip with a reason;
+ *  - `problem_state` — and on a problem entry, **no** `reset_completed_at`. The
+ *    item was routed out of the batch, not reset, and the two must not read the
+ *    same.
+ *
+ * What it still does NOT write:
+ *
+ *  - `state`. `0003:916` lets it reach `'Ready'` only when every required task
+ *    in the item's **category checklist** is ticked for each required mode —
+ *    `category_checklist_tasks` / `cleaning_task_results`, neither of which this
+ *    verb is told about. Moving it would be asserting a checklist nobody ran.
+ *    `TODO(decision)`: an item therefore stays `'Waiting'` with its completion
+ *    times set, and every reader must judge completion off the timestamps.
+ *  - `checklist_version`, for the same reason, and `first_task_at`, which is a
+ *    moment on the floor no caller currently carries.
  */
 async function completeResetQueue(
   booking: BookingHead,
-  unitIds: readonly string[],
+  entries: readonly ResetEntryInput[],
   ctx: ActionContext,
   at: string,
   actionUuid: string,
 ): Promise<number> {
+  const byUnit = new Map(entries.map((e) => [e.unitId, e]))
+  const unitIds = [...byUnit.keys()]
+
   const { data, error } = await supabase
     .from('cleaning_queue_entries')
-    .select('id, unit_id, requires_reset, reset_completed_at')
+    .select('id, unit_id, requires_clean, requires_reset, clean_completed_at, reset_completed_at')
     .eq('booking_id', booking.id)
-    .in('unit_id', [...unitIds])
+    .in('unit_id', unitIds)
 
   if (error) throw new Error(`Could not read the reset queue for ${booking.booking_no}: ${error.message}`)
 
-  const entries = (data ?? []) as Array<{
+  const rows = (data ?? []) as Array<{
     id: string
     unit_id: string
+    requires_clean: boolean
     requires_reset: boolean
+    clean_completed_at: string | null
     reset_completed_at: string | null
   }>
 
-  const found = new Set(entries.map((e) => e.unit_id))
+  const found = new Set(rows.map((e) => e.unit_id))
   const unqueued = unitIds.filter((u) => !found.has(u))
   if (unqueued.length > 0) {
     throw new Error(
@@ -885,7 +1157,7 @@ async function completeResetQueue(
   }
 
   // CHECK :895 — reset_completed_at may only be set where requires_reset.
-  const notRequired = entries.filter((e) => !e.requires_reset).map((e) => e.unit_id)
+  const notRequired = rows.filter((e) => !e.requires_reset).map((e) => e.unit_id)
   if (notRequired.length > 0) {
     throw new Error(
       `${notRequired.length} unit(s) do not require a reset — ${notRequired.join(', ')}. ` +
@@ -893,15 +1165,40 @@ async function completeResetQueue(
     )
   }
 
-  const pending = entries.filter((e) => e.reset_completed_at === null)
+  const pending = rows.filter((e) => e.reset_completed_at === null)
   if (pending.length === 0) {
     throw new Error(
       `Every named unit on ${booking.booking_no} was already reset. Nothing was written — this is a repeat submit.`,
     )
   }
 
-  for (const entry of pending) {
-    await safeUpdate('cleaning_queue_entries', entry.id, { reset_completed_at: at, updated_at: at }, actionUuid)
+  let reset = 0
+
+  for (const row of pending) {
+    const entry = byUnit.get(row.unit_id) as ResetEntryInput
+    const problem = entry.problemState ?? 'No Problems'
+    const routed = problem !== 'No Problems'
+
+    // CHECK :893 mirrors :895 for the cleaning half — a stamp only where the
+    // mode was required, and never a second one over a stamp already there.
+    const stampsClean =
+      !routed && entry.cleanedBy !== undefined && row.requires_clean !== false && row.clean_completed_at === null
+
+    const fields: CleaningQueueUpdate = {
+      updated_at: at,
+      ...(routed ? { problem_state: problem } : { reset_completed_at: at }),
+      ...(entry.cleanedBy === undefined ? {} : { cleaned_by: entry.cleanedBy }),
+      ...(stampsClean ? { clean_completed_at: at } : {}),
+      ...(entry.qcSkipped === true
+        ? { qc_skipped: true, qc_skip_reason: entry.qcSkipReason ?? null, qc_at: at }
+        : {}),
+      ...(entry.qcBy === undefined ? {} : { qc_by: entry.qcBy, qc_at: at }),
+      ...(entry.qcFailReason === undefined ? {} : { qc_fail_reason: entry.qcFailReason }),
+    }
+
+    await safeUpdate('cleaning_queue_entries', row.id, fields, actionUuid)
+    if (!routed) reset += 1
+
     // Per item, never per batch (`0003:911`) — and so is its audit row.
     // TODO(decision) §4.36, same ruling as the session row above. Note the extra
     // wrinkle here: the `safeUpdate` on the line before has already committed,
@@ -915,21 +1212,21 @@ async function completeResetQueue(
       action: 'Update',
       severity: 'Informational',
       tableName: 'cleaning_queue_entries',
-      recordId: entry.id,
+      recordId: row.id,
       actorId: ctx.userId,
       actorRole: ctx.role,
       branchId: booking.branch_id,
-      newValues: { reset_completed_at: at, unit_id: entry.unit_id },
+      newValues: { ...fields, unit_id: row.unit_id },
     })
     if (!entryAudit.ok) {
       console.error(
-        `[floorVerb] Reset committed on cleaning_queue_entries ${entry.id} with NO audit row.`,
+        `[floorVerb] Reset committed on cleaning_queue_entries ${row.id} with NO audit row.`,
         entryAudit.error,
       )
     }
   }
 
-  return pending.length
+  return reset
 }
 
 /* ── The stage, and the cases where it deliberately does not move ───────── */

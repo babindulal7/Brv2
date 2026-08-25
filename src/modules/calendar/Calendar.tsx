@@ -61,13 +61,13 @@ const TODAY = getBusinessToday()
  *
  * | Width | Grid | A day click opens |
  * |---|---|---|
- * | Desktop ≥1180 | 7 columns, BS big / AD small, booking **chips** | a right **side-peek** |
- * | Tablet 768–1179 | 7 columns, chips truncate to a **dot** | a **bottom sheet** |
+ * | Desktop ≥1280 | 7 columns, BS big / AD small, booking **chips** | a right **side-peek** |
+ * | Tablet 768–1279 | 7 columns, chips truncate to a **dot** | a **bottom sheet** |
  * | Phone <768 | dots only | the **agenda list below the grid** |
  *
  * Per `WIREFRAME_RULINGS_2026-08-12.md` §1 the wireframe is a **layout** spec,
  * not a content inventory: the right rail, the Full View mode and the filter
- * panel survive because no prose removes them. Below 1180 the rail **reflows**
+ * panel survive because no prose removes them. Below 1280 the rail **reflows**
  * beneath the grid (§7: *"collapse means reflow, not hide"*) — it is not
  * wrapped in `CollapsibleAside`, whose defaults other pages depend on.
  *
@@ -1291,7 +1291,14 @@ function SelectedEventPanel({ bar, row, onClose }: { bar: Bar; row: ResourceRow;
             {bar.label}
           </div>
         </div>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', fontWeight: 700, color: skin.fg === 'var(--st-out-fg)' ? 'var(--success-text)' : skin.fg }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', fontWeight: 700, /*
+            v4.1: was `skin.fg === 'var(--st-out-fg)' ? 'var(--success-text)'`
+            — a string comparison against a token NAME, written when On Rent
+            was green and its ink needed overriding to a readable green. On
+            Rent is ORANGE now, so that branch painted the orange event's label
+            green. The pair already carries a readable ink; use it.
+          */
+          color: skin.fg }}>
           <span aria-hidden style={{ width: 7, height: 7, borderRadius: 'var(--r-badge)', background: skin.line }} />
           {bar.kind}
         </span>
@@ -1551,7 +1558,7 @@ export default function Calendar() {
 
   /**
    * §5.1 Notes — the crew, maintenance and transport overlays are desktop-only,
-   * so below 1180 the grid and the day list carry the booking layer alone and
+   * so below 1280 the grid and the day list carry the booking layer alone and
    * say so in words rather than dropping rows silently.
    */
   const layerVisible = useCallback(
@@ -1825,7 +1832,7 @@ export default function Calendar() {
     </span>
   )
 
-  /** §5.1 Notes — desktop only. Below 1180 the note in the grid says why. */
+  /** §5.1 Notes — desktop only. Below 1280 the note in the grid says why. */
   const layerToggles = desktop && view === 'Month' && (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
       <span style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>Layers</span>
@@ -2065,7 +2072,7 @@ export default function Calendar() {
       <MonthGrid anchor={start} jobsOn={jobsOn} viewport={viewport} selectedDay={day} onPickDay={pickDay} />
       {!desktop && (
         <p style={{ margin: 0, padding: '0 var(--sp-md) var(--sp-sm)', fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.5 }}>
-          Chips truncate to a dot below 1180, and the crew, maintenance and transport layers are desktop-only
+          Chips truncate to a dot below 1280, and the crew, maintenance and transport layers are desktop-only
           (§5.1 Notes) — this grid shows the booking layer.
         </p>
       )}
@@ -2383,7 +2390,7 @@ export default function Calendar() {
         <div style={{ display: 'flex', gap: 'var(--sp-md)', alignItems: 'center', flexWrap: 'wrap' }}>
           {viewTabs}
           {layerToggles}
-          {/* Below 1180 these two live in the Filters panel instead of doubling
+          {/* Below 1280 these two live in the Filters panel instead of doubling
               in the header — the same controls, one place. */}
           {desktop && (
             <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -2396,7 +2403,7 @@ export default function Calendar() {
 
       {/* The event-type chip row is a desktop affordance; §5.1 puts filters
           behind `[filters ▾]`, and twelve chips ahead of the grid on a phone is
-          a scroll, not a filter. Below 1180 they render inside Filters. */}
+          a scroll, not a filter. Below 1280 they render inside Filters. */}
       {desktop && <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', flexWrap: 'wrap' }}>{kindChips}</div>}
 
       {desktop ? (

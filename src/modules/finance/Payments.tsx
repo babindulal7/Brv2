@@ -476,7 +476,7 @@ const DEPOSIT_LINES: ReadonlyArray<{ label: string; source: string }> = [
  */
 export default function Payments({ embedded = false }: { embedded?: boolean }) {
   const [params, setParams] = useSearchParams()
-  /* Law 13/14 — one width reading, at Foundation's locked 768 / 1180. */
+  /* Law 13/14 — one width reading, at v4.1 §7.7's 768 / 1280. */
   const viewport = useViewport()
   const tabular = viewport !== 'phone'
   const railBesideList = viewport === 'desktop'
@@ -969,7 +969,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
           </p>
         </Card>
 
-        {/* Rulings §7 — below 1180 the rail REFLOWS beneath the list rather than
+        {/* Rulings §7 — below 1280 the rail REFLOWS beneath the list rather than
             hiding behind `CollapsibleAside`'s handle. */}
         {railBesideList ? <Rail label="Deposits">{railContent}</Rail> : railContent}
       </div>

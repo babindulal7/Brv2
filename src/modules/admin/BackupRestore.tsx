@@ -298,7 +298,7 @@ export default function BackupRestore() {
       <div
         style={{
           display: 'grid',
-          /* Rulings §7 — below 1180 the rail reflows underneath, still visible.
+          /* Rulings §7 — below 1280 the rail reflows underneath, still visible.
              `useRailGridColumns()` drops the rail track and `ReflowRail` below
              renders the same children as a plain column — the previous build
              paired this grid with plain `Rail` (which IS CollapsibleAside), so
@@ -713,7 +713,7 @@ export default function BackupRestore() {
           </Card>
         </div>
 
-        {/* Rulings §7 (binding) — "reflow, not hide": below 1180 these four
+        {/* Rulings §7 (binding) — "reflow, not hide": below 1280 these four
             cards land underneath as a plain column, never behind a handle. */}
         <ReflowRail>
           <Card title="Backup Summary">

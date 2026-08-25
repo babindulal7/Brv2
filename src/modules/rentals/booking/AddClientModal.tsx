@@ -1217,7 +1217,7 @@ export function AddClientModal({
               }}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <Icon name="alert_triangle" size={20} style={{ color: 'var(--warning-text)', flexShrink: 0, marginTop: 1 }} />
+                <Icon name="alert_triangle" size={20} style={{ color: 'var(--ready-text)', flexShrink: 0, marginTop: 1 }} />
                 <div style={{ minWidth: 0 }}>
                   <h3
                     id={confirmHeadingId}

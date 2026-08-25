@@ -30,7 +30,7 @@ export function CollapsibleAside({
   const key = `${side}:${id ?? location.pathname}`
   // Phone *and* tablet width have no room for a 210–300px rail sitting beside
   // `minmax(0,1fr)` content — it squeezes the content column to nothing. This
-  // product's actual target device is the 768–1179px warehouse tablet (see
+  // product's actual target device is the 768–1279px warehouse tablet (see
   // device.ts's docstring), so the collapse-by-default has to cover that band
   // too, not just phone. Default collapsed on both; `useCollapsed` still lets
   // an explicit user toggle override it.

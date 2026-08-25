@@ -1,5 +1,6 @@
 import type { Dest } from '../../../data/settings'
 import type { Field, Section } from './shared'
+import { DevicePinControl } from './DevicePin'
 
 /**
  * **Settings ▸ System** — appearance, notifications, preferences, security and
@@ -152,6 +153,27 @@ export const SYSTEM_SECTIONS: Section[] = [
       { label: 'Two-factor authentication', note: 'Required for Owner and Admin roles.', on: true },
       { label: 'Password policy', note: 'Min 12 chars, mixed case, number, symbol. 90-day expiry.', settingKey: 'passwordPolicy' },
       { label: 'Shared-device screen lock', note: 'Locks the tablet between operators.', on: true },
+      /*
+       * Device PIN — added 24 Aug 2026, deliberately as a row in THIS card and
+       * not a card of its own. It belongs beside the screen-lock toggle because
+       * it is the credential that toggle's lock consumes; separated, a reader
+       * has to work out that the two are one feature.
+       *
+       * It is also the only row on this page whose control is live against the
+       * database, which is why `Field.custom` exists. See its comment in
+       * `shared.tsx`.
+       *
+       * ⚠ The password policy row above does NOT govern this PIN, and the note
+       * says six digits so the two cannot be read as one rule. A 12-character
+       * minimum would make a 6-digit PIN unsettable; they are different
+       * credential classes — one is proof of identity, the other re-admits a
+       * session that already proved it (migration 0066).
+       */
+      {
+        label: 'Device PIN',
+        note: 'Six digits, used only to re-open a session locked on this device. It cannot sign you in, and it is not governed by the password policy above.',
+        custom: <DevicePinControl />,
+      },
     ],
   },
   {

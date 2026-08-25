@@ -53,7 +53,21 @@ const db = vi.hoisted(() => {
   return { state, supabase }
 })
 
-vi.mock('../supabase', () => ({ supabase: db.supabase, newClientUuid: () => 'uuid' }))
+/*
+ * `IS_MOCK` joined this mock on 24 Aug 2026 with the staff PIN.
+ *
+ * `AuthProvider` now resolves whether the session holds a PIN as soon as an
+ * identity lands — the idle lock has to know synchronously whether a timeout
+ * should draw the curtain or sign out, so it cannot ask at the moment it fires.
+ * That read goes through `staffPinStatus`, which checks `IS_MOCK` first, and a
+ * `vi.mock` factory that omits an export makes reading it throw rather than
+ * yield undefined.
+ *
+ * `true` is the right value here: it short-circuits to `{ hasPin: false }`
+ * without touching the fake client, so these tests stay about `loadProfile` and
+ * say nothing about PINs.
+ */
+vi.mock('../supabase', () => ({ supabase: db.supabase, newClientUuid: () => 'uuid', IS_MOCK: true }))
 
 ;(globalThis as Record<string, unknown>)['IS_REACT_ACT_ENVIRONMENT'] = true
 

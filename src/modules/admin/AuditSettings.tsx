@@ -232,7 +232,7 @@ function MiniLine({ d, tone }: { d: { yTicks: string[]; labels: string[]; points
  * ## Phase 3.1 — reflow, not hide
  *
  * The rail is `ReflowRail` over `useRailGridColumns()` (Rulings §7, binding):
- * below 1180 the five rail cards reflow underneath as a plain column instead
+ * below 1280 the five rail cards reflow underneath as a plain column instead
  * of collapsing to a 44px handle on the warehouse tablet.
  */
 export default function AuditSettings() {
@@ -626,7 +626,7 @@ export default function AuditSettings() {
           </Card>
         </div>
 
-        {/* Rulings §7 (binding) — "reflow, not hide": below 1180 these five
+        {/* Rulings §7 (binding) — "reflow, not hide": below 1280 these five
             cards land underneath as a plain column, never behind a handle. */}
         <ReflowRail>
           <Card title="Audit Summary">

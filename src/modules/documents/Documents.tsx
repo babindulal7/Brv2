@@ -864,7 +864,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
           </>
           )
           /* Rulings §7 — reflow, not hide. `order: 2` puts the categories and
-             filters beneath the list below 1180 instead of behind a handle. */
+             filters beneath the list below 1280 instead of behind a handle. */
           return desktop ? (
             <SideRail width={228} label="Categories">{categoriesContent}</SideRail>
           ) : (

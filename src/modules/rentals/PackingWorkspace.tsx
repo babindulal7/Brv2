@@ -15,6 +15,7 @@ import { toBs, formatBs, formatAd, formatAdDateTime } from '../../lib/bs'
 import { newClientUuid } from '../../lib/supabase'
 import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/queries/bookings'
 import type { FloorLineInput } from '../../actions/rentals/floorVerb'
+import { CompactButton } from '../../components/ui/TouchTarget'
 
 /**
  * **Packing Workspace** — `Packing Workflow.md` v2.1 (Build Locked), wired live.
@@ -49,10 +50,12 @@ import type { FloorLineInput } from '../../actions/rentals/floorVerb'
  * the panel says so instead of dressing the counter up as an upload.
  */
 
-/** §13 — the workspace primary is `--blue-600` in light *and* dark. */
+/** §13 — the workspace primary is `--primary` in light *and* dark. */
 const BLUE_PRIMARY = {
-  background: 'var(--cat-1)',
-  color: '#fff',
+  // Was  (#3b82d6, a CHART CATEGORY hue) with a raw '#fff' ink — the
+  // comment above already claimed --primary while the code used neither.
+  background: 'var(--btn-primary-bg)',
+  color: 'var(--btn-primary-fg)',
   border: '1px solid transparent',
 } as const
 
@@ -261,7 +264,7 @@ export default function PackingWorkspace() {
   const id = bookingNo ?? ''
   /** The one identity every dispatch on this screen may act as. No fallback. */
   const { user } = useAuth()
-  /* Law 13/14 — width decides, at Foundation's locked 768 / 1180. */
+  /* Law 13/14 — width decides, at v4.1 §7.7's 768 / 1280. */
   const viewport = useViewport()
   const desktop = viewport === 'desktop'
   const phone = viewport === 'phone'
@@ -584,7 +587,9 @@ export default function PackingWorkspace() {
                       gap: 'var(--sp-xs)',
                       height: 22,
                       padding: '0 9px',
-                      borderRadius: 'var(--r-badge)',
+                      // §3.3 — a status is --r-chip; --r-badge (999) is for
+                      // numeric count badges only.
+                      borderRadius: 'var(--r-chip)',
                       background: STATUS[statusToken(stage)].bg,
                       color: STATUS[statusToken(stage)].fg,
                       fontSize: 'var(--t-meta)',
@@ -699,8 +704,8 @@ export default function PackingWorkspace() {
 
             {/*
               §3.2's three layouts, all of them REFLOW rather than hide (Rulings §7):
-               · desktop ≥1180 — tree │ list │ progress, three columns;
-               · tablet 768–1179 — list and progress side by side, tree beneath;
+               · desktop ≥1280 — tree │ list │ progress, three columns;
+               · tablet 768–1279 — list and progress side by side, tree beneath;
                · phone <768 — one column: list → progress → tree.
             */}
             <div
@@ -804,7 +809,7 @@ export default function PackingWorkspace() {
                       onChange={(e) => setQuery(e.target.value)}
                       placeholder="Search item, serial…"
                       aria-label="Search items"
-                      style={{ flex: 1, minWidth: 180, minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
+                      style={{ flex: 1, minWidth: 180, minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
                     />
                     {FILTERS.map((f) => {
                       const on = filter === f
@@ -1107,7 +1112,7 @@ export default function PackingWorkspace() {
                             aria-label={`Reason ${r.name} is missing`}
                             /* Law 15 — a typed field on a touch device, inside a
                                blocking gate: the Law 10 reason is entered here. */
-                            style={{ width: '100%', minHeight: 44, marginTop: 5, padding: '0 8px', borderRadius: 'var(--r-input)', border: `1px solid ${(marks[r.key]?.reason ?? '').trim().length < MIN_REASON ? 'var(--danger)' : 'var(--input-border)'}`, background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
+                            style={{ width: '100%', minHeight: 44, marginTop: 5, padding: '0 8px', borderRadius: 'var(--r-input)', border: `1px solid ${(marks[r.key]?.reason ?? '').trim().length < MIN_REASON ? 'var(--danger)' : 'var(--input-border)'}`, background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
                           />
                         </div>
                       ))}
@@ -1143,7 +1148,7 @@ export default function PackingWorkspace() {
                     placeholder="Notes for this packing session (saved onto the session when packing completes)…"
                     aria-label="Packing session notes"
                     rows={3}
-                    style={{ width: '100%', minHeight: 64, padding: '8px 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none', resize: 'vertical' }}
+                    style={{ width: '100%', minHeight: 64, padding: '8px 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
                   />
                   <p style={{ margin: '7px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
                     Written to <span className="identifier">operation_sessions.notes</span> with the dispatch —
@@ -1201,29 +1206,18 @@ export default function PackingWorkspace() {
   )
 }
 
-function RowAction({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        height: 22,
-        padding: '0 7px',
-        borderRadius: 'var(--r-xs)',
-        border: '1px solid var(--border)',
-        background: 'var(--card2)',
-        color: 'var(--text2)',
-        fontSize: 'var(--t-meta)',
-        fontWeight: 600,
-        cursor: 'pointer',
-        fontFamily: 'inherit',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {label}
-    </button>
-  )
-}
+/**
+ * The floor workspaces' compact row action.
+ *
+ * Was a private 22px-tall `<button>` with NO hit-area expansion, duplicated
+ * byte-for-byte across ReturnWorkspace, PackingWorkspace, HandoverWorkspace and
+ * ResetWorkspace — half of Law 15's 44px floor, on the four screens most often
+ * used with gloves on a tablet. Replaced 25 Aug 2026 by the shared
+ * `CompactButton`, which keeps the 22px paint and adds the 44px target.
+ *
+ * Aliased rather than renamed so the call sites below read unchanged.
+ */
+const RowAction = CompactButton
 
 function Ring({ pct }: { pct: number }) {
   const r = 26

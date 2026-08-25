@@ -4,7 +4,7 @@ import { Card, PageHeader, KpiStrip, ReflowRail, SummaryRows, FooterNote, cardSt
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { Donut, Legend, HBars, catColor } from '../../components/ui/Charts'
-import { STATUS, BRAND, BRAND_TEXT } from '../../lib/status'
+import { BRAND, BRAND_TEXT } from '../../lib/status'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import {
   KPIS,
@@ -172,7 +172,7 @@ function clientsCsv(money: boolean): ReportCsvRow[] {
  * carries that note precisely because the order is the exception, not the rule.
  */
 export default function ClientReports() {
-  /* Rulings §7 — the rail track goes away below 1180 so `ReflowRail`'s
+  /* Rulings §7 — the rail track goes away below 1280 so `ReflowRail`'s
      inline column is not squeezed by a rail column that is still there. */
   const railGridColumns = useRailGridColumns()
   const navigate = useNavigate()
@@ -345,9 +345,19 @@ export default function ClientReports() {
                               alignItems: 'center',
                               height: 19,
                               padding: '0 7px',
-                              borderRadius: 5,
-                              background: STATUS[c.membershipKey].bg,
-                              color: STATUS[c.membershipKey].fg,
+                              borderRadius: 'var(--r-chip)',
+                              /*
+                               * Membership TIER is an entity attribute, not a
+                               * state — §2 reserves the hue vocabulary for
+                               * state, so a Gold/Silver tier reading as a
+                               * status is a category error. Worse here than
+                               * most: a tier chip beside a real status chip in
+                               * the same row invites reading them as the same
+                               * kind of fact.
+                               */
+                              background: 'var(--surface-2)',
+                              border: '1px solid var(--border)',
+                              color: 'var(--text2)',
                               fontSize: 'var(--t-meta)',
                               fontWeight: 700,
                             }}

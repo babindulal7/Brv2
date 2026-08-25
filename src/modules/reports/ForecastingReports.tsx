@@ -130,7 +130,7 @@ export default function ForecastingReports() {
                     <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{p.category}</td>
                     <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{p.item}</td>
                     <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{p.reason}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: p.confidence === 'High' ? 'var(--success)' : 'var(--warning)' }}>{p.confidence}</td>
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: p.confidence === 'High' ? 'var(--success)' : 'var(--ready)' }}>{p.confidence}</td>
                   </tr>
                 ))}
               </tbody>
@@ -156,7 +156,7 @@ export default function ForecastingReports() {
                     <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{m.item}</td>
                     <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{m.nextService}</td>
                     <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{m.trigger}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: m.priority === 'High' ? 'var(--danger)' : 'var(--warning)' }}>{m.priority}</td>
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: m.priority === 'High' ? 'var(--danger)' : 'var(--ready)' }}>{m.priority}</td>
                   </tr>
                 ))}
               </tbody>

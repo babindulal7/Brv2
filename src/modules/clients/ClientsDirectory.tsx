@@ -222,10 +222,23 @@ function Tone({
   tone,
   icon,
   reason,
+  entity,
 }: {
   text: string
-  tone: keyof typeof STATUS
+  /** Omitted for an `entity` mark, which takes no hue at all. */
+  tone?: keyof typeof STATUS
   icon?: IconName
+  /**
+   * This chip names an ENTITY ATTRIBUTE, not an operational state.
+   *
+   * v4.1 §2 gives each of the seven hues exactly one meaning, so spending one
+   * on a client property teaches the eye that the hue means nothing in
+   * particular. VIP is the case that forced this: it was yellow here, blue in
+   * the booking combobox and `neutral` in the canonical FLAGS map, all at the
+   * same time — and yellow ("being worked in-house") was the worst reading of
+   * the three. An entity mark is a recessed surface plus its word.
+   */
+  entity?: boolean
   /**
    * Why this chip is on the row. Rulings §11.2.3 — *"a client told they are on
    * stop will ask why"* — so the On Stop chip carries its firing limb here
@@ -235,8 +248,8 @@ function Tone({
    */
   reason?: string
 }) {
-  const c = STATUS[tone]
-  const glyph = (icon ?? STATUS_ICON[tone]) as IconName
+  const c = entity || tone === undefined ? null : STATUS[tone]
+  const glyph = (icon ?? (tone ? STATUS_ICON[tone] : undefined)) as IconName | undefined
   return (
     <span
       {...(reason ? { title: reason, 'aria-label': `${text} — ${reason}` } : {})}
@@ -246,16 +259,21 @@ function Tone({
         gap: 4,
         height: 19,
         padding: '0 7px',
-        borderRadius: 5,
-        background: c.bg,
-        color: c.fg,
-        border: c.border ? `1px solid ${c.border}` : undefined,
+        borderRadius: 'var(--r-chip)',
+        // An entity mark takes a recessed surface and no hue; a status takes
+        // its pair. Both keep the word, so §7.4 ("never colour alone") holds
+        // either way — and holds trivially for the entity mark, which has no
+        // colour to lean on in the first place.
+        background: c ? c.bg : 'var(--surface-2)',
+        color: c ? c.fg : 'var(--text2)',
+        border: c ? (c.border ? `1px solid ${c.border}` : undefined) : '1px solid var(--border)',
         fontSize: 'var(--t-th)',
-        fontWeight: 600,
+        fontWeight: c ? 600 : 700,
+        letterSpacing: c ? undefined : '0.02em',
         whiteSpace: 'nowrap',
       }}
     >
-      <Icon name={glyph} size={10} />
+      {glyph && <Icon name={glyph} size={10} />}
       {text}
     </span>
   )
@@ -320,7 +338,7 @@ export function ClientsDirectory({
      Spec 8.1 draws THREE layouts, not two, so this reads the band rather than
      the phone-vs-not boolean it used to: `tabular` still decides table-vs-cards
      at 768, and `desktop` decides whether the two rails sit beside the list or
-     reflow beneath it. Rulings §7 — "collapse below 1180" is *reflow*, not
+     reflow beneath it. Rulings §7 — "collapse below 1280" is *reflow*, not
      *hide*, so at tablet the Filters/Saved Views and Client-profile content
      renders inline rather than going into `CollapsibleAside`'s handle. */
   const viewport = useViewport()
@@ -1060,7 +1078,7 @@ export function ClientsDirectory({
         }}
       >
         {/*
-          Rulings §7 — below 1180 this content REFLOWS, it does not hide. The
+          Rulings §7 — below 1280 this content REFLOWS, it does not hide. The
           same children go into `SideRail` (which is `CollapsibleAside`, and
           therefore a 44px handle at tablet/phone) only at desktop; below that
           they render as a plain column that `order: 2` places beneath the
@@ -1372,7 +1390,7 @@ export function ClientsDirectory({
 
                       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                         <Tone text={client.membership} tone={TIER_TONE[client.membership]} />
-                        {client.isVip && <Tone text="VIP" tone="progress" />}
+                        {client.isVip && <Tone text="VIP" entity />}
                         {client.isBlocked && <Tone text="Blocked" tone="danger" />}
                         {/* Rulings §11.2.5 — icon + label + colour, and the
                             firing limb travels with the chip so the row can
@@ -1533,7 +1551,7 @@ export function ClientsDirectory({
                                 <span style={{ minWidth: 0 }}>
                                   <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                     <span style={{ fontWeight: 600, color: 'var(--text)' }}>{client.name}</span>
-                                    {client.isVip && <Tone text="VIP" tone="progress" />}
+                                    {client.isVip && <Tone text="VIP" entity />}
                                     {client.isVerified && (
                                       <span
                                         title="KYC and PAN verified"
@@ -1810,7 +1828,7 @@ export function ClientsDirectory({
                     <h3 style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', margin: 0 }}>
                       {selectedClient.name}
                     </h3>
-                    {selectedClient.isVip && <Tone text="VIP" tone="progress" />}
+                    {selectedClient.isVip && <Tone text="VIP" entity />}
                   </div>
                   <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 3 }}>
                     {selectedClient.id} · {selectedClient.membership}
@@ -2123,7 +2141,7 @@ export function ClientsDirectory({
             </Card>
             )
             /* Rulings §7 again — the profile rail is beside the list at
-               desktop and inline beneath it below 1180, never behind the
+               desktop and inline beneath it below 1280, never behind the
                collapse handle. */
             return desktop ? <Rail width={330} label="Client profile">{profileContent}</Rail> : profileContent
           })()}

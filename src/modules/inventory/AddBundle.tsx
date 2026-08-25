@@ -306,7 +306,7 @@ function Banner({
     tone === 'danger'
       ? { border: 'var(--danger)', background: 'var(--st-danger-bg)', color: 'var(--st-danger-fg)' }
       : tone === 'warning'
-        ? { border: 'var(--warning-text)', background: 'var(--st-progress-bg)', color: 'var(--st-progress-fg)' }
+        ? { border: 'var(--ready-text)', background: 'var(--st-progress-bg)', color: 'var(--st-progress-fg)' }
         : { border: 'var(--border)', background: 'var(--card2)', color: 'var(--text2)' }
   return (
     <div
@@ -390,7 +390,7 @@ export function AddBundle() {
     Spec 7.7: "TABLET: three panes become three stacked sections. PHONE: three
     accordion steps with a sticky [Save]." This screen had no width read at all
     and pinned a two-pane grid plus a 318px rail at every width, so the form was
-    unusable below 1180. `viewport` now drives the three bands; the sticky save
+    unusable below 1280. `viewport` now drives the three bands; the sticky save
     bar below 768 follows BookingDetail's in-repo precedent.
   */
   const viewport = useViewport()
@@ -1832,7 +1832,7 @@ export function AddBundle() {
                   gap: 7,
                   fontSize: 'var(--t-meta)',
                   fontWeight: 700,
-                  color: availability.blockedItems === 0 ? 'var(--success-text)' : 'var(--warning-text)',
+                  color: availability.blockedItems === 0 ? 'var(--success-text)' : 'var(--ready-text)',
                 }}
               >
                 <Icon name={availability.blockedItems === 0 ? 'check' : 'alert_triangle'} size={14} />
@@ -1975,7 +1975,7 @@ export function AddBundle() {
           </div>
           )
           /* Rulings §7 — reflow, not hide. The summary sits beside the form at
-             desktop and beneath it below 1180, never behind the rail handle. */
+             desktop and beneath it below 1280, never behind the rail handle. */
           return desktop ? <Rail width={318} label="Bundle summary">{railContent}</Rail> : railContent
         })()}
       </div>
@@ -2606,7 +2606,7 @@ function LineRow({
                       {child.available} / {child.stock} free
                     </span>
                     {isLine && (
-                      <span style={{ ...subtle, color: 'var(--warning-text)' }}>
+                      <span style={{ ...subtle, color: 'var(--ready-text)' }}>
                         already its own line — a child or a line, never both
                       </span>
                     )}

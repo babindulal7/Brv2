@@ -16,6 +16,7 @@ import { newClientUuid } from '../../lib/supabase'
 import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/queries/bookings'
 import { SHARED_CLEAN_TASKS, DAMAGE_TYPES, SEVERITIES, PROBLEM_ROUTE, QUEUE_FILTERS } from '../../data/reset'
 import type { QueueState, ProblemState } from '../../data/reset'
+import { CompactButton, TouchTarget } from '../../components/ui/TouchTarget'
 
 /**
  * **Reset Workspace** — `04 Operations/Cleaning & Reset Workflow.md` v3.1
@@ -73,7 +74,17 @@ import type { QueueState, ProblemState } from '../../data/reset'
  */
 
 /** §13 sibling convention — the workspace primary is blue in both themes. */
-const BLUE_PRIMARY = { background: 'var(--cat-1)', color: '#fff', border: '1px solid transparent' } as const
+/*
+ * The primary action's paint. Was `background: 'var(--cat-1)', color: '#fff'`
+ * — `--cat-1` is a CHART CATEGORY hue (#3b82d6), not the app's primary, and
+ * the ink was a raw literal. Five workspaces carried byte-identical copies, so
+ * five primary buttons were an off-palette blue that no token governed and
+ * that never followed a theme change.
+ *
+ * v4.1 §5: primary is `--primary`, one per view. The --btn-primary-* pair is
+ * the token that exists for exactly this and carries its own measured ink.
+ */
+const BLUE_PRIMARY = { background: 'var(--btn-primary-bg)', color: 'var(--btn-primary-fg)', border: '1px solid transparent' } as const
 
 /**
  * §4.2's five tokens, mapped onto the four queue states. QC's render colour
@@ -243,7 +254,7 @@ export default function ResetWorkspace() {
   const NO_ACTOR =
     'Nobody is signed in, so this cleaning work cannot be recorded against anyone. ' +
     'A reset names who cleaned the unit and who QC’d it, and the QC gate compares the two. Sign in and reopen this workspace.'
-  /* Law 13/14 — width decides, at Foundation's locked 768 / 1180. */
+  /* Law 13/14 — width decides, at v4.1 §7.7's 768 / 1280. */
   const viewport = useViewport()
   const desktop = viewport === 'desktop'
   const phone = viewport === 'phone'
@@ -656,7 +667,7 @@ export default function ResetWorkspace() {
                   <span
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', height: 22, padding: '0 9px',
-                      borderRadius: 'var(--r-badge)', background: STATUS[statusToken(stage)].bg, color: STATUS[statusToken(stage)].fg,
+                      borderRadius: 'var(--r-chip)', background: STATUS[statusToken(stage)].bg, color: STATUS[statusToken(stage)].fg,
                       fontSize: 'var(--t-meta)', fontWeight: 700,
                     }}
                   >
@@ -755,7 +766,7 @@ export default function ResetWorkspace() {
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search equipment, serial…"
                 aria-label="Search the reset queue"
-                style={{ flex: 1, minWidth: 200, minHeight: 44, padding: '0 10px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
+                style={{ flex: 1, minWidth: 200, minHeight: 44, padding: '0 10px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
               />
               {QUEUE_FILTERS.map((f) => {
                 const on = filter === f
@@ -778,7 +789,7 @@ export default function ResetWorkspace() {
             </div>
 
             {/* §3.5 — groups rail · queue · batch panel; the rails reflow rather
-                than collapse below 1180 (Rulings §7). */}
+                than collapse below 1280 (Rulings §7). */}
             <div
               style={{
                 display: 'grid',
@@ -1084,7 +1095,7 @@ export default function ResetWorkspace() {
                                         onChange={(e) => changeProblemField(r.key, { reason: e.target.value })}
                                         placeholder="Reason (min 5 characters)"
                                         aria-label={`Reason ${r.name} is ${draft.type}`}
-                                        style={{ minHeight: 44, padding: '0 8px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
+                                        style={{ minHeight: 44, padding: '0 8px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
                                       />
                                     )}
                                     {draft.type === 'Damaged' && (
@@ -1291,21 +1302,18 @@ export default function ResetWorkspace() {
   )
 }
 
-function RowAction({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        height: 22, padding: '0 7px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)',
-        background: 'var(--card2)', color: 'var(--text2)',
-        fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-      }}
-    >
-      {label}
-    </button>
-  )
-}
+/**
+ * The floor workspaces' compact row action.
+ *
+ * Was a private 22px-tall `<button>` with NO hit-area expansion, duplicated
+ * byte-for-byte across ReturnWorkspace, PackingWorkspace, HandoverWorkspace and
+ * ResetWorkspace — half of Law 15's 44px floor, on the four screens most often
+ * used with gloves on a tablet. Replaced 25 Aug 2026 by the shared
+ * `CompactButton`, which keeps the 22px paint and adds the 44px target.
+ *
+ * Aliased rather than renamed so the call sites below read unchanged.
+ */
+const RowAction = CompactButton
 
 /**
  * §10 — QC by someone other than the cleaner, by default. The name defaults to
@@ -1352,21 +1360,41 @@ function QcRowControls({
           style={{ height: 24, padding: '0 6px', borderRadius: 'var(--r-xs)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
         />
       )}
-      <div style={{ display: 'flex', gap: 'var(--sp-xs)' }}>
+      {/*
+        The QC verdict. Two opposite outcomes, entered on a tablet by someone who
+        has just put gloves down, so this pair gets the most careful treatment of
+        any control on the floor screens.
+
+        `--sp-sm` (8px) rather than `--sp-xs` (4px): the 44px `TouchTarget` hit
+        areas below would otherwise overlap and the later button in the DOM would
+        silently win the tap.
+
+        The borders stay `--st-in-fg` / `--st-danger-fg` (both #ffffff). That
+        reads wrong out of context, but it is correct HERE: when enabled these
+        buttons carry a solid `--st-in-bg` / `--st-danger-bg` fill, so the white
+        is on-fill ink doing its job. ⚠ In the DISABLED state the fill drops to
+        `--card2` and both borders render white on grey — Pass and Fail then
+        differ only by their word. The word is what Law 11 requires and it is
+        there, so this is cosmetic rather than a safety defect, but it is a real
+        inconsistency and it is NOT fixed here.
+      */}
+      <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
         <button
           type="button"
           disabled={blocked}
           onClick={onPass}
-          style={{ height: 22, padding: '0 8px', borderRadius: 'var(--r-xs)', border: '1px solid var(--st-in-fg)', background: blocked ? 'var(--card2)' : 'var(--st-in-bg)', color: blocked ? 'var(--muted)' : 'var(--st-in-fg)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: blocked ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+          style={{ position: 'relative', height: 22, padding: '0 8px', borderRadius: 'var(--r-xs)', border: '1px solid var(--st-in-fg)', background: blocked ? 'var(--card2)' : 'var(--st-in-bg)', color: blocked ? 'var(--muted)' : 'var(--st-in-fg)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: blocked ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
         >
+          <TouchTarget />
           Pass
         </button>
         <button
           type="button"
           disabled={failBlocked}
           onClick={onFail}
-          style={{ height: 22, padding: '0 8px', borderRadius: 'var(--r-xs)', border: '1px solid var(--st-danger-fg)', background: failBlocked ? 'var(--card2)' : 'var(--st-danger-bg)', color: failBlocked ? 'var(--muted)' : 'var(--st-danger-fg)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: failBlocked ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+          style={{ position: 'relative', height: 22, padding: '0 8px', borderRadius: 'var(--r-xs)', border: '1px solid var(--st-danger-fg)', background: failBlocked ? 'var(--card2)' : 'var(--st-danger-bg)', color: failBlocked ? 'var(--muted)' : 'var(--st-danger-fg)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: failBlocked ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
         >
+          <TouchTarget />
           Fail
         </button>
       </div>

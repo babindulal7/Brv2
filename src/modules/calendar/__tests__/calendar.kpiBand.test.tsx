@@ -55,7 +55,7 @@ const Calendar = (await import('../Calendar')).default
 let container: HTMLDivElement
 let root: Root
 
-/** Foundation's locked breakpoints — 768 and 1180. Width only (Law 14). */
+/** v4.1 §7.7's breakpoints — 768 and 1280. Width only (Law 14). */
 async function mount(width: number) {
   Object.defineProperty(window, 'innerWidth', { value: width, configurable: true, writable: true })
   container = document.createElement('div')

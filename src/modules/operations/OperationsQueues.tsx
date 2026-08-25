@@ -53,9 +53,9 @@ const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', w
  * The chip row selects a predicate; the list underneath is always the same
  * list, ordered by the instant each job is due. Three layouts:
  *
- *  - **desktop ≥1180** — chips, then the table, then a right rail;
- *  - **tablet 768–1179** — chips, then the same table, then the rail's content
- *    **inline beneath it**. Rulings §7: *"right rails collapse below 1180"
+ *  - **desktop ≥1280** — chips, then the table, then a right rail;
+ *  - **tablet 768–1279** — chips, then the same table, then the rail's content
+ *    **inline beneath it**. Rulings §7: *"right rails collapse below 1280"
  *    means reflow, not hide* — so the rail is not wrapped in `Rail`
  *    (`CollapsibleAside`) at this width, because that hides it behind a 28px
  *    handle, which is not what §3.1's tablet drawing shows;
@@ -311,7 +311,7 @@ function StageBadge({ stage }: { stage: JobRow['stage'] }) {
 export default function OperationsQueues() {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
-  /* Law 13/14 — width decides, at Foundation's locked 768 / 1180. */
+  /* Law 13/14 — width decides, at v4.1 §7.7's 768 / 1280. */
   const viewport = useViewport()
   const tabular = viewport !== 'phone'
   const railBesideList = viewport === 'desktop'
@@ -722,7 +722,7 @@ export default function OperationsQueues() {
           </PageBody>
         </Card>
 
-        {/* Rulings §7 — below 1180 the rail REFLOWS beneath the list; it does not
+        {/* Rulings §7 — below 1280 the rail REFLOWS beneath the list; it does not
             hide behind `CollapsibleAside`'s handle. */}
         {railBesideList ? <Rail>{railContent}</Rail> : railContent}
       </div>

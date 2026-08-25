@@ -31,6 +31,9 @@ import '@fontsource/outfit/600.css'
 import '@fontsource/outfit/700.css'
 import '@fontsource/source-sans-3/400.css'
 import '@fontsource/source-sans-3/600.css'
+// 800 is not decorative: DESIGN_DIRECTION_SPEC_v4.1 §4 sets every status block
+// at weight 800, and without the real face the browser synthesises it.
+import '@fontsource/source-sans-3/800.css'
 import '@fontsource-variable/jetbrains-mono'
 
 /**
@@ -39,6 +42,12 @@ import '@fontsource-variable/jetbrains-mono'
  * Replaces the capsule-era index.css.
  */
 import './styles/theme.css'
+/*
+ * v4.1 §7.7 — the shared responsive layer. AFTER theme.css so its layout
+ * rules can override token-level defaults, and imported here rather than from
+ * a screen so no screen can forget it.
+ */
+import './styles/responsive.css'
 import { REFERENCE_CASE_ERROR } from './lib/money'
 import { startAuditLogging } from './events/auditLogger'
 

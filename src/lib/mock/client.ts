@@ -381,6 +381,49 @@ function createBooking(payload: Record<string, unknown>): { data: Row | null; er
     })
   }
 
+  /*
+   * PARENT LINKAGE — the local half of migration 0070.
+   *
+   * `booking_lines.id` is generated in here, so a caller building the payload
+   * cannot fill `parent_line_id` for a bundle child. A child names its parent by
+   * that parent's own `client_uuid` instead (`parent_client_uuid`), and the ids
+   * are resolved after every row has been given one. Postgres has to do this as
+   * a dependency-ordered insert loop because the FK is checked per statement;
+   * here every id already exists, so one pass over the map is enough — the
+   * OUTCOME is identical, which is the only thing the seam requires.
+   *
+   * A dangling reference is refused whole, exactly as 0070 raises: a bundle
+   * silently flattened into loose lines is the failure both halves exist to end.
+   */
+  const idByClientUuid = new Map<string, string>()
+  for (const row of built) idByClientUuid.set(String(row['client_uuid']), String(row['id']))
+  for (const [i, line] of lines.entries()) {
+    const parentKey = line['parent_client_uuid']
+    if (parentKey === undefined || parentKey === null || parentKey === '') continue
+    const parentId = idByClientUuid.get(String(parentKey))
+    if (parentId === undefined) {
+      return {
+        data: null,
+        error: {
+          code: '23503',
+          message:
+            `create_booking: line ${String(line['client_uuid'])} names parent_client_uuid ${String(parentKey)}, ` +
+            'which is not a line on this booking. Nothing was created.',
+          details: '',
+          hint: '',
+        },
+      }
+    }
+    if (parentId === String(built[i]?.['id'])) {
+      return {
+        data: null,
+        error: { code: '23514', message: 'create_booking: a line cannot be its own parent. Nothing was created.', details: '', hint: '' },
+      }
+    }
+    const row = built[i]
+    if (row) row['parent_line_id'] = parentId
+  }
+
   // Nothing is committed to the store until every line has validated, so a bad
   // line cannot leave a header with no lines behind it — the local stand-in for
   // the transaction the real function gets from Postgres.

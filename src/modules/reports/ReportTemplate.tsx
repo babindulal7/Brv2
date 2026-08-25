@@ -48,8 +48,8 @@ import {
  *
  * ## The three responsive layouts, from `useViewport()` only
  *
- * - **Desktop ≥1180** — toolbar on one row; chart full width; table full width.
- * - **Tablet 768–1179** — filter chips wrap to two rows; table drops its
+ * - **Desktop ≥1280** — toolbar on one row; chart full width; table full width.
+ * - **Tablet 768–1279** — filter chips wrap to two rows; table drops its
  *   lowest-priority columns (§9.7's "table, fewer columns").
  * - **Phone <768** — table becomes label/value card rows, and the working moves
  *   from a hover title to an expanded disclosure, because a `title` tooltip is

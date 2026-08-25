@@ -404,7 +404,7 @@ export default function UnifiedInbox() {
 
         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-md)' }}>
           <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>Unread Inbound</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: metrics.unreadCount > 0 ? 'var(--warning-text)' : 'var(--text)', marginTop: 'var(--sp-xs)' }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: metrics.unreadCount > 0 ? 'var(--ready-text)' : 'var(--text)', marginTop: 'var(--sp-xs)' }}>
             {metrics.unreadCount}
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>Requires coordinator review</div>
@@ -1408,7 +1408,7 @@ export default function UnifiedInbox() {
                   <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.35 }}>
                     {tpl.body}
                   </div>
-                  <div style={{ fontSize: 'var(--t-th)', color: tpl.requiresHumanDraft ? 'var(--warning-text)' : 'var(--success)' }}>
+                  <div style={{ fontSize: 'var(--t-th)', color: tpl.requiresHumanDraft ? 'var(--ready-text)' : 'var(--success)' }}>
                     {tpl.requiresHumanDraft ? '🔒 Mandatory Human Draft Review' : '⚡ Auto-send permitted'}
                   </div>
                 </div>

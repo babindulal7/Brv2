@@ -205,9 +205,23 @@ function PrefixChip({ prefix }: { prefix: string }) {
         alignItems: 'center',
         height: 20,
         padding: '0 7px',
-        borderRadius: 4,
-        background: STATUS.primary.bg,
-        color: STATUS.primary.fg,
+        borderRadius: 'var(--r-chip)',
+        /*
+         * A prefix is an IDENTIFIER, not a state.
+         *
+         * This wore `STATUS.primary` — the hue v4.1 §2 assigns exactly one
+         * meaning, "committed / scheduled". Spending it on a literal string
+         * like "INV-" teaches the eye that blue means nothing in particular,
+         * which is the whole failure the seven-hue table exists to prevent
+         * ("a hue never means two things").
+         *
+         * A recessed surface reads as "this is a value" without claiming a
+         * status. The mono face (`className="figure"`, already here) is what
+         * actually signals identifier-ness.
+         */
+        background: 'var(--surface-2)',
+        border: '1px solid var(--border)',
+        color: 'var(--text2)',
         fontSize: 'var(--t-meta)',
         fontWeight: 700,
       }}

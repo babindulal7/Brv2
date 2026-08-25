@@ -215,7 +215,9 @@ const text = () => container.textContent ?? ''
  * `--cat-1` backgrounds is therefore counting primaries.
  */
 const filledPrimaries = () =>
-  buttons().filter((b) => (b.getAttribute('style') ?? '').includes('background: var(--cat-1)'))
+  // Was 'background: var(--cat-1)'. That was a CHART CATEGORY hue standing in
+  // for the primary; v4.1 §5 puts the primary action on --btn-primary-bg.
+  buttons().filter((b) => (b.getAttribute('style') ?? '').includes('background: var(--btn-primary-bg)'))
 
 beforeEach(() => {
   viewport = 'desktop'
@@ -425,7 +427,7 @@ describe('Spec 03 Notes bullet 2 — blockers are inline in the rail', () => {
   })
 })
 
-describe('Rulings §7 — rails reflow below 1180 rather than collapsing', () => {
+describe('Rulings §7 — rails reflow below 1280 rather than collapsing', () => {
   it('keeps the Packing progress column on screen at tablet width', async () => {
     viewport = 'tablet'
     await mountAt('/rentals/B-715/packing', <PackingWorkspace />, '/rentals/:bookingNo/packing')

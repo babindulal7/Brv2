@@ -21,6 +21,17 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    /*
+     * Vitest stubs CSS imports to an empty string by default, which is right
+     * for component suites — they should not pay to parse a stylesheet.
+     * `lib/__tests__/breakpoints.test.ts` is the exception: it READS
+     * `styles/responsive.css` as text to prove its breakpoints still match
+     * `lib/breakpoints.ts`. With the stub in place that guard silently
+     * compared against "" and passed while proving nothing.
+     *
+     * Scoped to the one stylesheet so no other suite starts paying for CSS.
+     */
+    css: { include: [/responsive.css/] },
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     /* `src/archive` holds screens ruled out of the application. Their suites
        are kept with them (Law 3 — nothing is deleted) but not run: they assert

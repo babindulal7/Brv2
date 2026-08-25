@@ -3,8 +3,11 @@ import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
+import { TouchTarget } from '../../components/ui/TouchTarget'
 import { EmptyState } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
+import { Badge } from '../../components/ui/Badge'
+import type { StatusKey } from '../../lib/status'
 import {
   PURCHASE_REQUESTS,
   PURCHASE_REQUEST_KPIS,
@@ -45,6 +48,71 @@ const inlineErrorStyle = {
   color: 'var(--danger-text)',
   lineHeight: 1.4,
 } as const
+
+/* ── The two §4 hue maps this screen paints from ─────────────────────────────
+ *
+ * These replace `PRIORITY_COLORS` and `STATUS_COLORS`, two hand-built
+ * `{ bg, text }` tables that were rebuilt inside the component on every render
+ * and that got the pairing wrong three times over. Because they held raw
+ * values rather than a `StatusKey`, nothing could tell them that the ink they
+ * chose did not belong to the fill they chose:
+ *
+ *  - **`High`** was `--danger-text` (RED ink) on `--st-out-bg` (the ORANGE
+ *    fill). Red on orange, and doubly wrong: the hue said "out with the
+ *    client" about a purchase request that has not been raised yet.
+ *  - **`Rejected`** was the same red-on-orange pair.
+ *  - **`Ordered`** was `--orange-text` on `--st-out-bg` — and `--orange-text`
+ *    is not orange: theme.css:367 aliases it to `--ready-text`, YELLOW, as
+ *    part of spec §11's legacy remap. So the one chip whose author explicitly
+ *    reached for "orange ink" got yellow ink on an orange fill.
+ *
+ * All three were unreadable, and all three came from the same root cause —
+ * §3.2 makes the on-colour "part of the token, not a screen choice", and a
+ * `{ bg, text }` table is precisely the shape that hands the screen that
+ * choice. Naming the HUE and letting `<Badge>` resolve the pair removes it.
+ *
+ * The hues, per §4's meanings:
+ *
+ *  Priority is the money traffic light §4 already uses (green settled · yellow
+ *  partway · red decide now): **High red** ("problem · decide now" — the whole
+ *  point of a High PR is that somebody must act), Medium yellow, Low green.
+ *
+ *  Status follows the lifecycle: **Draft gray** ("not started yet" — it was
+ *  `--hover`, which is a HOVER surface and not a status colour at all),
+ *  **Submitted yellow** (waiting on a decision), **Approved blue**
+ *  ("committed · scheduled" — it was green, which reads as *settled*, and an
+ *  approved PR is a commitment, not a delivery: the gear has not arrived and
+ *  painting it the same green as Received made the two ends of the chain
+ *  identical at a glance), **Ordered yellow** (waiting again, now on the
+ *  supplier), **Received green** (home & ready — the one green this list has
+ *  earned), **Rejected red**, **Cancelled dim** ("finished · inactive").
+ */
+const PRIORITY_TONE: Record<PRPriority, StatusKey> = {
+  High: 'danger',
+  Medium: 'progress',
+  Low: 'in',
+}
+
+/**
+ * Priority as **ink on a surface**, for the one place the detail panel prints
+ * the priority score as a figure rather than a block. A block's `-fg` is its
+ * on-colour and would be white on `--card`; these are the text-safe hues.
+ */
+const PRIORITY_INK: Record<PRPriority, string> = {
+  High: 'var(--danger-text)',
+  Medium: 'var(--progress-text)',
+  Low: 'var(--success-text)',
+}
+
+const STATUS_TONE: Record<PRStatus, StatusKey> = {
+  Draft: 'neutral',
+  Submitted: 'progress',
+  Approved: 'primary',
+  Ordered: 'progress',
+  Received: 'in',
+  Rejected: 'danger',
+  Cancelled: 'dim',
+}
 
 /**
  * ⛔ Law 6 — **this screen had no money gate at all.** It imported `formatMoney`
@@ -186,21 +254,6 @@ export default function PurchaseRequests() {
       })
   }
 
-  const PRIORITY_COLORS: Record<PRPriority, { bg: string; text: string }> = {
-    High: { bg: 'var(--st-out-bg, rgba(239, 68, 68, 0.1))', text: 'var(--danger-text)' },
-    Medium: { bg: 'var(--st-progress-bg)', text: 'var(--progress-text)' },
-    Low: { bg: 'var(--st-in-bg)', text: 'var(--success-text)' },
-  }
-
-  const STATUS_COLORS: Record<PRStatus, { bg: string; text: string }> = {
-    Draft: { bg: 'var(--hover)', text: 'var(--text2)' },
-    Submitted: { bg: 'var(--st-progress-bg)', text: 'var(--progress-text)' },
-    Approved: { bg: 'var(--st-in-bg, rgba(16, 185, 129, 0.15))', text: 'var(--success-text)' },
-    Ordered: { bg: 'var(--st-out-bg)', text: 'var(--orange-text)' },
-    Received: { bg: 'var(--st-in-bg)', text: 'var(--success-text)' },
-    Rejected: { bg: 'var(--st-out-bg, rgba(239, 68, 68, 0.15))', text: 'var(--danger-text)' },
-    Cancelled: { bg: 'var(--hover)', text: 'var(--muted)' },
-  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, paddingBottom: 60 }}>
@@ -344,18 +397,11 @@ export default function PurchaseRequests() {
                       </td>
                       <td style={{ padding: '10px 8px', fontWeight: 600 }}>{pr.requestedQty}</td>
                       <td style={{ padding: '10px 8px' }}>
-                        <span
-                          style={{
-                            padding: '2px 8px',
-                            borderRadius: 4,
-                            background: PRIORITY_COLORS[pr.priority].bg,
-                            color: PRIORITY_COLORS[pr.priority].text,
-                            fontSize: 'var(--t-th)',
-                            fontWeight: 700,
-                          }}
-                        >
-                          {pr.priority}
-                        </span>
+                        {/* §8 step 2 — <Badge> is the one thing that paints a
+                            status. The hand-built span here carried radius 4,
+                            weight 700 and sentence case against §4's block
+                            anatomy, and picked its own ink; see PRIORITY_TONE. */}
+                        <Badge tone={PRIORITY_TONE[pr.priority]} label={pr.priority} size="sm" />
                       </td>
                       {money && (
                         <td style={{ padding: '10px 8px' }}>
@@ -365,18 +411,7 @@ export default function PurchaseRequests() {
                         </td>
                       )}
                       <td style={{ padding: '10px 8px' }}>
-                        <span
-                          style={{
-                            padding: '2px 8px',
-                            borderRadius: 4,
-                            background: STATUS_COLORS[pr.status].bg,
-                            color: STATUS_COLORS[pr.status].text,
-                            fontSize: 'var(--t-th)',
-                            fontWeight: 700,
-                          }}
-                        >
-                          {pr.status}
-                        </span>
+                        <Badge tone={STATUS_TONE[pr.status]} label={pr.status} size="sm" />
                       </td>
                       <td style={{ padding: '10px 8px' }}>
                         <div style={{ color: 'var(--text2)' }}>{pr.requestedBy.split(' ')[0]}</div>
@@ -397,8 +432,14 @@ export default function PurchaseRequests() {
             <Card
               title={`PR Overview — ${activePR.prNo}`}
               action={
-                <button onClick={() => selectPr(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)' }}>
+                <button
+                  type="button"
+                  onClick={() => selectPr(null)}
+                  aria-label={`Close purchase request ${activePR.prNo}`}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', position: 'relative' }}
+                >
                   <Icon name="close" size={14} />
+                  <TouchTarget />
                 </button>
               }
             >
@@ -434,7 +475,7 @@ export default function PurchaseRequests() {
                   </div>
                   <div>
                     <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Priority Score</div>
-                    <div className="figure" style={{ fontWeight: 700, color: PRIORITY_COLORS[activePR.priority].text }}>
+                    <div className="figure" style={{ fontWeight: 700, color: PRIORITY_INK[activePR.priority] }}>
                       {activePR.priorityScore} ({activePR.priority})
                     </div>
                   </div>

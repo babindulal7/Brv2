@@ -77,6 +77,8 @@ export const EvidenceThumbnail: React.FC<EvidenceThumbnailProps> = ({
                 </span>
               </div>
               <button
+                type="button"
+                aria-label="Close evidence viewer"
                 onClick={() => setIsOpen(false)}
                 className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
               >

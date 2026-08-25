@@ -11,7 +11,7 @@ gsap.registerPlugin(ScrollTrigger, useGSAP)
  * A Persuade surface, deliberately separate from the internal ops app: its own
  * Vite entry (`marketing.html`), its own stylesheet, its own React root. It
  * shares the brand mark colour with `src/styles/theme.css` and nothing else —
- * none of the ops app's locked layout laws (44x44 targets, 768/1180-only
+ * none of the ops app's locked layout laws (44x44 targets, 768/1280-only
  * breakpoints, colour-never-alone) govern a landing page, and none of this
  * page's CSS can reach the ops app.
  *

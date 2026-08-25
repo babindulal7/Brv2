@@ -21,6 +21,7 @@ import { newClientUuid } from '../../lib/supabase'
 import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/queries/bookings'
 import type { FloorLineInput } from '../../actions/rentals/floorVerb'
 import type { ItemCondition, NotReturnedDecision } from '../../types/database'
+import { CompactButton } from '../../components/ui/TouchTarget'
 
 /**
  * **Return & Inspection Workspace** — the floor-loop model
@@ -74,11 +75,23 @@ import type { ItemCondition, NotReturnedDecision } from '../../types/database'
  * write path yet, and the panel says so instead of implying one.
  */
 
-/** §13 sibling convention — the workspace primary is `--blue-600` in both themes, never green. */
-const BLUE_PRIMARY = { background: 'var(--cat-1)', color: '#fff', border: '1px solid transparent' } as const
+/** §13 sibling convention — the workspace primary is `--primary` in both themes, never green. */
+/*
+ * The primary action's paint. Was `background: 'var(--cat-1)', color: '#fff'`
+ * — `--cat-1` is a CHART CATEGORY hue (#3b82d6), not the app's primary, and
+ * the ink was a raw literal. Five workspaces carried byte-identical copies, so
+ * five primary buttons were an off-palette blue that no token governed and
+ * that never followed a theme change.
+ *
+ * v4.1 §5: primary is `--primary`, one per view. The --btn-primary-* pair is
+ * the token that exists for exactly this and carries its own measured ink.
+ */
+const BLUE_PRIMARY = { background: 'var(--btn-primary-bg)', color: 'var(--btn-primary-fg)', border: '1px solid transparent' } as const
 
 /** Spec 03 — one filled primary per workspace; the scan-first affordance keeps the accent as an outline. */
-const ACCENT_OUTLINE = { background: 'transparent', color: 'var(--cat-1)', border: '1px solid var(--cat-1)' } as const
+// Same correction as BLUE_PRIMARY above: --cat-1 is a chart hue, not the app
+// primary. The text-safe primary is the readable ink on a card.
+const ACCENT_OUTLINE = { background: 'transparent', color: 'var(--primary-text)', border: '1px solid var(--primary)' } as const
 
 /**
  * The reason the Witness row cannot be signed. Stated on the control rather
@@ -357,7 +370,7 @@ export default function ReturnWorkspace() {
   const id = bookingNo ?? ''
   /** The one identity every dispatch on this screen may act as. No fallback. */
   const { user } = useAuth()
-  /* Law 13/14 — width decides, at Foundation's locked 768 / 1180. */
+  /* Law 13/14 — width decides, at v4.1 §7.7's 768 / 1280. */
   const viewport = useViewport()
   const desktop = viewport === 'desktop'
   const phone = viewport === 'phone'
@@ -751,7 +764,9 @@ export default function ReturnWorkspace() {
                       gap: 'var(--sp-xs)',
                       height: 22,
                       padding: '0 9px',
-                      borderRadius: 'var(--r-badge)',
+                      // §3.3 — a status is --r-chip; --r-badge (999) is for
+                      // numeric count badges only.
+                      borderRadius: 'var(--r-chip)',
                       background: STATUS[statusToken(stage)].bg,
                       color: STATUS[statusToken(stage)].fg,
                       fontSize: 'var(--t-meta)',
@@ -876,7 +891,7 @@ export default function ReturnWorkspace() {
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search Equipment"
                     aria-label="Search equipment"
-                    style={{ width: '100%', height: 44, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-ui)', fontFamily: 'inherit', outline: 'none' }}
+                    style={{ width: '100%', height: 44, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-ui)', fontFamily: 'inherit' }}
                   />
                 </div>
               </div>
@@ -1079,8 +1094,22 @@ export default function ReturnWorkspace() {
                                     )}
                                   </td>
                                   <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{r.location ?? '—'}</td>
-                                  <td style={{ ...td, width: 170 }}>
-                                    <span style={{ display: 'flex', gap: 'var(--sp-xs)', justifyContent: 'flex-end' }}>
+                                  <td style={{ ...td, width: 186 }}>
+                                    {/*
+                                      `--sp-sm` (8px), not `--sp-xs` (4px), and the column
+                                      widened 170 → 186 to absorb it.
+
+                                      This is the one row in the four floor workspaces that
+                                      renders TWO actions at once, and they are opposite
+                                      outcomes: "Mark Returned" beside "Not Returned". At 4px
+                                      apart their 44px `TouchTarget` hit areas would OVERLAP,
+                                      and the later one in the DOM would win the tap — a
+                                      worse failure than the small target it replaced,
+                                      because it is invisible. The siblings in Packing,
+                                      Handover and Reset keep `--sp-xs`: their pairs are
+                                      mutually exclusive, so only one ever renders.
+                                    */}
+                                    <span style={{ display: 'flex', gap: 'var(--sp-sm)', justifyContent: 'flex-end' }}>
                                       {!r.alreadyReturned && s === 'Outstanding' && (
                                         <>
                                           <RowAction label="Mark Returned" onClick={() => receive(r.key)} />
@@ -1236,7 +1265,7 @@ export default function ReturnWorkspace() {
                               aria-label={`Reason ${r.name} was not returned`}
                               /* Law 15 — a typed field on a touch device, inside a
                                  blocking gate: the Law 10 reason is entered here. */
-                              style={{ width: '100%', minHeight: 44, marginTop: 5, padding: '0 8px', borderRadius: 'var(--r-input)', border: `1px solid ${reason.trim().length < MIN_REASON ? 'var(--danger)' : 'var(--input-border)'}`, background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
+                              style={{ width: '100%', minHeight: 44, marginTop: 5, padding: '0 8px', borderRadius: 'var(--r-input)', border: `1px solid ${reason.trim().length < MIN_REASON ? 'var(--danger)' : 'var(--input-border)'}`, background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
                             />
                             {/* §8.5 — a decision, never a rupee figure, on this screen. */}
                             <select
@@ -1276,7 +1305,7 @@ export default function ReturnWorkspace() {
                           onChange={(e) => setReturningName(e.target.value)}
                           placeholder="Who is returning the gear?"
                           aria-label="Returning person's name"
-                          style={{ flex: 1, minWidth: 0, minHeight: 44, padding: '0 8px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
+                          style={{ flex: 1, minWidth: 0, minHeight: 44, padding: '0 8px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
                         />
                         <button
                           type="button"
@@ -1318,7 +1347,7 @@ export default function ReturnWorkspace() {
                     placeholder="Notes for this return session (saved onto the session when it completes)…"
                     aria-label="Return session notes"
                     rows={3}
-                    style={{ width: '100%', minHeight: 64, padding: '8px 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none', resize: 'vertical' }}
+                    style={{ width: '100%', minHeight: 64, padding: '8px 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
                   />
                   <p style={{ margin: '7px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
                     Written to <span className="identifier">operation_sessions.notes</span> with the dispatch —
@@ -1544,29 +1573,18 @@ function SigRow({
   )
 }
 
-function RowAction({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        height: 22,
-        padding: '0 7px',
-        borderRadius: 'var(--r-xs)',
-        border: '1px solid var(--border)',
-        background: 'var(--card2)',
-        color: 'var(--text2)',
-        fontSize: 'var(--t-meta)',
-        fontWeight: 600,
-        cursor: 'pointer',
-        fontFamily: 'inherit',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {label}
-    </button>
-  )
-}
+/**
+ * The floor workspaces' compact row action.
+ *
+ * Was a private 22px-tall `<button>` with NO hit-area expansion, duplicated
+ * byte-for-byte across ReturnWorkspace, PackingWorkspace, HandoverWorkspace and
+ * ResetWorkspace — half of Law 15's 44px floor, on the four screens most often
+ * used with gloves on a tablet. Replaced 25 Aug 2026 by the shared
+ * `CompactButton`, which keeps the 22px paint and adds the 44px target.
+ *
+ * Aliased rather than renamed so the call sites below read unchanged.
+ */
+const RowAction = CompactButton
 
 function Ring({ pct }: { pct: number }) {
   const r = 26

@@ -331,19 +331,20 @@ export function Rail({
 }
 
 /**
- * `Rail` at desktop; the same children as a plain column below 1180.
+ * `Rail` at desktop; the same children as a plain column below 1280.
  *
- * Rulings §7 (binding): *"'Right rails collapse below 1180' means **reflow**,
+ * Rulings §7 (binding): *"'Right rails collapse below 1280' means **reflow**,
  * not **hide**… Do not wrap those in `CollapsibleAside`, and do not change its
- * default: other pages depend on it."* `Rail` **is** `CollapsibleAside`, which
- * defaults to collapsed at tablet *and* phone, so any screen that renders
- * `<Rail>` unconditionally puts its rail content behind a handle on the
- * warehouse tablet this product targets.
+ * default: other pages depend on it."* (The ruling was written against the old
+ * 1180 line; v4.1 §7.7 moved it to 1280 and the rule itself is unchanged.)
+ * `Rail` **is** `CollapsibleAside`, which defaults to collapsed at tablet *and*
+ * phone, so any screen that renders `<Rail>` unconditionally puts its rail
+ * content behind a handle on the warehouse tablet this product targets.
  *
  * The pages that got this right hand-rolled the same three lines each
  * (`Finance.tsx`, `OperationsQueues.tsx`, `Payments.tsx`). This is that shape
  * once, so a screen only has to pick the right component rather than remember
- * the rule. The parent grid still has to drop its rail track below 1180 —
+ * the rule. The parent grid still has to drop its rail track below 1280 —
  * `RailGrid` below does that half.
  */
 export function ReflowRail({
@@ -372,7 +373,7 @@ export function ReflowRail({
 
 /**
  * The other half of `ReflowRail`: the `content | rail` grid's own tracks. The
- * rail track has to disappear below 1180, or the reflowed column lands in a
+ * rail track has to disappear below 1280, or the reflowed column lands in a
  * second column that is still there and the content is squeezed anyway.
  *
  * A hook rather than a wrapper component because the screens that need it

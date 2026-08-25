@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react'
+import { Children, useMemo, useState } from 'react'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { Badge } from '../../components/ui/Badge'
+import type { StatusKey } from '../../lib/status'
 import { EmptyState } from '../../components/ui/StateViews'
 import { formatMoney, rupees, toRupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
@@ -34,14 +36,48 @@ import type { DamageFinding } from '../../data/damage'
  * pages never implement business logic (`CLAUDE.md`).
  */
 
-function Chip({ tone, children }: { tone: 'danger' | 'progress' | 'success' | 'neutral'; children: React.ReactNode }) {
-  const bg = tone === 'danger' ? 'var(--st-danger-bg)' : tone === 'progress' ? 'var(--st-progress-bg)' : tone === 'success' ? 'var(--st-in-bg)' : 'var(--card2)'
-  const fg = tone === 'danger' ? 'var(--st-danger-fg)' : tone === 'progress' ? 'var(--st-progress-fg)' : tone === 'success' ? 'var(--success-text)' : 'var(--text2)'
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', height: 20, padding: '0 8px', borderRadius: 'var(--r-badge)', background: bg, color: fg, fontSize: 'var(--t-th)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-      {children}
-    </span>
-  )
+/**
+ * This screen's four chip tones, mapped onto the §4 hues.
+ *
+ * `success` is the only name that does not survive verbatim: `lib/status`
+ * calls green `in` ("home & ready · settled"), which is what an approved
+ * finding is. The local name is kept at the call sites — five of them read
+ * `tone="success"` / `tone="progress"` and they say what this screen means,
+ * not what the palette calls it — so the translation lives here, once.
+ */
+const CHIP_TONE = {
+  danger: 'danger',
+  progress: 'progress',
+  success: 'in',
+  neutral: 'neutral',
+} as const satisfies Record<string, StatusKey>
+
+/**
+ * Delegates to `<Badge>` — DESIGN_DIRECTION_SPEC_v4.1 §8 step 2: "one
+ * component rendering the §4 map from lib/status; every screen inherits. No
+ * screen colours a status itself."
+ *
+ * The two ternary chains this replaces were assembling a bg/fg pair by hand,
+ * and the `success` arm got the pairing wrong: `--st-in-bg` (the solid green
+ * fill) under `--success-text` (the green INK meant for a page surface). Green
+ * on green. The on-colour for that fill is `--on-success`, and §3.2 is
+ * explicit that the on-colour is "part of the token, not a screen choice" —
+ * which is exactly the choice a hand-built pair forces a screen to make, and
+ * this one made it wrong.
+ *
+ * The `neutral` arm was not a status hue at all (`--card2` / `--text2`); it is
+ * now v4.1's gray, "not started yet", which is what both its call sites mean:
+ * a finding that has not been approved, and an approval level nobody has acted
+ * on yet.
+ *
+ * The wrapper stays so the call sites keep reading in this screen's own
+ * vocabulary, and because it takes `children` rather than a string — the two
+ * chips that render `{approver} approves` and `{approverFor(…)} level` compose
+ * their word from an engine call. `<Badge>`'s `label` is a string, so the
+ * children are joined here.
+ */
+function Chip({ tone, children }: { tone: keyof typeof CHIP_TONE; children: React.ReactNode }) {
+  return <Badge tone={CHIP_TONE[tone]} label={Children.toArray(children).join('')} size="sm" />
 }
 
 export function DamageTab() {

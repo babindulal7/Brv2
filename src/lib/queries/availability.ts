@@ -256,13 +256,20 @@ async function readCandidates(productIds: readonly string[]): Promise<Map<string
  * cannot collide with a named one, so those are filtered out here too, again
  * matching the constraint's `asset_id is not null`.
  */
-async function readHolds(bookingIdToExclude: string): Promise<UnitHold[]> {
-  const { data, error } = await supabase
+async function readHolds(bookingIdToExclude: string | null): Promise<UnitHold[]> {
+  let query = supabase
     .from('inventory_reservations')
     .select('asset_id, booking_id, period, bookings ( booking_no )')
     .is('released_at', null)
     .not('asset_id', 'is', null)
-    .neq('booking_id', bookingIdToExclude)
+
+  /* `null` means "there is no booking of ours to leave out" — the tentative
+     plan for a booking that has no row yet. Sending a placeholder uuid to
+     `neq` instead would work today and read as a filter nobody can explain
+     later; the absence of the filter IS the honest expression of the case. */
+  if (bookingIdToExclude !== null) query = query.neq('booking_id', bookingIdToExclude)
+
+  const { data, error } = await query
 
   if (error) throw new Error(`Could not read existing reservations, so nothing was assigned: ${error.message}`)
 

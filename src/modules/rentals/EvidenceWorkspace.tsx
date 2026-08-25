@@ -59,7 +59,7 @@ const TONE: Record<MatchState, { bg: string; fg: string }> = {
 /**
  * §3.6's three layouts — desktop rails, tablet 3-up grid, phone 2-up. The
  * lightbox is the selected-photo rail, which reflows beneath the grid below
- * 1180 rather than collapsing to a handle (Rulings §7).
+ * 1280 rather than collapsing to a handle (Rulings §7).
  */
 const GRID_COLUMNS = { desktop: 'repeat(auto-fill, minmax(150px, 1fr))', tablet: 'repeat(3, minmax(0,1fr))', phone: 'repeat(2, minmax(0,1fr))' } as const
 
@@ -109,7 +109,7 @@ const UNMATCH_UNAVAILABLE_REASON =
 export default function EvidenceWorkspace() {
   const { bookingNo } = useParams()
   const id = bookingNo ?? BOOKING.no
-  /* Law 13/14 — width decides, at Foundation's locked 768 / 1180. */
+  /* Law 13/14 — width decides, at v4.1 §7.7's 768 / 1280. */
   const viewport = useViewport()
   const desktop = viewport === 'desktop'
   const phone = viewport === 'phone'
@@ -191,7 +191,8 @@ export default function EvidenceWorkspace() {
                 alignItems: 'center',
                 height: 22,
                 padding: '0 9px',
-                borderRadius: 'var(--r-badge)',
+                // §3.3 — a status is --r-chip; 999 is for numeric counts.
+                borderRadius: 'var(--r-chip)',
                 background: STATUS.primary.bg,
                 color: STATUS.primary.fg,
                 fontSize: 'var(--t-meta)',
@@ -535,7 +536,7 @@ export default function EvidenceWorkspace() {
         </div>
 
         {/* ── §8 right — selected photo. §3.6's "click → lightbox with serial
-             and timestamp"; below 1180 it reflows beneath the grid so the
+             and timestamp"; below 1280 it reflows beneath the grid so the
              lightbox is still on screen (Rulings §7). ─────────────────── */}
         <FloorAside collapsible={desktop} side="right" width={290} label="Selected photo" style={place.rail}>
           <Card title="Selected Photo">
@@ -655,7 +656,7 @@ export default function EvidenceWorkspace() {
                       onChange={(e) => setReason(e.target.value)}
                       placeholder="Reason for removal"
                       aria-label="Reason for removal"
-                      style={{ width: '100%', height: 28, marginTop: 7, padding: '0 8px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
+                      style={{ width: '100%', height: 28, marginTop: 7, padding: '0 8px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
                     />
                     <div style={{ display: 'flex', gap: 6, marginTop: 7 }}>
                       <Button onClick={() => setRemoving(null)}>Cancel</Button>

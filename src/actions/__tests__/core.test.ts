@@ -241,9 +241,22 @@ describe('createAction — fails closed', () => {
       }
     })
 
-    it('admits the finance/admin five to purchase.approve — mirroring 0064', async () => {
-      for (const role of ['Owner', 'Admin', 'Manager', 'Coordinator', 'Accounts'] as const) {
+    it('admits only Owner and Manager to purchase.approve — mirroring 0069', async () => {
+      for (const role of ['Owner', 'Manager'] as const) {
         await expect(probe('purchase.approve', role).run()).resolves.toEqual({ ok: true })
+      }
+    })
+
+    /*
+     * 0069 (25 Aug 2026) narrowed past the money-visibility tier. These three
+     * may SEE the cost and do every non-deciding verb, but landing the request
+     * on Approved or Rejected is an owner/manager act.
+     */
+    it('denies Admin, Coordinator and Accounts purchase.approve — 0069 live since 25 Aug 2026', async () => {
+      for (const role of ['Admin', 'Coordinator', 'Accounts'] as const) {
+        const { run, execute } = probe('purchase.approve', role)
+        await expect(run()).rejects.toBeInstanceOf(ActionPermissionError)
+        expect(execute).not.toHaveBeenCalled()
       }
     })
 

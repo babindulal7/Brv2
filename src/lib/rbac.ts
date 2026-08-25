@@ -259,26 +259,27 @@ export function canWriteSharedTriage(role: SystemRole): boolean {
 /**
  * Deciding a purchase request — landing it on Approved or Rejected.
  *
- * Mirrors `purchase_requests_approval_rank` (0064, applied 23 Aug 2026): a
+ * Mirrors `purchase_requests_approval_rank` (0069, applied 25 Aug 2026): a
  * RESTRICTIVE UPDATE policy gating any update whose RESULTING row is Approved
- * or Rejected on `auth_is_finance_or_admin()` — Owner, Admin, Manager,
- * Coordinator, Accounts (0018:20). Exactly `auth_is_staff()` minus the three
- * money-blind staff roles: the tier that can READ the costs is the tier that
- * may authorise them (Law 6 coherence — the incoherence this fixes was a
- * Driver approving spend it could not see).
+ * or Rejected on `auth_can_approve_purchase()` — Owner and Manager only.
  *
  * Rejected is gated alongside Approved because refusing spend is deciding
  * spend, and the enum allows Rejected from Approved — an ungated Reject would
- * let a money-blind role revoke a finance decision.
+ * let a lower tier revoke an owner's decision.
+ *
+ * ## Why narrower than the money-visibility tier
+ *
+ * 0064 (23 Aug 2026) moved this verb off `auth_is_staff()` onto
+ * `auth_is_finance_or_admin()` — Owner, Admin, Manager, Coordinator, Accounts
+ * — closing the real incoherence of a Driver authorising spend it is forbidden
+ * by Law 6 from even reading. 0069 narrows it again: seeing a cost and being
+ * allowed to commit the business to it are different powers. Admin,
+ * Coordinator and Accounts keep every non-deciding verb — raising, editing,
+ * submitting, cancelling, and the Ordered/Received procurement legwork after a
+ * decision — through `purchase_requests_all`, which 0069 does not touch.
  */
 export function canApprovePurchase(role: SystemRole): boolean {
-  return (
-    role === 'Owner' ||
-    role === 'Admin' ||
-    role === 'Manager' ||
-    role === 'Coordinator' ||
-    role === 'Accounts'
-  )
+  return role === 'Owner' || role === 'Manager'
 }
 
 /**

@@ -199,7 +199,10 @@ export default function HandoverStep({
                         borderRadius: 'var(--r-btn)',
                         border: 'none',
                         background: 'var(--danger)',
-                        color: '#fff',
+                        // §3.2 — each hue's on-colour is part of the token, not
+                        // a per-caller guess. '#fff' is right for red and wrong
+                        // for yellow and orange, so guessing does not scale.
+                        color: 'var(--on-danger)',
                         fontWeight: 700,
                         fontSize: 'var(--t-th)',
                         cursor: readOnly || !correctionValid ? 'not-allowed' : 'pointer',

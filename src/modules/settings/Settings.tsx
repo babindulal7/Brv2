@@ -79,13 +79,13 @@ const TODAY = getBusinessToday()
  *
  * | Width | §11.1 draws | Built |
  * |---|---|---|
- * | **≥1180** | left tab column, right panel | left tab column · panel · rail |
- * | **768–1179** | tabs scroll in one row, panel full width | the same, rail reflowed under the panel |
+ * | **≥1280** | left tab column, right panel | left tab column · panel · rail |
+ * | **768–1279** | tabs scroll in one row, panel full width | the same, rail reflowed under the panel |
  * | **<768** | a LIST of sections, each tapping through to its own screen | the same, breadcrumb back |
  *
  * The rail is the one addition, and it is a ruling rather than a liberty:
  * Rulings §1 keeps `OverviewRail`/`BranchesRail` because §11.1 draws two
- * columns but removes nothing in prose. Below 1180 it **reflows beneath the
+ * columns but removes nothing in prose. Below 1280 it **reflows beneath the
  * panel** — Rulings §7, *"collapse means reflow, not hide"* — so it is not
  * wrapped in `CollapsibleAside` at those widths and that component's defaults
  * are untouched.
@@ -467,7 +467,7 @@ export default function Settings() {
             </span>
           </nav>
           {panel}
-          {/* Below 1180 the rail reflows under the panel rather than collapsing
+          {/* Below 1280 the rail reflows under the panel rather than collapsing
               behind a handle — Rulings §7. */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>{rail}</div>
         </div>

@@ -656,9 +656,21 @@ describe('the dispatcher — capability gates, as mapped (never widened here)', 
     }
   })
 
-  it('ADMITS the finance/admin five to purchase.approve — mirroring 0064', async () => {
-    const result = await approvePurchaseRequest(PR_INPUT, { userId: 'u-1', role: 'Accounts', isOnline: true })
-    expect(result.status).toBe('Approved')
+  /* 0069 (25 Aug 2026) narrowed the verb again, to Owner and Manager only:
+     Accounts may see the cost but no longer commits the business to it. */
+  it('ADMITS Owner and Manager to purchase.approve — mirroring 0069', async () => {
+    for (const role of ['Owner', 'Manager'] as const) {
+      const result = await approvePurchaseRequest(PR_INPUT, { userId: 'u-1', role, isOnline: true })
+      expect(result.status).toBe('Approved')
+    }
+  })
+
+  it('DENIES Admin, Coordinator and Accounts purchase.approve — mirroring 0069', async () => {
+    for (const role of ['Admin', 'Coordinator', 'Accounts'] as const) {
+      await expect(
+        approvePurchaseRequest(PR_INPUT, { userId: 'u-1', role, isOnline: true }),
+      ).rejects.toThrow(/cannot perform "APPROVE_PURCHASE_REQUEST"/i)
+    }
   })
 
   it('runs end-to-end for a permitted role — implemented is TRUE and the body writes', async () => {

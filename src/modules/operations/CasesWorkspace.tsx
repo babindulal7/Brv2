@@ -5,12 +5,16 @@ import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { EmptyState } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
+import { Badge } from '../../components/ui/Badge'
+import Icon from '../../components/ui/Icon'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { toBs, formatBs } from '../../lib/bs'
 import { findClientIdByBooking } from '../../data/clients'
 import {
   CASES,
+  CASE_STATUS_META,
+  CASE_PRIORITY_META,
   CASE_WORKSPACE_ROUTE,
   STATUS_COUNTS,
   openCasesCount,
@@ -32,6 +36,42 @@ import { IconSearch, IconPlus, IconDownload } from '@tabler/icons-react'
  * carry its own frozen clock — §11 of Foundation exists to stop exactly that:
  * the age a case shows here and the age the escalation rules read must be the
  * same number. */
+
+/**
+ * The two status renderers this screen used to hand-roll, now delegating to
+ * <Badge> — DESIGN_DIRECTION_SPEC_v4.1 §8 step 2: "one component rendering the
+ * §4 map from lib/status; every screen inherits."
+ *
+ * They replace `getPriorityColor()` and `getStatusColor()`, two switches that
+ * returned raw CSS variables and painted a coloured DOT beside coloured TYPE.
+ * §4 has no such treatment — every status is a solid block — but the deeper
+ * problem was that they were a SECOND opinion. `data/cases.ts` already owns
+ * the Cases vocabulary in `CASE_STATUS_META` / `CASE_PRIORITY_META`, which the
+ * sibling `CasesQueue.tsx` reads, and the two opinions disagreed:
+ *
+ *  - **Low** was `var(--info)` (blue) here. The meta moved it to gray for a
+ *    documented reason recorded at `data/cases.ts:158` — green/blue "reads as
+ *    good" on a priority column, which is not what low priority means.
+ *  - **Closed** was `var(--good)` (green) here and gray in the meta. §2 gives
+ *    green one meaning — "home & ready / settled" — and a closed case is
+ *    neither; it is over.
+ *  - **In Progress** was blue in both, but only the meta carries the `solid`
+ *    flag that separates it from Under Review, which is blue too.
+ *
+ * Rather than fix three colours in a switch that would drift again, both
+ * wrappers now read the same meta the queue reads. One vocabulary, two
+ * screens; a hue can no longer mean one thing in the list and another in the
+ * workspace.
+ */
+function CaseStatusBadge({ status }: { status: CaseStatus }) {
+  const m = CASE_STATUS_META[status]
+  return <Badge tone={m.token} label={status} icon={<Icon name={m.icon} size={11} fill={m.solid === true} />} size="sm" />
+}
+
+function CasePriorityBadge({ priority }: { priority: CasePriority }) {
+  const m = CASE_PRIORITY_META[priority]
+  return <Badge tone={m.token} label={priority} icon={<Icon name={m.icon} size={11} fill={m.solid === true} />} size="sm" />
+}
 
 function createdBsOf(c: Case): string {
   const bs = toBs(c.openedAd)
@@ -121,33 +161,6 @@ export function CasesWorkspace() {
     setSelectedRowIds(next)
   }
 
-  const getPriorityColor = (priority: CasePriority) => {
-    switch (priority) {
-      case 'Critical': return 'var(--bad)'
-      case 'High': return 'var(--bad)'
-      case 'Medium': return 'var(--warn)'
-      case 'Low': return 'var(--info)'
-    }
-  }
-
-  const getStatusColor = (status: CaseStatus) => {
-    switch (status) {
-      case 'Resolved':
-      case 'Closed':
-        return 'var(--good)'
-      case 'Cancelled':
-        return 'var(--muted)'
-      case 'Awaiting Decision':
-      case 'Under Review':
-        return 'var(--warn)'
-      case 'In Progress':
-        return 'var(--info)'
-      case 'Open':
-      default:
-        return 'var(--text)'
-    }
-  }
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* KPIs — derived from canonical CASES array, never hand-typed (§3 / AUDIT_FINDINGS P1 #13) */}
@@ -167,7 +180,7 @@ export function CasesWorkspace() {
           <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
             Awaiting Decision
           </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--warn)', marginTop: 'var(--sp-xs)' }}>
+          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--ready-text)', marginTop: 'var(--sp-xs)' }}>
             {awaitingDecisionCount()}
           </div>
           <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
@@ -344,13 +357,10 @@ export function CasesWorkspace() {
                       </div>
                     </td>
                     <td style={{ padding: '12px 14px' }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', color: getPriorityColor(c.priority), fontWeight: 600 }}>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
-                        {c.priority}
-                      </span>
+                      <CasePriorityBadge priority={c.priority} />
                     </td>
                     <td style={{ padding: '12px 14px' }}>
-                      <div style={{ fontWeight: 600, color: getStatusColor(c.status) }}>{c.status}</div>
+                      <CaseStatusBadge status={c.status} />
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{c.disposition ?? '—'}</div>
                     </td>
                     {money && (
@@ -364,7 +374,7 @@ export function CasesWorkspace() {
                       </td>
                     )}
                     <td style={{ padding: '12px 14px' }}>
-                      <div className="figure" style={{ fontWeight: 500, color: ageDays(c.openedAd) > 14 ? 'var(--warn)' : 'var(--text)' }}>
+                      <div className="figure" style={{ fontWeight: 500, color: ageDays(c.openedAd) > 14 ? 'var(--ready-text)' : 'var(--text)' }}>
                         {ageDays(c.openedAd)} Days
                       </div>
                       <div className="figure" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>

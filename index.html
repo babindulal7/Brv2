@@ -39,13 +39,51 @@
     <script>
       (function () {
         var mode = localStorage.getItem('br-theme-mode')
+        // DESIGN_DIRECTION_SPEC_v4.1 §1 — dark is the in-app default.
+        // This branch USED to fall through to prefers-color-scheme for an
+        // unset user, which disagreed with lib/theme.tsx once that defaulted
+        // to 'dark': a first-time visitor on a light-preferring OS got one
+        // painted frame of light before React corrected it. The two now agree,
+        // and 'system' is still honoured for anyone who chose it explicitly.
         var resolved =
           mode === 'dark' || mode === 'light'
             ? mode
-            : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-              ? 'dark'
-              : 'light'
+            : mode === 'system'
+              ? window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light'
+              : 'dark'
         document.documentElement.setAttribute('data-theme', resolved)
+      })()
+    </script>
+    <!--
+      DESIGN_DIRECTION_SPEC_v4.1 §7.7 — the viewport band, before first paint.
+
+      Same reasoning as the two scripts above: without this the first frame is
+      laid out for whatever the CSS defaults to and then re-laid-out once
+      device.ts mounts, which on a phone is a visible reflow of the whole page.
+
+      768 / 1280 are duplicated from lib/breakpoints.ts because an inline
+      pre-paint script cannot import a module. lib/__tests__/breakpoints.test.ts
+      parses THIS FILE and fails if the numbers drift apart — that guard is the
+      whole reason the duplication is acceptable.
+    -->
+    <script>
+      (function () {
+        function band() {
+          var w = window.innerWidth
+          return w < 768 ? 'phone' : w < 1280 ? 'tablet' : 'desktop'
+        }
+        var el = document.documentElement
+        el.setAttribute('data-vp', band())
+        // Keep it truthful when a window is dragged across a threshold or a
+        // tablet rotates. matchMedia, not resize: it fires only when a
+        // threshold is actually crossed, not on every pixel of a drag.
+        if (window.matchMedia) {
+          var sync = function () { el.setAttribute('data-vp', band()) }
+          window.matchMedia('(max-width: 767px)').addEventListener('change', sync)
+          window.matchMedia('(min-width: 1280px)').addEventListener('change', sync)
+        }
       })()
     </script>
     <script type="module" src="/src/main.tsx"></script>

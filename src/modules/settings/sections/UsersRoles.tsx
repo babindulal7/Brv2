@@ -14,6 +14,7 @@ import {
 import type { SystemRole } from '../../../types/database'
 import { BRANCHES } from '../../../data/settings'
 import { ToneChip, td } from './shared'
+import { StaffDirectoryCard } from './StaffDirectory'
 
 /**
  * **Settings ▸ Users & Roles** — §11.2: *"user list, role assignment, the
@@ -40,6 +41,13 @@ const CAPABILITIES: Array<{ label: string; note: string; test: (r: SystemRole) =
 export function UsersPane() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
+      {/*
+        First, because it is the task. The matrix below it is reference material
+        — an operator arrives on this tab to act on a person, not to read the
+        9-role grid, and the grid was the only thing here until 24 Aug 2026.
+      */}
+      <StaffDirectoryCard />
+
       <Card
         title="Permissions Matrix"
         action={<span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Computed live from lib/rbac — not a copy of it</span>}
@@ -139,10 +147,17 @@ export function UsersPane() {
                 </span>
               </div>
             ))}
+            {/*
+              Narrowed 24 Aug 2026, not deleted. The first two clauses stopped
+              being true when `Staff Directory` above started reading
+              `staff_directory_v` — there IS a user query now, and the account
+              count is on screen. What is still true is the third clause, so
+              that is all this says.
+            */}
             <p style={{ margin: '4px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.5 }}>
-              How many staff accounts exist is not tracked yet — there is no user query in this build. The full directory,
-              user creation and role assignment need the auth backend, which is not connected — only the branch managers named
-              in the branch records can be listed here.
+              These are the managers named on the branch records. Creating a staff account and assigning a role are
+              still unbuilt — both write <span className="identifier">users</span>, and who may do it needs a ruling
+              rather than a form. The directory above reads staff and can recover their access; it cannot add anyone.
             </p>
           </div>
         </Card>

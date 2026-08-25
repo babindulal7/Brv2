@@ -614,7 +614,7 @@ export function Bundles() {
       </div>
 
       {/* Rulings §7 — the Bundle preview rail sits beside the grid at desktop
-          and reflows inline beneath it below 1180, never behind a handle. */}
+          and reflows inline beneath it below 1280, never behind a handle. */}
       <div style={{ display: 'grid', gridTemplateColumns: viewport === 'desktop' ? 'minmax(0,1fr) auto' : 'minmax(0,1fr)', gap: 'var(--sp-md)', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <KpiStrip items={kpis} columns={4} />
@@ -665,7 +665,7 @@ export function Bundles() {
                 gap: 5,
                 fontSize: 'var(--t-th)',
                 fontWeight: 600,
-                color: chipsReconcile ? 'var(--success-text)' : 'var(--warning-text)',
+                color: chipsReconcile ? 'var(--success-text)' : 'var(--ready-text)',
               }}
             >
               <Icon name={chipsReconcile ? 'check' : 'alert_triangle'} size={12} />

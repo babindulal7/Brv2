@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Icon from '../../../components/ui/Icon'
+import { Badge } from '../../../components/ui/Badge'
 import { useViewport } from '../../../lib/device'
 import { useNetwork } from '../../../lib/network'
 import type { BookingStatus, JobName } from '../../../lib/workflow'
@@ -34,11 +35,11 @@ import ResetStep from './steps/ResetStep'
  *  - **4 steps, not 5.** `lib/workflow.ts` (Foundation v2.0 §1.5, already
  *    locked): "Reset absorbs Cleaning." The rail below is Packing/Handover/
  *    Return/Reset.
- *  - **Breakpoint at 1180, not the spec's 1024.** Law 14 already locks this
- *    app's only two breakpoints at 768/1180 ("Never orientation," and by
- *    extension never a third number). The spec's two-band request (desktop
- *    overlay vs. full-screen) maps onto this app's `desktop` band (≥1180)
- *    vs. `phone`+`tablet` combined (<1180), not a new 1024 line.
+ *  - **Breakpoint at 1280, not the spec's 1024.** v4.1 §7.7 already locks this
+ *    app's only two breakpoints at 768/1280 (Law 14's "Never orientation," and
+ *    by extension never a third number). The spec's two-band request (desktop
+ *    overlay vs. full-screen) maps onto this app's `desktop` band (≥1280)
+ *    vs. `phone`+`tablet` combined (<1280), not a new 1024 line.
  *
  * Positioning (§3): rendered inline in the calling page's own tree inside a
  * `position: relative` wrapper, sized to that page's content column — never
@@ -279,12 +280,24 @@ export default function OperationsShell({ bookingNo, bookingStatus, isOpen, onCl
           </p>
         </div>
         {!isOnline && (
-          <span
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 26, padding: '0 9px', borderRadius: 'var(--r-badge)', background: 'var(--st-progress-bg)', color: 'var(--st-progress-fg)', fontSize: 'var(--t-th)', fontWeight: 600 }}
-          >
-            <Icon name="error" size={12} />
-            Offline{queuedCount > 0 ? ` · ${queuedCount} queued` : ''}
-          </span>
+          /*
+           * §8 step 2 — painted by <Badge>, not here. This read
+           * `--st-progress-bg` / `--st-progress-fg` off the token wall
+           * directly, which is the one thing a screen must not do: reaching
+           * past `lib/status` is how a chip ends up on `--r-badge` (999),
+           * which §3.3 reserves for numeric count badges, at weight 600
+           * instead of §4's 800.
+           *
+           * `progress` is the right key and always was. §2 gives yellow
+           * "being worked in-house / waiting", and a queued offline write is
+           * precisely waiting — the work is accepted and not yet through.
+           */
+          <Badge
+            tone="progress"
+            label={`Offline${queuedCount > 0 ? ` · ${queuedCount} queued` : ''}`}
+            icon={<Icon name="error" size={12} />}
+            size="sm"
+          />
         )}
         <button
           type="button"

@@ -82,6 +82,8 @@ export const GateChecklist: React.FC<GateChecklistProps> = ({
             <div className="flex items-start gap-3">
               <button
                 type="button"
+                aria-label={`Mark ${item.label} as ${item.passed ? 'not passed' : 'passed'}`}
+                aria-pressed={item.passed}
                 disabled={disabled || !onToggleItem}
                 onClick={() => onToggleItem && onToggleItem(item.id, !item.passed)}
                 /* Law 15 — 44×44 at every width, desktop included. */

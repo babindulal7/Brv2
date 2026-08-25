@@ -10,7 +10,7 @@ import Icon from './Icon'
  */
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'gold'
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger'
   size?: 'sm' | 'md' | 'lg'
   loading?: boolean
   icon?: ReactNode
@@ -61,15 +61,6 @@ function variantStyle(variant: NonNullable<ButtonProps['variant']>): CSSProperti
         border: '1px solid transparent',
         boxShadow: 'var(--shadow-card)',
       }
-    case 'gold':
-      // §4.2 "gold outline = external asset only" governs the status token, not
-      // this generic reusable primitive — a solid filled gold background is fine.
-      return {
-        background: '#d8a93a',
-        color: '#000000',
-        border: '1px solid transparent',
-        boxShadow: 'var(--shadow-card)',
-      }
   }
 }
 
@@ -91,6 +82,7 @@ export function Button({
   return (
     <button
       disabled={isDisabled}
+      aria-busy={loading || undefined}
       className={['press', className].filter(Boolean).join(' ')}
       style={{
         display: 'inline-flex',
@@ -103,7 +95,10 @@ export function Button({
         borderRadius: 'var(--r-btn)',
         transition: 'background-color 150ms, opacity 150ms',
         cursor: isDisabled ? 'not-allowed' : 'pointer',
-        opacity: isDisabled ? 0.5 : 1,
+        // Containing block for the loading spinner overlay below.
+        position: 'relative',
+        // §5 — disabled is opacity 0.45, never a colour change. Was 0.5.
+        opacity: isDisabled ? 0.45 : 1,
         minHeight: sizing.minHeight,
         padding: sizing.padding,
         fontSize: sizing.fontSize,
@@ -113,12 +108,35 @@ export function Button({
       }}
       {...props}
     >
-      {loading ? (
-        <Icon name="refresh" size={sizing.iconSize} style={{ animation: 'spin 0.8s linear infinite' }} />
-      ) : (
-        icon && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
+      {/*
+        §5 — "loading keeps the button's width (label transparent, spinner
+        overlays) so layout never jumps."
+
+        This previously swapped the ICON SLOT for the spinner while leaving
+        `children` rendered, so a text-only button — the common case — GAINED a
+        spinner and grew wider the moment it started loading, shifting whatever
+        sat beside it. Now the label keeps its box and turns transparent, and
+        the spinner is absolutely positioned over it: the button occupies the
+        exact same rectangle loading or not.
+
+        `visibility` rather than `opacity` on the label so a screen reader does
+        not announce a value that is mid-flight; `aria-busy` carries the state.
+      */}
+      {loading && (
+        <Icon
+          name="refresh"
+          size={sizing.iconSize}
+          style={{
+            animation: 'spin 0.8s linear infinite',
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+          }}
+        />
       )}
-      {children && <span>{children}</span>}
+      {!loading && icon && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{icon}</span>}
+      {children && <span style={loading ? { visibility: 'hidden' } : undefined}>{children}</span>}
       {!loading && iconRight && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{iconRight}</span>}
     </button>
   )

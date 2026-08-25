@@ -47,7 +47,7 @@ export const BOOKING_STATUS: Record<BookingStatus, StatusMeta> = {
   // §4.2 — green separates these two by fill weight: solid = out, soft = in.
   'On Rent': { order: 3, token: 'out', client: 'With you', means: 'All items with the client.' },
   Returned: { order: 4, token: 'in', client: 'Returned', means: 'All items physically received back.' },
-  Closed: { order: 5, token: 'neutral', client: 'Complete', means: 'Money settled, deposit resolved, nothing open.' },
+  Closed: { order: 5, token: 'dim', client: 'Complete', means: 'Money settled, deposit resolved, nothing open.' },
 }
 
 export const STATUS_ORDER = (Object.keys(BOOKING_STATUS) as BookingStatus[]).sort(
@@ -210,7 +210,7 @@ const BLOCKS_CLOSE: readonly BookingStatus[] = ['Closed']
 
 export const FLAGS: Record<Flag, FlagMeta> = {
   Draft: { type: 'State', effect: 'Quote not yet sent', token: 'neutral', blocks: [] },
-  'Partial Pickup': { type: 'State', effect: 'Items remain at status Packed', token: 'progress', blocks: [] },
+  'Partial Pickup': { type: 'State', effect: 'Items remain at status Packed', token: 'out', blocks: [] },
   'Returned Early': { type: 'Information', effect: 'Reporting only', token: 'neutral', blocks: [] },
   'Due Soon': { type: 'Attention', effect: 'Yellow badge, ≤24h to return', token: 'progress', blocks: [] },
   Overdue: { type: 'Critical', effect: 'Red badge, blocks Close, triggers late-fee calculation', token: 'danger', blocks: BLOCKS_CLOSE },

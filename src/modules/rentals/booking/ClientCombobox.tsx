@@ -667,26 +667,49 @@ function ClientOptionRow({
         >
           {client.name}
         </span>
-        {client.isVip && (
-          <span
-            style={{
-              flexShrink: 0,
-              height: 18,
-              padding: '0 6px',
-              display: 'inline-flex',
-              alignItems: 'center',
-              borderRadius: 'var(--r-badge)',
-              // Foundation §4.2: gold is outline-only, never a fill.
-              border: '1px solid var(--ext-line)',
-              color: 'var(--gold)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 700,
-              lineHeight: 1,
-            }}
-          >
-            VIP
-          </span>
-        )}
+        {/*
+          * VIP is BLUE, and it used to be GOLD. That was a real bug, not a
+          * taste call.
+          *
+          * DESIGN_DIRECTION_SPEC_v4.1 §2: gold (`--ext-*`) "is NOT a status
+          * ... it is the only outline on screen, marking sub-rented /
+          * external gear", and §4 repeats it — "never solid, never on an
+          * action, never a status". A VIP client is not external gear. The
+          * chip painted `border: 1px solid var(--ext-line)` with
+          * `color: var(--gold)`, which is the sub-rental mark's exact
+          * signature, and it sat INSIDE this row's `role="option"` — so gold
+          * appeared inside a clickable affordance as well as outside its one
+          * meaning. `lib/status.ts` names the cost precisely: "a gold Save
+          * button beside a gold sub-rental badge destroys the one distinction
+          * a warehouse must see."
+          *
+          * `primary` is the replacement because §2 gives blue exactly one
+          * meaning — "committed · scheduled" — and a VIP flag is a standing,
+          * committed relationship with the client. It is the only one of the
+          * seven that fits: yellow is in-house work, orange is out with a
+          * client, green is settled, red is a problem, gray is not started,
+          * dim is finished.
+          *
+          * The old comment cited "Foundation §4.2". That document is
+          * superseded; v4.1 §2/§4 is the standing rule and is what this reads.
+          */}
+        {client.isVip && <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '2px 7px',
+                      borderRadius: 'var(--r-chip)',
+                      background: 'var(--surface-2)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text2)',
+                      fontSize: 'var(--t-th)',
+                      fontWeight: 700,
+                      letterSpacing: '0.02em',
+                    }}
+                  >
+                    VIP
+                  </span>}
         <span style={{ marginLeft: 'auto', flexShrink: 0 }}>
           <ClientHealthChip verdict={verdict} />
         </span>

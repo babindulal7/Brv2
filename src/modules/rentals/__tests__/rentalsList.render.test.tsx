@@ -130,7 +130,7 @@ function LocationProbe() {
   return null
 }
 
-/** Foundation's locked breakpoints — 768 and 1180. Width only (Law 14). */
+/** v4.1 §7.7's breakpoints — 768 and 1280. Width only (Law 14). */
 async function mount(width: number, entry = '/rentals') {
   Object.defineProperty(window, 'innerWidth', { value: width, configurable: true, writable: true })
   container = document.createElement('div')
@@ -337,7 +337,7 @@ describe('§18 — this screen’s filters are the query string', () => {
 })
 
 describe('the three layouts, from one width reading (Law 14)', () => {
-  it('desktop ≥1180 — table, and the filter panel costs the table no width', async () => {
+  it('desktop ≥1280 — table, and the filter panel costs the table no width', async () => {
     await mount(1280)
     expect(container.querySelector('table')).not.toBeNull()
 
@@ -354,7 +354,7 @@ describe('the three layouts, from one width reading (Law 14)', () => {
     expect(text()).not.toContain('Save as new filter')
   })
 
-  it('tablet 768–1179 — fewer columns, and the filter panel is reachable at this width too', async () => {
+  it('tablet 768–1279 — fewer columns, and the filter panel is reachable at this width too', async () => {
     await mount(1000)
     const headers = [...container.querySelectorAll('th')].map((h) => h.textContent?.trim())
     // §4.1 tablet draws `BR# │ client │ dates │ badge │ [prim]⋮`.
@@ -363,7 +363,7 @@ describe('the three layouts, from one width reading (Law 14)', () => {
     expect(headers).toContain('Pickup')
 
     /*
-     * Rulings §7 — "rails collapse below 1180" means REFLOW, not hide — used to
+     * Rulings §7 — "rails collapse below 1280" means REFLOW, not hide — used to
      * be satisfied by rendering the same card inline under the list, and this
      * test asserted that by looking for its contents on the page.
      *

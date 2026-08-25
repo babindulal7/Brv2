@@ -94,7 +94,7 @@ export const VIEWS_BY_WIDTH: Record<'desktop' | 'tablet' | 'phone', readonly Vie
  * The month grid's base layer is the booking layer: what is reserved, out,
  * blocked, cleaning, sub-rented, in conflict or expiring. Crew duty, the
  * maintenance bench and the vehicles ride *over* it as toggleable overlays,
- * and below 1180 they are not offered at all — the narrow grid states that in
+ * and below 1280 they are not offered at all — the narrow grid states that in
  * words rather than silently dropping rows.
  */
 export type LayerName = 'Crew' | 'Maintenance' | 'Transport'
@@ -148,26 +148,74 @@ export type BarKind =
 
 export interface BarSkin {
   bg: string
+  /**
+   * The ink that goes **ON `bg`** — an on-colour (§3.2), not a text colour.
+   *
+   * ⚠ `Calendar.tsx`'s `SelectedEventPanel` reads this as the colour of the
+   * kind label it prints on a `--card` surface, where an on-colour is wrong by
+   * construction: white for every white-on-fill hue, near-black for the two
+   * dark-ink ones. That was already true of the nine kinds that were solid
+   * before, and making `Available` and `Maintenance` solid (see below) puts
+   * them in the same position — they used to hold `--success-text` /
+   * `--progress-text`, which are text colours and happened to read correctly
+   * there. **That panel wants a text-safe token, the way `INV_DOT` and
+   * `CONDITION_INK` are the ink forms of their block tables.** Not fixed here
+   * because it is a change to how `Calendar.tsx` renders, not to this table.
+   */
   fg: string
   /** Outline colour; also the legend swatch. */
   line: string
+  /**
+   * Dashed rather than solid. §4 leaves exactly one use for this — the gold
+   * sub-rental mark, which §2 keeps outline-only so it cannot be read as a
+   * yellow status, and which uses dash-vs-solid to separate Out from In.
+   * A STATUS must never set it: every status is a solid block.
+   */
   dash?: boolean
   icon?: IconName
 }
 
+/**
+ * Bar kind → its skin. Every kind that is a STATUS is a solid block
+ * (DESIGN_DIRECTION_SPEC_v4.1 §4); the only outline left in this table is gold.
+ *
+ * ## The rule the two rewritten comments below used to quote
+ *
+ * Both cited **§4.2 "solid = out, soft = in"** — the 24 Aug morning fill rule,
+ * which v4.1 lists by name in its own supersedes line and §3 replaces with
+ * "everything is solid now". Two bars were still built on it:
+ *
+ *  - **`Available`** was `bg: 'transparent'` + `dash: true` — a dashed green
+ *    outline, on a spec where §2 says gold is the ONLY outline on screen.
+ *  - **`Maintenance`** was `bg: 'transparent'` with yellow ink, deliberately
+ *    outlined so it would not be "byte-identical to Cleaning".
+ *
+ * That last one deserves its own note, because the problem it solved is real
+ * and the solution is now illegal. Cleaning and Maintenance ARE the same hue
+ * under §4 — both are yellow, "being worked in-house" — and v4.1 does not
+ * offer a second weight to separate them with. §7.4 supplies the separator it
+ * does intend: never colour alone. These two rows carry different words
+ * (`Cleaning` / `Maintenance`) and different icons (`refresh` / `tool`), which
+ * is what tells a reset queue from a repair bench. The legend swatches now
+ * match by design; the legend rows do not, because each prints its kind.
+ */
 export const BAR_STYLE: Record<BarKind, BarSkin> = {
-  Available: { bg: 'transparent', fg: 'var(--success-text)', line: 'var(--success)', dash: true },
+  /* `icon` stays absent, as it always was: Available is the ABSENCE of a
+     booking, and every other kind's icon marks a thing that is happening. The
+     word on the bar is the carrier §7.4 requires. */
+  Available: { bg: 'var(--st-in-bg)', fg: 'var(--st-in-fg)', line: 'var(--success)' },
   Reserved: { bg: 'var(--st-primary-bg)', fg: 'var(--st-primary-fg)', line: 'var(--st-primary-fg)', icon: 'calendar_event' },
-  /* §4.2 — "solid = out, soft = in". On Rent is the solid weight, always. */
+  /* §4 — orange, "out with the client", and solid like every other status. */
   'On Rent': { bg: 'var(--st-out-bg)', fg: 'var(--st-out-fg)', line: 'var(--st-out-bg)', icon: 'calendar_event' },
   Cleaning: { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)', line: 'var(--st-progress-fg)', icon: 'refresh' },
-  /* Was byte-identical to Cleaning, so a repair bench and a reset queue drew the
-     same bar and the legend had two rows sharing one swatch. Same family, other
-     weight: Cleaning fills, Maintenance outlines. */
-  Maintenance: { bg: 'transparent', fg: 'var(--progress-text)', line: 'var(--progress)', icon: 'tool' },
+  /* Same yellow as Cleaning on purpose — see the header. The icon and the word
+     separate them; the fill is not allowed to. */
+  Maintenance: { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)', line: 'var(--progress)', icon: 'tool' },
   'Crew Duty': { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)', line: 'var(--st-progress-fg)', icon: 'crew' },
   Blocked: { bg: 'var(--st-neutral-bg)', fg: 'var(--st-neutral-fg)', line: 'var(--st-neutral-fg)', icon: 'package' },
-  /* §4.2 — gold, outline only. The renders draw these purple; purple is banned. */
+  /* §2 — gold, outline only, and the ONE exception to the solid rule above.
+     It is kept outline precisely so it can never be read as a yellow status.
+     The renders draw these purple; purple is retired. */
   'Sub-Rental Out': { bg: 'transparent', fg: 'var(--ext-fg)', line: 'var(--ext-line)', icon: 'external_link' },
   'Sub-Rental In': { bg: 'transparent', fg: 'var(--ext-fg)', line: 'var(--ext-line)', dash: true, icon: 'return_arrow' },
   Conflict: { bg: 'var(--st-danger-bg)', fg: 'var(--st-danger-fg)', line: 'var(--danger)', icon: 'alert_triangle' },

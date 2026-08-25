@@ -1,12 +1,22 @@
 -- =============================================================================
 -- 0064 — Purchase-request approval is the finance/admin tier, not every staff.
 --
--- ⚠⚠ NOT APPLIED. Written 22 Aug 2026 (Phase 2 item 2.4b); this file is the
--- policy change `lib/rbac.ts:canWriteSharedTriage`'s own ⚠ note asks for
--- ("change the RLS policy first and let this follow" — PLAN.md §4.29).
--- Apply requires the user's explicit approval per CLAUDE.md. Until it is
--- applied, the rbac predicate deliberately KEEPS mirroring the live (broad)
--- policy — do not tighten the TypeScript ahead of this file landing.
+-- ✅ APPLIED 22 Aug 2026 19:55 UTC (migration version 20260822195501), verified
+-- against the live project on 24 Aug 2026. Written as Phase 2 item 2.4b; this
+-- file is the policy change `lib/rbac.ts:canWriteSharedTriage`'s own ⚠ note
+-- asked for ("change the RLS policy first and let this follow" — PLAN.md
+-- §4.29), and `canApprovePurchase` correctly followed it.
+--
+-- This header read "⚠⚠ NOT APPLIED … do not tighten the TypeScript ahead of
+-- this file landing" until 24 Aug 2026. It was never updated on apply, so it
+-- contradicted `lib/rbac.ts` — which says applied — and instructed future
+-- readers to loosen a predicate that is in fact correctly mirroring a live
+-- policy. Corrected rather than deleted, because the next person to find the
+-- discrepancy deserves to know which side was stale.
+--
+-- SUPERSEDED FOR THIS VERB by 0069 (24 Aug 2026), which narrows approval again
+-- from the finance/admin tier to Owner + Manager only. 0069 is NOT applied at
+-- time of writing; while that holds, the tier below is still the live one.
 --
 -- THE PROBLEM. `purchase_requests_all` (0036:171) grants ALL commands to
 -- `auth_is_staff()`. Approving a purchase request is a spend-authorising verb

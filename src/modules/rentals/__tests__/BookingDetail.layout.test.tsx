@@ -11,7 +11,7 @@
  *  1. the **six-step stepper**, read from `lib/workflow.ts`'s canonical order;
  *  2. **money blocks OMITTED, not greyed**, for a money-blind role — Law 6 —
  *     including the sticky bar, which is entirely money;
- *  3. the **sticky bottom bar** below 1180 and the **`[Items][Money][Docs]`
+ *  3. the **sticky bottom bar** below 1280 and the **`[Items][Money][Docs]`
  *     segmented control** on phone;
  *  4. Law 5 stated where it can be broken: the deposit never enters
  *     Outstanding;
@@ -306,7 +306,7 @@ describe('§4.2 — the phone segmented control', () => {
   })
 })
 
-describe('§4.2 — the summary rail becomes a sticky bottom bar below 1180', () => {
+describe('§4.2 — the summary rail becomes a sticky bottom bar below 1280', () => {
   it('has no bar on desktop, where the rail itself is on screen', async () => {
     await mount(1280)
     expect(button('Record Payment')).toBeDefined() // Block 4's own button
@@ -358,7 +358,7 @@ describe('Law 6 — money blocks are OMITTED for money-blind roles, not greyed',
     expect(tabs).toEqual(['Items', 'Docs'])
   })
 
-  it('drops the sticky bar entirely below 1180 — every part of it is money', async () => {
+  it('drops the sticky bar entirely below 1280 — every part of it is money', async () => {
     await mount(1000, 'Warehouse')
     expect(stickyBars()).toHaveLength(0)
   })

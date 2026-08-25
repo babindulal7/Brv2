@@ -175,9 +175,9 @@ function KpiCard({
 
 export default function ExpenseReports() {
   /* KpiStrip's clamp, applied to this screen's hand-rolled key-figure grid:
-     four or six cards side by side is unreadable below 1180. */
+     four or six cards side by side is unreadable below 1280. */
   const bandCols = useBandColumns()
-  /* Rulings §7 — the rail track goes away below 1180 so `ReflowRail`'s
+  /* Rulings §7 — the rail track goes away below 1280 so `ReflowRail`'s
      inline column is not squeezed by a rail column that is still there. */
   const railGridColumns = useRailGridColumns()
   const money = useCanViewMoney()
@@ -395,10 +395,30 @@ export default function ExpenseReports() {
                 gap: 6,
                 height: 30,
                 padding: '0 11px',
-                borderRadius: 'var(--r-badge)',
-                border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                background: on ? 'var(--st-progress-bg)' : 'var(--card)',
-                color: on ? 'var(--st-progress-fg)' : 'var(--text2)',
+                borderRadius: 'var(--r-btn)',
+                /*
+                 * Selected = the PRIMARY, not a status hue.
+                 *
+                 * This painted its selected state `--st-progress-*` — solid
+                 * YELLOW — which breaks two v4.1 laws at once. §2/§5: "orange
+                 * and yellow never appear on a button", because the moment a
+                 * control wears a status hue the eye reads it as a status.
+                 * And §2's entity/state split: this filters by expense
+                 * CATEGORY, which is an entity, so it has no business wearing
+                 * the status vocabulary at all.
+                 *
+                 * §6's carve-out ("status FILTER chips … on = the solid block
+                 * itself") is narrow and deliberate: it covers filters whose
+                 * options ARE statuses. A category filter is not one.
+                 *
+                 * The primary treatment is what the sibling filters on Today
+                 * and CalendarPanel already use, so this now matches them.
+                 * Radius moves off `--r-badge` too — §3.3 reserves 999 for
+                 * numeric count badges, and this is a control.
+                 */
+                border: `1px solid ${on ? 'var(--primary)' : 'var(--border)'}`,
+                background: on ? 'var(--primary)' : 'var(--card)',
+                color: on ? 'var(--on-primary)' : 'var(--text2)',
                 fontSize: 'var(--t-meta)',
                 fontWeight: 600,
                 fontFamily: 'inherit',
@@ -408,7 +428,9 @@ export default function ExpenseReports() {
             >
               {c !== 'All' && <Icon name={CATEGORY_ICON[c] ?? 'dot'} size={13} />}
               {c}
-              <span className="figure" style={{ color: 'var(--muted)', fontWeight: 700 }}>
+              {/* Inside a selected (primary-filled) chip --muted is unreadable;
+                  inherit the button's own ink instead. */}
+              <span className="figure" style={{ color: on ? 'inherit' : 'var(--muted)', fontWeight: 700, opacity: on ? 0.85 : 1 }}>
                 {count}
               </span>
             </button>

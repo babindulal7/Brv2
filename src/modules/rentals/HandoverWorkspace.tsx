@@ -17,6 +17,7 @@ import { toBs, formatBs, formatAd, formatAdDateTime } from '../../lib/bs'
 import { newClientUuid } from '../../lib/supabase'
 import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/queries/bookings'
 import type { FloorLineInput } from '../../actions/rentals/floorVerb'
+import { CompactButton } from '../../components/ui/TouchTarget'
 
 /**
  * **Handover Workspace** — `Handover Workflow.md` v1.1 (Build Locked), wired
@@ -68,8 +69,18 @@ import type { FloorLineInput } from '../../actions/rentals/floorVerb'
  * `OVERRIDE_UNAVAILABLE`.
  */
 
-/** §13 — the workspace primary is `--blue-600` in light *and* dark. */
-const BLUE_PRIMARY = { background: 'var(--cat-1)', color: '#fff', border: '1px solid transparent' } as const
+/** §13 — the workspace primary is `--primary` in light *and* dark. */
+/*
+ * The primary action's paint. Was `background: 'var(--cat-1)', color: '#fff'`
+ * — `--cat-1` is a CHART CATEGORY hue (#3b82d6), not the app's primary, and
+ * the ink was a raw literal. Five workspaces carried byte-identical copies, so
+ * five primary buttons were an off-palette blue that no token governed and
+ * that never followed a theme change.
+ *
+ * v4.1 §5: primary is `--primary`, one per view. The --btn-primary-* pair is
+ * the token that exists for exactly this and carries its own measured ink.
+ */
+const BLUE_PRIMARY = { background: 'var(--btn-primary-bg)', color: 'var(--btn-primary-fg)', border: '1px solid transparent' } as const
 
 /**
  * The reason the Witness row cannot be signed — §9.2 makes the witness
@@ -319,7 +330,7 @@ export default function HandoverWorkspace() {
   const id = bookingNo ?? ''
   /** The one identity every dispatch on this screen may act as. No fallback. */
   const { user } = useAuth()
-  /* Law 13/14 — width decides, at Foundation's locked 768 / 1180. */
+  /* Law 13/14 — width decides, at v4.1 §7.7's 768 / 1280. */
   const viewport = useViewport()
   const desktop = viewport === 'desktop'
   const phone = viewport === 'phone'
@@ -712,7 +723,7 @@ export default function HandoverWorkspace() {
                     Partial Pickup FLAG carries the staggered-collection fact.
                   */}
                   <span
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', height: 22, padding: '0 9px', borderRadius: 'var(--r-badge)', background: STATUS[statusToken(stage)].bg, color: STATUS[statusToken(stage)].fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', height: 22, padding: '0 9px', borderRadius: 'var(--r-chip)', background: STATUS[statusToken(stage)].bg, color: STATUS[statusToken(stage)].fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}
                   >
                     <Icon name="dot" size={9} />
                     {stage}
@@ -724,7 +735,7 @@ export default function HandoverWorkspace() {
                     Handover job: {jobState}
                   </span>
                   {outUnits > 0 && !allResolved && (
-                    <span title={FLAGS['Partial Pickup'].effect} style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', height: 22, padding: '0 9px', borderRadius: 'var(--r-badge)', background: STATUS.progress.bg, color: STATUS.progress.fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}>
+                    <span title={FLAGS['Partial Pickup'].effect} style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', height: 22, padding: '0 9px', borderRadius: 'var(--r-chip)', background: STATUS.progress.bg, color: STATUS.progress.fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}>
                       <Icon name="alert_triangle" size={11} />
                       Partial Pickup
                     </span>
@@ -794,7 +805,7 @@ export default function HandoverWorkspace() {
             </div>
 
             {/* §3.3 — checklist and gates left, summary rail right at desktop;
-                below 1180 the rail REFLOWS beneath (Rulings §7). */}
+                below 1280 the rail REFLOWS beneath (Rulings §7). */}
             <div
               style={{
                 display: 'grid',
@@ -842,7 +853,7 @@ export default function HandoverWorkspace() {
                       onChange={(e) => setQuery(e.target.value)}
                       placeholder="Search equipment, serial…"
                       aria-label="Search equipment"
-                      style={{ flex: 1, minWidth: 180, minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
+                      style={{ flex: 1, minWidth: 180, minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
                     />
                     {FILTERS.map((f) => {
                       const on = filter === f
@@ -1203,7 +1214,7 @@ export default function HandoverWorkspace() {
                             aria-label={`Reason ${r.name} is missing`}
                             /* Law 15 — a typed field on a touch device, inside a
                                blocking gate: the Law 10 reason is entered here. */
-                            style={{ width: '100%', minHeight: 44, marginTop: 5, padding: '0 8px', borderRadius: 'var(--r-input)', border: `1px solid ${(marks[r.key]?.reason ?? '').trim().length < MIN_REASON ? 'var(--danger)' : 'var(--input-border)'}`, background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
+                            style={{ width: '100%', minHeight: 44, marginTop: 5, padding: '0 8px', borderRadius: 'var(--r-input)', border: `1px solid ${(marks[r.key]?.reason ?? '').trim().length < MIN_REASON ? 'var(--danger)' : 'var(--input-border)'}`, background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
                           />
                           <div style={{ marginTop: 6 }}>
                             <Button icon="refresh" onClick={() => clearMark(r.key)}>Undo</Button>
@@ -1221,7 +1232,7 @@ export default function HandoverWorkspace() {
                     placeholder="Notes for this handover session (saved onto the session when it completes)…"
                     aria-label="Handover session notes"
                     rows={3}
-                    style={{ width: '100%', minHeight: 64, padding: '8px 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none', resize: 'vertical' }}
+                    style={{ width: '100%', minHeight: 64, padding: '8px 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
                   />
                   <p style={{ margin: '7px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
                     Written to <span className="identifier">operation_sessions.notes</span> with the dispatch —
@@ -1381,17 +1392,18 @@ function SigRow({ label, sig, onCapture, required, disabled, unavailable }: { la
   )
 }
 
-function RowAction({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{ height: 22, padding: '0 7px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
-    >
-      {label}
-    </button>
-  )
-}
+/**
+ * The floor workspaces' compact row action.
+ *
+ * Was a private 22px-tall `<button>` with NO hit-area expansion, duplicated
+ * byte-for-byte across ReturnWorkspace, PackingWorkspace, HandoverWorkspace and
+ * ResetWorkspace — half of Law 15's 44px floor, on the four screens most often
+ * used with gloves on a tablet. Replaced 25 Aug 2026 by the shared
+ * `CompactButton`, which keeps the 22px paint and adds the 44px target.
+ *
+ * Aliased rather than renamed so the call sites below read unchanged.
+ */
+const RowAction = CompactButton
 
 function Ring({ pct }: { pct: number }) {
   const r = 26

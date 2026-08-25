@@ -153,7 +153,7 @@ function workingCapitalCsv(): ReportCsvRow[] {
 }
 
 export default function WorkingCapitalReport() {
-  /* Rulings §7 — the rail track goes away below 1180 so `ReflowRail`'s
+  /* Rulings §7 — the rail track goes away below 1280 so `ReflowRail`'s
      inline column is not squeezed by a rail column that is still there. */
   const railGridColumns = useRailGridColumns()
   const canSeeMoney = useCanViewMoney()

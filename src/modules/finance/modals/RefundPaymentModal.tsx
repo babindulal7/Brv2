@@ -205,8 +205,25 @@ export function RefundPaymentModal({
             style={{
               padding: '10px 14px',
               borderRadius: 'var(--r-btn)',
-              background: 'var(--danger-bg, #fee2e2)',
-              color: 'var(--danger-text, #991b1b)',
+              /*
+                ⛔ Was `var(--danger-bg, #fee2e2)` / `var(--danger-text, #991b1b)`.
+                The same correction landed on the three rentals modals
+                (AssignCrewModal, CreateSubRentalModal, ExtendRentalModal) in an
+                earlier pass; these three were missed by it and kept the hexes.
+
+                Two things were wrong. A raw hex in a component is a §3
+                violation on its own ("screens use var(--…), never a literal").
+                And the pair is a LIGHT-theme pink: when the fallback fired it
+                stayed pink in dark mode, where the status pair resolves to a
+                deep `#4b1515`-family red instead.
+
+                `--danger-bg` exists again as of the v4.1 repaint, so the
+                fallbacks are now dead rather than active — but a dead fallback
+                carrying the wrong colour is a trap for whoever next removes an
+                alias. Using the status pair directly removes the question.
+              */
+              background: 'var(--st-danger-bg)',
+              color: 'var(--st-danger-fg)',
               fontSize: 'var(--t-meta)',
             }}
           >

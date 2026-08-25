@@ -413,6 +413,22 @@ export interface Field {
    * than believed.
    */
   readBy?: string
+  /**
+   * A caller-supplied control for this row, rendered in place of the value /
+   * switch / dest chain below.
+   *
+   * Added 24 Aug 2026 for `Settings ▸ System ▸ Security ▸ Device PIN`, which is
+   * the first row on this page whose control is genuinely interactive — it opens
+   * a modal, calls two RPCs and reflects database state. The existing `value` /
+   * `on` / `dest` vocabulary describes rows that display or navigate, and
+   * stretching it to cover a stateful widget would have meant a fourth
+   * half-expressive variant.
+   *
+   * Kept deliberately narrow: one field uses it. It is an escape hatch, not an
+   * invitation to move row rendering into the section files — the reason this
+   * page is consistent at all is that `FieldRow` owns the layout.
+   */
+  custom?: ReactNode | undefined
 }
 
 export interface Section {
@@ -508,9 +524,13 @@ export function FieldRow({ f }: { f: Field }) {
         )}
       </span>
 
-      {/* §4.3.11 — three options, each setting --ui-scale on the root. Every
-          size in §4.3.6 is rem, so one variable moves the whole app. */}
-      {f.label === 'Text size' ? (
+      {/* A caller-supplied control wins outright — see `Field.custom`. Placed
+          first so the row never renders two controls. */}
+      {f.custom !== undefined ? (
+        <span style={{ flexShrink: 0 }}>{f.custom}</span>
+      ) : /* §4.3.11 — three options, each setting --ui-scale on the root. Every
+          size in §4.3.6 is rem, so one variable moves the whole app. */
+      f.label === 'Text size' ? (
         <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
           {TEXT_SIZES.map((t) => {
             const on = textSize === t.key

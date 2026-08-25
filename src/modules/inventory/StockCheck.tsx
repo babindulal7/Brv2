@@ -78,7 +78,7 @@ import type { StockCheckUnitState } from '../../data/stockCheck'
  * §7.3 draws DESKTOP and TABLET identically — session card, list, `[Confirm
  * missing]`, scanner FAB — and PHONE as progress · list · scan bar. The session
  * picker + scanner terminal is a rail at desktop and **reflows beneath the
- * list** below 1180 (`WIREFRAME_RULINGS_2026-08-12.md` §7: collapse means
+ * list** below 1280 (`WIREFRAME_RULINGS_2026-08-12.md` §7: collapse means
  * reflow, not hide).
  */
 
@@ -521,7 +521,7 @@ export default function StockCheck({ embedded = false }: { embedded?: boolean } 
               padding: 'var(--sp-md)',
               borderRadius: 'var(--r-sm)',
               background: lastScannedFeedback.match ? 'var(--st-in-bg)' : 'var(--st-progress-bg)',
-              border: `1px solid ${lastScannedFeedback.match ? 'var(--success-text)' : 'var(--warning-text)'}`,
+              border: `1px solid ${lastScannedFeedback.match ? 'var(--success-text)' : 'var(--ready-text)'}`,
               display: 'flex',
               flexDirection: 'column',
               gap: 'var(--sp-xs)',
@@ -535,7 +535,7 @@ export default function StockCheck({ embedded = false }: { embedded?: boolean } 
                 gap: 6,
                 fontWeight: 700,
                 fontSize: 'var(--t-meta)',
-                color: lastScannedFeedback.match ? 'var(--success-text)' : 'var(--warning-text)',
+                color: lastScannedFeedback.match ? 'var(--success-text)' : 'var(--ready-text)',
               }}
             >
               <Icon name={lastScannedFeedback.match ? 'check' : 'alert_triangle'} size={14} />
@@ -953,7 +953,7 @@ export default function StockCheck({ embedded = false }: { embedded?: boolean } 
 
             {/*
               Desktop: session picker + scanner terminal to the left of the
-              manifest. Below 1180 they reflow BENEATH the manifest — still
+              manifest. Below 1280 they reflow BENEATH the manifest — still
               visible, still operable, never behind a handle.
             */}
             <div

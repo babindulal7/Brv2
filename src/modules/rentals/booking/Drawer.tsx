@@ -232,7 +232,7 @@ export function DrawerRow({
     tone === 'danger'
       ? 'var(--danger-text)'
       : tone === 'warning'
-        ? 'var(--warning-text)'
+        ? 'var(--ready-text)'
         : tone === 'success'
           ? 'var(--success-text)'
           : tone === 'muted'

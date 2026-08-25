@@ -6,6 +6,8 @@ import { Input } from '../../components/ui/Input'
 import { EmptyState } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import Icon from '../../components/ui/Icon'
+import { Badge } from '../../components/ui/Badge'
+import type { StatusKey } from '../../lib/status'
 import { formatMoney, rupees, type Paisa } from '../../lib/money'
 import { useAuth } from '../../lib/auth'
 import { gateContext, canViewMoneyField } from '../../lib/fieldGating'
@@ -116,6 +118,40 @@ const SUB_RENTAL_DATA: SubRentalRecord[] = [
  * card is built from (`data/supplierIntel.ts`).
  */
 const SUPPLIER_GROUPS = groupByCounterparty(SUB_RENTAL_DATA)
+
+/**
+ * The §4 hue for each sub-rental status — the shape `Finance.tsx`'s
+ * `INVOICE_TOKEN` already uses, so a screen names a TOKEN and <Badge> owns the
+ * paint. This replaces a `getStatusColor()` switch that returned raw CSS
+ * variables, and it corrects two of them, both of which were semantic errors
+ * rather than styling ones:
+ *
+ *  - **On Rent / Picked Up returned `var(--info)` — BLUE.** §4 puts On Rent,
+ *    Picked Up and Partial Pickup on ORANGE, and §2 gives blue exactly one
+ *    meaning: "committed · scheduled". Painting gear that is physically out
+ *    with a supplier's client in the committed hue told an operator scanning
+ *    the column by colour that the kit was still booked and still on the
+ *    shelf. Orange is the one hue that means "out".
+ *
+ *  - **Reserved returned `var(--ready-text)` — YELLOW.** §2 gives yellow to
+ *    "being worked in-house / waiting", which is the workshop: Packed,
+ *    Cleaning, Maintenance. A Reserved sub-rental is not being worked on; it
+ *    is committed and scheduled, which §4 spells BLUE. The two errors were
+ *    each other's mirror, so the column read its lifecycle backwards at the
+ *    two moments — leaving and arriving — where being wrong costs the most.
+ *
+ * Returned / Checked In stay GREEN ("home & ready", §2) and Cancelled stays
+ * DIM ("finished / inactive"); those two were already right, and `--good` /
+ * `--muted` are simply the pre-token spellings of them.
+ */
+const SUB_RENTAL_TOKEN: Record<SubRentalStatus, StatusKey> = {
+  Reserved: 'primary',
+  'Picked Up': 'out',
+  'On Rent': 'out',
+  Returned: 'in',
+  'Checked In': 'in',
+  Cancelled: 'dim',
+}
 
 type FilterKey = SubRentalStatus | 'All' | 'Overdue'
 
@@ -299,21 +335,14 @@ function SupplierDirectoryTable({
                       </IntelCard>
                     </td>
                     <td style={{ padding: '12px 14px' }}>
-                      <span
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          height: 20,
-                          padding: '0 8px',
-                          borderRadius: 'var(--r-badge)',
-                          border: '1px solid var(--ext-line)',
-                          color: 'var(--ext-fg)',
-                          fontSize: 11,
-                          fontWeight: 600,
-                        }}
-                      >
-                        {row.relationship}
-                      </span>
+                      {/* The gold mark, from `EXT_MARK` via <Badge tone="ext">
+                          rather than hand-rolled a third time. §2 keeps gold
+                          outline-only so it can never read as a yellow status,
+                          and §3.3 puts it on `--r-chip` (6) — this carried
+                          `--r-badge` (999), which §3.3 reserves for numeric
+                          count badges. A supplier relationship IS the external
+                          -gear axis, so `ext` is the right key here. */}
+                      <Badge tone="ext" label={row.relationship} size="sm" />
                     </td>
                     <td className="figure" style={{ padding: '12px 14px', fontWeight: 600, color: 'var(--text)' }}>
                       {row.unitsInHouse}
@@ -452,21 +481,6 @@ export function SubRental() {
     if (next.has(id)) next.delete(id)
     else next.add(id)
     setSelectedRowIds(next)
-  }
-
-  const getStatusColor = (status: SubRentalStatus) => {
-    switch (status) {
-      case 'Returned':
-      case 'Checked In':
-        return 'var(--good)'
-      case 'Cancelled':
-        return 'var(--muted)'
-      case 'Reserved':
-        return 'var(--warn)'
-      case 'Picked Up':
-      case 'On Rent':
-        return 'var(--info)'
-    }
   }
 
   const calculateMargin = (revenue: Paisa, cost: Paisa) => {
@@ -753,10 +767,11 @@ export function SubRental() {
                               OVERDUE
                             </span>
                           )}
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', color: getStatusColor(c.status), fontWeight: 600 }}>
-                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
-                            {c.status}
-                          </span>
+                          {/* §8 step 2 — the status is painted by <Badge> and
+                              nowhere else. The dot-plus-coloured-word this
+                              replaces was colour on TYPE, which §4 does not
+                              have: every status is a solid block. */}
+                          <Badge tone={SUB_RENTAL_TOKEN[c.status]} label={c.status} size="sm" />
                         </div>
                       </td>
                       <td style={{ padding: '12px 14px', textAlign: 'right' }}>

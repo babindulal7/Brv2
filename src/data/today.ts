@@ -2,7 +2,15 @@ import type { AlertRow, Movement, MovementKind } from '../types/today'
 import type { BrandKey, StatusKey } from '../lib/status'
 import { statusToken, STATUS_ORDER } from '../lib/workflow'
 import type { BookingStatus, Flag } from '../lib/workflow'
-import { getBusinessToday, toBs, formatBs, formatAd, eachDay, kathmanduCivil, NPT_OFFSET_MIN } from '../lib/bs'
+import {
+  getBusinessToday,
+  toBs,
+  formatBs,
+  formatAd,
+  eachDay,
+  kathmanduCivil,
+  NPT_OFFSET_MIN,
+} from '../lib/bs'
 import { clockPad } from '../lib/format'
 import { formatMoney, rupees } from '../lib/money'
 import { todaysIncoming, todaysOutgoing, type BookingListRow } from '../lib/queries/bookings'

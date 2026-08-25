@@ -28,9 +28,21 @@ const getSystemTheme = (): ResolvedTheme => {
 
 export function ThemeProvider({ children, initial = 'dark' }: { children: ReactNode; initial?: ResolvedTheme }) {
   const [mode, setModeState] = useState<ThemeMode>(() => {
-    if (typeof window === 'undefined') return 'system'
+    /*
+     * DESIGN_DIRECTION_SPEC_v4.1 §1 — "dark (in-app default)". An operator who
+     * has never touched the toggle gets DARK, not whatever their OS happens to
+     * be set to: this is a control-room tool that spends its life on warehouse
+     * tablets and a shop-floor desktop, and the dark build is the one the
+     * status hues were measured against first.
+     *
+     * 'system' remains available and is still honoured once chosen — the
+     * change is only to which mode an unconfigured session STARTS in. Anyone
+     * who has already picked a mode keeps it, because the stored value is
+     * read before this default applies.
+     */
+    if (typeof window === 'undefined') return 'dark'
     const saved = localStorage.getItem(KEY) as ThemeMode
-    return saved === 'dark' || saved === 'light' || saved === 'system' ? saved : 'system'
+    return saved === 'dark' || saved === 'light' || saved === 'system' ? saved : 'dark'
   })
 
   const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(() => {

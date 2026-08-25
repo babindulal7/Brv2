@@ -724,7 +724,7 @@ export function Maintenance() {
         })}
 
         <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 10px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)' }}>
+          <label className="focus-host" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 10px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)' }}>
             <Icon name="search" size={14} style={{ color: 'var(--muted)' }} />
             <input
               value={searchQuery}
@@ -766,7 +766,7 @@ export function Maintenance() {
           <div style={{ overflowX: 'auto' }}>
             {/* §7.4 TABLET — "same, fewer columns". Technician, Vendor and
                 Booking Impact are dropped there, which takes the 1080px minimum
-                down inside the 768–1179 band instead of scrolling it sideways. */}
+                down inside the 768–1279 band instead of scrolling it sideways. */}
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: desktop ? 1080 : 660 }}>
               <thead>
                 <tr style={{ background: 'var(--th-bg)' }}>

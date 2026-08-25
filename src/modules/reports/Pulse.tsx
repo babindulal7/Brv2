@@ -331,7 +331,7 @@ export default function Pulse() {
   const { user } = useAuth()
   const periodRef = useRef<HTMLSelectElement>(null)
   const viewport = useViewport()
-  /* Rulings §7 — the rail track goes away below 1180 so `ReflowRail`'s
+  /* Rulings §7 — the rail track goes away below 1280 so `ReflowRail`'s
      inline column is not squeezed by a rail column that is still there.
      Called here, above the no-period early return, because it is a hook. */
   const railGridColumns = useRailGridColumns()
@@ -453,7 +453,9 @@ export default function Pulse() {
             gap: 5,
             height: 26,
             padding: '0 9px',
-            borderRadius: 'var(--r-badge)',
+            // §3.3 — --r-badge (999) is numeric count badges only; a status
+            // takes --r-chip. See DESIGN_DIRECTION_SPEC_v4.1 §4.
+            borderRadius: 'var(--r-chip)',
             background: figures.live ? STATUS.in.bg : STATUS.neutral.bg,
             color: figures.live ? STATUS.in.fg : STATUS.neutral.fg,
             fontSize: 'var(--t-meta)',
@@ -735,7 +737,7 @@ export default function Pulse() {
 
   // §5.3's cards are dense — icon, label, value, delta and a link — so below
   // desktop they get the same treatment as BookingDetail's facts strip: two
-  // across on the 768–1179px tablet band, one across on phone, rather than
+  // across on the 768–1279px tablet band, one across on phone, rather than
   // squeezing all of `cards.length` into a viewport that has no room for it
   // (Law 13/14).
   const cardsCols =
@@ -745,7 +747,7 @@ export default function Pulse() {
         ? `repeat(${Math.min(cards.length, 2)}, minmax(0,1fr))`
         : '1fr'
 
-  // The content/rail split only has room on desktop; below 1180 the rail
+  // The content/rail split only has room on desktop; below 1280 the rail
   // track goes away and `ReflowRail` renders its cards as a plain inline
   // column under the content — Rulings §7's "reflow, not hide". This used to
   // be `Rail` (CollapsibleAside), which put all four rail cards behind a 44px

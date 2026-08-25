@@ -6,7 +6,7 @@ import { ConfirmDialog, Input, Select } from '../../components/ui'
 import { Card, PageHeader, Button, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
 import { EmptyState } from '../../components/ui/StateViews'
 import { useToast } from '../../components/ui/Toast'
-import { BREAKPOINT, useViewport } from '../../lib/device'
+import { useViewport } from '../../lib/device'
 import { useNetwork } from '../../lib/network'
 import { STATUS } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
@@ -876,7 +876,10 @@ function VatToggle({ ratePercent, on, onChange }: { ratePercent: number; on: boo
           gap: 4,
           height: 20,
           padding: '0 7px',
-          borderRadius: 'var(--r-badge)',
+          // §3.3 — not a count badge, so not the 999 radius.
+          // NOTE: this toggle also wears STATUS hues while being a CONTROL;
+          // flagged for a ruling rather than changed mid-sweep.
+          borderRadius: 'var(--r-btn)',
           background: on ? 'var(--st-in-bg)' : 'var(--st-neutral-bg)',
           color: on ? 'var(--st-in-fg)' : 'var(--st-neutral-fg)',
           fontSize: 'var(--t-th)',
@@ -975,7 +978,8 @@ function DiscountChips({
                 position: 'relative',
                 minHeight: 24,
                 padding: '0 9px',
-                borderRadius: 'var(--r-badge)',
+                // §3.3 — a filter chip is a control, not a count badge.
+                borderRadius: 'var(--r-btn)',
                 border: `1px solid ${active ? 'var(--st-primary-fg)' : 'var(--border)'}`,
                 background: active ? 'var(--st-primary-bg)' : 'var(--card2)',
                 color: active ? 'var(--st-primary-fg)' : 'var(--text2)',
@@ -1127,8 +1131,18 @@ export default function NewRental() {
    * a band change actually reach the accordion.
    */
   const phoneAccordion = viewport === 'phone'
+  /*
+   * Seeded from `phoneAccordion`, not `window.innerWidth`.
+   *
+   * The comment above claimed this read had already been removed while the
+   * initializer directly below still performed it — the comment described the
+   * intent and the code kept the bug. `useViewport()` resolves synchronously
+   * on its own first render (it seeds from `viewportFor(window.innerWidth)`),
+   * so reading the band here is correct at mount AND stays correct afterwards,
+   * which the raw width read never did.
+   */
   const [open, setOpen] = useState<boolean[]>(() =>
-    typeof window !== 'undefined' && window.innerWidth < BREAKPOINT.phone
+    phoneAccordion
       ? [false, false, true, false, false, false]
       : [true, true, true, false, false, true],
   )
@@ -1170,7 +1184,7 @@ export default function NewRental() {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [addClientOpen, setAddClientOpen] = useState(false)
   /* The tablet/phone rail handle is gone. `WIREFRAME_RULINGS_2026-08-12.md` §7:
-     "Right rails collapse below 1180" means **reflow, not hide** — the rail's
+     "Right rails collapse below 1280" means **reflow, not hide** — the rail's
      cards render inline beneath the workspace at tablet and phone, always
      visible, and only the summary + Confirm move into the sticky bar. A
      collapsed handle hid the blocking notices, which Law 12 forbids. */
@@ -2047,7 +2061,7 @@ export default function NewRental() {
    * phone the header button and the sticky bar's button were two primaries for
    * one action on one screen.
    *
-   * Rendered by the desktop rail only; below 1180 the sticky bar owns it, so
+   * Rendered by the desktop rail only; below 1280 the sticky bar owns it, so
    * there is exactly one Confirm at every width.
    */
   const confirmBlock = (
@@ -3021,7 +3035,7 @@ export default function NewRental() {
       {/*
         Tablet and phone: the rail **reflows**, it does not hide.
 
-        `WIREFRAME_RULINGS_2026-08-12.md` §7 — "Right rails collapse below 1180"
+        `WIREFRAME_RULINGS_2026-08-12.md` §7 — "Right rails collapse below 1280"
         means the rail's content moves below the list and stays visible. The
         collapsed "Review n/n" handle that used to sit here hid the blocking
         notices behind a tap, which Law 12 forbids outright.
@@ -3043,7 +3057,7 @@ export default function NewRental() {
         persist — never a toast."
 
         The tablet and phone bars the spec draws are `Total …… [Confirm]`, with
-        no room for a notice. So below 1180 the notices card **detaches from the
+        no room for a notice. So below 1280 the notices card **detaches from the
         rail and renders immediately above the sticky bar**, in full: not
         truncated into the bar, not a toast, and not behind a disclosure. It is
         the last thing above the button it is refusing.

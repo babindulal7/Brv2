@@ -12,6 +12,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:mock", "--", "--port", "3100", "--strictPort"],
       "port": 3100
+    },
+    {
+      "name": "babin-rentals-os-localdb",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:local", "--", "--port", "3200", "--strictPort"],
+      "port": 3200
     }
   ]
 }

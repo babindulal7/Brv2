@@ -275,8 +275,8 @@ export function BarcodeScannerModal({
                   borderRadius: 'var(--r-btn)',
                   border: lastScanResult
                     ? lastScanResult.success
-                      ? '2px solid var(--success, #16a34a)'
-                      : '2px solid var(--danger, #dc2626)'
+                      ? '2px solid var(--success)'
+                      : '2px solid var(--danger)'
                     : '1px solid var(--border)',
                   background: 'var(--card)',
                   color: 'var(--text)',
@@ -301,12 +301,17 @@ export function BarcodeScannerModal({
             style={{
               padding: '12px 14px',
               borderRadius: 'var(--r-btn)',
-              background: lastScanResult.success
-                ? 'var(--success-bg, #dcfce7)'
-                : 'var(--danger-bg, #fee2e2)',
-              color: lastScanResult.success
-                ? 'var(--success-text, #15803d)'
-                : 'var(--danger-text, #b91c1c)',
+              /*
+                The status pairs, not aliases-with-a-light-theme-hex-behind-them.
+                These read `var(--success-bg, #dcfce7)` / `var(--danger-bg,
+                #fee2e2)` etc: six literals that were dead while the aliases
+                resolved and became a light-only pink/green the moment one did
+                not. §3 bans a literal in a screen regardless, and a scan
+                result is a STATE, so it takes the same st-* pair as every
+                other status surface.
+              */
+              background: lastScanResult.success ? 'var(--st-in-bg)' : 'var(--st-danger-bg)',
+              color: lastScanResult.success ? 'var(--st-in-fg)' : 'var(--st-danger-fg)',
               fontSize: 'var(--t-meta)',
               fontWeight: 600,
               display: 'flex',
@@ -374,8 +379,10 @@ export function BarcodeScannerModal({
                     fontSize: 'var(--t-meta)',
                     padding: '4px 8px',
                     borderRadius: 4,
-                    background: log.success ? 'var(--success-bg, #f0fdf4)' : 'var(--danger-bg, #fef2f2)',
-                    color: log.success ? 'var(--success-text, #166534)' : 'var(--danger-text, #991b1b)',
+                    // Same correction as the result banner above — status
+                    // pairs, no literals behind a fallback.
+                    background: log.success ? 'var(--st-in-bg)' : 'var(--st-danger-bg)',
+                    color: log.success ? 'var(--st-in-fg)' : 'var(--st-danger-fg)',
                   }}
                 >
                   <span style={{ color: 'var(--muted)', fontSize: 'var(--t-meta)', fontFamily: 'monospace' }}>

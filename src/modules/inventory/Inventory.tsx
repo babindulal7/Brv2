@@ -8,12 +8,11 @@ import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle, SideRail } f
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { Unavailable } from '../../components/ui/Unavailable'
-import { STATUS } from '../../lib/status'
+import { Badge } from '../../components/ui/Badge'
 import { formatMoney, grouped } from '../../lib/money'
-import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useAuth } from '../../lib/auth'
 import { useTabularLayout, useViewport } from '../../lib/device'
-import { gateContext } from '../../lib/fieldGating'
+import { canViewMoneyField, gateContext } from '../../lib/fieldGating'
 import type { GateContext } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
 import { Bundles } from './Bundles'
@@ -43,7 +42,9 @@ import {
   INV_STYLE,
   INV_DOT,
   INV_LABEL,
+  INV_TONE,
   CONDITION_TONE,
+  CONDITION_INK,
   CATEGORY_ICON,
   FILTER_RAIL,
   SORTS,
@@ -258,64 +259,58 @@ function pageWindow(current: number, pageCount: number, span = 5): number[] {
 /* ── small pieces ──────────────────────────────────────────────────────── */
 
 /**
- * Status badge. Every status carries its own icon as well as its colour —
- * §4.2 notes three statuses share the amber token, so the icon and label are
- * what separate them. Never colour alone.
+ * Status badge.
  *
- * The word comes from `INV_LABEL`, never from the union member: §7.1's chip says
- * `Available` where the enum says `In Stock`. See the note on `INV_LABEL`.
+ * Delegates to `<Badge>` — DESIGN_DIRECTION_SPEC_v4.1 §8 step 2: "one
+ * component rendering the §4 map from lib/status; every screen inherits. No
+ * screen colours a status itself."
+ *
+ * It used to assemble the chip here, and the assembly carried three deviations
+ * from §4's block anatomy: `--r-badge` (a 999 pill, which §3.3 reserves for
+ * numeric COUNT badges), weight 600, and sentence case. It also carried an
+ * `outlined = s.bg === 'transparent'` branch that drew a green OUTLINE for `In
+ * Stock` — the §2 violation now fixed at its source in `data/inventory.ts`.
+ * With that fixed the branch could only ever be false, so it goes rather than
+ * sitting here waiting for a transparent skin to come back.
+ *
+ * What the wrapper still owns, and why it is kept rather than inlined at the
+ * two call sites:
+ *
+ *  - **The word comes from `INV_LABEL`, never from the union member** — §7.1's
+ *    chip says `Available` where the enum says `In Stock`. That is an
+ *    Inventory vocabulary decision and not something `<Badge>` should know.
+ *  - **The icon comes from `INV_STYLE`** — §7.4, never colour alone. Four
+ *    statuses share the yellow token, so the icon is doing real work, and
+ *    `<Badge>`'s own icon table is keyed on booking statuses and flags, which
+ *    these are not.
+ *
+ * `size="sm"` because these sit in dense equipment rows: it lands at roughly
+ * the 21px the hand-rolled version had, without giving up the weight, casing
+ * or tracking that ARE the identity of a status block.
  */
 function StatusBadge({ status }: { status: InvStatus }) {
-  const s = INV_STYLE[status]
-  const outlined = s.bg === 'transparent'
   return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 5,
-        height: 21,
-        padding: '0 8px',
-        borderRadius: 'var(--r-badge)',
-        background: s.bg,
-        color: s.fg,
-        border: outlined ? `1px solid ${s.fg}` : '1px solid transparent',
-        fontSize: 'var(--t-meta)',
-        fontWeight: 600,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      <Icon name={s.icon} size={11} />
-      {INV_LABEL[status]}
-    </span>
+    <Badge
+      tone={INV_TONE[status]}
+      label={INV_LABEL[status]}
+      icon={<Icon name={INV_STYLE[status].icon} size={11} />}
+      size="sm"
+    />
   )
 }
 
-/** The mockup badges Condition. Tones come from `CONDITION_TONE` — see its note. */
+/**
+ * The mockup badges Condition. Tones come from `CONDITION_TONE` — see its note.
+ *
+ * Same delegation as `StatusBadge` above; what stays here is the one thing
+ * `<Badge>` must not decide — a quantity-tracked SKU has no unit rows and
+ * therefore no condition, and the honest render of that is an em dash, not a
+ * chip. The mock typed `condition: 'Good'` onto the BNC cable; this states the
+ * gap instead.
+ */
 function ConditionBadge({ condition }: { condition: Condition | null }) {
-  // A quantity-tracked SKU has no unit rows and therefore no condition. The mock
-  // typed `condition: 'Good'` onto the BNC cable; this states the gap.
   if (condition === null) return <span style={{ color: 'var(--muted)' }}>—</span>
-  const c = STATUS[CONDITION_TONE[condition]]
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        height: 20,
-        padding: '0 8px',
-        borderRadius: 'var(--r-xs)',
-        background: c.bg,
-        color: c.fg,
-        border: `1px solid ${c.border ?? 'transparent'}`,
-        fontSize: 'var(--t-meta)',
-        fontWeight: 600,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {condition}
-    </span>
-  )
+  return <Badge tone={CONDITION_TONE[condition]} label={condition} size="sm" />
 }
 
 /** Stands in for the mockup's product photograph — see `CATEGORY_ICON`. */
@@ -1153,10 +1148,11 @@ function chipSlug(c: EquipmentChip): string {
  *    not in bulk. Status is written by the Status Engine from events, so this
  *    screen deliberately offers no way to set it, and `Bulk Actions` stays inert
  *    for that reason rather than for want of a menu.
- *  · §8.3 **Warehouse sees no money.** `useCanViewMoney()` removes the value
- *    columns and the value export fields outright, and stops the query naming a
- *    rate at all; nothing is masked, because a masked cell still tells you a
- *    number exists.
+ *  · §8.3 **Warehouse sees no money — and neither does Coordinator.** One gate,
+ *    `canViewMoneyField(gctx, 'asset-finance')` (the hover card's own), removes
+ *    the value columns and the value export fields outright, and stops the query
+ *    naming a rate at all; nothing is masked, because a masked cell still tells
+ *    you a number exists.
  *  · §4.3's chip-count invariant is **gone with the counts it guarded** — see the
  *    note where `CHIP_COUNTS` used to be in `data/inventory.ts`.
  */
@@ -1216,7 +1212,6 @@ export default function Inventory() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
   const navigate = useNavigate()
-  const money = useCanViewMoney()
   const { user } = useAuth()
   /**
    * DEVICES.md §7 — the equipment table (`minWidth: 1060`) produced a horizontal
@@ -1224,10 +1219,20 @@ export default function Inventory() {
    * capability, never a platform name (Law 13).
    */
   const tabular = useTabularLayout()
-  /** Width only, Law 14 — 768 / 1180. The rail reflows below 1180, never hides. */
+  /** Width only, Law 14 — 768 / 1280. The rail reflows below 1280, never hides. */
   const viewport = useViewport()
   const role = user?.role ?? 'Client'
   const gctx = useMemo(() => gateContext(role), [role])
+  /**
+   * One money gate for the whole screen. The table column, the CSV export, the
+   * query's `withMoney` and the hover card's Money group all read this — and it
+   * is the hover card's own predicate (`canViewMoneyField(gctx, 'asset-finance')`),
+   * because daily rate and replacement value are asset finance, which HIS §4.1
+   * excludes from Coordinator's booking-and-client-balance scope. The screen
+   * previously read `useCanViewMoney()` here, which admits Coordinator, so the
+   * table showed a replacement value the card built from the same row withheld.
+   */
+  const money = canViewMoneyField(gctx, 'asset-finance')
 
   const activeFacetCount = Object.values(facets).reduce((a, s) => a + s.size, 0)
   const filtersOn = activeFacetCount > 0 || chip.kind !== 'all'
@@ -1561,7 +1566,10 @@ export default function Inventory() {
                     ? 'var(--text2)'
                     : c.kind === 'status'
                       ? INV_DOT[c.status]
-                      : STATUS[CONDITION_TONE[c.condition]].fg
+                      : /* `CONDITION_INK`, not `STATUS[…].fg`: a `-fg` token is
+                           a block's on-colour and painted this chip white on
+                           `--card`. See the note on `CONDITION_INK`. */
+                        CONDITION_INK[c.condition]
                 return (
                   <button
                     key={key}
@@ -1659,7 +1667,7 @@ export default function Inventory() {
           {/*
             §7.1 desktop: a filter rail on the left, the table to its right.
 
-            Below 1180 the rail **reflows**, it does not hide
+            Below 1280 the rail **reflows**, it does not hide
             (`WIREFRAME_RULINGS_2026-08-12.md` §7): one column, with the rail's
             content rendered inline BENEATH the list, still visible and still
             operable. It is deliberately not wrapped in `CollapsibleAside` —
@@ -1836,7 +1844,7 @@ export default function Inventory() {
                 emptyTitle={filtersOn ? 'No equipment matches these filters' : 'No equipment yet'}
                 emptyMessage={
                   query.impossible
-                    ? `The “${chip}” chip and the Status filter do not overlap, so nothing can match both.`
+                    ? `The “${chip.label}” chip and the Status filter do not overlap, so nothing can match both.`
                     : filtersOn
                       ? 'Nothing in the catalogue satisfies the status chip and filter rail together.'
                       : 'No equipment has been added to the catalogue yet.'
@@ -2090,7 +2098,7 @@ export default function Inventory() {
             </Card>
 
             {/*
-              Below 1180 the rail's content renders HERE — inline, beneath the
+              Below 1280 the rail's content renders HERE — inline, beneath the
               list, still visible. "Collapse" means reflow, not hide
               (`WIREFRAME_RULINGS_2026-08-12.md` §7); the fourteen groups are the
               same fourteen, in the same order, with the same reasons.

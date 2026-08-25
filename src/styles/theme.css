@@ -29,282 +29,276 @@
                              above everything, including legacy 9999/10000 literals */
 }
 
+/* ============================================================================
+   DESIGN_DIRECTION_SPEC_v4.1 — the seven-hue palette. Ruled 24 Aug 2026.
+   docs/DESIGN_DIRECTION_SPEC_v4.1.md is the authority; this file only sets it.
+
+   DARK IS THE DEFAULT. Bare `:root` carries the dark values so a reload cannot
+   flash light before `lib/theme.tsx` stamps `data-theme` (v4.1 §1).
+
+   Every value here is the MEASURED set. Seven cells moved off the ruling draft
+   because they failed the §7.8 gate at 4.5:1 — recorded in §10 of the spec with
+   before/after ratios. The rule did not move; the values did.
+
+   TWO TOKENS DID NOT TAKE THE SPEC'S NAME, to avoid silently rebinding live
+   code (the trap §8.1 names):
+     · v4.1's "Dim" fill is `--dim`, NOT `--muted`. `--muted` is muted TEXT in
+       1,211 places across 136 files; repainting it to a #24262C fill would
+       black out muted copy on nearly every screen. §2 calls the hue "Dim", so
+       `--dim` is the spec's own word.
+     · `--warn` IS reclaimed for v4.1's orange, and the six legacy caution-text
+       uses were migrated to `--ready-text` first (spec §11).
+   ========================================================================== */
+
 :root,
-:root[data-theme='light'] {
-  /* brand */
-  --gold: #c9982f;
-  /* The wordmark's own gold. Brand --gold measures 2.62:1 on white — fine as a
-     fill behind dark text (its job in the dark theme), not as ink. This step is
-     the same hue at 4.54:1, so the mark stays gold and stays readable. Dark
-     theme keeps brand gold, which is already well clear against #111827. */
-  --brand-mark: #96700f;
-  --blue: #2563eb;
-  --success: #16a34a;
-  --warning: #ea580c;
-  --danger: #dc2626;
-  /* §4.2 — the five. --primary/--progress are the canonical names; --blue and
-     --warning remain as aliases only until the last inline style is migrated. */
-  --primary: #2563eb;
-  --progress: #d97706;
-  --primary-text: #1d4ed8;
-  --progress-text: #b45309;
+:root[data-theme='dark'] {
+  /* ---- §3.1 core ---- */
+  --bg: #101114;
+  --surface: #15171B;
+  --surface-2: #1a1c21;
+  --border: #22242a;
+  --border2: #2a2d34;
+  --divider: #1e2026;
 
-  /* Ink that sits ON a brand fill (an icon glyph inside a coloured tile).
-     White is safe on four of the five, but --progress is amber: in dark theme
-     it lightens to #fbbf24, where a white glyph measures ~1.7:1 — under the 3:1
-     WCAG minimum for non-text. So the amber tile carries dark ink instead, and
-     the pairing is a token rather than a literal each caller has to remember. */
-  --on-brand: #ffffff;
-  --on-progress: #ffffff;
+  /* Text ramp. --muted is v4.1's --text-2 value (#8B8E96, measured 5.48:1 on
+     --surface) because --muted is what 1,118 `color:` declarations already
+     read; the `--text-2` alias below points at it, so the spec's name and the
+     codebase's name resolve to the same measured colour. */
+  --text: #e6e7ea;
+  --text2: #a9acb4;
+  --muted: #8b8e96;
+  --disabled: #62656b;
+
+  --primary: #386af7;      /* draft #3D6EF7 → white was 4.40, now 4.59 */
+  --on-primary: #ffffff;
+  --primary-text: #7ea2ff; /* text-safe blue on --surface */
+
+  /* ---- §3.2 status hues + their on-colours ---- */
+  --success: #1e864a;      /* draft #1F8A4C → white was 4.38, now 4.60 */
   --on-success: #ffffff;
+  --success-text: #4ade80;
 
-  /* surfaces */
-  --app: #f6f8fb;
+  --danger: #c73a3a;
+  --on-danger: #ffffff;
+  --danger-text: #f08a8a;
+
+  --warn: #e8762d;         /* ORANGE — "out with the client". Never a button. */
+  --on-warn: #1c1005;
+  --warn-text: #f0985e;
+
+  --ready: #edbe2a;        /* YELLOW — in-house work / waiting. Never a button. */
+  --on-ready: #1c1405;
+  --ready-text: #edbe2a;
+
+  --neutral: #3a3e47;      /* GRAY — not started yet */
+  --on-neutral: #c9cbd1;
+
+  --dim: #24262c;          /* DIM — finished / inactive. Draft #26282E → 4.61 */
+  --on-dim: #8b8e96;
+
+  /* Gold — outline only, never solid, never a status, never an action.
+     Border lightened from the draft #6B5A2E (2.67:1) to clear 3:1 so the one
+     outline on screen can actually be seen. */
+  --ext-fg: #d9b45a;
+  --ext-line: #756332;
+  --ext-bg: rgba(217, 180, 90, 0.08);
+  --gold: #d9b45a;
+  --brand-mark: #d9b45a;
+
+  /* ---- surfaces the app already names ---- */
+  --app: #101114;
+  --sidebar: #15171b;
+  --card: #15171b;
+  --card2: #1a1c21;
+  --modal: #1a1c21;
+  --dropdown: #1a1c21;
+
+  --hover-card: #1e2027;
+  --hover-sidebar: #1c1e24;
+  --hover-button: #2f5ce0;
+  --hover-row: #1b1d23;
+
+  /* ---- §5 buttons: quiet, so the statuses stay loud ---- */
+  --btn-primary-bg: #386af7;
+  --btn-primary-fg: #ffffff;
+  --btn-secondary-bg: transparent;
+  --btn-secondary-border: #22242a;
+  --btn-danger-bg: #c73a3a;
+  --btn-danger-fg: #ffffff;
+
+  /* Sidebar active is BLUE now — gold retired from every action (§2). */
+  --nav-active-accent: #386af7;
+  --nav-active-bg: #1a2033;
+  --nav-icon: #8b8e96;
+
+  --input-bg: #101114;
+  --input-border: #2a2d34;
+  --input-placeholder: #62656b;
+  --input-focus: #386af7;
+
+  --th-bg: #15171b;
+  --tr-bg: #15171b;
+  --tr-hover: #1b1d23;
+  --tr-alt: #1a1c21;
+
+  /* §3.3 — dark elevation lightens the surface; it never leans on shadow. */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-kpi: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.6);
+
+  --danger-soft: #1a1315;
+  --scrim: rgba(0, 0, 0, 0.65);
+
+  --chart-grid: #22242a;
+  --cat-1: #3b82d6;
+  --cat-2: #b87a1e;
+  --cat-3: #249e76;
+  --cat-4: #d9613c;
+  --cat-5: #5a76c2;
+  --cat-6: #c25588;
+  --cat-7: #7a8c3e;
+  --cat-8: #5d71b0;
+}
+
+:root[data-theme='light'] {
+  --bg: #fafaf8;
+  --surface: #ffffff;
+  --surface-2: #f2f1ec;
+  --border: #e3e2dd;
+  --border2: #eceae4;
+  --divider: #eceae4;
+
+  --text: #1c1e22;
+  --text2: #4b4e54;
+  --muted: #6d7076;   /* v4.1 --text-2, measured 4.97:1 on white */
+  --disabled: #9b9ea4;
+
+  --primary: #2456d6;
+  --on-primary: #ffffff;
+  --primary-text: #1e49b8;
+
+  --success: #1e864a;
+  --on-success: #ffffff;
+  --success-text: #15683a;
+
+  --danger: #c73a3a;
+  --on-danger: #ffffff;
+  --danger-text: #a82f2f;
+
+  /* Orange keeps the ruled hue; the INK moved to dark because white measured
+     3.61:1 on it (§10). Orange is dark-ink in both themes. */
+  --warn: #d96518;
+  --on-warn: #231a05;
+  --warn-text: #9c4710;
+
+  --ready: #e3b117;
+  --on-ready: #231a05;
+  --ready-text: #7a5f0c;
+
+  --neutral: #72757e;  /* draft #8A8D95 → white was 3.32, now 4.60 */
+  --on-neutral: #ffffff;
+
+  --dim: #dddcd6;
+  --on-dim: #5a5d63;
+
+  --ext-fg: #8a6d1f;
+  --ext-line: #af903a;  /* draft #CDB268 was 2.07:1 — invisible on white */
+  --ext-bg: rgba(205, 178, 104, 0.1);
+  --gold: #c9982f;
+  --brand-mark: #8a6d1f;
+
+  --app: #fafaf8;
   --sidebar: #ffffff;
   --card: #ffffff;
-  --card2: #f9fafb;
+  --card2: #f2f1ec;
   --modal: #ffffff;
   --dropdown: #ffffff;
 
-  /* borders */
-  --border: #e5e7eb;
-  --border2: #f1f5f9;
-  --divider: #eceff3;
+  --hover-card: #f7f6f2;
+  --hover-sidebar: #f0f3fb;
+  --hover-button: #1e49b8;
+  --hover-row: #f7f6f2;
 
-  /* text
-     ⚠ DEVIATION, light theme only. The spec's --muted #9ca3af measures 2.54:1
-     on white — it carries real content here (calendar day numbers, row meta,
-     KPI secondary lines), so every level shifts one step down the same gray
-     ramp to clear AA. --disabled inherits the old --muted value and is now
-     reserved for genuinely inert marks: out-of-month days, bullet separators.
-     TODO(decision): confirm or overrule alongside the status-colour deviation. */
-  --text: #111827;
-  --text2: #4b5563; /* spec #6b7280 */
-  --muted: #6b7280; /* spec #9ca3af — 2.54:1, below AA */
-  --disabled: #9ca3af; /* spec #d1d5db */
-
-  /* hover */
-  --hover-card: #f8fafc;
-  --hover-sidebar: #eef4ff;
-  --hover-button: #1d4ed8;
-  --hover-row: #f5f7fa;
-
-  /* primary button — LIGHT: blue bg, white text */
-  --btn-primary-bg: #2563eb;
+  --btn-primary-bg: #2456d6;
   --btn-primary-fg: #ffffff;
-  --btn-secondary-bg: #ffffff;
-  --btn-secondary-border: #d1d5db;
-  --btn-danger-bg: #dc2626;
+  --btn-secondary-bg: transparent;
+  --btn-secondary-border: #e3e2dd;
+  --btn-danger-bg: #c73a3a;
   --btn-danger-fg: #ffffff;
 
-  /* sidebar active — LIGHT: blue */
-  --nav-active-accent: #2563eb;
-  --nav-active-bg: #eef4ff;
-  --nav-icon: #6b7280;
+  --nav-active-accent: #2456d6;
+  --nav-active-bg: #f0f3fb;
+  --nav-icon: #6d7076;
 
-  /* inputs — LIGHT: blue focus */
   --input-bg: #ffffff;
-  --input-border: #d1d5db;
-  --input-placeholder: #9ca3af;
-  --input-focus: #2563eb;
+  --input-border: #d8d7d1;
+  --input-placeholder: #9b9ea4;
+  --input-focus: #2456d6;
 
-  /* tables */
-  --th-bg: #f8fafc;
+  --th-bg: #f2f1ec;
   --tr-bg: #ffffff;
-  --tr-hover: #f5f7fa;
+  --tr-hover: #f7f6f2;
+  --tr-alt: #fafaf8;
 
-  /* elevation */
-  --shadow-card: 0 2px 8px rgba(15, 23, 42, 0.05);
-  --shadow-kpi: 0 4px 12px rgba(0, 0, 0, 0.05);
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-kpi: 0 1px 3px rgba(0, 0, 0, 0.06);
   --shadow-modal: 0 15px 40px rgba(15, 23, 42, 0.12);
 
-  /* status — background / text pairs.
-     ⚠ DEVIATION from Theme Design System §Status Colors, light theme only.
-     Five of the spec's pairs measure below WCAG AA 4.5:1 at badge size
-     (11.5px/600): maintenance 2.86, return 3.35, damage 3.95, reserved 4.24,
-     cancelled 4.39. Backgrounds are kept exactly as specified; only those five
-     foregrounds are darkened one step to clear 4.5:1. The dark theme's pairs
-     already pass and are untouched.
-     TODO(decision): confirm or overrule — logged with the T-series conflicts. */
-  --st-neutral-bg: #f3f4f6;     --st-neutral-fg: #4b5563;
-  --st-primary-bg: #dbeafe;     --st-primary-fg: #1d4ed8;
-  --st-progress-bg: #fef3c7;    --st-progress-fg: #92400e;
-  /* §4.2 — green separates On Rent from Returned by *fill weight*, not by hue.
-     Solid = out, soft = in. Same green, two weights, so the pair reads as one
-     colour doing two jobs rather than as two colours. */
-  --st-out-bg: #15803d;         --st-out-fg: #ffffff; /* white on green-600 was 3.30:1 */
-  --st-in-bg: #dcfce7;          --st-in-fg: #15803d;
-  --st-danger-bg: #fee2e2;      --st-danger-fg: #b91c1c;
-  --st-purple-bg: #f3e8ff;      --st-purple-fg: #7e22ce; /* Sub-Rental */
-  /* Gold, outline only. Never a fill, never a button (§4.2). */
-  --ext-line: #c9982f;          --ext-fg: #96700f;
-
-  /* Overdue row wash — Dashboard.md §7. Tinted so the left border is not the
-     only signal ("never colour alone"); the row still states "Overdue" in text. */
-  /* Kept light enough that --muted meta text on an overdue row still clears
-     4.5:1; a deeper wash drags the row's own body copy under. */
-  --danger-soft: #fff7f7;
-
-  /* Text-safe warning/danger/success — see BRAND_TEXT in lib/status.ts. */
-  --warning-text: #b45309;
-  --danger-text: #b91c1c;
-  --success-text: #15803d;
-  --blue-text: #1d4ed8;
-
-  /* Modal/drawer backdrop. AddBundle read `var(--scrim, rgba(0,0,0,0.55))` and
-     always got the fallback — a flat black scrim in a theme whose every other
-     shade of dark is slate. Same ink as --shadow-modal, per theme. */
+  --danger-soft: #fdf6f6;
   --scrim: rgba(15, 23, 42, 0.45);
 
-  /*
-    charts — re-validated 5 Aug against §4.2's five-colour law.
-
-    §4.2 bans purple, cyan, teal, indigo and violet outright, which had left
-    the categorical set on a placeholder — three slots replaced by darker
-    shades of already-used families, with the dataviz six-checks known broken
-    and logged as a TODO(decision). That is resolved: eight hues *do* fit
-    inside the allowed families (blue, orange, green, red, plus pink/magenta
-    and gold/olive, neither of which §4.2 mentions), re-picked and run through
-    `dataviz/scripts/validate_palette.js` against this exact surface.
-
-    Light — surface #ffffff: lightness band PASS, chroma floor PASS, CVD
-    separation PASS (worst adjacent ΔE 8.4 protan, target 8), normal-vision
-    floor PASS (worst 15.2, floor 15 — the tightest margin in the set),
-    contrast PASS all 8 ≥ 3:1. ALL CHECKS PASS, zero WARNs.
-  */
-  --chart-grid: #e5e7eb;
-  --cat-1: #0072b2; /* blue        */
-  --cat-2: #c87a00; /* orange      */
-  --cat-3: #009e73; /* green       */
-  --cat-4: #d55e00; /* red         */
-  --cat-5: #3d5a9e; /* blue, dark  */
-  --cat-6: #b23a6b; /* pink        */
-  --cat-7: #6b7a00; /* olive       */
-  --cat-8: #8b3a0e; /* rust        */
-}
-
-:root[data-theme='dark'] {
-  --gold: #d8a93a;
-  --brand-mark: #d8a93a;
-  --blue: #3b82f6;
-  --success: #22c55e;
-  --warning: #fb923c;
-  --danger: #ef4444;
-  --primary: #3b82f6;
-  --progress: #fbbf24;
-  --primary-text: #60a5fa;
-  --progress-text: #fbbf24;
-
-  /* See the note in the light block. Dark theme lightens the fills, so two of
-     them fail white ink and take dark ink from their own family instead:
-       --progress #fbbf24 → white 1.7:1, dark amber 8.1:1
-       --success  #22c55e → white 2.3:1, dark green 7.4:1
-     Measured in the browser, not estimated. */
-  --on-brand: #ffffff;
-  --on-progress: #3d2c05;
-  --on-success: #05320f;
-
-  --app: #0b1220;
-  --sidebar: #111827;
-  --card: #161f2e;
-  --card2: #1b2435;
-  --modal: #161f2e;
-  --dropdown: #1b2435;
-
-  --border: #2b3648;
-  --border2: #374151;
-  --divider: #2f3a4f;
-
-  --text: #f8fafc;
-  --text2: #cbd5e1;
-  --muted: #94a3b8;
-  --disabled: #64748b;
-
-  --hover-card: #202c3e;
-  --hover-sidebar: #1e293b;
-  --hover-button: #2563eb;
-  --hover-row: #233047;
-
-  /* primary button — DARK: gold bg, black text.
-     Ruled 5 Aug: two specs agree (Theme Design System + Buttons & Status
-     Colors B1). Design Tokens v2.0's "gold is not primary" is the outlier,
-     and its concern — gold colliding with the external-gear marker — applies
-     to the light theme where --ext gold outlines actually appear. */
-  --btn-primary-bg: #d8a93a;
-  --btn-primary-fg: #0a0a0a;
-  --btn-secondary-bg: #1f2937;
-  --btn-secondary-border: #374151;
-  --btn-danger-bg: #ef4444;
-  --btn-danger-fg: #ffffff;
-
-  /* sidebar active — DARK: gold */
-  --nav-active-accent: #d8a93a;
-  --nav-active-bg: #1a2233;
-  --nav-icon: #94a3b8;
-
-  /* inputs — DARK: gold focus */
-  --input-bg: #111827;
-  --input-border: #334155;
-  --input-placeholder: #64748b;
-  --input-focus: #d8a93a;
-
-  --th-bg: #111827;
-  --tr-bg: #161f2e;
-  --tr-hover: #1f2937;
-  --tr-alt: #1a2233;
-
-  --shadow-card: 0 10px 30px rgba(0, 0, 0, 0.45);
-  --shadow-kpi: 0 10px 30px rgba(0, 0, 0, 0.45);
-  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.65);
-
-  --st-neutral-bg: #2d3748;     --st-neutral-fg: #cbd5e1;
-  --st-primary-bg: #102c56;     --st-primary-fg: #60a5fa;
-  --st-progress-bg: #47340c;    --st-progress-fg: #fbbf24;
-  /* §4.2 — solid = out, soft = in. Same green, two weights. */
-  --st-out-bg: #22c55e;         --st-out-fg: #06240f;
-  --st-in-bg: #123524;          --st-in-fg: #4ade80;
-  --st-danger-bg: #4b1515;      --st-danger-fg: #f87171;
-  --st-purple-bg: #3b0764;      --st-purple-fg: #c084fc; /* Sub-Rental */
-  --ext-line: #d8a93a;          --ext-fg: #d8a93a;
-
-  --danger-soft: #1f1517;
-
-  --warning-text: #fdba74;
-  --danger-text: #fca5a5;
-  --success-text: #4ade80;
-  --blue-text: #60a5fa;
-
-  /* See the light block. Deeper here — the dark surfaces need more separation
-     from their own backdrop, matching --shadow-modal's heavier ink. */
-  --scrim: rgba(0, 0, 0, 0.65);
-
-  /*
-    Dark is a *selected* set from the same hue order — not an automatic flip of
-    the light values, since a hue that clears the light card at L 0.43–0.77
-    usually sits outside dark's 0.48–0.67 band. Re-validated 5 Aug against
-    #161f2e: lightness band PASS, chroma floor PASS, CVD separation PASS
-    (worst adjacent ΔE 8.7 protan/deutan), normal-vision floor PASS (worst
-    18.1), contrast PASS all 8 ≥ 3:1. ALL CHECKS PASS, zero WARNs.
-  */
-  --chart-grid: #334155;
-  --cat-1: #3b82d6; /* blue        */
-  --cat-2: #b87a1e; /* orange      */
-  --cat-3: #249e76; /* green       */
-  --cat-4: #d9613c; /* red         */
-  --cat-5: #5a76c2; /* blue, dark  */
-  --cat-6: #c25588; /* pink        */
-  --cat-7: #7a8c3e; /* olive       */
-  --cat-8: #5d71b0; /* blue, light */
+  --chart-grid: #e3e2dd;
+  --cat-1: #0072b2;
+  --cat-2: #c87a00;
+  --cat-3: #009e73;
+  --cat-4: #d55e00;
+  --cat-5: #3d5a9e;
+  --cat-6: #b23a6b;
+  --cat-7: #6b7a00;
+  --cat-8: #8b3a0e;
 }
 
 /* ---- scale: identical in both themes ---- */
 :root {
   /* radius */
-  --r-btn: 12px;
-  --r-card: 14px; /* §4.4 — radius scale: --r-btn/--r-input 12px, --r-card 14px, --r-modal 20px, --r-badge 999px */
-  --r-input: 12px;
-  --r-modal: 20px;
-  --r-badge: 999px;
+  /* §3.3 — v4.1 shape. The v3.1 open item 12->8 is RULED: this language is 8. */
+  --r-btn: 8px;
+  --r-card: 8px;
+  --r-input: 8px;
+  --r-modal: 12px;
+  --r-chip: 6px;    /* status blocks */
+  --r-badge: 999px; /* numeric count badges ONLY */
+
+  /* §3.3 / §7.3 - the law is the HIT AREA, not the paint. */
+  --tap: 44px;
+  --row-min-h: 56px;
+  --icon-stroke: 1.6;
+
+  /* ══ §4 status blocks — ALL SOLID ═══════════════════════════════════════
+     v4.1 killed the solid-vs-outline fill rule: every status is a solid block
+     and the word inside carries the meaning (§7.4, never colour alone). Gold
+     is the ONLY outline left on screen.
+
+     These st-* names are what lib/status.ts and the screens already read, so
+     they are kept and REPOINTED rather than renamed — the rename would have
+     touched every call site for no gain. Two of them change meaning, which is
+     the whole point of v4.1:
+       --st-out-*  was green "solid = out of the warehouse" -> now ORANGE,
+                   because On Rent is orange: the gear is with the client.
+       --st-in-*   was a soft green wash -> now SOLID green: home & settled.
+     ══════════════════════════════════════════════════════════════════════ */
+  --st-neutral-bg: var(--neutral);  --st-neutral-fg: var(--on-neutral);  /* Quote, Draft */
+  --st-primary-bg: var(--primary);  --st-primary-fg: var(--on-primary);  /* Booked, Reserved, Issued */
+  --st-progress-bg: var(--ready);   --st-progress-fg: var(--on-ready);   /* Packed, Due Soon, Partial, Cleaning, Maintenance */
+  --st-out-bg: var(--warn);                 --st-out-fg: var(--on-warn);         /* On Rent, Picked Up — out with the client */
+  --st-in-bg: var(--success);       --st-in-fg: var(--on-success);       /* Returned, Available, Paid — home */
+  --st-danger-bg: var(--danger);    --st-danger-fg: var(--on-danger);    /* Overdue, Damaged, Unpaid, Blocked */
+  --st-dim-bg: var(--dim);          --st-dim-fg: var(--on-dim);          /* Closed, Void, Retired, Deactivated */
+
+  /* Canonical v4.1 spellings, for code written against the spec directly. */
+  --st-ready-bg: var(--ready);      --st-ready-fg: var(--on-ready);
+  --st-warn-bg: var(--warn);               --st-warn-fg: var(--on-warn);
+  --st-success-bg: var(--success);  --st-success-fg: var(--on-success);
   /* Compact-element radii — chips, tags, icon wrappers: smaller than a full
      button/card/input, so they don't share those tokens. Added after an audit
      found --r-sm's 8px and --r-xs's 6px as the two most common hardcoded
@@ -312,10 +306,11 @@
   --r-sm: 8px;
   --r-xs: 6px;
 
-  /* Inline links follow the theme's blue in both modes — gold is reserved for
-     the dark primary and would read as a warning inline. This is the *text*
-     blue: brand --blue measures 4.23:1 on the dark card. */
-  --link: var(--blue-text);
+  /* Inline links take the text-safe primary in both themes. The pre-v4.1 note
+     here explained that gold was reserved for the dark primary button — v4.1
+     retired gold from every action (§2), so there is nothing left to avoid
+     colliding with; links are simply the primary hue. */
+  --link: var(--primary-text);
 
   /* Aliases for a handful of call sites (SubRental.tsx, CasesWorkspace.tsx,
      CasesReports.tsx) that reference --good/--bad/--info directly instead of
@@ -366,17 +361,47 @@
                     token was the nav-active pair's bg half
   */
   --hover: var(--hover-card);
-  --bg: var(--app);
-  --warn: var(--warning-text);
-  --orange-text: var(--warning-text);
+  /* --bg is a REAL per-theme token in v4.1 (see the palette above), not an
+     alias. --warn is likewise real now (v4.1's orange); its six legacy
+     caution-text call sites moved to --ready-text first, per spec §11. */
+  --orange-text: var(--ready-text);
+
+  /*
+    ⚠ REGRESSION FIX, 25 Aug 2026. The v4.1 repaint renamed the yellow hue to
+    --ready / --ready-text and DELETED --progress / --progress-text with the
+    old palette — but 77 declarations across 28 files still read them. An
+    undefined custom property makes the whole declaration compute to `unset`,
+    so each of those silently inherited its colour instead of failing: every
+    yellow "needs attention" signal in the app (INV_DOT's Packed / Inspection /
+    Cleaning / Maintenance, calendar bar styles, purchase-request priorities,
+    the warehouse map) rendered as inherited text colour.
+
+    This is the exact failure the "alias registry, 22 Aug audit" block above
+    was written to catch, and the repaint reintroduced it. Aliased rather than
+    migrating 28 files, for the same reason that registry gives: the alias
+    resolves per-theme because the token it points at does.
+
+    --progress IS the v4.1 yellow. It is NOT --warn (orange): "in progress /
+    waiting" is the in-house-work meaning, which §2 assigns to yellow.
+  */
+  --progress: var(--ready);
+  --progress-text: var(--ready-text);
   --danger-bg: var(--st-danger-bg);
   --success-bg: var(--st-in-bg);
+  --warning-bg: var(--st-progress-bg); /* App.tsx OfflineBanner read this and it never existed */
   --text-1: var(--text);
-  --text-2: var(--text2);
+  --text-2: var(--muted); /* v4.1 §3.1 names this #8B8E96 = --muted */
   --text-3: var(--muted);
   --text3: var(--muted);
   --fs-meta: var(--t-meta);
   --shadow-sm: var(--shadow-card);
+  /* Ink on a brand FILL. v4.1 gives every hue its own on-colour (--on-warn,
+     --on-ready, …) because yellow and orange cannot carry white; --on-brand is
+     the legacy single name for the same idea and is white in both themes, so
+     it maps to --on-primary. Kept because five call sites still read it, and
+     an undefined custom property computes to `unset` rather than failing
+     loudly — it silently inherits, which is how this went unnoticed. */
+  --on-brand: var(--on-primary);
   --on-accent: var(--on-brand);
   --nav-active-accent-bg: var(--nav-active-bg);
 
@@ -632,6 +657,42 @@ td,
   outline-offset: 2px;
 }
 
+/* ── .focus-host — the ring for an input that lives inside a bordered box ─────
+   Added 25 Aug 2026.
+
+   THE BUG THIS CLOSES
+
+   A pattern repeats across ~14 screens: a bordered container holding a bare
+   input, where the input carries `border: 'none', outline: 'none'` inline so the
+   CONTAINER draws the boundary. The intent is right; the effect is that those
+   controls have no focus indicator at all.
+
+   The rule above cannot save them, twice over. `:where()` has zero specificity
+   by definition, and an inline style outranks any stylesheet rule regardless —
+   so `style={{ outline: 'none' }}` wins permanently. A keyboard operator tabbing
+   into the command palette, a workspace note field, or a queue filter gets no
+   indication of where they are.
+
+   WHY :focus-within ON THE HOST RATHER THAN DELETING THE INLINE outline
+
+   Deleting `outline: 'none'` does restore a ring, but it draws it around the
+   INPUT, inside the container that is already drawing a border — two nested
+   outlines, the inner one clipped by the padding. Ringing the host is what the
+   design intends: the box IS the control as far as the operator is concerned.
+
+   Applied by adding `className="focus-host"` to the container. The input keeps
+   its inline `outline: 'none'`, which is now correct rather than harmful — it
+   stops the double ring.
+
+   `:focus-within` is not `:focus-visible`, so this also lights up on a mouse
+   click into the field. That is deliberate: these are search and note fields on
+   a warehouse tablet, where "which box am I typing into" is worth showing
+   whatever put the caret there. */
+.focus-host:focus-within {
+  outline: 2px solid var(--input-focus);
+  outline-offset: 2px;
+}
+
 /*
   ⛔ Removed 5 Aug — this block scoped a status token, `--st-inspection-*`, that
   no longer exists. v2.0 replaced the eight status tokens with the five §4.2
@@ -747,3 +808,23 @@ td,
 @keyframes drawer-out-down { from { transform: none } to { transform: translateY(100%) } }
 @keyframes scrim-in { from { opacity: 0 } to { opacity: 1 } }
 @keyframes scrim-out { from { opacity: 1 } to { opacity: 0 } }
+
+/* ── PIN pad rejection (PinPad.tsx) ───────────────────────────────────────────
+   A rejected entry has to be perceivable, and the dots are the only thing on
+   the lock screen that can carry it. `transform` only — the dots sit in a flex
+   row and animating position would relayout on every frame.
+
+   The prefers-reduced-motion block above sets `animation: none !important`
+   globally, so this is already opted out for anyone who asked; the danger
+   fill/border PinPad sets from React state is what remains, and that is the
+   half that must not be motion-dependent. The `invalid` flag is cleared by a
+   TIMER, not `animationend` — under reduced motion that event never fires and
+   the pad would stay red forever (the lesson from the filter drawer above). */
+@keyframes pinpad-shake {
+  0%, 100% { transform: translateX(0) }
+  20%      { transform: translateX(-6px) }
+  40%      { transform: translateX(6px) }
+  60%      { transform: translateX(-4px) }
+  80%      { transform: translateX(4px) }
+}
+.pinpad-invalid { animation: pinpad-shake 200ms ease-in-out }

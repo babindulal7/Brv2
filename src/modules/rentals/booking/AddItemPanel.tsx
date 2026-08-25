@@ -566,7 +566,7 @@ export function AddItemPanel({
                   </span>
                 </>
               ) : (
-                <span style={{ color: 'var(--warning-text)', fontWeight: 600 }}>
+                <span style={{ color: 'var(--ready-text)', fontWeight: 600 }}>
                   No valid pickup/return yet — availability is shown for today.
                 </span>
               )}

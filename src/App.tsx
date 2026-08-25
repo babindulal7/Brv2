@@ -727,7 +727,9 @@ export default function App() {
                     padding: '8px 16px',
                     borderRadius: 8,
                     background: 'var(--nav-active-accent)',
-                    color: '#fff',
+                    // The nav accent IS --primary since v4.1 §2 retired gold
+                    // from every action, so its ink is --on-primary.
+                    color: 'var(--on-primary)',
                     textDecoration: 'none',
                     fontWeight: 600,
                     fontSize: 13,
@@ -804,17 +806,18 @@ function OfflineBanner() {
   return (
     <div style={{
       /*
-       * The amber status pair, not a literal. Corrected 16 Aug 2026: this read
-       * `var(--warning-bg, #4d3a00)` / `var(--warning-text, #ffc833)`, and
-       * **`--warning-bg` is not defined anywhere in `theme.css`** — so the
-       * fallback WAS the colour, in both themes. `--warning-text` does exist and
-       * does flip (`#b45309` light / `#fdba74` dark), so light mode rendered dark
-       * amber text on a near-black brown bar. The `#ffc833` fallback was dead.
+       * The yellow status pair, not a literal — and deliberately the SAME pair
+       * every "waiting / needs attention" surface uses, so the offline bar
+       * cannot drift into a colour of its own.
        *
-       * `--st-progress-*` is the amber pair the whole app already uses for this
-       * meaning — every status chip, and `ErrorBanner` uses `--st-danger-*` the
-       * same way — and it is defined in both themes (`#fef3c7`/`#92400e` light,
-       * `#47340c`/`#fbbf24` dark), so the bar now reads correctly in each.
+       * History, because this line has been wrong twice: it originally read the
+       * legacy warning-bg / warning-text alias pair with hard-coded fallbacks,
+       * and warning-bg was never defined in theme.css — so the fallback WAS the
+       * colour, in both themes. Fixed 16 Aug by moving to --st-progress-*. Under
+       * DESIGN_DIRECTION_SPEC_v4.1 (25 Aug) the legacy --warning* aliases are
+       * deleted outright and --st-progress-* now resolves to the v4.1 yellow
+       * (--ready / --on-ready), which is the "waiting / in-house" hue. Offline
+       * is exactly that: work is paused, not broken, so yellow and not red.
        */
       background: 'var(--st-progress-bg)',
       color: 'var(--st-progress-fg)',

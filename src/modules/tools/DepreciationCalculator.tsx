@@ -133,7 +133,7 @@ export default function DepreciationCalculator() {
         <div
           style={{
             display: 'grid',
-            /* Desktop puts inputs beside the result; below 1180 the result
+            /* Desktop puts inputs beside the result; below 1280 the result
                reflows underneath — Rulings §7, "collapse means reflow, not
                hide". Nothing here is wrapped in CollapsibleAside. */
             gridTemplateColumns: viewport === 'desktop' ? 'minmax(320px, 380px) minmax(0, 1fr)' : 'minmax(0, 1fr)',

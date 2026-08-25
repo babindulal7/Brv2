@@ -46,6 +46,21 @@ const ANCHOR_BS: BsDate = { year: 2083, month: 4, day: 1 }
  * Days in Shrawan 2083. BS month lengths vary year to year and come from a
  * table; only the anchor month is known here, so conversion is valid within it
  * and `toBs` returns null outside — an honest gap beats a wrong date.
+ *
+ * ## ⚠ Required before BS may be trusted anywhere else
+ *
+ * **A full BS month-length table for 2080–2090 has to land in this file before
+ * any BS date outside the window below can be rendered.** A Bikram Sambat month
+ * is 29, 30, 31 or 32 days and the sequence is published calendar *data*, not
+ * arithmetic: there is no rule, no cycle and no leap formula to derive it from,
+ * so nothing here may extrapolate past the one month the anchor vouches for.
+ * Inventing those lengths would put a wrong Nepali date in front of a client —
+ * `Calendar.md` §4.2's highest-priority correctness bug, in a new costume.
+ *
+ * Until that table exists the product's primary calendar is **English (AD)**:
+ * `toBs` returns null outside its window, `formatBsOrAd` falls back to the
+ * English date, and screens state `BS_UNSUPPORTED_NOTE` rather than drawing an
+ * empty grid or an em dash where a date belongs.
  */
 const SHRAWAN_2083_DAYS = 32
 
@@ -98,10 +113,28 @@ export function toBs(ad: Date): BsDate | null {
   return { year: ANCHOR_BS.year, month: ANCHOR_BS.month, day }
 }
 
+/** Whether the engine can name this AD day in BS at all. */
+export function hasBs(ad: Date): boolean {
+  return toBs(ad) !== null
+}
+
 /** "16 Shrawan 2083 BS" — Latin digits always (Foundation §03). */
 export function formatBs(bs: BsDate, opts: { suffix?: boolean } = {}): string {
   const name = BS_MONTHS[bs.month - 1] ?? ''
   return `${bs.day} ${name} ${bs.year}${opts.suffix === false ? '' : ' BS'}`
+}
+
+/**
+ * The BS date where the engine can vouch for one, the **English date**
+ * otherwise. Never null, never an em dash, never a guessed BS day.
+ *
+ * This is what a screen calls when it has one line to spend on a date: a
+ * missing BS label is a gap in this file's table, not a gap in the date, and
+ * showing "—" where "25 Aug 2026" is known would hide a date the app holds.
+ */
+export function formatBsOrAd(ad: Date, opts: { suffix?: boolean } = {}): string {
+  const bs = toBs(ad)
+  return bs ? formatBs(bs, opts) : formatAd(ad)
 }
 
 /**
@@ -142,6 +175,67 @@ export function eachDay(startAd: Date, days: number): Date[] {
   const start = Date.UTC(startAd.getUTCFullYear(), startAd.getUTCMonth(), startAd.getUTCDate())
   return Array.from({ length: days }, (_, i) => new Date(start + i * DAY))
 }
+
+/* ── the English (AD) month — the calendar this product can always compute ──
+ *
+ * Gregorian month lengths ARE derivable (`Date.UTC(y, m + 1, 0)` is the last
+ * day of month `m`, leap years included), which is the whole difference between
+ * this block and the BS table `SHRAWAN_2083_DAYS` is waiting for. Every screen
+ * that has to draw a month draws it from here, so a month grid is never empty
+ * and a month arrow never has to be disabled.
+ */
+
+/** Midnight UTC of the 1st of the AD month `ad` falls in. */
+export function adMonthStart(ad: Date): Date {
+  return new Date(Date.UTC(ad.getUTCFullYear(), ad.getUTCMonth(), 1))
+}
+
+/** Days in the AD month `ad` falls in — day 0 of the next month, never a table. */
+export function adMonthLength(ad: Date): number {
+  return new Date(Date.UTC(ad.getUTCFullYear(), ad.getUTCMonth() + 1, 0)).getUTCDate()
+}
+
+/** Every day of that AD month, **generated from a range** (§4.1), never listed. */
+export function adMonthDays(ad: Date): Date[] {
+  return eachDay(adMonthStart(ad), adMonthLength(ad))
+}
+
+/**
+ * `n` calendar months from `ad`, clamped to the target month's last day so
+ * 31 Jan − 1 month is 31 Dec and 31 Mar + 1 month is 30 Apr rather than a date
+ * rolling silently into the month after it.
+ */
+export function addAdMonths(ad: Date, months: number): Date {
+  const year = ad.getUTCFullYear()
+  const month = ad.getUTCMonth() + months
+  const last = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
+  return new Date(Date.UTC(year, month, Math.min(ad.getUTCDate(), last)))
+}
+
+/** "August 2026" — the month heading, rendered in Kathmandu like every other date. */
+export function formatAdMonth(ad: Date): string {
+  return ad.toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'Asia/Kathmandu' })
+}
+
+/** "Tuesday" — the weekday of an AD day. */
+export function formatAdWeekday(ad: Date): string {
+  return ad.toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'Asia/Kathmandu' })
+}
+
+/** "16 Jul 2026 – 16 Aug 2026" — the only window `toBs` answers inside. */
+export const BS_SUPPORTED_RANGE = `${formatAd(new Date(ANCHOR_AD))} – ${formatAd(
+  new Date(ANCHOR_AD + (SHRAWAN_2083_DAYS - 1) * DAY),
+)}`
+
+/**
+ * The sentence a screen prints where a BS label cannot be computed. It names
+ * the gap and what closes it; it never stands in for a date, because the
+ * English date is always known and is shown instead.
+ */
+export const BS_UNSUPPORTED_NOTE =
+  `Nepali (BS) dates are available for ${BS_SUPPORTED_RANGE} only — the Date Engine needs the 2080–2090 BS ` +
+  'month-length table before it can name any other month, and month lengths are calendar data that is never ' +
+  'inferred here. English dates are shown throughout.'
 
 /**
  * §4.3 — **the operating day, from the real clock.** The Today marker, the

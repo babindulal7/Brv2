@@ -1,13 +1,13 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
+import { Badge } from '../../components/ui/Badge'
 import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { Donut, Legend } from '../../components/ui/Charts'
 import type { Slice } from '../../components/ui/Charts'
-import { STATUS } from '../../lib/status'
 import { getBusinessToday, toBs, formatBs, formatAd } from '../../lib/bs'
 import { rupees, formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
@@ -826,7 +826,7 @@ export default function Finance() {
    * §9.1's right-rail stack — `P&L SUMMARY` then `BY METHOD`.
    *
    * Held as a value rather than written inline because it is rendered in two
-   * places: inside `Rail` at desktop, and inline beneath the list below 1180.
+   * places: inside `Rail` at desktop, and inline beneath the list below 1280.
    * One definition, so the two cannot drift; see where it is used for why the
    * rail is not simply left to `CollapsibleAside`.
    */
@@ -1462,12 +1462,12 @@ export default function Finance() {
             {/*
               §9.1's right rail — `P&L SUMMARY` then `BY METHOD`.
 
-              **"Right rails collapse below 1180" is REFLOW, not hide** —
+              **"Right rails collapse below 1280" is REFLOW, not hide** —
               `WIREFRAME_RULINGS_2026-08-12.md` §7, and §9.1's own tablet note
               is "rail drops below". `Rail` wraps `CollapsibleAside`, which
               reads "collapse" as *hide behind a 28px handle* at both tablet and
               phone; under that reading the P&L summary and the method
-              breakdown vanish on the 768–1179px tablet this product actually
+              breakdown vanish on the 768–1279px tablet this product actually
               targets, behind a control nothing labels.
 
               So the rail is rendered only at desktop, and the same cards are
@@ -1559,25 +1559,27 @@ export default function Finance() {
  */
 function StatusBadge({ row }: { row: InvoiceListRow }) {
   const label = row.isVoid ? 'Void' : row.status
-  const token = INVOICE_TOKEN[label]
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        height: 20,
-        padding: '0 8px',
-        borderRadius: 'var(--r-badge)',
-        background: STATUS[token].bg,
-        color: STATUS[token].fg,
-        fontSize: 'var(--t-meta)',
-        fontWeight: 600,
-        flexShrink: 0,
-      }}
-    >
-      {label}
-    </span>
-  )
+  /*
+   * Delegates to <Badge> — DESIGN_DIRECTION_SPEC_v4.1 §8 step 2: "one
+   * component rendering the §4 map from lib/status; every screen inherits. No
+   * screen colours a status itself."
+   *
+   * This used to assemble the chip here: `--r-badge` (a 999 pill, which §3.3
+   * reserves for numeric COUNT badges), weight 600, sentence case, reading
+   * `STATUS[token]` straight. That is three deviations from §4's block
+   * anatomy, and it was one of fifteen local components doing the same thing —
+   * which is how the product ended up with no status block that actually had
+   * the ruled anatomy.
+   *
+   * The wrapper is KEPT rather than inlined at the call sites: it owns the
+   * isVoid-beats-status rule documented above, which is a Finance decision and
+   * not something <Badge> should know. What it no longer owns is the paint.
+   *
+   * `size="sm"` because these sit in dense invoice rows — it lands at roughly
+   * the 20px the hand-rolled version had, without giving up the weight,
+   * casing or tracking that ARE the identity of a status block.
+   */
+  return <Badge tone={INVOICE_TOKEN[label]} label={label} size="sm" />
 }
 
 /**

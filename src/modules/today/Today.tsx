@@ -231,7 +231,9 @@ function MoreFilters({
                 background: 'var(--st-primary-bg)',
                 color: 'var(--st-primary-fg)',
                 padding: '1px 6px',
-                borderRadius: 999,
+                // A real numeric count badge — the one case §3.3 allows 999
+                // for. Spelled as the token so it cannot drift from the rule.
+                borderRadius: 'var(--r-badge)',
                 fontWeight: 700,
               }}
             >
@@ -454,11 +456,11 @@ const NOT_TRACKED = 'Not tracked yet'
  * Spec 02 §2.1 draws KPI strip → OUTGOING and INCOMING in time order on the
  * left → ALERTS and a CALENDAR mini on the right rail.
  *
- *  - **Desktop ≥1180** — two tracks: the two lists stacked on the left, the two
+ *  - **Desktop ≥1280** — two tracks: the two lists stacked on the left, the two
  *    rail cards stacked on the right.
- *  - **Tablet 768–1179** — one track. The rail *reflows* beneath the lists; it
+ *  - **Tablet 768–1279** — one track. The rail *reflows* beneath the lists; it
  *    is NOT hidden and is deliberately not wrapped in `CollapsibleAside`
- *    (rulings §7 — "collapse below 1180 means reflow, not hide", and other
+ *    (rulings §7 — "collapse below 1280 means reflow, not hide", and other
  *    pages depend on that component's defaults).
  *  - **Phone <768** — the `[Out][In][Alerts]` segmented control shows one of
  *    the three at a time, as card rows.

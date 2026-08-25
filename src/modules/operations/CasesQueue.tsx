@@ -4,6 +4,7 @@ import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
+import { Badge } from '../../components/ui/Badge'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import type { Role } from '../../lib/rbac'
@@ -77,7 +78,17 @@ import { findClientIdByBooking } from '../../data/clients'
  * Law 6 is enforced by RLS (PLAN.md §0); this gate is the UI half of it.
  */
 
-const BLUE_PRIMARY = { background: 'var(--cat-1)', color: '#fff', border: '1px solid transparent' } as const
+/*
+ * The primary action's paint. Was `background: 'var(--cat-1)', color: '#fff'`
+ * — `--cat-1` is a CHART CATEGORY hue (#3b82d6), not the app's primary, and
+ * the ink was a raw literal. Five workspaces carried byte-identical copies, so
+ * five primary buttons were an off-palette blue that no token governed and
+ * that never followed a theme change.
+ *
+ * v4.1 §5: primary is `--primary`, one per view. The --btn-primary-* pair is
+ * the token that exists for exactly this and carries its own measured ink.
+ */
+const BLUE_PRIMARY = { background: 'var(--btn-primary-bg)', color: 'var(--btn-primary-fg)', border: '1px solid transparent' } as const
 /** `CASES` is asserted non-empty at module load in `data/cases.ts`; this names that guarantee once instead of an unchecked index everywhere below. */
 const FIRST_CASE = CASES[0] as Case
 /** §11 — Resolution is Manager/Owner only. */
@@ -85,35 +96,44 @@ function canResolve(role: Role): boolean {
   return role === 'Owner' || role === 'Admin'
 }
 
-function Pill({ token, icon, label, solid, strike }: { token: StatusKey; icon: IconName; label: string; solid?: boolean | undefined; strike?: boolean | undefined }) {
-  const t = STATUS[token]
-  // Same fill-weight trick §4.2 uses for On Rent (solid) vs Returned (soft) — reused here for Critical/High and Under Review/In Progress.
-  const skin = solid ? { background: t.fg, color: '#fff' } : { background: t.bg, color: t.fg }
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 5,
-        height: 21,
-        padding: '0 8px',
-        borderRadius: 'var(--r-badge)',
-        fontSize: 'var(--t-meta)',
-        fontWeight: 700,
-        whiteSpace: 'nowrap',
-        textDecoration: strike ? 'line-through' : undefined,
-        ...skin,
-      }}
-    >
-      <Icon name={icon} size={11} fill={solid === true} />
-      {label}
-    </span>
-  )
+/**
+ * Delegates to <Badge> — DESIGN_DIRECTION_SPEC_v4.1 §8 step 2: "one component
+ * rendering the §4 map from lib/status; every screen inherits. No screen
+ * colours a status itself."
+ *
+ * This used to assemble the chip here, and it got two things wrong that were
+ * invisible while every screen had its own chip. It painted `--r-badge` — the
+ * 999 pill §3.3 reserves for numeric COUNT badges — where §4 wants `--r-chip`
+ * (6); and it ran weight 700 sentence-case where the block anatomy is weight
+ * 800 uppercase with 0.04em tracking. Cases was one of fifteen local chips
+ * making the same two mistakes in fifteen slightly different ways.
+ *
+ * The wrapper is KEPT rather than inlined into StatusPill/PriorityPill/
+ * FlagPill below: it owns the mapping from a Cases meta record (token + Icon
+ * REGISTRY name + `solid`) onto a status block, which is Cases vocabulary and
+ * not something <Badge> should know. What it no longer owns is the paint.
+ *
+ * `solid` survives intact — it was never a background switch after the earlier
+ * fix in this session, only the icon's stroke weight, which is how Critical
+ * reads apart from High and In Progress from Under Review without inventing an
+ * eighth hue. It rides in on the icon node <Badge> renders verbatim.
+ *
+ * `strike` is GONE. §4's block anatomy has no struck variant, and it could not
+ * survive the move anyway: `text-decoration` does not propagate into an
+ * atomic inline-level box, which is what <Badge>'s inline-flex span is. Losing
+ * it costs nothing a reader needs — §4.3 asks statuses sharing a hue to be
+ * "separated by icon and label", and Cancelled already carries its own `close`
+ * glyph and its own word against Open's `flag` and Closed's `folder`.
+ * `CaseStatusMeta.strike` stays declared in `data/cases.ts` (not this pass's
+ * file) and is simply no longer read.
+ */
+function Pill({ token, icon, label, solid }: { token: StatusKey; icon: IconName; label: string; solid?: boolean | undefined }) {
+  return <Badge tone={token} label={label} icon={<Icon name={icon} size={11} fill={solid === true} />} size="sm" />
 }
 
 function StatusPill({ status }: { status: CaseStatus }) {
   const m = CASE_STATUS_META[status]
-  return <Pill token={m.token} icon={m.icon} label={status} solid={m.solid} strike={m.strike} />
+  return <Pill token={m.token} icon={m.icon} label={status} solid={m.solid} />
 }
 function PriorityPill({ priority }: { priority: Case['priority'] }) {
   const m = CASE_PRIORITY_META[priority]
@@ -141,9 +161,9 @@ export default function CasesQueue() {
      1180) is unreadable below 768; the right rail's fixed 340px column breaks
      too. Law 13: branch on capability, not platform. */
   const tabular = useTabularLayout()
-  /* Rulings §7 names spec 03: "collapse" below 1180 means REFLOW, not hide.
+  /* Rulings §7 names spec 03: "collapse" below 1280 means REFLOW, not hide.
      `tabular` is phone-vs-not, so on its own it left the 340px Case detail
-     rail beside the list through the whole 768–1179 band, where
+     rail beside the list through the whole 768–1279 band, where
      `CollapsibleAside` defaults it collapsed behind a handle. The band is
      what decides, exactly as `OperationsQueues.tsx:694` on the same page. */
   const viewport = useViewport()
@@ -438,7 +458,7 @@ export default function CasesQueue() {
           }}
           placeholder="Search case ID, equipment, booking, client…"
           aria-label="Search cases"
-          style={{ flex: 1, minWidth: 220, height: 34, padding: '0 10px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
+          style={{ flex: 1, minWidth: 220, height: 34, padding: '0 10px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
         />
         {statusFilter !== 'All' || flagFilter ? (
           <Button
@@ -739,7 +759,7 @@ export default function CasesQueue() {
               </select>
             </span>
             <span style={{ display: 'flex', gap: 3 }}>
-              <button type="button" disabled={pageSafe <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} style={pagerBtn(false)}>
+              <button type="button" aria-label="Previous page" disabled={pageSafe <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} style={pagerBtn(false)}>
                 ‹
               </button>
               {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
@@ -747,7 +767,7 @@ export default function CasesQueue() {
                   {p}
                 </button>
               ))}
-              <button type="button" disabled={pageSafe >= pageCount} onClick={() => setPage((p) => Math.min(pageCount, p + 1))} style={pagerBtn(false)}>
+              <button type="button" aria-label="Next page" disabled={pageSafe >= pageCount} onClick={() => setPage((p) => Math.min(pageCount, p + 1))} style={pagerBtn(false)}>
                 ›
               </button>
             </span>
@@ -768,7 +788,7 @@ export default function CasesQueue() {
             />
           )
           /* Same shape `OperationsQueues.tsx:694` uses one file away — the rail
-             at desktop, the same element inline beneath the list below 1180.
+             at desktop, the same element inline beneath the list below 1280.
              `CollapsibleAside`'s defaults are NOT changed: other pages rely on them. */
           return viewport === 'desktop' ? (
             <Rail width={340} label="Case detail">

@@ -173,7 +173,7 @@ export default function ToolsLanding() {
             style={{
               display: 'grid',
               /* Law 13 — the band comes from `useViewport()`, the only place the
-                 768/1180 thresholds are defined. Phone is 1-up full-width,
+                 768/1280 thresholds are defined. Phone is 1-up full-width,
                  tablet 2-up, desktop is the group's own count. */
               gridTemplateColumns: `repeat(${
                 viewport === 'phone' ? 1 : viewport === 'tablet' ? Math.min(2, group.cards.length) : Math.min(group.desktopColumns, group.cards.length)
@@ -235,7 +235,9 @@ function ToolTile({ card }: { card: ToolCard }) {
                 alignItems: 'center',
                 gap: 4,
                 padding: '1px 7px',
-                borderRadius: 'var(--r-badge)',
+                // §3.3 — status blocks are --r-chip; --r-badge's 999 is
+                // reserved for numeric count badges.
+                borderRadius: 'var(--r-chip)',
                 background: 'var(--st-progress-bg)',
                 color: 'var(--st-progress-fg)',
                 fontSize: 'var(--t-th)',

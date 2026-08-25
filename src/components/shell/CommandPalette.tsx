@@ -175,7 +175,11 @@ export const CommandPalette: React.FC = () => {
         }}
       >
         {/* Search header */}
+        {/* focus-host — the input inside carries `outline: 'none'` so this box
+            draws the boundary; without this class the palette's only control has
+            no focus indicator at all. See theme.css. */}
         <div
+          className="focus-host"
           style={{
             display: 'flex',
             alignItems: 'center',

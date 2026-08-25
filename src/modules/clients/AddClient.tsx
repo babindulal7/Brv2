@@ -586,11 +586,11 @@ export default function AddClient() {
             </div>
           )}
           <div style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', alignItems: 'flex-start' }}>
-            <Icon name={pan.trim() ? 'check' : 'alert_triangle'} size={14} style={{ color: pan.trim() ? 'var(--success-text)' : 'var(--warning-text)', flexShrink: 0, marginTop: 2 }} />
+            <Icon name={pan.trim() ? 'check' : 'alert_triangle'} size={14} style={{ color: pan.trim() ? 'var(--success-text)' : 'var(--ready-text)', flexShrink: 0, marginTop: 2 }} />
             <span>VAT / PAN {!pan.trim() && 'missing — required before a booking can be confirmed'}</span>
           </div>
           <div style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', alignItems: 'flex-start' }}>
-            <Icon name={address.trim() ? 'check' : 'alert_triangle'} size={14} style={{ color: address.trim() ? 'var(--success-text)' : 'var(--warning-text)', flexShrink: 0, marginTop: 2 }} />
+            <Icon name={address.trim() ? 'check' : 'alert_triangle'} size={14} style={{ color: address.trim() ? 'var(--success-text)' : 'var(--ready-text)', flexShrink: 0, marginTop: 2 }} />
             <span>Address {!address.trim() && 'missing — required on the invoice'}</span>
           </div>
         </div>

@@ -74,8 +74,8 @@ import { ReportTemplate } from './ReportTemplate'
  *
  * ## Three layouts
  *
- * - **Desktop ≥1180** — three group columns.
- * - **Tablet 768–1179** — *"2 group columns"*.
+ * - **Desktop ≥1280** — three group columns.
+ * - **Tablet 768–1279** — *"2 group columns"*.
  * - **Phone <768** — *"accordion, one group open at a time"*, which is a real
  *   behaviour and not a narrow grid: opening a group closes the last.
  */

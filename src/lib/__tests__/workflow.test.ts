@@ -46,14 +46,27 @@ describe('BOOKING_STATUS — Foundation §1.2, six statuses and no more', () => 
     expect(STATUS_ORDER).toEqual(SIX)
   })
 
-  it('carries a colour token from the five-tone law for each', () => {
-    expect(statusToken('Quote')).toBe('neutral')
-    expect(statusToken('Booked')).toBe('primary')
-    expect(statusToken('Packed')).toBe('progress')
-    // §4.2 — green split by fill weight: solid = out, soft = in.
-    expect(statusToken('On Rent')).toBe('out')
-    expect(statusToken('Returned')).toBe('in')
-    expect(statusToken('Closed')).toBe('neutral')
+  it('carries the v4.1 seven-hue colour token for each', () => {
+    /*
+     * DESIGN_DIRECTION_SPEC_v4.1 §4. This test asserted the five-tone law
+     * until 25 Aug 2026; v4.1 superseded it and two expectations moved:
+     *
+     *   On Rent  green -> ORANGE. Green used to mean "out of the warehouse",
+     *            split from Returned by fill weight within one hue. v4.1 gives
+     *            "out with the client" its own hue, so the lifecycle reads
+     *            gray -> blue -> yellow -> orange -> green -> dim.
+     *   Closed   neutral -> dim. Gray now means "not started yet" (Quote);
+     *            "finished" is the dim hue, so the two no longer share a token.
+     *
+     * The KEY names are deliberately unchanged (`out`, `in`, `progress`) per
+     * §7.5 — v4.1 recolours the statuses, it does not rename them.
+     */
+    expect(statusToken('Quote')).toBe('neutral')   // gray  — not started
+    expect(statusToken('Booked')).toBe('primary')  // blue  — committed
+    expect(statusToken('Packed')).toBe('progress') // yellow — in-house work
+    expect(statusToken('On Rent')).toBe('out')     // ORANGE — with the client
+    expect(statusToken('Returned')).toBe('in')     // green — safely home
+    expect(statusToken('Closed')).toBe('dim')      // dim   — finished
   })
 })
 

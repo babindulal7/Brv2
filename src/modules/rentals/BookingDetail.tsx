@@ -5,12 +5,13 @@ import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ErrorBanner, LoadingSkeleton } from '../../components/ui/StateViews'
+import { Badge } from '../../components/ui/Badge'
 import { useViewport } from '../../lib/device'
 import type { Viewport } from '../../lib/device'
 import { BAR_BOX } from '../../components/shell/BottomBar'
 import { STATUS, BRAND, BRAND_ON, BRAND_TEXT } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
-import { statusToken, BOOKING_STATUS, STATUS_ORDER } from '../../lib/workflow'
+import { BOOKING_STATUS, STATUS_ORDER } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
 import OperationsShell from '../operations/OperationsShell'
 import { Unavailable } from '../../components/ui/Unavailable'
@@ -92,29 +93,23 @@ import type { PaymentHistoryRow } from '../../data/booking'
  */
 const SUB_RENTED_LABEL = 'Sub-rented — external gear borrowed in for this booking'
 
+/**
+ * The gold mark, from `EXT_MARK` via `<Badge tone="ext">` — the same renderer
+ * `RentalsList.tsx` and `SubRental.tsx` now use. Three screens hand-rolled this
+ * and three screens drifted: this copy was radius 4 at weight 700 against §4's
+ * radius 6 at weight 600. The weight matters more than it looks — §4 keeps the
+ * gold mark at 600 and un-uppercased precisely so it can never be mistaken for
+ * a yellow status, and a 700 chip erodes exactly that distance.
+ *
+ * The outer span stays: <Badge> takes no `aria-label` or `title`, and
+ * `SUB_RENTED_LABEL` is the sentence a screen reader and a tooltip both get —
+ * the fourth carrier Law 11 counts. Wrapping keeps the accessible name where it
+ * was rather than teaching <Badge> a prop for one caller.
+ */
 function SubRentedMark({ label = 'Sub-rented' }: { label?: string }) {
   return (
-    <span
-      aria-label={SUB_RENTED_LABEL}
-      title={SUB_RENTED_LABEL}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 4,
-        height: 17,
-        padding: '0 6px',
-        borderRadius: 4,
-        background: STATUS.ext.bg,
-        color: STATUS.ext.fg,
-        border: `1px solid ${STATUS.ext.border ?? 'var(--border)'}`,
-        fontSize: 'var(--t-meta)',
-        fontWeight: 700,
-        flexShrink: 0,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      <Icon name="external_link" size={10} />
-      {label}
+    <span aria-label={SUB_RENTED_LABEL} title={SUB_RENTED_LABEL} style={{ display: 'inline-flex', flexShrink: 0 }}>
+      <Badge tone="ext" label={label} icon={<Icon name="external_link" size={10} />} size="sm" />
     </span>
   )
 }
@@ -146,14 +141,35 @@ const srOnly = {
   border: 0,
 }
 
-/** Line-type marker beside an item name (Bundle / Service / Accessory …). */
-function ItemBadge({ text, kind }: { text: string; kind: 'bundle' | 'required' | 'count' }) {
-  const skin =
-    kind === 'bundle'
-      ? { background: 'var(--st-progress-bg)', color: 'var(--st-progress-fg)' }
-      : kind === 'required'
-        ? { background: 'var(--st-primary-bg)', color: 'var(--st-primary-fg)' }
-        : { background: 'var(--card2)', color: 'var(--text2)' }
+/**
+ * Line-type marker beside an item name (Bundle / Service / Accessory …).
+ *
+ * **Deliberately NOT a <Badge>, and deliberately not a hue.** Everything else
+ * on this screen that was painting itself now delegates to the one status
+ * renderer; this one does not, because what it labels is not a status.
+ *
+ * §2's table is law for STATE: "a hue never means two things; a status never
+ * uses a hue outside its meaning." `line_type` is not state — a line is a
+ * Bundle or an Accessory for its whole life, and nothing it does changes that.
+ * The old skin spent two of the seven hues on it anyway: `--st-progress-*`
+ * (yellow, which §2 reserves for "being worked in-house / waiting") on Bundle,
+ * and `--st-primary-*` (blue, "committed · scheduled") on required. A reader
+ * scanning the line table by colour was being told a bundle row was in the
+ * workshop and a required row was booked, neither of which the field means.
+ * Reading those `--st-*` variables directly, rather than through `lib/status`,
+ * is what let it happen quietly.
+ *
+ * So the marker moves off the status vocabulary entirely: one neutral surface
+ * with a border for every kind, distinguished by its WORD, which is the only
+ * thing that ever carried the fact. That leaves all seven hues meaning exactly
+ * one thing each on this screen — which is the whole point of §2.
+ *
+ * The `kind` prop is kept rather than deleted: it still records which axis a
+ * marker sits on, and it is the hook a future non-hue differentiator (an icon,
+ * a dotted vs solid border) would hang from. It simply no longer picks a
+ * colour. Note `'required'` currently has no call site in this file.
+ */
+function ItemBadge({ text }: { text: string; kind?: 'bundle' | 'required' | 'count' }) {
   return (
     <span
       style={{
@@ -161,11 +177,13 @@ function ItemBadge({ text, kind }: { text: string; kind: 'bundle' | 'required' |
         alignItems: 'center',
         height: 16,
         padding: '0 5px',
-        borderRadius: 4,
+        borderRadius: 'var(--r-chip)',
         fontSize: 'var(--t-meta)',
-        fontWeight: 700,
+        fontWeight: 600,
         flexShrink: 0,
-        ...skin,
+        background: 'var(--card2)',
+        color: 'var(--text2)',
+        border: '1px solid var(--border)',
       }}
     >
       {text}
@@ -1022,21 +1040,13 @@ export default function BookingDetail() {
         }`}
         actions={
           <>
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                height: 30,
-                padding: '0 10px',
-                borderRadius: 'var(--r-badge)',
-                background: STATUS[statusToken(stage)].bg,
-                color: STATUS[statusToken(stage)].fg,
-                fontSize: 'var(--t-meta)',
-                fontWeight: 700,
-              }}
-            >
-              {stage}
-            </span>
+            {/* §8 step 2 — the stage block is <Badge>'s. This assembled it
+                here from `STATUS[statusToken(stage)]`, on `--r-badge` (999,
+                which §3.3 reserves for numeric count badges) and with no glyph
+                at all, so the header's own status was colour + word only.
+                Passing `status` gets the §4 hue, the word and the icon in one
+                move and cannot be half-done. */}
+            <Badge status={stage} />
             {/* §11.1 — computed from the QUERIED lines on every render; there
                 is no stored `bookings.is_sub_rental` and there must not be. */}
             {subRental && <SubRentedMark label="Sub-rental" />}
@@ -1129,21 +1139,11 @@ export default function BookingDetail() {
           </span>
           <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginLeft: 5 }}>Days</span>
           <span style={{ display: 'block', marginTop: 6 }}>
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                height: 21,
-                padding: '0 9px',
-                borderRadius: 'var(--r-badge)',
-                background: STATUS[statusToken(stage)].bg,
-                color: STATUS[statusToken(stage)].fg,
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-              }}
-            >
-              {stage}
-            </span>
+            {/* The second copy of the header's block, in the Rental Days fact.
+                Same delegation, `size="sm"` because it sits in the denser fact
+                strip — the weight, casing and tracking that ARE a status block
+                do not scale away with it. */}
+            <Badge status={stage} size="sm" />
           </span>
         </Fact>
 
@@ -1707,7 +1707,7 @@ export default function BookingDetail() {
           )}
         </div>
 
-        {/* Rulings §7 — rails reflow below 1180, never hide. */}
+        {/* Rulings §7 — rails reflow below 1280, never hide. */}
         {viewport === 'desktop' ? (
           <Rail>{railBody}</Rail>
         ) : (

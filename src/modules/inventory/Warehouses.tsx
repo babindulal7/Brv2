@@ -1754,7 +1754,7 @@ export default function Warehouses() {
                         disabled-with-a-reason rather than an input that silently
                         does nothing when typed into and submitted (Law 6). */}
                     <Unavailable reason="AI Warehouse Assistant is not built — there is no query engine behind this prompt yet.">
-                      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-md)', display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
+                      <div className="focus-host" style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-md)', display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
                         <span style={{ display: 'grid', placeItems: 'center', width: 32, height: 32, borderRadius: 'var(--r-sm)', background: 'var(--btn-primary-bg)', color: 'var(--btn-primary-fg)' }}>
                           <Icon name="message" size={16} />
                         </span>

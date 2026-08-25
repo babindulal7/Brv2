@@ -32,7 +32,7 @@ interface SidebarProps {
  *
  * The wireframe shell block, identical in all eleven specs:
  *
- * > DESKTOP ≥1180 `│nav│219│` · TABLET 768–1179 `│▮│72│`, "labels on
+ * > DESKTOP ≥1280 `│nav│219│` · TABLET 768–1279 `│▮│72│`, "labels on
  * > hover/long-press" · PHONE <768 — no sidebar, a bottom bar instead.
  *
  * Law 13 — width decides, never platform. `useViewport()` is the only source of

@@ -125,24 +125,37 @@ export function ClientQuickView({
           <span style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--text)', minWidth: 0 }}>
             {client.name}
           </span>
-          {client.isVip && (
-            <span
-              style={{
-                height: 20,
-                padding: '0 7px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                borderRadius: 'var(--r-badge)',
-                border: '1px solid var(--ext-line)',
-                color: 'var(--gold)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 700,
-                lineHeight: 1,
-              }}
-            >
-              VIP
-            </span>
-          )}
+          {/*
+            * The drawer's copy of `ClientCombobox`'s VIP chip, and it carried
+            * the same bug: `--ext-line` + `--gold`, which v4.1 §2 reserves for
+            * sub-rented / external gear and forbids as a status outright. See
+            * the long note at `ClientCombobox.tsx` for the full reasoning; the
+            * short version is that a VIP client is not external gear, and blue
+            * ("committed · scheduled", §2) is the one hue of the seven that
+            * describes a standing client relationship.
+            *
+            * Both copies now render the same <Badge>, so the drawer and the
+            * option row cannot drift apart the way they already had — this one
+            * was 20px at radius 999, the other 18px at radius 999, neither
+            * matching §4's block.
+            */}
+          {client.isVip && <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '2px 7px',
+                      borderRadius: 'var(--r-chip)',
+                      background: 'var(--surface-2)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text2)',
+                      fontSize: 'var(--t-th)',
+                      fontWeight: 700,
+                      letterSpacing: '0.02em',
+                    }}
+                  >
+                    VIP
+                  </span>}
           <ClientHealthChip verdict={verdict} size="md" style={{ marginLeft: 'auto' }} />
         </div>
         {client.company && (

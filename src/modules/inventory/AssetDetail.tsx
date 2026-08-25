@@ -17,7 +17,16 @@ import type { ListQueryResult } from '../../lib/queries/useList'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import { getAssetDetail, INVENTORY_STATES, UNIT_CONDITIONS } from '../../lib/queries/inventory'
 import type { AssetDetailRecord, InventoryUnitRow } from '../../lib/queries/inventory'
-import { stockLabel, unitLocationOf } from '../../data/inventory'
+import { Badge } from '../../components/ui/Badge'
+import {
+  stockLabel,
+  unitLocationOf,
+  INV_STYLE,
+  INV_TONE,
+  INV_LABEL,
+  CONDITION_TONE,
+} from '../../data/inventory'
+import type { InvStatus, Condition } from '../../data/inventory'
 
 /**
  * # Asset Detail — `/inventory/:assetId`
@@ -222,31 +231,48 @@ function NotTracked({ children }: { children: string }) {
   )
 }
 
-function statusChip(text: string) {
-  return (
-    <span style={{ padding: '2px 8px', borderRadius: 4, background: 'var(--card2)', border: '1px solid var(--border)', fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>
-      {text}
-    </span>
-  )
+/**
+ * A unit's status, as a §4 block — DESIGN_DIRECTION_SPEC_v4.1 §8 step 2: "one
+ * component rendering the §4 map from lib/status; every screen inherits. No
+ * screen colours a status itself."
+ *
+ * It used to paint **every one of the ten statuses the same gray** — `--card2`
+ * fill, `--border` outline, `--text2` ink — so this page's unit table was the
+ * one place in Inventory where you could not tell a Missing unit from an
+ * Available one without reading. That is not a shade off the spec; it is the
+ * absence of the signal §4 exists to carry, and it is why the parameter is now
+ * the enum rather than `string`: a chip that takes any string cannot know
+ * which hue it owes.
+ *
+ * The call sites do not change — they already pass `u.state`, which is
+ * `inventory_state`, which is `InvStatus` member for member (pinned by
+ * `__tests__/inventoryList.test.ts` against `INVENTORY_STATES`).
+ *
+ * `INV_LABEL` supplies the word for the same reason `Inventory.tsx` uses it:
+ * the chip says `Available` where the enum says `In Stock`.
+ */
+function statusChip(state: InvStatus) {
+  return <Badge tone={INV_TONE[state]} label={INV_LABEL[state]} icon={<Icon name={INV_STYLE[state].icon} size={11} />} size="sm" />
 }
 
-function conditionChip(condition: string) {
-  const good = condition === 'Excellent'
-  return (
-    <span
-      style={{
-        padding: '2px 8px',
-        borderRadius: 4,
-        background: good ? 'var(--st-in-bg)' : 'var(--card2)',
-        color: good ? 'var(--success-text)' : 'var(--text2)',
-        border: '1px solid var(--border)',
-        fontSize: 'var(--t-th)',
-        fontWeight: 600,
-      }}
-    >
-      {condition}
-    </span>
-  )
+/**
+ * A unit's condition, as a §4 block. Same delegation as `statusChip`.
+ *
+ * This one had a different failure: `const good = condition === 'Excellent'`,
+ * a hardcoded one-of-five test that painted Excellent green and folded the
+ * other four — including **Damaged and Lost** — into the same gray as each
+ * other. `CONDITION_TONE` is the table that already answers this question for
+ * the rest of Inventory, and it separates all five.
+ *
+ * It also put `--success-text` on `--st-in-bg`: green ink on the solid green
+ * fill. That pairing was survivable while `--st-in-bg` was a soft wash; v4.1
+ * §3.2 makes it the solid `--success`, and the on-colour that goes with it is
+ * `--on-success` (white). Reading a `-text` token onto a `-bg` token is the
+ * mistake the on-colour being "part of the token, not a screen choice" (§3.2)
+ * is meant to prevent, and delegating removes the opportunity entirely.
+ */
+function conditionChip(condition: Condition) {
+  return <Badge tone={CONDITION_TONE[condition]} label={condition} size="sm" />
 }
 
 /** One fact in the expanded unit record. `value` is already formatted or an honest '—'. */

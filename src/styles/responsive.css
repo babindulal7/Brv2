@@ -1,0 +1,160 @@
+/* ============================================================================
+   RESPONSIVE LAYER — DESIGN_DIRECTION_SPEC_v4.1 §7.7
+   "No screen carries its own responsive code; BP 768/1280."
+
+   This file is the ONLY place a layout @media query may live. A screen that
+   needs to change shape at a breakpoint uses a class from here; it does not
+   write its own query, and it does not invent a third threshold.
+
+   ── The numbers are duplicated on purpose, and guarded ──────────────────────
+   CSS cannot import TypeScript. `lib/breakpoints.ts` holds 768/1280 for the
+   JS side and this file mirrors them for the CSS side. That duplication is
+   unavoidable, so it is TESTED rather than trusted:
+   `lib/__tests__/breakpoints.test.ts` parses this file and fails if the two
+   ever disagree. Change a number here and the test tells you what else moves.
+
+   ── Why not utility classes for everything ─────────────────────────────────
+   These are LAYOUT primitives, not a utility framework. The app styles with
+   inline `style={{}}` + CSS variables (see theme.css); Tailwind classes in
+   this codebase historically compiled to nothing, which is why Badge/Input
+   were rewritten. So this file stays small and structural: the handful of
+   shape changes the spec actually names, and nothing that a token already does.
+   ========================================================================== */
+
+/* ── The band attribute ──────────────────────────────────────────────────────
+   `index.html` stamps `data-vp="phone|tablet|desktop"` on <html> BEFORE first
+   paint, from the same 768/1280 pair. That lets a rule branch on the band
+   without a media query — useful where a component must know the band in a
+   selector that also depends on state — and, more importantly, means the
+   correct layout paints on load instead of flashing desktop first.
+
+   The media queries below remain authoritative for pure-layout rules, because
+   they keep working if JS never runs. The attribute is an enhancement, not the
+   mechanism. */
+
+/* ── Escape hatch, deliberately narrow ───────────────────────────────────────
+   `.no-shrink` opts an element out of every stacking rule below. It exists so
+   a genuine exception (a signature pad, a barcode canvas) has a sanctioned way
+   to say so instead of a screen writing its own @media. If you reach for this
+   more than a couple of times, the rule below is wrong — fix the rule. */
+.no-shrink {
+  --rsp-opt-out: 1;
+}
+
+/* ══ PHONE — below 768 ══════════════════════════════════════════════════════
+   §16 of CLAUDE.md: do not simply shrink the desktop interface. Below 768 the
+   decisions are what disappears, what stacks, and what becomes a sheet. */
+@media (max-width: 767px) {
+  /* A wide table below 768 is not a table — it is a horizontal scrollbar
+     hiding the columns that matter. `useTabularLayout()` already returns false
+     here so screens can render card rows instead; this is the CSS backstop for
+     any table that slips through, so it scrolls inside its own box rather than
+     pushing the whole page sideways. §7.7's "the page body must never scroll
+     horizontally". */
+  .rsp-table-scroll:not(.no-shrink) {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Multi-column content collapses to one column. */
+  .rsp-cols:not(.no-shrink) {
+    display: block;
+  }
+  .rsp-cols:not(.no-shrink) > * + * {
+    margin-top: var(--sp-lg);
+  }
+
+  /* A row of actions becomes a full-width stack — a 3-up button row at 390px
+     produces three targets under 44px wide, which §7.3 forbids. */
+  .rsp-actions:not(.no-shrink) {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sp-sm);
+  }
+  .rsp-actions:not(.no-shrink) > * {
+    width: 100%;
+    min-height: var(--tap);
+  }
+
+  /* Things that carry no information the row does not already repeat. */
+  .rsp-hide-phone {
+    display: none !important;
+  }
+
+  /* Side rails become part of the flow rather than a column. */
+  .rsp-aside:not(.no-shrink) {
+    position: static;
+    width: 100%;
+    max-width: none;
+  }
+}
+
+/* ══ TABLET — 768 to 1279 ══════════════════════════════════════════════════
+   The band that matters most here: a rental floor runs on tablets, and 1194
+   (iPad Pro 11" landscape) lives in this band ONLY because v4.1 moved the
+   desktop threshold to 1280. Under the old 1180 it fell into desktop and got
+   hover-dependent, mouse-sized UI. */
+@media (min-width: 768px) and (max-width: 1279px) {
+  .rsp-hide-tablet {
+    display: none !important;
+  }
+
+  /* Three-up grids fit two across at this width; forcing three produces
+     columns too narrow to read a client name in. */
+  .rsp-cols-3:not(.no-shrink) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ══ BELOW DESKTOP — anything under 1280 ═══════════════════════════════════ */
+@media (max-width: 1279px) {
+  .rsp-hide-below-desktop {
+    display: none !important;
+  }
+}
+
+/* ══ DESKTOP — 1280 and up ═════════════════════════════════════════════════ */
+@media (min-width: 1280px) {
+  .rsp-only-phone,
+  .rsp-only-tablet {
+    display: none !important;
+  }
+}
+
+/* ══ COARSE POINTER — capability, not size ═════════════════════════════════
+   A 24" touchscreen at the packing bench is desktop-SIZED but finger-DRIVEN.
+   §7.3's 44px is a rule about thumbs, so it keys off the pointer, not the
+   width. This is exactly the size-vs-capability split `device.ts` documents. */
+@media (pointer: coarse) {
+  /* The law is the HIT AREA, not the paint (§5). A 34px compact button keeps
+     its 34px of ink and grows an invisible 44px target around it, so a dense
+     toolbar stays dense and still passes. */
+  .rsp-tap::after {
+    content: '';
+    position: absolute;
+    inset: 50% 0 0 0;
+    translate: 0 -50%;
+    min-height: var(--tap);
+    pointer-events: none;
+  }
+  .rsp-tap {
+    position: relative;
+  }
+
+  /* Hover-only affordances must not be the only way to reach something when
+     there is no hover to give. Screens pair this with a long-press or an
+     always-visible control; the class only stops the hover-reveal from being
+     the mechanism. */
+  .rsp-hover-only {
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+}
+
+/* ══ NO HOVER ══════════════════════════════════════════════════════════════ */
+@media (hover: none) {
+  .rsp-hover-lift:hover {
+    transform: none;
+  }
+}

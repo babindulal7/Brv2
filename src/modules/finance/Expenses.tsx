@@ -7,7 +7,7 @@ import { PageBody } from '../../components/ui/PageBody'
 import { Modal } from '../../components/ui/Modal'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
-import { STATUS } from '../../lib/status'
+import { Badge } from '../../components/ui/Badge'
 import type { StatusKey } from '../../lib/status'
 import { rupees, formatMoney } from '../../lib/money'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
@@ -220,28 +220,39 @@ function NoValue({ reason }: { reason: string }) {
 }
 
 function StatusBadge({ status }: { status: ExpenseStatusDb }) {
-  const tok = STATUS[STATUS_TOKEN[status]]
+  /*
+   * Delegates to <Badge> — DESIGN_DIRECTION_SPEC_v4.1 §8 step 2: "one component
+   * rendering the §4 map from lib/status; every screen inherits. No screen
+   * colours a status itself."
+   *
+   * What this used to be: a span assembled here from `STATUS[STATUS_TOKEN[…]]`
+   * with `--r-badge` (999 — §3.3 reserves that radius for numeric COUNT badges,
+   * not statuses), weight 600, sentence case and a fixed 20px height. Four
+   * deviations from §4's block anatomy, none of them deliberate — this file was
+   * simply written before there was one component to inherit from, and it was
+   * one of fifteen screens hand-rolling the same chip. That is exactly how the
+   * product ended up with no status block anywhere that had the ruled anatomy.
+   *
+   * The wrapper is KEPT: `STATUS_TOKEN` is an expense-domain mapping (the
+   * `expense_status` enum has six members that are not booking statuses), and
+   * the call sites should keep naming a status rather than a tone. It loses the
+   * paint, not the mapping.
+   *
+   * The glyph is passed through rather than dropped — Law 11 / §7.4, colour is
+   * never the sole carrier, and `STATUS_GLYPH` is per-expense-status, finer
+   * than the per-tone icon <Badge> would otherwise pick.
+   *
+   * `size="sm"` because these sit in dense ledger rows; it lands near the 20px
+   * the hand-rolled version had without surrendering the weight, casing and
+   * tracking that ARE the identity of a status block.
+   */
   return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 5,
-        height: 20,
-        padding: '0 8px',
-        borderRadius: 'var(--r-badge)',
-        background: tok.bg,
-        color: tok.fg,
-        border: tok.border ? `1px solid ${tok.border}` : undefined,
-        fontSize: 'var(--t-meta)',
-        fontWeight: 600,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {/* Law 11 — icon + label + colour, so the state survives monochrome. */}
-      <Icon name={STATUS_GLYPH[status]} size={11} />
-      {status}
-    </span>
+    <Badge
+      tone={STATUS_TOKEN[status]}
+      label={status}
+      icon={<Icon name={STATUS_GLYPH[status]} size={11} />}
+      size="sm"
+    />
   )
 }
 
