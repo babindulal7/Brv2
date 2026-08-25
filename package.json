@@ -21,7 +21,8 @@
     "test:coverage": "vitest run --coverage",
     "seed:sql": "node scripts/emit-seed-sql.mjs",
     "db:types": "supabase gen types typescript --local > src/types/database.ts",
-    "check:contrast": "node scripts/check-contrast.cjs"
+    "check:contrast": "node scripts/check-contrast.cjs",
+    "check:db": "node scripts/check-db.mjs"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
