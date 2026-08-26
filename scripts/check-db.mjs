@@ -302,21 +302,58 @@ async function main() {
    * establish that the SQL editor cannot, because it goes through the same
    * path the app does: client → PostgREST → RLS.
    */
-  if (signedIn && staffRow) {
+  /*
+   * ⛔ `Client` CANNOT prove Law 6, and the check below refuses to let it try.
+   *
+   * A signed-in session with no row in `users` resolves through
+   * `auth_user_role()` to 'Client', and a Client reads zero from nearly every
+   * table because its policies are scoped by a client_id linkage it cannot
+   * satisfy. `MONEY_BLIND` contains 'Client', so before this guard the verdict
+   * ran: blind = true, moneyZero = 5, and it printed
+   *
+   *     Law 6 — role Client reads zero from 5/5 money tables.  PASS
+   *
+   * That is a PASS FOR THE WRONG REASON — zero rows because the session is
+   * nobody, not because the mask works. Run straight after applying 0062 it
+   * would read as proof that the migration closed the hole, while the hole had
+   * never been tested. The most dangerous output this script can produce is a
+   * green line nobody has cause to doubt.
+   *
+   * So the proof requires a STAFF money-blind role — Warehouse, Technician or
+   * Driver. Client is money-blind and still cannot be the witness.
+   */
+  const PROOF_ROLES = new Set(['Warehouse', 'Technician', 'Driver'])
+
+  if (signedIn && !staffRow && !staffErr) {
+    console.log(
+      `\n  ${C.bad}Law 6 — NOT PROVEN.${C.off} Signed in, but this auth.uid() has no row in \`users\`,` +
+        `\n  so the database resolves it to Client and it reads zero from almost everything.` +
+        `\n  ${C.warn}The zero counts above are meaningless as a Law 6 result.${C.off}` +
+        `\n  Insert a \`users\` row for this uid with primary_role 'Warehouse', then run again.`,
+    )
+  } else if (signedIn && staffRow) {
     const moneyZero = rows.filter((r) => MONEY_TABLES.has(r.table) && r.status === 'ZERO').length
     /* `primary_role`, not `role` — see the identity probe above. Reading the
        wrong key here made `blind` always false, so the Law 6 verdict — the most
        valuable line this script prints — could only ever report a pass. */
-    const blind = MONEY_BLIND.has(staffRow.primary_role)
-    const pass = blind ? moneyZero === MONEY_TABLES.size : true
-    console.log(
-      `\n  Law 6 — role ${staffRow.primary_role} reads zero from ${moneyZero}/${MONEY_TABLES.size} money tables.` +
-        (blind
-          ? pass
-            ? `  ${C.ok}PASS${C.off} — money-blind, and it is.`
-            : `  ${C.bad}FAIL — a money-blind role can read money. This is a real hole.${C.off}`
-          : `  ${C.dim}(not a money-blind role; run again as Warehouse for the real test)${C.off}`),
-    )
+    const role = staffRow.primary_role
+    const canProve = PROOF_ROLES.has(role)
+    const pass = moneyZero === MONEY_TABLES.size
+    console.log(`\n  Law 6 — role ${role} reads zero from ${moneyZero}/${MONEY_TABLES.size} money tables.`)
+    if (canProve) {
+      console.log(
+        pass
+          ? `  ${C.ok}PASS${C.off} — a money-blind STAFF role, and it reads no money.`
+          : `  ${C.bad}FAIL — a money-blind role can read money. This is a real hole.${C.off}`,
+      )
+    } else if (role === 'Client') {
+      console.log(
+        `  ${C.bad}NOT PROVEN — Client cannot witness Law 6.${C.off} It reads zero from nearly every` +
+          `\n  table by construction, so 5/5 here says nothing about the mask. Use a Warehouse account.`,
+      )
+    } else {
+      console.log(`  ${C.dim}(not a money-blind role; run again as Warehouse for the real test)${C.off}`)
+    }
   }
   console.log()
 }
