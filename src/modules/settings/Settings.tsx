@@ -343,7 +343,31 @@ export default function Settings() {
         <BranchesPane money={money} rows={branches} setRows={setBranches} addOpen={addOpen} setAddOpen={setAddOpen} />
       )
     }
-    if (active === 'people') return <UsersPane />
+    /*
+     * People renders its custom pane AND any field sections declared for it.
+     *
+     * This used to be a bare `return <UsersPane />`, which short-circuited
+     * before the `FIELD_SECTIONS[active]` renderer below. The export walk near
+     * the top of this file iterates `FIELD_SECTIONS[t.key]` for EVERY tab, so
+     * the two disagreed by construction: a row added to `FIELD_SECTIONS.people`
+     * would appear in babin-settings.csv while rendering on no screen — a
+     * setting that exists in the audit trail and nowhere a person could see or
+     * change it. Nothing trips it today because `FIELD_SECTIONS` has no
+     * `people` key (sections/index.ts maps only `business` and `system`), which
+     * is exactly why it would have gone unnoticed until someone added one.
+     *
+     * Rendering the sections here rather than teaching the export to skip
+     * People is the direction that cannot silently diverge again: whatever the
+     * CSV claims about this tab is now, by construction, what the tab draws.
+     * With no `people` key this is a no-op.
+     */
+    if (active === 'people')
+      return (
+        <>
+          <UsersPane />
+          {FIELD_SECTIONS.people ? <SectionCards sections={FIELD_SECTIONS.people} /> : null}
+        </>
+      )
     if (active === 'business') {
       /*
        * Business is Organisation + Financial in one pane. Law 6 is applied HERE
