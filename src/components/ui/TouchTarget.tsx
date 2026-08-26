@@ -45,13 +45,38 @@
  * </button>
  * ```
  *
- * ⚠ Two adjacent controls whose visual boxes are closer than 44px apart will
- * have OVERLAPPING hit areas, and the later one in the DOM wins the tap. That is
- * worse than the small target it replaced, because it is invisible. Where this
- * is used on a pair of opposing actions, the row's gap must be widened too — see
- * the four workspace call sites, which use `--sp-sm` rather than `--sp-xs`.
+ * ⚠ OVERLAP — the failure mode this component causes, on BOTH axes.
+ *
+ * Any two controls whose boxes sit closer than 44px apart end up with
+ * OVERLAPPING hit areas, and the later one in the DOM wins the tap. That is
+ * worse than the small target it replaced, because nothing on screen shows you
+ * why the wrong thing fired. Both axes have now bitten, and they look different
+ * enough that finding one does not find the other:
+ *
+ *   HORIZONTAL — two side-by-side controls. `DateTimeField`'s calendar and
+ *     clock buttons are 26px and share an edge; both targets grew to 44 and
+ *     overlapped by 18px, so the timer's target reached ~9px into the calendar
+ *     button's VISIBLE glyph. Fixed with `axis="y"`: take the free axis, and
+ *     state the shortfall on the other rather than shipping a mis-fire. Two
+ *     adjacent controls cannot both hold a 44-wide target inside 52px — that
+ *     is geometry, and closing it is a layout change.
+ *
+ *   VERTICAL — the neighbour is the next ROW, not a sibling button, so an
+ *     audit looking for adjacent controls will not see it. `CompactButton` is
+ *     22px inside floor table rows that were 8+22+8 = 38px, so each target
+ *     overhung its row by ~3px and adjacent rows overlapped by ~6px. On Return
+ *     the two actions are "Mark Returned" and "Not Returned", so a boundary tap
+ *     could record against the WRONG line item — a data error, not a cosmetic
+ *     one. Fixed by giving those tables the §7.3 row floor
+ *     (`height: var(--row-min-h)`, 56px), which the rows owed anyway: a 44px
+ *     target then sits inside the row with 6px of margin each side.
+ *
+ * The rule of thumb: before adding this, ask what is 44px away in EVERY
+ * direction — including the row above and below. If the answer is "another
+ * target", fix the spacing or the row height first. Shrinking the target is the
+ * wrong trade on a gloved-tablet screen.
  */
-export function TouchTarget() {
+export function TouchTarget({ axis = 'both' }: { axis?: 'both' | 'y' } = {}) {
   return (
     <span
       aria-hidden="true"
@@ -60,9 +85,25 @@ export function TouchTarget() {
         left: '50%',
         top: '50%',
         transform: 'translate(-50%, -50%)',
-        // `max(100%, …)` so a control WIDER than the floor keeps its own width
-        // and only the short axis is inflated.
-        width: 'max(100%, var(--tap))',
+        /*
+         * `axis="y"` grows ONLY the vertical target and leaves the width at the
+         * control's own box.
+         *
+         * It exists because of a real geometric limit, not a preference: two
+         * horizontally-adjacent controls cannot BOTH have a 44px-wide target
+         * inside less than 88px of width. Where they sit closer — the date
+         * field's calendar and clock buttons are 26px each and share an edge —
+         * growing both widths makes the later one in the DOM steal the earlier
+         * one's visible glyph, so the tap lands on the wrong control. That is
+         * strictly worse than the small target, because it is invisible.
+         *
+         * So on a horizontal pair, take the height (the axis that is free) and
+         * be honest that the width is still short, rather than shipping an
+         * overlap that silently mis-fires. Fixing the width is a layout change
+         * — widen the field or drop to one control — and belongs to whoever
+         * owns that design, not to a hit-area pass.
+         */
+        width: axis === 'y' ? '100%' : 'max(100%, var(--tap))',
         height: 'var(--tap)',
       }}
     />

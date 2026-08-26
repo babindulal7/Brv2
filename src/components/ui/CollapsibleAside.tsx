@@ -45,7 +45,9 @@ export function CollapsibleAside({
           display: 'flex',
           alignItems: 'flex-start',
           justifyContent: 'center',
-          width: 44,
+          // The collapsed rail is exactly one tap wide — it holds nothing but the
+          // handle. `var(--tap)`, never a literal, per §3.3.
+          width: 'var(--tap)',
           // Sticky for the same reason the expanded panel is (see below): the
           // handle that reopens the rail has to still be on screen when someone
           // has scrolled down far enough to want it back.
@@ -68,8 +70,8 @@ export function CollapsibleAside({
           aria-label={`Expand ${label}`}
           title={`Expand ${label}`}
           style={{
-            minWidth: 44,
-            minHeight: 44,
+            minWidth: 'var(--tap)',
+            minHeight: 'var(--tap)',
             padding: 0,
             border: 'none',
             background: 'transparent',
@@ -107,8 +109,8 @@ export function CollapsibleAside({
   const handleStyle: CSSProperties = {
     position: 'absolute',
     top: -10,
-    minWidth: 44,
-    minHeight: 44,
+    minWidth: 'var(--tap)',
+    minHeight: 'var(--tap)',
     padding: 0,
     border: 'none',
     background: 'transparent',
@@ -120,6 +122,17 @@ export function CollapsibleAside({
     ...(side === 'right' ? { left: -22 } : { right: -22 }),
   }
 
+  /*
+   * Law 14 is already satisfied for this one and it is worth saying why, because
+   * a 24px circle looks like a violation at a glance and is not.
+   *
+   * This is an `aria-hidden` `<span>` — pure paint. The *control* is
+   * `handleStyle`'s `<button>` wrapping it, which carries the full `--tap` box.
+   * That is the hit-area-not-paint rule taken the direct way: rather than
+   * pinning an invisible pseudo-element onto a small button, the button IS the
+   * 44 and the circle is drawn inside it. Nothing to add here; do not shrink the
+   * button to fit the circle.
+   */
   const handleDotStyle: CSSProperties = {
     width: 24,
     height: 24,

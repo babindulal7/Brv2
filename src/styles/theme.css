@@ -448,6 +448,48 @@
   box-sizing: border-box;
 }
 
+/*
+  ── `.tap` — the 44px hit area, for controls whose PAINT must stay smaller ──
+
+  DESIGN_DIRECTION_SPEC_v4.1 §5: "Compact 34px visual is allowed in dense
+  toolbars ONLY with an invisible pseudo-element extending the hit area to 44 —
+  **the law is the HIT AREA, not the paint**." §7.3: "44px hit areas
+  everywhere; rows >= 56px."
+
+  Use this when growing the box would wreck a dense layout: a pagination arrow
+  in a toolbar strip, a remove glyph inside a chip, a row action in a table
+  cell. Where the box CAN grow, prefer `min-height: var(--tap)` — a real 44px
+  control is better than a 32px control wearing a 44px coat.
+
+  Three things this gets right that the first attempt did not:
+
+   1. It is NOT behind `@media (pointer: coarse)`. The spec says every device,
+      desktop included — a mouse user with a tremor, or a packer using a stylus
+      on a docked tablet, needs the same target.
+   2. It does NOT set `pointer-events: none`. That was the whole bug in the
+      first version: a pseudo-element with pointer-events none is decorative,
+      clicks pass through it, and the hit area is not extended at all. Left
+      default, the ::after is part of the host's own hit region.
+   3. It grows BOTH axes. `width: max(100%, var(--tap))` keeps a control that is
+      already wider than 44 at its own width and only inflates the short axis.
+
+  ⚠ Targets closer together than 44px will OVERLAP once both grow, and the one
+  later in the DOM wins. That is a spacing problem, not a class problem — space
+  the controls, do not silently drop the target.
+*/
+.tap {
+  position: relative;
+}
+.tap::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: max(100%, var(--tap));
+  height: max(100%, var(--tap));
+}
+
 /* min-height, not height: a fixed 100% caps the document at one viewport and
    clips anything below the fold instead of scrolling it. */
 html,

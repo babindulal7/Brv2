@@ -267,12 +267,31 @@ function MoreFilters({
               <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
                 {g.group}
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {/* Law 14 / v4.1 §7.3 — the rows sit 20px apart while the columns
+                  stay at 6, and that asymmetry is the tap areas talking, not the
+                  layout. Each live chip below is painted 26px but hit at 44, so
+                  its target reaches 9px past its own top and bottom edge; at the
+                  old symmetric 6px gap a group that wrapped — and every group
+                  here wraps once this panel is on a laptop, let alone a phone —
+                  had its second line's targets 12px inside its first line's,
+                  where the later chip in the DOM silently wins the click. 20 is
+                  the first step on the 4px grid that clears the 18px the two
+                  overhangs need. Sideways nothing grows: every label but `VIP`
+                  is already wider than 44 and `VIP` lands on it. */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', columnGap: 6, rowGap: 20 }}>
                 {g.options.map((o) => {
                   const support = FILTER_SUPPORT[o]
                   const reason = support?.kind === 'stage' ? null : (support?.reason ?? 'No column behind this filter.')
                   const on = picked.includes(o)
 
+                  /* The 26px paint stays and `.tap` (theme.css) carries the 44px
+                     target under it — §5's dense-strip trade, taken here because
+                     this panel is a floating popover with no max-height and no
+                     scroller of its own: growing five groups of chips to a real
+                     44 adds the better part of 200px to a sheet that already has
+                     to fit under its trigger on a phone. Only the live chips get
+                     the class; a `disabled` button fires no pointer events, so a
+                     target around one would be a hit area over nothing. */
                   const style = {
                     height: 26,
                     padding: '0 10px',
@@ -299,7 +318,7 @@ function MoreFilters({
                       </button>
                     </span>
                   ) : (
-                    <button key={o} type="button" onClick={() => toggle(o)} aria-pressed={on} style={style}>
+                    <button key={o} type="button" className="tap" onClick={() => toggle(o)} aria-pressed={on} style={style}>
                       {o}
                     </button>
                   )

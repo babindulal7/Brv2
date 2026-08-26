@@ -149,20 +149,27 @@ export type BarKind =
 export interface BarSkin {
   bg: string
   /**
-   * The ink that goes **ON `bg`** — an on-colour (§3.2), not a text colour.
-   *
-   * ⚠ `Calendar.tsx`'s `SelectedEventPanel` reads this as the colour of the
-   * kind label it prints on a `--card` surface, where an on-colour is wrong by
-   * construction: white for every white-on-fill hue, near-black for the two
-   * dark-ink ones. That was already true of the nine kinds that were solid
-   * before, and making `Available` and `Maintenance` solid (see below) puts
-   * them in the same position — they used to hold `--success-text` /
-   * `--progress-text`, which are text colours and happened to read correctly
-   * there. **That panel wants a text-safe token, the way `INV_DOT` and
-   * `CONDITION_INK` are the ink forms of their block tables.** Not fixed here
-   * because it is a change to how `Calendar.tsx` renders, not to this table.
+   * The ink that goes **ON `bg`** — an on-colour (§3.2). Correct only where
+   * `bg` is actually painted behind the text. For the same kind rendered as
+   * text on a card, use `ink`.
    */
   fg: string
+  /**
+   * The same kind as **text on a `--card` surface** — a text-safe colour.
+   *
+   * Added 26 Aug 2026. `Calendar.tsx`'s `SelectedEventPanel` was reading `fg`
+   * for its kind label, which is wrong by construction: an on-colour is picked
+   * to sit on its OWN fill, so on a card it renders white-on-card for every
+   * white-ink hue and NEAR-BLACK for the two dark-ink ones. Maintenance's
+   * `--on-ready` (#1C1405) on a dark card was the worst case — effectively
+   * invisible.
+   *
+   * This is the split `INV_DOT` and `CONDITION_INK` already make against their
+   * own block tables: a status needs two colours, and which one you want
+   * depends on what is behind the text. Carrying both on the row means a
+   * caller cannot pick wrong by accident.
+   */
+  ink: string
   /** Outline colour; also the legend swatch. */
   line: string
   /**
@@ -203,24 +210,24 @@ export const BAR_STYLE: Record<BarKind, BarSkin> = {
   /* `icon` stays absent, as it always was: Available is the ABSENCE of a
      booking, and every other kind's icon marks a thing that is happening. The
      word on the bar is the carrier §7.4 requires. */
-  Available: { bg: 'var(--st-in-bg)', fg: 'var(--st-in-fg)', line: 'var(--success)' },
-  Reserved: { bg: 'var(--st-primary-bg)', fg: 'var(--st-primary-fg)', line: 'var(--st-primary-fg)', icon: 'calendar_event' },
+  Available: { bg: 'var(--st-in-bg)', fg: 'var(--st-in-fg)', ink: 'var(--success-text)', line: 'var(--success)' },
+  Reserved: { bg: 'var(--st-primary-bg)', fg: 'var(--st-primary-fg)', ink: 'var(--primary-text)', line: 'var(--st-primary-fg)', icon: 'calendar_event' },
   /* §4 — orange, "out with the client", and solid like every other status. */
-  'On Rent': { bg: 'var(--st-out-bg)', fg: 'var(--st-out-fg)', line: 'var(--st-out-bg)', icon: 'calendar_event' },
-  Cleaning: { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)', line: 'var(--st-progress-fg)', icon: 'refresh' },
+  'On Rent': { bg: 'var(--st-out-bg)', fg: 'var(--st-out-fg)', ink: 'var(--warn-text)', line: 'var(--st-out-bg)', icon: 'calendar_event' },
+  Cleaning: { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)', ink: 'var(--ready-text)', line: 'var(--st-progress-fg)', icon: 'refresh' },
   /* Same yellow as Cleaning on purpose — see the header. The icon and the word
      separate them; the fill is not allowed to. */
-  Maintenance: { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)', line: 'var(--progress)', icon: 'tool' },
-  'Crew Duty': { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)', line: 'var(--st-progress-fg)', icon: 'crew' },
-  Blocked: { bg: 'var(--st-neutral-bg)', fg: 'var(--st-neutral-fg)', line: 'var(--st-neutral-fg)', icon: 'package' },
+  Maintenance: { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)', ink: 'var(--ready-text)', line: 'var(--progress)', icon: 'tool' },
+  'Crew Duty': { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)', ink: 'var(--ready-text)', line: 'var(--st-progress-fg)', icon: 'crew' },
+  Blocked: { bg: 'var(--st-neutral-bg)', fg: 'var(--st-neutral-fg)', ink: 'var(--muted)', line: 'var(--st-neutral-fg)', icon: 'package' },
   /* §2 — gold, outline only, and the ONE exception to the solid rule above.
      It is kept outline precisely so it can never be read as a yellow status.
      The renders draw these purple; purple is retired. */
-  'Sub-Rental Out': { bg: 'transparent', fg: 'var(--ext-fg)', line: 'var(--ext-line)', icon: 'external_link' },
-  'Sub-Rental In': { bg: 'transparent', fg: 'var(--ext-fg)', line: 'var(--ext-line)', dash: true, icon: 'return_arrow' },
-  Conflict: { bg: 'var(--st-danger-bg)', fg: 'var(--st-danger-fg)', line: 'var(--danger)', icon: 'alert_triangle' },
-  'Quote Expiry': { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)', line: 'var(--st-progress-fg)', icon: 'timer' },
-  'Case Escalation': { bg: 'var(--st-danger-bg)', fg: 'var(--st-danger-fg)', line: 'var(--danger)', icon: 'flag' },
+  'Sub-Rental Out': { bg: 'transparent', fg: 'var(--ext-fg)', ink: 'var(--ext-fg)', line: 'var(--ext-line)', icon: 'external_link' },
+  'Sub-Rental In': { bg: 'transparent', fg: 'var(--ext-fg)', ink: 'var(--ext-fg)', line: 'var(--ext-line)', dash: true, icon: 'return_arrow' },
+  Conflict: { bg: 'var(--st-danger-bg)', fg: 'var(--st-danger-fg)', ink: 'var(--danger-text)', line: 'var(--danger)', icon: 'alert_triangle' },
+  'Quote Expiry': { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)', ink: 'var(--ready-text)', line: 'var(--st-progress-fg)', icon: 'timer' },
+  'Case Escalation': { bg: 'var(--st-danger-bg)', fg: 'var(--st-danger-fg)', ink: 'var(--danger-text)', line: 'var(--danger)', icon: 'flag' },
 }
 
 export const BAR_KINDS = Object.keys(BAR_STYLE) as BarKind[]

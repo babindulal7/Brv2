@@ -43,9 +43,14 @@ export interface EditableRowDef {
   hint?: string
 }
 
+/* Law 15 — the law is the hit area, not the paint, and `--tap` in theme.css is
+   where that number lives. Both consumers below are a real <input>/<textarea>
+   inside a stacked edit row, so the honest fix is to grow the box rather than
+   inset an invisible target; 36 also left these out of step with Input.tsx,
+   which has been at 44 all along. */
 const inputStyle = {
   width: '100%',
-  minHeight: 36,
+  minHeight: 'var(--tap)',
   padding: '7px 10px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--border)',

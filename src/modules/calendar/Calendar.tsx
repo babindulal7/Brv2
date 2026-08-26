@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Input, Select, EmptyState } from '../../components/ui'
+import { Input, Select, EmptyState, TouchTarget } from '../../components/ui'
 import { Card, PageHeader, Button, FooterNote, cardStyle, Rail } from '../../components/ui/Page'
 import { BRAND } from '../../lib/status'
 import { getBusinessToday, toBs, formatBs, formatAd, eachDay, isWeekend, BS_MONTHS } from '../../lib/bs'
@@ -358,8 +358,11 @@ const chipBase = {
   whiteSpace: 'nowrap' as const,
 }
 
+/* Law 15 — hit area, not paint; `--tap` holds the number. Shared by the booking
+   drawer's Selects and the full-view search field, all of them in wrapping flex
+   rows rather than a fixed-height strip. */
 const selectStyle = {
-  height: 30,
+  minHeight: 'var(--tap)',
   padding: '0 8px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--border)',
@@ -1134,8 +1137,14 @@ function MiniMonth({ anchor, onPickDay, busy }: { anchor: Date; onPickDay: (d: D
           onClick={() => step(-1)}
           disabled={!prevOk}
           title={prevOk ? 'Previous month' : MONTH_STEP_BLOCKED}
-          style={{ background: 'none', border: 'none', color: prevOk ? 'var(--text2)' : 'var(--disabled)', cursor: prevOk ? 'pointer' : 'not-allowed', display: 'flex', padding: 2 }}
+          /* Law 14 — hit area, not paint. This month stepper is a bare 20px glyph
+             at the left edge of the mini BS calendar's header; inflating the paint
+             would give the card a chrome it does not want, and the row is
+             `space-between` with a wide month label in the middle, so the invisible
+             44 has nothing to collide with on either side. */
+          style={{ position: 'relative', background: 'none', border: 'none', color: prevOk ? 'var(--text2)' : 'var(--disabled)', cursor: prevOk ? 'pointer' : 'not-allowed', display: 'flex', padding: 2 }}
         >
+          <TouchTarget />
           <Icon name="chevron_left" size={16} />
         </button>
         <span style={{ fontSize: 'var(--t-ui)', fontWeight: 700 }}>
@@ -1146,8 +1155,10 @@ function MiniMonth({ anchor, onPickDay, busy }: { anchor: Date; onPickDay: (d: D
           onClick={() => step(1)}
           disabled={!nextOk}
           title={nextOk ? 'Next month' : MONTH_STEP_BLOCKED}
-          style={{ background: 'none', border: 'none', color: nextOk ? 'var(--text2)' : 'var(--disabled)', cursor: nextOk ? 'pointer' : 'not-allowed', display: 'flex', padding: 2 }}
+          /* Same treatment as the Previous arrow above — see its note. */
+          style={{ position: 'relative', background: 'none', border: 'none', color: nextOk ? 'var(--text2)' : 'var(--disabled)', cursor: nextOk ? 'pointer' : 'not-allowed', display: 'flex', padding: 2 }}
         >
+          <TouchTarget />
           <Icon name="chevron_right" size={16} />
         </button>
       </div>
@@ -1292,13 +1303,20 @@ function SelectedEventPanel({ bar, row, onClose }: { bar: Bar; row: ResourceRow;
           </div>
         </div>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', fontWeight: 700, /*
-            v4.1: was `skin.fg === 'var(--st-out-fg)' ? 'var(--success-text)'`
-            — a string comparison against a token NAME, written when On Rent
-            was green and its ink needed overriding to a readable green. On
-            Rent is ORANGE now, so that branch painted the orange event's label
-            green. The pair already carries a readable ink; use it.
+            `ink`, not `fg` — this label sits on a --card, not on the bar.
+
+            Two wrongs preceded it. First a string comparison against a token
+            NAME (`skin.fg === 'var(--st-out-fg)'`), written when On Rent was
+            green and needed its ink overridden; On Rent is ORANGE under v4.1,
+            so that branch painted the orange event's label green. Replacing it
+            with `skin.fg` fixed the wrong colour but kept the wrong KIND of
+            colour: `fg` is an on-colour, chosen to sit on its own fill, so on
+            a card it renders near-black for the two dark-ink hues —
+            Maintenance's #1C1405 on a dark card is effectively invisible.
+
+            `BarSkin.ink` is the text-safe form, added for exactly this.
           */
-          color: skin.fg }}>
+          color: skin.ink }}>
           <span aria-hidden style={{ width: 7, height: 7, borderRadius: 'var(--r-badge)', background: skin.line }} />
           {bar.kind}
         </span>
@@ -1747,7 +1765,8 @@ export default function Calendar() {
         style={{
           display: 'inline-flex',
           alignItems: 'center',
-          height: 34,
+          // Matches the two steppers either side, which are now a full `--tap` box.
+          height: 'var(--tap)',
           padding: '0 11px',
           borderRadius: 'var(--r-btn)',
           border: '1px solid var(--border)',
@@ -1890,16 +1909,21 @@ export default function Calendar() {
   const zoomControl = (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
       <span style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>Zoom</span>
-      <button type="button" onClick={() => stepZoom(1)} title="Show more days" style={iconBtn} aria-label="Zoom out">
+      <button type="button" onClick={() => stepZoom(1)} title="Show more days" style={iconBtnCompact} aria-label="Zoom out">
+        <TouchTarget />
         <Icon name="chevron_down" size={14} />
       </button>
       <span className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', minWidth: 46, textAlign: 'center' }}>
         {dayCount} days
       </span>
-      <button type="button" onClick={() => stepZoom(-1)} title="Show fewer days" style={iconBtn} aria-label="Zoom in">
+      <button type="button" onClick={() => stepZoom(-1)} title="Show fewer days" style={iconBtnCompact} aria-label="Zoom in">
+        <TouchTarget />
         <Icon name="chevron_up" size={14} />
       </button>
-      <button type="button" onClick={() => { setZoom(DEFAULT_ZOOM); goToday() }} title="Back to a 7-day window on today" style={{ ...iconBtn, width: 'auto', padding: '0 9px', fontSize: 'var(--t-th)', fontWeight: 600 }}>
+      <button type="button" onClick={() => { setZoom(DEFAULT_ZOOM); goToday() }} title="Back to a 7-day window on today" style={{ ...iconBtnCompact, width: 'auto', padding: '0 9px', fontSize: 'var(--t-th)', fontWeight: 600 }}>
+        {/* `TouchTarget` uses `max(100%, var(--tap))`, so this one keeps its own
+            text width and only the short axis is inflated to the floor. */}
+        <TouchTarget />
         Fit
       </button>
     </span>
@@ -2472,9 +2496,24 @@ export default function Calendar() {
   )
 }
 
+/**
+ * §5 — "Icon buttons 44×44, always `aria-label`".
+ *
+ * This was 34×34 and the header it sits in was already 44 tall, because every
+ * `Button` beside it carries `minHeight: 44`. So the paint had room to grow to
+ * the floor for free: the range steppers and the month steppers now match the
+ * height of the Today / Filters / New Rental buttons they sit between instead
+ * of being visibly short of them, and nothing gets pushed down.
+ *
+ * Growing the paint also disposes of the hazard the alternative carries. Two
+ * arrows 4px apart, each given an invisible 44-wide target, would have had
+ * overlapping targets with the later one in the DOM winning — a Previous-range
+ * button whose right edge silently steps forward. A real 44 box has no
+ * invisible half to collide.
+ */
 const iconBtn = {
-  width: 34,
-  height: 34,
+  width: 'var(--tap)',
+  height: 'var(--tap)',
   display: 'grid',
   placeItems: 'center',
   borderRadius: 'var(--r-btn)',
@@ -2483,6 +2522,24 @@ const iconBtn = {
   color: 'var(--text)',
   cursor: 'pointer',
   fontFamily: 'inherit',
+} as const
+
+/**
+ * The §5 compact exception, for the timeline strip only.
+ *
+ * The zoom cluster does NOT live in a 44-tall row — it sits in the timeline
+ * card's own header, a 9px-padded strip whose tallest occupant is a two-line
+ * BS/AD label, ~46px all in. Taking the paint to 44 there would push that strip
+ * to ~62 and eat a row of the timeline itself, which is the density §60 asks
+ * for. So this is the case §5 wrote the exception for: **the paint stays 34 and
+ * the HIT AREA goes to 44** via `TouchTarget`, which needs the `position:
+ * relative` below to anchor against.
+ */
+const iconBtnCompact = {
+  ...iconBtn,
+  width: 34,
+  height: 34,
+  position: 'relative',
 } as const
 
 /** The same control, permanently unavailable and saying so. */

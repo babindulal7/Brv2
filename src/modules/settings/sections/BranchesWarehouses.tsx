@@ -249,8 +249,14 @@ function WarehouseChildRow({ w, columns, onOpen }: { w: Warehouse; columns: numb
           <span style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>
             Zones <span className="figure" style={{ fontWeight: 700, color: 'var(--text)' }}>{w.zonesCount}</span>
           </span>
+          {/* 28px of paint keeps this inside the warehouse sub-row without
+              stretching it; `tap` is what makes the target legal. The label
+              carries it past 44 across, so only the short axis inflates, and
+              the sub-row is the last thing in its cell — nothing sits under the
+              extra 8px but the row's own padding. */}
           <button
             type="button"
+            className="tap"
             onClick={onOpen}
             style={{ ...controlStyle, minHeight: 28, padding: '0 9px', fontSize: 'var(--t-th)', marginLeft: 'auto' }}
           >
@@ -490,6 +496,14 @@ export function BranchesPane({
         ).map((v) => {
           const on = view === v.key
           return (
+            /* Grown rather than coated. The tablist wraps, and once it does the
+               two tabs stack 6px apart — at the old 34px paint that is a pitch
+               of 40, so two 44px pseudo-elements would have overlapped in a 4px
+               band and the later tab in the DOM would have won presses along it.
+               There is no density argument for keeping these small either: they
+               are the pane's top-level view switch with a whole row to
+               themselves, which is precisely the button §5 says should be 44 in
+               the first place. */
             <button
               key={v.key}
               type="button"
@@ -498,7 +512,7 @@ export function BranchesPane({
               onClick={() => setView(v.key)}
               style={{
                 ...controlStyle,
-                minHeight: 34,
+                minHeight: 'var(--tap)',
                 borderColor: on ? 'var(--nav-active-accent)' : 'var(--border)',
                 background: on ? 'var(--nav-active-bg)' : 'var(--card)',
                 color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
@@ -605,13 +619,18 @@ export function BranchesPane({
                   </span>
                 </div>
 
+                {/* The card's one action, full width and last in the card, so
+                    it can simply be 44 — no pseudo-element needed and nothing
+                    below it to overlap. This is the phone/tablet path (tables
+                    become card rows under 768), which is exactly where a thumb
+                    is doing the pressing. */}
                 <button
                   type="button"
                   onClick={() => {
                     setFocused(b.id)
                     setPage(1)
                   }}
-                  style={{ ...controlStyle, width: '100%', justifyContent: 'center', minHeight: 34, background: 'var(--card2)' }}
+                  style={{ ...controlStyle, width: '100%', justifyContent: 'center', minHeight: 'var(--tap)', background: 'var(--card2)' }}
                 >
                   View Branch Profile
                   <Icon name="arrow_right" size={13} />
@@ -625,7 +644,17 @@ export function BranchesPane({
             <Card
               title={`Branch Profile — ${focusedBranch.name}`}
               action={
-                <button type="button" onClick={() => setFocused(null)} style={{ ...controlStyle, minHeight: 28, fontSize: 'var(--t-th)' }}>
+                /* A card-header action: 28px so it sits inside the header band
+                   rather than inflating it, `tap` so the way out of the branch
+                   profile is not a 28px strip. The header is 52px tall and this
+                   is the only control in it, so the 44px target lands entirely
+                   inside the header. */
+                <button
+                  type="button"
+                  className="tap"
+                  onClick={() => setFocused(null)}
+                  style={{ ...controlStyle, minHeight: 28, fontSize: 'var(--t-th)' }}
+                >
                   <Icon name="chevron_left" size={12} />
                   Back to all branches
                 </button>
@@ -724,7 +753,22 @@ export function BranchesPane({
                     </option>
                   ))}
                 </select>
-                <button type="button" onClick={exportCsv} style={{ ...controlStyle, minHeight: 30, fontSize: 'var(--t-th)' }}>
+                {/* 30px to line up with the search box and status select it
+                    shares the header band with — a button standing 14px taller
+                    than the two filters beside it would read as a different
+                    class of control. `tap` for the rest. It is wider than 44,
+                    so the target grows only up and down, never the 8px across
+                    into the status select. Note the band wraps below ~768: once
+                    it does, the three sit 8px apart in a column and the 44px
+                    target clears the select above by exactly 1px — it holds,
+                    but it is the seam to re-measure if either filter is ever
+                    given a target of its own. */}
+                <button
+                  type="button"
+                  className="tap"
+                  onClick={exportCsv}
+                  style={{ ...controlStyle, minHeight: 30, fontSize: 'var(--t-th)' }}
+                >
                   <Icon name="download" size={12} />
                   Export CSV
                 </button>
@@ -780,6 +824,40 @@ export function BranchesPane({
                         <Fragment key={b.id}>
                           <tr>
                             <td style={{ ...td, padding: '0 0 0 4px' }}>
+                              {/* 26x26 was the whole target — a third of the
+                                  required area on the control that opens a
+                                  branch's warehouses. It stays 26 on screen
+                                  because a 44px disclosure glyph would set the
+                                  width of the first column and push every row
+                                  sideways; `tap` grows BOTH axes here, since
+                                  unlike the labelled buttons this one is square
+                                  and under 44 in each direction.
+
+                                  ⚠ These rows pitch at about 39px, short of the
+                                  §7.3 "rows >= 56" floor, so this target and the
+                                  one in the row below overlap in a band of
+                                  roughly 5px and the lower row wins it. Raising
+                                  the row height is the fix and it belongs to
+                                  `td`, which several screens share — flagged
+                                  rather than forced from inside this file. */}
+                              {/*
+                                No `className="tap"` here, deliberately.
+
+                                It WAS applied, and an adversarial check showed
+                                the ::after being clipped: the table sits in a
+                                `<div style={{ overflowX: 'auto' }}>` (line
+                                ~797), and a non-visible `overflow-x` makes
+                                `overflow-y` compute to `auto` too — a real
+                                scroll container that clips on both axes. With
+                                the first `td` at `padding: '0 0 0 4px'`, the
+                                26px button sits 4px inside the scrollport edge,
+                                so the 44px pseudo-element lost 5px off its left
+                                and the true target measured 39x44.
+
+                                A pseudo-element cannot escape a scrollport, so
+                                the box grows instead. `minWidth`/`minHeight`
+                                are real layout, which the container cannot clip.
+                              */}
                               <button
                                 type="button"
                                 onClick={() => toggle(b.id)}
@@ -787,8 +865,12 @@ export function BranchesPane({
                                 aria-label={`${open ? 'Collapse' : 'Expand'} the warehouses under ${b.name}`}
                                 style={{
                                   ...controlStyle,
-                                  minHeight: 26,
-                                  width: 26,
+                                  // Real layout, not a pseudo-element — see the
+                                  // note above. The scrollport clips ::after but
+                                  // cannot clip the box itself.
+                                  minHeight: 'var(--tap)',
+                                  minWidth: 'var(--tap)',
+                                  width: 'var(--tap)',
                                   padding: 0,
                                   justifyContent: 'center',
                                   border: 'none',
@@ -818,8 +900,16 @@ export function BranchesPane({
                               {/* §11.3 draws a `⋮`. One built action does not
                                   need a menu, and a menu of unbuilt rows would
                                   be four dead controls. */}
+                              {/* Same trade as the disclosure glyph: the paint
+                                  stays 28 so the row does not grow, `tap` makes
+                                  the target legal, and the label keeps it past
+                                  44 across so only the short axis moves. Same
+                                  row-pitch caveat too — until rows reach 56,
+                                  this target and the Profile button one row
+                                  down share a ~5px band. */}
                               <button
                                 type="button"
+                                className="tap"
                                 onClick={() => {
                                   setFocused(b.id)
                                   setPage(1)
@@ -890,8 +980,17 @@ export function BranchesPane({
                 </select>
               </label>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                {/* The pagination pair is the case §5 wrote the exception for:
+                    28x28 arrows in a dense strip, kept compact on screen and
+                    given their 44 underneath. Square and under 44 both ways, so
+                    `tap` inflates both axes — 8px of reach on each side. That
+                    is checked against its neighbours rather than assumed: the
+                    "Rows per page" select sits 12px away and the two arrows are
+                    84px apart centre to centre with the page count between
+                    them, so nothing overlaps. */}
                 <button
                   type="button"
+                  className="tap"
                   onClick={() => setPage(current - 1)}
                   disabled={current === 1}
                   aria-label="Previous page"
@@ -904,6 +1003,7 @@ export function BranchesPane({
                 </span>
                 <button
                   type="button"
+                  className="tap"
                   onClick={() => setPage(current + 1)}
                   disabled={current === pageCount}
                   aria-label="Next page"
@@ -948,8 +1048,16 @@ export function BranchesPane({
                     </span>
                   </div>
                 ))}
+                {/* Last thing in the card, under a list of transfer counts that
+                    are text and chips rather than controls, so the 6px this
+                    target reaches upward crosses nothing clickable. `tap` and
+                    not a taller box only because `controlStyle`'s 32 is what
+                    every other "see the rest of this" link on the page paints
+                    at, and one of them standing 44 tall would look like the
+                    card's primary action. */}
                 <button
                   type="button"
+                  className="tap"
                   onClick={() => setView('warehouses')}
                   style={{ ...controlStyle, justifyContent: 'center', marginTop: 'var(--sp-xs)' }}
                 >
@@ -1087,8 +1195,10 @@ function AddBranchModal({
         value={value}
         onChange={(e) => set(e.target.value)}
         placeholder={placeholder}
+        /* Law 15 — the law is the hit area and `--tap` is the token. One field
+           per line in the Add Branch form, so it just grows. */
         style={{
-          minHeight: 32,
+          minHeight: 'var(--tap)',
           padding: '0 9px',
           borderRadius: 'var(--r-input)',
           border: '1px solid var(--input-border)',
@@ -1274,7 +1384,15 @@ export function BranchesRail({
               </span>
             </DestControl>
           ))}
-          <Link to="/operations" style={{ ...controlStyle, justifyContent: 'center', width: '100%', marginTop: 2 }}>
+          {/* ⚠ The tightest seam in this file. The alert rows above stack 6px
+              apart with `marginTop: 2` under the last one, so this target's 6px
+              of upward reach stops 2px short of the alert box — it clears, but
+              only just. The alert rows are 32px tall themselves and are still
+              short of Law 15; whoever gives them their target must open this gap
+              first, or the two will start trading clicks. Their style is a local
+              object rather than `controlStyle`, which is why they are not fixed
+              in this pass. */}
+          <Link to="/operations" className="tap" style={{ ...controlStyle, justifyContent: 'center', width: '100%', marginTop: 2 }}>
             View all alerts
             <Icon name="arrow_right" size={13} />
           </Link>

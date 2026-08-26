@@ -184,8 +184,11 @@ const th = {
 }
 const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
 
+/* Law 15 — hit area over paint, number from `--tap`. These are the Record
+   Expense fields, stacked one per row, plus the category filter above the
+   table; none of them sit tight enough to need the inset-target trick. */
 const inputStyle = {
-  height: 36,
+  minHeight: 'var(--tap)',
   padding: '0 11px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--border)',
@@ -290,12 +293,25 @@ const menuStyle = {
   zIndex: 30,
 }
 
+/*
+ * Law 14 / §7.3 — 44px floor, and here it has to be the PAINT.
+ *
+ * §5's compact-34 escape buys density by hiding the target in surrounding
+ * chrome. A stacked menu has no surrounding chrome: these rows touch, so a 44px
+ * invisible target on a 34px row overlaps its neighbours by 5px top and bottom
+ * and the later row in the DOM wins the tap. On a menu that moves an expense
+ * between approval states, taking the wrong row is a booking-safety failure,
+ * not a cosmetic one.
+ *
+ * Growing the paint costs nothing: `menuStyle` is absolutely positioned with no
+ * max-height, so the popover simply gets taller.
+ */
 const menuItemStyle = {
   display: 'flex',
   alignItems: 'center',
   gap: 9,
   width: '100%',
-  height: 34,
+  minHeight: 'var(--tap)',
   padding: '0 9px',
   borderRadius: 'var(--r-sm)',
   border: 'none',

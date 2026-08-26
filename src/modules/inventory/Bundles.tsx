@@ -77,8 +77,11 @@ const td: CSSProperties = {
   verticalAlign: 'top',
 }
 
+/* Law 15 — the hit area is the law and `--tap` is the token. Every consumer is
+   a Select in the wrapping filter card or the pager, so a taller box costs a
+   few pixels of chrome and nothing else. */
 const selectStyle: CSSProperties = {
-  height: 32,
+  minHeight: 'var(--tap)',
   padding: '0 8px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--input-border)',

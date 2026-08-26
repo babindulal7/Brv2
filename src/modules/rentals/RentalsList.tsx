@@ -308,12 +308,29 @@ const menuStyle = {
   zIndex: 30,
 }
 
+/*
+ * Law 14 / §7.3 — 44px floor, taken on the PAINT rather than on an invisible
+ * target, because a stacked menu is the one shape where the two are the same
+ * thing. Rows here are contiguous; a 44px target on a 34px row overlaps the row
+ * above and below by 5px each, and the later one in the DOM wins. This style
+ * dresses the Operations menu (Pickup · Packing · Handover · Return …) and the
+ * column chooser's `<label>` rows, so a stolen tap is a wrong operation opened
+ * against a real booking.
+ *
+ * Nothing constrains the growth: `menuStyle` is absolutely positioned with no
+ * max-height, and `OPS_MENU_H` — which only *predicts* the height so the menu
+ * knows whether to flip up — moves with it.
+ *
+ * The column chooser's rows are `<label>`s wrapping a checkbox, so growing the
+ * label grows the checkbox's hit area with it (Law 14 is satisfied by the label
+ * forwarding the click; the same trick the floor workspaces use).
+ */
 const menuItemStyle = {
   display: 'flex',
   alignItems: 'center',
   gap: 9,
   width: '100%',
-  height: 34,
+  minHeight: 'var(--tap)',
   padding: '0 9px',
   borderRadius: 'var(--r-sm)',
   border: 'none',
@@ -342,7 +359,9 @@ const menuItemStyle = {
  *     reason on hover and focus** (§4.2), never hidden.
  */
 /** Tallest the menu gets — Open Booking, the rule, and the four operations. */
-const OPS_MENU_H = 200
+/** Predicted menu height for the flip decision. Rose from 200 when the rows
+ *  took the 44px `--tap` floor: Open Booking + 4 `OPERATIONS` = 5 × 44, plus 13 divider and 12 padding. */
+const OPS_MENU_H = 245
 
 function RowOperations({ row }: { row: RentalListRow }) {
   const [open, setOpen] = useState(false)
@@ -2080,8 +2099,12 @@ const stickyTd = {
   boxShadow: 'inset 1px 0 0 var(--border)',
 }
 
+/* Law 15 — the law is the hit area, not the paint, and `--tap` is where 44
+   lives. At 30 these two date fields were the smallest targets on the page and
+   the ones most often used on a phone at the counter. The range bar wraps, so
+   they can simply grow. */
 const dateInput = {
-  height: 30,
+  minHeight: 'var(--tap)',
   padding: '0 8px',
   borderRadius: 'var(--r-sm)',
   border: '1px solid var(--input-border)',

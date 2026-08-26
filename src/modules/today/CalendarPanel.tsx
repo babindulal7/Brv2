@@ -124,6 +124,18 @@ const kindOf = (m: MovementRow): 'pickup' | 'return' => (m.kind === 'Return' || 
  * nothing at all about returns.
  */
 function KindChips({ kind, setKind }: { kind: Kind; setKind: (k: Kind) => void }) {
+  /* Law 14 / v4.1 §7.3 — 26px of paint, 44px of target. These three chips had
+     neither: 26px is below the touch minimum on every axis, and nothing around
+     them made up the difference.
+
+     They keep the compact paint rather than growing to 44, which is the trade §5
+     licenses for a dense strip ("the law is the HIT AREA, not the paint"). This
+     is the narrow secondary control on a rail card — the card's day list is
+     already capped at 250px and scrolls, so 18px more chrome would come straight
+     out of the rows an operator is trying to read, to make a chip that only
+     narrows the view beside it look like a primary action. `.tap` (theme.css)
+     grows both axes underneath instead; the row does not wrap and every chip is
+     ~44 wide or more, so no target here reaches into its neighbour. */
   const chip = (k: Kind) => {
     const on = kind === k
     return {
@@ -143,14 +155,14 @@ function KindChips({ kind, setKind }: { kind: Kind; setKind: (k: Kind) => void }
 
   return (
     <div role="group" aria-label="Show only pickups or only returns" style={{ display: 'flex', gap: 5 }}>
-      <button type="button" onClick={() => setKind('pickup')} aria-pressed={kind === 'pickup'} style={chip('pickup')}>
+      <button type="button" className="tap" onClick={() => setKind('pickup')} aria-pressed={kind === 'pickup'} style={chip('pickup')}>
         Pickups
       </button>
-      <button type="button" onClick={() => setKind('return')} aria-pressed={kind === 'return'} style={chip('return')}>
+      <button type="button" className="tap" onClick={() => setKind('return')} aria-pressed={kind === 'return'} style={chip('return')}>
         Returns
       </button>
       {kind !== 'all' && (
-        <button type="button" onClick={() => setKind('all')} aria-pressed={false} style={chip('all')}>
+        <button type="button" className="tap" onClick={() => setKind('all')} aria-pressed={false} style={chip('all')}>
           All
         </button>
       )}

@@ -107,7 +107,12 @@ const controlBase: CSSProperties = {
 
 const selectStyle: CSSProperties = { ...controlBase, cursor: 'pointer' }
 
-const filterSelect: CSSProperties = { ...selectStyle, height: 32, width: 'auto' }
+/* Law 15 — hit area, not paint, and the number comes from `--tap`. These four
+   are the one part of this file the density argument above does not cover: they
+   sit in a wrapping filter card, not the ten-column pricing grid, so they take
+   the floor directly. `height: 'auto'` sheds `controlBase`'s 34 so the box is
+   governed by --tap alone instead of by two rules fighting. */
+const filterSelect: CSSProperties = { ...selectStyle, height: 'auto', minHeight: 'var(--tap)', width: 'auto' }
 
 /*
  * The render fits ten Bundle Items columns into roughly 600px beside the tree

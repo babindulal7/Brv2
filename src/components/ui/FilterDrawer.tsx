@@ -499,12 +499,24 @@ export function ActiveFilterChips({
           }}
         >
           {f.label}
+          {/* The glyph stays 20px because its chip is only 28px tall — a target
+              painted at the full touch minimum would stand taller than its own
+              parent and burst the row. §5 sanctions exactly this trade: keep the
+              paint compact, extend the hit area underneath it, because the law
+              is the hit area and not the paint.
+
+              This used to carry its own hand-rolled `aria-hidden` span holding a
+              literal 44×44. That worked — a plain descendant with default
+              pointer-events is genuinely part of the button's hit region — but it
+              was a private copy of a rule that now has one home in `theme.css`,
+              and it hard-coded the number `--tap` owns. `.tap` brings its own
+              `position: relative`, so the inline one left with the span. */}
           <button
             type="button"
+            className="tap"
             onClick={f.onRemove}
             aria-label={`Remove filter ${f.label}`}
             style={{
-              position: 'relative',
               display: 'grid',
               placeItems: 'center',
               width: 20,
@@ -516,12 +528,6 @@ export function ActiveFilterChips({
               cursor: 'pointer',
             }}
           >
-            {/* 44×44 hit area on a 20px glyph — the touch minimum applies on
-                desktop too, and inflating the chip would wreck the row. */}
-            <span
-              aria-hidden="true"
-              style={{ position: 'absolute', top: '50%', left: '50%', width: 44, height: 44, transform: 'translate(-50%,-50%)' }}
-            />
             <Icon name="close" size={12} />
           </button>
         </span>
@@ -683,13 +689,28 @@ export function FilterOptionList({
             const text = o.label ?? o.value
             const on = chosen.has(o.value)
             return (
+              /*
+                The ROW grows to the touch minimum; the checkbox stays 16px.
+                A label forwards its clicks to the control it wraps, so the whole
+                strip — box, option name and facet count — is one target, and we
+                get there without the grotesquerie of a 44px native checkbox.
+                Same bargain the packing, handover and reset card rows already
+                make.
+
+                36px was simply short of the line. Nothing about a filter panel
+                is dense enough to earn §5's compact exception, and the drawer
+                body scrolls on its own axis, so the extra height per option
+                costs a little scroll rather than a clipped option. The rows are
+                real boxes in a grid, not pseudo-elements, so growing them pushes
+                their neighbours apart instead of overlapping them.
+              */
               <label
                 key={o.value}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: 9,
-                  minHeight: 36,
+                  minHeight: 44,
                   padding: '0 8px',
                   borderRadius: 'var(--r-sm)',
                   cursor: 'pointer',

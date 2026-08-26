@@ -63,8 +63,11 @@ import type { ClientRecord } from '../../data/clients'
 const IMPORT_UNAVAILABLE_REASON =
   'Import is not connected in this build — no client-import action exists, so nothing can be created.'
 
+/* Law 15 — hit area, not paint; the number comes from `--tap`. The one
+   consumer is the Maps To select in the mapping preview, one per column and
+   the only thing the operator touches on this screen. Its row simply grows. */
 const inputStyle: CSSProperties = {
-  height: 34,
+  minHeight: 'var(--tap)',
   padding: '0 10px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--border)',

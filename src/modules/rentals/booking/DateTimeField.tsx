@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import Icon from '../../../components/ui/Icon'
+import { TouchTarget } from '../../../components/ui/TouchTarget'
 import { toBs, formatBs, formatAd, BS_MONTHS } from '../../../lib/bs'
 
 /**
@@ -15,7 +16,6 @@ import { toBs, formatBs, formatAd, BS_MONTHS } from '../../../lib/bs'
  * are the only reusable pieces; everything else here is new.
  */
 
-const TOUCH = 44
 const MONTH_ABBR = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
 
 function pad2(n: number): string {
@@ -72,17 +72,33 @@ function displayDate(v: string): string {
   return Number.isNaN(d.getTime()) ? v : formatAd(d)
 }
 
-/** Same shape as `NewRental.tsx`'s private `TouchInset` — not exported from
- *  that module, so re-declaring nine lines here beats widening its surface. */
-function TouchInset() {
-  return (
-    <span
-      aria-hidden="true"
-      style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: `max(100%, ${TOUCH}px)`, height: TOUCH }}
-    />
-  )
-}
-
+/*
+ * The private `TouchInset` that used to live here is gone; its four call sites
+ * now use the shared `components/ui/TouchTarget`.
+ *
+ * Same geometry, one difference that matters: the local copy hard-coded
+ * `const TOUCH = 44`, so the floor was written down twice — once in `theme.css`
+ * as `--tap` and once here as a number that would not move with it. The shared
+ * component reads `var(--tap)`, which is what §3.3 says the number is for.
+ *
+ * ⚠ KNOWN OVERLAP, pre-existing and NOT introduced here. The calendar and timer
+ * buttons at the end of the field are 26px wide and share an edge, so their two
+ * 44px targets overlap by 18px — and because the timer button is later in the
+ * DOM it wins that band, which reaches ~9px into the calendar button's VISIBLE
+ * glyph, so tapping the right edge of the calendar icon opens the time list.
+ *
+ * RESOLVED 25 Aug 2026 by taking only the axis that is actually free. Both
+ * buttons now use `<TouchTarget axis="y" />`: full 44px vertical target, width
+ * left at the control's own 26px. The overlap is gone and neither button can
+ * steal the other's glyph.
+ *
+ * The width is still short of 44, and that is stated rather than hidden: two
+ * adjacent controls cannot both hold a 44px-wide target inside 52px of space.
+ * Closing it needs a layout change — widen the field, or collapse the two
+ * pickers into one — which is a design decision about this field, not
+ * something a hit-area pass should force. 26x44 with no mis-fire beats 44x44
+ * with one.
+ */
 const iconBtnStyle: CSSProperties = {
   position: 'relative',
   flexShrink: 0,
@@ -133,7 +149,7 @@ function CalendarPopover({ value, onSelect }: { value: string; onSelect: (v: str
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <button type="button" className="press" aria-label="Previous month" onClick={() => setViewMonth((m) => (m === 0 ? (setViewYear((y) => y - 1), 11) : m - 1))} style={iconBtnStyle}>
-          <TouchInset />
+          <TouchTarget />
           <Icon name="chevron_left" size={14} />
         </button>
         <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
@@ -141,7 +157,7 @@ function CalendarPopover({ value, onSelect }: { value: string; onSelect: (v: str
           {monthBs && <span style={{ display: 'block', fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>{BS_MONTHS[monthBs.month - 1]} {monthBs.year} BS</span>}
         </span>
         <button type="button" className="press" aria-label="Next month" onClick={() => setViewMonth((m) => (m === 11 ? (setViewYear((y) => y + 1), 0) : m + 1))} style={iconBtnStyle}>
-          <TouchInset />
+          <TouchTarget />
           <Icon name="chevron_right" size={14} />
         </button>
       </div>
@@ -345,7 +361,7 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
           }}
           style={iconBtnStyle}
         >
-          <TouchInset />
+          <TouchTarget axis="y" />
           <Icon name="calendar_event" size={15} />
         </button>
         <button
@@ -358,7 +374,7 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
           }}
           style={iconBtnStyle}
         >
-          <TouchInset />
+          <TouchTarget axis="y" />
           <Icon name="timer" size={15} />
         </button>
       </div>

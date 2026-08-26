@@ -141,7 +141,25 @@ const DECISIONS: readonly NotReturnedDecision[] = [
 const MIN_REASON = 10
 
 const th = { textAlign: 'left' as const, padding: '8px 9px', fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)', whiteSpace: 'nowrap' as const, borderBottom: '1px solid var(--border)' }
-const td = { padding: '8px 9px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic. It gives `--row-min-h` its first consumers; it had none.
+ *
+ * This is also a DATA-INTEGRITY fix, not a density preference. `CompactButton`
+ * (RowAction on all four floor screens) is 22px tall and carries a 44px
+ * TouchTarget, so its hit area overhung this row by ~3px at each edge while the
+ * row was 8+22+8 = 38px. Vertically adjacent rows therefore overlapped by ~6px,
+ * and the later row in the DOM wins a tap in that band — on Return, where the
+ * two actions are "Mark Returned" and "Not Returned", a tap near a row boundary
+ * could record a return against the WRONG line item.
+ *
+ * At 56px the 44px target sits inside the row with 6px of margin each side and
+ * the overlap is gone. Fixing the row floor and the hit area turned out to be
+ * one fix, which is why it is done here rather than by shrinking the target:
+ * a smaller target on a gloved-tablet screen is the wrong trade.
+ */
+const td = { height: 'var(--row-min-h)', padding: '8px 9px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
 
 /**
  * One checklist row — one physical unit (`booking_line_units` row) on a

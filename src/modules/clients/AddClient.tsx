@@ -105,9 +105,13 @@ function formatSinceDate(iso: string): string {
   return bs ? `${formatBs(bs)} · ${formatAd(d)}` : formatAd(d)
 }
 
+/* Law 15 — 44 is the minimum hit area, and `--tap` is the single place that
+   number is written. Every consumer here is a field in the New Client form, one
+   per line with nothing to collide with, so `minHeight` (not `height`) — the
+   notes textarea at the bottom still overrides to `auto` and grows past it. */
 const inputStyle = (hasError?: boolean): CSSProperties => ({
   width: '100%',
-  height: 38,
+  minHeight: 'var(--tap)',
   padding: '0 12px',
   borderRadius: 'var(--r-input)',
   border: `1px solid ${hasError ? 'var(--danger-text)' : 'var(--border)'}`,
@@ -1040,13 +1044,41 @@ export default function AddClient() {
             <div style={fieldRow}>
               <Field label="Preferred Contact Method">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', paddingTop: 4 }}>
+                  {/*
+                    These three rows were as tall as the text in them — about 19px
+                    of target for a control the operator taps on a docked tablet
+                    while holding a case in the other hand. The fix is on the
+                    LABEL, not the box: a label hands its clicks to the control it
+                    wraps, so stretching it to the touch minimum makes the whole
+                    "☐ WhatsApp" strip clickable while the checkbox itself stays
+                    16px. Resizing the input instead would give us a 44px native
+                    checkbox, which is enormous and still leaves the word beside it
+                    dead to the touch. The literal 44 rather than `var(--tap)` is
+                    deliberate — it matches the three card-row labels in the
+                    packing, handover and reset workspaces that set this same
+                    pattern.
+
+                    They stack in a flex column with a real gap between them, so
+                    each grown row pushes the next one down; nothing overlaps.
+                  */}
                   {PREFERRED_CONTACT_METHODS.map((m) => (
-                    <label key={m} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text)', cursor: 'pointer' }}>
+                    <label
+                      key={m}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 'var(--sp-sm)',
+                        minHeight: 44,
+                        fontSize: 'var(--t-meta)',
+                        color: 'var(--text)',
+                        cursor: 'pointer',
+                      }}
+                    >
                       <input
                         type="checkbox"
                         checked={preferredMethods.includes(m)}
                         onChange={() => togglePreferred(m)}
-                        style={{ width: 16, height: 16, accentColor: 'var(--nav-active-accent)' }}
+                        style={{ width: 16, height: 16, flexShrink: 0, accentColor: 'var(--nav-active-accent)' }}
                       />
                       {m}
                     </label>

@@ -813,8 +813,8 @@ function pagerBtn(on: boolean) {
   } as const
 }
 
-/** Tallest the menu gets — all 5 items below. */
-const CASE_MENU_H = 190
+/** Tallest the menu gets — all 5 items below, each at the 44px `--tap` floor, plus 12px padding. Was 190 at 30px rows. */
+const CASE_MENU_H = 232
 
 /** §4.5's `⋮` — Assign Owner · Add Note · View Timeline · Duplicate · Archive. Same disclosure pattern as `BookingDetail.tsx`'s Operations menu. */
 function RowMenu({ caseId }: { caseId: string }) {
@@ -847,7 +847,14 @@ function RowMenu({ caseId }: { caseId: string }) {
                 tabIndex={0}
                 title={`${label} is not built yet for Cases`}
                 aria-disabled
-                style={{ display: 'flex', alignItems: 'center', height: 30, padding: '0 9px', borderRadius: 7, fontSize: 'var(--t-meta)', color: 'var(--muted)', cursor: 'not-allowed' }}
+                /* Law 14 / §7.3 — the 44px floor lands on the PAINT here, not on an
+                   invisible target. §5's compact-34 escape assumes the hidden target
+                   spills into empty chrome; menu rows touch, so a 44px target on a 30px
+                   row overlaps the neighbour above and below by 7px each and the later
+                   row in the DOM wins the tap — Duplicate stealing Archive's edge. The
+                   popover has no max-height, so the paint is free to grow; `CASE_MENU_H`
+                   above only predicts the height for the flip decision and moves with it. */
+                style={{ display: 'flex', alignItems: 'center', minHeight: 'var(--tap)', padding: '0 9px', borderRadius: 7, fontSize: 'var(--t-meta)', color: 'var(--muted)', cursor: 'not-allowed' }}
               >
                 {label}
               </span>

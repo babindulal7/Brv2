@@ -91,9 +91,14 @@ import type { Tool, GroupKey, CalcKey } from '../../data/tools'
 
 /* ══ shared field furniture ══════════════════════════════════════════════ */
 
+/* Law 15 — the law is the hit area, not the paint, and `--tap` is the one place
+   44 is written. Every consumer is an <input> or <select>: the numeric and
+   choice fields in the tool panels, the discount reason/approver pair, and the
+   category filter. `minHeight` so the filter's local `height: 30` cannot dip
+   back under the floor. */
 const controlStyle: CSSProperties = {
   width: '100%',
-  height: 34,
+  minHeight: 'var(--tap)',
   padding: '0 10px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--input-border)',

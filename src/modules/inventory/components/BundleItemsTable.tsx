@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import Icon from '../../../components/ui/Icon'
+import { TouchTarget } from '../../../components/ui/TouchTarget'
 import { formatMoney, rupees } from '../../../lib/money'
 
 interface BundleItemsTableProps {
@@ -100,11 +101,22 @@ export const BundleItemsTable = memo(({ hydratedBundleItems, clearAllItems, upda
                   )}
                 </td>
                 <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                  {/*
+                    Law 14 / §7.3 — hit area, not paint. This is a 16px glyph in 4px
+                    of padding: 24×24, a bit over half the floor. Growing the PAINT to
+                    44 would widen the Action column and set the height of every row in
+                    a table that is meant to stay dense, so the invisible target grows
+                    instead. It has room to: the cell holds nothing else, the row is
+                    ~46px tall from the two-line Equipment Model and Availability cells
+                    either side, and the nearest other control (the discount input) is a
+                    full column away.
+                  */}
                   <button 
                     onClick={() => toggleItem(item.id)} 
-                    style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', display: 'inline-flex', padding: 'var(--sp-xs)' }}
+                    style={{ position: 'relative', background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', display: 'inline-flex', padding: 'var(--sp-xs)' }}
                     aria-label={`Remove ${item.inv.name} from bundle`}
                   >
+                    <TouchTarget />
                     <Icon name="close" size={16} />
                   </button>
                 </td>

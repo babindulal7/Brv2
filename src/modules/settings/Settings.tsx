@@ -246,6 +246,12 @@ export default function Settings() {
   const headerActions =
     load.status !== 'ready' ? null : active === 'branches' && !onPhoneList ? (
       <>
+        {/* No `tap` here, deliberately, and the omission is the considered
+            answer rather than a miss. This is a `span`: no handler, no focus,
+            and it says outright that Import is not built. Law 15 sizes TARGETS,
+            and there is nothing here to aim at — an invisible 44px band around
+            a dead control cannot help anyone reach it, it can only sit over the
+            header strip catching presses that then do nothing at all. */}
         <span
           aria-disabled="true"
           title={IMPORT_WHY}
@@ -315,7 +321,12 @@ export default function Settings() {
         <Button icon="download" onClick={exportConfig}>
           Export config
         </Button>
-        <Link to="/admin/audit" style={{ ...controlStyle, minHeight: 34 }}>
+        {/* 34 to sit level with the `Button`s beside it, so the header strip
+            does not step up and down; `tap` for the height those 34 pixels owe
+            Law 15. Only the short axis inflates — the label puts this well past
+            44 across — so the target grows into the header's padding rather
+            than sideways into Export config. */}
+        <Link to="/admin/audit" className="tap" style={{ ...controlStyle, minHeight: 34 }}>
           <Icon name="checklist" size={14} />
           View audit log
         </Link>
@@ -447,8 +458,16 @@ export default function Settings() {
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <nav aria-label="Breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            {/* The crumb is the only way back up on phone — §4 rules out a
+                Back button — so it is the single most important target on this
+                layout, and it was a borderless 32px word with 2px of padding.
+                `tap` rather than a taller box because a breadcrumb that stands
+                44px tall reads as a button and stops reading as a trail; the
+                chevron and the current-page label beside it are inert, so
+                nothing is there to be stolen from. */}
             <button
               type="button"
+              className="tap"
               onClick={toList}
               style={{
                 ...controlStyle,

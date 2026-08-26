@@ -89,8 +89,10 @@ const tdFor = (d: Density) => ({
   verticalAlign: 'top' as const,
 })
 
+/* Law 15 — hit area, not paint; `--tap` carries the number. Two consumers,
+   both Selects (sort, rows per page) in flex rows that wrap. */
 const selectStyle = {
-  height: 32,
+  minHeight: 'var(--tap)',
   padding: '0 8px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--input-border)',
@@ -942,12 +944,23 @@ function FilterRail({
       return next
     })
 
+  /*
+   * Law 14 / §7.3 — 44px floor on the PAINT.
+   *
+   * These are the facet accordion headers (Category, Status, …), stacked with a
+   * 2px gap. §5's compact-34-plus-invisible-target escape needs somewhere for
+   * the invisible half to go; in a stacked list there is nowhere — a 44px target
+   * on a 34px row with a 2px gap overlaps the row above and below by 4px each,
+   * and the later one in the DOM wins, so tapping the bottom of Category would
+   * open Status. Growing the paint costs a few pixels of rail height and no
+   * correctness.
+   */
   const rowBase = {
     display: 'flex',
     alignItems: 'center',
     gap: 'var(--sp-sm)',
     width: '100%',
-    height: 34,
+    minHeight: 'var(--tap)',
     padding: '0 4px',
     border: 'none',
     background: 'transparent',

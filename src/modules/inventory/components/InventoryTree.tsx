@@ -46,7 +46,19 @@ export const InventoryTree = memo(({ inventory, searchQuery, bundleItems, toggle
                 aria-selected={!!parentSelected}
                 tabIndex={0}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleItem(parent.id) }}
-                style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', background: 'var(--bg)', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                /*
+                  Law 14 — the ROW is the control here, not the 16px box drawn inside
+                  it: the click handler, `role="treeitem"`, `tabIndex` and the Enter/Space
+                  key handler all live on this div, and the little square is decoration
+                  the row paints to show its own selected state. So there is no invisible
+                  target to add — the hit area already covers the full width.
+                  What it did NOT have was a guaranteed height. 8px padding + a 14px name
+                  + a 13px code + the 1px rule lands on 44 exactly, with nothing to spare
+                  for a shorter font stack or a row whose code line is missing. `--tap` as
+                  a floor makes the compliance a stated rule rather than an arithmetic
+                  coincidence.
+                */
+                style={{ padding: '8px 16px', minHeight: 'var(--tap)', display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', background: 'var(--bg)', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
               >
                 <div style={{ width: 16, height: 16, border: '1px solid var(--border)', borderRadius: 3, background: parentSelected ? 'var(--nav-active-accent)' : 'transparent', position: 'relative' }}>
                   {parentSelected && <span style={{ color: 'white', position: 'absolute', top: 1, left: 1, display: 'flex' }}><Icon name="check" size={12} /></span>}
@@ -83,7 +95,9 @@ export const InventoryTree = memo(({ inventory, searchQuery, bundleItems, toggle
                     aria-selected={!!childSelected}
                     tabIndex={0}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleItem(child.id) }}
-                    style={{ padding: '8px 16px 8px 48px', display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                    /* Same as the parent row above — the row is the control, `--tap` is
+                       its floor rather than an accident of the type scale. */
+                    style={{ padding: '8px 16px 8px 48px', minHeight: 'var(--tap)', display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
                   >
                     <div style={{ width: 16, height: 16, border: '1px solid var(--border)', borderRadius: 3, background: childSelected ? 'var(--nav-active-accent)' : 'transparent', position: 'relative' }}>
                       {childSelected && <span style={{ color: 'white', position: 'absolute', top: 1, left: 1, display: 'flex' }}><Icon name="check" size={12} /></span>}

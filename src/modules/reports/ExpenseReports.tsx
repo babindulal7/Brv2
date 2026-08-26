@@ -654,8 +654,10 @@ export default function ExpenseReports() {
   )
 }
 
+/* Law 15 — the hit area is the law and `--tap` is the token for it. Two
+   consumers, both period/branch Selects in the report toolbar. */
 const selStyle = {
-  height: 32,
+  minHeight: 'var(--tap)',
   padding: '0 8px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--border)',

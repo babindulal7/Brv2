@@ -618,11 +618,27 @@ export function Maintenance() {
     setSearchQuery('')
   }
 
+  /* Law 14 / v4.1 §7.3 — the hit area is 44 everywhere, and here the box itself
+     carries it. These status chips were painted 30px tall: under the touch
+     minimum, and under even the 34px compact paint §5 allows in a dense strip.
+
+     They grow rather than wear a `.tap` pseudo-element, because nothing stops
+     them: the strip is a wrapping flex row that already carries a 34px search
+     field and two full-height buttons, so the row was never 30px tall anyway.
+     The compact route would have been worse than cosmetic here — this row wraps
+     at `--sp-sm` (8px), and a 30px chip carrying a 44px pseudo-element spills 7px
+     above and below itself, so on a wrapped line two chips' targets would have
+     overlapped by 6px with the lower one winning the click. A real 44px control
+     has no such seam.
+
+     `minHeight`, not `height`: 44 is the floor the law sets, not a ceiling the
+     chip has to fit inside, so a reader running a larger body size gets a taller
+     chip rather than a label pressed against its own border. */
   const chipStyle = (on: boolean) => ({
     display: 'inline-flex' as const,
     alignItems: 'center' as const,
     gap: 6,
-    height: 30,
+    minHeight: 'var(--tap)',
     padding: '0 10px',
     borderRadius: 'var(--r-sm)',
     border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,

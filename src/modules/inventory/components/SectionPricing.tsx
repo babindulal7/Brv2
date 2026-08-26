@@ -96,7 +96,15 @@ export function SectionPricing() {
                         }}
                         aria-pressed={on}
                         style={{
-                          height: 32,
+                          /* Was a hard height: 32. These two are not a dense
+                             toolbar — they are a segmented choice sitting alone
+                             above the deposit field with a whole form's worth of
+                             room around them, so the box can simply grow and
+                             become a real 44px control instead of a 32px one
+                             wearing a pseudo-element coat. min-height, not
+                             height, so a wrapped label at 390px lengthens the
+                             button rather than spilling out of it. */
+                          minHeight: 'var(--tap)',
                           padding: '0 12px',
                           borderRadius: 'var(--r-btn)',
                           border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
@@ -166,7 +174,16 @@ export function SectionPricing() {
                     { label: 'Inspection required on return', on: inspectionRequired, set: setInspectionRequired },
                     { label: 'Packing required', on: packingRequired, set: setPackingRequired },
                   ].map((t) => (
-                    <label key={t.label} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 'var(--t-meta)', color: 'var(--text)', cursor: 'pointer' }}>
+                    /* The tick stays 15px — a 44px native checkbox reads as a
+                       rendering fault, and §5 puts the law on the hit area, not
+                       the paint. The <label> does the work: it forwards clicks
+                       to the control it wraps, so a min-height of 44 turns the
+                       whole "Inspection required on return" row into one target.
+                       Plain number rather than --tap to match the wrapper
+                       Handover, Packing and Reset already use. The three sit 18px
+                       apart in a wrap row, which is flow layout, so they grow
+                       taller without ever growing into each other. */
+                    <label key={t.label} style={{ display: 'flex', alignItems: 'center', gap: 7, minHeight: 44, fontSize: 'var(--t-meta)', color: 'var(--text)', cursor: 'pointer' }}>
                       <input
                         type="checkbox"
                         checked={t.on}

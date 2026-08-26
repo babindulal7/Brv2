@@ -127,20 +127,12 @@
    §7.3's 44px is a rule about thumbs, so it keys off the pointer, not the
    width. This is exactly the size-vs-capability split `device.ts` documents. */
 @media (pointer: coarse) {
-  /* The law is the HIT AREA, not the paint (§5). A 34px compact button keeps
-     its 34px of ink and grows an invisible 44px target around it, so a dense
-     toolbar stays dense and still passes. */
-  .rsp-tap::after {
-    content: '';
-    position: absolute;
-    inset: 50% 0 0 0;
-    translate: 0 -50%;
-    min-height: var(--tap);
-    pointer-events: none;
-  }
-  .rsp-tap {
-    position: relative;
-  }
+  /* `.rsp-tap` lived here and was wrong twice — see `.tap` in theme.css, which
+     replaces it. It was scoped to (pointer: coarse) when §5/§7.3 say 44px on
+     EVERY device including desktop, and it carried `pointer-events: none`,
+     which makes a pseudo-element decorative: clicks pass straight through it,
+     so the "grown" hit area was never clickable. The law is not a responsive
+     concern, so it does not belong in this file at all. */
 
   /* Hover-only affordances must not be the only way to reach something when
      there is no hover to give. Screens pair this with a long-press or an

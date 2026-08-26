@@ -104,8 +104,10 @@ const th = {
 }
 const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
 
+/* Law 15 — hit area over paint, number from `--tap`. One consumer: the range
+   Select above the pulse table. */
 const selStyle = {
-  height: 32,
+  minHeight: 'var(--tap)',
   padding: '0 8px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--border)',
@@ -115,6 +117,19 @@ const selStyle = {
   fontFamily: 'inherit',
 }
 
+/* Law 14 / v4.1 §7.3 — 44px hit area on every interactive target, and §5's
+   escape hatch: "compact visual allowed ONLY with an invisible pseudo-element
+   extending the hit area to 44 — the law is the HIT AREA, not the paint."
+
+   The paint stays 30 here on purpose, and the difference from every other strip
+   on this screen is that this constant dresses TWO different things: the `Link`
+   for a family that has a page, and an `aria-disabled` `<span>` for the eight
+   that do not. Growing the box would have inflated the span as well — a hit area
+   on something with nothing to hit — and shrinking only the interactive half
+   would leave a strip of 44px links beside 30px spans, which reads as two kinds
+   of tab rather than one kind in two states. So the constant keeps the shared
+   paint and the interactive consumer alone carries `className="tap"`, which
+   grows its target underneath the pill without moving a pixel of the strip. */
 const tabStyle = {
   display: 'inline-flex',
   alignItems: 'center',
@@ -804,12 +819,22 @@ export default function Pulse() {
           visibly unavailable state with the reason stated below the strip,
           because a tab that goes nowhere is worse than one that admits it. */}
       <nav aria-label="Report families">
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+        {/* The row gap is no longer the column gap, and the reason is the tap
+            areas rather than the look: eleven tabs wrap on any laptop, and a
+            30px tab whose target is 44 reaches 7px past its own edge top and
+            bottom. At the old symmetric 6px gap the second line's targets
+            climbed 8px into the first line's, and the later element in the DOM
+            wins a contested point — so a click just under "Inventory" would have
+            opened whatever sat below it. 16px is the first step on the 4px grid
+            that clears the 14px the two halves need. Columns stay tight at 6:
+            every label is wider than 44, so no tab grows sideways. */}
+        <div style={{ display: 'flex', columnGap: 6, rowGap: 'var(--sp-lg)', flexWrap: 'wrap', borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
           {tabs.map((t) =>
             t.to ? (
               <Link
                 key={t.label}
                 to={t.to}
+                className="tap"
                 aria-current={t.current ? 'page' : undefined}
                 style={{
                   ...tabStyle,

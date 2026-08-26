@@ -140,8 +140,11 @@ const td = {
   verticalAlign: 'middle' as const,
 }
 
+/* Law 15 — the law is the hit area, and it is spelled `--tap` exactly once, in
+   theme.css. `selectStyle` below spreads this, so both field kinds clear the
+   floor from one edit; the notes textarea still overrides `height` to auto. */
 const inputStyle = {
-  height: 32,
+  minHeight: 'var(--tap)',
   padding: '0 9px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--input-border)',

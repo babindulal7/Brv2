@@ -70,9 +70,13 @@ const stickyRight = {
   textAlign: 'right' as const,
   borderLeft: '1px solid var(--border)',
 }
+/* Law 15 — the law is the hit area, and `--tap` holds the number. Kept as
+   `minHeight` so the three call sites that used to bump this to 34 or shrink it
+   to 28 (search, sort, rows-per-page) can no longer opt below the floor: a
+   local `height` loses to `min-height`, which is exactly what we want here. */
 const fieldStyle = {
   width: '100%',
-  height: 32,
+  minHeight: 'var(--tap)',
   padding: '0 8px',
   borderRadius: 'var(--r-sm)',
   border: '1px solid var(--input-border)',
@@ -196,8 +200,9 @@ function ActionIcon({ name, label, why }: { name: IconName; label: string; why: 
  * The menu itself is real; each entry that needs storage or delivery says why
  * it cannot run. `Open related record` is the one that works today.
  */
-/** Tallest the menu gets — the related-record link, divider, all 7 `ROW_MENU` entries, and the closing note. */
-const DOC_MENU_H = 320
+/** Tallest the menu gets — the related-record link, divider, all 7 `ROW_MENU` entries, and the closing note.
+ *  Rose from 320 when the rows went to the 44px `--tap` floor: 8 × 44 + 13 divider + ~34 note + 12 padding. */
+const DOC_MENU_H = 420
 
 function RowMenu({ row, open, onToggle }: { row: DocRow; open: boolean; onToggle: () => void }) {
   const target = RELATED_TARGET[row.relatedKind]
@@ -295,12 +300,30 @@ function RowMenu({ row, open, onToggle }: { row: DocRow; open: boolean; onToggle
   )
 }
 
+/*
+ * Law 14 / §7.3 — the floor is the HIT AREA, not the paint, and for THIS shape
+ * the two cannot be separated.
+ *
+ * The compact-34-with-a-pseudo-element escape in §5 works for an icon button
+ * sitting alone in a toolbar: the invisible 44 spills into empty chrome and
+ * steals nothing. It cannot work in a stacked menu. These rows are contiguous —
+ * item N's bottom edge IS item N+1's top edge — so inflating each one to 44
+ * would give every row a 6px band of invisible target lying on top of its
+ * neighbour's visible paint, and the later row in the DOM wins the tap. A menu
+ * whose last entry is Archive is exactly where a silently-wrong-row tap is
+ * least affordable.
+ *
+ * So the paint grows. It costs nothing here: the popover is absolutely
+ * positioned with no max-height, `useMenuFlip` only *predicts* the height to
+ * choose up-or-down, and `DOC_MENU_H` is updated alongside to keep that
+ * prediction honest.
+ */
 const menuItem = {
   display: 'flex',
   alignItems: 'center',
   gap: 9,
   width: '100%',
-  height: 32,
+  minHeight: 'var(--tap)',
   padding: '0 9px',
   borderRadius: 'var(--r-sm)',
   border: 'none',

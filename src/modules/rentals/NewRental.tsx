@@ -214,9 +214,13 @@ interface ReviewItem {
   targetId: string
 }
 
+/* Law 15 — hit area over paint, number from `--tap`. This object is also handed
+   down as the `inputStyle` prop to the discount and crew sub-forms, so raising
+   it here raises every field they render too — which is the point: they are the
+   same vertical form, split only for readability. */
 const inputStyle = {
   width: '100%',
-  height: 32,
+  minHeight: 'var(--tap)',
   padding: '0 9px',
   borderRadius: 'var(--r-input)',
   border: '1px solid var(--input-border)',
@@ -268,12 +272,25 @@ const inlineErrorStyle = {
  * Same shape as `booking/AddItemPanel.tsx`'s private `TouchInset`; it is not
  * exported from that module, and re-declaring nine lines is better than
  * widening another agent's public surface mid-flight.
+ *
+ * The two 44s were typed in as numbers and now read `var(--tap)`, which is the
+ * same 44 with a name: the touch minimum belongs to the theme, and a literal
+ * here would keep its old value on the day the token moves. The geometry is
+ * untouched, so all fifteen call sites below are unaffected — this is the token
+ * discipline the rest of the file already follows, arriving late.
+ *
+ * `theme.css` has since grown a `.tap` utility doing the same job with a
+ * pseudo-element instead of a child span, and that is where this should land
+ * eventually. Not in this pass: the class has to be checked against each of the
+ * fifteen parents (several sit inside clipping or side-scrolling boxes, and
+ * `overflow` cuts a hit area as hard as it cuts paint), and half-migrating would
+ * leave two mechanisms doing one job in one file.
  */
 function TouchInset() {
   return (
     <span
       aria-hidden="true"
-      style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: 'max(100%, 44px)', height: 44 }}
+      style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: 'max(100%, var(--tap))', height: 'var(--tap)' }}
     />
   )
 }
@@ -285,6 +302,30 @@ function TouchInset() {
  * `TouchInset` while staying visually compact for table density.
  */
 function Stepper({ value, min = 1, onChange, disabled, label }: { value: number; min?: number; onChange: (n: number) => void; disabled?: boolean; label: string }) {
+  /* ⚠ 20px of glyph. Law 14 is satisfied on Y and NOT on X — stated plainly,
+     because the comment that stood here claimed "the target measures 44 on both
+     axes" and an adversarial check proved that false.
+
+     What the old claim measured, correctly: the two glyphs INSIDE one stepper.
+     10 + 3 + 18 + 3 + 10 = 44, so those two abut exactly and neither steals the
+     other. What it stopped at: the stepper's own inline-flex box. The real
+     nearest interactive neighbour is in the ADJACENT CELL — the Qty stepper's
+     "+" and the Days stepper's "−" are separated only by `td` padding, 9px each
+     side = 18px. Two 44px targets across 18px overlap by 26px, and the later
+     one in the DOM wins, so a tap near that cell boundary changes the WRONG
+     number. `TouchInset` grows the width via `max(100%, var(--tap))`, which is
+     precisely what creates that overlap.
+
+     So the width is deliberately left at the glyph's own box. Y is the free
+     axis here and Y is what is taken; X needs the columns spaced or the
+     steppers redesigned, which is a table-layout decision and not a hit-area
+     one. The paint stays 20 because a 44px box per cell would turn the row grid
+     back into a form, which is the shape §7.4 moved away from.
+     `position: relative` is load-bearing rather than decorative — remove it and
+     the inset resolves against some ancestor and lands somewhere else entirely.
+     The two glyphs sit 24px apart edge to edge (3 + the 18px value + 3), which is
+     exactly what their two targets need to meet without overlapping; anything
+     tighter here would have them fighting over the same points. */
   const btnStyle = (dis: boolean) => ({
     position: 'relative' as const,
     width: 20,
@@ -2115,9 +2156,16 @@ export default function NewRental() {
               type="button"
               className="press"
               onClick={() => jumpToSection(r.targetId)}
-              style={{ position: 'relative', display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', width: '100%', minHeight: 30, padding: '4px 2px', border: 'none', background: 'transparent', textAlign: 'left', fontFamily: 'inherit', fontSize: 'var(--t-meta)', cursor: 'pointer' }}
+              /* Grown, not coated. These rows were minHeight 30 with a
+                 `TouchInset` on top, which is the vertical-overlap trap: a 44px
+                 target on a 30px row in a GAPLESS column overhangs 7px each
+                 side, so adjacent rows overlapped by 14px and the later one in
+                 the DOM won — a tap near a boundary jumped to the wrong
+                 section. Full-width rows have no horizontal neighbour to
+                 collide with, so the box grows to the floor and the inset is
+                 not needed at all: the row IS the target. */
+              style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', width: '100%', minHeight: 'var(--tap)', padding: '4px 2px', border: 'none', background: 'transparent', textAlign: 'left', fontFamily: 'inherit', fontSize: 'var(--t-meta)', cursor: 'pointer' }}
             >
-              <TouchInset />
               <Icon name={r.ok ? 'check' : 'alert_triangle'} size={13} style={{ color: r.ok ? 'var(--success-text)' : 'var(--progress-text)', flexShrink: 0 }} />
               <span style={{ flex: 1, minWidth: 0, color: 'var(--text2)' }}>{r.label}</span>
               <span style={{ fontWeight: 600, color: r.ok ? 'var(--text)' : 'var(--progress-text)' }}>{r.ok ? 'Complete' : 'Pending'}</span>

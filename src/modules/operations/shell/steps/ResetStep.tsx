@@ -50,10 +50,25 @@ export default function ResetStep({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {returned.map((it) => {
               const done = resetDone.has(it.id)
+              /*
+                The 18px box stays 18px — a 44px native checkbox is grotesque.
+                The label is the target instead: a label forwards its clicks to
+                the control it wraps, so a row carrying `minHeight: 44` gives
+                §7.3 its hit area without touching the paint. Before this the
+                row was only its 10px padding plus two short lines of
+                --t-meta/--t-th text, which lands under 44 — a fingertip-sized
+                miss for a caretaker checking items off on a docked tablet.
+                Written as the bare number rather than var(--tap) to match the
+                identical label wrappers in PackingWorkspace and
+                ResetWorkspace. Growing the box rather than pasting a .tap
+                ::after on it also matters here: these rows sit in a 6px-gap
+                column, and two 44px pseudo-elements would have overlapped and
+                stolen each other's clicks.
+              */
               return (
                 <label
                   key={it.id}
-                  style={{ ...cardStyle, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, cursor: readOnly ? 'default' : 'pointer', opacity: done ? 0.7 : 1 }}
+                  style={{ ...cardStyle, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, minHeight: 44, cursor: readOnly ? 'default' : 'pointer', opacity: done ? 0.7 : 1 }}
                 >
                   <input
                     type="checkbox"
