@@ -119,6 +119,23 @@ const filterSelect: CSSProperties = { ...selectStyle, height: 'auto', minHeight:
  * and the rail. That density is the point — a line you have to scroll to price
  * is a line nobody checks — so the cells run tight rather than the table running
  * wide. It still scrolls inside its own container below that.
+ *
+ * RULED 26 Aug 2026 — this argument and the §7.3 row floor DO NOT CONFLICT, so
+ * no exception is carved for this table and none is needed.
+ *
+ * The reasoning above is entirely about HORIZONTAL width: ten columns inside
+ * ~600px, cells running tight rather than the table running wide. §7.3's
+ * "rows >= 56px" is VERTICAL and costs nothing horizontally. A row-floor sweep
+ * flagged this file for a ruling on the strength of the words "that density is
+ * the point"; the ruling is that the two rules are about different axes and the
+ * flag was a false positive.
+ *
+ * So the `td` below deliberately does NOT carry `height: var(--row-min-h)`,
+ * and that is the ruled state rather than an oversight — recorded here so the
+ * next sweep does not re-open it. Note also that the exposure here is latent,
+ * not live: this file imports no `TouchTarget`, so no 44px hit area currently
+ * overhangs these rows. It would arrive the moment a row control adopts one,
+ * and THAT is the trigger to revisit — not the width argument above.
  */
 const th: CSSProperties = {
   textAlign: 'left',

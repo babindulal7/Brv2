@@ -1,22 +1,25 @@
 /**
- * ⚠ UNROUTED as of 26 Aug 2026 — this screen renders for nobody.
+ * ⚰ ARCHIVED 26 Aug 2026 by owner ruling. Kept, not deleted (Law 3).
  *
- * `App.tsx` sends BOTH `/operations/cases` and `/operations/cases/:id` to
- * `<CasesWorkspace />`; nothing imports this file. A hit-area verifier found it
- * by refusing to confirm a row-floor fix it could not observe in a browser, and
- * the state was then confirmed against App.tsx and an importer search.
+ * It had already stopped rendering for anyone: `App.tsx` sends BOTH
+ * `/operations/cases` and `/operations/cases/:id` to `<CasesWorkspace />`, and
+ * nothing imported this file. A hit-area verifier found that by refusing to
+ * confirm a row-floor fix it could not observe in a browser.
  *
- * This is NOT dead-by-decision the way `src/archive` is. The 17 Aug page audit
- * recorded the opposite intent — "a second, richer Cases screen exists that no
- * route mounts, and /operations/cases/:id renders the list rather than a case"
- * — i.e. this is the richer screen and it lost its route, and the :id route
- * renders a LIST rather than the case it names. That is an owner decision
- * (mount it, or delete it), not something a styling pass should settle.
+ * The ruling was archive rather than mount: "a routing change now adds a
+ * variable for no operational gain" during the production push. So this is
+ * shelved in the state it was in — v4.1 status work and the §7.3 row floor are
+ * both applied — and restoring it is a move back plus a route, not a second
+ * remediation.
  *
- * Kept compliant in the meantime — the v4.1 status work and the §7.3 row floor
- * are both applied here — so that mounting it is a routing change and not a
- * second remediation. Labelled so the next audit does not spend a day on a
- * screen no user can reach.
+ * ⚠ SEPARATE BUG, NOT FIXED BY ARCHIVING THIS, logged for its own ticket:
+ * `/operations/cases/:id` renders a LIST rather than the case its URL names.
+ * That is wrong independently of which component serves the route, and moving
+ * this file does not touch it.
+ *
+ * Its suite moved with it, per the vitest config's rule ("their suites are kept
+ * with them but not run"). `src/archive` is excluded from both the TypeScript
+ * program and the test run.
  */
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
