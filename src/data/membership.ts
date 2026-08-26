@@ -1,7 +1,7 @@
 import type { Kpi } from '../components/ui/Page'
 import type { StatusKey, BrandKey } from '../lib/status'
 import { formatMoney, rupees, type Paisa } from '../lib/money'
-import { TIER_TONE, type MembershipTier } from './clients'
+import type { MembershipTier } from './clients'
 
 /**
  * Clients → **Membership** seed data, transcribed from renders
@@ -259,10 +259,17 @@ export function chipsFor(rows: MemberRow[]): MemberChip[] {
 
 /* ── plans ─────────────────────────────────────────────────────────────── */
 
+/**
+ * A plan is a **domain fact** — what the tier is called, what it costs, what it
+ * grants. It deliberately carries **no appearance**: v4.1 §2 gives every hue
+ * exactly one operational meaning, and a membership tier is an attribute of a
+ * client, not an operational state. How a tier looks is decided where it is
+ * drawn (`modules/clients/Membership.tsx`), keyed off `name`.
+ */
 export interface Plan {
   name: MembershipTier
+  /** The segment word the plan wears — "Access Member" / "Partner" / "Elite Member". */
   badge: string
-  badgeKey: StatusKey
   icon: 'crew' | 'eye' | 'users' | 'briefcase' | 'sparkles'
   price: string
   per?: string
@@ -275,7 +282,6 @@ export const PLANS: Plan[] = [
   {
     name: 'Academy',
     badge: 'Access Member',
-    badgeKey: TIER_TONE.Academy,
     icon: 'crew',
     price: 'Rs 6,000',
     per: '/ year',
@@ -294,7 +300,6 @@ export const PLANS: Plan[] = [
   {
     name: 'Creator',
     badge: 'Access Member',
-    badgeKey: TIER_TONE.Creator,
     icon: 'eye',
     price: 'Rs 15,000',
     per: '/ year',
@@ -313,7 +318,6 @@ export const PLANS: Plan[] = [
   {
     name: 'Cinematographer',
     badge: 'Access Member',
-    badgeKey: TIER_TONE.Cinematographer,
     icon: 'users',
     price: 'Rs 35,000',
     per: '/ year',
@@ -332,7 +336,6 @@ export const PLANS: Plan[] = [
   {
     name: 'Production Alliance',
     badge: 'Partner',
-    badgeKey: TIER_TONE['Production Alliance'],
     icon: 'briefcase',
     price: 'Rs 80,000',
     per: '/ year',
@@ -353,7 +356,6 @@ export const PLANS: Plan[] = [
   {
     name: 'Elite',
     badge: 'Elite Member',
-    badgeKey: TIER_TONE.Elite,
     icon: 'sparkles',
     price: 'Custom pricing',
     discounts: ['20% Individual discount (max cap 25%)', 'Custom bundle discount'],

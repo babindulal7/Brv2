@@ -289,7 +289,27 @@ const EMPTY_MESSAGE: Readonly<Record<InvoiceChip, string>> = {
 const NO_ACCOUNT_RECORDED = 'No account recorded'
 
 const th = { textAlign: 'left' as const, padding: '9px 10px', fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)', whiteSpace: 'nowrap' as const, borderBottom: '1px solid var(--border)' }
-const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic; the horizontal padding is left alone.
+ *
+ * Both tables on this page share this constant — the Outstanding snapshot and
+ * the full invoice ledger — and the floor is owed by both, because §7.3 states
+ * it of rows, not of rows that happen to carry a control.
+ *
+ * The ledger is what makes it a data-integrity fix rather than a density
+ * preference. Its last cell holds `RowActions`: `+ Pay`, `Refund` and `Void`,
+ * three untargeted buttons painted at `padding: '2px 8px'`, about 22px tall.
+ * The 44px hit area each of them owes does not fit in a 10 + one line + 10 row;
+ * it overhangs the neighbours by ~3px top and bottom, the rows touch, and the
+ * later row in the DOM wins a tap in that band. `Void` moves an invoice to a
+ * terminal state and `+ Pay` opens a payment against it, so a tap near a
+ * boundary voids or bills the WRONG invoice. Raising the row is the
+ * precondition for giving those three a real `TouchTarget`, which is the next
+ * fix; it cannot be done safely on a 38px row.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
 
 /** A `date` column, `YYYY-MM-DD`, rendered as "2 Aug 2026". */
 function formatDayAd(dayAd: string): string {
@@ -1317,7 +1337,15 @@ export default function Finance() {
                                 <td style={td}>
                                   <StatusBadge row={i} />
                                 </td>
-                                <td style={{ ...td, display: 'flex', gap: 6 }}>
+                                {/* `display: flex` takes this cell out of table-cell
+                                    layout, so the `height` the row floor puts on `td`
+                                    stops behaving as a minimum and becomes a definite
+                                    height on a flex container — and with `align-items`
+                                    left at its default the three buttons would stretch
+                                    to fill all 56px. `center` holds them at their
+                                    painted size; the row still gets its floor from the
+                                    seven real table cells beside this one. */}
+                                <td style={{ ...td, display: 'flex', alignItems: 'center', gap: 6 }}>
                                   <RowActions
                                     row={i}
                                     canPay={canTakePayment}

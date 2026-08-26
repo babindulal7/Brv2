@@ -217,7 +217,21 @@ export const th: CSSProperties = {
   borderBottom: '1px solid var(--border)',
 }
 
-export const td: CSSProperties = { padding: '7px 8px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this hands every table built
+ * on these cells §7.3's row floor ("rows >= 56px") from the token instead of
+ * from padding arithmetic. Horizontal padding is unchanged.
+ *
+ * Its one consumer today is the Stock Units grid in `SectionStockUnits`, which
+ * is exactly where the floor earns itself: each row holds a 44px serial input,
+ * a 44px condition select and a "Remove unit" button, and at 7 + content + 7
+ * those targets overhang the row. They then overlap the neighbouring row, where
+ * the later row in the DOM wins the tap — so a tap near a boundary can remove
+ * the unit BELOW the one aimed at, or send a scanned serial into another unit's
+ * field. Both are data errors that leave no trace on screen. Rows already
+ * taller than the floor are unaffected.
+ */
+export const td: CSSProperties = { height: 'var(--row-min-h)', padding: '7px 8px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' }
 
 export interface UnitDraft {
   id: string

@@ -42,7 +42,26 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic; the horizontal padding is left alone.
+ *
+ * These rows already clear 56 today — but by accident, not by rule. The Action
+ * cell holds a primary `Button`, `Page.tsx` gives that `minHeight: 44`, and 44
+ * plus this cell's 10px padding is the only thing holding the row open.
+ * Nothing states it, and the cell beside it would be the first casualty: it is
+ * a 44x44 overflow `Link`, so quieten or drop the verb button and the row falls
+ * to ~38px, at which point that 44px target overhangs its neighbours by ~3px
+ * top and bottom, the rows touch, and the later row in the DOM wins a tap in
+ * the overlap band. The Link goes to `/rentals/:bookingNo` and this queue is
+ * time-ordered, so the row above and the row below are two different bookings
+ * due minutes apart — the wrong one is a plausible-looking wrong one.
+ *
+ * Stating the floor here makes the height a property of the row rather than of
+ * one control that happens to be tall.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
 
 /**
  * **Floor** — spec 03 §3.1, `/operations`.

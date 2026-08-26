@@ -132,7 +132,21 @@ const th = {
   borderBottom: '1px solid var(--border)',
 }
 
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is §7.3's row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic. Horizontal padding is unchanged; rows already taller stay put.
+ *
+ * Not a density preference — a hit-test one. These rows carry the 28px open and
+ * transfer icon buttons, whose 44px targets stand 16px taller than the paint,
+ * and `whiteSpace: nowrap` holds most rows to a single line, so at
+ * 10 + line + 10 the target overhangs the row at both edges. Adjacent rows then
+ * overlap, the later one in the DOM wins the tap, and a warehouse is opened —
+ * or a transfer started — against the wrong warehouse. The floor removes the
+ * overlap rather than shrinking a target a gloved hand on a tablet needs.
+ */
 const td = {
+  height: 'var(--row-min-h)',
   padding: '10px',
   fontSize: 'var(--t-meta)',
   color: 'var(--text)',

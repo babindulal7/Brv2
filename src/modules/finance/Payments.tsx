@@ -319,7 +319,26 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic; the horizontal padding is left alone.
+ *
+ * This ledger looks as though it already clears the floor, and that is the part
+ * worth naming: the height comes from `ReverseAction`, whose button carries
+ * `minHeight: 44` and pushes its own cell to 64px. But `ReverseAction` returns
+ * null when the session lacks `canRecordPayment`, so for every read-only reader
+ * the row collapses to 10 + one line + 10 and the geometry of the table becomes
+ * a function of a permission check. That is the wrong thing for a row height to
+ * depend on. The next control to land in this ledger inherits a ~38px row, and
+ * a 44px target on a 38px row overhangs its neighbours by ~3px each side where
+ * the rows touch — in that band the later row in the DOM wins the tap, which
+ * here means a reversal opened against the WRONG payment.
+ *
+ * Stating the floor on `td` makes the row own its height instead of borrowing
+ * it from whichever control happens to be tall and happens to be allowed.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
 
 const inputStyle = {
   minHeight: 44,

@@ -289,7 +289,24 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '11px 12px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic. Horizontal padding is untouched; the floor is a vertical law.
+ *
+ * This is a DATA-INTEGRITY fix, not a density preference. At 11 + 11 + a
+ * --t-meta line the credit rows below stood around 39px, which cannot contain
+ * the 44px hit area §7.3 owes the client link each row carries. A target
+ * bigger than its row has to overhang into the neighbouring row, and an
+ * absolutely positioned hit area wins the hit test — so the LATER row in the
+ * DOM takes any tap landing in the overlap band. Commit 7d38cdf proved that on
+ * the floor workspaces, where a boundary tap could record a return against the
+ * wrong line item. On a credit table the same mis-tap opens the wrong client's
+ * account, and every credit-limit judgement made from that screen is then
+ * being made about the wrong person. The floor has to come first so the link
+ * can be given its 44px without re-creating the overlap.
+ */
+const td = { height: 'var(--row-min-h)', padding: '11px 12px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
 
 /**
  * Referral — the panel that used to render `REFERRALS` above.

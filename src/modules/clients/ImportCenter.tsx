@@ -581,4 +581,23 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px 12px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic. Horizontal padding is left as it was — the floor is vertical.
+ *
+ * This is a DATA-INTEGRITY fix, not a density preference, and on this screen
+ * the argument is at its sharpest because both tables put a CONTROL in every
+ * row: a target-field `Select` in the mapping table, a skip checkbox in the
+ * preview table. At 10 + 10 + a --t-meta line those rows stood around 37px,
+ * too short to hold the 44px hit area §7.3 owes each of those controls, and a
+ * target larger than its row must overhang into the neighbouring row. An
+ * absolutely positioned hit area wins the hit test, so the LATER row in the
+ * DOM claims any tap in the overlap band — that is the mechanism commit
+ * 7d38cdf fixed on the floor workspaces. Here it would mean a tap toggling the
+ * skip state of the row BELOW the one the operator aimed at, or re-mapping the
+ * wrong CSV column, and both mistakes are silent: the preview still looks
+ * right, and the wrong records are the ones that go on to be created. The
+ * floor comes first so those controls can reach 44px without overlapping.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px 12px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }

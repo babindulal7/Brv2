@@ -89,7 +89,19 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', borderBottom: '1px solid var(--border)' }
+/*
+ * `height` on a table cell behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") written with the token instead of padding arithmetic; the
+ * horizontal padding stays where it was.
+ *
+ * The reason is tap accuracy, not density. A 44px hit area does not fit inside
+ * a row of 10+~18+10, so it overhangs the rows above and below, and because an
+ * absolutely-positioned target wins the hit test the LATER row takes the tap in
+ * that band. The equipment table here is read-only, but the floor is what makes
+ * a row safe for the first control it is ever given, and the `<th scope="row">`
+ * model cell spreads this same object so the whole row lifts, not half of it.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', borderBottom: '1px solid var(--border)' }
 
 /** §9.6's "the locked Pulse row" — four tiles, and the fourth is a count. */
 function pulseKpis(f: PeriodFigures): Kpi[] {

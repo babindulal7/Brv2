@@ -67,7 +67,19 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic. Horizontal padding and the top alignment are untouched — a row
+ * that grows to the floor should still hang its text from the top.
+ *
+ * Each expense row ends in a link back to the booking, case or asset the money
+ * was spent against, and a link is a tap target. Under 56px a 44px target
+ * overhangs the rows either side, and the later row in the DOM wins the tap in
+ * the overlap band, which opens the wrong booking. What the floor buys is the
+ * tap landing on the row it was aimed at, not a roomier-looking table.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
 
 /** Every glyph here is a real key in `components/ui/Icon`'s registry. */
 const CATEGORY_ICON: Record<string, IconName> = {

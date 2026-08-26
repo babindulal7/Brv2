@@ -36,7 +36,20 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic; the horizontal padding is unchanged.
+ *
+ * The last cell of every product row carries the same eye/overflow glyph pair
+ * the client table uses. A 44px hit area cannot fit inside a 10+~18+10 row, so
+ * it overhangs the neighbouring rows, and the later row in the DOM wins a tap
+ * anywhere in that overlap — on a table where the glyph is meant to open one
+ * product, that is a wrong-row action rather than a cosmetic annoyance. The row
+ * floor is also the precondition for ever giving those 14px glyphs a real
+ * target: there is nowhere to put one until the row can hold it.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
 const link = { fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' } as const
 
 function PeriodPill() {

@@ -1189,4 +1189,22 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '11px 12px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic. Horizontal padding is deliberately left alone — the floor is a
+ * vertical law and the columns were already spaced the way this page wants.
+ *
+ * This is a DATA-INTEGRITY fix, not a density preference. The floor is the
+ * precondition that makes the 44px hit area POSSIBLE: at 11 + 11 + a --t-meta
+ * line these rows stood around 39px, and a 44px target in a 39px row has
+ * nowhere to go but over the boundary into its neighbour. That overhang is
+ * exactly the bug commit 7d38cdf fixed on the floor workspaces — an absolutely
+ * positioned hit area wins the hit test, so the LATER row in the DOM takes a
+ * tap landing in the overlap band and the action is recorded against the wrong
+ * line. Both tables below carry a per-row destination ("Open" on the rentals
+ * table, the booking number on the invoices one), so here the same mis-tap
+ * sends the operator into somebody else's booking. Setting the floor first
+ * means those targets can be grown to 44 without re-creating the overlap.
+ */
+const td = { height: 'var(--row-min-h)', padding: '11px 12px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }

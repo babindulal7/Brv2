@@ -726,7 +726,23 @@ const th: CSSProperties = {
   whiteSpace: 'nowrap',
 }
 
+/*
+ * §7.3's row floor ("rows >= 56px"), stated with the token rather than as
+ * padding arithmetic: `height` on a `<td>` is read as a MINIMUM, so it lifts
+ * the short rows and leaves the tall ones — and the horizontal padding —
+ * exactly where they are.
+ *
+ * This is a hit-testing guarantee, not a density preference. The floor is what
+ * lets a 44px target sit INSIDE its own row; below it the target overhangs the
+ * neighbouring row, and the row that comes later in the DOM wins a tap in the
+ * overlapping band — the wrong-row failure fixed on the four floor workspaces.
+ * This table clears 56 today only by accident: `DiscloseButton` is a real 44x44
+ * box, so it drags each row to about 66. That guarantee rests on one control's
+ * paint. Written as the token it becomes structural instead, and the `colSpan`
+ * detail row underneath inherits the same floor rather than being exempt.
+ */
 const td: CSSProperties = {
+  height: 'var(--row-min-h)',
   padding: '11px 12px',
   fontSize: 'var(--t-meta)',
   color: 'var(--text)',

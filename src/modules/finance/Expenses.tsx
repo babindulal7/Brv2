@@ -182,7 +182,27 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic; the horizontal padding is left alone.
+ *
+ * This is a data-integrity fix, not a density preference. Every expense row
+ * ends in `RowMenu`, and that menu is how an expense moves between approval
+ * states — Submit for approval, Approve, Reject. Its trigger paints 26x26 and
+ * carries no `TouchTarget` at all, so the 44px hit area it owes cannot be added
+ * while the row is 10 + one line + 10: a 44px target on a ~38px row overhangs
+ * the rows above and below by ~3px each, the rows touch, and in that overlap
+ * band the later row in the DOM wins the tap. Approving the row below the one
+ * under the thumb is a money decision recorded against the WRONG expense.
+ *
+ * 56px is what makes the row able to hold the target the trigger still needs;
+ * giving `RowMenu` a real `TouchTarget` is the next fix and this height is its
+ * precondition. The stacked two-line cells here (expense no + branch, BS + AD)
+ * already reach most of the way, which is exactly why the shortfall is easy to
+ * miss — `verticalAlign: 'top'` keeps them reading from the top either way.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
 
 /* Law 15 — hit area over paint, number from `--tap`. These are the Record
    Expense fields, stacked one per row, plus the category filter above the

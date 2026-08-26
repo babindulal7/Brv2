@@ -1,3 +1,23 @@
+/**
+ * ⚠ UNROUTED as of 26 Aug 2026 — this screen renders for nobody.
+ *
+ * `App.tsx` sends BOTH `/operations/cases` and `/operations/cases/:id` to
+ * `<CasesWorkspace />`; nothing imports this file. A hit-area verifier found it
+ * by refusing to confirm a row-floor fix it could not observe in a browser, and
+ * the state was then confirmed against App.tsx and an importer search.
+ *
+ * This is NOT dead-by-decision the way `src/archive` is. The 17 Aug page audit
+ * recorded the opposite intent — "a second, richer Cases screen exists that no
+ * route mounts, and /operations/cases/:id renders the list rather than a case"
+ * — i.e. this is the richer screen and it lost its route, and the :id route
+ * renders a LIST rather than the case it names. That is an owner decision
+ * (mount it, or delete it), not something a styling pass should settle.
+ *
+ * Kept compliant in the meantime — the v4.1 status work and the §7.3 row floor
+ * are both applied here — so that mounting it is a routing change and not a
+ * second remediation. Labelled so the next audit does not spend a day on a
+ * screen no user can reach.
+ */
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -154,7 +174,28 @@ function DateCell({ ad }: { ad: Date }) {
 }
 
 const th = { textAlign: 'left' as const, padding: '9px 10px', fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)', whiteSpace: 'nowrap' as const, borderBottom: '1px solid var(--border)' }
-const td = { padding: '9px 10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic; the horizontal padding is left alone.
+ *
+ * On this table the ROW is itself the control — every `<tr>` carries `onClick`
+ * and `tabIndex={0}` and selects the case the detail rail then renders — so the
+ * 44px target §7.3 asks for IS the row, not something inside it. At 9 + one
+ * line + 9 the rows are ~38px, they touch, and a tap near a boundary lands on
+ * the neighbour: the rail fills with the wrong case. The first cell makes it
+ * worse, because it is the bulk-select checkbox, and a miss there tickets the
+ * WRONG case into whatever the bulk action does next.
+ *
+ * The action cell is undersized in the other direction — "Open Case" paints at
+ * height 24 and `RowMenu`'s trigger is 24x24, neither carrying a `TouchTarget`.
+ * Those still owe their 44px, and this row height is what makes adding it
+ * possible without the target spilling into the rows above and below.
+ *
+ * `verticalAlign: 'top'` stays: several cells stack two lines (owner + role,
+ * BS + AD) and they should read from the top of a taller row, not float in it.
+ */
+const td = { height: 'var(--row-min-h)', padding: '9px 10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
 
 export default function CasesQueue() {
   /* DEVICES.md §7 build order item 1 — the 14-column table (minWidth up to

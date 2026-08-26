@@ -35,7 +35,21 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic; the horizontal padding is left alone.
+ *
+ * This table is the case the rule exists for. Every client row ends in a
+ * control cell — a `role="button"` view-client glyph and the overflow beside it
+ * — and each of those owes a 44px hit area that cannot fit inside a 10+~18+10
+ * row: it would overhang the rows above and below, and in the overlap band the
+ * later row in the DOM wins the tap, so a thumb near a boundary opens the WRONG
+ * client. 56px is what makes the row able to hold the target those glyphs still
+ * need; they render at 14px today, and giving them a real `TouchTarget` is the
+ * next fix, which needs this row height before it can be done safely.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
 const link = { fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' } as const
 
 /*

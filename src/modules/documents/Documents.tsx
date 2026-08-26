@@ -56,7 +56,26 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
+/*
+ * §7.3's row floor ("rows >= 56px"), expressed with the token instead of with
+ * padding arithmetic — `height` on a `<td>` is read as a MINIMUM, so it raises
+ * the short rows and leaves the horizontal padding, the sticky Actions column
+ * and the two-line date cell exactly as they are.
+ *
+ * Same argument as the `menuItem` note below, one level out. That comment grew
+ * the PAINT of the row-menu entries because contiguous rows cannot be given
+ * overhanging 44px targets without one row stealing its neighbour's taps; a
+ * table row is the same geometry. Every row here ends in four controls — view,
+ * download, send, and the menu whose last entry is Archive — so a boundary
+ * press resolving to the row below archives the wrong document.
+ *
+ * Those four controls are still painted 24x24 and are NOT yet at the Law 15 hit
+ * area; that is a separate gap, flagged rather than fixed here. But the row
+ * floor is its precondition: there is nowhere to put a 44px target until the
+ * row is tall enough to contain one, so this has to land first.
+ */
 const td = {
+  height: 'var(--row-min-h)',
   padding: '9px 8px',
   fontSize: 'var(--t-meta)',
   color: 'var(--text)',

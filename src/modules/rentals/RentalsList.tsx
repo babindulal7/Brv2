@@ -2059,7 +2059,33 @@ const th = {
   borderBottom: '1px solid var(--border)',
 }
 
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") stated with the token rather than reached by padding
+ * arithmetic; the 12px horizontal padding is untouched. `stickyTd` below
+ * spreads this object, so the pinned action column inherits the same floor —
+ * which is the column that matters, because it is the one holding the row
+ * action.
+ *
+ * That action is `RowOperations`, and its trigger is a bare 26px button with no
+ * inflated target — under Law 15's 44 today. Growing it is the obvious next
+ * change and it is deliberately not made here, because it is only safe once the
+ * row can hold it: a 44px target inside the old 11 + 17 + 11 = 39px row would
+ * have overhung ~2.5px at each edge, neighbouring rows would have overlapped by
+ * ~5px, and an absolutely positioned target wins the hit test with the LATER row
+ * in the DOM taking the tap. The menu behind that trigger routes into Packing,
+ * Handover, Return & Inspection and Reset, so a boundary tap would open the
+ * wrong booking's menu and walk the wrong booking onto the floor. The floor
+ * comes first; `components/ui/TouchTarget.tsx` records the same ordering on the
+ * floor workspaces.
+ *
+ * `th`/`stickyTh` keep their own height. The header row carries no row action
+ * and does not owe 56. Its sticky cell does hold a control — `ColumnMenu`'s
+ * 24px trigger — and that CONTROL owes its own 44px target; that is a debt on
+ * the button, not a reason to inflate the header.
+ */
 const td = {
+  height: 'var(--row-min-h)',
   padding: '11px 12px',
   fontSize: 'var(--t-meta)',
   color: 'var(--text)',

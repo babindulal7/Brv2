@@ -53,7 +53,22 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '9px 10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
+/*
+ * §7.3's row floor ("rows >= 56px") expressed with the token instead of padding
+ * arithmetic: `height` on a `<td>` is a MINIMUM, so this raises the short rows
+ * and leaves the horizontal padding alone.
+ *
+ * The floor is a hit-testing guarantee, not a density choice — a 44px target
+ * only stays inside its own row when the row is at least 56, and below that it
+ * overhangs the neighbour, where the later row in the DOM wins the tap. Backup
+ * History ends each row with `RowAction`, a real 44x44 box, so those rows reach
+ * about 62 already; the Schedule table above shares this same object, carries
+ * only an "Enabled" pill, and pitches near 38. Restore-from-backup is not an
+ * action anyone should be able to aim at the wrong row, so the floor is stated
+ * once and structurally rather than left resting on how tall today's tallest
+ * cell happens to paint.
+ */
+const td = { height: 'var(--row-min-h)', padding: '9px 10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
 
 function Pill({ text, status }: { text: string; status: StatusKey }) {
   const c = STATUS[status]

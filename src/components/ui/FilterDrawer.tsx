@@ -454,6 +454,13 @@ export interface ActiveFilter {
   onRemove: () => void
 }
 
+/**
+ * Every item in the strip paints at this height — the chips, `+N more` and
+ * `Clear all` alike. It is a named constant because the row gap below is
+ * derived from it, so the two cannot drift apart.
+ */
+const CHIP_H = 28
+
 export function ActiveFilterChips({
   filters,
   onClearAll,
@@ -478,7 +485,41 @@ export function ActiveFilterChips({
       role="list"
       aria-label="Active filters"
       id={listId}
-      style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}
+      /*
+        THE GAP IS THE HIT-AREA DECISION. `gap: 6` on both axes is what made
+        this strip the one place a `.tap` target could not be granted, so the
+        two axes are now set separately and each number is derived, not chosen.
+
+        ROW GAP — `--tap` minus the chip height. Every item here paints at
+        CHIP_H and every hit area is `--tap` tall and centred on its item, so
+        two items stacked by a wrap sit (CHIP_H + rowGap) apart centre to
+        centre. Below `--tap` those targets OVERLAP, and the one later in the
+        DOM — the LOWER row — wins the tap: the second row silently removes the
+        first row's filter. At 6px that overlap was 10px tall and live (the
+        hand-rolled 44×44 span this replaced had the identical geometry, so it
+        is not a regression of the `.tap` pass — it is older than it). Setting
+        the gap to `--tap - CHIP_H` puts the centres exactly `--tap` apart, so
+        the targets meet edge to edge and never overlap. Written as a calc so a
+        future change to the 44px floor moves this with it; see TouchTarget.tsx,
+        whose ⚠ block names the row-above/row-below axis this is an instance of.
+
+        COLUMN GAP — the remove glyph is 20px with 4px of chip padding to its
+        right, so its `--tap`-wide target overhangs the chip's right edge by
+        (44/2 - 20/2 - 4) = 8px. At `gap: 6` two of those pixels landed on the
+        NEXT chip, and an absolutely-positioned ::after wins the hit test over a
+        static sibling — so a tap on the next chip's leading padding removed the
+        PREVIOUS chip's filter. 8px puts the whole overhang in the gutter, where
+        it belongs. The chips' own remove targets stay far apart horizontally
+        (a chip is never narrower than ~80px), so nothing else on this axis is
+        at risk, and 2px of extra gutter costs the toolbar nothing.
+      */
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        rowGap: `calc(var(--tap) - ${CHIP_H}px)`,
+        columnGap: 8,
+        alignItems: 'center',
+      }}
     >
       {shown.map((f) => (
         <span
@@ -488,7 +529,7 @@ export function ActiveFilterChips({
             display: 'inline-flex',
             alignItems: 'center',
             gap: 4,
-            height: 28,
+            height: CHIP_H,
             padding: '0 4px 0 10px',
             borderRadius: 'var(--r-badge)',
             border: '1px solid var(--border)',
@@ -534,13 +575,23 @@ export function ActiveFilterChips({
       ))}
 
       {overflow > 0 && (
+        /* Both this and `Clear all` paint at CHIP_H so the strip stays one
+           optical line, and both now carry `.tap`, which the row gap above
+           finally makes safe. Neither grows sideways: `.tap::after` is
+           `max(100%, var(--tap))` wide and the shortest label these ever render
+           ("+1 more", seven glyphs at `--t-meta`/600 inside 20px of padding)
+           measures ~65px, so the pseudo-element matches its own box on X and
+           only the height moves. That is why these two could not simply be
+           granted targets in the hit-area pass: the constraint was never their
+           width — it was the row above and the row below. */
         <button
           type="button"
+          className="tap"
           onClick={() => setExpanded((e) => !e)}
           aria-expanded={expanded}
           aria-controls={listId}
           style={{
-            height: 28,
+            height: CHIP_H,
             padding: '0 10px',
             borderRadius: 'var(--r-badge)',
             border: '1px dashed var(--border)',
@@ -559,9 +610,10 @@ export function ActiveFilterChips({
       {onClearAll && (
         <button
           type="button"
+          className="tap"
           onClick={onClearAll}
           style={{
-            height: 28,
+            height: CHIP_H,
             padding: '0 10px',
             borderRadius: 'var(--r-badge)',
             border: 'none',
@@ -664,9 +716,19 @@ export function FilterOptionList({
           onChange={(e) => setTerm(e.target.value)}
           placeholder={`Search ${label.toLowerCase()}`}
           aria-label={`Search within ${label}`}
+          /*
+            36 -> `--tap`. This one is the easy half of the pair: the input is
+            `width: 100%` in a single-column fieldset, so it has no horizontal
+            neighbour, and the 6px `marginBottom` plus the option grid's own
+            44px rows keep the next control a full row away. The box itself
+            grows, so there is no pseudo-element to overhang anything — the
+            overlap axis that governs the chip strip above does not exist here.
+            Same bargain as the option rows below: a filter panel is not dense
+            enough to earn §5's compact exception, and the drawer body scrolls.
+          */
           style={{
             width: '100%',
-            minHeight: 36,
+            minHeight: 'var(--tap)',
             marginBottom: 6,
             padding: '0 10px',
             borderRadius: 'var(--r-input)',

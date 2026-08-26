@@ -120,7 +120,22 @@ const th: CSSProperties = {
   whiteSpace: 'nowrap',
 }
 
+/*
+ * §7.3's row floor ("rows >= 56px"), carried by the token rather than by
+ * padding arithmetic: `height` on a `<td>` behaves as a MINIMUM, so it lifts
+ * the single-line rows while the two-line ones (`currentValue` with its
+ * "in <year>" line, `WhenCell` with BS above AD) keep the height they compute.
+ *
+ * Worth stating even though this registry is read-only in this build. The floor
+ * is what makes a 44px hit area fit inside its own row instead of overhanging
+ * the neighbour, where the row later in the DOM wins the tap. The
+ * `SETTINGS_ONLY_UNAVAILABLE` note above describes a GATE, not an absence: the
+ * moment the draft editor is ungated this table grows a per-sequence control,
+ * and a sequence write mints IDs product-wide. A row that was already tall
+ * enough cannot be the reason such a write lands on the wrong sequence.
+ */
 const td: CSSProperties = {
+  height: 'var(--row-min-h)',
   padding: '11px 12px',
   fontSize: 'var(--t-meta)',
   color: 'var(--text)',

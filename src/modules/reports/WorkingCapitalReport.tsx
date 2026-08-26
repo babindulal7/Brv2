@@ -104,7 +104,20 @@ const th = {
   fontWeight: 600,
   borderBottom: '1px solid var(--divider)',
 }
-const td = { padding: '10px', fontSize: 'var(--fs-body)', borderBottom: '1px solid var(--divider)' }
+/*
+ * `height` on a table cell behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than by padding arithmetic;
+ * the horizontal padding is unchanged.
+ *
+ * Under-height rows are a tap-accuracy problem rather than a look: 44px of hit
+ * area cannot fit inside a ~38px row, so the target overhangs the rows either
+ * side and the later row in the DOM wins the tap in the overlap band. The
+ * position table is read-only today and still owes the floor — its label cells
+ * are `<th scope="row">` spreading this same object and `num` derives from it,
+ * so every cell of a line rises together, and a drill-through added later
+ * inherits a row that can already hold its target.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--fs-body)', borderBottom: '1px solid var(--divider)' }
 const num = { ...td, textAlign: 'right' as const, fontFamily: 'var(--font-id)' }
 
 /**

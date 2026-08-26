@@ -69,7 +69,22 @@ const th = {
   fontWeight: 600,
   borderBottom: '1px solid var(--divider)',
 }
+/*
+ * `height` on a table cell behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") stated with the token rather than reached by inflating the
+ * padding; the horizontal padding is left exactly as it was.
+ *
+ * The floor is a data-integrity rule and not a density preference. A row under
+ * 56px cannot contain a 44px hit area, so the target overhangs the rows either
+ * side, and where two rows overlap the later one in the DOM wins the tap. This
+ * statement carries no row control today, which is the reason the floor belongs
+ * on the shared constant rather than on the day somebody adds a drill-through
+ * to a cash line: the row is already safe when that happens. `num` derives from
+ * this object and the `<th scope="row">` label cells spread it, so a line rises
+ * as a whole row instead of one half of it.
+ */
 const td = {
+  height: 'var(--row-min-h)',
   padding: '10px',
   fontSize: 'var(--fs-body)',
   borderBottom: '1px solid var(--divider)',

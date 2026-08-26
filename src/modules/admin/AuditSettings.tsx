@@ -35,7 +35,22 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '9px 10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
+/*
+ * §7.3's row floor ("rows >= 56px") written with the token rather than as
+ * padding arithmetic — `height` on a `<td>` behaves as a MINIMUM, so the short
+ * rows come up to the floor and nothing else on the row moves.
+ *
+ * Why this is data integrity and not taste: one object dresses BOTH tables here
+ * and they are not the same shape. Audit Rules ends every row with a 44x44
+ * actions target, so those rows already pitch around 62 and satisfy the floor
+ * incidentally. Retention Policies carries only a status pill and pitches
+ * around 38 — precisely the shape where a 44px target overhangs its neighbours
+ * by a few pixels at each edge and the LATER row in the DOM takes a tap landing
+ * in that band. Retention Policies has no row control today, but it sits one
+ * ungated "Add Retention Policy" away from having one, and a floor that holds
+ * only on the table that already has actions is not a floor.
+ */
+const td = { height: 'var(--row-min-h)', padding: '9px 10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
 const link = { fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' } as const
 
 /* ── Phase 2.7 named reasons ──────────────────────────────────────────────

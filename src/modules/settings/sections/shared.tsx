@@ -31,7 +31,29 @@ import { isDestVisible } from '../../../data/settings'
 
 /* ── style atoms ───────────────────────────────────────────────────────── */
 
+/*
+ * §7.3's row floor ("rows >= 56px") for every Settings section table, written
+ * with the token rather than as padding arithmetic: `height` on a `<td>`
+ * behaves as a MINIMUM, so short rows rise to the floor while the two-line
+ * cells and the nested expander rows keep the height they compute.
+ *
+ * This is the fix `BranchesWarehouses.tsx` flagged and deliberately declined to
+ * force from inside itself — see the note on its branch-disclosure control,
+ * which reads: "These rows pitch at about 39px, short of the §7.3 'rows >= 56'
+ * floor, so this target and the one in the row below overlap in a band of
+ * roughly 5px and the lower row wins it. Raising the row height is the fix and
+ * it belongs to `td`, which several screens share." This is that `td`, so the
+ * fix lands here.
+ *
+ * It is a data-integrity line, not a density preference: below 56 a 44px hit
+ * area cannot fit inside its own row, so it spills over the boundary, and an
+ * absolutely-positioned target wins the hit test — meaning the row LATER in the
+ * DOM answers a tap aimed at the row above it. On a branch list whose row
+ * controls open, edit and deactivate a branch, that is the wrong branch acted
+ * on, not a cosmetic wobble.
+ */
 export const td: CSSProperties = {
+  height: 'var(--row-min-h)',
   padding: '10px',
   fontSize: 'var(--t-meta)',
   color: 'var(--text)',

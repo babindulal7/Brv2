@@ -8,7 +8,7 @@ import { STATUS, BRAND, BRAND_TEXT } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-import { TIER_TONE, type MembershipTier } from '../../data/clients'
+import type { MembershipTier } from '../../data/clients'
 import {
   TABS,
   PLANS,
@@ -27,8 +27,45 @@ import type { Plan, MemberRow, MemberBucket, PlanView, Usage } from '../../data/
 
 /* ── small parts ───────────────────────────────────────────────────────── */
 
-function Pill({ text, status, small }: { text: string; status: StatusKey; small?: boolean }) {
-  const c = STATUS[status]
+/**
+ * How a membership TIER looks — decided here, in the presentation layer, and
+ * deliberately not in `src/data`. The data layer carries the tier (a domain
+ * fact: `ClientRecord.membership`, `Plan.name`); this file decides its paint.
+ *
+ * A tier may not wear a **status** token. v4.1 §2 gives each of the seven hues
+ * exactly one operational meaning — orange is "out with the client", green is
+ * "home & settled" - and a tier is an attribute of a client, not a state of a
+ * rental. The old `data/clients.ts:TIER_TONE` typed tiers as `StatusKey`, which
+ * put Elite in the orange the floor reads as "the gear is out".
+ *
+ * The comparison page still needs five plans to separate at a glance, so this
+ * uses `--cat-1..5` — the design system's **categorical** ramp
+ * (`components/ui/Charts.tsx`), whose whole job is identity, never state. It is
+ * applied as **icon ink on the card surface**: no solid fill, no uppercase word,
+ * none of `STATUS_BLOCK`'s anatomy, so it cannot be read as a status block.
+ * Measured >= 3:1 against `--surface` in both themes (`--cat-2` is 3.37 in light,
+ * which is why the ink sits on the card and not on `--surface-2`, where the same
+ * slot measures 2.98).
+ *
+ * §7.4 still holds — colour is never the only signal: every plan also carries a
+ * distinct icon glyph, its name, its price and its segment word.
+ */
+const TIER_ACCENT: Record<MembershipTier, string> = {
+  Academy: 'var(--cat-1)',
+  Creator: 'var(--cat-2)',
+  Cinematographer: 'var(--cat-3)',
+  'Production Alliance': 'var(--cat-4)',
+  Elite: 'var(--cat-5)',
+}
+
+/**
+ * A label chip. Given a `status` it wears that status token; given none it is a
+ * quiet surface chip — which is what every **non-status** fact gets here (a
+ * membership tier, a plan's segment word), so no hue is spent on something that
+ * is not an operational state.
+ */
+function Pill({ text, status, small }: { text: string; status?: StatusKey; small?: boolean }) {
+  const c = status ? STATUS[status] : undefined
   return (
     <span
       style={{
@@ -37,9 +74,9 @@ function Pill({ text, status, small }: { text: string; status: StatusKey; small?
         height: small ? 18 : 21,
         padding: small ? '0 6px' : '0 8px',
         borderRadius: 5,
-        background: c.bg,
-        color: c.fg,
-        border: c.border ? `1px solid ${c.border}` : undefined,
+        background: c ? c.bg : 'var(--surface-2)',
+        color: c ? c.fg : 'var(--text)',
+        border: c?.border ? `1px solid ${c.border}` : undefined,
         // §4.3.6 — the floor is --t-th; raw px also opts out of --ui-scale.
         fontSize: 'var(--t-th)',
         fontWeight: 600,
@@ -87,20 +124,22 @@ function PlanCard({ p, money, onViewMembers, memberCount }: {
   return (
     <article style={{ ...cardStyle, padding: 14, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        {/*
+          The plan's mark. The glyph carries the tier's categorical colour; the
+          tile itself is unpainted, so the card shows no coloured block a reader
+          could mistake for a status. See `TIER_ACCENT`.
+        */}
         <span
           style={{
             width: 34,
             height: 34,
-            borderRadius: 9,
             display: 'grid',
             placeItems: 'center',
-            background: STATUS[p.badgeKey].bg,
-            color: STATUS[p.badgeKey].fg,
-            border: STATUS[p.badgeKey].border ? `1px solid ${STATUS[p.badgeKey].border}` : undefined,
+            color: TIER_ACCENT[p.name],
             flexShrink: 0,
           }}
         >
-          <Icon name={p.icon} size={18} fill />
+          <Icon name={p.icon} size={20} fill />
         </span>
         <span style={{ minWidth: 0 }}>
           <span
@@ -109,7 +148,7 @@ function PlanCard({ p, money, onViewMembers, memberCount }: {
             {p.name}
           </span>
           <span style={{ display: 'block', marginTop: 3 }}>
-            <Pill text={p.badge} status={p.badgeKey} small />
+            <Pill text={p.badge} small />
           </span>
         </span>
       </div>
@@ -211,7 +250,27 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const, verticalAlign: 'top' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic. Horizontal padding stays at 10 — the floor is a vertical law and
+ * this table is wide enough already.
+ *
+ * This is a DATA-INTEGRITY fix, not a density preference. The members table
+ * gives every row two controls, a selection checkbox on the left and the
+ * find-in-directory button on the right, and at 10 + 10 + a --t-meta line the
+ * row stood around 37px — too short to contain the 44px hit area §7.3 owes
+ * either of them. A target bigger than its row overhangs into the neighbour,
+ * and because an absolutely positioned hit area wins the hit test the LATER
+ * row in the DOM takes any tap in the overlap band; that is precisely the bug
+ * commit 7d38cdf fixed on the floor workspaces. A selection checkbox is the
+ * worst place for it: `selected` is what a bulk action reads, so a boundary
+ * tap quietly puts the wrong member into the set and the operator sees a
+ * plausible count either way. The same constant also floors the plan
+ * comparison table above, which carries no controls but owes the row law
+ * anyway and reads better at the same rhythm.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const, verticalAlign: 'top' as const }
 
 function PageBtn({ label, active, disabled, onClick }: { label: string; active?: boolean; disabled?: boolean; onClick: () => void }) {
   return (
@@ -739,7 +798,14 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
                     </td>
 
                     <td style={td}>
-                      <Pill text={m.level} status={TIER_TONE[m.level]} small />
+                      {/*
+                        Quiet on purpose. The Status cell immediately to the
+                        right is where this row spends its colour, and a second
+                        tinted chip beside it competed with the one signal that
+                        is actually operational. The tier is named in words and
+                        is filterable from the Level control above.
+                      */}
+                      <Pill text={m.level} small />
                     </td>
 
                     <td style={td}>

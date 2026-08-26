@@ -236,7 +236,34 @@ const inputStyle = {
  * rows carry a single hairline rule rather than a box each.
  */
 const th = { textAlign: 'left' as const, padding: '7px 9px', fontSize: 'var(--t-th)', fontWeight: 700, color: 'var(--text2)', letterSpacing: '0.03em', textTransform: 'uppercase' as const, whiteSpace: 'nowrap' as const, borderBottom: '1px solid var(--border)' }
-const td = { padding: '7px 9px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than padding arithmetic.
+ * Horizontal padding is untouched and so is every glyph, which is the whole
+ * distinction §7.4 and §60 are protecting: a 44px BOX per cell would turn the
+ * equipment grid back into the form it moved away from, but a 56px ROW does
+ * not paint anything — it only stops the row being shorter than the targets it
+ * already contains.
+ *
+ * And it already contains them. `Stepper`'s `TouchInset` and the row's remove
+ * button both stamp `height: var(--tap)` — 44px — on a 20/26px glyph, inside a
+ * row that measured 7 + 20 + 7 = 34px. Each of those targets hung ~5px past its
+ * own row at each edge, vertically adjacent rows overlapped by ~10px, and an
+ * absolutely positioned target wins the hit test with the LATER row in the DOM
+ * taking the tap. So a tap near a row boundary changed the WRONG line's qty or
+ * days, or removed the WRONG line. Same failure, same fix as commit 7d38cdf on
+ * the floor workspaces.
+ *
+ * A correction to the `Stepper` comment below, in its own spirit: its X half —
+ * Qty's "+" and Days's "−" overlapping across 18px of cell padding — stands and
+ * is still open, and closing it is a table-layout decision, not a hit-area one.
+ * Its Y half ("Y is the free axis here and Y is what is taken") was measured
+ * against the two glyphs inside one stepper and stopped at the row's own box,
+ * the same way the claim it replaced stopped at the stepper's box. The nearest
+ * neighbour on Y is the next ROW. Y is only free once the row is at least 56,
+ * which is what this line now guarantees.
+ */
+const td = { height: 'var(--row-min-h)', padding: '7px 9px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
 
 /** §59 / §60 — the one sub-heading used inside every section body. */
 const sub = { margin: '0 0 8px', fontSize: 'var(--t-th)', fontWeight: 700, color: 'var(--text2)', letterSpacing: '0.04em', textTransform: 'uppercase' } as const

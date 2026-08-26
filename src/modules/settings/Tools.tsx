@@ -1551,7 +1551,21 @@ export default function Tools() {
 
 /* ══ small parts ═════════════════════════════════════════════════════════ */
 
+/*
+ * §7.3's row floor ("rows >= 56px"), expressed with the token rather than with
+ * padding arithmetic — `height` on a `<td>` reads as a MINIMUM, so short rows
+ * rise to the floor and the horizontal padding is untouched.
+ *
+ * The disposition table this dresses is read-only, so nothing here can currently
+ * mis-record a tap. It is still the floor's job to guarantee that a 44px hit
+ * area fits inside its own row rather than overhanging the neighbour, where the
+ * later row in the DOM wins the press; at 8px padding around one line of text
+ * these rows pitch near 36, which is the shape that fails the moment a row ever
+ * carries a control. Applying the token now makes the guarantee a property of
+ * the table rather than something the next person has to remember to add.
+ */
 const tdStyle: CSSProperties = {
+  height: 'var(--row-min-h)',
   padding: '8px 10px',
   fontSize: 'var(--t-meta)',
   color: 'var(--text)',

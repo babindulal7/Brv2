@@ -512,7 +512,22 @@ const thStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 }
 
+/*
+ * §7.3's row floor ("rows >= 56px"), taken from the token rather than built out
+ * of padding: `height` on a `<td>` acts as a MINIMUM, so the schedule's rows
+ * come up to the floor without the horizontal padding or the totals row moving.
+ *
+ * The schedule is a read-only projection with no row controls, so no tap can be
+ * misfiled here today. The floor is applied anyway because it is the guarantee
+ * that a 44px hit area fits inside its own row instead of overhanging the
+ * neighbour — and a table of near-identical numeric rows is the worst place to
+ * discover later that a control was added to rows too short to hold its target,
+ * since every row looks like every other one and a wrong-row press reads as
+ * plausible output. The phone branch above renders the same data as cards and
+ * is unaffected; this is the desktop table only.
+ */
 const tdStyle: React.CSSProperties = {
+  height: 'var(--row-min-h)',
   padding: '10px 12px',
   fontSize: 'var(--t-meta)',
   color: 'var(--text)',

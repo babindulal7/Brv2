@@ -595,7 +595,30 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '9px 10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token instead of padding arithmetic. The
+ * horizontal padding is untouched — this raises the row, nothing else.
+ *
+ * Why it is a data-integrity fix rather than a density preference: this one
+ * `td` dresses both tables on the page, and both put a target inside the row.
+ * The lines table links every serial through to `/inventory/:serial`, and the
+ * payments table hands its date cell to `IntelCard`, which is `role="button"`.
+ * Neither carries an inflated 44px target yet, and at 9 + 17 + 9 = 35px there
+ * was nowhere to put one: a 44px target in a 35px row overhangs ~4px into the
+ * rows above and below, the two neighbours then overlap by ~9px, and an
+ * absolutely positioned target wins the hit test — with the LATER row in the
+ * DOM taking the tap. That opens the wrong unit on the lines table and peeks
+ * the wrong payment below it. Commit 7d38cdf fixed exactly this shape on the
+ * four floor workspaces; `components/ui/TouchTarget.tsx` carries the full
+ * vertical case.
+ *
+ * At 56px a 44px target sits inside the row with 6px of margin each side, so
+ * the row can pay Law 15 without borrowing from its neighbour. `th` is left
+ * alone on purpose: the header rows here are plain column labels with no row
+ * action, and a header owes the 44px rule only when it holds a control.
+ */
+const td = { height: 'var(--row-min-h)', padding: '9px 10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
 
 /** A muted in-card paragraph for a surface whose read genuinely does not exist yet. */
 function NotWiredNote({ children }: { children: React.ReactNode }) {

@@ -102,7 +102,20 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
+ * ("rows >= 56px") expressed with the token rather than with padding
+ * arithmetic; horizontal padding and the top alignment stay as they are.
+ *
+ * Both tables below are read-only today, and their two-line cells — AD over BS
+ * on a due date, unit-days under an equipment name — already clear the floor on
+ * their own. That is the argument for putting it on the constant rather than
+ * leaving it to the content: a single-line row must not end up shorter than the
+ * two-line row beside it, and no row may be too short to hold a 44px hit area,
+ * because a target that overhangs its row hands the tap to the next row in the
+ * DOM. The floor is what stops that before a control is ever added here.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
 
 /* Law 15 — hit area over paint, number from `--tap`. One consumer: the range
    Select above the pulse table. */

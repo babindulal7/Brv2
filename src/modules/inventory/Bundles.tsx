@@ -70,7 +70,22 @@ const th: CSSProperties = {
   verticalAlign: 'bottom',
 }
 
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so this states §7.3's row floor
+ * ("rows >= 56px") with the token rather than with padding arithmetic, and
+ * leaves the horizontal padding alone.
+ *
+ * It is here for correctness, not for air. Every row starts with the selection
+ * checkbox that feeds the bulk bar and ends in a `Menu` trigger, and a 44px hit
+ * area does not fit inside 10 + one line + 10. What overflows does not stop at
+ * the row edge: it reaches into the rows above and below, and the later row in
+ * the DOM wins a tap in that band. A bulk action then runs against a bundle the
+ * user never ticked, with nothing on screen to say why. At 56 the target sits
+ * inside its own row with room each side, so the overlap cannot form. Rows
+ * already taller than the floor do not move — this is a minimum, not a height.
+ */
 const td: CSSProperties = {
+  height: 'var(--row-min-h)',
   padding: '10px',
   fontSize: 'var(--t-meta)',
   color: 'var(--text)',

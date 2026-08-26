@@ -306,7 +306,20 @@ const th = {
   whiteSpace: 'nowrap' as const,
   borderBottom: '1px solid var(--border)',
 }
-const td = { padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
+/*
+ * `height` on a `<td>` behaves as a MINIMUM, so §7.3's row floor
+ * ("rows >= 56px") is stated with the token instead of by padding arithmetic;
+ * horizontal padding is untouched and taller rows keep the height they had.
+ *
+ * The reason is data integrity, not density. Column one of every job row is the
+ * checkbox feeding the bulk bar and the last column is the row's own action;
+ * both carry a 44px hit area that a 10 + one line + 10 row cannot contain. The
+ * overhang lands on the neighbouring rows, and the later row in the DOM takes
+ * the tap — so a tap near a boundary ticks the job BELOW the one aimed at, and
+ * whatever the bulk bar then runs, runs against the wrong maintenance job. At
+ * 56 the target sits inside its row and the overlap is gone.
+ */
+const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
 
 /** Whole days between two UTC midnights — no calendar arithmetic, so no engine is bypassed. */
 const DAY_MS = 86_400_000
