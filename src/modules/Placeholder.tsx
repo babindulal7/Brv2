@@ -30,11 +30,7 @@ export default function Placeholder({ title }: { title: string }) {
         </span>
         <h2 style={{ margin: 0, fontSize: 'var(--fs-h4)', fontWeight: 700, color: 'var(--text)' }}>{title}</h2>
         <p style={{ margin: '8px 0 0', fontSize: 'var(--t-ui)', color: 'var(--text2)', lineHeight: 1.5 }}>
-          This screen has not been built yet. Screens are ported one at a time from the reference renders — see{' '}
-          <code className="figure" style={{ fontSize: 'var(--t-meta)' }}>
-            SCREENS.md
-          </code>{' '}
-          for the catalogue and what is done.
+          This screen has not been built yet. Please contact your system administrator or refer to system documentation.
         </p>
       </div>
     </div>

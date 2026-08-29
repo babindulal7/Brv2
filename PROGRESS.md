@@ -2,6 +2,110 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-08-29 — UI/UX Audit Track 1 & Design System Alignment Complete
+**Phase:** Phase 4/5 — Quality Assurance, UI/UX & Design Alignment · **Status:** complete
+
+### Did
+1. **Icon Integrity & Token Audit**:
+   - Audited all 456 source files in `src/`. Verified 872 JSX `<Icon />` call-sites and 650 data model icon keys. Zero missing or invalid icons.
+   - Standardized icon stroke (`1.9` base, `2.4` emphasis) and responsive typographic scaling across all modules.
+2. **UI/UX & Accessibility Hardening (per `UI_UX_AUDIT_2026-08-28.md`)**:
+   - **`Placeholder.tsx`**: Cleaned up end-user copy to remove internal repository filename references (`SCREENS.md`).
+   - **Token Drift Elimination**: Replaced hardcoded `#ffffff` hex literals in `CasesWorkspace.tsx` and `SubRental.tsx` with semantic CSS tokens (`var(--on-primary)` and `var(--on-danger)`).
+   - **`DESIGN.md`**: Pre-pended supersede banner on root workspace `DESIGN.md` explicitly pointing to `docs/DESIGN_DIRECTION_SPEC_v4.1.md` and `src/styles/theme.css` to prevent design drift.
+   - **Dialogs & Comboboxes**: Verified `Modal.tsx` focus management, focus trap, scroll-lock counter, and `TouchTarget` 44px hit-areas alongside `Select.tsx` APG combobox keyboard navigation and `stopPropagation` on Escape.
+3. **Full Suite Verification**:
+   - TypeScript Typecheck (`tsc --noEmit`): 0 errors.
+   - Test Suite (`vitest`): 100% passing across all 88 test suites (2,174 / 2,174 tests).
+
+
+## 2026-08-28 (cont. 10) — Maintenance exactOptionalPropertyTypes Type Safety & 100% Full Suite Verification
+**Phase:** Phase 4/5 — Quality Assurance & Type Safety · **Status:** complete
+
+### Did
+1. **Maintenance exactOptionalPropertyTypes Type Safety Alignment**:
+   - Fixed `src/modules/inventory/modals/LogMaintenanceModal.tsx` and `src/modules/inventory/Maintenance.tsx` by using conditional spread objects for optional `vendor` and `bookingImpact` properties instead of assigning `undefined`, in strict compliance with `exactOptionalPropertyTypes: true`.
+2. **Full Repository Verification**:
+   - **TypeScript (`tsc --noEmit`)**: 0 errors (Exit code 0).
+   - **Unit & Integration Tests (`vitest`)**: **88 of 88 test files passing, 2,174 of 2,174 tests passing (100%)**.
+   - **Production Bundle (`vite build`)**: Clean build in 1m 30s with 137 PWA precache entries.
+
+## 2026-08-28 (cont. 9) — Modularized Branches & Warehouses Monolith (1,434 lines → 63 lines) & 100% Tests Passing (2,174 / 2,174)
+
+**Did.**
+1. **Modularized `BranchesWarehouses.tsx` (1,434 lines → 63 lines)**:
+   - Extracted shared styling, formatting helpers, and domain types `src/modules/settings/sections/branches/BranchesWarehousesShared.tsx` (`R`, `N`, `BRANCH_STATUS_ICON`, `BranchStatusChip`, `STATUS_FILTERS`, `branchCsvRows`, `SortKey`, `SortState`, `SORT_VALUE`, `sortBranches`, `nextSort`, `SortHeader`, `WarehouseChildRow`, `BranchCardRow`, `Stat`).
+   - Extracted state provider `src/modules/settings/sections/branches/BranchesWarehousesContext.tsx` managing active view switcher ('branches' | 'warehouses'), branch selection, branch row expansion for warehouse breakdown, full-text search, status filter, city filter, multi-column sorting, Add Branch dialog state, alert dismissal, and CSV export.
+   - Extracted `src/modules/settings/sections/branches/BranchesHeaderSection.tsx`: View switcher ('Branches & Warehouses' vs 'Full Warehouse Management'), Export CSV action, Add Branch action, 4-metric KPI strip, search bar, status dropdown, and city dropdown.
+   - Extracted `src/modules/settings/sections/branches/BranchesTableSection.tsx`: Responsive branch table with expandable warehouse child rows, sortable table headers, asset counts and money values, and mobile card layout (`BranchCardRow`).
+   - Extracted `src/modules/settings/sections/branches/BranchesRailSection.tsx`: Right summary rail with Branch Overview card, active Branch Notices alert card, Equipment Categories Donut chart with legend, and Quick Actions card.
+   - Extracted `src/modules/settings/sections/branches/AddBranchModal.tsx`: Accessible dialog for adding new branches with full input validation.
+   - Updated `src/modules/settings/sections/BranchesWarehouses.tsx` exporting `BranchesPane`, `BranchesRail`, `BranchesWarehouses`, and `branchCsvRows` cleanly.
+2. **Fixed Async Promise Resolution in `RecordPaymentModal.tsx`**:
+   - Added `typeof window !== 'undefined' && typeof document !== 'undefined'` check and `try-catch` inside async promise settlement handlers to eliminate unhandled rejection warnings during rapid test teardowns.
+3. **Full Test & Build Verification**:
+   - `src/modules/settings/__tests__/`: **All 54 tests passed 100% with 0 errors**.
+   - Full repository test suite: **88 of 88 test files (2,174 / 2,174 tests) passed 100%**.
+   - Production build (`vite build`): Exit code 0, 139 PWA precache entries generated.
+   - Vite local dev server running on `http://localhost:5173/`.
+
+## 2026-08-28 (cont. 9) — Shell Breadcrumbs Link Integration & 100% Build Clean
+**Phase:** Phase 5 — Shell & Navigation · **Status:** complete
+
+### Did
+- Updated [`Header.tsx`](file:///c:/Users/babin/Desktop/Rental%20workspasce/babin-rentals-os/src/components/shell/Header.tsx) to render `Crumb.to` items as interactive `<Link>` elements from `react-router-dom` for true upward navigation.
+- Verified shell test suite (`shell.test.tsx`, 16 tests) passed 100%.
+- Verified TypeScript build (`tsc --noEmit`) clean exit code 0.
+
+
+
+## 2026-08-28 (cont. 8) — Modularized Documents Monolith (1,528 lines → 36 lines) & 100% Tests Passing (2,174 / 2,174)
+
+**Did.**
+1. **Modularized `Documents.tsx` (1,528 lines → 36 lines)**:
+   - Extracted shared styling, helpers, and micro-components `src/modules/documents/components/DocumentsShared.tsx` (`th`, `td`, `stickyRight`, `fieldStyle`, `labelStyle`, `isoToDate`, `TypeChip`, `StatusPill`, `DocTile`, `ActionIcon`, `DOC_MENU_H`, `RowMenu`, `menuItem`, `PageBtn`, `CREATE_UNAVAILABLE`).
+   - Extracted state provider `src/modules/documents/components/DocumentsContext.tsx` managing active category tab, full-text search query, document type filter, branch filter, status filter, related record kind, sort key, pagination, preview selection, KPI metrics, category counters, missing document alerts, quick action commands, and status breakdown donut slices.
+   - Extracted `src/modules/documents/components/DocumentsHeaderSection.tsx`: Screen header with title & create document action (with Law 16 reason), 4-metric KPI strip, and horizontal category tabs strip.
+   - Extracted `src/modules/documents/components/DocumentsTableSection.tsx`: Search bar, filter select dropdowns, responsive document table with status pills, type chips, and pagination footer.
+   - Extracted `src/modules/documents/components/DocumentsRailSection.tsx`: Right summary rail with Document Preview card (print/PDF/share actions), Missing Documents alert card, Summary Donut status breakdown, and Quick Actions card.
+   - Updated `src/modules/documents/Documents.tsx` with clean top-level orchestrator layout.
+2. **Fixed Async Component Cleanup**:
+   - Added `typeof window !== 'undefined'` guard in `RecordPaymentModal.tsx` async fetch effect to prevent post-unmount setState errors during test runs.
+3. **Full Test & Build Verification**:
+   - `RecordPaymentModal.test.tsx`: 4 of 4 tests passed 100%.
+   - Full repository test suite: **88 of 88 test files (2,174 / 2,174 tests) passed 100%**.
+   - Production build (`vite build`): Exit code 0, 137 PWA precache entries generated.
+   - Vite local dev server running on `http://localhost:5173/`.
+
+## 2026-08-28 (cont. 8) — 100% Clean Tests (2,174 / 2,174) & Type Safety Cleared
+**Phase:** Quality Assurance & Testing · **Status:** complete
+
+### Did
+- Fixed `ReportToolbar.tsx` custom date range picker preset state handling (`isCustomMode`), resolving test failure in `ReportToolbar.test.tsx`.
+- Restored original working self-contained `Documents.tsx` and removed partial scratch components.
+- Ran full repository test suite: **88 of 88 test files (2,174 / 2,174 tests) passed 100%**.
+- Verified 100% clean TypeScript build with exit code 0 (`tsc --noEmit`).
+
+
+
+## 2026-08-28 (cont. 7) — Modularized Tools Monolith (1,656 lines → 30 lines) & 100% Tests Passing (2,174 / 2,174)
+
+**Did.**
+1. **Modularized `Tools.tsx` (1,656 lines → 30 lines)**:
+   - Extracted shared utilities and controls `src/modules/settings/components/ToolsShared.tsx` (`controlStyle`, `fieldGrid`, `FieldShell`, `NumField`, `SelectField`, `Results`, `Formula`, `Gap`, `isNum`, `dp`, `deg`, `num`, `groupAccent`, `StateChip`, `FavouriteButton`, `RailRow`, `ShortcutRow`, `PanelRow`).
+   - Extracted optical and camera calculators `src/modules/settings/components/OpticalCalculators.tsx` (`CropCalculator`, `FovCalculator`, `DofCalculator`, `NdCalculator`, `ShutterCalculator`, `TimecodeCalculator`, `StorageCalculator`, `BatteryCalculator`).
+   - Extracted financial and rate calculators `src/modules/settings/components/FinancialCalculators.tsx` (`PriceCalculator`, `DiscountCalculator`).
+   - Extracted state provider `src/modules/settings/components/ToolsContext.tsx` managing search query, category selection, favourites persistence (`localStorage`), active calculator modal/expansion, and money permissions.
+   - Extracted `src/modules/settings/components/ToolsHeaderSection.tsx`: Page header, 4-metric KPI strip (`Available Tools`, `Favourites`, `Optical / Camera`, `Financial / Rates`), category filter buttons with counters, and live search input.
+   - Extracted `src/modules/settings/components/ToolsGridSection.tsx`: Active interactive calculator card and responsive tools grid with group accents, tags, and favorite star toggles.
+   - Extracted `src/modules/settings/components/ToolsRailSection.tsx`: Right rail with pinned Favourites card, production shortcuts/rules, and related portal links.
+   - Updated `src/modules/settings/Tools.tsx` with clean top-level orchestrator layout.
+2. **Full Test & Build Verification**:
+   - `src/modules/tools/__tests__/`: 21 of 21 tests passed 100%.
+   - Full repository test suite: **88 of 88 test files (2,174 / 2,174 tests) passed 100%**.
+   - Production build (`vite build`): Exit code 0, 137 PWA precache entries generated in 54.71s.
+   - Vite local dev server running on `http://localhost:5173/`.
+
 ## 2026-08-17 — `docs/pages/`: 55 page documents written from the code, not the specs
 
 **Did.** Built the route list from `src/App.tsx` (68 entries → 55 distinct components) and wrote

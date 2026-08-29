@@ -59,11 +59,13 @@ function ToastCard({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: str
         padding: 14,
         borderRadius: 'var(--r-card)',
         background: 'var(--dropdown)',
-        border: '1px solid var(--st-in-fg)',
-        boxShadow: 'var(--shadow-modal)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        border: '1px solid var(--border2)',
+        boxShadow: 'var(--shadow-xl)',
         opacity: mounted ? 1 : 0,
-        transform: mounted ? 'translateY(0)' : 'translateY(6px)',
-        transition: 'opacity var(--dur) ease, transform var(--dur) ease',
+        transform: mounted ? 'translateY(0) scale(1)' : 'translateY(12px) scale(0.96)',
+        transition: 'opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
       <span
@@ -135,7 +137,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           position: 'fixed',
           bottom: 20,
           right: 20,
-          zIndex: 70,
+          /* --z-system (10500), not the old literal 70. At 70 a toast painted
+             BEHIND Calendar full view (200), the rentals dropdowns (1000),
+             BranchesWarehouses (9000) — so the confirmation for an action
+             taken on those surfaces was invisible. Toasts are system feedback;
+             they sit above everything except nothing. */
+          zIndex: 'var(--z-system)' as unknown as number,
           display: 'flex',
           flexDirection: 'column',
           gap: 10,

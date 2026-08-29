@@ -27,6 +27,9 @@ import { useAuth } from '../../lib/auth'
 import { gateContext } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
 import { maintenanceGlance, maintenanceDetailGroups } from '../../data/maintenanceIntel'
+import { LogMaintenanceModal, type MaintenanceJobPayload } from './modals/LogMaintenanceModal'
+import { useDomainEvent } from '../../events/useDomainEvent'
+import { EVENT_TYPES } from '../../events/eventBus'
 
 /*
  * The operating day, resolved once when this module loads, from the real
@@ -506,6 +509,30 @@ export function Maintenance() {
   const [tab, setTab] = useState<'Maintenance' | 'Damage'>('Maintenance')
   const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
+  const [isLogMaintenanceOpen, setIsLogMaintenanceOpen] = useState(false)
+  const [recordsList, setRecordsList] = useState<MaintenanceRecord[]>(() => [...MAINTENANCE_DATA])
+
+  useDomainEvent(EVENT_TYPES.MAINTENANCE_STARTED, (payload: any) => {
+    if (payload?.id) {
+      const estDate = payload.estCompletionAd ? new Date(payload.estCompletionAd) : new Date()
+      const newRec: MaintenanceRecord = {
+        id: payload.id,
+        equipmentName: payload.equipmentName,
+        serialNumber: payload.serialNo,
+        type: payload.type,
+        priority: payload.priority,
+        status: 'In Progress',
+        flags: [],
+        conditions: ['Holding a Booking'],
+        technician: payload.technician,
+        vendor: payload.vendor,
+        estCompletion: estDate,
+        costEstPaisa: payload.estCostPaisa ?? 0,
+        bookingImpact: payload.bookingImpact,
+      }
+      setRecordsList((prev) => [newRec, ...prev])
+    }
+  })
 
   /**
    * §8.3 — the cost tile is *added* for a role that may see money; it is not a
@@ -569,7 +596,7 @@ export function Maintenance() {
   }
 
   const filteredRecords = useMemo(() => {
-    return MAINTENANCE_DATA.filter((m) => {
+    return recordsList.filter((m) => {
       if (activeFilter !== 'All') {
         if ((MAINTENANCE_STATUSES as string[]).includes(activeFilter)) {
           if (m.status !== activeFilter) return false
@@ -766,11 +793,9 @@ export function Maintenance() {
           <Button icon="download" onClick={() => exportCsv(filteredRecords, money)}>
             Export
           </Button>
-          <Unavailable reason="Logging a job needs the maintenance intake form, which is not built in this release.">
-            <Button icon="plus" variant="primary" disabled>
-              Log Maintenance
-            </Button>
-          </Unavailable>
+          <Button icon="plus" variant="primary" onClick={() => setIsLogMaintenanceOpen(true)}>
+            Log Maintenance
+          </Button>
         </span>
       </div>
 
@@ -987,6 +1012,30 @@ export function Maintenance() {
       </p>
         </>
       )}
+
+      <LogMaintenanceModal
+        isOpen={isLogMaintenanceOpen}
+        onClose={() => setIsLogMaintenanceOpen(false)}
+        onSuccess={(job: MaintenanceJobPayload) => {
+          const estDate = job.estCompletionAd ? new Date(job.estCompletionAd) : new Date()
+          const newRec: MaintenanceRecord = {
+            id: job.id,
+            equipmentName: job.equipmentName,
+            serialNumber: job.serialNo,
+            type: job.type,
+            priority: job.priority,
+            status: 'In Progress',
+            flags: [],
+            conditions: ['Holding a Booking'],
+            technician: job.technician,
+            ...(job.vendor ? { vendor: job.vendor } : {}),
+            estCompletion: estDate,
+            costEstPaisa: job.estCostPaisa,
+            ...(job.bookingImpact ? { bookingImpact: job.bookingImpact } : {}),
+          }
+          setRecordsList((prev) => [newRec, ...prev])
+        }}
+      />
     </div>
   )
 }

@@ -836,39 +836,36 @@ export default function Today() {
         </button>
       </div>
 
-      {viewport === 'desktop' ? (
-        /* §2.1 Desktop — lists left, ALERTS + CALENDAR mini in the right rail. */
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'minmax(0,1.55fr) minmax(0,1fr)',
-            gap: 'var(--sp-md)',
-            alignItems: 'start',
-          }}
-        >
-          <div style={stack}>
-            {outgoing}
-            {incoming}
+      {viewport !== 'phone' ? (
+        <>
+          {/* Main 2-Column Grid: Left Column = Pickups (Outgoing), Right Column = Returns (Incoming) */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+              gap: 'var(--sp-md)',
+              alignItems: 'start',
+            }}
+          >
+            <div style={stack}>{outgoing}</div>
+            <div style={stack}>{incoming}</div>
           </div>
-          <div style={stack}>
-            {alertsPanel}
-            {calendar}
+
+          {/* Lower 2-Column Grid: Left Column = Alerts, Right Column = Mini Calendar */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr)',
+              gap: 'var(--sp-md)',
+              alignItems: 'start',
+            }}
+          >
+            <div style={stack}>{alertsPanel}</div>
+            <div style={stack}>{calendar}</div>
           </div>
-        </div>
-      ) : viewport === 'tablet' ? (
-        /* §2.1 Tablet — "OUTGOING rows · INCOMING rows · ALERTS full-width
-           below". The rail REFLOWS beneath the lists (rulings §7): its cards
-           render inline, at full width, and are not hidden behind a handle. */
-        <div style={stack}>
-          {outgoing}
-          {incoming}
-          {alertsPanel}
-          {calendar}
-        </div>
+        </>
       ) : (
-        /* §2.1 Phone — one of the three at a time. The calendar mini follows
-           beneath: no prose removes it, and it is the only date affordance left
-           once the three lists are behind a control. */
+        /* Phone (<768px) — segmented control tab view */
         <div style={stack}>
           <SegmentedControl
             segment={segment}

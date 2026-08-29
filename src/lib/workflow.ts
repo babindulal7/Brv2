@@ -156,6 +156,17 @@ export function assertItemCounts(c: ItemCounts, total: number): void {
   }
 }
 
+/** Converts a database item_quantity_state to workflow ItemState and Damaged flag */
+export function normalizeItemState(rawState: string): { state: ItemState; isDamaged: boolean } {
+  if (rawState === 'Damaged') {
+    return { state: 'Returned', isDamaged: true }
+  }
+  if (rawState === 'Ready' || rawState === 'Picked Up' || rawState === 'Returned' || rawState === 'Missing') {
+    return { state: rawState as ItemState, isDamaged: false }
+  }
+  return { state: 'Ready', isDamaged: false }
+}
+
 /* ── §1.9 · flags registry ─────────────────────────────────────────────── */
 
 export type FlagType = 'State' | 'Information' | 'Attention' | 'Critical'

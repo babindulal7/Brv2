@@ -23,13 +23,15 @@ import {
   recoveredThisMonthPaisa,
   outstandingOf,
   ageDays,
-  NEW_CASE_UNAVAILABLE_REASON,
   CASES_EXPORT_UNAVAILABLE_REASON,
   type Case,
   type CaseStatus,
   type CasePriority,
 } from '../../data/cases'
 import { IconSearch, IconPlus, IconDownload } from '@tabler/icons-react'
+import { LogCaseModal } from './modals/LogCaseModal'
+import { useDomainEvent } from '../../events/useDomainEvent'
+import { EVENT_TYPES } from '../../events/eventBus'
 
 /* Age comes from the shared `ageDays` in `data/cases.ts`, computed against the
  * one operating day (`getBusinessToday()` in `lib/bs.ts`). This file used to
@@ -113,6 +115,14 @@ export function CasesWorkspace() {
   const searchQuery = params.get('q') ?? ''
   const activeFilter = statusFromParam(params.get('status'))
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
+  const [isLogCaseOpen, setIsLogCaseOpen] = useState(false)
+  const [casesList, setCasesList] = useState<Case[]>(() => [...CASES])
+
+  useDomainEvent(EVENT_TYPES.DISCREPANCY_FLAGGED, (payload: any) => {
+    if (payload?.case) {
+      setCasesList((prev) => [payload.case, ...prev.filter((c) => c.id !== payload.case.id)])
+    }
+  })
 
   /* Merge-write one or more params; `null` deletes a key. `replace: true`
    * keeps chip flicks and search keystrokes out of the history stack
@@ -130,7 +140,7 @@ export function CasesWorkspace() {
   const setSearchQuery = (q: string) => patch({ q: q || null })
 
   const filteredCases = useMemo(() => {
-    return CASES.filter((c) => {
+    return casesList.filter((c) => {
       if (activeFilter !== 'All' && c.status !== activeFilter) return false
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
@@ -238,7 +248,7 @@ export function CasesWorkspace() {
                 cursor: 'pointer',
                 border: activeFilter === chip.label ? '1px solid var(--nav-active-accent)' : '1px solid var(--border)',
                 background: activeFilter === chip.label ? 'var(--nav-active-accent)' : 'var(--card)',
-                color: activeFilter === chip.label ? '#ffffff' : 'var(--text)',
+                color: activeFilter === chip.label ? 'var(--on-primary)' : 'var(--text)',
                 transition: 'all 0.15s ease',
               }}
             >
@@ -264,11 +274,9 @@ export function CasesWorkspace() {
               Export
             </Button>
           </Unavailable>
-          <Unavailable reason={NEW_CASE_UNAVAILABLE_REASON}>
-            <Button variant="primary" icon={<IconPlus size={16} />} disabled>
-              Log Incident
-            </Button>
-          </Unavailable>
+          <Button variant="primary" icon={<IconPlus size={16} />} onClick={() => setIsLogCaseOpen(true)}>
+            Log Incident
+          </Button>
         </div>
       </div>
 
@@ -393,6 +401,14 @@ export function CasesWorkspace() {
           </div>
         )}
       </Card>
+
+      <LogCaseModal
+        isOpen={isLogCaseOpen}
+        onClose={() => setIsLogCaseOpen(false)}
+        onSuccess={(newCase: Case) => {
+          setCasesList((prev) => [newCase, ...prev])
+        }}
+      />
     </div>
   )
 }

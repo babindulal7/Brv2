@@ -629,6 +629,12 @@ function StorageCalculator() {
   return (
     <>
       <Formula>{`GB = (bitrate Mbps × seconds) ÷ 8 ÷ 1000`}</Formula>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text-dim)', alignSelf: 'center' }}>Presets:</span>
+        <button type="button" onClick={() => setBitrate('240')} style={{ padding: '4px 8px', fontSize: 'var(--t-meta)', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer', color: 'var(--text)' }}>Sony FX3/FX6 4K (240 Mbps)</button>
+        <button type="button" onClick={() => setBitrate('280')} style={{ padding: '4px 8px', fontSize: 'var(--t-meta)', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer', color: 'var(--text)' }}>RED Komodo 6K (280 Mbps)</button>
+        <button type="button" onClick={() => setBitrate('220')} style={{ padding: '4px 8px', fontSize: 'var(--t-meta)', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer', color: 'var(--text)' }}>ProRes 422 HQ (220 Mbps)</button>
+      </div>
       <div style={fieldGrid}>
         <NumField
           label="Bitrate"
@@ -636,7 +642,7 @@ function StorageCalculator() {
           onChange={setBitrate}
           suffix="Mbps"
           placeholder="Read off the codec"
-          hint="Typed, not picked — see below."
+          hint="Typed or selected from presets above."
         />
         <NumField label="Running time — hours" value={hours} onChange={setHours} step="1" />
         <NumField label="…and minutes" value={minutes} onChange={setMinutes} step="1" />
@@ -677,6 +683,12 @@ function BatteryCalculator() {
     <>
       <Formula>{`runtime hours    = (battery Wh ÷ draw W) × ${USABLE_CAPACITY}        ${USABLE_CAPACITY} = usable capacity
 batteries needed = ceil(shoot hours ÷ runtime) + 1  spare`}</Formula>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text-dim)', alignSelf: 'center' }}>Presets:</span>
+        <button type="button" onClick={() => { setWh('98'); setDraw('18'); }} style={{ padding: '4px 8px', fontSize: 'var(--t-meta)', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer', color: 'var(--text)' }}>V-Mount 98Wh + FX6 (18W)</button>
+        <button type="button" onClick={() => { setWh('150'); setDraw('37'); }} style={{ padding: '4px 8px', fontSize: 'var(--t-meta)', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer', color: 'var(--text)' }}>V-Mount 150Wh + Komodo (37W)</button>
+        <button type="button" onClick={() => { setWh('290'); setDraw('85'); }} style={{ padding: '4px 8px', fontSize: 'var(--t-meta)', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer', color: 'var(--text)' }}>V-Mount 290Wh + Cine Rig (85W)</button>
+      </div>
       <div style={fieldGrid}>
         <NumField label="Battery capacity" value={wh} onChange={setWh} suffix="Wh" placeholder="Off the cell" />
         <NumField label="Body draw" value={draw} onChange={setDraw} suffix="W" placeholder="Measured" />

@@ -23,7 +23,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'a7baa008-a745-4191-8195-725a0aa5ed38') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001003', '20x20 skimmer cloth ', 'Generic', '20x20 skimmer cloth ', '', 2000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001003', '20x20 skimmer cloth (BLACK)', 'Generic', '20x20 skimmer cloth (BLACK)', '', 2000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -308,9 +308,19 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
       END IF;
     
 
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'fac690ec-8e5d-4590-a8ff-e81f02c70471') THEN
+        INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001028', 'Aperture LS 1200x light', 'Generic', 'APURTURE-1200X-LIGHT', '<p>The Aperture LS 1200x is a powerful LED light fixture designed for professional film, photography, and event production. With its bright 1200-watt output and daylight-balanced color temperature, it delivers consistent, flicker-free illumination for any creative project.</p><br><strong>Product Details:</strong><ul><li>Output: 1200W LED</li><li>Color Temperature: 5600K daylight</li><li>Dimensions: 24" x 18" x 4"</li><li>Weight: 8 lbs</li><li>Materials: Aluminum housing with tempered glass</li><li>Includes: Power cable, mounting bracket, diffusion panel</li></ul>', 4000, 'Serialised', 1, true)
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'products', 'fac690ec-8e5d-4590-a8ff-e81f02c70471', v_new_id::text);
+      END IF;
+    
+
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'fae2d985-62c2-4241-b341-f21248135f24') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001028', 'Aperture LS 600x light', 'Generic', 'LGT-600X-APU', '<p>What’s Included:<br>• Aputure LS 600x Light<br>• Control Box<br>• Power Cable<br>• Head Cable<br>• Reflector<br>• 120cm Softbox<br>• Jumbo Stand<br>• Socket<br>• Sand Bag<br>• Bowens Mount Cap<br>• Clamp / Controller Clamp<br>• Carrying Case</p>', 3000, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001029', 'Aperture LS 600x light', 'Generic', 'LGT-600X-APU', '<p>What’s Included:<br>• Aputure LS 600x Light<br>• Control Box<br>• Power Cable<br>• Head Cable<br>• Reflector<br>• 120cm Softbox<br>• Jumbo Stand<br>• Socket<br>• Sand Bag<br>• Bowens Mount Cap<br>• Clamp / Controller Clamp<br>• Carrying Case</p>', 3000, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -320,7 +330,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'b4405ee5-3632-4a5e-84e2-066be6441b46') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001029', 'Aputure 400x', 'Generic', 'Aputure 400x', '', 2500, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001030', 'Aputure 400x', 'Generic', 'Aputure 400x', '', 2500, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -330,7 +340,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '8d0d1ea2-8de2-4dc9-8be4-04639791fadf') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001030', 'Aputure MC Pro RGB LED Light Panel (Production 8-Light Kit)', 'Generic', 'LGT-MCPRO-APU-KIT8', '', 2500, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001031', 'Aputure MC Pro RGB LED Light Panel (Production 8-Light Kit)', 'Generic', 'LGT-MCPRO-APU-KIT8', '', 2500, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -340,7 +350,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '19115b6b-c79a-4539-8e72-b13069b275a5') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001031', 'Arm Rod', 'Generic', 'ARM-ROD', '', 0, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001032', 'Arm Rod', 'Generic', 'ARM-ROD', '', 0, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -350,7 +360,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'e8af9c60-2a3e-417d-b410-c5024b035e42') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001032', 'Atomos Ninja V+ Kit', 'Generic', 'MON-REC-NV+-ATM-KIT', '', 2500, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001033', 'Atomos Ninja V+ Kit', 'Generic', 'MON-REC-NV+-ATM-KIT', '', 2500, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -360,7 +370,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '56970926-76fb-403c-ac07-6f75155446e1') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001033', 'Baby boom stand', 'Generic', 'Baby boom stand', '', 1000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001034', 'Baby boom stand', 'Generic', 'Baby boom stand', '', 1000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -370,7 +380,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'a3ae6748-df8a-410d-8e88-68bba61a57e2') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001034', 'Blazar Great Joy 1.8x T2.9 Anamorphic lens set (PL) ', 'Generic', 'LEN-BLZ-GREATJOY-SET', '<p>What’s Included:</p>
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001035', 'Blazar Great Joy 1.8x T2.9 Anamorphic lens set (PL) ', 'Generic', 'LEN-BLZ-GREATJOY-SET', '<p>What’s Included:</p>
 <p>• 35 mm T2.9 Anamorphic Lens</p>
 <p>• 50 mm T2.9 Anamorphic Lens</p>
 <p>• 85 mm T2.9 Anamorphic Lens</p>
@@ -385,7 +395,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'e5e6965a-62f4-4c25-b1c5-659d323a6315') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001035', 'BLAZAR LENS MANTIS 1.33x Anamorphic 5-Lens Set (ARRI PL)', 'Generic', 'LEN-MANTIS-SET-BLZ', '<p>What’s Included:<br>• Blazar Mantis Anamorphic Lens Set<br>• 25mm Lens<br>• 35mm Lens<br>• 50mm Lens<br>• 75mm Lens<br>• 100mm Lens<br>• Front Lens Caps<br>• Rear Lens Caps<br>• Main Storage Case</p>', 7000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001036', 'BLAZAR LENS MANTIS 1.33x Anamorphic 5-Lens Set (ARRI PL)', 'Generic', 'LEN-MANTIS-SET-BLZ', '<p>What’s Included:<br>• Blazar Mantis Anamorphic Lens Set<br>• 25mm Lens<br>• 35mm Lens<br>• 50mm Lens<br>• 75mm Lens<br>• 100mm Lens<br>• Front Lens Caps<br>• Rear Lens Caps<br>• Main Storage Case</p>', 7000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -395,7 +405,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '9cac09a6-357b-4dab-b91b-2424fb818f1a') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001036', 'Camera Caretaker ', 'Generic', 'CAMERA-CARETAKER', '', 2000, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001037', 'Camera Caretaker ', 'Generic', 'CAMERA-CARETAKER', '', 2000, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -405,7 +415,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'aa174f09-8324-4496-bb52-01ecfa9eaa63') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001037', 'Camera Caretaker - Contact no. 9712052572 (Sunil Lama)', 'Generic', 'Camera Caretaker - Contact no. 9712052572 (Sunil Lama)', '', 2000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001038', 'Camera Caretaker - Contact no. 9712052572 (Sunil Lama)', 'Generic', 'Camera Caretaker - Contact no. 9712052572 (Sunil Lama)', '', 2000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -415,7 +425,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '269e3020-27d8-45ae-9591-996dda5fb3b3') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001038', 'Camera Caretaker - Contact no. 9712052574 (Aryan Chaudhary)', 'Generic', 'Camera Caretaker - Contact no. 9712052574 (Aryan Chaudhary)', '', 2000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001039', 'Camera Caretaker - Contact no. 9712052574 (Aryan Chaudhary)', 'Generic', 'Camera Caretaker - Contact no. 9712052574 (Aryan Chaudhary)', '', 2000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -425,7 +435,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '7bd28208-35e5-4de8-9963-7758f2b14188') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001039', 'Camera Caretaker - Contact no. 9748249945 (Shisir Parkhi)', 'Generic', 'Camera Caretaker - Contact no. 9748249945 (Shisir Parkhi)', '', 2000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001040', 'Camera Caretaker - Contact no. 9748249945 (Shisir Parkhi)', 'Generic', 'Camera Caretaker - Contact no. 9748249945 (Shisir Parkhi)', '', 2000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -435,7 +445,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'bab0d6aa-d904-4f27-b903-e200f5fd4815') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001040', 'Camera Caretaker - Contact no. 9820418147 (Pratik Puri)', 'Generic', 'Camera Caretaker - Contact no. 9820418147 (Pratik Puri)', '', 2000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001041', 'Camera Caretaker - Contact no. 9820418147 (Pratik Puri)', 'Generic', 'Camera Caretaker - Contact no. 9820418147 (Pratik Puri)', '', 2000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -445,7 +455,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '7e7a9fcd-ca81-4cc4-8e1f-b765136af3a8') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001041', 'Came TV Hydraulic Suspension Car Rig', 'Generic', 'Came TV Hydraulic Suspension Car Rig', '', 3500, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001042', 'Came TV Hydraulic Suspension Car Rig', 'Generic', 'Came TV Hydraulic Suspension Car Rig', '', 3500, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -455,7 +465,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '4d3cbc55-2e59-473c-80fe-41615b5564fa') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001042', 'Canon Mount Adapter EF-EOS R', 'Generic', 'CAN-EF-EOSR-ADP', '', 1000, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001043', 'Canon Mount Adapter EF-EOS R', 'Generic', 'CAN-EF-EOSR-ADP', '', 1000, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -465,7 +475,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'a72afbb5-a98e-45fc-8ed0-e8f0cae3e779') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001043', 'CFast 512GB Memory Card (RED)', 'Generic', 'CFS-512GB-RED', '', 1000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001044', 'CFast 512GB Memory Card (RED)', 'Generic', 'CFS-512GB-RED', '', 1000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -475,7 +485,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'eb5dc279-c511-47c5-aedd-57a94051500c') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001044', 'CFast Card Reader', 'Generic', 'CFS-REA', '', 1000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001045', 'CFast Card Reader', 'Generic', 'CFS-REA', '', 1000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -485,7 +495,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'ece10e12-dbda-43fc-9bd2-34d5d76041f0') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001045', 'CFexpress Type B 1TB card (RED)', 'Generic', 'CFX-B-1TB-RED', '', 1500, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001046', 'CFexpress Type B 1TB card (RED)', 'Generic', 'CFX-B-1TB-RED', '', 1500, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -495,7 +505,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'b23aa65a-e268-41f9-87c2-791a485aa23c') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001046', 'CF express Type B Card Reader ', 'Generic', 'CFX-B-REA', '', 500, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001047', 'CF express Type B Card Reader ', 'Generic', 'CFX-B-REA', '', 500, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -505,7 +515,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '3fb02af4-c5ae-41dd-9f76-7fe9db2f3802') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001047', 'CFexpress Type B Card Reader', 'Generic', 'CFX-B-REA', '', 1000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001048', 'CFexpress Type B Card Reader', 'Generic', 'CFX-B-REA', '', 1000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -515,7 +525,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '752c7c5c-625d-4e0f-aced-2fdf5e901d64') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001048', 'CHIOPT XTREME Zoom Lens 28–85mm T3.2', 'Generic', 'CHP-LNS-28-85MM', '', 5000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001049', 'CHIOPT XTREME Zoom Lens 28–85mm T3.2', 'Generic', 'CHP-LNS-28-85MM', '', 5000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -525,7 +535,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '432371b6-4732-4888-9ce0-94170746b759') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001049', 'CHIOPT XTREME Zoom Lens 75–250mm T3.2', 'Generic', 'CHP-LNS-75-250MM', '', 5000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001050', 'CHIOPT XTREME Zoom Lens 75–250mm T3.2', 'Generic', 'CHP-LNS-75-250MM', '', 5000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -535,7 +545,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'feb076dd-6d95-429a-9097-a1f97575b11c') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001050', 'Clap Board', 'Generic', 'Clap Board', '<p>A clap board, also known as a film slate, is an essential tool used in film and video production to mark scenes and synchronize audio with video during editing. The clap sound created when the slate closes provides a clear reference point for syncing footage and sound recordings.</p>
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001051', 'Clap Board', 'Generic', 'Clap Board', '<p>A clap board, also known as a film slate, is an essential tool used in film and video production to mark scenes and synchronize audio with video during editing. The clap sound created when the slate closes provides a clear reference point for syncing footage and sound recordings.</p>
 
 <p>Clap boards are commonly used by assistant directors and camera crews to organize scenes, shots, and takes during production. The writable surface allows quick updates for each shot, helping maintain accurate records throughout the shoot.</p>
 
@@ -559,7 +569,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '6b57befd-d3f9-47f4-a705-804ec176ed8b') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001051', 'C stand  - Cstand Flag set', 'Generic', 'C stand  - Cstand Flag set', '', 500, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001052', 'C stand  - Cstand Flag set', 'Generic', 'C stand  - Cstand Flag set', '', 500, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -569,7 +579,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '7b6759dd-cf17-42ec-bbfe-75dfe2bc1b9a') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001052', 'C stand  - Double height ', 'Generic', 'C stand  - Double height ', '', 250, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001053', 'C stand  - Double height ', 'Generic', 'C stand  - Double height ', '', 250, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -579,7 +589,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'e6ea3984-b29a-4264-9443-0829a8c54a42') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001053', 'C stand  - Triple height ', 'Generic', 'C stand  - Triple height ', '', 300, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001054', 'C stand  - Triple height ', 'Generic', 'C stand  - Triple height ', '', 300, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -589,7 +599,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '75b2ba02-bad4-4cba-8551-59641d857222') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001054', 'Dana Dolly NS-50 Slider System', 'Generic', 'Dana Dolly NS-50 Slider System', '<p>What’s Included:<br>• Dana Dolly Platform<br>• 4x &nbsp;Wheel Trucks<br>• 10x 2ft Rods / Rails<br>• 8x Rod Sockets<br>• Pipe / Rail Support Brackets<br>• Center Plate / Camera Mount<br>• Carrying Case</p>', 3000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001055', 'Dana Dolly NS-50 Slider System', 'Generic', 'Dana Dolly NS-50 Slider System', '<p>What’s Included:<br>• Dana Dolly Platform<br>• 4x &nbsp;Wheel Trucks<br>• 10x 2ft Rods / Rails<br>• 8x Rod Sockets<br>• Pipe / Rail Support Brackets<br>• Center Plate / Camera Mount<br>• Carrying Case</p>', 3000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -599,7 +609,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '8095ebef-eb51-4577-a45e-b21184222326') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001055', 'Desview Blade 5 Pro', 'Generic', 'MON-BLADE5PRO-DSV', '<p>What’s Included:<br>• Desview blade OLED 5.5″ Monitor<br>• HDMI Cable<br>• Sun Hood&nbsp;<br>• Monitor Mount / Magic Arm<br>• Power Cable / Batteries (NP-F)x2<br>• Carrying Pouch</p>', 1500, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001056', 'Desview Blade 5 Pro', 'Generic', 'MON-BLADE5PRO-DSV', '<p>What’s Included:<br>• Desview blade OLED 5.5″ Monitor<br>• HDMI Cable<br>• Sun Hood&nbsp;<br>• Monitor Mount / Magic Arm<br>• Power Cable / Batteries (NP-F)x2<br>• Carrying Pouch</p>', 1500, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -609,7 +619,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'f75a5668-f6ae-48ee-b1b3-89e6d0756ead') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001056', 'Desview OLED Director Monitor  - 14 Inch', 'Generic', 'DESVIEW_OLED_INCH_DIRECTOR_MONITOR', '<p><b>Desview OLED Director Monitor Kit with Wireless Video</b></p>
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001057', 'Desview OLED Director Monitor  - 14 Inch', 'Generic', 'DESVIEW_OLED_INCH_DIRECTOR_MONITOR', '<p><b>Desview OLED Director Monitor Kit with Wireless Video</b></p>
 <p>The Desview &nbsp;OLED Director Monitor Kit is a professional monitoring solution designed for directors, DITs, and video village setups. The high-quality OLED display provides excellent color accuracy, deep contrast, and clear image detail, making it ideal for critical on-set monitoring.</p>
 <p>This kit includes an Accsoon wireless video system, allowing directors and crew to monitor the camera feed remotely without cables. Powered by V-Mount batteries, the setup offers reliable and portable power for long shooting days.</p>
 <p>To make setup easier on set, the kit also includes 3″ magic arms for securely mounting the wireless receiver or accessories to the monitor case.</p>
@@ -629,7 +639,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '52c58901-f697-4087-847d-2c0f82be2b07') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001057', 'Desview OLED Director Monitor  - 16 Inch', 'Generic', 'Desview OLED Director Monitor  - 16 Inch', '<p><b>Desview OLED Director Monitor Kit with Wireless Video</b></p>
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001058', 'Desview OLED Director Monitor  - 16 Inch', 'Generic', 'Desview OLED Director Monitor  - 16 Inch', '<p><b>Desview OLED Director Monitor Kit with Wireless Video</b></p>
 <p>The Desview &nbsp;OLED Director Monitor Kit is a professional monitoring solution designed for directors, DITs, and video village setups. The high-quality OLED display provides excellent color accuracy, deep contrast, and clear image detail, making it ideal for critical on-set monitoring.</p>
 <p>This kit includes an Accsoon wireless video system, allowing directors and crew to monitor the camera feed remotely without cables. Powered by V-Mount batteries, the setup offers reliable and portable power for long shooting days.</p>
 <p>To make setup easier on set, the kit also includes 3″ magic arms for securely mounting the wireless receiver or accessories to the monitor case.</p>
@@ -649,7 +659,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'ddaa2fcf-3474-46d1-8ae2-5b29f924dd5a') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001058', 'Desview S14-HDR 14″ Director Monitor Kit (Wireless Video + V-Mount Battery)', 'Generic', 'MON-S14HDR-DSV-KIT', '', 2500, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001059', 'Desview S14-HDR 14″ Director Monitor Kit (Wireless Video + V-Mount Battery)', 'Generic', 'MON-S14HDR-DSV-KIT', '', 2500, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -659,7 +669,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'f0e43838-02b7-44c2-a51c-4ca38be680f2') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001059', 'Director Monitor (PortKeys 8″  or  Desview S14-HDR 14″") - Desview S14-HDR 14″', 'Generic', 'Director Monitor (PortKeys 8″  or  Desview S14-HDR 14″") - Desview S14-HDR 14″', '', 2500, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001060', 'Director Monitor (PortKeys 8″  or  Desview S14-HDR 14″") - Desview S14-HDR 14″', 'Generic', 'Director Monitor (PortKeys 8″  or  Desview S14-HDR 14″") - Desview S14-HDR 14″', '', 2500, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -669,7 +679,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '1ca711d2-9392-438c-9bee-2d3e8695835e') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001060', 'Director Monitor (PortKeys 8″  or  Desview S14-HDR 14″") -  PortKeys 8″ Monitor', 'Generic', 'Director Monitor (PortKeys 8″  or  Desview S14-HDR 14″") -  PortKeys 8″ Monitor', '', 2500, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001061', 'Director Monitor (PortKeys 8″  or  Desview S14-HDR 14″") -  PortKeys 8″ Monitor', 'Generic', 'Director Monitor (PortKeys 8″  or  Desview S14-HDR 14″") -  PortKeys 8″ Monitor', '', 2500, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -679,7 +689,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'b810a88a-7810-469b-8301-e138607574ce') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001061', 'Dji Focus pro with Lidar', 'Generic', 'FPRO-LDR-DJI', '<p>What’s Included:<br>• DJI Focus Pro Hand Unit<br>• DJI Focus Pro Motor<br>• DJI LiDAR Range Finder<br>• Motor Rod Mount<br>• Focus Gear Ring<br>• USB-C Cable<br>• Power Cable<br>• Allen Key / Adjustment Tool<br>• Storage Case</p>', 2500, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001062', 'Dji Focus pro with Lidar', 'Generic', 'FPRO-LDR-DJI', '<p>What’s Included:<br>• DJI Focus Pro Hand Unit<br>• DJI Focus Pro Motor<br>• DJI LiDAR Range Finder<br>• Motor Rod Mount<br>• Focus Gear Ring<br>• USB-C Cable<br>• Power Cable<br>• Allen Key / Adjustment Tool<br>• Storage Case</p>', 2500, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -689,7 +699,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '47bdfbe2-4e5e-4ed1-bd14-6792bcf1da02') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001062', 'Dji High Bright Monitor', 'Generic', 'MON-HBR-DJI', '', 2000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001063', 'Dji High Bright Monitor', 'Generic', 'MON-HBR-DJI', '', 2000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -699,7 +709,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'c13e73ff-74f2-4b75-821a-a305ad8599f6') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001063', 'Dji Mic Mini', 'Generic', 'Dji Mic Mini', '<p>What’s Included:<br>• DJI Mic Mini Transmitterx2<br>• DJI Mic Mini Receiver<br>• Magnetic Clip<br>• Windscreen<br>• USB-C Charging Cable<br>• 3.5mm Audio Cable<br>• Storage Pouch / Case</p>', 500, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001064', 'Dji Mic Mini', 'Generic', 'Dji Mic Mini', '<p>What’s Included:<br>• DJI Mic Mini Transmitterx2<br>• DJI Mic Mini Receiver<br>• Magnetic Clip<br>• Windscreen<br>• USB-C Charging Cable<br>• 3.5mm Audio Cable<br>• Storage Pouch / Case</p>', 500, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -709,7 +719,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '499036fe-d75c-479d-8973-d2b35b01b2b3') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001064', 'DJI Osmo Pocket 3 ', 'Generic', 'CAM-OP3-DJI', '', 2000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001065', 'DJI Osmo Pocket 3 ', 'Generic', 'CAM-OP3-DJI', '', 2000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -719,7 +729,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'ee85988e-04e0-4ab6-9c39-afc20902b382') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001065', 'DJI Ronin 4D 6K 4-Axis Cinema Camera System (Body Only)', 'Generic', 'CAM-R4D6K-DJI', '<p></p>
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001066', 'DJI Ronin 4D 6K 4-Axis Cinema Camera System (Body Only)', 'Generic', 'CAM-R4D6K-DJI', '<p></p>
 <p><b>Overview</b></p>
 <p></p>
 
@@ -793,7 +803,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '3a6b6d9d-0e08-4715-88e9-ade5644fee26') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001066', 'DJI Ronin 4D Flex Cable ', 'Generic', 'FLX-CBL-4D-DJI', '<p>What’s Included:<br>• DJI Flex Cable<br>• Front Cap<br>• Rear Cap<br>• Storage Pouch / Zip Bag</p>', 2000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001067', 'DJI Ronin 4D Flex Cable ', 'Generic', 'FLX-CBL-4D-DJI', '<p>What’s Included:<br>• DJI Flex Cable<br>• Front Cap<br>• Rear Cap<br>• Storage Pouch / Zip Bag</p>', 2000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -803,7 +813,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'efd165c5-e278-4e83-b45f-191f4babfad5') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001067', 'DJI RS 3 Gimbal', 'Generic', 'GMB-RS3-DJI', '<p>What’s Included:<br>• DJI RS 3 Gimbal<br>• Tripod/Foot<br>• Camera Riser<br>• Quick-Release Plate<br>• Battery <br>• Storage Pouch / Case</p>', 1250, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001068', 'DJI RS 3 Gimbal', 'Generic', 'GMB-RS3-DJI', '<p>What’s Included:<br>• DJI RS 3 Gimbal<br>• Tripod/Foot<br>• Camera Riser<br>• Quick-Release Plate<br>• Battery <br>• Storage Pouch / Case</p>', 1250, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -813,7 +823,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '2919876f-71e4-4d8a-a2cc-13f8c50244ca') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001068', 'DJI RS 4 Pro', 'Generic', 'GMB-RS4P-DJI', '<p>What’s Included:<br>• DJI RS 4 Pro Gimbal<br>• Tripod/Foot<br>• Camera Riser<br>• Quick-Release Plate<br>• Battery <br>• Storage Pouch / Case</p>', 2000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001069', 'DJI RS 4 Pro', 'Generic', 'GMB-RS4P-DJI', '<p>What’s Included:<br>• DJI RS 4 Pro Gimbal<br>• Tripod/Foot<br>• Camera Riser<br>• Quick-Release Plate<br>• Battery <br>• Storage Pouch / Case</p>', 2000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -823,7 +833,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'f396fd7f-1d4e-41c8-bda7-6a6bda5e33c8') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001069', 'DJI RS 5 / RS 5 Combo - DJI RS 5', 'Generic', 'DJI RS 5 / RS 5 Combo - DJI RS 5', '<p>What’s Included:<br>• DJI RS 5 Gimbal<br>• Tripod/Foot<br>• Camera Riser<br>• Quick-Release Plate<br>• Battery<br>• Storage Pouch / Case<br>If comobo : RS5 smart handle</p>', 1500, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001070', 'DJI RS 5 / RS 5 Combo - DJI RS 5', 'Generic', 'DJI RS 5 / RS 5 Combo - DJI RS 5', '<p>What’s Included:<br>• DJI RS 5 Gimbal<br>• Tripod/Foot<br>• Camera Riser<br>• Quick-Release Plate<br>• Battery<br>• Storage Pouch / Case<br>If comobo : RS5 smart handle</p>', 1500, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -833,7 +843,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'a577c664-cdfc-427e-b2ea-9ba3473335e1') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001070', 'DJI RS 5 / RS 5 Combo - DJI RS 5 Combo', 'Generic', 'DJI RS 5 / RS 5 Combo - DJI RS 5 Combo', '<p>What’s Included:<br>• DJI RS 5 Gimbal<br>• Tripod/Foot<br>• Camera Riser<br>• Quick-Release Plate<br>• Battery<br>• Storage Pouch / Case<br>If comobo : RS5 smart handle</p>', 2000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001071', 'DJI RS 5 / RS 5 Combo - DJI RS 5 Combo', 'Generic', 'DJI RS 5 / RS 5 Combo - DJI RS 5 Combo', '<p>What’s Included:<br>• DJI RS 5 Gimbal<br>• Tripod/Foot<br>• Camera Riser<br>• Quick-Release Plate<br>• Battery<br>• Storage Pouch / Case<br>If comobo : RS5 smart handle</p>', 2000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -843,7 +853,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '90e6d398-3583-4b43-9d9c-fe3c5d24226c') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001071', 'DJI SDR TRANSMISSION COMBO', 'Generic', 'DJI SDR TRANSMISSION COMBO', '', 2000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001072', 'DJI SDR TRANSMISSION COMBO', 'Generic', 'DJI SDR TRANSMISSION COMBO', '', 2000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -853,7 +863,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '3366d2e0-04ca-42a9-b2fe-6e2dee6f2300') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001072', 'D-tap Charger', 'Generic', 'D-TAP-CHRG', '', 500, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001073', 'D-tap Charger', 'Generic', 'D-TAP-CHRG', '', 500, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -863,7 +873,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'b07a5f7e-f268-41a0-9e55-fd25899e8c54') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001073', 'D tap to 12v DC cable', 'Generic', 'DTP-12V-DC', '', 0, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001074', 'D tap to 12v DC cable', 'Generic', 'DTP-12V-DC', '', 0, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -873,7 +883,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '67b71ce0-5abe-4473-a96e-f7874e881bec') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001074', 'Easy rig', 'Generic', 'EASY-RIG', '<p>What’s Included:<br>• Easyrig&nbsp;<br>• Support Vest<br>• Support Arm<br>• Camera Hook<br>• Carrying Bag / Case<br><br></p>', 2500, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001075', 'Easy rig', 'Generic', 'EASY-RIG', '<p>What’s Included:<br>• Easyrig&nbsp;<br>• Support Vest<br>• Support Arm<br>• Camera Hook<br>• Carrying Bag / Case<br><br></p>', 2500, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -883,7 +893,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '3dc927d6-8627-47c4-b210-3ceeb9722b38') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001075', 'Easyrig minimax', 'Generic', 'Easyrig minimax', '<p>What’s Included:<br>• Easyrig MiniMax<br>• Support Vest<br>• Support Arm<br>• Camera Hook<br>• Carrying Bag / Case<br><br></p>', 3000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001076', 'Easyrig minimax', 'Generic', 'Easyrig minimax', '<p>What’s Included:<br>• Easyrig MiniMax<br>• Support Vest<br>• Support Arm<br>• Camera Hook<br>• Carrying Bag / Case<br><br></p>', 3000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -893,7 +903,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'e7a075b7-13c8-41ed-972f-a4e8f43239e8') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001076', 'E image 3 gear tripod', 'Generic', 'E image 3 gear tripod', '', 1000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001077', 'E image 3 gear tripod', 'Generic', 'E image 3 gear tripod', '', 1000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -903,7 +913,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '7138a261-7cdd-496d-9bcf-37509cb3bc74') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001077', 'FB 310Whr Vmount battery', 'Generic', 'V-MOUNT-310-FB', '', 1000, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001078', 'FB 310Whr Vmount battery', 'Generic', 'V-MOUNT-310-FB', '', 1000, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -913,7 +923,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '48a52682-dae3-492d-bc3f-e68f731d58a6') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001078', 'Feelworld 5.5-inch Monitor', 'Generic', 'MON-5.5-FWL', '<p>What’s Included:<br>• Feelworld 5.5″ Monitor<br>• HDMI Cable<br>• Sun Hood <br>• Monitor Mount / Magic Arm<br>• Power Cable / Batteries (NP-F)x2<br>• Carrying Pouch</p>', 500, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001079', 'Feelworld 5.5-inch Monitor', 'Generic', 'MON-5.5-FWL', '<p>What’s Included:<br>• Feelworld 5.5″ Monitor<br>• HDMI Cable<br>• Sun Hood <br>• Monitor Mount / Magic Arm<br>• Power Cable / Batteries (NP-F)x2<br>• Carrying Pouch</p>', 500, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -923,7 +933,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'c5eb2876-b4dc-4f56-8454-3c88acc0a75e') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001079', 'Fog Machine  - 1300 Watt', 'Generic', 'Fog Machine  - 1300 Watt', '', 1000, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001080', 'Fog Machine  - 1300 Watt', 'Generic', 'Fog Machine  - 1300 Watt', '', 1000, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -933,7 +943,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '0dc07857-abc5-4ba3-9135-3b859c95a291') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001080', 'Fog Machine  - 1500 Watt', 'Generic', 'Fog Machine  - 1500 Watt', '', 1500, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001081', 'Fog Machine  - 1500 Watt', 'Generic', 'Fog Machine  - 1500 Watt', '', 1500, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -943,7 +953,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '952b5ea3-c84e-431c-87e2-469c814a034b') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001081', 'Fog Machine  - 1800 Watt', 'Generic', 'Fog Machine  - 1800 Watt', '', 2000, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001082', 'Fog Machine  - 1800 Watt', 'Generic', 'Fog Machine  - 1800 Watt', '', 2000, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -953,7 +963,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '7083e588-a232-4113-9c6f-be5997f81db9') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001082', 'Godox RS60R Kit 2 RGB LED Video Light (2-Light Kit)', 'Generic', 'GDX-RS60R-KIT2', '', 2000, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001083', 'Godox RS60R Kit 2 RGB LED Video Light (2-Light Kit)', 'Generic', 'GDX-RS60R-KIT2', '', 2000, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -963,7 +973,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '56942370-8a1b-41e5-9324-d05777e322d6') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001083', 'Godox SkyTalk Air intercom system - 3 set', 'Generic', 'Godox SkyTalk Air intercom system - 3 set', '', 1250, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001084', 'Godox SkyTalk Air intercom system - 3 set', 'Generic', 'Godox SkyTalk Air intercom system - 3 set', '', 1250, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -973,7 +983,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'aec318e8-e52c-4ce9-86f3-f37ce68ec8de') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001084', 'Godox SkyTalk Air intercom system - 4 set', 'Generic', 'Godox SkyTalk Air intercom system - 4 set', '', 1600, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001085', 'Godox SkyTalk Air intercom system - 4 set', 'Generic', 'Godox SkyTalk Air intercom system - 4 set', '', 1600, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -983,7 +993,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '18bb864e-990c-4cfb-ab62-1f61b4f777af') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001085', 'Godox SkyTalk Air intercom system - 5 set', 'Generic', 'Godox SkyTalk Air intercom system - 5 set', '', 2000, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001086', 'Godox SkyTalk Air intercom system - 5 set', 'Generic', 'Godox SkyTalk Air intercom system - 5 set', '', 2000, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -993,7 +1003,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'd37a02fc-698f-4dc0-9958-adba8ac7665e') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001086', 'Godox V860III Flash for Sony', 'Generic', 'Godox V860III Flash for Sony', '<p>What’s Included:<br>
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001087', 'Godox V860III Flash for Sony', 'Generic', 'Godox V860III Flash for Sony', '<p>What’s Included:<br>
 • Godox V860III Flash<br>
 • Li-ion Battery<br>
 • Battery Charger<br>
@@ -1008,7 +1018,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '72361de4-e28c-4d0c-8a9d-f1964137715c') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001087', 'Great Joy 1.8x Anamorphic Lens |T2.9| PL Mount - 35mm', 'Generic', 'Great Joy 1.8x Anamorphic Lens |T2.9| PL Mount - 35mm', '', 2000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001088', 'Great Joy 1.8x Anamorphic Lens |T2.9| PL Mount - 35mm', 'Generic', 'Great Joy 1.8x Anamorphic Lens |T2.9| PL Mount - 35mm', '', 2000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -1018,7 +1028,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '7682528c-83e8-4a04-a08f-ec6723e7028d') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001088', 'Great Joy 1.8x Anamorphic Lens |T2.9| PL Mount - 50mm', 'Generic', 'Great Joy 1.8x Anamorphic Lens |T2.9| PL Mount - 50mm', '', 2000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001089', 'Great Joy 1.8x Anamorphic Lens |T2.9| PL Mount - 50mm', 'Generic', 'Great Joy 1.8x Anamorphic Lens |T2.9| PL Mount - 50mm', '', 2000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -1028,7 +1038,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'ab474815-88fd-4acb-ae12-7b69441c183a') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001089', 'Great Joy 1.8x Anamorphic Lens |T2.9| PL Mount - 85mm', 'Generic', 'Great Joy 1.8x Anamorphic Lens |T2.9| PL Mount - 85mm', '', 2000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001090', 'Great Joy 1.8x Anamorphic Lens |T2.9| PL Mount - 85mm', 'Generic', 'Great Joy 1.8x Anamorphic Lens |T2.9| PL Mount - 85mm', '', 2000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -1038,7 +1048,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'afa51c3c-51ee-4b5b-bf35-928b17b81d9f') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001090', 'Grip Head', 'Generic', 'GRIP-HEAD', '<p>What’s Included:</p>
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001091', 'Grip Head', 'Generic', 'GRIP-HEAD', '<p>What’s Included:</p>
 <p>• Grip Head</p>', 100, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
@@ -1049,7 +1059,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '582c8729-6475-4ca4-ae2e-08c3bc62e17b') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001091', 'HDMI to HDMI Cable (SmallRig) - 35cm', 'Generic', 'HDMI to HDMI Cable (SmallRig) - 35cm', '', 0, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001092', 'HDMI to HDMI Cable (SmallRig) - 35cm', 'Generic', 'HDMI to HDMI Cable (SmallRig) - 35cm', '', 0, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -1059,7 +1069,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'b37dbc86-a12c-4489-a3d9-ca520aec08dd') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001092', 'HDMI to HDMI Cable (SmallRig) - 55cm', 'Generic', 'HDMI to HDMI Cable (SmallRig) - 55cm', '', 0, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001093', 'HDMI to HDMI Cable (SmallRig) - 55cm', 'Generic', 'HDMI to HDMI Cable (SmallRig) - 55cm', '', 0, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -1069,7 +1079,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'a0250a1f-7c96-4c85-8d18-13f4953f7a35') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001093', 'Hollyland 8 person comset', 'Generic', 'COM-8P-HOL', '<p>What’s Included:<br>• Hollyland 8-Person Comms Set<br>• 8x Wireless Headsets<br>• Charging Case / Charging Dock<br>• 16x Batteries<br>• Power Adapter<br>• Storage Case</p>', 3500, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001094', 'Hollyland 8 person comset', 'Generic', 'COM-8P-HOL', '<p>What’s Included:<br>• Hollyland 8-Person Comms Set<br>• 8x Wireless Headsets<br>• Charging Case / Charging Dock<br>• 16x Batteries<br>• Power Adapter<br>• Storage Case</p>', 3500, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -1079,7 +1089,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'a03374b2-3cd0-45fb-8ff0-ac0926377bee') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001094', 'Hollyland cosmo C1 wireless video transmitter', 'Generic', 'TRN-C1-HOL-KIT', '', 1500, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001095', 'Hollyland cosmo C1 wireless video transmitter', 'Generic', 'TRN-C1-HOL-KIT', '', 1500, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -1089,7 +1099,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '1279a96a-5813-482c-947e-5bc01199a7c4') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001095', 'Honda EU22i Inverter Generator (2200VA)', 'Generic', 'Honda EU22i Inverter Generator (2200VA)', '<p>What’s Included:<br>• Honda EU22i Inverter Generator<br>• Power Cable<br>• Extension Cable<br>• Fuel Cap<br>• Oil Cap<br>• Pull Starter Handle<br>• Carry Handle</p>', 2000, 'Serialised', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001096', 'Honda EU22i Inverter Generator (2200VA)', 'Generic', 'Honda EU22i Inverter Generator (2200VA)', '<p>What’s Included:<br>• Honda EU22i Inverter Generator<br>• Power Cable<br>• Extension Cable<br>• Fuel Cap<br>• Oil Cap<br>• Pull Starter Handle<br>• Carry Handle</p>', 2000, 'Serialised', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -1099,7 +1109,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'a3e5ecc1-37f5-4599-89ee-312464ad140d') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001096', 'Insta360 X5 8K 360° Action Camera', 'Generic', 'CAM-X5-INS', '<p><b>What’s Included</b></p>
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001097', 'Insta360 X5 8K 360° Action Camera', 'Generic', 'CAM-X5-INS', '<p><b>What’s Included</b></p>
 
 
 <ul>
@@ -1135,7 +1145,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '3c6493ce-d0c5-4bfc-ac36-08785a0da8ca') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001097', 'JF DigitalFoto IRON-C100S + IRON-C100G Magic Arm & Super Clamp Combo Kit', 'Generic', 'JFDF-IRON-C100S-C100G', '', 1500, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001098', 'JF DigitalFoto IRON-C100S + IRON-C100G Magic Arm & Super Clamp Combo Kit', 'Generic', 'JFDF-IRON-C100S-C100G', '', 1500, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -1145,7 +1155,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '44f9b5e6-2d68-482d-aa2d-3be8a966423d') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001098', 'Jib Operator ', 'Generic', 'JIB-OPERATOR', '', 3000, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001099', 'Jib Operator ', 'Generic', 'JIB-OPERATOR', '', 3000, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -1155,21 +1165,11 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = 'd455e352-d231-4288-aed1-3b106989ee01') THEN
         INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001099', 'Jumbo Stand  - Double Height ', 'Generic', 'Jumbo Stand  - Double Height ', '', 0, 'Quantity', 1, true)
+        VALUES (gen_random_uuid(), v_cat_id, 'EQ001100', 'Jumbo Stand  - Double Height ', 'Generic', 'Jumbo Stand  - Double Height ', '', 0, 'Quantity', 1, true)
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
         VALUES ('booqable', 'products', 'd455e352-d231-4288-aed1-3b106989ee01', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'products' AND external_id = '191e7d8f-82c2-4971-bee0-cf6cefafe18f') THEN
-        INSERT INTO public.products (client_uuid, category_id, asset_code, name, brand, model, description, daily_rate, tracking_mode, total_quantity, is_active)
-        VALUES (gen_random_uuid(), v_cat_id, 'EQ001100', 'Jumbo Stand  - Triple Height ', 'Generic', 'Jumbo Stand  - Triple Height ', '', 0, 'Quantity', 1, true)
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'products', '191e7d8f-82c2-4971-bee0-cf6cefafe18f', v_new_id::text);
       END IF;
     
 
@@ -1275,7 +1275,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'clients' AND external_id = '1e74de60-f34d-428b-95e3-7324b7db87ef') THEN
         INSERT INTO public.clients (client_uuid, client_code, name, email, phone, city, status)
-        VALUES (gen_random_uuid(), 'C-1011', 'babin dulal', 'babindulal7@gmail.com', '+977981101011', 'Kathmandu', 'Active')
+        VALUES (gen_random_uuid(), 'C-1011', 'Babin Dulal', 'babindulal7@gmail.com', '+977981101011', 'Kathmandu', 'Active')
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -2173,9 +2173,749 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
       END IF;
     
 
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '600a19af-6e17-40cb-bc93-95413919d487') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-897', 'Customer Pickup', NOW(), NOW(), 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '600a19af-6e17-40cb-bc93-95413919d487', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '2d33de68-3342-4064-8f20-8d2d2928ad1c') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-896', 'Customer Pickup', '2026-08-28T06:00:00.000000+00:00', '2026-09-02T06:00:00.000000+00:00', 'On Rent')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '2d33de68-3342-4064-8f20-8d2d2928ad1c', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'a83de4d3-3058-442f-a793-1f0529502052') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-895', 'Customer Pickup', '2026-08-27T06:00:00.000000+00:00', '2026-08-28T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'a83de4d3-3058-442f-a793-1f0529502052', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '2145ed3a-28cc-452f-a9f4-ead11ce7e332') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-894', 'Customer Pickup', '2026-08-28T06:00:00.000000+00:00', '2026-08-30T06:00:00.000000+00:00', 'On Rent')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '2145ed3a-28cc-452f-a9f4-ead11ce7e332', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '5db3fd69-c22a-482e-a256-e8746d8d6a73') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-893', 'Customer Pickup', '2026-11-25T12:00:00.000000+00:00', '2026-11-25T22:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '5db3fd69-c22a-482e-a256-e8746d8d6a73', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '4e30732e-9faf-46c2-a593-c0c8b0108fa1') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-892', 'Customer Pickup', '2026-10-11T07:00:00.000000+00:00', '2026-10-11T21:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '4e30732e-9faf-46c2-a593-c0c8b0108fa1', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'f13578de-dcd7-4393-b41a-0be4592ef59b') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-891', 'Customer Pickup', '2026-08-27T06:00:00.000000+00:00', '2026-08-28T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'f13578de-dcd7-4393-b41a-0be4592ef59b', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '068f3e6d-4689-49da-9a9f-cd3d13748bfc') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-890', 'Customer Pickup', '2026-08-27T06:00:00.000000+00:00', '2026-08-28T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '068f3e6d-4689-49da-9a9f-cd3d13748bfc', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '1f0bf975-0a50-4df1-833e-133eb574a8a7') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-889', 'Customer Pickup', '2026-08-27T06:00:00.000000+00:00', '2026-08-28T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '1f0bf975-0a50-4df1-833e-133eb574a8a7', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'cf48b48d-7305-4ed2-8090-162b63c8852d') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-888', 'Customer Pickup', '2026-08-29T06:00:00.000000+00:00', '2026-08-30T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'cf48b48d-7305-4ed2-8090-162b63c8852d', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '67771ed0-2a60-458c-ac72-d0f7afbd3d6e') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-887', 'Customer Pickup', '2026-08-26T06:00:00.000000+00:00', '2026-08-27T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '67771ed0-2a60-458c-ac72-d0f7afbd3d6e', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '2407c3fd-c57a-4ee9-8076-d2d956cfa704') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-886', 'Customer Pickup', '2026-08-26T06:00:00.000000+00:00', '2026-08-28T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '2407c3fd-c57a-4ee9-8076-d2d956cfa704', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '93d85ccc-c425-4c53-8f1c-2b031a376d34') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-885', 'Customer Pickup', '2026-08-26T06:00:00.000000+00:00', '2026-08-27T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '93d85ccc-c425-4c53-8f1c-2b031a376d34', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'b0347aa5-ccb7-41c6-9e48-2b4c5e24036b') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-884', 'Customer Pickup', '2026-08-25T06:00:00.000000+00:00', '2026-08-26T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'b0347aa5-ccb7-41c6-9e48-2b4c5e24036b', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '88fed58f-1c69-4c09-989c-5cdc8e9315a9') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-883', 'Customer Pickup', '2026-08-26T06:00:00.000000+00:00', '2026-08-27T05:45:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '88fed58f-1c69-4c09-989c-5cdc8e9315a9', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '5f819514-949f-4223-9bba-1458c796c651') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-882', 'Customer Pickup', '2026-08-26T06:00:00.000000+00:00', '2026-08-28T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '5f819514-949f-4223-9bba-1458c796c651', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '38947b27-7f2c-43a4-8532-34bb62b83752') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-881', 'Customer Pickup', NOW(), NOW(), 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '38947b27-7f2c-43a4-8532-34bb62b83752', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '51e73747-0c2a-486c-a42f-8aa51bffc435') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-880', 'Customer Pickup', '2026-08-25T06:15:00.000000+00:00', '2026-08-26T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '51e73747-0c2a-486c-a42f-8aa51bffc435', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '6c75c8e4-7f82-4811-952c-2458e040afbf') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-879', 'Customer Pickup', '2026-08-27T06:00:00.000000+00:00', '2026-08-29T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '6c75c8e4-7f82-4811-952c-2458e040afbf', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '8ebd3008-86f6-4b94-92e6-2e47c55eb342') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-878', 'Customer Pickup', '2026-08-25T06:00:00.000000+00:00', '2026-08-26T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '8ebd3008-86f6-4b94-92e6-2e47c55eb342', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'd2c38e0b-8ca0-4877-82dd-22cb2513538f') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-877', 'Customer Pickup', '2026-08-24T06:00:00.000000+00:00', '2026-08-25T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'd2c38e0b-8ca0-4877-82dd-22cb2513538f', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '1ec9fb29-d8fe-46b9-aab1-32602c90ffd7') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-876', 'Customer Pickup', NOW(), NOW(), 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '1ec9fb29-d8fe-46b9-aab1-32602c90ffd7', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '87a50d42-3a3e-4078-b4ff-96f09dc9d232') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-875', 'Customer Pickup', NOW(), NOW(), 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '87a50d42-3a3e-4078-b4ff-96f09dc9d232', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'ae315376-ebf9-4cdc-86fa-fa1ae60f8465') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-874', 'Customer Pickup', '2026-08-24T06:00:00.000000+00:00', '2026-08-25T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'ae315376-ebf9-4cdc-86fa-fa1ae60f8465', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'beac16fb-8430-40eb-80a4-8a551030450c') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-873', 'Customer Pickup', '2026-08-23T06:00:00.000000+00:00', '2026-08-24T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'beac16fb-8430-40eb-80a4-8a551030450c', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'f70a4ef2-e4f0-4866-85f0-e5a129222170') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-872', 'Customer Pickup', '2026-08-23T06:00:00.000000+00:00', '2026-08-24T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'f70a4ef2-e4f0-4866-85f0-e5a129222170', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '4e3d0f50-08b9-4319-9351-826340042e6f') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-871', 'Customer Pickup', '2026-08-23T06:00:00.000000+00:00', '2026-08-24T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '4e3d0f50-08b9-4319-9351-826340042e6f', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '8aa2268c-1344-491c-a197-83582c1d18c1') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-870', 'Customer Pickup', '2026-08-23T06:00:00.000000+00:00', '2026-08-24T05:45:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '8aa2268c-1344-491c-a197-83582c1d18c1', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'a95aa2e5-8268-4413-8017-693765fc05f9') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-869', 'Customer Pickup', '2026-08-23T06:00:00.000000+00:00', '2026-08-25T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'a95aa2e5-8268-4413-8017-693765fc05f9', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '746c1a1e-73ec-4bbb-9199-8611fceb8645') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-868', 'Customer Pickup', '2026-08-22T06:00:00.000000+00:00', '2026-08-23T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '746c1a1e-73ec-4bbb-9199-8611fceb8645', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '9e305aa2-a866-4108-9602-d7f9fdb82ffe') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-867', 'Customer Pickup', '2026-08-23T06:00:00.000000+00:00', '2026-08-24T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '9e305aa2-a866-4108-9602-d7f9fdb82ffe', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'b2eb10cd-c505-4476-b694-39c930c2b4ef') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-866', 'Customer Pickup', '2026-08-22T06:00:00.000000+00:00', '2026-08-23T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'b2eb10cd-c505-4476-b694-39c930c2b4ef', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '2103eed1-9c3c-4d54-a160-9798ea958b38') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-865', 'Customer Pickup', '2026-08-24T06:00:00.000000+00:00', '2026-08-25T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '2103eed1-9c3c-4d54-a160-9798ea958b38', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '8c93e7ad-c512-4e6a-8c2a-d2403c591cb7') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-864', 'Customer Pickup', '2026-08-22T06:00:00.000000+00:00', '2026-08-25T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '8c93e7ad-c512-4e6a-8c2a-d2403c591cb7', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '4d1f291f-d572-4b08-90e8-7884fe669b27') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-863', 'Customer Pickup', '2026-08-22T06:00:00.000000+00:00', '2026-08-23T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '4d1f291f-d572-4b08-90e8-7884fe669b27', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '715bd96f-cf99-42e3-839c-fb1301bf1a77') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-862', 'Customer Pickup', '2026-08-22T06:00:00.000000+00:00', '2026-08-23T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '715bd96f-cf99-42e3-839c-fb1301bf1a77', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '21218b5b-4d3e-4acb-ade3-95de66f65eee') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-861', 'Customer Pickup', '2026-08-22T06:00:00.000000+00:00', '2026-08-23T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '21218b5b-4d3e-4acb-ade3-95de66f65eee', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'e90932f4-344f-4e4e-8821-02cb2e6deb6b') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-860', 'Customer Pickup', '2026-08-22T06:00:00.000000+00:00', '2026-08-23T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'e90932f4-344f-4e4e-8821-02cb2e6deb6b', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '022a43d8-9c23-4c87-b54f-e238dbbf34eb') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-859', 'Customer Pickup', '2026-08-20T06:00:00.000000+00:00', '2026-08-22T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '022a43d8-9c23-4c87-b54f-e238dbbf34eb', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '217c0f5d-f3a5-4881-8d9c-6a4dcb2980d9') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-858', 'Customer Pickup', '2026-08-20T06:00:00.000000+00:00', '2026-08-21T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '217c0f5d-f3a5-4881-8d9c-6a4dcb2980d9', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '05fadd9d-2935-4bc9-9b7a-ce1a44ccdda4') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-857', 'Customer Pickup', '2026-08-20T06:00:00.000000+00:00', '2026-08-21T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '05fadd9d-2935-4bc9-9b7a-ce1a44ccdda4', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '74c0a5f1-8ac7-4c3c-ae0f-23a43d27f7b6') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-856', 'Customer Pickup', NOW(), NOW(), 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '74c0a5f1-8ac7-4c3c-ae0f-23a43d27f7b6', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '9438fead-0708-46e7-822d-7e0f12a0bfa0') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-855', 'Customer Pickup', '2026-08-23T06:00:00.000000+00:00', '2026-08-25T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '9438fead-0708-46e7-822d-7e0f12a0bfa0', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '9954b0bc-b5fa-4223-9cbd-a310f560b786') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-854', 'Customer Pickup', '2026-08-26T06:00:00.000000+00:00', '2026-08-27T05:45:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '9954b0bc-b5fa-4223-9cbd-a310f560b786', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '641a1b83-231e-421e-ba49-d5b29fd9fad0') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-853', 'Customer Pickup', '2026-08-24T06:00:00.000000+00:00', '2026-08-25T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '641a1b83-231e-421e-ba49-d5b29fd9fad0', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '141da10c-8f99-4732-bcca-29ff62e6c5d1') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-852', 'Customer Pickup', NOW(), NOW(), 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '141da10c-8f99-4732-bcca-29ff62e6c5d1', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'bcfa53c5-41b2-4306-8bf1-bdfc339499e8') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-851', 'Customer Pickup', NOW(), NOW(), 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'bcfa53c5-41b2-4306-8bf1-bdfc339499e8', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '2231b82a-85e6-4627-a8c8-9a72b9c9829e') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-850', 'Customer Pickup', NOW(), NOW(), 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '2231b82a-85e6-4627-a8c8-9a72b9c9829e', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '7a428cf6-136c-43a8-ad57-415b39e63568') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-849', 'Customer Pickup', '2026-08-17T06:00:00.000000+00:00', '2026-08-18T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '7a428cf6-136c-43a8-ad57-415b39e63568', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '0cdee545-93ca-4d7a-8bee-a47f90c5277e') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-848', 'Customer Pickup', '2026-08-18T06:00:00.000000+00:00', '2026-08-19T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '0cdee545-93ca-4d7a-8bee-a47f90c5277e', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '093c67cd-ef42-4de7-b0e4-1e2335ca55c3') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-847', 'Customer Pickup', '2026-08-18T06:00:00.000000+00:00', '2026-08-19T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '093c67cd-ef42-4de7-b0e4-1e2335ca55c3', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'f2ee7f7e-859b-4de7-87a7-30a13c8de194') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-846', 'Customer Pickup', '2026-07-30T06:00:00.000000+00:00', '2026-07-31T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'f2ee7f7e-859b-4de7-87a7-30a13c8de194', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'dbbce03e-f1d0-4652-a042-4a8bc9bbf943') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-845', 'Customer Pickup', '2026-08-18T06:00:00.000000+00:00', '2026-08-19T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'dbbce03e-f1d0-4652-a042-4a8bc9bbf943', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '3be58d53-37d1-4956-9b7a-50c9e8fb12b2') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-844', 'Customer Pickup', '2026-08-18T06:00:00.000000+00:00', '2026-08-19T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '3be58d53-37d1-4956-9b7a-50c9e8fb12b2', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'aa6264a2-b3df-4b39-a825-04809ddb3142') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-843', 'Customer Pickup', '2026-08-17T06:00:00.000000+00:00', '2026-08-18T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'aa6264a2-b3df-4b39-a825-04809ddb3142', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'f369666f-959e-436b-a870-291fb6bfbf89') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-842', 'Customer Pickup', '2026-08-18T06:00:00.000000+00:00', '2026-08-31T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'f369666f-959e-436b-a870-291fb6bfbf89', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '374e5b95-0356-4e40-8e36-f7cb4fbcf7aa') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-841', 'Customer Pickup', '2026-08-17T06:00:00.000000+00:00', '2026-08-18T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '374e5b95-0356-4e40-8e36-f7cb4fbcf7aa', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'a9800a24-3775-4bca-938f-5ad656fe3b23') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-840', 'Customer Pickup', NOW(), NOW(), 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'a9800a24-3775-4bca-938f-5ad656fe3b23', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '57040385-c7c4-4f0b-9ea7-7976abbea4a4') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-839', 'Customer Pickup', '2026-08-17T06:00:00.000000+00:00', '2026-08-18T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '57040385-c7c4-4f0b-9ea7-7976abbea4a4', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'd94b74f1-ea1f-4bf4-a9c1-f5158eed8b7a') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-838', 'Customer Pickup', '2026-08-18T06:00:00.000000+00:00', '2026-08-19T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'd94b74f1-ea1f-4bf4-a9c1-f5158eed8b7a', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '8206822a-8294-4e02-ab56-9a2db482cc50') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-837', 'Customer Pickup', '2026-08-21T06:00:00.000000+00:00', '2026-08-22T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '8206822a-8294-4e02-ab56-9a2db482cc50', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'f2eb8b2f-f046-4964-b391-a0d5273f77d0') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-836', 'Customer Pickup', '2026-08-20T06:00:00.000000+00:00', '2026-08-25T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'f2eb8b2f-f046-4964-b391-a0d5273f77d0', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '8ee11db6-c41f-4b50-a0fb-ffa93f282595') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-835', 'Customer Pickup', '2026-08-18T06:00:00.000000+00:00', '2026-08-20T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '8ee11db6-c41f-4b50-a0fb-ffa93f282595', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '21c31069-bc1a-49c7-ac17-c57b6d9b63d6') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-834', 'Customer Pickup', '2026-08-24T08:00:00.000000+00:00', '2026-08-25T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '21c31069-bc1a-49c7-ac17-c57b6d9b63d6', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '2b0cec8f-8bb9-4f3a-bedb-1b6fb7be7bb6') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-833', 'Customer Pickup', '2026-08-16T06:00:00.000000+00:00', '2026-08-21T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '2b0cec8f-8bb9-4f3a-bedb-1b6fb7be7bb6', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '0a5c1f33-59b4-4dc9-a0af-49af4048fe40') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-832', 'Customer Pickup', '2026-08-15T06:00:00.000000+00:00', '2026-08-16T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '0a5c1f33-59b4-4dc9-a0af-49af4048fe40', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '407e23a5-8b12-4288-b381-0e3ab5f19de2') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-831', 'Customer Pickup', '2026-08-19T06:00:00.000000+00:00', '2026-08-20T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '407e23a5-8b12-4288-b381-0e3ab5f19de2', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '7844d836-55c5-478f-bb7c-4e343d66375d') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-830', 'Customer Pickup', '2026-08-14T06:00:00.000000+00:00', '2026-08-30T06:00:00.000000+00:00', 'On Rent')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '7844d836-55c5-478f-bb7c-4e343d66375d', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'f07b70ff-d355-4c91-92ec-6868cdbf2aae') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-829', 'Customer Pickup', '2026-08-14T06:00:00.000000+00:00', '2026-08-15T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'f07b70ff-d355-4c91-92ec-6868cdbf2aae', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '7b2da252-e86b-4dd8-801c-4be46319b58e') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-828', 'Customer Pickup', '2026-08-14T06:15:00.000000+00:00', '2026-08-15T06:00:00.000000+00:00', 'Booked')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '7b2da252-e86b-4dd8-801c-4be46319b58e', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'a77b56ee-8ffb-4051-82cf-3f4028f9cf6a') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-827', 'Customer Pickup', '2026-08-14T06:15:00.000000+00:00', '2026-08-15T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'a77b56ee-8ffb-4051-82cf-3f4028f9cf6a', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'ffa33898-0ccb-456a-9ecb-5ce578fa0623') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-826', 'Customer Pickup', '2026-08-16T06:00:00.000000+00:00', '2026-08-18T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'ffa33898-0ccb-456a-9ecb-5ce578fa0623', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '93e76e77-9195-486e-ad3a-c1e3dc9c070b') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-825', 'Customer Pickup', '2026-08-27T06:00:00.000000+00:00', '2026-09-03T06:00:00.000000+00:00', 'On Rent')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', '93e76e77-9195-486e-ad3a-c1e3dc9c070b', v_new_id::text);
+      END IF;
+    
+
+      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'f8b879be-9757-4ad9-a63d-4ff70191bb0f') THEN
+        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-824', 'Customer Pickup', '2026-08-16T06:00:00.000000+00:00', '2026-08-18T06:00:00.000000+00:00', 'Returned')
+        RETURNING id INTO v_new_id;
+
+        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
+        VALUES ('booqable', 'orders', 'f8b879be-9757-4ad9-a63d-4ff70191bb0f', v_new_id::text);
+      END IF;
+    
+
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'a8f81436-f8b2-4b93-b696-4c2aa93c4792') THEN
         INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-823', 'Customer Pickup', '2026-08-13T06:00:00.000000+00:00', '2026-08-14T06:00:00.000000+00:00', 'Booked')
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-823', 'Customer Pickup', '2026-08-14T06:00:00.000000+00:00', '2026-08-15T06:00:00.000000+00:00', 'Returned')
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -2185,7 +2925,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'a5e3eef4-1e24-49db-b315-beaa5ff89c45') THEN
         INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-822', 'Customer Pickup', '2026-08-13T06:00:00.000000+00:00', '2026-08-14T06:00:00.000000+00:00', 'Booked')
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-822', 'Customer Pickup', '2026-08-13T06:00:00.000000+00:00', '2026-08-14T06:00:00.000000+00:00', 'Returned')
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -2195,7 +2935,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'f147d071-33db-4377-bb38-135acce1af03') THEN
         INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-821', 'Customer Pickup', '2026-08-13T06:00:00.000000+00:00', '2026-08-14T06:00:00.000000+00:00', 'Booked')
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-821', 'Customer Pickup', '2026-08-13T06:00:00.000000+00:00', '2026-08-14T06:00:00.000000+00:00', 'Returned')
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -2205,7 +2945,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '3ca212a6-a85a-4b05-95c9-7bc7c914d495') THEN
         INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-820', 'Customer Pickup', '2026-08-14T06:15:00.000000+00:00', '2026-08-15T06:00:00.000000+00:00', 'Booked')
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-820', 'Customer Pickup', '2026-08-14T06:15:00.000000+00:00', '2026-08-15T06:00:00.000000+00:00', 'Returned')
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -2225,7 +2965,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '57ad0dc3-4f71-4445-8d81-1a0de5d39e7d') THEN
         INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-818', 'Customer Pickup', '2026-08-15T06:00:00.000000+00:00', '2026-08-16T06:00:00.000000+00:00', 'Booked')
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-818', 'Customer Pickup', '2026-08-16T06:00:00.000000+00:00', '2026-08-17T06:00:00.000000+00:00', 'Returned')
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -2285,7 +3025,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '7e68b71f-96ba-40fd-873e-39f6c301a686') THEN
         INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-812', 'Customer Pickup', '2026-08-12T06:00:00.000000+00:00', '2026-08-14T06:00:00.000000+00:00', 'On Rent')
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-812', 'Customer Pickup', '2026-08-12T06:00:00.000000+00:00', '2026-08-14T06:00:00.000000+00:00', 'Returned')
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -2345,7 +3085,7 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
       IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '36d53af5-953d-4e9e-ac3a-d7f009febac9') THEN
         INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-806', 'Customer Pickup', '2026-08-10T06:15:00.000000+00:00', '2026-08-14T06:00:00.000000+00:00', 'On Rent')
+        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-806', 'Customer Pickup', '2026-08-10T06:15:00.000000+00:00', '2026-08-15T06:00:00.000000+00:00', 'Returned')
         RETURNING id INTO v_new_id;
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
@@ -2430,746 +3170,6 @@ DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch 
 
         INSERT INTO public.external_refs (provider, entity, external_id, local_id)
         VALUES ('booqable', 'orders', '4bbc2f17-9e46-4066-870f-b9c9af3fe59f', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'e440e525-60fd-467f-b673-d8724e517ef6') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-797', 'Customer Pickup', '2026-08-09T06:00:00.000000+00:00', '2026-08-10T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'e440e525-60fd-467f-b673-d8724e517ef6', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '6da6c9fe-7162-42fd-b2dc-77d09042df98') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-796', 'Customer Pickup', '2026-08-09T06:00:00.000000+00:00', '2026-08-11T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '6da6c9fe-7162-42fd-b2dc-77d09042df98', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'be24a1cf-332d-412a-8427-8937075f196f') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-795', 'Customer Pickup', '2026-08-09T06:00:00.000000+00:00', '2026-08-10T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'be24a1cf-332d-412a-8427-8937075f196f', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'd1f5cdb9-e571-4209-99fb-4d096f1c922a') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-794', 'Customer Pickup', '2026-08-08T06:00:00.000000+00:00', '2026-08-10T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'd1f5cdb9-e571-4209-99fb-4d096f1c922a', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '26d02173-b830-4fe0-b5fa-3640967a38b1') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-793', 'Customer Pickup', '2026-08-09T06:00:00.000000+00:00', '2026-08-10T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '26d02173-b830-4fe0-b5fa-3640967a38b1', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '3defada4-07b1-4b7f-b1dd-9b6dabdf03df') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-792', 'Customer Pickup', '2026-08-09T06:00:00.000000+00:00', '2026-08-10T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '3defada4-07b1-4b7f-b1dd-9b6dabdf03df', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'f5faab89-8d45-4ade-8718-950f36fb2f9a') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-791', 'Customer Pickup', '2026-08-11T06:00:00.000000+00:00', '2026-08-12T06:00:00.000000+00:00', 'Booked')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'f5faab89-8d45-4ade-8718-950f36fb2f9a', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '40694e0f-de1a-4d20-b3db-ec2c7b8af8d1') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-790', 'Customer Pickup', '2026-08-08T06:15:00.000000+00:00', '2026-08-09T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '40694e0f-de1a-4d20-b3db-ec2c7b8af8d1', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '0226391e-deb9-4692-92f3-24c0650a46f8') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-789', 'Customer Pickup', '2026-08-08T06:00:00.000000+00:00', '2026-08-09T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '0226391e-deb9-4692-92f3-24c0650a46f8', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '3afb7563-71ad-49c9-a093-f342d4da6e08') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-788', 'Customer Pickup', '2026-08-07T06:00:00.000000+00:00', '2026-08-09T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '3afb7563-71ad-49c9-a093-f342d4da6e08', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'b9159302-2b03-4874-89be-9a5f2f8dd0f6') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-787', 'Customer Pickup', '2026-08-09T06:00:00.000000+00:00', '2026-08-12T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'b9159302-2b03-4874-89be-9a5f2f8dd0f6', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '60cf70c0-d6b2-411f-8d22-479c66575c32') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-786', 'Customer Pickup', '2026-08-06T06:00:00.000000+00:00', '2026-08-07T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '60cf70c0-d6b2-411f-8d22-479c66575c32', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '8105aede-3bed-41ba-ae5f-d09c55bae8ed') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-785', 'Customer Pickup', '2026-08-06T06:00:00.000000+00:00', '2026-08-08T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '8105aede-3bed-41ba-ae5f-d09c55bae8ed', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'f7ae2629-7b9b-420f-bdae-d08843f538cc') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-784', 'Customer Pickup', '2026-08-06T06:00:00.000000+00:00', '2026-08-07T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'f7ae2629-7b9b-420f-bdae-d08843f538cc', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '73baf8a4-55a4-4c54-b1fc-d68a1924c4b9') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-783', 'Customer Pickup', '2026-08-06T06:00:00.000000+00:00', '2026-08-08T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '73baf8a4-55a4-4c54-b1fc-d68a1924c4b9', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '15fbac9e-2b16-4894-aea9-b2c155f837ed') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-782', 'Customer Pickup', '2026-08-07T06:15:00.000000+00:00', '2026-08-08T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '15fbac9e-2b16-4894-aea9-b2c155f837ed', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '022bfc40-1059-41a6-8e65-187a47b6593c') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-781', 'Customer Pickup', '2026-08-06T06:00:00.000000+00:00', '2026-08-07T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '022bfc40-1059-41a6-8e65-187a47b6593c', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '9512a206-502e-4107-9499-86519562cade') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-780', 'Customer Pickup', NOW(), NOW(), 'Booked')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '9512a206-502e-4107-9499-86519562cade', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'e1cb9c8e-1351-464b-a22b-c00383123d8c') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-779', 'Customer Pickup', '2026-08-06T06:00:00.000000+00:00', '2026-08-07T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'e1cb9c8e-1351-464b-a22b-c00383123d8c', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'f844eb03-8fdc-4470-819a-9074c99ce5b5') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-778', 'Customer Pickup', '2026-08-06T06:00:00.000000+00:00', '2026-08-07T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'f844eb03-8fdc-4470-819a-9074c99ce5b5', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '2d88bcbe-bd71-4aed-8e1c-16ef6b834691') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-777', 'Customer Pickup', '2026-08-05T06:00:00.000000+00:00', '2026-08-06T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '2d88bcbe-bd71-4aed-8e1c-16ef6b834691', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '8ddc2cfb-edb2-4fd7-9394-a0323f03cf3e') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-776', 'Customer Pickup', '2026-08-05T06:00:00.000000+00:00', '2026-08-06T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '8ddc2cfb-edb2-4fd7-9394-a0323f03cf3e', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'e77060b2-532e-468c-a68e-445c5cc46f64') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-775', 'Customer Pickup', '2026-08-05T06:00:00.000000+00:00', '2026-08-06T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'e77060b2-532e-468c-a68e-445c5cc46f64', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '311d92d1-2875-42a3-88c1-13609cb52d95') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-774', 'Customer Pickup', '2026-08-05T06:00:00.000000+00:00', '2026-08-07T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '311d92d1-2875-42a3-88c1-13609cb52d95', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '4c108ed6-e358-43d1-8147-0b6e9452c006') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-773', 'Customer Pickup', '2026-08-05T06:00:00.000000+00:00', '2026-08-06T06:00:00.000000+00:00', 'Booked')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '4c108ed6-e358-43d1-8147-0b6e9452c006', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '5870f639-3316-4fc2-baa6-e7e07ba49276') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-772', 'Customer Pickup', '2026-08-05T06:00:00.000000+00:00', '2026-08-06T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '5870f639-3316-4fc2-baa6-e7e07ba49276', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'd872df63-7127-4cf5-a007-3921676e572b') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-771', 'Customer Pickup', '2026-08-04T06:00:00.000000+00:00', '2026-08-05T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'd872df63-7127-4cf5-a007-3921676e572b', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '091c2431-44d3-4a15-8942-076b488e7628') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-770', 'Customer Pickup', '2026-08-05T06:00:00.000000+00:00', '2026-08-06T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '091c2431-44d3-4a15-8942-076b488e7628', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '69618e0b-814e-4083-8ce7-dfb0d5089f47') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-769', 'Customer Pickup', '2026-08-04T06:00:00.000000+00:00', '2026-08-05T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '69618e0b-814e-4083-8ce7-dfb0d5089f47', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'c73d7c2a-08ef-44d4-ad50-fa1becae0de9') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-768', 'Customer Pickup', '2026-08-04T06:00:00.000000+00:00', '2026-08-05T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'c73d7c2a-08ef-44d4-ad50-fa1becae0de9', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '41bb23ec-8e8d-44d8-b005-e9741ee1daad') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-767', 'Customer Pickup', '2026-08-04T06:00:00.000000+00:00', '2026-08-05T06:00:00.000000+00:00', 'Booked')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '41bb23ec-8e8d-44d8-b005-e9741ee1daad', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '95612a36-2047-4e8c-b978-15623d367950') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-766', 'Customer Pickup', '2026-08-04T06:00:00.000000+00:00', '2026-08-05T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '95612a36-2047-4e8c-b978-15623d367950', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '4ba41cbf-4767-42d7-8bed-30449bdedcff') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-765', 'Customer Pickup', '2026-08-04T06:00:00.000000+00:00', '2026-08-05T06:00:00.000000+00:00', 'Booked')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '4ba41cbf-4767-42d7-8bed-30449bdedcff', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'e1ede32d-0469-4470-87e6-85cfea6fd946') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-764', 'Customer Pickup', '2026-08-04T06:00:00.000000+00:00', '2026-08-05T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'e1ede32d-0469-4470-87e6-85cfea6fd946', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '04e95258-75e6-48d8-837e-c5dcf931d674') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-763', 'Customer Pickup', '2026-08-11T06:00:00.000000+00:00', '2026-08-12T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '04e95258-75e6-48d8-837e-c5dcf931d674', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'db0208fc-8a4c-47b5-a9a6-9f616476dcbe') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-762', 'Customer Pickup', '2026-08-04T06:00:00.000000+00:00', '2026-08-07T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'db0208fc-8a4c-47b5-a9a6-9f616476dcbe', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '98baa3fb-019b-43e1-996d-2a5f67d5197b') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-761', 'Customer Pickup', '2026-08-03T06:00:00.000000+00:00', '2026-08-04T06:00:00.000000+00:00', 'Booked')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '98baa3fb-019b-43e1-996d-2a5f67d5197b', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '9f4e42e0-294f-464a-a419-078957412b20') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-760', 'Customer Pickup', NOW(), NOW(), 'Booked')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '9f4e42e0-294f-464a-a419-078957412b20', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '05209f12-17ef-4750-95e5-f71481e2c6b0') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-759', 'Customer Pickup', '2026-08-08T06:00:00.000000+00:00', '2026-08-09T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '05209f12-17ef-4750-95e5-f71481e2c6b0', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '823697ce-c60e-43ec-8ef4-1d2943b7cee4') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-758', 'Customer Pickup', '2026-08-05T06:00:00.000000+00:00', '2026-08-06T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '823697ce-c60e-43ec-8ef4-1d2943b7cee4', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '08758487-6cbc-4d34-882f-ff3bf6219448') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-757', 'Customer Pickup', '2026-08-10T06:00:00.000000+00:00', '2026-08-11T06:00:00.000000+00:00', 'Booked')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '08758487-6cbc-4d34-882f-ff3bf6219448', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '8027ed3b-f5e4-43fd-ae99-3f0d4fe7983f') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-756', 'Customer Pickup', '2026-08-02T06:00:00.000000+00:00', '2026-08-03T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '8027ed3b-f5e4-43fd-ae99-3f0d4fe7983f', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'fbb9db0f-0347-41aa-b3c8-780238fc77ce') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-755', 'Customer Pickup', '2026-08-01T06:00:00.000000+00:00', '2026-08-02T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'fbb9db0f-0347-41aa-b3c8-780238fc77ce', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'fd82dd03-88c5-4322-9025-5a252a283a8b') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-754', 'Customer Pickup', '2026-08-01T06:00:00.000000+00:00', '2026-08-03T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'fd82dd03-88c5-4322-9025-5a252a283a8b', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'f27fed11-dfd8-46d1-910c-0b1853893fa9') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-753', 'Customer Pickup', '2026-08-03T06:00:00.000000+00:00', '2026-08-04T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'f27fed11-dfd8-46d1-910c-0b1853893fa9', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '838d6950-3d36-4b2a-ac4a-45f8f36a4206') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-752', 'Customer Pickup', '2026-08-02T06:00:00.000000+00:00', '2026-08-06T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '838d6950-3d36-4b2a-ac4a-45f8f36a4206', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'b2d1a1e5-1c4e-4baa-8eca-cc7465b56a83') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-751', 'Customer Pickup', '2026-08-01T06:00:00.000000+00:00', '2026-08-02T05:45:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'b2d1a1e5-1c4e-4baa-8eca-cc7465b56a83', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '1ab6d1de-0daf-4461-8305-96e58482d65c') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-750', 'Customer Pickup', '2026-08-02T06:00:00.000000+00:00', '2026-08-03T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '1ab6d1de-0daf-4461-8305-96e58482d65c', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'dbb73690-c327-4cab-9466-d656f4373d1c') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-749', 'Customer Pickup', '2026-08-02T06:00:00.000000+00:00', '2026-08-03T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'dbb73690-c327-4cab-9466-d656f4373d1c', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '6ef21dc6-c7d7-41ec-86ed-7cec1d12c374') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-748', 'Customer Pickup', '2026-08-01T06:15:00.000000+00:00', '2026-08-02T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '6ef21dc6-c7d7-41ec-86ed-7cec1d12c374', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'e5182d9b-72e5-4f43-b74a-d2e8c7762646') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-747', 'Customer Pickup', '2026-08-01T06:00:00.000000+00:00', '2026-08-02T06:00:00.000000+00:00', 'Booked')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'e5182d9b-72e5-4f43-b74a-d2e8c7762646', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'cb514143-929e-4ac4-855f-382ae30b4818') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-746', 'Customer Pickup', NOW(), NOW(), 'Booked')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'cb514143-929e-4ac4-855f-382ae30b4818', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '0265b0db-7efd-4f22-9d86-c0631077e128') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-745', 'Customer Pickup', '2026-07-31T06:00:00.000000+00:00', '2026-08-01T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '0265b0db-7efd-4f22-9d86-c0631077e128', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'a2727871-ae90-4ae8-9dc9-dd1df5955bd4') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-744', 'Customer Pickup', '2026-08-01T06:00:00.000000+00:00', '2026-08-02T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'a2727871-ae90-4ae8-9dc9-dd1df5955bd4', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '1beb4a0f-9915-4f7b-8716-5bfd51048953') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-743', 'Customer Pickup', NOW(), NOW(), 'Booked')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '1beb4a0f-9915-4f7b-8716-5bfd51048953', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'd76c5cb4-b9c5-4e17-a8bc-0906c544c51b') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-742', 'Customer Pickup', '2026-07-31T06:00:00.000000+00:00', '2026-08-01T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'd76c5cb4-b9c5-4e17-a8bc-0906c544c51b', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'a9a49226-be5a-414c-a39c-2411e181d2a8') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-741', 'Customer Pickup', '2026-07-30T06:00:00.000000+00:00', '2026-07-31T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'a9a49226-be5a-414c-a39c-2411e181d2a8', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '67ffc03d-97fa-4755-bce7-78755ac13355') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-740', 'Customer Pickup', '2026-07-29T06:00:00.000000+00:00', '2026-07-30T05:45:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '67ffc03d-97fa-4755-bce7-78755ac13355', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '44785d02-f562-458d-949a-bd860a53f279') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-739', 'Customer Pickup', '2026-07-30T06:00:00.000000+00:00', '2026-07-31T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '44785d02-f562-458d-949a-bd860a53f279', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '8e85d0c6-de21-4196-832f-b3915322ecf2') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-738', 'Customer Pickup', '2026-07-30T06:00:00.000000+00:00', '2026-07-31T06:00:00.000000+00:00', 'Booked')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '8e85d0c6-de21-4196-832f-b3915322ecf2', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '4a530f7e-7872-428b-a999-2966c7ed21d4') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-737', 'Customer Pickup', '2026-07-29T06:00:00.000000+00:00', '2026-07-30T06:15:00.000000+00:00', 'Booked')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '4a530f7e-7872-428b-a999-2966c7ed21d4', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '2ac35f4f-9b87-426a-bccd-8c9761a46746') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-736', 'Customer Pickup', '2026-07-29T06:00:00.000000+00:00', '2026-07-30T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '2ac35f4f-9b87-426a-bccd-8c9761a46746', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '734a609e-f8b9-4dad-858e-ef9cd59bdfa0') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-735', 'Customer Pickup', '2026-07-30T06:00:00.000000+00:00', '2026-08-01T06:00:00.000000+00:00', 'Booked')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '734a609e-f8b9-4dad-858e-ef9cd59bdfa0', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '3a2a58a6-d63d-4e0e-bc61-5c5a68323c2e') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-734', 'Customer Pickup', '2026-07-30T06:00:00.000000+00:00', '2026-08-01T06:00:00.000000+00:00', 'Booked')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '3a2a58a6-d63d-4e0e-bc61-5c5a68323c2e', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'f65d0658-f8e5-4660-b6c7-c5eb88206b40') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-733', 'Customer Pickup', '2026-07-30T06:00:00.000000+00:00', '2026-07-31T06:00:00.000000+00:00', 'Booked')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'f65d0658-f8e5-4660-b6c7-c5eb88206b40', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '269a9e20-6f36-43dd-8a3f-49d1664cb7e9') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-732', 'Customer Pickup', '2026-07-28T06:00:00.000000+00:00', '2026-07-29T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '269a9e20-6f36-43dd-8a3f-49d1664cb7e9', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'd2f9058a-0dbc-4c8b-afb7-b5cd96218486') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-731', 'Customer Pickup', '2026-07-29T06:00:00.000000+00:00', '2026-07-30T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'd2f9058a-0dbc-4c8b-afb7-b5cd96218486', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'a3f97df8-08cc-4031-a32a-279f1e2db581') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-730', 'Customer Pickup', '2026-07-27T06:00:00.000000+00:00', '2026-07-28T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'a3f97df8-08cc-4031-a32a-279f1e2db581', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '43cb23bf-4964-4f8a-b9a1-9719da50cecb') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-729', 'Customer Pickup', '2026-07-27T06:00:00.000000+00:00', '2026-07-28T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '43cb23bf-4964-4f8a-b9a1-9719da50cecb', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = 'a91d6a93-9e13-40cb-bb42-270675e9af36') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-728', 'Customer Pickup', NOW(), NOW(), 'Booked')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', 'a91d6a93-9e13-40cb-bb42-270675e9af36', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '27dfb222-fbe8-49ca-bac2-e87371cf3439') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-727', 'Customer Pickup', '2026-07-27T06:00:00.000000+00:00', '2026-07-28T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '27dfb222-fbe8-49ca-bac2-e87371cf3439', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '29501bed-1db7-4104-8cb8-e2889737bed3') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-726', 'Customer Pickup', '2026-07-27T06:00:00.000000+00:00', '2026-07-28T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '29501bed-1db7-4104-8cb8-e2889737bed3', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '4f10fe11-fafe-407b-aa31-f9612d20fe57') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-725', 'Customer Pickup', '2026-07-27T06:00:00.000000+00:00', '2026-07-29T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '4f10fe11-fafe-407b-aa31-f9612d20fe57', v_new_id::text);
-      END IF;
-    
-
-      IF NOT EXISTS (SELECT 1 FROM public.external_refs WHERE provider = 'booqable' AND entity = 'orders' AND external_id = '75542f71-2972-42b0-8132-38ae2dc22c4b') THEN
-        INSERT INTO public.bookings (client_uuid, branch_id, client_id, created_by, updated_by, booking_no, delivery_type, pickup_at, return_at, stage)
-        VALUES (gen_random_uuid(), v_branch, (SELECT id FROM public.clients LIMIT 1), v_user, v_user, 'B-724', 'Customer Pickup', '2026-07-26T16:00:00.000000+00:00', '2026-07-27T06:00:00.000000+00:00', 'Returned')
-        RETURNING id INTO v_new_id;
-
-        INSERT INTO public.external_refs (provider, entity, external_id, local_id)
-        VALUES ('booqable', 'orders', '75542f71-2972-42b0-8132-38ae2dc22c4b', v_new_id::text);
       END IF;
     
 END $$;

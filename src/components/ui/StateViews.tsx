@@ -23,6 +23,12 @@ import { Button, cardStyle } from './Page'
 
 /** §2.2 Empty — "illustration · title · one-sentence explanation · one primary action." */
 export interface EmptyStateProps {
+  /**
+   * The kind of empty state (System States & Patterns §2.2):
+   * - `'nothing-yet'`: No records exist in the system yet (initial onboarding state).
+   * - `'no-results'`: Records exist, but none match the current filter or search query.
+   */
+  kind?: 'nothing-yet' | 'no-results'
   title?: string
   description?: string
   actionLabel?: string
@@ -32,13 +38,25 @@ export interface EmptyStateProps {
 }
 
 export function EmptyState({
-  title = 'No items found',
-  description = 'There are no records matching your current filter criteria.',
+  kind = 'no-results',
+  title,
+  description,
   actionLabel,
   onAction,
   icon,
   className,
 }: EmptyStateProps) {
+  const defaultTitle = kind === 'nothing-yet' ? 'No records yet' : 'No items found'
+  const defaultDescription =
+    kind === 'nothing-yet'
+      ? 'Get started by creating your first record.'
+      : 'There are no records matching your current filter criteria.'
+  const defaultIcon = kind === 'nothing-yet' ? <Icon name="plus" size={22} /> : <Icon name="search" size={22} />
+
+  const finalTitle = title ?? defaultTitle
+  const finalDescription = description ?? defaultDescription
+  const finalIcon = icon ?? defaultIcon
+
   return (
     <div
       className={className}
@@ -68,11 +86,11 @@ export function EmptyState({
           marginBottom: 14,
         }}
       >
-        {icon ?? <Icon name="folder" size={22} />}
+        {finalIcon}
       </div>
-      <h3 style={{ margin: '0 0 4px', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{title}</h3>
+      <h3 style={{ margin: '0 0 4px', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{finalTitle}</h3>
       <p style={{ margin: '0 0 16px', maxWidth: 340, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>
-        {description}
+        {finalDescription}
       </p>
       {actionLabel && onAction && (
         <Button variant="secondary" onClick={onAction}>

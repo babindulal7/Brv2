@@ -1,7 +1,9 @@
 import Icon from '../ui/Icon'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../lib/auth'
+import { useViewport } from '../../lib/device'
+import { openCommandPalette } from './CommandPalette'
 import HandoverSheet from '../../modules/auth/HandoverSheet'
 
 export interface Crumb {
@@ -43,6 +45,8 @@ const iconBtn = {
 export default function Header({ crumbs, searchPlaceholder = 'Search…', actions }: HeaderProps) {
   const { user, logout, lockNow, hasPin } = useAuth()
   const navigate = useNavigate()
+  const vp = useViewport()
+  const isPhone = vp === 'phone'
   const [showHandover, setShowHandover] = useState(false)
 
   const handleLogoutRequest = () => {
@@ -64,8 +68,8 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 'var(--sp-lg)',
-        padding: '10px 20px',
+        gap: isPhone ? 'var(--sp-xs)' : 'var(--sp-lg)',
+        padding: isPhone ? '6px 12px' : '10px 20px',
         /* Reads the token rather than setting the height, so `--header-h` and
            this element cannot disagree. Everything that sticks BELOW the header
            — the page rails, the filter drawer — offsets by that token, and
@@ -81,104 +85,124 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
         zIndex: 20,
       }}
     >
-      <nav aria-label="Breadcrumb" style={{ flexShrink: 0 }}>
+      <nav aria-label="Breadcrumb" style={{ flexShrink: 0, overflow: 'hidden' }}>
         <ol style={{ display: 'flex', alignItems: 'center', gap: 7, margin: 0, padding: 0, listStyle: 'none' }}>
-          {crumbs.map((c, i) => {
-            const last = i === crumbs.length - 1
+          {(isPhone && crumbs.length > 1 ? [crumbs[crumbs.length - 1]!] : crumbs).map((c, i, arr) => {
+            const last = i === arr.length - 1
+            const labelEl = (
+              <span
+                aria-current={last ? 'page' : undefined}
+                style={{
+                  fontSize: 'var(--t-ui)',
+                  fontWeight: i === 0 ? 600 : last ? 600 : 500,
+                  color: i === 0 ? 'var(--nav-active-accent)' : last ? 'var(--text)' : 'var(--text2)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {c.label}
+              </span>
+            )
             return (
               <li key={c.label} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 {i > 0 && <Icon name="chevron_right" size={13} style={{ color: 'var(--muted)' }} />}
-                <span
-                  aria-current={last ? 'page' : undefined}
-                  style={{
-                    fontSize: 'var(--t-ui)',
-                    fontWeight: i === 0 ? 600 : last ? 600 : 500,
-                    color: i === 0 ? 'var(--nav-active-accent)' : last ? 'var(--text)' : 'var(--text2)',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {c.label}
-                </span>
+                {c.to && !last ? (
+                  <Link to={c.to} style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex' }}>
+                    {labelEl}
+                  </Link>
+                ) : (
+                  labelEl
+                )}
               </li>
             )
           })}
         </ol>
       </nav>
 
-      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', minWidth: 0, gap: 'var(--sp-md)' }}>
-        <button
-          type="button"
-          onClick={() => {
-            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))
-          }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--sp-sm)',
-            width: '100%',
-            maxWidth: 440,
-            minHeight: 44,
-            padding: '0 12px',
-            borderRadius: 'var(--r-input)',
-            background: 'var(--input-bg)',
-            border: '1px solid var(--input-border)',
-            cursor: 'pointer',
-            textAlign: 'left',
-          }}
-        >
-          <Icon name="search" size={15} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-          <span style={{ flex: 1, fontSize: 'var(--t-ui)', color: 'var(--muted)' }}>
-            {searchPlaceholder} (⌘K)
-          </span>
-          <kbd
-            className="figure"
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', minWidth: 0, gap: 'var(--sp-md)' }}>
+        {isPhone ? (
+          <button
+            type="button"
+            onClick={() => openCommandPalette()}
+            aria-label="Search"
+            style={iconBtn}
+          >
+            <Icon name="search" size={17} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => openCommandPalette()}
             style={{
-              fontSize: 'var(--t-meta)',
-              color: 'var(--muted)',
-              flexShrink: 0,
-              padding: '2px 6px',
-              borderRadius: 4,
-              background: 'var(--card)',
-              border: '1px solid var(--border)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--sp-sm)',
+              width: '100%',
+              maxWidth: 440,
+              minHeight: 44,
+              padding: '0 12px',
+              borderRadius: 'var(--r-input)',
+              background: 'var(--input-bg)',
+              border: '1px solid var(--input-border)',
+              cursor: 'pointer',
+              textAlign: 'left',
             }}
           >
-            ⌘K
-          </kbd>
-        </button>
+            <Icon name="search" size={15} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+            <span style={{ flex: 1, fontSize: 'var(--t-ui)', color: 'var(--muted)' }}>
+              {searchPlaceholder} (⌘K)
+            </span>
+            <kbd
+              className="figure"
+              style={{
+                fontSize: 'var(--t-meta)',
+                color: 'var(--muted)',
+                flexShrink: 0,
+                padding: '2px 6px',
+                borderRadius: 4,
+                background: 'var(--card)',
+                border: '1px solid var(--border)',
+              }}
+            >
+              ⌘K
+            </kbd>
+          </button>
+        )}
 
         {/* Branch & Fiscal Year Pills */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <span
-            style={{
-              fontSize: '11px',
-              fontWeight: 600,
-              padding: '3px 8px',
-              borderRadius: 'var(--r-xs)',
-              background: 'var(--surface-2)',
-              color: 'var(--text2)',
-              border: '1px solid var(--border)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 'var(--sp-xs)',
-            }}
-          >
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--text-3)' }} />
-            Kathmandu HQ
-          </span>
-          <span
-            style={{
-              fontSize: '11px',
-              fontWeight: 600,
-              padding: '3px 8px',
-              borderRadius: 'var(--r-xs)',
-              background: 'var(--surface-2)',
-              color: 'var(--text2)',
-              border: '1px solid var(--border)',
-            }}
-          >
-            FY 2083/84
-          </span>
-        </div>
+        {!isPhone && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <span
+              style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '3px 8px',
+                borderRadius: 'var(--r-xs)',
+                background: 'var(--surface-2)',
+                color: 'var(--text2)',
+                border: '1px solid var(--border)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 'var(--sp-xs)',
+              }}
+            >
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--text-3)' }} />
+              Kathmandu HQ
+            </span>
+            <span
+              style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '3px 8px',
+                borderRadius: 'var(--r-xs)',
+                background: 'var(--surface-2)',
+                color: 'var(--text2)',
+                border: '1px solid var(--border)',
+              }}
+            >
+              FY 2083/84
+            </span>
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexShrink: 0 }}>

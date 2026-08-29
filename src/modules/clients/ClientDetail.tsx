@@ -33,8 +33,16 @@ import {
   evaluateCreditStop,
   readOverdueStopDays,
   type ClientRecord,
+  type MembershipTier,
+  type KycStatus,
 } from '../../data/clients'
+import type { Paisa } from '../../lib/money'
 import { INVOICE_TOKEN } from '../../data/invoiceIntel'
+import { AdjustCreditLimitModal } from './modals/AdjustCreditLimitModal'
+import { UpgradeTierModal } from './modals/UpgradeTierModal'
+import { VerifyKycModal } from './modals/VerifyKycModal'
+import { useDomainEvent } from '../../events/useDomainEvent'
+import { EVENT_TYPES } from '../../events/eventBus'
 
 /**
  * Client Detail — the confirmed gap named by three sources this session (the
@@ -299,6 +307,28 @@ export default function ClientDetail() {
   const [draft, setDraft] = useState<ClientRecord | null>(null)
   const client = draft ?? loaded?.record ?? null
   const [tab, setTab] = useState<TabKey>('overview')
+  const [isAdjustCreditOpen, setIsAdjustCreditOpen] = useState(false)
+  const [isUpgradeTierOpen, setIsUpgradeTierOpen] = useState(false)
+  const [isVerifyKycOpen, setIsVerifyKycOpen] = useState(false)
+
+  useDomainEvent(EVENT_TYPES.CLIENT_CREDIT_ADJUSTED, (payload: any) => {
+    if (payload?.clientId === client?.id && payload?.newLimitPaisa !== undefined) {
+      setDraft((d) => (d ? { ...d, creditLimitPaisa: payload.newLimitPaisa } : d))
+    }
+  })
+
+  useDomainEvent(EVENT_TYPES.MEMBERSHIP_TIER_CHANGED, (payload: any) => {
+    if (payload?.clientId === client?.id && payload?.newTier) {
+      setDraft((d) => (d ? { ...d, membership: payload.newTier, standingDiscountPercent: payload.discountPct ?? d.standingDiscountPercent } : d))
+    }
+  })
+
+  useDomainEvent(EVENT_TYPES.KYC_STATUS_UPDATED, (payload: any) => {
+    if (payload?.clientId === client?.id && payload?.newStatus) {
+      setDraft((d) => (d ? { ...d, kycStatus: payload.newStatus } : d))
+    }
+  })
+
   /* Law: errors inline, toasts for successes only — so a refused exit from edit
      mode is a banner naming the fields, never a toast. */
   const [leaveError, setLeaveError] = useState<string | null>(null)
@@ -513,6 +543,9 @@ export default function ClientDetail() {
                 Edit Client
               </Button>
             )}
+            <Button icon="checklist" variant="secondary" onClick={() => setIsVerifyKycOpen(true)}>
+              Verify KYC
+            </Button>
             <Button icon="users" onClick={() => navigate('/clients/duplicates')}>
               Merge Duplicate
             </Button>
@@ -711,7 +744,21 @@ export default function ClientDetail() {
             </Card>
           )}
 
-          <Card title="Membership & Credit">
+          <Card
+            title="Membership & Credit"
+            action={
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <Button variant="secondary" icon="activity" onClick={() => setIsUpgradeTierOpen(true)}>
+                  Change Tier
+                </Button>
+                {moneyScope(gctx) === 'full' && (
+                  <Button variant="secondary" icon="dollar" onClick={() => setIsAdjustCreditOpen(true)}>
+                    Adjust Credit
+                  </Button>
+                )}
+              </div>
+            }
+          >
             <EditableRows
               edit={edit}
               rows={[
@@ -1175,6 +1222,35 @@ export default function ClientDetail() {
       )}
 
       <FooterNote extra={['Clients are never deleted — a closed account is retained and marked']} />
+
+      {client && (
+        <>
+          <AdjustCreditLimitModal
+            isOpen={isAdjustCreditOpen}
+            onClose={() => setIsAdjustCreditOpen(false)}
+            client={client}
+            onSuccess={(newLimitPaisa: Paisa) => {
+              setDraft((d) => (d ? { ...d, creditLimitPaisa: newLimitPaisa } : d))
+            }}
+          />
+          <UpgradeTierModal
+            isOpen={isUpgradeTierOpen}
+            onClose={() => setIsUpgradeTierOpen(false)}
+            client={client}
+            onSuccess={(newTier: MembershipTier) => {
+              setDraft((d) => (d ? { ...d, membership: newTier } : d))
+            }}
+          />
+          <VerifyKycModal
+            isOpen={isVerifyKycOpen}
+            onClose={() => setIsVerifyKycOpen(false)}
+            client={client}
+            onSuccess={(newStatus: KycStatus) => {
+              setDraft((d) => (d ? { ...d, kycStatus: newStatus } : d))
+            }}
+          />
+        </>
+      )}
 
     </div>
   )

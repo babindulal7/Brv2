@@ -93,7 +93,7 @@ export function Button({
         whiteSpace: 'nowrap',
         userSelect: 'none',
         borderRadius: 'var(--r-btn)',
-        transition: 'background-color 150ms, opacity 150ms',
+        transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
         cursor: isDisabled ? 'not-allowed' : 'pointer',
         // Containing block for the loading spinner overlay below.
         position: 'relative',

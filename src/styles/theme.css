@@ -141,10 +141,15 @@
   --tr-hover: #1b1d23;
   --tr-alt: #1a1c21;
 
-  /* §3.3 — dark elevation lightens the surface; it never leans on shadow. */
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-kpi: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.6);
+  /* §3.3 — multi-tiered soft shadows & glowing elevation */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 4px 12px -2px rgba(0, 0, 0, 0.35);
+  --shadow-kpi: 0 4px 12px -2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 20px -3px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 16px 32px -4px rgba(0, 0, 0, 0.55);
+  --shadow-modal: 0 20px 48px rgba(0, 0, 0, 0.7);
+  --shadow-primary-glow: 0 8px 20px -4px rgba(56, 106, 247, 0.35);
 
   --danger-soft: #1a1315;
   --scrim: rgba(0, 0, 0, 0.65);
@@ -240,9 +245,14 @@
   --tr-hover: #f7f6f2;
   --tr-alt: #fafaf8;
 
-  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow-kpi: 0 1px 3px rgba(0, 0, 0, 0.06);
-  --shadow-modal: 0 15px 40px rgba(15, 23, 42, 0.12);
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 2px 4px rgba(15, 23, 42, 0.05);
+  --shadow-card: 0 4px 12px -2px rgba(15, 23, 42, 0.06);
+  --shadow-kpi: 0 4px 12px -2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 8px 20px -3px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 16px 32px -4px rgba(15, 23, 42, 0.12);
+  --shadow-modal: 0 20px 48px rgba(15, 23, 42, 0.16);
+  --shadow-primary-glow: 0 8px 20px -4px rgba(36, 86, 214, 0.25);
 
   --danger-soft: #fdf6f6;
   --scrim: rgba(15, 23, 42, 0.45);
@@ -425,11 +435,19 @@
   --fs-small: 14px;
   --fs-caption: 12px;
 
-  --dur: 150ms;
+  --dur: 180ms;
+  --dur-fast: 120ms;
   --dur-theme: 200ms;
   /* Filter System v1.0 §20 — "slide animation 180–240ms ease-out". The middle of
      the band. The global prefers-reduced-motion block below kills it outright. */
-  --dur-drawer: 200ms;
+  --dur-drawer: 220ms;
+
+  /* Spring physics & signature silky curves */
+  --transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-smooth: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-fast: all 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
 
   /* The sticky header's own height, so anything that must sit UNDER it stops
      guessing.
@@ -605,14 +623,29 @@ html {
 
 body {
   margin: 0;
-  background: var(--app);
+  background-color: var(--app);
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(56, 106, 247, 0.065) 0px, transparent 55%),
+    radial-gradient(at 100% 100%, rgba(232, 118, 45, 0.04) 0px, transparent 55%),
+    radial-gradient(at 50% 50%, rgba(30, 134, 74, 0.015) 0px, transparent 65%);
+  background-attachment: fixed;
   color: var(--text);
   font-family: var(--font-body);
   font-size: var(--t-body);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   /* "smooth 200ms transition" on theme switch */
   transition: background-color var(--dur-theme) ease, color var(--dur-theme) ease;
+}
+
+:root[data-theme='light'] body {
+  background-color: var(--app);
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(36, 86, 214, 0.045) 0px, transparent 55%),
+    radial-gradient(at 100% 100%, rgba(217, 101, 24, 0.03) 0px, transparent 55%),
+    radial-gradient(at 50% 50%, rgba(30, 134, 74, 0.012) 0px, transparent 65%);
+  background-attachment: fixed;
 }
 
 /* §4.3.2 — Outfit carries the brand voice, never body copy. */
@@ -778,49 +811,110 @@ td,
   }
 }
 
-/* Hover: 150ms, scale 1.02, shadow increases slightly. */
-.lift {
-  transition: transform var(--dur) ease, box-shadow var(--dur) ease, border-color var(--dur) ease;
+/* ── Tactile Interactive Transitions & Click Compression ── */
+button,
+a.btn,
+[role="button"],
+input[type="button"],
+input[type="submit"] {
+  font-family: inherit;
+  cursor: pointer;
+  transition: var(--transition);
 }
-.lift:hover {
-  /* Dashboard.md §17: "Hover — lift 2px, shadow increases, border → accent."
-     A card sets --lift-accent to its own accent; anything that doesn't keeps
-     its border, so the rule is opt-in rather than a surprise. */
+
+button:active:not(:disabled),
+.press:active:not(:disabled),
+a.btn:active,
+[role="button"]:active:not([aria-disabled="true"]) {
+  transform: scale(0.97);
+}
+
+/* ── Smooth Form Inputs with Glow Focus Rings ── */
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  transition: border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease;
+}
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px rgba(56, 106, 247, 0.22) !important;
+}
+
+/* ── Glassmorphism Utility ── */
+.glass {
+  background: var(--surface) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid var(--border);
+}
+
+/* ── Card Levitation & Micro-Elevation ── */
+.card,
+section[id] {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+}
+
+.lift {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+}
+.lift:hover,
+.card-interactive:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-modal);
-  border-color: var(--lift-accent, var(--border));
+  box-shadow: var(--shadow-lg);
+  border-color: var(--lift-accent, var(--border2));
 }
 
 .press {
-  transition: transform 100ms ease;
+  transition: transform 0.12s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.press:active {
+.press:active:not(:disabled) {
   transform: scale(0.97);
 }
 
 @media (prefers-reduced-motion: reduce) {
   *,
-  .lift {
+  .lift,
+  .card,
+  button,
+  .press {
     transition: none !important;
     animation: none !important;
   }
-  .lift:hover {
+  .lift:hover,
+  .card-interactive:hover {
     transform: none;
   }
-  .press:active {
+  .press:active,
+  button:active {
     transform: none;
   }
 }
 
+/* ── Sleek, Clean Native-Feel Scrollbars ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+}
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--border2);
   border-radius: 999px;
-  border: 3px solid transparent;
-  background-clip: content-box;
+  transition: background-color 0.2s ease;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* ── lazy-load spinner ──────────────────────────────────────────────────── */

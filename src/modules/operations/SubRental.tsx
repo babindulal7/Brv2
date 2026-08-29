@@ -611,7 +611,7 @@ export function SubRental() {
                 background: activeFilter === chip.label
                   ? chip.label === 'Overdue' ? 'var(--bad)' : 'var(--nav-active-accent)'
                   : 'var(--card)',
-                color: activeFilter === chip.label ? '#ffffff' : chip.label === 'Overdue' ? 'var(--bad)' : 'var(--text)',
+                color: activeFilter === chip.label ? (chip.label === 'Overdue' ? 'var(--on-danger)' : 'var(--on-primary)') : 'var(--text)',
                 transition: 'all 0.15s ease',
               }}
             >

@@ -8,13 +8,6 @@ export * from './PinPad'
 export * from './TouchTarget'
 export * from './ConfirmDialog'
 export * from './Toast'
-export * from './GateChecklist'
-export * from './MoneyField'
-export * from './BsAdDate'
-export * from './ScannerInput'
-export * from './QuantityChip'
-export * from './EvidenceThumbnail'
-export * from './ReconciliationAssertion'
 export * from './Icon'
 export * from './IntelCard'
 export { PageHeader, KpiStrip, Rail, SummaryRows, FooterNote } from './Page'
@@ -24,3 +17,13 @@ export * from './StateViews'
 export * from './PageBody'
 export * from './TableHeaderCell'
 export * from './FilterDrawer'
+/*
+ * NOT exported (UI_UX_AUDIT_2026-08-28 §4): GateChecklist, MoneyField,
+ * BsAdDate, ScannerInput, QuantityChip, EvidenceThumbnail,
+ * ReconciliationAssertion — all still written in Tailwind utility classes,
+ * which compile to nothing in the app bundle (only marketing.css imports
+ * tailwindcss). Advertising them here meant any future import shipped an
+ * unstyled control. They stay on disk for reference and their tests; rewrite
+ * onto the inline-style + token system (as Modal/Input/Badge/StateViews were)
+ * before re-exporting.
+ */

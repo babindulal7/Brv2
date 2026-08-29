@@ -1,4 +1,4 @@
-import { useMemo, type CSSProperties, type ReactNode } from 'react'
+import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import Icon from './Icon'
 import { Button } from './Page'
 import { csvCell } from '../../lib/csv'
@@ -449,7 +449,9 @@ export function ReportToolbar({
   csv,
   children,
 }: ReportToolbarProps) {
-  const preset = presetOf(value.dateRange)
+  const [isCustomMode, setIsCustomMode] = useState(false)
+  const calculatedPreset = presetOf(value.dateRange)
+  const preset = isCustomMode ? 'custom' : calculatedPreset
   const fromDay = dayOf(value.dateRange?.fromAd)
   const toDay = dayOf(value.dateRange?.toAd)
   const lines = useMemo(() => periodLines(value.dateRange), [value.dateRange])
@@ -464,6 +466,7 @@ export function ReportToolbar({
     const from = next.fromDay === undefined ? fromDay : next.fromDay
     const to = next.toDay === undefined ? toDay : next.toDay
     if (!from && !to) {
+      setIsCustomMode(false)
       const { dateRange: _dropped, ...rest } = value
       onChange(rest)
       return
@@ -480,12 +483,14 @@ export function ReportToolbar({
 
   const pickPreset = (key: string) => {
     if (key === 'custom') {
+      setIsCustomMode(true)
       // Custom starts from whatever is already selected, falling back to the
       // narrowest honest thing there is — today.
       const day = civilDay(TODAY)
       setRange({ fromDay: fromDay ?? day, toDay: toDay ?? day })
       return
     }
+    setIsCustomMode(false)
     const chosen = REPORT_RANGE_PRESETS.find((p) => p.key === key)
     if (!chosen) return
     if (chosen.days === null) {

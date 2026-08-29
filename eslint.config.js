@@ -1,0 +1,1 @@
+const js = require(@eslint/js); module.exports = [js.configs.recommended, { rules: { no-undef: error, no-unused-vars: off }, languageOptions: { globals: { window: readonly, document: readonly, console: readonly, process: readonly, setTimeout: readonly, clearTimeout: readonly, require: readonly, module: readonly, __dirname: readonly } } }];

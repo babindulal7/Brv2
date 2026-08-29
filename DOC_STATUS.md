@@ -33,12 +33,14 @@ in this list outranks those three.
 | `DB_CHECK_WALKTHROUGH.md` | 15 Aug | **Mostly current**; two items answered — banner added, see §5. |
 | `BUG_SWEEP_ENGINES_v1.1.md` | 11 Aug | ⚠ **Live. Now registered** as `PLAN.md` §4.35 — see §6. |
 | `BUG_SWEEP_ENGINES_v1.2.md` | 11 Aug | ⚠ **Live. Now registered** as `PLAN.md` §4.35 — see §6. |
-| `SUCCESS_FABRICATION_REGISTER_2026-08-12.md` | 12 Aug | ✅ **Closed 15 Aug.** Bannered, kept as history. |
+| `SUCCESS_FABRICATION_REGISTER_2026-08-12.md` | 12 Aug | ⚠ **REOPENED 16 Aug.** Marked closed in this very register, then `docs/pages/26_cases.md` found two live sites on a screen the original sweep never covered. Banner corrected in the file. |
 | `AUDIT_FINDINGS.md` | 9 Aug | ✅ **Closed.** Bannered, kept as history. |
 | `WIRING_AUDIT_2026-08-11.md` | 11 Aug | ⛔ **Stale in all three headlines.** Bannered. |
 | `BUG_SWEEP_REGISTER_v1.0.md` | 10 Aug | ⛔ **Verdict superseded.** Bannered. |
 | `BUTTON_AUDIT.md` | Phase 1 | 🗄 **Archived** to `docs/archive/`. |
 | `SCREENS.md` | wireframe era | **Reference only.** Not a build target. |
+| `docs/BOOQABLE_DESIGN_PRINCIPLES.md` | 29 Aug | **Direction only — explicitly NOT a build target.** Its own §0 rules "LATER" and §6 rules "no screen rework now". An appendix cross-checks its §1 status column against `docs/pages/`. |
+| `docs/pages/` (55 + INDEX) | 17 Aug | **Authoritative on what the code does.** Written from source with `file:line`, forbidden from citing specs. |
 
 ---
 
@@ -55,8 +57,12 @@ point is to stop a reader before the first table, not to re-argue the finding.
 - **`BUG_SWEEP_REGISTER_v1.0.md`** — verdict and compile baseline both predate the 11 Aug fix
   wave. Its P2/P3 tail was never individually re-checked and may still hold.
 - **`AUDIT_FINDINGS.md`** — closed; #1 needs re-checking against the current `NewRental.tsx`.
-- **`SUCCESS_FABRICATION_REGISTER_2026-08-12.md`** — closed 15 Aug; the defect *class* is worth
-  keeping, the site list is spent.
+- **`SUCCESS_FABRICATION_REGISTER_2026-08-12.md`** — ⚠ **its banner now says REOPENED, not
+  closed.** This bullet said "the site list is spent" on 16 Aug; hours later the page pass found
+  `CasesWorkspace.tsx:211` toasting "Generating cases report…" and `:217` toasting "Opening case
+  logging workspace", neither of which happens. The three original sites *are* fixed. The lesson
+  is that the sweep enumerated **sites** and was closed when that list cleared — but the list was
+  never the population, and a screen nobody swept can hold the defect indefinitely.
 
 `BUTTON_AUDIT.md` was archived rather than bannered: every row reads `TBD` and it inventories a
 screen set three rounds of cuts have changed (routes 73 → 66 → 54).

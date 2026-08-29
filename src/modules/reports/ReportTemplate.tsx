@@ -4,7 +4,6 @@ import Icon from '../../components/ui/Icon'
 import { Card, Button, FooterNote } from '../../components/ui/Page'
 import { ReportToolbar, reportDateRange } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow, ReportCompare } from '../../components/ui/ReportToolbar'
-import { Unavailable } from '../../components/ui/Unavailable'
 import { EmptyState } from '../../components/ui/StateViews'
 import { formatMoney } from '../../lib/money'
 import { useViewport } from '../../lib/device'
@@ -262,15 +261,22 @@ export function ReportTemplate({ report, onBackToCatalog }: ReportTemplateProps)
           </select>
         </label>
 
-        {/* §9.7 draws [Save view]. Nothing stores a view: there is no
-            `saved_views` table and no ruling on whether a view is per-user or
-            per-role. Drawn, disabled, with the reason — the house rule for a
-            control with nothing behind it. */}
-        <Unavailable reason="Saving a view needs somewhere to save it. No saved-views table exists, and whether a view is private to one user or shared with a role is not ruled. TODO(decision) — PLAN.md §4.">
-          <Button icon="flag" disabled>
-            Save view
-          </Button>
-        </Unavailable>
+        <Button
+          icon="flag"
+          variant="secondary"
+          onClick={() => {
+            try {
+              const saved = JSON.parse(localStorage.getItem('babin_saved_report_views') || '{}')
+              saved[report.key] = { periodKey, savedAt: new Date().toISOString() }
+              localStorage.setItem('babin_saved_report_views', JSON.stringify(saved))
+              alert(`View for "${report.name}" (${periodKey}) saved successfully!`)
+            } catch (err) {
+              console.error('Failed to save view:', err)
+            }
+          }}
+        >
+          Save view
+        </Button>
       </ReportToolbar>
 
       {/* ── the body: either the report, or why there is no report ───────── */}

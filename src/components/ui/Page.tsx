@@ -22,7 +22,7 @@ export const cardStyle = {
   border: '1px solid var(--border)',
   borderRadius: 'var(--r-card)',
   boxShadow: 'var(--shadow-card)',
-  transition: 'background-color var(--dur-theme) ease, border-color var(--dur-theme) ease',
+  transition: 'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color var(--dur-theme) ease, border-color var(--dur-theme) ease',
 } as const
 
 export function Card({

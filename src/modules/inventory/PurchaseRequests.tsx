@@ -13,6 +13,7 @@ import {
   PURCHASE_REQUEST_KPIS,
   type PRStatus,
   type PRPriority,
+  type PurchaseRequest,
 } from '../../data/purchaseRequests'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
@@ -20,6 +21,9 @@ import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
 import { newClientUuid } from '../../lib/supabase'
 import type { ActionContext } from '../../actions/core'
+import { CreatePurchaseRequestModal } from './modals/CreatePurchaseRequestModal'
+import { useDomainEvent } from '../../events/useDomainEvent'
+import { EVENT_TYPES } from '../../events/eventBus'
 
 /**
  * The three decisions this screen can take on a purchase request.
@@ -161,6 +165,13 @@ export default function PurchaseRequests() {
   const [selectedPrId, setSelectedPrId] = useState<string | null>(null)
   const [requestsList, setRequestsList] = useState(PURCHASE_REQUESTS)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [isCreatePrOpen, setIsCreatePrOpen] = useState(false)
+
+  useDomainEvent(EVENT_TYPES.PURCHASE_REQUEST_UPDATED, (payload: any) => {
+    if (payload?.id && payload?.fleetItemName) {
+      setRequestsList((prev) => [payload, ...prev.filter((p) => p.id !== payload.id)])
+    }
+  })
 
   const activePR = useMemo(() => {
     return requestsList.find((pr) => pr.id === selectedPrId) ?? null
@@ -278,11 +289,9 @@ export default function PurchaseRequests() {
                 Filter
               </Button>
             </Unavailable>
-            <Unavailable reason="New Draft PR is not built — there is no purchase-request intake screen or route in this release, and no action that raises one.">
-              <Button variant="primary" icon={<Icon name="plus" size={14} />} disabled>
-                New Draft PR
-              </Button>
-            </Unavailable>
+            <Button variant="primary" icon={<Icon name="plus" size={14} />} onClick={() => setIsCreatePrOpen(true)}>
+              New Draft PR
+            </Button>
           </div>
         }
       />
@@ -611,6 +620,14 @@ export default function PurchaseRequests() {
           </div>
         )}
       </div>
+
+      <CreatePurchaseRequestModal
+        isOpen={isCreatePrOpen}
+        onClose={() => setIsCreatePrOpen(false)}
+        onSuccess={(newPr: PurchaseRequest) => {
+          setRequestsList((prev) => [newPr, ...prev])
+        }}
+      />
     </div>
   )
 }

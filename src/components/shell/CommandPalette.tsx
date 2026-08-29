@@ -48,6 +48,12 @@ interface PaletteAction {
   onSelect: () => void
 }
 
+export function openCommandPalette() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('open-command-palette'))
+  }
+}
+
 export const CommandPalette: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -57,7 +63,7 @@ export const CommandPalette: React.FC = () => {
   const { theme, toggle } = useTheme()
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Listen for ⌘K or Ctrl+K (Header's search button dispatches the same key)
+  // Listen for ⌘K or Ctrl+K or custom open command
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -69,8 +75,14 @@ export const CommandPalette: React.FC = () => {
       }
     }
 
+    const handleCustomOpen = () => setIsOpen(true)
+
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('open-command-palette', handleCustomOpen)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('open-command-palette', handleCustomOpen)
+    }
   }, [isOpen])
 
   useEffect(() => {

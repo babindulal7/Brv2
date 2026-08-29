@@ -185,9 +185,6 @@ export interface ClientHealthSignals {
  * this; a caller that has real values passes them directly.
  */
 export function deriveClientHealthSignals(_client: ClientRecord): ClientHealthSignals {
-  // TODO(decision) — populate from the real booking / invoice / return queries
-  // once Phase 2's data layer exists. Deliberately empty: an invented 0 here
-  // would render as a fact on the booking screen.
   return {}
 }
 
