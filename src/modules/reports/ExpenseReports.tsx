@@ -423,8 +423,9 @@ export default function ExpenseReports() {
                  * itself") is narrow and deliberate: it covers filters whose
                  * options ARE statuses. A category filter is not one.
                  *
-                 * The primary treatment is what the sibling filters on Today
-                 * and CalendarPanel already use, so this now matches them.
+                 * The primary treatment is what the sibling filters on the
+                 * Dashboard (`modules/today`) already use, so this now
+                 * matches them.
                  * Radius moves off `--r-badge` too — §3.3 reserves 999 for
                  * numeric count badges, and this is a control.
                  */

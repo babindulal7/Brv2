@@ -2,6 +2,116 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-08-30 (cont.) — Orphaned `CalendarPanel.tsx` deleted
+**Phase:** Phase 4/5 — UX Simplification · **Status:** complete
+
+### Did
+1. **Deleted `src/modules/today/CalendarPanel.tsx`** (502 lines). The Today → Dashboard
+   rename (this date, below) removed the mini Calendar from the Dashboard but left the
+   component file behind with zero call sites — a full-src grep found only the file itself
+   plus three comment mentions. Unlike `AlertsPanel`, which the same handoff re-homed on
+   `/operations`, nothing adopted this panel; the full `/calendar` page is unaffected.
+2. **Updated the three stale comments** that still cited it as live: `data/today.ts`
+   (`eventDaysOf` doc — now names the deletion and the guard test that survives it; §11
+   period-chips doc — "Today" → "Dashboard", panel noted as deleted) and
+   `modules/reports/ExpenseReports.tsx` (category-filter comment now cites the Dashboard's
+   sibling filters only).
+
+### Verified
+- `tsc --noEmit`: **0 errors**.
+- `vitest run`: **87 files / 2,169 tests, 100% passing** — identical totals to the 30 Aug
+  evening apply, confirming no test ever imported the panel.
+
+### Found
+- The mini-month seeds in `data/today.ts` (`CAL_MONTH`, `CAL_WEEKDAYS`, `CAL_LEADING`,
+  `CAL_TRAILING`, `CAL_DAYS`, `CAL_PREV_ISO`, `CAL_NEXT_ISO`) lost their last code
+  consumer; `eventDaysOf` keeps `todayQuery.test.ts` as its only caller. All left in
+  place — they are exports (`noUnusedLocals` is silent) and the dot rule they pin is what
+  a future month view inherits. Historical docs still describe the panel
+  (`docs/pages/06_today.md`, `BUG_SWEEP_REGISTER_v1.0.md` P2-62/P3-30) — records, not
+  updated.
+
+## 2026-08-30 (cont.) — Operation day tabs extended · Cases chip restyled with count · Cases page filed under Inventory
+**Phase:** Phase 4/5 — UX Simplification · **Status:** complete
+
+### Did
+1. **Day scope on `/operations` extended** to `[Today] [Tomorrow] [This Week] [Next 7 Days] [Custom ▾]`. The two new scopes delegate to `data/today.ts`'s `periodRange` rather than re-deriving date math, so the app's two stated conventions hold in one place: This Week = Monday→Sunday (CAL_WEEKDAYS starts MON; Saturday is Nepal's day OFF, not the week's start), Next 7 Days = today plus six. `?day=week|next7` join the URL vocabulary; unknown params still fall back to `today`.
+2. **Cases chip restyled to match the four verb chips** — same shape, icon, and count badge (danger tone). Still a Link, never a filter: a case is not a booking row. Count = `data/cases.ts` seed filtered by `isOpenStatus` — the SAME array and predicate the Cases page lists, so the chip cannot disagree with the page it opens. Stated in-code: it is a seed figure beside four DB figures; when Cases moves to the `cases` table, chip and page move together.
+3. **Cases page moved under Inventory**: `/inventory/cases` + `/inventory/cases/:id`, crumbs `Inventory ▸ Cases`. `/operations/cases` and `/operations/cases/:id` kept as replace-redirects (`CasesLegacyRedirect` carries the `:id` across). Retargeted the three live inbound links: `CASE_WORKSPACE_ROUTE` (data/cases.ts), Settings' Open Cases stat, maintenanceIntel's "Open case" trigger. `CasesWorkspace.tsx` stays in `modules/operations/` — folder moves churn imports for zero behaviour (same call as modules/today on the Dashboard rename).
+
+### Verified
+- `tsc --noEmit`: errors confined to the same pre-existing untracked WIP under `src/modules/rentals/components/`; zero in touched files.
+- `vitest run`: **88 files / 2,174 tests, 100% passing** (operationRoutes' Cases-href assertion updated to the new address).
+- Not verified in a browser; the two new scopes send real `dateRange` bounds but no query ran against the live DB from this sandbox.
+- **Applied to the main workspace 30 Aug (evening merge).** The sandbox counts above are the sandbox's; this repo's after-apply verification: `tsc --noEmit` **0 errors**; `vitest run` **87 files / 2,169 tests, 100% passing** (the 88/2,174 above predates the calendar guard-test retirement, which landed here between the handoff cut and the apply). **Driven in the browser** on the mock corpus: `/inventory/cases` renders `CasesWorkspace` (Open Cases 12), `/operations/cases` and `/operations/cases/CASE-2026-0041` both replace-redirect with the id carried, the Operation chip reads `Cases 12` = the page's own figure, and `?day=week` / `?day=next7` select their chips and filter the list (This Week correctly reached back to a 24 Aug job — Monday-start convention holds). Adversarial review found nothing material; noted for later: `BRANCH_ALERTS`' hand-typed `Open Cases: 8` seed now disagrees with the 12 its destination page derives, and comments in `caseIntel.ts:16` / `inventory.ts:265` still describe the old address.
+
+### Next
+- The Cases chip count goes live the day a `cases` table query exists; the seed note in the chip comment names this.
+
+## 2026-08-30 — Today → Dashboard rename (route + nav) · Alerts moved to Operation · mini Calendar removed
+**Phase:** Phase 4/5 — UX Simplification · **Status:** complete
+
+### Did
+1. **Renamed Today → Dashboard, including the route.** `NAV` item 2 is now `Dashboard` at `/dashboard` (`data/nav.ts`, `BOTTOM_BAR_ROUTES`). `App.tsx`: route moved, crumb now `Dashboard`, `BUILT` set updated, root redirect and the 404 link retargeted, and `/today` kept as a `<Navigate replace>` legacy redirect so bookmarks and deep links survive. Login/ResetPassword landing and Calendar's "View Dashboard" button follow. `src/modules/today/` keeps its folder name deliberately — a folder rename churns every import for zero behaviour.
+2. **Removed the mini Calendar (`CalendarPanel`) and the Alerts panel from the Dashboard.** The desktop lower grid (Alerts · mini Calendar) is gone; the phone segmented control is `[Out][In]`; the reachable `Alerts` KPI card was removed with the panel (its count no longer has a panel on this page to equal — §5.6). The `quotesExpiring` query left with it; `overdue(NOW_AD)` stays because the Overdue KPI reads it. TimelinePanel untouched.
+3. **Alerts panel now lives on `/operations`, replacing the Crew Load empty-state card** in the right rail (reflows inline at tablet, per rulings §7). Same two named filter sets off `listBookings` (Law 2): Critical ← `overdue`, High ← `quotesExpiring`. Deliberately NOT bound to the page's day scope — an overdue booking is an exception on any day. `AlertsPanel.tsx` is imported from `modules/today/` unchanged. The crew-load gap Crew Load named remains recorded in `data/operations.ts` beside the retired `CREW_LOAD` constant.
+4. Tests updated where they pinned the old name/path: `nav.test.ts` (fixed-11 label, bottom-bar route), `shell.test.tsx` (bottom-bar labels + `active` mounts), `passwordReset.test.tsx` (landing route).
+
+### Verified
+- `tsc --noEmit`: 149 errors before AND after — all pre-existing in the untracked WIP under `src/modules/rentals/components/`; zero in any touched file.
+- `vitest run`: **88 files / 2,174 tests, 100% passing** (same totals as 29 Aug — no test added, four updated).
+- Not verified: no browser was run in this sandbox and no query hit the live DB; the Alerts queries on `/operations` are the same two that ran on `/today`, but their first render on the new page is still to be seen on a real machine.
+
+### Found
+- `SegmentedControl`'s `counts: Record<Segment, string>` derived from `SEGMENTS`, so dropping the `alerts` segment retyped the phone control for free — no orphaned key possible.
+
+### Next
+- If `/today` should also disappear as a redirect after a few weeks, delete one `<Route>` line in `App.tsx`.
+
+## 2026-08-30 — Calendar's KPI band removed (owner instruction)
+**Phase:** Phase 4/5 — UI · **Status:** complete
+
+### Did
+1. **Removed the four-card KPI band from `/calendar`** — `src/modules/calendar/Calendar.tsx`.
+   Deleted the `<section aria-label="Key figures">` block (Active Bookings, Today's
+   Operations, Equipment Utilization, Schedule Conflicts) and the now-unreferenced
+   `activeBookings` / `todaysOperations` memos, which `noUnusedLocals` would have
+   failed on. Corrected the file header, which still asserted the band "stays, at
+   all three widths".
+2. **Retired its guard test.** `src/modules/calendar/__tests__/calendar.kpiBand.test.tsx`
+   existed only to pin this band — it was written after the 12 Aug rebuild deleted the
+   band silently while the suite stayed green. Deleting the band without deleting the
+   test would have left a red suite asserting a ruling the owner had reversed. The
+   `__tests__` directory is now empty and was removed: **`/calendar` has no test
+   coverage at all.**
+
+### Ruling reversed
+**Rulings §1 listed "Calendar's KPI band" by name in its Kept column.** That is now
+contradicted by the code, at the owner's explicit instruction (30 Aug). Recorded here so
+the reversal is visible rather than reading as drift. Of the four figures: Active
+Bookings and Today's Operations existed nowhere else and are gone; Equipment Utilization
+was a `NotTracked` placeholder, never a figure; Schedule Conflicts survives on the Full
+View strip, where it was already duplicated.
+
+### Verified
+- `tsc --noEmit`: **0 errors**.
+- `vitest run`: **2,169 / 2,169 passing, 87 files** (down from 2,174 / 88 — the five
+  deleted assertions are the retired guard test).
+- `vite build --mode mock`: clean, 2m 43s.
+- **Driven in the browser** at `/calendar` on the mock corpus: no
+  `section[aria-label="Key figures"]`, zero `.kpi-value` nodes, none of the four labels
+  in `innerText`; view tabs, Today's Summary and Festivals & Holidays all still render.
+
+### Worth knowing
+Two mistakes were caught by driving the app rather than by the toolchain, both in the
+replacement comment, and both invisible to `tsc`:
+1. Written as a bare `/* … */` in a JSX children position it is a **string literal**,
+   and rendered on the calendar as visible body text.
+2. Rewritten as `{/* … */}` it still broke the build, because the note quoted a comment
+   terminator inside itself, closing the JSX comment early.
+A DOM probe reported "clean" during (2) because it was reading Vite's error overlay, not
+the page. The screenshot is what caught it.
+
 ## 2026-08-29 — UI/UX Audit Track 1 & Design System Alignment Complete
 **Phase:** Phase 4/5 — Quality Assurance, UI/UX & Design Alignment · **Status:** complete
 

@@ -501,9 +501,14 @@ export const CAL_NEXT_ISO = isoDay(MONTH_RANGE[TODAY_INDEX + 1] ?? TODAY)
  * The honest set is the one the screen can prove: the Kathmandu civil days its
  * own fetched rows fall on, intersected with the days this mini-month draws.
  * Days outside the selected period therefore carry **no** dot, and that is why
- * `CalendarPanel` labels the marks with the period rather than leaving a bare
- * dot to be read as "nothing scheduled" — an absent dot here means "outside what
- * was asked for", which is a different statement from "empty".
+ * the mini Calendar (`CalendarPanel`, removed from the Dashboard 30 Aug 2026
+ * and since deleted) labelled the marks with the period rather than leaving a
+ * bare dot to be read as "nothing scheduled" — an absent dot here means
+ * "outside what was asked for", which is a different statement from "empty".
+ * With the panel gone, `eventDaysOf`'s only caller is its guard test in
+ * `modules/today/__tests__/todayQuery.test.ts`, kept because the rule it pins
+ * — a dot is a booking, never a seeded day number — is what any future month
+ * view must inherit.
  *
  * Marking all 31 days truthfully needs a month-wide grouped count that
  * `listBookings` does not provide (it is a list, not an aggregate); that is a
@@ -526,10 +531,11 @@ export function eventDaysOf(rows: readonly { atDayAd: string }[]): number[] {
  * §11 period chips — the locked seven, in the Dashboard render's order
  * (All first, Custom last, with its own calendar affordance).
  *
- * ⚠ **Five of these seven are no longer offered on Today.** 12 Aug 2026:
- * `modules/today/Today.tsx` renders a `[Today][Tomorrow]` control in the page
- * header, which is what `../updated mds/02_TODAY.md`:37 draws, and the chip rail
- * that used to sit in `CalendarPanel`'s header is gone.
+ * ⚠ **Five of these seven are no longer offered on the Dashboard.** 12 Aug
+ * 2026: `modules/today/Today.tsx` renders a `[Today][Tomorrow]` control in the
+ * page header, which is what `../updated mds/02_TODAY.md`:37 draws, and the
+ * chip rail that used to sit in the mini Calendar's header is gone — as is the
+ * panel itself (`CalendarPanel`, removed 30 Aug 2026 and since deleted).
  *
  * The array is deliberately untouched. All six live cases in `periodRange` below
  * still work, still reach Postgres as a `dateRange`, and are still covered by
