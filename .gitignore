@@ -25,3 +25,8 @@ docs/docs.zip
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# Plugin receipt telemetry — append-only, unsigned, written into whichever
+# directory a tool happened to run in. Regenerable noise, not project history.
+receipts/
+review-receipts/
