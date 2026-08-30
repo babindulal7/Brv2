@@ -50,6 +50,15 @@ import './styles/theme.css'
 import './styles/responsive.css'
 import { REFERENCE_CASE_ERROR } from './lib/money'
 import { startAuditLogging } from './events/auditLogger'
+import { installGlobalErrorHandlers } from './lib/monitoring'
+
+/*
+ * Before either branch below renders. ErrorBoundary only sees render-time
+ * throws; this catches the rejected promises and event-handler errors that
+ * never touch React's render path. No-ops entirely without VITE_SENTRY_DSN,
+ * attaching nothing to window.
+ */
+installGlobalErrorHandlers()
 
 startAuditLogging()
 
