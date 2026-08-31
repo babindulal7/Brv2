@@ -69,7 +69,7 @@ one at zero engineering cost.
 
 - [ ] **B2 · Wire the booking writer that already exists.**
       `pushOrderCreate` ([sync.ts:1805-1827](src/lib/booqable/sync.ts:1805)) is a complete,
-      guarded booking writer — Law 10 discount gate, availability assertion, Law 15 days≥1 —
+      guarded booking writer — Law 10 discount gate, availability assertion, ~~Law 15~~ **Law 9** days≥1 *(corrected 31 Aug 2026; Law 15 is 44×44 targets)* —
       that inserts `bookings` + `booking_lines` via `idempotentInsert` and enqueues to the
       outbox. It has **zero callers**. So does every one of the six push functions.
       `createRental.ts` is a 36-line `console.log` stub and `NewRental.tsx:1515-1549`

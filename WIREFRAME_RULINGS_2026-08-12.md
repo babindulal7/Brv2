@@ -160,6 +160,10 @@ under which specs 03, 06 and 09's tablet drawings are satisfiable — they all d
 content moving *below* the list, still visible. Do not wrap those in `CollapsibleAside`,
 and do not change its default: other pages depend on it.
 
+> *31 Aug 2026:* the number is now **1280** — Law 14 was amended (`PLAN.md` §4.38a) to match
+> `DESIGN_DIRECTION_SPEC_v4.1` §7.7 and the rails built since 30 Aug. The ruling itself — reflow,
+> not hide — is unchanged; only the width at which it fires moved.
+
 ---
 
 ## 8. Never fabricate a figure or a success

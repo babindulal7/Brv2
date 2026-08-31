@@ -216,7 +216,7 @@ Full detail in the spec library; these are the ones that bite at the code level.
 - **Every write carries a client UUID.** Duplicates rejected — a replayed scan must not act twice.
 - **Never colour alone.** Every status is icon + label + colour.
 - **No platform branch in a layout component.** Branch on capability, never platform.
-- **Breakpoints 768 / 1180.** Width decides, never orientation.
+- **Breakpoints 768 / 1280.** Width decides, never orientation. *(Was 768 / 1180 until 31 Aug 2026 — Law 14 amended, `PLAN.md` §4.38a; `src/lib/device.ts` still carries 1180 until its follow-up lands.)*
 - **44×44 touch targets** on every device, desktop included.
 
 ---

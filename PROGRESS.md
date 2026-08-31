@@ -2,6 +2,1359 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-08-31 (cont.) — D3 FINAL: the discount gate is dropped, everywhere, in one change set
+**Phase:** Phase 3/6 — engines + screens · **Status:** app half complete; DB half drafted (0074, not applied)
+
+Babin's word, verbatim: **"don't put any gate on discount."** This overrides the same-day
+policies confirmation (below); the RUN_PROMPT's rule — a half-removed gate (UI open, DB
+closed) is the worst state — shaped the change: everything app-side landed together, the DB
+drop is one draft migration awaiting apply approval.
+
+### Did
+1. **Policies work reverted** — `0073_discount_policies.sql` deleted (never applied, hours
+   old), `applyPolicy`/`DiscountPolicy` removed from `lib/discount.ts`, its tests replaced.
+2. **PLAN.md Law 10 rewritten to the final text:** discounts are ungated — no reason, no
+   approver, no role tier, no cap below 100%. Survivors are arithmetic validity only:
+   negative refused (a price rise — R3-1 stays closed), >100% refused (a negative price).
+   The exclusive-source stacking matrix (Student/College/Named-client) is a separate 0002
+   ruling and survives.
+3. **All seven app-side implementations of the old law swept in one pass:**
+   `lib/discount.ts:validateDiscount` (ungated; `requiresApproval` kept in the shape, always
+   false) · `lib/money.ts:discountGate` + `DISCOUNT_CAP` (now 100 = the arithmetic ceiling;
+   `DISCOUNT_APPROVAL_THRESHOLD` deleted) · `lib/rbac.ts:canApproveDiscount` (sane percent →
+   true for every role, online or not) · NewRental (approval popover, reason/approver state,
+   the >10% hard-block panel and the 25-clamp all removed; chips are presets) · AddBundle
+   (per-line approval affordance + reason/approver panel removed; four props left `LineRow`)
+   · ClientDetail (the >10% standing-discount refusal removed — the live Booqable account
+   runs 20% standing discounts with zero ceremony) · Settings ▸ Tools DiscountCalculator
+   (reason/approver inputs removed — inputs that influence nothing are controls that lie)
+   + PricingCalculator. UsersRoles' capability matrix drops its 'Approve 15% discount' row —
+   a row every role passes says nothing.
+4. **`0074_drop_discount_gate.sql` — DRAFT, NOT APPLIED:** drops
+   `booking_discounts_hard_cap`, `booking_discounts_over_ten_needs_reason_and_approver`,
+   `invoices_discount_cap`, `invoices_discount_over_ten_needs_reason_and_approver`; replaces
+   them with 0–100 sanity CHECKs; rewrites `enforce_booking_discount_stacking()` to keep the
+   exclusivity matrix and a stacked ≤100 ceiling only. Post-conditions verify the drops and
+   the trigger's survival.
+5. Docs: 00-INDEX ⚠READ-FIRST block updated to the final ruling; the policies note it
+   replaced had itself replaced a stale "constraints must be dropped" warning.
+
+### Found
+- **A fourth R3-1-shaped hole, closed in passing:** `actions/inventory/createBundle.ts`
+  guarded discount validation with `item.discountPct && item.discountPct > 0`, so a NEGATIVE
+  line discount skipped validation entirely and was accepted. The ungated engine still
+  refuses negatives — and is now actually consulted. Pinned in `inventoryWrites.test.ts`.
+
+### Verified
+- `npx tsc --noEmit`: **exit 0, zero errors** — the whole tree, concurrent session's files
+  included.
+- Affected suites all green after the sweep: discount (4) · money (52) · rbac (49) ·
+  bookingQuery (151) · calculators (13) · createRental (33) · inventoryWrites (66) ·
+  ClientDetail.edit (14, incl. a new "20% saves without ceremony" pin). Full-suite run at the
+  end of the session below.
+- NOT verified in a browser; no migration applied; nothing touched the live DB.
+
+### Blocked / Next
+- **0074 needs Babin's apply approval.** Until then the live constraints still reject
+  >10%-no-reason rows — loudly, and no live discount write path exists today, so the
+  mismatch window is theoretical. Apply promptly once approved.
+- The `booking_discounts.reason`/`approver_id` columns stay as optional record-keeping.
+
+## 2026-08-31 — Unit chips on BookingDetail built · removal BLOCKED by Law 3, verified live · §4.39 filed
+**Phase:** Phase 6 wiring + §4 filing · **Status:** chips complete; the × is surfaced-as-unavailable by design
+
+The D5 note's "removable chip — named as next work". The grant check it asked for was
+performed FIRST, against the live database, and it came back negative — which changed the
+deliverable from an action to an honest refusal plus a §4 filing.
+
+### Did
+1. **The Serial/ID cell on BookingDetail renders unit chips**, not a comma list — each
+   assigned unit is a bordered chip (`--r-chip`, `--card2`): serial link + a VISIBLE ×
+   (v2.5 §10.4 observed Booqable's hover-only × and ruled "do not copy" — ours is always
+   drawn). The × is disabled inside `Unavailable` with the verified reason.
+2. **The grant check (the live database, not the migration files):**
+   `trg_booking_line_units_reject_delete` EXISTS live — 0044's Law 3 backstop is applied
+   despite its "FILE ONLY" header (the migration-headers-lie pattern, again) — and live
+   grants for anon/authenticated on `booking_line_units` are INSERT + UPDATE only, no
+   DELETE. The row's deletion is rejected at two layers for every role including Owner
+   and service_role.
+3. **No action file was written, deliberately.** The spec's ruled mechanism (delete the
+   row) is what Law 3 forbids; no substitute mechanism exists (no Swap RPC anywhere in
+   the migrations; no released_at column on the table; §4.30a puts Swap at Pack). An
+   action that cannot succeed is a plausible-looking guard on a button that does not
+   exist — Login.tsx's PIN reasoning, applied here.
+4. **PLAN.md §4.39 filed** *(filed as §4.38; renumbered when the 31 Aug rules-check section took §4.38)* — "how is a creation-time unit assignment released before
+   Pack?" — with the schema's own internal tension quoted (0002:295 promises assignments
+   stay reversible until Confirmed; 0044's trigger rejects the only named mechanism
+   unconditionally), four options (released_at column / asset_id→null / Law 3 amendment /
+   fold into §4.37c), none taken. Cross-linked to C3.
+5. The 44×44 hit-area growth (`TouchTarget`) is deferred TO the live implementation on
+   purpose: TouchTarget's own header forbids adding it where another target sits inside
+   44px in any direction, and adjacent chips/rows do. The live build owes the row-spacing
+   change first (the §7.3 row-floor precedent).
+
+### Verified
+- Driven on mock B-715 (the 18-unit seed booking): 18 chips render, one per unit; each ×
+  is `disabled`, labelled `Remove <serial> — unavailable`, and the wrapper carries the
+  full reason as hover title / long-press popover (the `Unavailable` contract). Checked
+  in DOM, plus screenshots of the chip anatomy.
+- Live-DB verification (read-only SQL via MCP): trigger present (count 1), grants
+  INSERT/UPDATE only. No migration applied, nothing written.
+- `npx tsc --noEmit`: zero errors in files this session touched (the only failures are
+  the parallel session's in-flight discount work — NewRental.tsx unused vars this run,
+  discount.test.ts imports the run before; that session's errors are moving through
+  their files, not ours).
+
+## 2026-08-31 (cont.) — Rules check of the governance pack: five law citations corrected · three rulings that never reached the repo recorded · Law 14 amended to 1280 · D3 reconciled
+**Phase:** cross-phase verification (**docs only — no code changed, no migration applied**; only the 19 root/governance `.md` files were in this session) · **Status:** complete for the docs; code follow-ups named under Blocked
+
+Babin asked for the rules in this log to be checked, then said "fix all", then uploaded the
+governance pack (CLAUDE · PLAN · PROGRESS · README · SCREENS · DOC_STATUS · the 12 audit files).
+Every `Law N` citation in every file was read against PLAN.md §0's 17 laws, and every ruling the
+pack records was read against the rulings he made in sessions that had no repo access.
+
+### Did
+1. **Six wrong law numbers corrected in place**, original left visible (Law 3), each tagged
+   *corrected 31 Aug*. In this file: 16 Aug capability-matrix entry cited **"Law 0"** for keeping
+   the `evidence_files` row while the image expires — that is **Law 3**; the 9 Aug Referral Code
+   entry cited **"Law 5"** twice for money-gating — that is **Law 6** (and `lib/auth.tsx`'s own
+   comment, which it quotes, carries the same wrong number); the 8 Aug Add Client entry cited
+   **"Law 27"** — no such law; the 28 Aug Documents-modularization entry cited **"Law 16"** for a
+   disabled create button's reason — Law 16 is the AI-panel law. In `ARCHIVE_AUDIT_2026-08-15.md`
+   B2: **"Law 15 days≥1"** — that is **Law 9**. Every other citation across all 19 files is right,
+   including this log's own corrections of the v2.5 spec (9→7, 15→14, 16→15).
+2. **Three of Babin's rulings recorded in the repo for the first time.** All three were made in
+   chat sessions that had no repo access and never landed here or in PLAN.md:
+   - **20 Aug — discount rules REMOVED, discounts kept.** No 25% cap, no mandatory reason above
+     10%, no named approver; app **and** migration. Now the provenance line on PLAN.md Law 10,
+     which the concurrent session had already rewritten to UNGATED on his 31 Aug final word.
+   - **24 Aug — BUILD FIRST, RULES LATER.** No new business rules until the working app is
+     finished. Recorded in PLAN.md §4.38(b) as a standing constraint on §4 rulings.
+   - **29 Aug — FOUNDATION_SPEC_v3.0_FRESH_START.md + UI_UX_SPEC_v1.0.md** delivered as the
+     single authority for the new app; `BABIN_RENTALS_OS_MASTER.md` (20 Aug) before them. None of
+     the three is in this repo, and CLAUDE.md/PLAN.md still name `Foundation Specification.md` as
+     canonical. Filed **OPEN** as PLAN.md §4.38(b) — precedence is Babin's to rule.
+3. **Law 14 amended: 768 / 1280.** PLAN.md §0 row rewritten with the old value struck;
+   `README.md` "Laws" list, `SCREENS.md` §07 row, PLAN.md Phase 6's responsive item and
+   `WIREFRAME_RULINGS` §7 annotated. Filed as PLAN.md §4.38(a) with the `device.ts` follow-up.
+4. **Correction notes added** under the 31 Aug RUN_PROMPT entry's D3 ruling (below) and under the
+   30 Aug Booqable-shape entry's quotation of rulings §7. `DOC_STATUS.md` gains a 31 Aug addendum.
+   PLAN.md §4.23 gains a note (the waiver/discount asymmetry is back, in the other direction) and
+   §4.27 is marked SUPERSEDED (a standing discount no longer has anything to satisfy).
+
+### Found
+- **The 31 Aug D3 "policies" ruling was taken on a false premise** — *"the 25% stacked cap
+  stands (Babin did not rule it away)"*. He had, on 20 Aug. By the time this check ran, his 31 Aug
+  final word ("don't put any gate on discount") had already overridden it and PLAN.md Law 10 read
+  UNGATED; what was missing was the 20 Aug provenance and the correction under the entry that
+  still says the cap stands. Both added. The DB half is `0074_drop_discount_gate.sql`, drafted,
+  **NOT applied** — and the 0075 entry above records that **two different 0074s** exist on disk;
+  one must be renumbered before either applies. Not touched here; both are the other session's. *(Later on 31 Aug: `0074_drop_discount_gate` WAS applied to the live project with Babin's explicit approval, together with 0071 and 0072 — see that entry below; the seed-corpus 0074 is now the one that must renumber.)*
+- **Law 14 had drifted without a ruling.** PLAN.md §0, `src/lib/device.ts` `BREAKPOINT`, README,
+  SCREENS §07 and `WIREFRAME_RULINGS` §7 all said **1180**; `DESIGN_DIRECTION_SPEC v4.1` §7.7
+  ("spec-locked 768/1280 pair") and every rail built since 30 Aug say **1280**, driven in the
+  browser ("SideRail at exactly 1280, inline chips at exactly 1279"). The 30 Aug entry quoted
+  rulings §7 as "below 1280" — §7 says 1180; the 1280 is v4.1's. So the repo carried two desktop
+  breakpoints, and the built screens and the ruled final look agree on 1280.
+- The pack's **method rules hold** throughout: newest-first, Did/Verified/Found/Blocked, no
+  migration applied without approval, drive-the-app-or-say-you-didn't, corrections left visible,
+  and DOC_STATUS's own rule — amend the audit, don't rely on the reader having seen the entry that
+  disproved it.
+
+### Ruled (applied on Babin's "fix all", 31 Aug — the resolutions presented to him; revert is one paragraph each if he rules otherwise)
+1. **Law 14 = 768 / 1280.** Tablet is 768–1279. The 1180 in `device.ts` is the stale value.
+2. **D3 needs no further ruling** — Law 10 UNGATED is his final word and matches 20 Aug and
+   30 Aug. Recorded, not re-decided.
+
+### Verified
+- Every edit is a string match re-read after writing; struck text stays visible; line endings
+  preserved per file (CRLF here, in SCREENS and DOC_STATUS; LF elsewhere). **Nothing under
+  `src/`, `supabase/` or the spec library was touched** — only the 19 uploaded `.md` files were
+  available, which is exactly why the follow-ups below exist. No gate was run; nothing to run it on.
+
+### Blocked / code follow-ups (none done here)
+1. **`src/lib/device.ts`** — `BREAKPOINT` desktop 1180 → 1280; then grep every `useViewport()`
+   consumer that branches on `'desktop'` and re-run the §7 reflow tests. A screen that reflowed at
+   1180 may now show its rail at 1180–1279 with too little room — the squeeze the 31 Aug double-rail
+   note already describes, one band lower. PLAN.md §4.38(a).
+2. **`lib/auth.tsx`** — the comment reading "testing Law 5" → Law 6. Comment only.
+3. **Discount gate drop — the concurrent session's, in flight:** renumber one of the two 0074s;
+   apply `0074_drop_discount_gate.sql` only with explicit approval, together with the `lib/discount`
+   change (a half-removed gate is the worst state); lift `ClientDetail`'s refusal to set a standing
+   discount above 10% (§4.27 is void); decide whether `booking_discounts.audit_event_id NOT NULL`
+   survives without a ceremony to audit.
+4. **§4.23** — the waiver still needs a named Manager/Owner while a discount needs nothing. Whether
+   that asymmetry is wanted is a fresh question; noted in §4.23, not ruled.
+5. **Place the 20/24/29 Aug documents in the repo** and rule their precedence — PLAN.md §4.38(b),
+   Babin's call.
+
+## 2026-08-31 (cont.) — 0075 drafted: the four I5 breaches, armed the way 0062 actually works
+**Phase:** Phase 1 schema · **Status:** draft written, **NOT APPLIED** — needs approval
+
+I5 found four tables whose money columns are raw behind a row policy that admits a money-blind
+role, and proposed a four-line fix. The fix as written would have closed nothing. New migration:
+[`0075_law6_arm_the_four_unarmed_tables.sql`](supabase/migrations/0075_law6_arm_the_four_unarmed_tables.sql).
+Numbered after 0074, the current highest on disk.
+
+⚠ **There are two different 0074s**, both written by the concurrent session while this one ran:
+`0074_drop_discount_gate.sql` (17:33, the renamed `0073_discount_policies.sql`) and
+`0074_seed_operational_stage_corpus.sql` (17:57). Same collision class as the 0017/0018 one
+0019's header records from 9 Aug. 0075 is unaffected — it is still the next free number — but
+**one of the two 0074s must be renumbered before either is applied.** Not touched here; they are
+the other session's files.
+
+### Found — before writing a line
+1. **I5 §3's one-liner is a no-op, and two of its four lines have already been issued once.**
+   `revoke select (col) … from authenticated` cannot subtract from a table-level grant, and
+   Supabase grants table-level SELECT on every `public` table to `authenticated`. This is the
+   exact finding 0062's and 0048's headers both carry against the live DB (`pg_class.relacl` =
+   `authenticated=arwDxtm/postgres`; `pg_attribute.attacl` null). **0035:38 already revokes
+   `accessories.replacement_cost` and 0036:151 already revokes `vehicle_fuel_logs.cost_amount`** —
+   and I5's own probe then read both columns as Warehouse. That is the mechanism being falsified
+   on live data, not a theory. §3's claim that this is "the mechanism 0062 established" reads
+   0062 backwards: 0062's mechanism is the reverse — `revoke select ON TABLE`, then
+   `grant select (<non-money columns>)`. 0075 does that.
+2. **Two of the four `_v` views do not exist.** §3 says each table "has a masked `_v` sibling
+   (`accessories_v`, `vehicle_fuel_logs_v`, …)" — the ellipsis is wrong. `booking_transport_v`
+   and `maintenance_records_v` have never been written in any file. `bookingQuery.ts:466` says so
+   independently. A bare revoke would have left Owner/Admin/Coordinator with **no** path to
+   `delivery_charge` / `fuel_charge` / `cost`, not a masked one. 0075 creates both, in the same
+   file as the revoke — the 0019/0035/0036 convention.
+3. **Nothing in `src/` reads any of the four tables.** Zero `.from('accessories' | 'booking_transport'
+   | 'maintenance_records' | 'vehicle_fuel_logs')`, single- or double-quoted. Every column-name hit
+   is generated types, one Law 6 forbidden-word list in `floorVerbs.test.ts:475`, or prose. No SQL
+   function or trigger reads them either — the only `from <table>` in 74 migrations is the two
+   masking-view bodies. **So 0075 needs no call-site migration**, unlike 0062, which needed a
+   74-site audit and 0065's two schema prerequisites. It is the cheapest of the pending drafts.
+
+### Did
+- Revoke + non-money grant for all four: accessories (12 cols, 11 granted), booking_transport
+  (14/12), maintenance_records (21/20), vehicle_fuel_logs (11/10). Lists read from the `create
+  table` blocks after confirming no `alter table … add/drop/rename column` touches any of the four
+  in 0001–0074; two counts corroborated by 0048's own asserted view counts. Grant lists and view
+  column lists were then diffed against the DDL mechanically, not by eye.
+- Created `booking_transport_v` and `maintenance_records_v`, definer-rights with the row predicate
+  inlined (0048/0065 pattern). Predicates read off the policies: transport mirrors
+  `booking_transport_driver_read` (0014) verbatim; maintenance is `auth_is_staff()`, since
+  `maintenance_records_select` (0020) and `_all` (0018) are PERMISSIVE and OR together.
+- Post-conditions that would have caught this bug class three migrations ago: the table grant is
+  gone · each money column unreachable **and** a neighbouring operational column still readable
+  (catches an over-broad revoke) · base-table column counts match what the grant lists assume ·
+  all four views exist, carry a WHERE, and are **not** `security_invoker`.
+
+### Verified — the existing views survive the revoke
+`security_invoker` appears in five files (0019, 0048, 0061, 0065, 0067). The only view ever set to
+invoker rights is `bookings_deposit_v` (0061:78), reset by 0065:242. Neither `accessories_v` nor
+`vehicle_fuel_logs_v` is named in any of them, so both are definer-rights — the owner reads the
+base table and the caller needs no column grant. **No view breaks; no money-visible screen blanks.**
+
+### Flagged, deliberately not fixed
+- **`vehicle_fuel_logs_v`'s row predicate is broader than its own table's policy.** 0048's header
+  says the view should carry the `vehicle_fuel_logs_all` list; the SQL it shipped (0048:731) says
+  `where auth_is_staff()`, which also admits Accounts and Technician. 0075 does not widen it, but
+  it becomes the sanctioned gate once the base table closes. Needs a ruling.
+- **`booking_transport_driver_read` excludes Manager *and* Accounts.** Accounts is money-visible and
+  still cannot read a transport row at all. Pre-existing; the new view mirrors the policy rather
+  than quietly widening it.
+- **`vehicle_fuel_logs.receipt_url` stays granted.** A receipt image obviously shows the amount —
+  that is a storage-bucket question (I5 §4), and a column grant does not answer it.
+- `anon` keeps its table grant, matching 0062. It is denied by RLS on all four (resolves to
+  `Client`), so the columns are unreachable — but by a **row** denial, not a grant denial.
+
+### Blocked / next
+Not applied, per CLAUDE.md. Before anyone applies it: confirm from `schema_migrations` and
+`pg_class.relacl` — **not from any file's own header** — that 0062 is really in. This session was
+told live stands at 0070, which puts 0062/0065 in and makes 0075's pattern already-proven; 0062's
+own header still reads ⛔ DO NOT APPLY. 0075 has no ordering dependency on 0071/0072/0074.
+Forward obligation once applied: the first write path built against any of these four tables must
+send `Prefer: return=minimal` or name granted columns — PostgREST's unqualified `RETURNING` will
+42501 otherwise (0065's hazard, here future rather than live).
+
+## 2026-08-31 — facetCounts wired to /rentals: the Status accordion shows §10 option counts
+**Phase:** Phase 6 wiring (no schema/engine changes) · **Status:** complete
+
+The 31 Aug Layer D pass named this "the best next piece of code": `facetCounts.ts` was
+built and tested with zero callers, so no screen showed an option count. `useFacetCounts`
+(and through it `countFacet`) now has its first live caller.
+
+### Did
+1. **`StatusFilterGroup` (RentalsList.tsx) renders a count beside each of the six stages**,
+   following `FilterOptionList`'s §10 rendering rule verbatim: dash while loading/failed,
+   `0` only as a computed fact. `enabled: open` — the six `count=exact` probes run only
+   while the accordion is showing them.
+2. **The page-injected counter respects the chip intersection.** This group could not use
+   `countFacet`'s default base-strip: `chips.stage` on this page is the quick chip's
+   structural set INTERSECTED with the Status picks (`narrowStages`), so stripping it would
+   count `Quote` under an `Active` chip as "all quotes". The probe travels under a column
+   name the server never sees (`status`), and `statusCountRows` rebuilds the real query via
+   `rentalsQuery(chip, dates, [probe], NOW_AD, sub)` — `impossible` from a stage the chip
+   does not carry returns a computed 0; Sub-Rental-unanswered (`bookingIds === null`)
+   returns null → dash, never a fake 0. The chip's structural stages stay in the hook's
+   base filters, which is what keys a re-count when only the chip changes (two chips that
+   differ solely in stage set would otherwise produce identical keys → stale counts).
+3. Neither call passes `withDeposit` (Law 6) — a count carries no money.
+
+### Verified (mock app, driven)
+- Base: accordion reads Quote 18 · Booked 31 · Packed 17 · On Rent 24 · Returned 14 ·
+  Closed 16 — sums to the list's own "120 Rentals found".
+- §10 own-group strip: ticking Quote narrows the list to "18 Rentals found" while every
+  sibling count HOLDS (31/17/24/14/16) — the group can still be widened.
+- Chip intersection: under quick chip On Rent, list reads 24 and the accordion reads
+  0/0/0/24/0/0 — the impossible intersections are computed zeros, not stripped-base lies.
+- Switching back to All re-fires: counts return to 18/31/17/24/14/16. Console clean.
+- `vitest run` facetCounts + FilterDrawer suites: 29/29 pass.
+- `npx tsc --noEmit` — the ONLY errors are in another session's in-flight discount work
+  (`discount.test.ts` / `money.test.ts` reference `applyPolicy` / `DISCOUNT_APPROVAL_THRESHOLD`,
+  unstaged edits to `lib/discount.ts` + `lib/money.ts` not from this session); zero errors
+  in the files this session touched.
+
+### Still unwired (noted, not done)
+`FilterOptionList` itself remains mounted only in its own test — the /rentals rail's
+visual language is accordions, and forcing the fieldset+legend component under the
+accordion header would double the "Status" label. The §10 count idiom is shared; the
+component is not. Wiring it belongs to whichever screen first grows a checkbox-list
+filter group without an accordion (Inventory's category rail is the likely first).
+
+## 2026-08-31 (cont.) — I6 root cause: the app was un-frozen, the seed was not. 0074 written and proven, NOT applied
+**Phase:** cross-phase verification · **Status:** migration written and proven; **not applied — needs Babin**
+
+Backlog **I6** — *"Seed `Booked` and `Packed` bookings; the Dashboard's Going out panel is
+structurally empty on every date."* The symptom is real. **The item as written would not have
+fixed it**, for a reason worth recording.
+
+### Found
+1. **`src/lib/seed.ts` already generates exactly what I6 asks for.** `STAGE_PLAN` carries
+   `{Booked, 30, 1..24}` and `{Packed, 16, 0..2}`, the latter commented as what "gives Today's
+   outgoing queue and the packing floor something to show". Seeding was never the missing idea.
+2. **The anchor is frozen one month in the past — and its justification has evaporated.**
+   `ANCHOR = kathmandu(2026, 6, 31, 6, 0)` is 31 Jul 2026 (month 0-indexed). Its doc comment
+   defended the freeze by citing *"`bs.ts`'s `TODAY`, 31 Jul 2026"* — **a constant that no longer
+   exists.** `bs.ts:255` records that `export const TODAY = new Date(Date.UTC(2026, 6, 31))` was
+   replaced by `getBusinessToday()`, reading the real clock, because a frozen day made "every
+   overdue chip, ageing count and days-left figure … measure distance from a day in the past".
+   **The app was un-frozen; the seed was not.** They are now a month apart, so regenerating `0047`
+   today would still emit Packed pickups dated 31 Jul – 2 Aug and leave the panel empty.
+   *Both* a drifting anchor and a frozen one end at the same empty screen — only the direction of
+   the lie differs.
+3. **The live corpus is not the seed corpus.** 200 bookings, **0** rows in `external_refs`,
+   **0** in `booking_stage_transitions` — bulk-inserted directly, bypassing both the Booqable
+   bridge and the transition machinery. Its stage spread mirrors the Booqable account, and
+   Booqable **cannot** produce these two stages: `reserved → Booked` exists but that account holds
+   only 2 Reserved, and **`Packed` has no Booqable equivalent** — "OS-only, never pushed"
+   (`src/lib/booqable/map/orders.ts:168`). **This is R3 in effect, not an oversight.**
+4. `validate_booking_gates` guards only the transitions into `On Rent` and `Closed`; **`Booked`
+   and `Packed` are ungated**, so seeding them needs no `security_deposits` or `invoices` rows.
+5. `delivery_type`'s enum carries the literal value **`Customer Pickup`**. A database enum, not UI
+   text, so not a Law 17 breach on its face — but noted, since Law 17 was already found breached
+   at six other sites.
+
+### Did
+1. Wrote **`supabase/migrations/0074_seed_operational_stage_corpus.sql`** — 30 Booked + 16 Packed
+   + 92 lines. Every timestamp is derived from `current_date` **at apply time**, so it cannot go
+   stale the way the frozen anchor did; line rates come from each product's own `daily_rate`, so
+   no figure is hand-typed (PLAN.md Phase 1). The trade is stated in its header: it is
+   **not byte-reproducible**, which is why it is its own migration rather than folded into the
+   generated `0047`.
+2. Corrected `seed.ts`'s `ANCHOR` doc comment, which cited the deleted constant, and left a
+   **`TODO(decision)` for PLAN.md §4**: should the anchor track the clock at generation time, or
+   stay fixed? Fixed keeps `0047` byte-reproducible and the suite's expectations stable — which is
+   why it was **not** simply changed — clock-relative keeps the Today screens meaningful.
+   Cost of getting it wrong is recorded at the site.
+
+### Verified
+- **The migration was proven, not asserted.** Its entire body ran against the live database inside
+  `begin; … rollback;`. It passed `validate_booking_gates`, the audit trigger and all ten
+  `booking_lines` CHECK constraints, and `todaysOutgoing`'s exact predicate then returned
+  **Today 6 · Tomorrow 9 · Next 7 days 26** — from 0 / 0 / 0 — across **46 distinct clients**.
+- **Nothing was persisted.** Re-checked after rollback: 200 bookings, 0 seed rows, 0
+  `booking_lines`, `B-899` still the high-water mark.
+- Live schema still at **0070**; 0071–0074 are all drafts.
+- `seed.ts` change is comment-only — no behaviour, no generated output affected.
+- ⚠ **`tsc --noEmit` currently FAILS (exit 2), and not because of this session.** Eight `TS6133`
+  "declared but never read" errors, all in two files this session never touched:
+  `modules/inventory/AddBundle.tsx` (`canApproveDiscount`, `discountOpen`, `role`, `approverName`,
+  `onToggleDiscount`) and `modules/rentals/BookingDetail.tsx` (`NotesCard`, `canWriteNotes`,
+  `notesList`). Both were written **after** this session's edit — `AddBundle.tsx` 18:19,
+  `BookingDetail.tsx` 18:13, `seed.ts` 18:01 — and the symbol names are the concurrent session's
+  in-flight discount-policy work (D3). `tsc` reports **zero** errors in `seed.ts`.
+  **Stated rather than glossed:** the gate is red as of this entry, the cause is another session's
+  WIP, and this session did not run the suite because a red typecheck makes the result
+  uninterpretable. Re-run both once that WIP settles.
+
+### Blocked
+- **Applying 0074 needs Babin.** `CLAUDE.md`: never apply a migration to the live project without
+  explicit approval. **And it is irreversible** — Law 3's `trg_bookings_reject_delete` blocks
+  DELETE on `bookings`, so these rows could only ever be *cancelled*, never removed. The file ends
+  with that retreat, keyed on `project = 'Seed corpus — operational stages (0074)'`.
+- I6 also names two things 0074 does **not** fix: `actual_return_at` is NULL on all 200 bookings
+  (so "Returned same-day" stays uncomputable), and only 3 `On Rent` rows exist, so the **Coming
+  back** panel stays thin. Seeding those means moving bookings *through* the handover gate, which
+  needs deposits and invoices — a larger job than this one.
+
+## 2026-08-31 (cont.) — I5 closed-in-part: Law 6 masking proven working; four latent breaches found
+**Phase:** cross-phase verification (**no code changed, no migration applied**) · **Status:** complete
+
+Backlog item **I5** — *"RLS policy correctness per money-blind role … the highest-value check in the
+pack"* — run against the live database, read-only. Full write-up:
+[`docs/booqable/I5-RLS-MONEY-VERIFICATION.md`](docs/booqable/I5-RLS-MONEY-VERIFICATION.md).
+
+### Did
+1. Built a **read-only RLS impersonation harness**. The MCP connection runs privileged and bypasses
+   RLS, so probing through it directly proves nothing. Every probe ran inside
+   `begin; set local role authenticated; select set_config('app.current_user_id', <uuid>, true); … rollback;`
+   — the same path a real session takes, since `auth_user_role()` is defined to resolve from that
+   GUC before `auth.uid()`. Confirmed engaged before probing:
+   `row_security_active('invoices') = true`.
+2. Probed **156 money columns** across 44 base tables and 21 views, as **Warehouse** (real user) and
+   as **Client** (unmatched UUID → the enum's `'Client'` fallback, which is the real production path
+   for an unbound user), with **Coordinator** as the money-visible control.
+
+### Found
+**No money leaks today. Four latent Law 6 breaches will leak on the first row written.**
+
+- **The mask provably discriminates by role** — the control that makes the test mean anything.
+  Same view, same rows: Coordinator reads **204** values from `products_v.daily_rate`, Warehouse
+  reads **204 `NULL`s**; same for `weekly_rate` and for `bookings_deposit_v.deposit_required` (200).
+  The raw values are genuinely there (`products.daily_rate` max Rs.25,000, `weekly_rate` max
+  Rs.125,000), so this is masking, not a column that is null for everyone. **Client sees zero rows**
+  — excluded at row level by `auth_is_staff()`, which is stronger than masking.
+- **`bookings`, `products`, `product_units` revoke base-table `SELECT`** from `authenticated`
+  (`permission denied`). That is what makes their `_v` masks real, and it is the pattern the rest
+  should follow.
+- **❌ 35 of 38 money base tables still grant `SELECT` to `authenticated`**, so the `_v` mask is
+  bypassable — RLS filters **rows, not columns**. On **four**, the policy also admits a money-blind
+  role to raw money, all four predicates evaluating `true` as Warehouse:
+  `accessories.replacement_cost` (Warehouse) · `booking_transport.delivery_charge`/`fuel_charge`
+  (Warehouse, **Driver**) · `maintenance_records.cost` (Warehouse) · `vehicle_fuel_logs.cost_amount`
+  (Warehouse, **Driver**). Each has a masked `_v` sibling — **the mask was written, then left
+  bypassable.** All four tables are empty, which is the only reason nothing leaks.
+- **`Technician` appears 0 times in all 232 policies** (Warehouse 52, Coordinator 39, Driver 4) and
+  in no view; its only mention in the schema is inside `auth_can_view_money()`. Safe for Law 6 by
+  accident — and it means the role is **non-functional at the data layer**, unable to read the
+  maintenance and damage records it exists to work on.
+- **A methodological correction worth keeping.** The first probe reported *"120 of 156 money columns
+  blocked by RLS"*. **That figure is near-meaningless** — an empty table and a perfectly-enforced
+  policy return the identical zero rows. Only **four** money tables hold any rows at all (`clients`
+  366, `products` 204, `bookings` 200, `number_sequences` 10). Four columns flagged as "leaked" were
+  re-checked and are **not money** (`total_bookings_count`, `total_quantity` ×2,
+  `number_sequences.current_value`) — regex hits on *total* / *value*.
+
+### Ruled
+- A zero-row result is **not** evidence of enforcement. Any future RLS claim must pair the
+  money-blind reading with a **privileged control** showing the value exists, and with a
+  **money-visible role** showing the mask discriminates. Recorded in the write-up's §1.
+
+### Blocked
+- **I5 stays open, narrowed to one sentence:** the money core — `invoices`, `payments`,
+  `security_deposits`, `expenses`, `invoice_lines`, `booking_lines` — is empty, so its policies have
+  never been exercised against a row while its `SELECT` grant to `authenticated` is open. Closing it
+  needs the seeded corpus **I6** already calls for; do the two together and re-run the harness
+  unchanged.
+
+### Verified
+- Live DB read-only throughout: every statement a `SELECT` inside a rolled-back transaction. **No
+  row created, changed or deleted; no migration applied.** `schema_migrations` still tops out at
+  **0070** — 0071/0072/0073 remain drafts.
+- **Not verified:** UI-side gating (`useCanViewMoney` / `moneyVisibility`) was not exercised — Law 6
+  also requires money be *not built into the DOM* for these roles, which is a separate check.
+  Write paths were not tested. Technician and Driver were not tested with real sessions (no such
+  users exist); their *masking* is proven analytically — every mask is
+  `CASE WHEN auth_can_view_money() … END`, one `NOT IN` list that cannot discriminate between the
+  four — but their *row* access is not uniform, which is exactly how Driver reached two money tables.
+
+## 2026-08-31 (cont.) — Remaining-items check: Open Cases count derived · three stale route comments fixed · two records corrected
+**Phase:** Phase 4/5 — hygiene · **Status:** complete
+
+A six-agent assessment of everything left open after the morning's Booqable-layout apply
+(each item verified in code, options weighed) found the backlog partly stale; this entry
+lands the one slice that needed no decisions. The rest is queued in the corrected records
+below.
+
+### Did
+1. **`data/settings.ts` `BRANCH_ALERTS` Open Cases tile now DERIVES its count** —
+   `count: openCasesCount()` (the export `data/cases.ts:871` already provides and
+   validates at module load) replacing a hand-typed `8` that disagreed with the 12 its
+   own destination page derives. One click no longer contradicted §5.8; the file's own
+   "nothing aggregate is typed" doctrine now actually holds for this tile. The other four
+   `BRANCH_ALERTS` counts are still hand-typed seeds — same class, each needs its source
+   module audited for a derivable before converting; not done here.
+2. **Three stale `/operations/cases` comments corrected** (route moved to
+   `/inventory/cases` 30 Aug): `data/caseIntel.ts` header (also dropped its
+   "stale duplicate with its own inline dataset" claim — `CasesWorkspace` reads
+   `data/cases.ts` now), `data/inventory.ts` rulings-quote gloss (quote kept verbatim,
+   only the present-tense route list updated), and `OperationsQueues.tsx`'s
+   "`/operations/cases` already exists (`App.tsx:364`)" sentence, which contradicted the
+   corrected `CASES_ROUTE` note three lines below it.
+3. **Two stale records corrected in place** (marked "Corrected 31 Aug"): the pattern
+   backlog line ("Finance / Reports / Documents — next candidates" — Documents is in fact
+   DONE, Reports is N/A by design, Finance's gap is query capability; details at the
+   line), and the double-rail squeeze note (band is 1280–~1557, not 1280–1439, and the
+   advertised "one-line reversal" needs a §7.7 spec amendment AND leaves ~42px of scroll —
+   the honest fix is `defaultCollapsed` on the Alerts rail, owner decision, not built).
+
+### Verified
+- `tsc --noEmit`: **0 errors**.
+- Targeted suites over every touched module (settings, data, operationRoutes):
+  **8 files / 168 tests, 100% passing** (no test pinned the old `8`).
+- **Driven in the browser** (mock corpus): Settings ▸ Branches rail tile reads
+  **Open Cases 12** — equal to `/inventory/cases`'s own figure for the first time.
+
+### Queued (from the same assessment, in recommended order)
+- **Next wave (M):** Booking Detail — Notes card + real quick-action panel. Payment half
+  already built (`RecordPaymentModal` wired 3×, Law 6 gated); `booking_notes` table is
+  LIVE in Supabase (verified via MCP — no migration needed); the rail's Print/Share/More
+  buttons are dead and should be replaced by the real panel. Defaultable owner choices:
+  Notes on phone → Docs segment; note-archive → next wave.
+- **After (M):** Finance Invoices filter rail — new client/date named sets in
+  `lib/queries/finance.ts`, SideRail INSIDE the money-gated PageBody, bundled with the
+  pagination/Export `TODO(decision)` (`Finance.tsx:804`).
+- **Owner decisions:** default-collapse the Alerts rail on `/operations` (squeeze fix);
+  §7 strictness on the Dashboard quick panel (recommend keep — §7 protects drawn content,
+  panel holds only §5.8 duplicates, the repo's own §7 test already enforces that line).
+- **Fix-later (S):** viewport-band-scoped `CollapsibleAside` memory (~15 lines in
+  `collapse.ts` + key prefix, `Sidebar.tsx` is the precedent); a tablet-collapsed test pin
+  for the Dashboard quick panel; unrouted `ProductReports.tsx:405`'s bare `<Rail>` the day
+  anyone routes it.
+
+## 2026-08-31 (cont.) — §2.4 corrections independently re-derived: AGREES; one of my own findings was wrong
+**Phase:** cross-phase verification (no `src/` or `supabase/` file changed) · **Status:** complete
+
+### Did
+Re-derived the extraction spec's repo-side claims from scratch in a separate session — twelve
+parallel agents, each required to cite `file:line` or command output, none permitted to treat a
+document as evidence — without reading [`CORRECTIONS.md`](docs/booqable/CORRECTIONS.md) first.
+Result recorded in [`docs/booqable/VERIFICATION_2026-08-31.md`](docs/booqable/VERIFICATION_2026-08-31.md),
+rewritten at the end as a **corroboration note rather than a second register** once the overlap
+was found. Also reconciled [`docs/booqable/dashboard.md`](docs/booqable/dashboard.md) against the
+four `[CONTRADICTS prior pass]` items in `layer-d/dashboard.md`.
+
+### Verified
+- **`CORRECTIONS.md` holds on every claim this pass could check independently** — the law-number
+  cluster (Law 9→7, Law 16→15), `BrandKey`'s `warn`-not-`purple`, the engine inventory, the two
+  `Card`s, `ClickableRow`'s non-existence, the inverted facet-counts finding, and the test-count
+  provenance. It is also ahead of this pass on four counts (its §9–§12).
+- Live, read-only via MCP: `booking_flags_recorded_subset_only` limits storable flags to **four**,
+  so **`Due Soon` and `Partial Pickup` have no persistence path**; `bookings_booking_no_format` is
+  `CHECK ((booking_no ~ '^B-[0-9]+$'::text))` verbatim; six `log_audit_event` triggers exist and
+  the sixth is on **`product_units`**, not the spec's `inventory_units`; `audit_events` holds
+  **5,378 rows** while `invoices`, `payments` and `booking_lines` hold **zero** — so the audit
+  trail outlives its subjects and a feed row usually cannot resolve its own record.
+- All 16 migrations carrying a "NOT APPLIED" header **are applied** — checked against
+  `supabase_migrations.schema_migrations`, not the header text. 0055 = `20260812150509`.
+- Frozen clock is **gone**: `const TODAY = getBusinessToday()` (`data/today.ts:24`).
+  `src/lib/operationalDay.ts` exists and `bookings.ts` records the D4 ruling — 06:00 as a
+  **setting** (`operationalDayStart`), not a constant.
+- `vitest run`: **2,169 / 87, exit 0**, twice, hours apart.
+
+### Found — and this is the part worth keeping
+**I got one wrong, in exactly the way this repo's discipline exists to prevent.** I found
+`calendar.kpiBand.test.tsx` as a ` D` in `git status`, paired it with the concurrent `<Rail>`
+width rework, and escalated it as a rulings-guard test vanishing during a width change. It was
+neither: the retirement was **deliberate, owner-instructed and logged** (`PROGRESS.md:850`), and it
+guarded **`/calendar`'s** band, not the Dashboard's. I read working-tree state and inferred a story
+**without checking PROGRESS.md for the reason** — while auditing a document for that same class of
+error. The correction is recorded in the file itself rather than quietly dropped.
+
+### Blocked / open
+- `tsc --noEmit` is **not clean**, and the errors move between runs — `Login.tsx TS6133` at ~02:10,
+  later three in `discount.test.ts` / `money.test.ts`. All trace to another session's in-flight
+  refactors. **Not fixed from here**; fixing them would collide with work in progress.
+- `/calendar` now has **no test coverage at all** — a real consequence of the band retirement,
+  noted at `PROGRESS.md:850-854` and still open.
+
+---
+
+## 2026-08-31 (cont.) — Migrations 0071 · 0072 · 0074 APPLIED to the live project
+**Phase:** Phase 1 — Schema · **Status:** applied and verified · **Approval:** Babin, explicit, in-session
+
+### Did
+Applied three migrations to the **live** project `sxguwvgoserhdolewibb` over the Supabase MCP route,
+in order, each pre-flighted and each verified afterwards by reading `pg_constraint` / `pg_policies` /
+`schema_migrations` rather than trusting the success flag.
+
+1. **`0071_create_booking_units_at_creation`** — D5. `create or replace function create_booking(jsonb)`;
+   a line may now carry `units[]`, writing one `booking_line_units` row each. Additive; no table
+   touched. `inventory_reservations` is still written at Confirm, not creation.
+2. **`0072_portal_email_binding_policies`** — D2. `portal_users` gains `auth_user_id` / `email` /
+   `email_verified_at` / `self_registered_at`; `portal_users_exactly_one_inviter` widened to
+   `portal_users_exactly_one_origin`; `phone` NOT NULL relaxed (0 rows, so no rewrite); new
+   `portal_link_requests` table; `portal_claim_by_verified_email()` (SECURITY DEFINER) as the single
+   binding writer. **Its own post-conditions passed** — 11 portal policies, and no non-staff write
+   path on `portal_users`.
+3. **`0074_drop_discount_gate`** — D3, Babin's final word. **NOT the 0073 that was requested:** 0073
+   (the additive policies table) had been deleted unapplied and replaced on disk by 0074, which does
+   the opposite. Applied only after putting the difference to Babin, who chose it explicitly.
+
+### Closed same session — `0075_drop_invoice_lines_discount_gate` written and APPLIED
+The gap below was put to Babin, who ruled "drop invoice lines too". A new migration file
+`supabase/migrations/0075_drop_invoice_lines_discount_gate.sql` was written (repo and DB kept in
+step — the DB is never changed without a file) and applied to the live project.
+
+- **Dropped:** `invoice_lines_discount_cap`, `invoice_lines_discount_over_ten_needs_reason_and_approver`.
+- **Added:** `invoice_lines_discount_percent_sane` — `discount_percent >= 0 and <= 100`, the same
+  rule and the same shape as its two siblings.
+- **Verified live:** all three discount-writing tables now carry the *identical* 0–100 check
+  (`booking_discounts_percent_sane`, `invoices_discount_percent_sane`,
+  `invoice_lines_discount_percent_sane`). **`over_ten_needs_reason` checks remaining anywhere: 0.**
+  `trg_recalc_invoice_lines` and `trg_booking_discounts_stacking` both intact.
+  `schema_migrations` tops out at `0075_drop_invoice_lines_discount_gate`.
+- **Deliberately left at ≤25**, none being a per-discount ceremony: `coupons.discount_percent`,
+  `membership_plans.*_discount_pct`, `user_approval_authorities.max_discount_pct`. The first two cap
+  a product configured once; the third defines a role authority `rbac.ts:canApproveDiscount` now
+  ignores. Each would be its own decision.
+
+### Found — the gate was PARTIALLY dropped (now closed, above)
+`0074` names `booking_discounts` and `invoices`. It does **not** name `invoice_lines`, which still
+carries **both** halves of the gate:
+- `invoice_lines_discount_cap` — `discount_percent <= 25`
+- `invoice_lines_discount_over_ten_needs_reason_and_approver` — `<= 10 OR (reason ≥10 chars AND discount_approved_by NOT NULL)`
+
+**So a >10% discount is now accepted on the booking and refused at invoicing** — the exact
+"works until billing" failure this repo's Layer D spot-check flagged on 31 Aug, now live. Caps also
+remain on `coupons` (≤25), `membership_plans` (≤25) and `user_approval_authorities` (≤25).
+**Not fixed here:** dropping further constraints is a new destructive act beyond the approval given,
+and it is a product call — Babin may well want the invoice path gated.
+
+### Verified
+- `schema_migrations` now tops out at **`0074_drop_discount_gate`**; 0071, 0072, 0074 all recorded.
+- Gate constraints on `booking_discounts` / `invoices`: **0 remaining**. `booking_discounts_percent_sane`
+  and `invoices_discount_percent_sane` (0–100) both present.
+- `trg_booking_discounts_stacking` **survived** — the exclusive-source matrix (Student / College /
+  Named-client rates) is intact, as intended.
+- Portal: `auth_user_id` column present, `portal_link_requests` created, **11** policies,
+  `portal_claim_by_verified_email()` present.
+- **Not verified:** no test suite was run and no app path was driven. `create_booking`'s new `units[]`
+  branch has not been exercised against the live project — `product_units` has **0 rows**, so the
+  unit-assignment path cannot be tested with real data yet.
+
+### Next
+- Decide whether `invoice_lines` (and the three ≤25 caps) follow `booking_discounts` out, or whether
+  the invoice path stays gated deliberately. Until then the two paths disagree.
+- `PLAN.md` Law 10 updated to record the application and the `invoice_lines` survival.
+
+## 2026-08-31 (cont.) — Layer D register independently spot-checked: SOUND
+**Phase:** cross-phase verification (no code changed) · **Status:** complete
+
+### Did
+Re-derived the load-bearing findings of `docs/booqable/LAYER-D-VERIFICATION.md` from scratch, in a
+different session from the one that wrote it, without reading its per-screen files first. Recorded
+in [`docs/booqable/layer-d/INDEPENDENT-SPOTCHECK.md`](docs/booqable/layer-d/INDEPENDENT-SPOTCHECK.md).
+A verification document is the artifact where fabrication would be hardest to notice, so it was
+checked rather than trusted.
+
+### Verified
+- **All six "zero importer" findings hold**, by grep over `src/` excluding each module's own file and
+  tests: `kpiEngine`, `queries/facetCounts`, `bookingQuery`, `fetchCanonicalBooking`,
+  `queries/bundles`, `auditForRecord` — **0 callers each**. The one to sit with is `bookingQuery.ts`
+  (2,568 lines): it implements **Law 2, a hard acceptance gate**, and nothing reaches it.
+- `modules/calendar/Calendar.tsx` has **zero** `supabase` / `queries/` / `actions/` references —
+  every §11.5 line specifies something unbuilt.
+- Live, read-only: `booking_lines` **0**, `product_units` **0**, `inventory_reservations` **0**;
+  `client_tax_profiles` exists; **`starts_at`/`ends_at` name zero columns in the whole `public`
+  schema**, so §11.5's only column-level fact names two columns that do not exist.
+- The discount collision is real — **nine CHECK constraints**, confirmed from `pg_constraint`. Two
+  corrections: they span **six** tables, not five, and the table is **`user_approval_authorities`**,
+  not `user_approval` (a migration written against the short name would fail). `invoices` and
+  `invoice_lines` do carry independent copies of both rules, so the register's central point stands.
+
+### Found
+- **All three of Appendix A0's ruled decisions have draft migrations that are NOT applied.** 75
+  migration files on disk; highest applied is `0070`. Unapplied: `0071_create_booking_units_at_creation`
+  (D5), `0072_portal_email_binding_policies` (D2), `0073_discount_policies` (D3). **The rulings are
+  made, the SQL is written, and the database is still on the pre-ruling schema.** Reading A0 as "in
+  effect" is wrong for all three.
+- **Migration identity lives in `schema_migrations.name`, not `version`.** `version` is a timestamp;
+  `name` carries the `00NN_` prefix. Comparing repo filenames against `version` makes it look like
+  nothing is applied — this pass briefly made that mistake and it is recorded so the next reader
+  does not. Related: the standing "migration headers lie" caution.
+
+### Verdict
+**SOUND.** The register's headline — ~28% of v2.5's Layer D correct as written — is supported by
+every part of it this pass could test independently. **Not checked:** the per-claim verdicts inside
+the fourteen per-screen files. Claims were sampled by consequence, not at random, so this is evidence
+the register is trustworthy where it matters most — not proof that all 329 verdicts are right.
+
+## 2026-08-31 — REFERENCE_SPEC_v2.5 Layer D verified line by line: 28% survives
+**Phase:** cross-phase verification (no phase work, **no code changed**) · **Status:** complete
+
+Layers A, B and C of [`docs/booqable/REFERENCE_SPEC_v2.5.md`](docs/booqable/REFERENCE_SPEC_v2.5.md)
+were observed live and stay trusted. **Layer D** — the backend data link, i.e. which table, view,
+engine, action or route serves each panel and column — was written from the spec's own §2.4
+contract list, and `CORRECTIONS.md` had already shown that list wrong in six places. Every
+Layer D line was therefore treated as unverified input and checked one at a time against source
+or against the live database.
+
+### Did
+1. Ran **14 parallel verification agents, one per screen section** — §4+§5 (Dashboard + order
+   sidebar), §9 Bookings list, §10 Booking detail, §11 Calendar, §12 Inventory/Downtime/Product
+   detail, §13 Product Settings/Variations/Clients, §14 Accounts/Documents/Reports index,
+   §15 Report pages, §16 Coupons/Activity logs, §17 Quotes & Contracts/Fulfillment/Background
+   tasks, §18 Bundles/Cross-sell/Online store/Packing slip/Quote, §19 Collections/Emails/Contract
+   document, §20 Pro forma/Rental period/Custom fields/Security, §21 the 17-page Settings
+   compendium. Each claim had to resolve to a `file:line` in `src/` or to a read-only `SELECT`
+   run over the Supabase MCP route; each got one of five verdicts (CONFIRMED / WRONG-NAME / GAP /
+   MISLEADING / UNVERIFIABLE).
+2. Recorded every doc-vs-code contradiction the pass surfaced, and ruled each one.
+3. **Nothing in `src/` was touched.** This was a documentation and verification session; the
+   gates below are a measurement of the repo as it already stood, not a green light on new code.
+
+### Found
+**Layer D survival rate: 93 of 329 claims — 28%.** Tally across the 14 sections:
+**CONFIRMED 93 · MISLEADING 85 · GAP 110 · WRONG-NAME 34 · UNVERIFIABLE 7.**
+Two thirds of Layer D either specifies something unbuilt (110 GAPs) or describes a real thing
+incorrectly (85 MISLEADING + 34 WRONG-NAME). Layer D is now **input to be checked, never a
+citation**.
+
+**Corrected contract list — this supersedes v2.5 §2.4.** Cite these, not the spec:
+
+| v2.5 says | Actually |
+| --- | --- |
+| dates = Law 9 (R6) | dates = **Law 7** |
+| 768px two-column = Law 15 (A.5) | = **Law 14** |
+| 44×44 = Law 16 | = **Law 15** |
+| BrandKey includes `purple` | `purple` is **retired**; `warn` is real and the spec drops it |
+| Card has no `subtitle` | the spec read `Page.tsx`'s Card; the **barrel exports `Card.tsx`, which has `subtitle`** |
+| `next_document_number({ kind })` | **`p_sequence_key`**; supabase-js RPC args are named, so the spec's version fails at **runtime**, not compile time |
+| `ClickableRow` + an "11 Aug improvement order" | **neither exists.** `Table.tsx`'s `onRowClick` is not a substitute: no `tabIndex`, no `role`, no Enter/Space, no 44px floor, not exported from the barrel, and Tailwind-classed so it compiles to nothing here |
+| faceted option counts serve the filter rails | `facetCounts.ts` exists and is tested but is **completely unwired** — `countFacet` imported only by its own test, `useFacetCounts` has zero callers in `src/`, `FilterOptionList` mounted only in its own test. **No screen shows an option count today.** |
+| 19 engine modules in `src/lib` | **37 modules plus four subdirectories** |
+| `kpiEngine` is the engine behind the metric strips | **zero importers anywhere in `src/`**, typed against the `RentalRow` seed, and it contains no delta contract at all |
+| `fetchCanonicalBooking` serves `/rentals/:bookingNo` | it and `priceCanonicalBooking` are 2,568 tested lines with **zero callers in `src/`**; the route reads through four different functions |
+| calendar bars span `starts_at`→`ends_at` | those two columns exist on **no table**; the window is `bookings.pickup_at` / `bookings.return_at` |
+| the Documents surface is the invoice register | the built, DB-backed register is **Finance → Invoices** (`listInvoices`, `src/lib/queries/finance.ts:452`); `/documents` has **zero** DB reads |
+| the activity feed reads `audit_events.occurred_at`, joins `users`, gated by `useCanViewMoney` | `occurred_at` **does not exist**; the sixth trigger table is **`product_units`**, not `inventory_units`; there is **no users join** (users RLS is self-scoped); the real gate is **`AUDIT_READ_ROLES`**, which hides the feed from the entire floor |
+| `lib/discount` owns the stacked 25% cap | the cap is a **DB trigger**; the engine's own header says so |
+| our Settings already models this (throughout §21) | `/settings` is a **localStorage registry plus hardcoded seed arrays**. `system_settings` exists live with **0 rows and zero readers in `src/`** |
+
+**The recurring shape of the failure — built, tested, and wired to nothing.** Five separate
+modules are in this state, and v2.5 cites four of them as live data paths:
+`facetCounts.ts`, `lib/kpiEngine.ts`, `fetchCanonicalBooking`/`priceCanonicalBooking`,
+`src/lib/queries/bundles.ts`, and `auditForRecord()` (`src/lib/queries/audit.ts:294`).
+`src/lib/availability.ts` + `src/lib/queries/availability.ts` are a sixth: rule-complete, and the
+Calendar's availability tab is an `EmptyState` (`Calendar.tsx:1106-1116`).
+
+**Screens that read no database at all** (every Layer D line filed against them is a
+specification, not a description): `/calendar`, all ten `/reports/*`, `/documents`,
+`/admin/activity-log`, `/tools/depreciation`, Maintenance, and both bundle screens.
+
+**Per-section headlines (14):**
+1. **§4+§5 Dashboard + order sidebar** — backlog **I6 is CONFIRMED by SQL**: live stages are
+   Returned 130 / Closed 60 / Quote 7 / On Rent 3, with **zero in Booked or Packed** — the exact
+   two stages `todaysOutgoing` filters on — so the Going-out panel is structurally empty on every
+   date. Only 14 of 46 Layer D claims survive intact.
+2. **§9 Bookings list** — wrong on both money claims and on the facet story: rows **already**
+   carry `depositRequired` via the masked view `bookings_deposit_v` behind `useCanViewMoney`; the
+   facet engine exists but has zero callers; the named strip engine `lib/kpiEngine` has zero
+   importers.
+3. **§10 Booking detail** — §10.6's entire Layer D describes `fetchCanonicalBooking`, which the
+   route never touches. Every table list, "ONE query" claim and money rule in it is about a
+   module with no caller.
+4. **§11 Calendar** — `/calendar` imports no supabase client, no query module and no action. It
+   is seed-only (`src/data/calendar.ts`), and it is a **fourth independent date-window
+   implementation** — it does not share `periodRange` with `/operations`, the Dashboard or
+   `src/data/rentals.ts`.
+5. **§12 Inventory / Downtime / Product detail** — **backlog I3 is answered and it is worse than
+   the sample suggested**: `purchase_price`, `replacement_value`, `purchase_date`,
+   `deposit_percent` and `deposit_fixed` are NULL on **all 204** products (not 178) — 0% coverage
+   — and `product_units` is **empty (0 rows)** though 192 unit rows existed before a reseed.
+6. **§13 Product Settings / Variations / Clients** — all eight Layer D lines are wrong in some
+   way. The two consequential errors: the detail fetch is keyed on **`client_code`, not `id`**
+   (a literal implementation returns zero rows), and the "GAP" tax profile is a fully-modelled
+   table (`client_tax_profiles`) sitting unused. Law 17 is confirmed breached at all six cited
+   sites, **none of them on `/clients`**, which is clean.
+7. **§14 Accounts / Documents / Reports index** — the whole section's backend link points at the
+   wrong screen (see the contract table above).
+8. **§15 Report pages** — all four `kpiEngine` claims fail; meanwhile the one thing §15 says we
+   lack, a page-level comparison selector, is **already built** at `ReportToolbar.tsx:615`.
+9. **§16 Coupons / Activity logs** — the only fully correct line is "`audit_events` already
+   triggered on 6 tables". No coupons screen, no `discount_policies` table, no sentence registry,
+   no per-entity scoping, no Dashboard feed.
+10. **§17 Quotes & Contracts / Fulfillment / Background tasks** — the numbering ruling reads as
+    description but is pure proposal: `next_document_number('quote')` has **zero call sites** and
+    the live quote sequence has never minted (`current_value = 0`).
+11. **§18 Bundles etc.** — per-component bundle pricing has **no storage on our side**:
+    `bundle_items` has 10 columns and not one carries a rate, discount or price.
+12. **§19 Collections / Emails / Contract document** — migration `0008_automation_comms` **is
+    applied**: all eleven comms/email tables exist live with 0 rows, and **zero lines of `src/`
+    read any of them.** Comms is a wiring job, not a migration job.
+13. **§20 Pro forma / Rental period / Custom fields / Security** — **D4's 06:00→06:00 operational
+    day is genuinely built end to end** (engine + setting + reader + rendered control + acceptance
+    test), but it persists to browser localStorage, so every "today" panel is per-browser.
+14. **§21 the Settings compendium** — see the contract table's last row.
+
+### Ruled
+Where a doc and the code disagreed, **code wins**, and these are now settled:
+1. **`docs/pages/06_today.md` is stale on four counts and must not be cited as Layer D input** —
+   route (`/dashboard`, not `/today`), title (`Dashboard`), AlertsPanel/CalendarPanel (moved and
+   deleted), and the two-track grid (now `main | Rail`).
+2. **The frozen clock is gone everywhere it was documented.** `src/data/today.ts:24`,
+   `RentalsList.tsx:55` and `Calendar.tsx:42-47` all read `getBusinessToday()` (real Kathmandu
+   civil time, `src/lib/bs.ts:277`). Three page docs still claim `TODAY = 2026-07-31`.
+3. **The `booking_lines` money-grant contradiction is settled against the live grants:**
+   `src/lib/queries/bookings.ts:973-976` asserts both `authenticated` and `anon` hold SELECT on
+   `rate` / `discount_amount` / `supplier_cost` / `markup_amount` and explicitly calls
+   `bookingQuery.ts:918-928` wrong. **`bookingQuery.ts` is right** — `authenticated` has no SELECT
+   on those four. The comment is right only about `anon`.
+4. **The 0062 revoke is live for `products` (35 of 44 columns) but NOT for `bundles`** —
+   `authenticated` holds SELECT on all 13 `bundles` columns, including `daily_rate` and
+   `weekly_rate`, contradicting the justification comments in `createBundle.ts:325-327` and
+   `src/lib/queries/bundles.ts:22-26`. Likewise `anon` **still** holds SELECT on
+   `bookings.deposit_required`; only `authenticated` was revoked, and **RLS (`auth_is_staff()`) is
+   what actually blocks anon**, not the grant that `bookings.ts:376-379` credits.
+5. **The per-product buffer question is not open, it is unwired.** v2.5 §12.5 lists it as STILL
+   OPEN; `products.prep_time_minutes` / `cleaning_time_minutes` exist, have a UI
+   (`SectionPricing.tsx:165,168`) and a write path (`createEquipment.ts:433-434`), and are read by
+   nothing — availability takes turnaround from a global setting only.
+6. **Downtime enums are decorative.** `maintenance_records.status` and `.maintenance_type` are
+   plain `text` with no CHECK, and the two matching enums are bound to zero columns anywhere.
+   Treat those columns as free text until a migration binds them.
+7. **`src/lib/booqable/sync.ts:317`'s key set is wrong, and the live table wins.** Its doc comment
+   names `'CL'|'BK'|'EQ'|'PAY'|'DEP'` citing `0007_admin_security.sql`; `number_sequences` uses
+   lower-case word keys. Per the standing caution, migration headers lie.
+8. **`AssetDetail.tsx:942-948` tells the operator "the audit trail is not wired to equipment
+   records".** That is false about the trail (trigger, 192 rows and `auditForRecord()` all exist)
+   and true only about the screen. The copy should be corrected when the tab is wired.
+9. **`docs/pages/22_add_bundle.md` gaps 2, 3, 4, 9 and 10 are all FIXED in current code** —
+   `createBundle.ts` resolves `product_id` and `category_id` by SELECT and refuses on no match,
+   writes real rates, calls `next_document_number` with the **correct** `p_sequence_key`, and
+   passes `{ returnRow: false }`.
+10. **`docs/pages/24_documents.md` is accurate throughout** — a rare clean case, verified against
+    the import block at `Documents.tsx:1-48`.
+11. **`src/data/nav.ts:137` and `:145` are backwards**: `App.tsx:132-135` redirects `/tools/*` into
+    `/admin/*`, not the reverse; and `:149` puts `/admin` in `MONEY_ROUTES`, doing exactly the
+    hiding that `:143-145` argues against in prose.
+12. **`/calendar` is not in `MONEY_ROUTES` and carries no `isStaff` test**, so the external Client
+    role reaches a staff screen. This matters to Layer D: `products_v` and `booking_lines_v` both
+    carry `WHERE auth_is_staff()` and would return nothing for that session once wired.
+
+### Verified
+Measured directly this session:
+- **`tsc --noEmit`: 0 errors.**
+- **`vitest run`: measured twice, and the tree moved in between.** At session start: **87 files /
+  2,169 tests**. Re-run at session end against the same working copy: **90 files / 2,209 tests,
+  100% passing**, `tsc --noEmit` still 0 errors. **Cite 90 / 2,209.** The v2.5 / v1.1 §7 gate
+  figure of "2,174 across 88 files" is the **handoff sandbox's** and matches neither — do not
+  chase that delta.
+  > ⚠ **This repo was edited by another session while this one ran.** 29 files under `src/` and
+  > `supabase/` changed between 01:50 and 10:41 on 31 Aug, including three new migrations
+  > (0071 serials-at-creation, 0072 portal email binding, 0073 discount policies) that did not
+  > exist when this session's ground-truth scout listed the tree at 0070. The first vitest run
+  > overlapped that window, which is exactly how the 87 / 2,169 figure went stale inside one
+  > session. The backlog's own standing caution — *re-check facts established at the start of a
+  > long session before relying on them at the end* — earned itself again here.
+- **`facetCounts.ts` is built and tested but completely unwired** — `countFacet` imported only by
+  its own test, `useFacetCounts` has no caller in `src/`, `FilterOptionList` mounted only in its
+  own test. No screen shows an option count today.
+- **Live DB reachable via the Supabase MCP route: true.** Read-only `SELECT`s only — **no
+  migration was applied and no row was written.**
+- **Live schema tops out at `0070`.** `supabase_migrations.schema_migrations` confirms migrations
+  **0071, 0072 and 0073 are not applied**, so their `NOT APPLIED` headers are accurate this time —
+  which is *not* the standing assumption in this repo, and was worth checking rather than trusting.
+- **The D3 discount collision is four times wider than `CAPTURE-BACKLOG.md` recorded.** That entry
+  named two CHECK constraints on `booking_discounts`; `pg_constraint` shows **nine, across five
+  tables** — `booking_discounts`, `invoice_lines`, `invoices`, `coupons`, and
+  `membership_plans` / `user_approval`. `invoices` and `invoice_lines` each carry their own
+  independent copies of both the ≤25% cap and the >10%-needs-reason-and-approver rule, so a
+  discount UI that clears the booking path would still fail at invoicing. Backlog §1 corrected.
+- **No application code was changed this session.** The two gates above describe the repo as it
+  already stood; they are not a verification of anything new.
+
+What was **not** checked, and should not be read as verified:
+- **Layers A, B and C were not re-verified** — they were observed live in the v2.5 pass and are
+  carried forward on that basis, not on this one.
+- **Nothing was driven in a browser.** Every verdict is source-level or SQL-level. Rendering,
+  focus order, keyboard behaviour and the 44px floor were not exercised.
+- **Booqable's own side was not re-observed** for any of the 13 screens or the 17 Settings pages.
+- **Line anchors in page docs were re-grepped only where a verdict depended on them.** Several
+  files are being edited concurrently (`ClientsDirectory.tsx`, `AddBundle.tsx`, `Calendar.tsx` —
+  the last ~95 lines longer than its page doc records), so **every `Calendar.tsx:NNNN` citation in
+  `docs/pages/23_calendar.md` must be re-anchored before it is quoted.**
+- **7 claims came back UNVERIFIABLE** and stay that way; each names in its section what evidence
+  would settle it.
+
+### Blocked
+Carried forward from the backlog, both still blocked:
+1. **D3 vs Law 10 — the discount collision.** Unchanged, and this pass sharpened it: the stacked
+   25% cap lives in a **DB trigger**, not `lib/discount`, and `coupons` carries **no
+   `log_audit_event` trigger**, so the Law 10 audit row has neither a writer nor a trigger. The
+   table also lacks `authorised_by`, `reason` and any product/client scope — the three things the
+   Law 10 ceremony needs.
+2. **D1 — the purchase-cost backfill.** Now confirmed **worse than sampled**: 0% coverage on all
+   204 products, so D1 is a **full backfill, not a top-up**, and `product_units` is empty (0 rows)
+   after a reseed, so the unit layer needs a second pass before any cost fallback can exist.
+
+Newly blocked by this pass:
+3. **Seven live RPC call sites in `src/lib/booqable/sync.ts` pass sequence keys
+   (`'EQ'`, `'CL'`, `'BK'`, `'PAY'`, `'DEP'`) that do not exist in `number_sequences` and raise at
+   runtime.** Nothing downstream of Booqable sync can be trusted until the keys are reconciled.
+4. **The Dashboard's Going-out panel cannot be demonstrated on any date** until the corpus carries
+   Booked/Packed rows (I6). The Incoming panel is near-empty for a second reason: only 3 On Rent
+   rows exist and `actual_return_at` is NULL on all 200 bookings, so "Returned same-day" is
+   uncomputable and "Overdue" resolves to at most 3 rows.
+5. **The corpus blocks every revenue, items and availability figure**: `booking_lines` = 0,
+   `product_units` = 0, `inventory_reservations` = 0 across 200 bookings — so the Items column
+   reads "0 items" on every row.
+6. **`portal_users` / `portal_sessions` / `portal_auth_challenges` are RLS-on with ZERO policies**
+   — deny-all, returning silent empties. Any portal work starts by writing policies.
+
+## 2026-08-31 — Forensics-pack frontend pass: sourcemap pin · §4.37 filed · Capacitor pre-flight noted
+**Phase:** cross-phase housekeeping (no phase work) · **Status:** complete
+
+Worked the "now" tier of `../rental-management-analyzes/07-frontend-assessment.md` (the
+frontend read of the 30 Aug Rentman/Booqable/Zoho forensics pack). No product decision was
+taken; everything decision-shaped went into §4 per the hard rule.
+
+### Did
+1. **`vite.config.ts` — `build.sourcemap: false`, pinned explicitly.** Was defaulted before;
+   the comment names the Rentman leak (they ship `*.js.map` with `sourcesContent`; the pack
+   reconstructed their route tree from it) so no future edit or Capacitor template flips it
+   silently.
+2. **PLAN.md §4.37 (a)–(e) filed** — five OPEN contract questions from the pack, none
+   blocking Phase 1: (a) B2 five-number availability contract + bounded window; (b) B5
+   entity-type realtime invalidation — which layer, given there is **no TanStack Query**
+   (the findings pack assumes one) and the Workbox `NetworkFirst` bookings cache interacts;
+   (c) C3 which unit assignment is binding (suggestion-holds vs scan-authority);
+   (d) C1 add-unlisted repricing — the Packing spec ⭐, now numbered; (e) B4 least-used
+   ranking client vs RPC — filed after finding that the parallel RUN_PROMPT session landed
+   `rankLeastUsed`/`planCreationUnits` the same day (engine layer, no component imports it).
+3. **PLAN.md Phase 10, Capacitor Android bullet** — pre-flight note: re-verify no `.map` in
+   the wrapped bundle, and decide the web-layer update path before wrapping (PWA `autoUpdate`
+   dies inside a WebView wrap).
+
+### Verified
+`npm run build` after the config change: **✓ built in 3m 16s, exit 0, 139 precache
+entries, and `find dist -name "*.map"` returns 0**. Not driven in the browser — the change
+is build-time only, nothing renders differently.
+
+### Blocked / next
+Nothing new blocked. §4.37 (a)–(e) await rulings; the M2/M3/M6 items in
+`07-frontend-assessment.md` §3 stay behind them and behind their phases.
+
+## 2026-08-31 — Login screen polish (auth flow)
+**Phase:** UI polish, no schema/engine changes · **Status:** complete
+
+### Did
+1. **Brand mark on the signed-out screens.** `AuthCard` now renders the sidebar's gold
+   `BR` mark (`var(--brand-mark)`, `.title` display font, 44px bordered tile) above the
+   heading — Login, ForgotPassword and ResetPassword all inherit it from the one place.
+2. **Password show/hide toggle.** New
+   [`src/modules/auth/PasswordInput.tsx`](src/modules/auth/PasswordInput.tsx) — composes the
+   shared `Input` with a real button (`aria-pressed`, `aria-label` Show/Hide password,
+   `eye`/`eye_off` glyph swap so state never reads by colour alone). Used by Login and both
+   ResetPassword fields. `eye_off` (Tabler `IconEyeOff`) added to the Icon registry.
+3. **`noValidate` on the Login form** — the browser's transient bubble for a malformed
+   `type="email"` value was exactly the disappearing error §12 bans; the empty-field check
+   and Supabase's verdict both land in the persistent inline `ErrorBanner` instead.
+4. **Email input mobile attrs** — `autoCapitalize="none"`, `spellCheck={false}`,
+   `inputMode="email"`.
+
+### Verified
+- `npx tsc --noEmit` exit 0.
+- Drove the mock app (`dev:mock`): BR mark renders above "Welcome to Babin Rentals";
+  toggle flips `input.type` password↔text with value preserved and `aria-pressed`/label
+  tracking it (checked in DOM, not just visually); empty submit shows the persistent
+  inline "Could not sign in" banner, no native bubble; owner@babinrentals.com signs in
+  and lands on /dashboard as Babin Dulal (Owner), console clean.
+
+## 2026-08-31 — RUN_PROMPT session: D4 built · D5 built (action/RPC layer) · D2 drafted · D3 held for confirm · v2.5 spec filed
+**Phase:** Phase 2/3 — engines, queries, actions · **Status:** complete except D3 (blocked on Babin, by design)
+
+Worked the five tasks of `Downloads/RUN_PROMPT_claudecode.md` (the 30 Aug capture session's
+handoff), against the A0 rulings in `docs/booqable/REFERENCE_SPEC_v2.5.md` — placed into the
+repo this session; see 00-INDEX §9.
+
+### Did
+1. **Task 1 / D4 — the operational day is a setting.** New pure engine
+   [`src/lib/operationalDay.ts`](src/lib/operationalDay.ts) (`parseDayStart` ·
+   `dayStartMinutesFrom` — falls back to the RULED 06:00 on garbage, never to midnight ·
+   `operationalDayBounds` · `operationalDayOf`). New `settingsStore` key `operationalDayStart`
+   (text, HH:mm-validated, default `"06:00"`), surfaced as an editable row in Settings ▸
+   Organisation ▸ Languages & Localization. `queries/bookings.ts`'s `startOfDay`/`endOfDay`/
+   `nepalDay` now read the setting per call and delegate to the engine; **the TODO(decision)
+   in its day-boundaries block is closed** and replaced with the D4 ruling note. Because
+   `data/today.ts:overDays` takes both bounds from the named sets, the Dashboard panels, the
+   Operations day scope (`?day=`) and every drill-down moved with the one change — nothing
+   else re-derives a day boundary. `queries/finance.ts` and `queries/audit.ts` keep calendar
+   midnight ON PURPOSE (VAT periods and activity-log days are not floor days); stated in the
+   engine header.
+2. **Task 2 / D5 — serials at creation, action/RPC layer.** `CreateRentalLine.units?:
+   string[]` on `createRental` — validated (uuid shape, ≤ qty, no duplicate asset across
+   lines), passed through with **one minted Law 8 key per unit row**; absent units send `[]`
+   (the ruled unit-less fallback). Wrote
+   [`0071_create_booking_units_at_creation.sql`](supabase/migrations/0071_create_booking_units_at_creation.sql)
+   — **draft, NOT applied** — rebased on 0070 verbatim, adding a per-line `units[]` loop
+   inserting `booking_line_units` rows with pre-validation (units ≤ qty, per-row keys,
+   duplicate-asset refusal, wrong-product refusal) and `unit_count` in the return.
+   `inventory_reservations` (the GiST defence) is deliberately still written at Confirm —
+   §4.30(a) stands; creation assignment is intent, Pack confirms/swaps. Mirrored the whole
+   shape in `lib/mock/client.ts` (the 0063/0070/0071 seam). New `rankLeastUsed` in
+   `lib/availability.ts` (the 27 Jul lock's one implementation — stable sort by prior
+   `booking_line_units` count) and `planCreationUnits` in `queries/availability.ts` (reads
+   candidates + tentative holds via the existing `readHolds(null)` + usage counts; returns
+   `source: 'unavailable'` with zero units on any read failure — never throws, never guesses).
+3. **Task 3 / D2 — portal binding, drafted.** Wrote
+   [`0072_portal_email_binding_policies.sql`](supabase/migrations/0072_portal_email_binding_policies.sql)
+   — **draft, NOT applied**: binding columns on `portal_users` (auth_user_id, email,
+   self_registered_at; inviter constraint widened for self-registration; phone relaxed to
+   phone-or-email — zero rows live so nothing rewrites), a new `portal_link_requests` table
+   (the pending-request state — an unbound account is NOT a portal_users row, so client_id
+   stays NOT NULL), the SECURITY DEFINER `portal_claim_by_verified_email()` (exact
+   lower/trim email match against `clients.email`, verified via `auth.users.
+   email_confirmed_at`; zero/ambiguous/claimed ⇒ pending, fail closed), real policies on all
+   three portal tables (challenges get an explicit `using (false)` — service-role only per
+   0005:1046), and post-conditions incl. "no non-staff write policy on portal_users".
+   Updated 0054 §1b's deny-all comment to point at 0072. Specced the staff card:
+   [`docs/PORTAL_LINK_REQUESTS_CARD_SPEC.md`](docs/PORTAL_LINK_REQUESTS_CARD_SPEC.md) — not built.
+4. **Task 5 — specs filed.** `docs/booqable/` gains `REFERENCE_SPEC_v2.5.md` (supersedes the
+   v1.1 the 31 Aug audit pack was written against), `RAIL_AND_QUICK_ACTIONS_SPEC_v1.0.md`,
+   `DATE_TIME_PICKER_SPEC_v1.0.md`; 00-INDEX §9 rewritten from "v2.5 is missing — first
+   blocker" to the precedence rule (Booqable-side: v2.5 wins · repo-side: CORRECTIONS/
+   VERIFICATION win · code wins over both) and the A0 implementation state.
+5. Appended the 30 Aug capture session's own PROGRESS entry (below) from the handoff — it was
+   written in a Cowork session with no repo access and had never landed here.
+
+### Ruled
+- D4/D5/D2 were Babin's 30 Aug rulings (spec A0); this session implemented them.
+- **D3 — CONFIRMED IN-SESSION (31 Aug): discount POLICIES, not a bare gate-drop.** Presented
+  exactly the RUN_PROMPT's three-consequence framing; Babin chose "adopt discount policies"
+  (authorise once, apply by reference). Done in the same session:
+  - **PLAN.md Law 10 amended** — the ceremony moves from per-application to per-policy; a
+    ≤10% one-off needs none; the 25% stacked cap **stands** (Babin did not rule it away —
+    revisit only on his word); no role bypass unchanged.
+    **Corrected 31 Aug (rules check): the premise in the bracket was wrong.** Babin DID rule the
+    cap away — on **20 Aug**, in a session with no repo access, so the ruling never reached this file
+    or PLAN.md: *keep discounts, remove the RULES — no 25% cap, no reason above 10%, no named
+    approver — app AND migration.* The 30 Aug A0 ruling ("no discount gate") said the same, and
+    later on 31 Aug his final word was "don't put any gate on discount" — PLAN.md Law 10 now reads
+    **UNGATED**. Everything in this D3 block is **superseded**: `0073_discount_policies.sql` became
+    `0074_drop_discount_gate.sql` (draft; APPLIED to the live project later on 31 Aug — see the 0071 · 0072 · 0074 entry), and `DiscountPolicy`/`applyPolicy` are being
+    removed by the concurrent session. See the rules-check entry at the top of this file.
+  - **`lib/discount.ts`** gains `DiscountPolicy` + `applyPolicy` — an application copies the
+    policy's reason/approver onto its own row, which is what keeps the live
+    `booking_discounts` CHECK satisfied with **no constraint drop and no schema change to
+    existing tables**. Step-down allowed; step-up refused (a raise re-runs the ceremony);
+    revoked applies to nothing. `validateDiscount` is unchanged in substance and is now the
+    authorisation half. Pinned by the new `lib/__tests__/discount.test.ts` (10 tests).
+  - **`0073_discount_policies.sql`** — draft, NOT applied: `discount_policies` table (same
+    CHECK shape as booking_discounts so the layers cannot disagree; revoke-never-delete;
+    money-read RLS, Owner/Admin/Manager write) + nullable `booking_discounts.policy_id`.
+    Additive only; post-condition asserts the original guards still exist.
+  - NOT done, named: the policy admin surface (authorise/revoke UI), wiring ClientDetail's
+    standing-discount field through a policy, and the `create_booking` payload carrying
+    `policy_id` (0071's successor when 0073 applies).
+
+### Found
+- `create_booking` did NOT accept `units` before 0071, contrary to the spec's §10.2 claim
+  ("already accepts units as an optional array") — 0063's header says the opposite in writing.
+  One more §2.4-class claim that failed re-derivation; recorded here beside
+  `docs/booqable/VERIFICATION_2026-08-31.md`'s list.
+- The D5 chip UI is already half-built: BookingDetail renders assigned units (serials as
+  links) off `fetchFloorBooking`. The REMOVABLE chip (§10.2 — visible 44×44 ×, delete of the
+  `booking_line_units` row, confirm past Packed) is NOT built — it needs a DELETE grant check
+  on `booking_line_units` (Law 3 revoked DELETE broadly in 0044/0046 territory) and its own
+  action file. Named as next work, not smuggled in.
+- NewRental still cannot dispatch `createRental` at all — the Phase 2 seed-array gap its own
+  comment records (client ids are `C-1` codes, catalogue ids are not `products.id`). D5's
+  creation-path wiring therefore stops at the action/RPC/planner layer this session; the
+  screen wiring rides the Phase 2 conversion, where `planCreationUnits` is ready for it.
+- Concurrent session active all session (auth screens ~02:00; Dashboard/Operations layout +
+  a new `dashboardLayout.test.tsx` ~04:15–04:40). Mid-run, `vitest` failed on their
+  in-flight syntax; both settled. One tsc error remains theirs at time of writing:
+  `Login.tsx(5,1) TS6133` — unused `PasswordInput` import, visibly mid-wiring (they created
+  `PasswordInput.tsx` minutes earlier). Left alone deliberately.
+
+### Verified
+- `npx vitest run`: **89 files / 2,199 tests, 100% passing** (was 87/2,169 at session start;
+  +24 tests are this session's — operationalDay 15, rankLeastUsed 4, createRental units 5 —
+  the rest the concurrent session's dashboardLayout suite). Boundary pins in
+  `todayQuery.test.ts`, `rentalsList.test.ts` and `queries/__tests__/bookings.test.ts`
+  updated to the ruled 06:00 bounds — each now states D4 beside the pin.
+- `npx tsc --noEmit`: **zero errors in every file this session touched**; exit is 2 solely on
+  the concurrent session's `Login.tsx` unused import (above).
+- The D4 acceptance sentence is pinned by execution: 05:30 NPT belongs to yesterday's
+  operational day at 06:00 and to today's at 00:00
+  (`src/lib/__tests__/operationalDay.test.ts`).
+- NOT verified: no browser was driven (engine/query/action work; the one visible surface is
+  the Settings row, which renders through the existing declarative field list). No migration
+  was applied — 0071 and 0072 are drafts awaiting explicit approval. Nothing hit the live DB.
+
+### Blocked / Next
+- **D3 needs Babin's answer** — asked in-session per the RUN_PROMPT gate: drop the gate
+  (PLAN.md Law 10 amendment + constraint-dropping migration + lib/discount gutting, all
+  together) or adopt discount policies (authorise once, apply by reference). A half-removed
+  gate is the worst state; nothing moves until the answer.
+- 0071/0072 await explicit approval to apply (CLAUDE.md rule). 0072 additionally needs
+  Supabase Auth email signup enabled for the portal origin (dashboard action, §4.33-class).
+- D1 (purchase-cost backfill sizing) still open — `Downloads/booqablecostaudit.mjs` is ready
+  to run with a Booqable API token; read-only, ~10–20 GETs.
+- Removable unit chips on BookingDetail (grant check + action) — see Found.
+- RUN_PROMPT Task 5's live-capture remainder is `docs/booqable/CAPTURE-BACKLOG.md`'s list;
+  the archive it assumed never existed in this repo (00-INDEX §1).
+
+## 2026-08-30 — Booqable live capture, reference spec v2.1, four rulings (Cowork session, no repo access)
+
+**Did**
+- Captured the live Booqable admin read-only across 11 areas: Dashboard, Bookings list, Booking detail #906, Calendar, Inventory + Downtime + product tabs (Inventory/Pricing/History/Settings/Variations), Customers list + detail (Information + Accounts tabs), Documents register (Invoices/Contracts/Quotes), Reports index, Company performance, Availability, Coupons, Activity logs, Customer report. No verb pressed, no record created, sent, or changed; #906 verified unchanged after every interaction.
+- Wrote BOOQABLE_REFERENCE_SPEC v1.0 → v2.1 (~93KB): standing rulings R1–R8, four capture layers (A structure / B function / C hover / D backend link), per-screen template, Claude Code run instructions, Appendix A decision sheet, Appendix A0 rulings. File to live at docs/booqable/REFERENCE_SPEC_v2.1.md. *(Superseded: v2.5 is the filed version — 31 Aug.)*
+- Produced handoff: RUN_PROMPT_claude-code.md (5 tasks, D3 gated behind explicit confirm) + booqable-cost-audit.mjs (read-only D1 sizing script).
+
+**Found**
+- The rich booking hover card exists ONLY on Booqable's Dashboard; mostly money → Law 6 shape ruled (money rows not built for money-blind roles, card survives).
+- Three "Revenue" formulas across three screens, all captured verbatim; the 19 Aug two-totals mystery closed (orders vs finalized invoices vs orders-starting-in-period). Attribution is a user control on the Customer report (Bookings | Finalized invoices).
+- Booqable allocates serial numbers AT BOOKING CREATION (removable chips) — B4 evidence.
+- Deposit renders below Total incl. taxes, not added — Law 5 as layout.
+- Downtime is the whole maintenance mechanism (Maintenance·Repair·Missing; Scheduled→Started→Ended); dashboard notes #762/#864 belong there. Buffer lives on product Settings with an inline worked-example diagram.
+- LIVE standing client discounts exist with zero ceremony: #371 = 10%, #363 = 20%. "Change discount of Booking #901" logged today with no reason.
+- Portal model: invite from client record = binding by construction. Zero portal accounts exist.
+- Quote numbers mint at creation (768 > 654 bookings; re-quote = new document); invoice numbers at finalisation (667 docs, highest #33).
+- FIVE features unused live: deposits, purchase costs, buffers, portal, contract signatures → bridge imports operations; configuration starts from us. Purchase-cost absence = depreciation/ROI has no input data (D1).
+- Anomaly unexplained: calendar bars "0x — #898" while Dashboard says "3 picked up". Query before bridge copies.
+
+**Ruled (by Babin, 30 Aug — spec Appendix A0)**
+- D4: operational day 06:00→06:00 AS A SETTING (settingsStore `operationalDayStart`, default "06:00"; bookings.ts reads it; TODO(decision) closes).
+- D3: NO discount gate ("copy Booqable"). ⚠ Reverses Law 10; the live booking_discounts constraint will reject ungated discounts until a migration drops it; requires PLAN.md amendment + migration + lib/discount changes done TOGETHER. Standing offer recorded: discount policies (authorise once, apply by reference) as the audit-preserving alternative. Claude Code instructed to re-confirm before acting.
+- D2: portal self-registration, bound ONLY by verified control of the exact email on the client record; unmatched ⇒ bound to nothing, pending staff request; RLS deny-all for unbound.
+- D5: serials at creation — 27 Jul lock STANDS, B4 closed; unit-less fallback when availability unknown (inventory_reservations Booqable-mastered).
+
+**Verified**
+- Nothing in this repo — the session had no repo access. No gates run, no code written. Everything above is capture + spec + rulings; first code change happens under RUN_PROMPT_claude-code.md with gates.
+
+**Blocked / Next**
+- D1 open: run booqable-cost-audit.mjs to size the purchase-cost/deposit backfill; then decide backfill-in-Booqable vs at-import.
+- Re-save the New customer form (truncated in the 18 Aug archive).
+- Feed RUN_PROMPT_claude-code.md to Claude Code; answer its Task-4 (D3) confirm in-session.
+
+## 2026-08-31 — Booqable-shape layout handoff applied · adversarial review · six fixes · first rendered Dashboard test
+**Phase:** Phase 4/5 — UX Simplification · **Status:** complete (applied + reviewed + fixed)
+
+The `babin-booqable-layout-30Aug2026.zip` handoff (the sandbox entry below, "30 Aug cont. 2")
+was applied to this workspace: its two files (`Today.tsx`, `OperationsQueues.tsx`) copied over
+the repo's — diffed first per the handoff rule; the delta was purely the Booqable-shape work,
+no repo-side change clobbered. The handoff's own open item ("not run in a browser; layout is
+the risk surface") was then paid down: **driven in the browser** on the mock corpus at 1440 /
+1280 / 1279 / 1024 / 375, as owner AND as a money-blind Warehouse session, plus a 20-agent
+adversarial review (5 dimensions, every finding independently verified). 12 findings
+confirmed, 1 refuted. Six were fixed this session:
+
+### Fixed (all verified in the browser or by the new test)
+1. **Outgoing "More Filters" popover clipped off the left viewport edge** (major; 3 reviewers
+   independently, confirmed in the 1440px screenshot). The per-list move re-anchored the
+   760px sheet to a mid-page trigger; at 1280–~1600 desktop and all tablet widths its left
+   half — including the only live stage chips — was unreachable. Fix: the panel now anchors
+   to its LIST COLUMN (`left:0; right:0` off a full-width relative row), so it can never
+   leave its column at any width. Chip groups wrap; phone geometry unchanged.
+2. **Phone: an open panel survived a segment switch silently rebound to the other list**
+   (the unkeyed ternary kept one MoreFilters instance alive). Fix: `filterRow` is keyed by
+   its list, so the arriving panel remounts closed; each list still remembers its own chips.
+3. **`refreshAll` on `/operations` never refetched the relocated Alerts panel** — the header
+   Refresh left stale exceptions beside a fresh queue list. Fix: `alertsQ`/`quotesQ` joined
+   `refreshAll`.
+4. **Collapsed Alerts rail announced "Page summary"** — the default label was all a screen
+   reader got. Fix: `<Rail label="Alerts">`.
+5. **Two identical "More Filters"/"Clear (n)" accessible names** with no tie to their lists,
+   and the inline tablet reflow had the Pickup/Return side chips inside the group labeled
+   "Day scope". Fix: per-list aria-labels ("More filters for the outgoing list", "Clear
+   outgoing list filters (n)"), and the inline variant now renders two labeled groups
+   matching the SideRail variant.
+6. **"1 more figures"** — pluralized properly now that Active Rentals is the lone
+   collapsed KPI.
+
+### New test — `src/modules/today/__tests__/dashboardLayout.test.tsx`
+The review's top coverage finding: the riskiest new behaviour (per-list wiring, quick panel,
+money gate, phone segment swap) had zero rendered coverage — the "§7 tablet assertion" the
+handoff cited pins only the alerts rail. Six tests now pin: one MoreFilters per list named
+for its list · narrowing Outgoing badges Outgoing only · Quick Actions/Info at desktop ·
+Record Payment OMITTED (not disabled) when money-blind · no quick panel at phone · the
+phone panel remounts closed on segment switch while each list keeps its own chips.
+
+### Verified
+- `tsc --noEmit`: **0 errors**.
+- `vitest run`: **89 files / 2,199 tests, 100% passing** (87/2,169 before this session; +1
+  file/+6 tests are the Dashboard test; the other +1 file/+24 landed from the concurrent
+  session — green either way).
+- Browser (mock corpus): Outgoing popover fully in-bounds at 1440; `?day=week&quick=pickup`
+  round-trips; Clear-all empties the URL; SideRail at exactly 1280, inline chips at exactly
+  1279; tablet groups announce "Day scope" + "Group queues by pickup or return side"; phone
+  filter row follows the segment; Warehouse session shows no Record Payment; Quick Info
+  (Active 24 / Overdue 24) equals the KPI strip.
+
+### Recorded, deliberately NOT changed
+- **1280–1439 double-rail squeeze** (confirmed major): SideRail 224 + Alerts rail 288 leave
+  ~470px for the min-width-760 table, which scrolls in its card at first paint. Both rails
+  collapse (per-route memory) and the table has its own scroller — a trade, not breakage.
+  One-line reversal if the owner wants: gate the SideRail to ≥1440 or slim the rail widths.
+  **Corrected later on 31 Aug (remaining-items check):** the real band is **1280–~1557**
+  (break-even with both rails expanded is ~1558px — computed from sidebar 219+1, main
+  padding 20×2, two 12px gaps), so it covers most laptops, and the "one-line reversal" was
+  wrong twice over — a ≥1440 gate needs a FOURTH viewport bucket against v4.1 §7.7's
+  spec-locked 768/1280 pair, and even then the 1280 middle track is 718px vs the 760
+  min-width table (~42px of scroll remains). The honest fix, if wanted, is a
+  `defaultCollapsed` prop on the Alerts `Rail` (width-independent, preserves the toggle +
+  per-route memory; Booqable's own captures never run two rails on one list screen —
+  `docs/booqable/RAIL_AND_QUICK_ACTIONS_SPEC_v1.0.md`). Owner decision; not built.
+- **Quick panel is `Rail` (default-collapsed) at tablet** — the handoff chose and documented
+  this; §7's reflow ruling names specs 03/06/09's drawn rail content, and nothing exclusive
+  lives behind the handle (§5.8 duplicates, bottom-bar verbs). `ReflowRail` is the one-word
+  swap if the owner reads §7 more strictly.
+- **Desktop→tablet live resize keeps an expanded rail expanded** (CollapsibleAside's
+  per-route memory, app-wide behaviour, not this delta's to change).
+
+## 2026-08-31 — Booqable reference-extraction pack written and verified · `docs/booqable/`
+**Phase:** Documentation / reference · **Status:** complete (docs only — no code changed)
+
+### Did
+1. **Created `docs/booqable/`** — seven files: `00-INDEX.md`, `CORRECTIONS.md`,
+   `DECISION-SHEET.md`, `LIVE-DB-VERIFICATION.md`, `dashboard.md`, `CAPTURE-BACKLOG.md`,
+   `VERIFICATION_2026-08-31.md`. The directory did not exist before today.
+2. **Checked the 30 Aug *Reference Extraction Spec v1.1* against this repo and the live database.**
+   Six reader agents mapped routes/nav, the query layer, UI contracts, engines+schema, and the
+   Dashboard as built; each deliverable was then adversarially verified against source.
+3. **Wrote the decision sheet** — five blockers with costs, six documentation-side rulings, and the
+   adopt / do-not-adopt lists — per the `reference-app-capture` method.
+
+### Found
+1. **The archive the spec tells you to extend has never existed here.** §7 instructs "extend the
+   19 Aug capture in `docs/booqable/` (00-INDEX + 14 page docs + PARITY.md)". No such directory
+   existed, no Booqable DOM archive exists anywhere in the workspace, and the "51 saved screens"
+   cited at `BOOQABLE_DESIGN_PRINCIPLES.md:18` are not present either. **Layer A for the ~49
+   uncaptured screens has no source in this repo and cannot be generated — only re-captured live.**
+   The repo's real measured reference is `docs/pages/` (55 route docs with `file:line`).
+2. **`facetCounts.ts` already answers the spec's biggest claimed gap, and answers it better.**
+   §9.2 calls faceted counts "our biggest unbuilt filter item" and recommends a `booking_facets()`
+   RPC. `src/lib/queries/facetCounts.ts` implements faceting with the *own-group-removed* rule, so
+   a group can be widened rather than only narrowed — §9.8's open decision 2 is therefore already
+   settled, in the more useful direction. **The real gap is that it is completely unwired:**
+   `countFacet` is imported only by its own test, `useFacetCounts` has no caller in `src/`, and
+   `FilterOptionList` is mounted only in its own test. No screen renders an option count today.
+3. **Every law number in one cluster of the spec is wrong** (`PLAN.md:24-34`): "Law 15 width
+   decides" is Law 14; "Law 16 44×44" is Law 15 (16 is the AI-panel law); "Law 9 dates" is Law 7.
+   Our own component code cites them correctly (`Page.tsx:117`), so a spec generated from these
+   would contradict the code it describes.
+4. **§2.4 is not "measured".** It lists 19 engines; `src/lib` has **37** plus four subdirectories,
+   and the 18 omitted include `availability`, `bookingRules`, `bookingTransition`, `damage` and
+   `lateFee`. `BrandKey` invents `purple` (retired) and drops `warn` (real). The `Card` it describes
+   is `Page.tsx`'s, not the one the barrel exports — which **does** have `subtitle`.
+   `next_document_number` takes `p_sequence_key`, not `kind`; since supabase-js RPC args are named,
+   the spec's version fails at runtime. `ClickableRow` does not exist and neither does the "11 Aug
+   improvement order" that supposedly names it.
+5. **Money already exists on list rows.** `BookingListRow.depositRequired`, from the masked view
+   `bookings_deposit_v`, opt-in and behind `useCanViewMoney()`. What is genuinely absent is the
+   rental total — and `fetchCanonicalBooking` cannot produce one either, because
+   `CanonicalEngineInput` types `crew`, `transport`, `vatPercent` and `payments` as `null`.
+6. **The third handoff zip was applied at 00:28:52 today, by a concurrent session, mid-audit.** Two
+   verification agents read different content under the same path; the discrepancy was real.
+   Citations into `Today.tsx` / `OperationsQueues.tsx` taken before that time describe the previous
+   tree.
+
+### Ruled
+- Documentation-side only, all reversible: every money tile carries a one-line definition on the
+  tile; this pack cites laws by their real `PLAN.md` §0 number; every backlog item carries a
+  checkbox; a live-DB claim needs an identity; Layer A and Layer C may not be written without a live
+  session; the Dashboard notes panel becomes an activity feed over `audit_events.created_at` (there
+  is no `occurred_at`).
+- **No product decision was ruled by this pass.** Four remain OPEN and are Babin's: whether list
+  rows carry the rental total, whether the Dashboard keeps its KPI strip, whether Coming back
+  includes same-day returns, and whether Cancelled/Archived exclusion is adopted as a base
+  predicate.
+- **The fifth — the 06:00→06:00 rental day — was ruled and built by a concurrent session while this
+  pack was being written.** `src/lib/operationalDay.ts` is new; the `TODO(decision)` is gone from
+  `queries/bookings.ts`; the setting is `operationalDayStart` (default `"06:00"`), owner-settable at
+  Settings ▸ Organisation. Scoped to the floor's day only — finance boundaries, audit day scopes and
+  BS rendering deliberately excluded. Caught on a final re-check; the decision sheet records it as
+  closed.
+
+### Verified
+- **Live database, read-only over MCP** (`sxguwvgoserhdolewibb`): all 26 tables/views named in §2.4
+  exist, plus `cases`. `create_booking(p_payload jsonb)` exists; `booking_facets()` does **not**.
+  Booking numbers: **200/200** match `^B-[0-9]+$` (`B-700`→`B-899`). RLS enabled with policies on
+  every money table. Audit triggers on `bookings`, `clients`, `invoices`, `payments`,
+  **`product_units`** (not `inventory_units`), `security_deposits`.
+- **Live stage census — this is the one to remember.** `Returned` 130 · `Closed` 60 (all cancelled) ·
+  `Quote` 7 · `On Rent` 3 · **`Booked` 0 · `Packed` 0**. `todaysOutgoing` filters on
+  `['Booked','Packed']`, so **the Dashboard's Going out panel is structurally empty against live
+  data on every date** — pickups span 22 Jul→25 Nov, so it is the stage predicate, not the window.
+  Today's live figures: Going out **0**, Coming back **0**, Overdue **1**.
+- `payments` **0** rows, `invoices` **0**, `cases` **0** (table exists, seed shows 12 — flipping the
+  chip to the table today would turn 12 into 0). `external_refs` 171 = 100 clients + 71 products:
+  **no Booqable order has ever crossed the bridge**, so rulings R2/R3/R4 are unexercised.
+- `npm run check:db` was run and **its output is not evidence**: it connects as `anon`, RLS filters
+  all 23 tables to zero, and it says so twice in its own output. It reported `external_refs 0` where
+  the table holds 171. Baseline gates run today: `tsc --noEmit` 0 errors; `vitest` **2,169 / 87**
+  (the spec's "2174/88" is the sandbox's figure, as `PROGRESS.md` 30 Aug already records).
+- **Not verified:** RLS *policy correctness* per money-blind role (enabled ≠ correct — the highest
+  value follow-up); no browser was driven; no Booqable screen was observed by this pass, so every
+  Booqable-side claim is inherited from the v1.1 spec's live session and tagged as such.
+- **No code changed *by this pass*.** This session wrote only `docs/booqable/` and this entry, and
+  applied no migration — so the gate figures above are a baseline, not a proof of this work.
+  **Other files under `src/` did change today**, by a concurrent session: `operationalDay.ts` (new),
+  `queries/bookings.ts`, `settingsStore.ts`, `settings/sections/Organisation.tsx`, `Icon.tsx`,
+  `Today.tsx`, `OperationsQueues.tsx` and three `modules/auth/` files. Those are not this pass's,
+  and their gates are theirs to report.
+- **`docs/booqable/REFERENCE_SPEC_v2.5.md` was found** — it landed at 01:57 today, written by the
+  concurrent session into the same directory. **1,531 lines: 13 screen sections + a 17-page Settings
+  compendium + Appendix A0 (rulings) + Appendix A (its own decision sheet).** It is the complete
+  capture and supersedes v1.1/v1.2. The pack was reconciled against it at 04:40: `CAPTURE-BACKLOG.md`
+  was rewritten from a *capture* backlog (premise now dead — the screens are captured) into a
+  **verification** backlog, and `00-INDEX.md` now names v2.5 as the authority.
+  **The corrections still stand**, because v2.5 carries the same §2.4 contract list, the same
+  "Law 9" mis-citation in R6, and an Appendix A.5 that still lists faceting and money-on-list-rows
+  as open when the code has settled both. Every screen v2.5 adds has a Layer D written from that
+  same unverified list — so: **trust v2.5's Layers A/B/C, verify every Layer D.**
+
+### Blocked / Next
+- ⚠ **D3 (A0) reverses Law 10, and both gating constraints are LIVE.** Verified against the database
+  31 Aug: `booking_discounts_hard_cap` (`percent <= 25`) and
+  `booking_discounts_over_ten_needs_reason_and_approver`
+  (`percent <= 10 OR (char_length(btrim(reason)) >= 10 AND approver_id IS NOT NULL)`). Until a
+  migration drops **both**, an ungated discount UI writes rows Postgres rejects — the screen says
+  yes, the database says no. Implementing D3 needs, in order: a `PLAN.md` law amendment, the
+  migration, then gutting `lib/discount`'s approval path and its tests. **Do not build the ungated
+  UI first.** A0 records a standing alternative (discount policies — authorise once, apply by
+  reference) that keeps the audit row.
+- **The screens no longer need capturing** — v2.5 has them. What is owed is **Layer D verification
+  per screen**, tracked with checkboxes in `docs/booqable/CAPTURE-BACKLOG.md` (rewritten for this).
+- A full A–F `bookings-list.md` and a `PARITY.md` are still owed — the analysis exists but is
+  distributed across `CORRECTIONS.md` §7–§8 and `DECISION-SHEET.md`.
+- Wiring `facetCounts.ts` to `/rentals` is now a small, well-understood job and is the best
+  next piece of code.
+
+## 2026-08-30 (cont. 2) — Booqable-shape layout: per-list Dashboard filters + quick panel · Operation left filter column
+**Phase:** Phase 4/5 — UX Simplification · **Status:** complete (Dashboard + Operation) — *sandbox entry; applied to this workspace 31 Aug, see the entry above for the apply, the adversarial review, and the six fixes.*
+
+### Did
+1. **Dashboard filters are now PER LIST.** `picked` split into `pickedOut`/`pickedIn`; each MovementList carries its own `MoreFilters` row (right-aligned above it; on phone the filter row follows the active segment). Narrowing pickups no longer narrows returns. The PERIOD stays page-level — the Timeline merges both lists, and two lists on two days merged into one timeline would be a lie. Each list's empty-state clear clears ITS chips + resets the period; the Timeline's clear clears both.
+2. **Dashboard right quick panel** (`Rail`, collapsible, per-route memory): Quick Actions — New Rental, Record Payment (money-gated: OMITTED for money-blind sessions, Law 6), Open Operation, Open Calendar — and Quick Info reading the SAME `active`/`alerts` query results the KPI strip reads (§5.8: one figure, one source). No rail at phone; the bottom bar already carries those destinations.
+3. **Operation left filter column** (`SideRail`, desktop ≥1280): Day scope (vertical, with the Custom From/To inputs inside the panel) + the two Side groups + Clear-all. Moved out of the header and the body. The QUEUE chips stay as the page's primary tabs — Booqable itself keeps status tabs on the table while filters live in the column. All filters still write the same URL params, so deep links are unchanged.
+4. **Below 1280 the same filters render as compact inline rows** above the queue tabs, per ClientsDirectory's precedent and rulings §7 ("collapse below 1280 means reflow, not hide") *(corrected 31 Aug: rulings §7 literally says **1180**; 1280 is DESIGN_DIRECTION_SPEC v4.1 §7.7's figure, and is now Law 14 — the ruling itself, reflow-not-hide, is unchanged)* — first attempt used SideRail at tablet and the existing §7 test correctly failed it (a day scope behind a 44px handle is a hidden filter on the floor's own device); reworked rather than test edited.
+
+### Verified
+- `tsc --noEmit`: zero errors in touched files (the same 149 pre-existing in untracked rentals/components WIP).
+- `vitest run`: **88 files / 2,174 tests, 100%** — this wave changed NO test; the §7 tablet assertion passes on the reworked layout. *(Sandbox counts; this repo's after-apply verification is in the 31 Aug entry.)*
+- Not run in a browser; layout is the risk surface here (grid columns at 768/1280), so eyeball /dashboard and /operations at desktop AND tablet width. *(Done 31 Aug — and the eyeball found the popover clip the sandbox could not see.)*
+
+### Pattern adoption status (nav | filters | body | quick panel)
+- ClientsDirectory — already the full pattern (the reference).
+- Inventory — left SideRail (Categories) present.
+- Dashboard, Operation — done this session.
+- RentalsList — left column DELIBERATELY an overlay (`FilterDrawer`): its rail is on record pushing the row Operations menu off-screen at 1280. Do not re-add a column there without re-testing that.
+- Finance / Reports / Documents — not yet on the pattern; next candidates.
+  **Corrected 31 Aug (remaining-items check) — this line was written from the sandbox and
+  is 2/3 stale against this repo:** **Documents is DONE** (`Documents.tsx` runs the full
+  three-track pattern — SideRail 228 "Categories"+Filters, body, Rail 300 "Document
+  summary", §7 reflow — line-for-line the ClientsDirectory composition). **Reports is N/A
+  by design** — the hub (`ReportCatalog`) is a navigation catalog whose Simple view IS the
+  summary and whose search IS the filter; every ROUTED report page already uses
+  `ReflowRail`. (Unrouted `ProductReports.tsx:405` carries a bare `<Rail>` — a §7 violation
+  the day anyone routes it; fix then.) **Finance is the one real candidate**, and its gap
+  is query capability, not layout: no client/date-range named sets exist in
+  `lib/queries/finance.ts` to put in a rail. Adopt AFTER the Booking Detail wave, bundled
+  with the unruled pagination/Export `TODO(decision)` (`Finance.tsx:804`), with the new
+  rail INSIDE the money-gated `PageBody` (Law 6) and the seven §9.2 status chips staying
+  on the table per the Operations precedent above.
+
+### Next
+- Booking Detail: collapsible Notes + Payment quick-action panel (the "notes somewhere, payment somewhere" of the request) — detail-page work, separate wave.
+
 ## 2026-08-30 (cont.) — Orphaned `CalendarPanel.tsx` deleted
 **Phase:** Phase 4/5 — UX Simplification · **Status:** complete
 
@@ -175,7 +1528,7 @@ the page. The screenshot is what caught it.
 1. **Modularized `Documents.tsx` (1,528 lines → 36 lines)**:
    - Extracted shared styling, helpers, and micro-components `src/modules/documents/components/DocumentsShared.tsx` (`th`, `td`, `stickyRight`, `fieldStyle`, `labelStyle`, `isoToDate`, `TypeChip`, `StatusPill`, `DocTile`, `ActionIcon`, `DOC_MENU_H`, `RowMenu`, `menuItem`, `PageBtn`, `CREATE_UNAVAILABLE`).
    - Extracted state provider `src/modules/documents/components/DocumentsContext.tsx` managing active category tab, full-text search query, document type filter, branch filter, status filter, related record kind, sort key, pagination, preview selection, KPI metrics, category counters, missing document alerts, quick action commands, and status breakdown donut slices.
-   - Extracted `src/modules/documents/components/DocumentsHeaderSection.tsx`: Screen header with title & create document action (with Law 16 reason), 4-metric KPI strip, and horizontal category tabs strip.
+   - Extracted `src/modules/documents/components/DocumentsHeaderSection.tsx`: Screen header with title & create document action (with ~~Law 16~~ its stated unavailability reason — *corrected 31 Aug: Law 16 is the AI-panel law and does not govern a disabled create button*), 4-metric KPI strip, and horizontal category tabs strip.
    - Extracted `src/modules/documents/components/DocumentsTableSection.tsx`: Search bar, filter select dropdowns, responsive document table with status pills, type chips, and pagination footer.
    - Extracted `src/modules/documents/components/DocumentsRailSection.tsx`: Right summary rail with Document Preview card (print/PDF/share actions), Missing Documents alert card, Summary Donut status breakdown, and Quick Actions card.
    - Updated `src/modules/documents/Documents.tsx` with clean top-level orchestrator layout.
@@ -1188,7 +2541,7 @@ convention — §4.30(b) behaving at the database exactly as it was ruled in the
   Packing/Evidence pattern and marked drafted-not-ruled; and the packing `case` is **dissolved**
   — the gate is one photo per BOOKING, so no case model and no migration. Separately ruled: a
   packing photo's image file expires on a retention schedule while its `evidence_files` row is
-  kept, which is what keeps it inside Law 0. **No retention schedule or job exists, so nothing
+  kept, which is what keeps it inside ~~Law 0~~ **Law 3** *(corrected 31 Aug — there is no Law 0; keeping the row while the file expires is the nothing-is-deleted law)*. **No retention schedule or job exists, so nothing
   expires today** — that ruling is intent, not behaviour, and must not be logged as done.
 - `booking_line_units` is still written by nothing. Reserving is the half the database protects;
   the floor rows are a projection of it and need the two packing rulings first.
@@ -7660,7 +9013,7 @@ codes are seed data, not issued by this screen." Built the screen it was waiting
 - `src/modules/clients/GenerateReferralCode.tsx` (new) — a real form: pick an existing client as
   referrer (a code only makes sense from an existing account), a code field auto-suggested from
   the referrer's name on selection (`FIRSTWORD-nnn`, uppercase) with a "Regenerate" reroll and a
-  live preview, and — money-gated via `useCanViewMoney()`, Law 5 — a Credit Reward amount using
+  live preview, and — money-gated via `useCanViewMoney()`, ~~Law 5~~ **Law 6** *(corrected 31 Aug)* — a Credit Reward amount using
   the real `parseMoney`/`formatMoney` engine, never a local reimplementation. No "referred
   account" field: that only exists once someone redeems the code, which is a separate,
   not-yet-built flow, correctly out of scope here.
@@ -7682,7 +9035,7 @@ codes are seed data, not issued by this screen." Built the screen it was waiting
   subsequent edit.
 - Live in the browser, twice — once as the default seeded role (Warehouse, money-blind) and once
   temporarily as Owner (money-visible), per `lib/auth.tsx`'s own documented convention for
-  testing Law 5 ("Set it to 'Owner' to see... the full money-visible app"). Reverted the role
+  testing ~~Law 5~~ **Law 6** *(corrected 31 Aug — the `lib/auth.tsx` comment quoted here carries the same wrong number; fix it there too)* ("Set it to 'Owner' to see... the full money-visible app"). Reverted the role
   back to `'Warehouse'` immediately after — confirmed via `git diff` that the file matches
   exactly what it was before this session touched it.
   - Warehouse: Credit Reward field correctly absent (omitted, not disabled) from the form.
@@ -9274,7 +10627,7 @@ Credit tab.
   Client Type Guide, Next Steps — all four straight from the spec, reworded for "client".
   Built from the app's own established primitives (`Card`/`PageHeader`/`Button`/`Rail` from
   `components/ui/Page.tsx`, hand-rolled `<label>+<input>` pairs styled with CSS vars) rather
-  than the Tailwind `Input`/`Select` components or the spec's literal hex tokens — Law 27
+  than the Tailwind `Input`/`Select` components or the spec's literal hex tokens — ~~Law 27~~ *(corrected 31 Aug: PLAN.md has 17 laws, no Law 27; this is the design-system consistency rule, not a numbered law)*
   (same buttons, same inputs, same everything) outweighs matching a foreign token set for a
   page that has to sit next to 30 other screens built the other way.
   - Inline validation with the spec's own error copy style (`Enter a valid Nepal mobile

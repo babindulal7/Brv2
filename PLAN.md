@@ -24,11 +24,11 @@ Break any of these and the work gets reverted, however good it looks.
 | 7 | **Store AD in UTC.** BS is rendered, never stored. All logic on AD | Schema + localization |
 | 8 | **Every write carries a client UUID.** Duplicates rejected | Data layer + offline |
 | 9 | **Days mandatory on every priced line** — explicitly `1`, never by omission | Schema |
-| 10 | **Discount > 10%** needs reason ≥10 chars **and** a named approver; 25% hard cap; **no role bypass, including Owner** → DB constraint, not app check | Schema |
+| 10 | **Discounts are UNGATED.** No reason, no approver, no cap below 100%, no role tier — any staff role that can write a discount may write one. What remains is arithmetic validity only: negative refused (a price rise is not a discount — the R3-1 hole stays closed) and >100% refused (a negative price). *Ruled first on **20 Aug 2026** — keep discounts, remove the rules, app and migration — in a session with no repo access, so it never reached this file until the 31 Aug rules check. Amended twice on 31 Aug 2026: D3 (ruled 30 Aug, "copy Booqable") was first confirmed as the policies alternative, then overridden by Babin's final word — "don't put any gate on discount." The policies draft (0073) was deleted unapplied. The app half is done (`lib/discount.ts` · `money.ts:discountGate` · `rbac.ts:canApproveDiscount` · both Tools calculators); the DB half, `0074_drop_discount_gate.sql`, was **APPLIED to the live project 31 Aug 2026** with Babin's explicit in-session approval — `booking_discounts_hard_cap`, `booking_discounts_over_ten_needs_reason_and_approver`, `invoices_discount_cap` and `invoices_discount_over_ten_needs_reason_and_approver` are gone, replaced by `*_percent_sane` (0–100). `0075_drop_invoice_lines_discount_gate.sql` finished the job the same session — 0074 had not named `invoice_lines`, which carried its own copy of both halves, so for one session a >10% discount was accepted on the booking and refused at invoicing. **All three discount-writing tables now carry the identical rule** — `booking_discounts_percent_sane`, `invoices_discount_percent_sane`, `invoice_lines_discount_percent_sane`, each `0–100`. **Zero `over_ten_needs_reason` checks remain anywhere.** Still capped at ≤25 and deliberately untouched, because none is a per-discount ceremony: `coupons.discount_percent`, `membership_plans.*_discount_pct`, `user_approval_authorities.max_discount_pct` — the first two ceiling a product configured once, the third defines a role authority that `rbac.ts:canApproveDiscount` now ignores. The exclusive-source stacking matrix (Student/College/Named-client rates) is a separate 0002 ruling and survives.* | Schema |
 | 11 | **Never colour alone** — every status is icon + label + colour | Components |
 | 12 | **Errors inline and persistent.** Toasts carry successes only | Components |
 | 13 | **No platform branch in a layout component.** Branch on capability | Everywhere |
-| 14 | **Width decides** — 768 / 1180. Never orientation | Layout |
+| 14 | **Width decides** — 768 / ~~1180~~ **1280**. Never orientation. *Amended 31 Aug 2026 (§4.38a): desktop begins at 1280, tablet is 768–1279 — per `docs/DESIGN_DIRECTION_SPEC_v4.1.md` §7.7 and every rail built since 30 Aug (`SideRail` at exactly 1280, driven in the browser). `src/lib/device.ts` `BREAKPOINT` still says 1180 until the follow-up lands; README, SCREENS §07 and WIREFRAME_RULINGS §7 are annotated.* | Layout |
 | 15 | **44×44 touch targets** on every device, desktop included | Components |
 | 16 | **No AI panel renders** until backed by a validated computation | Screens |
 | 17 | **The word "customer" appears nowhere in the UI.** They are clients | Copy |
@@ -371,7 +371,7 @@ reading — it needs the actual desaturation check.
       no pointer-reachable trigger** — the header search button is lost to the layout, leaving
       only the keyboard shortcut, which a phone does not have.
 - [~] Responsive: 390 / 834 / 1180 / 1920
-      → `useViewport()` and the 768/1180 breakpoints are real and correct (Law 14). **Gap: ~59
+      → `useViewport()` and the 768/1180 breakpoints are real and correct (Law 14) *(31 Aug 2026: the desktop breakpoint is now 1280 — Law 14 amended, §4.38a; `device.ts` still carries 1180)*. **Gap: ~59
       screens never call it** — they are fluid rather than deliberately responsive — and **the
       shell header overlaps itself at 390**, which alone blocks this item.
 
@@ -563,6 +563,13 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 - [ ] **install flows** → nothing captures `beforeinstallprompt`; no install control exists.
 - [ ] **Capacitor Android** → no Capacitor dependency, no `capacitor.config.ts`, no android/.
       Buildable here in principle (scaffolding + Keystore adapter); *shipping* it is not.
+      **Pre-flight, from the 30 Aug forensics pack:** (1) re-verify the *wrapped* bundle
+      ships no `*.js.map` — `vite.config.ts` pins `sourcemap: false`, but a Capacitor
+      template must not override it (Rentman ships maps with `sourcesContent`; their whole
+      route tree was reconstructed from them). (2) Decide the web-layer update path before
+      wrapping: the PWA's `autoUpdate` ships floor fixes with no store review today, but a
+      wrapped WebView loads bundled assets, so that path dies inside the wrap — Rentman uses
+      signed live updates (Appflow) with a rollback guard for exactly this reason.
 - [⊘] **Capacitor iOS** → needs macOS + Xcode + CocoaPods, a paid Apple Developer account, and
       a device or Simulator. None available.
 - [ ] **Tauri** → no `@tauri-apps/cli`, no `src-tauri/`. Scaffolding is buildable here; the
@@ -585,6 +592,156 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 # 4. Decisions that block work
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
+
+## 4.39 ⬅ OPEN — how is a creation-time unit assignment released before Pack?
+
+**Raised 31 Aug 2026** building the removable serial chip `REFERENCE_SPEC_v2.5 §10.4`
+ruled for BookingDetail ("line removal behind a visible 44×44 control, confirmed past
+Packed"). The chip is built; the removal cannot be, because the ruled mechanism — delete
+the `booking_line_units` row — is what Law 3 forbids, at two layers **verified against the
+live database this day**: DELETE on `booking_line_units` is granted to no signed-in role
+(live grants: INSERT and UPDATE only), and 0044's `trg_booking_line_units_reject_delete`
+exists live and raises for every role including Owner and `service_role`.
+
+The schema's own release paths (0002:297 — "a unit is released by voiding its parent line
+or by Swap, both of which leave the row") do not cover this case:
+
+- **Void the parent line** kills the line and its qty — the operator wanted the serial
+  unassigned, not the item removed from the booking.
+- **Swap** has no RPC anywhere in the migrations (searched: no `swap_unit`/`release`/
+  `unassign` function exists), and §4.30(a) places the swap at **Pack** — a chip on
+  BookingDetail is upstream of it.
+- `booking_line_units` has **no voided_at / released_at column** — unlike `booking_lines`
+  and `booking_crew_lines`, a released assignment has no way to exist as a row.
+
+The tension is in the schema's own words: 0002:295-296 promises "every assignment stays
+reversible until the booking is Confirmed", and 0044's trigger rejects the only mechanism
+the spec's ruling names, unconditionally. Both cannot stand.
+
+**The options, none taken here:**
+(a) a `released_at`/`released_by` pair on `booking_line_units` (migration; append-only
+release, Law 3 clean; the availability engine and `unit_count` readers must then filter
+live rows);
+(b) rule that release = UPDATE `asset_id → null` (grants already permit UPDATE, but it
+redefines the column's null semantics — 0002:270 says null means "non-serialised line",
+and it silently loses who released and when — Law 10-adjacent);
+(c) amend Law 3's enforcement for this one table pre-Confirm (reverses a written backstop
+— D3-class, the worst option);
+(d) fold into §4.37(c) C3 and rule assignment-bindingness and release together — they are
+the same question asked at two moments.
+
+Until ruled, the chip's × is surfaced-as-unavailable with this reason (the established
+answer), like the PIN button on Login. Whichever option wins also needs the ruled
+confirm-past-Packed guard and the §4.20-style capability string mirroring the policy on
+the table the release writes.
+
+## 4.38 — the 31 Aug rules check: one ruling applied, one left OPEN
+
+**Raised 31 Aug 2026** by the rules check of `PROGRESS.md` (its top entry of that date): every
+`Law N` citation in the 19 governance files read against §0, and every recorded ruling read
+against the rulings Babin made in sessions that had no repo access. Six wrong law numbers were
+corrected in place; three rulings were recorded in the repo for the first time (20 Aug discount
+rules removed · 24 Aug build first, rules later · 29 Aug Foundation v3.0 fresh start).
+
+### ✅ (a) RULED — Law 14's desktop breakpoint is **1280**, not 1180
+
+§0 Law 14, `src/lib/device.ts` `BREAKPOINT`, `README.md`, `SCREENS.md` §07 and
+`WIREFRAME_RULINGS_2026-08-12.md` §7 all said 768 / **1180**. `docs/DESIGN_DIRECTION_SPEC_v4.1.md`
+§7.7 (the ruled final look, confirmed 29 Aug) says a spec-locked **768 / 1280** pair, and every rail
+built since 30 Aug follows it — `SideRail` appears at exactly 1280 and the inline reflow at exactly
+1279, driven in the browser. The 30 Aug PROGRESS entry quoted rulings §7 as "below 1280"; §7 says
+1180 — the 1280 is v4.1's. The repo carried two desktop breakpoints without anyone ruling.
+
+**Ruled 31 Aug 2026 (applied on "fix all"): 1280 wins** — it is the ruled design direction and the
+built screens. Tablet is 768–1279. Docs corrected in this pass; one code follow-up:
+
+- [ ] `src/lib/device.ts` — `BREAKPOINT` desktop 1180 → 1280. Then grep every `useViewport()`
+      consumer that branches on `'desktop'` and re-run the §7 reflow tests: a screen that reflowed
+      at 1180 may now show its rail at 1180–1279 with too little room (the 31 Aug double-rail
+      squeeze, one band lower). `SCREENS.md` §07's "desktop 1180+" is annotated, not rewritten.
+
+### ⬅ (b) OPEN — precedence of the documents ruled outside this repo
+
+Three of Babin's rulings live only in chat-session deliverables:
+
+| Date | Document | What it claims |
+|---|---|---|
+| 20 Aug | `BABIN_RENTALS_OS_MASTER.md` | "the single winning reference" over the spec pack; carries the discount-rule removal, local-first, corrected date engine, 12 Aug nav, milestones M0–M6 |
+| 24 Aug | Product Goal & North Star v2.0 | **BUILD FIRST, RULES LATER** — no new business rules until the working app is finished; direction-only, MASTER.md wins on implementation |
+| 29 Aug | `FOUNDATION_SPEC_v3.0_FRESH_START.md` + `UI_UX_SPEC_v1.0.md` | "single authority for the NEW app" — sub-rentals core, crew light, 10-item v1 nav, v4.1 look final, glass on chrome |
+
+None of the three is in this repo. `CLAUDE.md` and this file still name
+`00 Getting Started/Foundation Specification.md` as canonical, and `PROGRESS.md` keeps building
+this codebase. Until Babin places the files and rules the order, **§0 + `PROGRESS.md` govern this
+repo and the 29 Aug specs govern nothing here** — that is a description of the current state, not
+a ruling on which should win.
+
+The 24 Aug stance is recorded here as a **standing constraint on every §4 ruling**: a new business
+rule (a gate, a tier, a ceremony) is out of scope until the app runs real jobs. The 31 Aug
+"discount policies" work was the first thing it would have stopped.
+
+---
+
+## 4.37 ⬅ OPEN ×5 — contracts raised by the 30 Aug reference-app forensics pack
+
+**Raised 31 Aug 2026** from `../rental-management-analyzes/` (Rentman/Booqable/Zoho
+forensics; `06-babin-findings.md` and `07-frontend-assessment.md`). None of these blocks
+Phase 1. They are recorded now because each is a *contract* screens will consume — deciding
+them before screens multiply is what keeps them cheap. Evidence tags per the pack; the calls
+are the owner's.
+
+### (a) B2 — what shape does availability serve?
+
+Booqable serves five numbers per item/location (`stock · planned · needed · available ·
+plannable`), not one `[OBSERVED]`. "3 available" cannot distinguish *own 3, all free* from
+*own 8, 5 out* from *own 3 free but 2 wanted by an unconfirmed quote* — and the sub-rent
+decision needs the difference. `src/lib/availability.ts` stays the pure engine either way;
+this ruling is about the **served contract** (view or RPC) every screen renders instead of
+doing per-screen arithmetic. Rule the number set, and **bound the query window in the same
+contract** (Rentman's `TIMEFRAME_TOO_BIG`; `RENTAL_WINDOW_BOUNDS` from §4.30 is the natural
+constant to reuse).
+
+### (b) B5 — which layer receives entity-type realtime invalidation?
+
+Both references push *what entity type changed*, never the change itself `[OBSERVED]` —
+small payloads, no stale-push risk, client refetches. The findings pack maps this onto "your
+TanStack Query layer", **which does not exist**: data access is hand-rolled
+(`lib/bookingQuery.ts`, `lib/dataAccess.ts`, Dexie) and there is no `@tanstack/*` dependency.
+The ruling: extend the hand-rolled layer with an invalidation hook, or adopt TanStack Query
+first. Must also state how invalidation interacts with the Workbox `NetworkFirst` bookings
+cache (`vite.config.ts`) — a "refetch" served by the service-worker cache is not a refetch.
+Blocks the Supabase Realtime port, nothing earlier.
+
+### (c) C3 — which unit assignment is binding: booking-time reservation or packing scan?
+
+Both references defer unit choice to the floor because the planned unit is routinely not
+the packed unit `[OBSERVED]`; ours auto-reserves least-used at creation with a fallback
+(27 Jul lock). The pack's recommendation — booking-time assignment is a **suggestion that
+holds availability**, the packing scan is the **authority** — is close to what is built, but
+no document states which one wins, and every floor screen implicitly answers it. One
+sentence to rule; contradictory screens if left unruled.
+
+### (d) C1 — may a packer's floor verb reprice a confirmed booking?
+
+The Packing spec's open ⭐, promoted here so it has a number. Rentman's `add` and
+`alternative` are floor verbs with defined consequences, not booking edits `[OBSERVED]` —
+a substitution marks the line Replaced and records what went instead. Our `substitute` verb
+can follow that pattern without a pricing question; **`add_unlisted` cannot** — an added
+line reprices a confirmed booking or creates an unpriced one, and that is the ruling.
+Blocks half of C1 in M3; `substitute` is buildable without it.
+
+### (e) B4 — does the least-used ranking run on the client or behind an RPC?
+
+The 27 Jul lock's implementation landed 31 Aug (same day this entry was written, by a
+parallel session): `rankLeastUsed` in `lib/availability.ts` (pure) and `planCreationUnits`
+in `lib/queries/availability.ts`, with tests; the client computes the choice and passes
+`units[]` to the create RPC (draft `0071`). Booqable serves `stock_item_suggestions` as a
+**server endpoint** `[OBSERVED]`, and the pack's argument holds here: the ranking reads
+rental history across all bookings, must give the same answer to the web form, the Pack
+workspace, and any future shell, and is a tunable rule (the open ⭐: 30-day window vs
+lifetime). Nothing is misplaced today — no component imports it, so it sits correctly in
+the engine layer. The ruling: promote the ranking into an RPC (client sends product + window,
+server returns ranked units), or accept client-computed-and-passed as the durable shape.
 
 ## 4.36 ⬅ OPEN — should a failed audit write stop the business action? (`R3-5`)
 
@@ -2138,6 +2295,12 @@ Any staff member may still *raise* a waiver; the approver signs it. Both names a
 to the audit log. `WAIVER_NEEDS_APPROVER` in `lib/lateFee.ts` is the switch, and
 `validateWaiver` refuses without it rather than silently waiving.
 
+> **Note 31 Aug 2026.** Law 10 is now **UNGATED**, so the table above is asymmetric again, in the
+> other direction: a discount of any size needs neither reason nor approver; a late-fee waiver
+> still needs a named Manager or Owner. Whether the waiver rule follows the discount rule is a
+> fresh question — recorded here, **not ruled**, and the 24 Aug "build first, rules later" stance
+> (§4.38b) says it can wait.
+
 ---
 
 ## 4.24 ✅ RULED 12 Aug 2026 — one day's rate is the whole booking
@@ -2246,7 +2409,13 @@ width (`सुरक्षित गर्नुहोस्` vs `Save`), which 
 
 ---
 
-## 4.27 A client's *standing* discount has no way to satisfy Law 10 — 12 Aug 2026
+## 4.27 ✅ SUPERSEDED 31 Aug 2026 — a client's *standing* discount has no way to satisfy Law 10 — 12 Aug 2026
+
+> **Superseded by Law 10 UNGATED (ruled 20 Aug, final 31 Aug).** There is no reason or approver to
+> satisfy any more, so the three options below are void and the schema does **not** grow
+> `standing_discount_reason` / `standing_discount_approver_id`. What survives as a follow-up:
+> `ClientDetail`'s inline edit still **refuses** a standing discount above 10% — lift that with the
+> gate drop, in the same commit. Original text kept below under Law 3.
 
 Law 10 gates a discount above 10% on a **reason ≥10 chars** and a **named approver**.
 `lib/discount.ts` implements that, and `validateDiscount(percent, reason, approverId)` takes both.

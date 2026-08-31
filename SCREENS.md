@@ -100,7 +100,7 @@ What it settled, and what it broke in code already written:
 | 02 | `Outstanding = Rental Total − Rental Payments`. **Deposits never reduce it.** "All totals displayed must reconcile exactly" | Render `05AFD275`'s own numbers don't reconcile; Foundation's worked example replaces them, guarded by an assertion |
 | 03 | BS always leads with **Latin digits**; store AD in UTC; Nepali FY is Shrawan–Ashadh | Already obeyed |
 | 06 | Contrast **4.5:1 minimum**; "Don't rely on color alone" | This is the bar the browser sweep enforces |
-| 07 | Breakpoints — mobile 0–767, tablet 768–1179, desktop 1180+ | Not yet implemented; the app is desktop-only so far |
+| 07 | Breakpoints — mobile 0–767, tablet 768–1179, desktop 1180+ *(amended 31 Aug 2026: tablet 768–1279, desktop **1280+** — Law 14, `PLAN.md` §4.38a)* | Not yet implemented; the app is desktop-only so far |
 
 ⚠ **Open conflict.** Foundation §5.1 draws the shell with **8 nav items** (Today,
 Rentals, Operations Queues, Inventory, Clients, Calendar, Finance, Settings) and

@@ -17,6 +17,15 @@ in this list outranks those three.
 > `PLAN.md` §4.35. Three claims in the original review were themselves wrong on inspection —
 > recorded in §8, because this file is subject to its own rule.
 
+> **31 Aug 2026 addendum — rules check.** Every `Law N` citation in the 19 governance files was read
+> against `PLAN.md` §0. Six were wrong and are corrected in place with the original struck: five in
+> `PROGRESS.md`, one in `ARCHIVE_AUDIT` B2 ("Law 15 days≥1" → Law 9). Two rule drifts closed:
+> **Law 14** 1180 → **1280** (`PLAN.md` §0 + §4.38a; README, SCREENS §07, WIREFRAME_RULINGS §7
+> annotated; `device.ts` follow-up open) and **Law 10** given its 20 Aug provenance (ruled UNGATED
+> then, final word 31 Aug). Three rulings made outside the repo — 20 Aug MASTER.md, 24 Aug build
+> first / rules later, 29 Aug Foundation v3.0 — are recorded for the first time; their precedence
+> is `PLAN.md` §4.38b, OPEN. Register rows below are otherwise unchanged.
+
 ---
 
 ## 1 · The register
