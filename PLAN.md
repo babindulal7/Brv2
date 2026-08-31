@@ -28,7 +28,7 @@ Break any of these and the work gets reverted, however good it looks.
 | 11 | **Never colour alone** — every status is icon + label + colour | Components |
 | 12 | **Errors inline and persistent.** Toasts carry successes only | Components |
 | 13 | **No platform branch in a layout component.** Branch on capability | Everywhere |
-| 14 | **Width decides** — 768 / ~~1180~~ **1280**. Never orientation. *Amended 31 Aug 2026 (§4.38a): desktop begins at 1280, tablet is 768–1279 — per `docs/DESIGN_DIRECTION_SPEC_v4.1.md` §7.7 and every rail built since 30 Aug (`SideRail` at exactly 1280, driven in the browser). `src/lib/device.ts` `BREAKPOINT` still says 1180 until the follow-up lands; README, SCREENS §07 and WIREFRAME_RULINGS §7 are annotated.* | Layout |
+| 14 | **Width decides** — 768 / ~~1180~~ **1280**. Never orientation. *Amended 31 Aug 2026 (§4.38a): desktop begins at 1280, tablet is 768–1279 — per `docs/DESIGN_DIRECTION_SPEC_v4.1.md` §7.7 and every rail built since 30 Aug (`SideRail` at exactly 1280, driven in the browser). The code follow-up is landed: commit `8a16cd7` moved the pair to `src/lib/breakpoints.ts` (`BP = { phone: 768, desktop: 1280 }`), `device.ts` re-exports it, and `__tests__/breakpoints.test.ts` guards TS / `responsive.css` / `index.html` agreement — verified green 31 Aug. README, SCREENS §07 and WIREFRAME_RULINGS §7 are annotated.* | Layout |
 | 15 | **44×44 touch targets** on every device, desktop included | Components |
 | 16 | **No AI panel renders** until backed by a validated computation | Screens |
 | 17 | **The word "customer" appears nowhere in the UI.** They are clients | Copy |
@@ -371,7 +371,7 @@ reading — it needs the actual desaturation check.
       no pointer-reachable trigger** — the header search button is lost to the layout, leaving
       only the keyboard shortcut, which a phone does not have.
 - [~] Responsive: 390 / 834 / 1180 / 1920
-      → `useViewport()` and the 768/1180 breakpoints are real and correct (Law 14) *(31 Aug 2026: the desktop breakpoint is now 1280 — Law 14 amended, §4.38a; `device.ts` still carries 1180)*. **Gap: ~59
+      → `useViewport()` and the 768/1180 breakpoints are real and correct (Law 14) *(31 Aug 2026: the desktop breakpoint is now 1280 — Law 14 amended, §4.38a; the code reads it from `lib/breakpoints.ts`)*. **Gap: ~59
       screens never call it** — they are fluid rather than deliberately responsive — and **the
       shell header overlaps itself at 390**, which alone blocks this item.
 
@@ -593,7 +593,18 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
-## 4.39 ⬅ OPEN — how is a creation-time unit assignment released before Pack?
+## 4.39 ✅ RULED 31 Aug 2026 — option (a): released_at/released_by, append-style release
+
+**The owner ruled (a)** the same day this was filed. Migration
+`0076_booking_line_units_release.sql` (DRAFT — apply needs its own approval) adds the
+pair, the both-or-neither CHECK, a freeze trigger making a released row immutable, and a
+live-rows partial index. `unit.release` (actions/core.ts) mirrors `booking_line_units_all`
+per §4.20; `releaseBookingLineUnit.ts` is the action; the BookingDetail chip's × is live
+with §10.4's confirm-past-Packed. Until 0076 applies, the live floor select cannot name
+`released_at` (42703) — the select is mode-scoped and the apply-day step is named in
+0076's header. Original filing kept below for the reasoning trail.
+
+### The filing as it stood when ruled — how is a creation-time unit assignment released before Pack?
 
 **Raised 31 Aug 2026** building the removable serial chip `REFERENCE_SPEC_v2.5 §10.4`
 ruled for BookingDetail ("line removal behind a visible 44×44 control, confirmed past
@@ -655,10 +666,16 @@ built since 30 Aug follows it — `SideRail` appears at exactly 1280 and the inl
 **Ruled 31 Aug 2026 (applied on "fix all"): 1280 wins** — it is the ruled design direction and the
 built screens. Tablet is 768–1279. Docs corrected in this pass; one code follow-up:
 
-- [ ] `src/lib/device.ts` — `BREAKPOINT` desktop 1180 → 1280. Then grep every `useViewport()`
+- [x] `src/lib/device.ts` — `BREAKPOINT` desktop 1180 → 1280. Then grep every `useViewport()`
       consumer that branches on `'desktop'` and re-run the §7 reflow tests: a screen that reflowed
       at 1180 may now show its rail at 1180–1279 with too little room (the 31 Aug double-rail
       squeeze, one band lower). `SCREENS.md` §07's "desktop 1180+" is annotated, not rewritten.
+      *(Done before this section was written — commit `8a16cd7` (v4.1 repaint, Wave-0 responsive)
+      moved the pair to `src/lib/breakpoints.ts`: `BP` 768/1280, `MQ` strings, `viewportFor()`,
+      mirrored by `styles/responsive.css` and the `index.html` pre-paint script, with
+      `__tests__/breakpoints.test.ts` asserting all three agree. The rules-check session had only
+      the md pack, no repo, and could not see it. Verified 31 Aug: that guard plus the §7 reflow
+      suites — 55 tests across 3 files — all green.)*
 
 ### ⬅ (b) OPEN — precedence of the documents ruled outside this repo
 

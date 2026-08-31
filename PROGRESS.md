@@ -2,6 +2,109 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-08-31 (cont. 2) — Booking Detail wave: Notes shipped (booking_notes' first reader AND first writer) · dead Quick Actions replaced with real verbs
+**Phase:** Phase 4/5 — the handoff's named next wave · **Status:** complete (built + reviewed + fixed)
+
+The "notes somewhere, payment somewhere" wave. The payment half already existed
+(`RecordPaymentModal` wired 3×, Law 6 gated); this session built the notes half and made
+the Quick Actions card honest. `booking_notes` had been live in the schema since 0002 with
+zero consumers — it now has its first reader and first writer, and **no migration was
+needed or applied**.
+
+### Did
+1. **NEW `src/lib/queries/bookingNotes.ts`** — `listBookingNotes` (live notes, newest
+   first, `archived_at IS NULL` baked in) + `notesForBooking(bookingId)`, wired through
+   `useList` exactly as the invoices read is. No author-name join (no users read exists to
+   borrow), no archive toggle (no archive UI exists), no print shaping (0002:764's view
+   owns that) — each absence stated in the module header.
+2. **NEW `src/actions/notes/addBookingNote.ts`** — `note.create`, mirrored per §4.20 from
+   `booking_notes_all` (0024:73-76) onto `canWriteBookingDesk` (exact five-role match,
+   verified). Refuses `History` by name (system-written member — a hand-typed one would
+   fabricate a trail), empty bodies, missing Law-8 keys, and offline (same call as
+   `blockClient`: an unconfirmable write is refused, not queued). Persistence-checked:
+   only a row with a database-issued id is reported saved. `implemented: true`.
+3. **`BookingDetail.tsx`** — new `NotesCard` in the rail's Docs slot: all-staff list
+   (badge + timestamp + body; Internal badged with "never printed" hint), desk-gated
+   composer (omitted — not disabled — for Accounts/Technician), Law-8 key minted per
+   intent and reused across retries, inline `role="alert"` errors, success toast.
+   **The dead Print/Share/More card is gone** — three buttons with no onClick, replaced
+   by real verbs reusing the page's existing launchers under their existing gates:
+   Receive Payment (`canBookingMoney && canTakePayment`), Open Operations, Extend Rental
+   (`+ canOperate`), Assign Crew (`canCrewMoney && canOperate`).
+4. **`actions/core.ts`** `note.create` case (with the mirror citation);
+   **`eventBus.ts`** `NOTE_ADDED`.
+5. **NEW `src/actions/notes/__tests__/addBookingNote.test.ts`** — 11 tests: payload
+   columns, §4.20 gate (Warehouse writes / Accounts refused pre-insert), History/empty/
+   keyless refusals, replay-as-same-noteId (modelling dataAccess's real 23505 contract),
+   FK error mapping, queued-write-is-not-success.
+
+### Adversarial review (10 agents, 3 dimensions, every finding verified) — 5 confirmed, 2 refuted, all 5 fixed
+- **[major] Type-toggle kept the Law-8 key across a Booking↔Internal flip.** On the live
+  path a committed-but-unconfirmed press + toggle + retry would have hit
+  `idempotentInsert`'s 23505 re-fetch and reported the OLD row as a success under the NEW
+  type — a mislabel that decides whether the note prints on client paperwork. Invisible
+  to the browser drive (mock inserts are atomic). Fixed: the type chip now mints a fresh
+  intent exactly as a body edit does.
+- The action's duplicate-key catch branch was DEAD CODE (a client_uuid 23505 never
+  escapes `idempotentInsert` — it resolves to the committed row as success), and the
+  header + a test asserted that false contract. Fixed all three: branch deleted, header
+  now states the real semantics (replay ⇒ same noteId, one row), test remodelled on the
+  real seam. (`blockClient.ts:295` carries the same pre-existing dead branch — not this
+  wave's to touch.)
+- **Both BookingDetail unit suites were reaching the LIVE Supabase project** — vitest
+  loads `.env.local` (`VITE_DATA_SOURCE=live`), and the new unmocked notes read went over
+  the wire on every mount (a verifier caught a real REST GET). Fixed: `bookingNotes`
+  seam mocked in both suites beside the bookings/finance mocks.
+- Two inline errors lacked `role="alert"` (the page's own convention). Fixed.
+- Refuted (2): the offline-refusal framing and the ListFilters-surface complaint — both
+  mechanically accurate, neither a defect against the surrounding seams.
+
+### Verified
+- `tsc --noEmit`: **zero errors in every file this wave touched** (the tree's only errors
+  are the concurrent session's in-flight sync-engine WIP: `syncEngine.ts`/`syncContext.tsx`/
+  `posEngines.test.ts` — not this wave's).
+- Full suite (pre-review-fix stamp, real exit code): **91 files / 2,209 tests, 100%**.
+  Post-fix, every touched suite re-run green: **3 files / 42 tests** (11 notes-action +
+  both BookingDetail suites under the new isolation).
+- **Driven in the browser** (mock corpus, desktop) as three roles: Warehouse — composer
+  present, quick actions = Open Operations only, added a Booking and an Internal note
+  (badges, newest-first, hint shown); Owner — all four quick actions, both notes visible;
+  Accounts (billing@) — list visible, composer OMITTED, Receive Payment + Open
+  Operations. One stale-HMR crash during the drive (`useAuth` context mismatch after the
+  concurrent session's auth edits) cleared by a dev-server restart — not a code defect.
+
+### Deferred, named
+- Note ARCHIVE flow (the table's Law 3 terminal action) — next wave; nothing renders
+  archived rows today and the read excludes them by construction.
+- Author display names (needs a users read no query module owns yet).
+- Line-level notes (`booking_line_id` — belongs to the lines surface).
+- Notes on phone live in the Docs segment (defaultable choice, flagged for Babin: a 4th
+  segment would change the §4.2 control).
+
+## 2026-08-31 (cont.) — §4.38(a) device.ts follow-up: found already landed, verified green · stale doc notes corrected
+**Phase:** cross-phase verification · **Status:** no code changed — verification and doc corrections only
+
+Babin asked to apply the §4.38(a) follow-up (`device.ts` `BREAKPOINT` 1180 → 1280). It was
+already done: commit `8a16cd7` (v4.1 repaint, Wave-0 responsive) moved the pair into
+`src/lib/breakpoints.ts` — `BP = { phone: 768, desktop: 1280 }`, `MQ` strings, `viewportFor()` —
+with `device.ts` re-exporting `BREAKPOINT = BP`, `styles/responsive.css` and the `index.html`
+pre-paint script carrying the same 768/1280, and `__tests__/breakpoints.test.ts` asserting all
+three agree. The 12:40 rules-check session wrote “device.ts still carries 1180” from the uploaded
+md pack alone — it had no repo access, and `8a16cd7` was already in history when it wrote that.
+
+### Verified
+- `npx vitest run` on `breakpoints.test.ts` + `FilterDrawer.test.tsx` + `operationRoutes.test.tsx`
+  (the §7 reflow suites): **3 files, 55 tests, all green** — including “Rulings §7 — rails reflow
+  below 1280 rather than collapsing” at tablet and phone widths.
+- `grep -rn 1180 src/`: no viewport threshold reads 1180 any more — remaining hits are table
+  `minWidth` px values (ClientsDirectory, archived CasesQueue), comments narrating the change,
+  and seed-data rupee figures.
+
+### Did
+- Corrected the now-stale annotations only: PLAN.md §0 Law 14 row and the Phase 6 responsive line,
+  §4.38(a)’s checkbox ticked with the landing commit named, README.md’s breakpoints bullet, and a
+  note under follow-up #1 of the rules-check entry below.
+
 ## 2026-08-31 (cont.) — D3 FINAL: the discount gate is dropped, everywhere, in one change set
 **Phase:** Phase 3/6 — engines + screens · **Status:** app half complete; DB half drafted (0074, not applied)
 
@@ -176,7 +279,9 @@ pack records was read against the rulings he made in sessions that had no repo a
 1. **`src/lib/device.ts`** — `BREAKPOINT` desktop 1180 → 1280; then grep every `useViewport()`
    consumer that branches on `'desktop'` and re-run the §7 reflow tests. A screen that reflowed at
    1180 may now show its rail at 1180–1279 with too little room — the squeeze the 31 Aug double-rail
-   note already describes, one band lower. PLAN.md §4.38(a).
+   note already describes, one band lower. PLAN.md §4.38(a). *(Already landed before this entry
+   was written — commit `8a16cd7` moved the pair to `lib/breakpoints.ts`; this session had only
+   the md pack and could not see it. Verified green 31 Aug — see the entry above.)*
 2. **`lib/auth.tsx`** — the comment reading "testing Law 5" → Law 6. Comment only.
 3. **Discount gate drop — the concurrent session's, in flight:** renumber one of the two 0074s;
    apply `0074_drop_discount_gate.sql` only with explicit approval, together with the `lib/discount`
@@ -315,8 +420,33 @@ accordion header would double the "Status" label. The §10 count idiom is shared
 component is not. Wiring it belongs to whichever screen first grows a checkbox-list
 filter group without an accordion (Inventory's category rail is the likely first).
 
-## 2026-08-31 (cont.) — I6 root cause: the app was un-frozen, the seed was not. 0074 written and proven, NOT applied
-**Phase:** cross-phase verification · **Status:** migration written and proven; **not applied — needs Babin**
+## 2026-08-31 (cont.) — I6 APPLIED as 0076: Today ▸ Going out goes 0 → 6. Renumbered around a live 0074 collision
+**Phase:** cross-phase verification · **Status:** **applied to the live project** on Babin's instruction
+
+> **Applied, and what it changed.** `0076_seed_operational_stage_corpus`, registered
+> `20260831141204`. bookings 200 → **246** · `booking_lines` 0 → **92** · Packed **16** ·
+> Booked **30** · **Today ▸ Going out 0 → 6**, Tomorrow 9, Next 7 days 26. Rows `B-900 … B-945`,
+> one per client, 2 lines / 3 items each, values from each product's own `daily_rate`.
+> Sampled after applying: six Packed pickups today at 07:30 / 09:15 NPT against real client names.
+>
+> **It was renumbered 0074 → 0076 minutes before applying, and that is the finding worth keeping.**
+> A concurrent session had written a *different* `0074_drop_discount_gate` and **applied it at
+> 12:42**, plus `0075_drop_invoice_lines_discount_gate` at **13:19**. Two files carried each of
+> 0074 and 0075 on disk. Only `supabase_migrations.schema_migrations` showed it — the filenames
+> could not, and neither could either file's header. Also noted: `0073_discount_policies.sql` has
+> been **deleted** and D3 re-ruled from "discount policies" to "no gate at all", which makes this
+> pack's earlier D3 notes stale.
+> ⚠ **`0075_law6_arm_the_four_unarmed_tables.sql` (the I5 follow-up) still collides with the
+> applied 0075** and must be renumbered before it is applied.
+>
+> **Not self-refreshing.** Dates were resolved from `current_date` on 31 Aug, so this corpus ages
+> exactly as `seed.ts`'s frozen anchor did — just from a later start. When Going out empties again
+> the fix is a fresh migration of the same shape, **not** an edit to 0076: Law 3
+> (`trg_bookings_reject_delete`) means its rows can never be deleted, only cancelled, keyed on
+> `project = 'Seed corpus — operational stages (0076)'`.
+
+The analysis that produced it follows. **The item as written would not have fixed anything** —
+that is the part worth reading.
 
 Backlog **I6** — *"Seed `Booked` and `Packed` bookings; the Dashboard's Going out panel is
 structurally empty on every date."* The symptom is real. **The item as written would not have
@@ -382,10 +512,10 @@ fixed it**, for a reason worth recording.
   uninterpretable. Re-run both once that WIP settles.
 
 ### Blocked
-- **Applying 0074 needs Babin.** `CLAUDE.md`: never apply a migration to the live project without
-  explicit approval. **And it is irreversible** — Law 3's `trg_bookings_reject_delete` blocks
-  DELETE on `bookings`, so these rows could only ever be *cancelled*, never removed. The file ends
-  with that retreat, keyed on `project = 'Seed corpus — operational stages (0074)'`.
+- ~~Applying needs Babin.~~ **Resolved — Babin instructed "apply 0074", and it was applied as
+  0076** (see the box at the top of this entry). It remains irreversible by design: Law 3's
+  `trg_bookings_reject_delete` blocks DELETE on `bookings`, so these rows can only ever be
+  *cancelled*, keyed on `project = 'Seed corpus — operational stages (0076)'`.
 - I6 also names two things 0074 does **not** fix: `actual_return_at` is NULL on all 200 bookings
   (so "Returned same-day" stays uncomputable), and only 3 `On Rent` rows exist, so the **Coming
   back** panel stays thin. Seeding those means moving bookings *through* the handover gate, which
