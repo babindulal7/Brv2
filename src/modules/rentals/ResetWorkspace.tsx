@@ -11,7 +11,7 @@ import { JOBS, statusToken } from '../../lib/workflow'
 import type { BookingStatus, JobState } from '../../lib/workflow'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
-import { toBs, formatBs, formatAd } from '../../lib/bs'
+import { formatBsOrAd, formatAd } from '../../lib/bs'
 import { newClientUuid } from '../../lib/supabase'
 import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/queries/bookings'
 import { SHARED_CLEAN_TASKS, DAMAGE_TYPES, SEVERITIES, PROBLEM_ROUTE, QUEUE_FILTERS } from '../../data/reset'
@@ -248,11 +248,17 @@ function buildRows(floor: FloorBooking): ResetRow[] {
   return rows
 }
 
-/** BS above AD, and an honest dash outside `bs.ts`'s vouched range. */
+/**
+ * BS where the engine can name it, the **English date** otherwise.
+ *
+ * The dash survives for `!iso` — no instant, nothing to render. It no longer
+ * survives the second case: an instant outside `bs.ts`'s BS table is still a
+ * date, and dashing it hid a known date on every row once the clock left
+ * Shrawan 2083. `formatBsOrAd` owns that fallback.
+ */
 function bsLabel(iso: string | null): string {
   if (!iso) return '—'
-  const bs = toBs(new Date(iso))
-  return bs ? formatBs(bs) : '—'
+  return formatBsOrAd(new Date(iso))
 }
 
 /*

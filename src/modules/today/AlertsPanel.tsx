@@ -210,7 +210,13 @@ export default function AlertsPanel({
                         fontWeight: 700,
                         letterSpacing: '0.05em',
                         textTransform: 'uppercase',
-                        color: a.priority === 'Critical' ? 'var(--st-danger-fg)' : 'var(--muted)',
+                        /* --danger-text, not --st-danger-fg. This word sits
+                           bare on the row — its sibling branch is --muted, not
+                           a fill — and --st-danger-fg is --on-danger = #ffffff
+                           in both themes. The CRITICAL label was white on the
+                           card, so Law 11's required WORD was missing exactly
+                           on the rows that most need it. */
+                        color: a.priority === 'Critical' ? 'var(--danger-text)' : 'var(--muted)',
                       }}
                     >
                       {a.priority}

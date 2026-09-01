@@ -189,9 +189,16 @@ function PlanCard({ p, money, onViewMembers, memberCount }: {
               name={f.kind === 'off' ? 'close' : f.kind === 'pending' ? 'timer' : 'dot'}
               size={12}
               style={{
+                /* --ready-text, not --st-progress-fg — the MIRROR of the
+                   white-on-light bug, and it bites the dark theme instead.
+                   --st-progress-fg is --on-ready, which is near-black
+                   (#231a05 / #1c1405) in BOTH themes because it is ink for a
+                   solid yellow fill. This glyph carries no fill, so on the
+                   dark card it was black-on-black. Its two sibling branches
+                   already name text-safe tokens; this one was the outlier. */
                 color:
                   f.kind === 'neutral'
-                    ? 'var(--st-progress-fg)'
+                    ? 'var(--ready-text)'
                     : f.kind === 'on'
                       ? 'var(--success-text)'
                       : 'var(--disabled)',
@@ -658,6 +665,10 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
             padding: '9px 12px',
             borderBottom: '1px solid var(--border)',
             background: 'var(--card2)',
+            /* Flush in the card's top corners (body padding is 0), so it takes
+               the card's radius — otherwise its square corners paint over the
+               14px arc. See ClientsDirectory's strip for the same pattern. */
+            borderRadius: 'var(--r-card) var(--r-card) 0 0',
             flexWrap: 'wrap',
           }}
         >

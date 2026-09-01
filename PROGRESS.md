@@ -2,6 +2,139 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-01 (cont. 2) — "finish all todos": the bare-status-ink sweep was incomplete; six more found and fixed
+**Phase:** cross-phase close-out · **Status:** done, gate green
+
+The standing list was already closed by an earlier entry today. What was left to take was
+the **completeness of its own `--st-*-fg` sweep**, which reported "78 call sites classified,
+9 bare". Re-derived that classification mechanically rather than re-reading the note, and
+it was short: **six live bare sites survived**, three of them in files that sweep had
+already edited.
+
+### Why the miss was systematic, not careless
+The previous sweep looked for bare **text**. The bug is not about text — it is that
+`--st-*-fg` is *ink for a solid fill*, so it fails wherever it is spent on anything the
+fill is not behind. Two whole shapes were therefore never in scope:
+- a **border/ring** drawn against something other than its own fill, and
+- a **`tone` prop** that a child component spends as a bare `color:` one file away.
+
+Both shapes are represented below. The detector I used flags any `--st-*-fg` with no
+`-bg`/`background` within its element window **plus every `border:` use regardless** —
+that second clause is what caught the ring cases, and it is the clause a text-shaped
+search cannot have.
+
+### Fixed — six, each verified against the token table in `theme.css`
+`--st-danger-fg`/`--st-in-fg` are `--on-danger`/`--on-success` = **`#ffffff` in BOTH
+themes**; `--st-progress-fg` is `--on-ready` = **near-black (`#231a05`/`#1c1405`) in BOTH**.
+So the first class disappears on the now-default LIGHT theme and the second on DARK.
+
+1. **`shell/Header.tsx:229`** — the sync chip's *settled* branch. Its other four branches
+   already named `--primary-text`/`--warn-text`/`--muted`/`--danger-text`; only "Synced"
+   read `--st-in-fg`, against a `--surface-2` background. White on a light surface — the
+   chip read as **empty** in its most common state. → `--success-text`. Note this is the
+   same chip an earlier entry today had just edited for the error tooltip.
+2. **`crew/CrewBooking.tsx:861`** — `MoneyStat`'s `tone` is spent as bare `color:` at
+   `:872`. **Both** branches were fill-ink, so the Margin figure was white on the card
+   **either side of zero** — profit and loss equally invisible. → `--danger-text` /
+   `--success-text`.
+3. **`crew/CrewBooking.tsx:1002`** — the conflict ring, drawn against `tone.bg`, i.e.
+   whatever status fill the block already carries and never guaranteed to be the red one.
+   White ring on a light chip = the conflict signal gone. → `--danger` (the line hue),
+   matching `data/calendar.ts`, which already names `line: 'var(--danger)'` for this.
+4. **`settings/sections/DevicePin.tsx:183`** — locked-out label; its own `else` branch was
+   already `--success-text`. → `--danger-text`.
+5. **`today/AlertsPanel.tsx:213`** — the CRITICAL priority word, sibling branch `--muted`.
+   Its comment reads *"Law 11 — the priority … is a word on the row"*; the word was white
+   on the card, so **Law 11 was breached at exactly the rows that most need it**.
+   → `--danger-text`.
+6. **`clients/Membership.tsx:194`** — the MIRROR direction: `--st-progress-fg` bare on a
+   glyph is black-on-black in **dark**. Its two sibling branches were already text-safe.
+   → `--ready-text`.
+
+### Deliberately NOT fixed — triaged, not skipped
+- **`stockCheck.ts:74/82/88`, `NewRental.tsx:1008`, `ResetWorkspace.tsx:1103`** — the
+  border and its fill are on the *same element*, so the ring sits on the status colour it
+  belongs to. Cosmetic at worst; the fill and word still carry the signal.
+- **`NewRental.tsx:1984`** — looks bare (`background: 'transparent'`) but the enclosing
+  `<li>` is `--st-danger-bg`, so the button genuinely sits on red. False positive.
+- **`ResetWorkspace.tsx:1410/1419`** — a real inconsistency that the code **already
+  documents in place** as cosmetic-and-not-fixed-here. Left as its author ruled it.
+- **`archive/automation/EventTriggers.tsx`, `archive/notifications/UnifiedInbox.tsx`** —
+  re-confirmed dead: the only non-archive mentions are prose in comments, no importers.
+
+### Verified
+- `npx tsc --noEmit` **exit 0** · `npm run check:contrast` **40/40, 0 FAIL** · `npx vitest
+  run` **96 files, 2282 tests, all green**.
+- Every token substituted in is gated by `check:contrast` in both themes — `danger-text`
+  6.75:1 light, `success-text` 6.83:1, `ready-text` 6.05:1 on surface.
+- The detector re-run is clean of all six; the 13 it still prints are the triaged set above.
+- ⚠ **Not driven in a browser.** Another session holds this folder's dev-server port. These
+  are token substitutions whose failure mode is a contrast ratio, and the ratios are gated
+  above — but "gated" is not "seen". The six should be eyeballed on the next run that owns
+  the port, `Membership` in **dark** specifically.
+
+### ⚠ Working-tree hazard for whoever reads this next
+A **concurrent session was editing this same tree during this one** — it landed `4696af8`
+and prepended the Dashboard-sweep entry below while this pass was running, and left ~27
+files uncommitted. My six edits are mixed in with its work and **nothing here is
+committed**. Do not `git add -A` this tree without separating the two.
+
+### Blocked — unchanged, all of it Babin's
+The five standing items are untouched: token rotation, the `B-900…B-945` collision,
+`full_sync.sql`, the three §4 rulings, and the ~30 money tables. None is an agent's to take.
+
+## 2026-09-01 — Dashboard bug sweep (driven audit, no fixes applied)
+**Phase:** cross-phase verification · **Status:** findings reported to owner, nothing changed
+
+Drove every Dashboard control in mock mode (desktop/phone/tablet) plus a source pass over
+`Today.tsx` / `MovementList.tsx` / `data/today.ts`. Findings, most severe first:
+
+1. **Mock engine compares timestamps as strings** (`engine.ts` `cmp` → `String(a) < String(b)`).
+   `operationalDayBounds` emits `+05:45`-offset ISO bounds; mock rows store `Z`-form —
+   lexicographic comparison silently drops every row in the 00:00–06:00Z band, i.e. **the
+   whole Nepal working morning (05:45–11:45 NPT)**, from every mock date-ranged read:
+   Dashboard Outgoing/Incoming, Rentals pickups/returns KPIs, Operations day scope.
+   Repro: pickups sandboxed at 10:00/11:00 NPT invisible; 12:00 NPT visible. Fix shape:
+   `cmp` should `Date.parse` ISO-looking strings. **Mock-only, but it poisons every mock
+   demo and every mock-mode verification of a day panel.**
+2. **More Filters offers guaranteed-dead stage chips.** The Status group ships all six
+   stages + Inspection(→Returned) to BOTH lists, but Outgoing intersects {Booked,Packed}
+   and Incoming {On Rent} — five of seven live chips on Outgoing (six of seven on
+   Incoming) can only ever render the empty state. Also cross-wired: the Return group's
+   options appear on the Outgoing list's panel and vice versa.
+3. **Row menu "Complete Pickup"/"Complete Return" look live but can never succeed**
+   (stub / no-lines-by-construction). The file's own rule — "Entries that can act, act.
+   The rest are explicitly unavailable" — is violated by exactly these two. Also offered
+   stage-inappropriately (Complete Return on a not-yet-collected booking). The failure
+   banner works (inline, role=alert, honest copy) but has no dismiss control.
+4. **"Edit" navigates to the same route as "Open"** — a mislabelled duplicate.
+5. **"Print Checklist" prints nothing** — navigates to Packing, identical to "Packing
+   List". Two labels, one route.
+6. **Hover card is `role="tooltip"` with four interactive buttons inside** — ARIA
+   violation; a tooltip's controls are unreachable for keyboard/AT users. Needs a
+   popover/non-modal-dialog pattern.
+7. **Tomorrow-with-no-chips empty state reads "No pickups match these filters"** — the
+   operator changed the day, not a filter (`outFiltered` conflates the two). The Clear
+   affordance is right; the sentence blames filters that were never picked.
+
+Known-open items SURFACING here, not new: DatePill "Nepali date unavailable" every day
+since 17 Aug (§4.34 DATED — the 2083 BS table); "Cash due · Not tracked yet" (§4 TODO).
+
+**Not a bug after investigation:** layout failing to reflow on resize in the Claude
+browser pane — probe showed the pane's emulated resize never fires `matchMedia` change
+events while `.matches` flips; `useViewport`'s wiring is correct and a real window drag
+will reflow. Logged so nobody chases it again.
+
+**Verified working:** DatePill→/calendar?d=today · period retitles every heading ·
+Clear-filters restores Today · KPI ↔ list consistency (§5.8) · 25 disabled filter chips
+all carry reasons · menu unavailable items aria-disabled+title · Copy Booking Number ·
+Invoice→/documents (real route) · money-gating (Invoice hidden, Record Payment omitted)
+· phone segmented control + per-list filter rebinding · More Filters fits 375px ·
+Rail collapse/expand · no horizontal scroll at 375/800/1440 · failure banners inline.
+
+Sandbox note: six mock bookings were moved onto today's date (browser-local overlay
+only) so the day panels are demonstrable; the mock banner already disclaims the data.
+
 ## 2026-09-01 (cont.) — "finish all to dos": sync error surfaced · two docs falsified by 0077 corrected · seven junk files removed
 **Phase:** cross-phase close-out · **Status:** done; what remains is Babin's, itemised below
 
@@ -159,6 +292,77 @@ the 768/1280 duplication. Nothing to do.
   (`#050B12→#0B1622`), sidebar computed transition shows
   `width 0.24s cubic-bezier(0.16, 1, 0.3, 1)` (i.e. `--ease` resolves).
 
+### Second pass — what an adversarial review of the above found
+A four-lens review (CSS cascade · radius blast-radius · theme-flip consistency ·
+backdrop-filter stacking) was run over the diff, each finding then handed to an
+independent agent told to refute it. It caught six real defects the first pass
+missed — four of them **caused by the flip itself**:
+
+- **`--st-*-fg` used as bare text.** The fg half of a status pair is ink for a
+  SOLID fill: `--st-danger-fg` is `#ffffff` in *both* themes. Bare on a light
+  card that is white-on-white. A mechanical sweep classified all **78** call
+  sites — 69 correctly paired with a fill, **9 bare**. Fixed the live ones to
+  the gated text-safe pair (`--danger-text` / `--ready-text`): Today's Quick
+  Info overdue figure, MovementList's overdue note (whose own comment cited a
+  *dark-theme* measurement), both BookingDetail Notes errors, both ScreenLock
+  PIN alerts, PinPad's rejection ring, PackingWorkspace's tree glyph. Two are
+  deliberate non-fixes: `HandoverWorkspace:1063` is a false positive (it sits
+  inside a ternary-filled yellow block) and `archive/automation/EventTriggers`
+  is dead code with no importers. The mirror bug also existed —
+  `--st-progress-fg` is near-black in both themes, so those sites were invisible
+  in DARK. Both directions are now gated.
+  Note the Today/BookingDetail/PinPad/System findings show as "refuted" in the
+  review output only because I had already fixed them while it ran.
+- **Body ink lagged its own canvas.** Defining `--ease` switched ON a body
+  `transition: background …, color …` that had been dead (an unresolvable var
+  invalidates the shorthand). Measured: the gradient cannot interpolate so it
+  snaps, while `color` took 200ms — text crossing to the new theme over a canvas
+  that already arrived. In dev it was caught frozen at black on the navy canvas.
+  The transition is now removed and canvas + ink change in one frame (verified
+  by sampling both 32ms after a toggle).
+- **PWA manifest still shipped the dark canvas.** `vite.config.ts` kept
+  `background_color`/`theme_color: '#0F1420'` while index.html flipped to
+  `#fdefdc` — an installed cold launch would paint a full-screen dark splash and
+  permanently mismatched window chrome. (`#0F1420` matched *neither* theme.)
+- **`--r-card` 8 → 14 squared off four cards' corners.** A child with an opaque
+  background flush inside a padding-0 card paints over the parent's rounded
+  corner; at 14px the overhang is ~4.1px, plainly visible. Verified empirically
+  in the browser (hit-testing the corner pixel) rather than by eye. Fixed by
+  giving the flush child the card's radius — **not** `overflow: hidden` on the
+  card, which would have clipped ClientsDirectory's absolutely-positioned
+  row-action menu. Membership, ClientsDirectory, Maintenance, Bundles (top) and
+  AddBundle's totals `tfoot` (bottom). Maintenance/Bundles bottoms were checked
+  and are fine — their footer strips carry no background.
+- **A modal was living inside the new glass chrome.** `HandoverSheet` renders a
+  `Modal` (`position: fixed; inset: 0`, and this codebase uses no portals) from
+  *inside* `<header>`, which I had just given `backdrop-filter`. Measured on
+  Chromium 148: `filter` and `transform` do trap a fixed child, `backdrop-filter`
+  does not — but WebKit treats it as a containing block, which would collapse a
+  full-screen modal into the 59px header strip on iPad. Moved out to a sibling,
+  matching `BottomBar.tsx:128`, which already renders `MoreSheet` outside its own
+  glass `<nav>`.
+- **Two more undefined tokens**, same class as the alias registry: `--t-caption`
+  (6 call sites across three modals) and `--text-dim` (2 in Tools) were read but
+  defined nowhere, so those labels silently inherited body size/colour. Probed
+  live to confirm before aliasing.
+
+Also removed `--ease-bounce`/`--ease-spring` (zero readers; a bounce curve
+contradicts §5's single-curve rule), and corrected Settings' Theme note, which
+still told operators "dark uses gold" — a palette retired on 25 Aug.
+
+**Verified after the second pass:** `check:contrast` 40/40 · `vitest` 95 files /
+2241 tests, exit 0 · `tsc --noEmit` clean · driven in the app (light default on
+the cream canvas, dark toggle intact, the Overdue figure now legible where it
+had been invisible). One earlier run reported a transient error that did not
+reproduce — the concurrent session was editing files mid-run.
+
+⚠ The `prefers-reduced-transparency: reduce` media query is ACTIVE in this
+machine's browser, so the glass was exercised via its opaque fallback for most
+of the session. The kill-switch is therefore well proven (blur `none`, tokens
+solid, beating the inline `backdropFilter`); the glass path was verified
+separately by removing that rule at runtime (chrome blur 20px, tokens at the
+0.88 floor). Glass has **not** been eyeballed on a display without that setting.
+
 ### Blocked / for Babin
 - **§8's same-pass downstream updates cannot be done from this machine**: no
   `DESIGN_DIRECTION_SPEC_v4.1.md`, `UI_UX_SPEC`, `CLAUDE_DESIGN_INSTRUCTIONS`,
@@ -259,6 +463,48 @@ family, commit-model ruling, open decisions 1–3) is verbatim v1.0.
   correction BS-large is the *default*, so the open decision is really whether an
   AD-primary comfort toggle exists. Kept verbatim (not our decision to rewrite);
   flag when decision 2 is ruled.
+## 2026-09-01 (cont. 3) — BS dates stop hiding: the em dash is gone from eight sites · the month-length table stays open
+**Phase:** Phase 4/5 — date engine consumers · **Status:** fixed and verified in the running app;
+the underlying BS table is **still open and needs Babin**
+
+Since 17 Aug 2026 the app had been rendering `—` where it held a perfectly good date. `lib/bs.ts`
+can only name days inside Shrawan 2083 (anchor 16 Jul + 32 days), and eight call sites wrote
+`bs ? formatBs(bs) : '—'`. On the Dashboard and Finance pills the dash took the **bold** line while
+the real English date sat muted beneath it — the app hiding a date it knows, and the thing the
+31 Aug walk saw and misfiled as "Finance period control shows a blank start date".
+
+### Did — no new date arithmetic, no invented calendar data
+1. **Adopted `lib/bs.ts:135 formatBsOrAd()`**, which already existed for exactly this ("Never null,
+   never an em dash, never a guessed BS day") and had **zero importers**. Now used by
+   `CasesWorkspace`, `queries/clients.ts`, `ReturnWorkspace`, `ResetWorkspace`, `PackingWorkspace`.
+   `toBs`/`formatBs` dropped from those five import lists (they became unused).
+2. **The two date pills** (`data/today.ts` `TODAY_DATE`, `Finance.tsx` `AS_OF`) now carry
+   `bs: string | null` instead of a pre-baked `'—'`, and the renderers promote the AD date to the
+   lead line, printing "Nepali date unavailable" beneath with `BS_UNSUPPORTED_NOTE` as its `title`.
+   Law 9's BS-above-AD ordering is untouched wherever BS *can* be named.
+3. **`Warehouses.tsx`** ×2 — the transfer cell promotes AD to the lead line; the activity line drops
+   the orphan `—  ·` separator. `archive/wall/WallDisplay.tsx` updated for the null.
+4. **The `!iso` dash is deliberately kept** in the three floor workspaces — no instant really is no
+   date. Only the second branch (a known instant with no BS name) changed.
+5. **Four tests added** to `lib/__tests__/bs.test.ts` for `formatBsOrAd`, including a sweep asserting
+   no day across ±400 days returns `—` or empty, and a Kathmandu-civil check on the fallback path.
+
+### Verified
+- `npx tsc --noEmit` **exit 0**; `npx vitest run` **exit 0 — 96 files, 2,282 tests**.
+- **Driven in the mock app** (`dev:mock`, real clock = 1 Sep 2026, i.e. outside the BS window):
+  the Dashboard pill reads **"1 Sept 2026 / Nepali date unavailable"** where it previously read
+  **"— / 1 Sept 2026"**; `/finance` shows the same. Screenshot taken.
+- ⚠ One test expectation of mine was wrong and the code was right: en-GB's short month for
+  September is **"Sept"**, not "Sep". Corrected the assertion, not the renderer.
+
+### ⛔ Still open — and NOT an agent's call
+`toBs` still answers only inside **Shrawan 2083**, so BS dates are now *absent* (English shown)
+rather than *hidden*. Closing that needs the **2080–2090 BS month-length table**. A BS month is
+29/30/31/32 days with no derivable rule, `bs.ts:50-65` explicitly forbids extrapolating, and no such
+table exists anywhere in this workspace (searched, including the spec library). **I did not invent
+one** — a wrong month length silently shifts every subsequent date, which is `Calendar.md` §4.2's
+highest-priority correctness bug in a new costume. Babin supplies or approves a source.
+
 ## 2026-09-01 (cont. 2) — The gap check's 38 P1/P2 claims verified against source: 4 false, 17 partial · eight new defects found, one of them a live law breach
 **Phase:** verification · **Status:** done, read-only. Record:
 [`docs/booqable/GAP-CHECK-VERIFICATION.md`](docs/booqable/GAP-CHECK-VERIFICATION.md)

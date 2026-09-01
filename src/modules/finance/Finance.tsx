@@ -8,7 +8,7 @@ import { PageBody } from '../../components/ui/PageBody'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { Donut, Legend } from '../../components/ui/Charts'
 import type { Slice } from '../../components/ui/Charts'
-import { getBusinessToday, toBs, formatBs, formatAd } from '../../lib/bs'
+import { getBusinessToday, toBs, formatBs, formatAd, BS_UNSUPPORTED_NOTE } from '../../lib/bs'
 import { rupees, formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { useAuth } from '../../lib/auth'
@@ -177,7 +177,12 @@ const RECEIVED_IN_PERIOD: ListFilters = paymentsInPeriod(PERIOD_FROM_AD, PERIOD_
 
 /** §2.2 / §7 — BS dates and the fiscal-year label, from the one Date Engine. */
 const bs = toBs(TODAY)
-const AS_OF = { bs: bs ? formatBs(bs) : '—', ad: formatAd(TODAY) }
+/**
+ * `bs` is **null**, not `'—'`, outside the Date Engine's table. The em dash took
+ * the bold line of the As-of pill while `ad` held the real date in the muted one
+ * — the app hiding a date it knows. The renderer promotes `ad` when this is null.
+ */
+const AS_OF = { bs: bs ? formatBs(bs) : null, ad: formatAd(TODAY) }
 
 /**
  * §5.2 — payment and invoice statuses are **different sets**, and the build the
@@ -1016,9 +1021,15 @@ export default function Finance() {
         <Icon name="calendar" size={14} style={{ color: 'var(--muted)' }} />
         <span style={{ lineHeight: 1.2, textAlign: 'left' }}>
           <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-            {AS_OF.bs}
+            {AS_OF.bs ?? AS_OF.ad}
           </span>
-          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{AS_OF.ad}</span>
+          {AS_OF.bs ? (
+            <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{AS_OF.ad}</span>
+          ) : (
+            <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }} title={BS_UNSUPPORTED_NOTE}>
+              Nepali date unavailable
+            </span>
+          )}
         </span>
       </span>
       {/* Launcher 1 of 2 money launchers. Hidden, not disabled, like its three

@@ -11,7 +11,7 @@ import type { BookingStatus, JobState } from '../../lib/workflow'
 import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
-import { toBs, formatBs, formatAd, formatAdDateTime } from '../../lib/bs'
+import { formatBsOrAd, formatAd, formatAdDateTime } from '../../lib/bs'
 import { newClientUuid } from '../../lib/supabase'
 import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/queries/bookings'
 import type { FloorLineInput } from '../../actions/rentals/floorVerb'
@@ -264,11 +264,17 @@ function rentalDays(pickupIso: string, returnIso: string): number {
   return Math.max(1, Math.round(ms / 86_400_000))
 }
 
-/** BS above AD, and an honest dash outside `bs.ts`'s vouched range. */
+/**
+ * BS where the engine can name it, the **English date** otherwise.
+ *
+ * The dash survives for `!iso` — no instant, nothing to render. It no longer
+ * survives the second case: an instant outside `bs.ts`'s BS table is still a
+ * date, and dashing it hid a known date on every row once the clock left
+ * Shrawan 2083. `formatBsOrAd` owns that fallback.
+ */
 function bsLabel(iso: string | null): string {
   if (!iso) return '—'
-  const bs = toBs(new Date(iso))
-  return bs ? formatBs(bs) : '—'
+  return formatBsOrAd(new Date(iso))
 }
 
 /*
@@ -739,7 +745,12 @@ export default function PackingWorkspace() {
               <FloorAside collapsible={desktop} side="left" width={260} label="Bundle / Item Tree" style={place.tree}>
                 <Card title="1 · Bundle / Item Tree">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', paddingBottom: 9, borderBottom: '1px solid var(--border)' }}>
-                    <Icon name="box" size={17} style={{ color: 'var(--st-progress-fg)' }} />
+                    {/* --ready-text, not --st-progress-fg: this glyph carries no
+                        yellow fill behind it, and the fg half of the pair is
+                        near-black ink meant to sit ON the yellow block — on the
+                        dark card (#15171B) that ink is all but invisible. The
+                        text-safe yellow is gated in both themes. */}
+                    <Icon name="box" size={17} style={{ color: 'var(--ready-text)' }} />
                     <span style={{ minWidth: 0 }}>
                       <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
                         {floor.project ?? floor.bookingNo}

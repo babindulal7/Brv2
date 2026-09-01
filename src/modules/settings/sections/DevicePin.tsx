@@ -180,7 +180,11 @@ export function DevicePinControl() {
               gap: 'var(--sp-xs)',
               fontSize: 'var(--t-th)',
               fontWeight: 700,
-              color: isLockedOut ? 'var(--st-danger-fg)' : 'var(--success-text)',
+              /* --danger-text, not --st-danger-fg: this span carries no fill,
+                 so it needs the text-safe red its own `else` branch already
+                 uses. --st-danger-fg is --on-danger = #ffffff in both themes,
+                 which put the locked-out warning as white on the card. */
+              color: isLockedOut ? 'var(--danger-text)' : 'var(--success-text)',
             }}
           >
             <Icon name={isLockedOut ? 'lock' : 'check'} size={13} fill />

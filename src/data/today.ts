@@ -75,7 +75,14 @@ const TODAY = getBusinessToday()
  */
 const TODAY_BS = toBs(TODAY)
 export const TODAY_DATE = {
-  bs: TODAY_BS ? formatBs(TODAY_BS) : '—',
+  /**
+   * `null` — not `'—'` — when the Date Engine holds no BS month-length data for
+   * today. An em dash here claimed the date was unknown while `ad` below held
+   * it, and it took the *bold* line of the pill while the real date sat muted
+   * beneath: the app hiding a date it knows. The renderer promotes `ad` when
+   * this is null; see `lib/bs.ts` `formatBsOrAd` for the same rule in one call.
+   */
+  bs: TODAY_BS ? formatBs(TODAY_BS) : null,
   ad: formatAd(TODAY),
 }
 

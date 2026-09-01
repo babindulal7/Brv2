@@ -9,7 +9,7 @@ import { Badge } from '../../components/ui/Badge'
 import Icon from '../../components/ui/Icon'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-import { toBs, formatBs } from '../../lib/bs'
+import { formatBsOrAd } from '../../lib/bs'
 import { findClientIdByBooking } from '../../data/clients'
 import {
   CASES,
@@ -75,9 +75,14 @@ function CasePriorityBadge({ priority }: { priority: CasePriority }) {
   return <Badge tone={m.token} label={priority} icon={<Icon name={m.icon} size={11} fill={m.solid === true} />} size="sm" />
 }
 
+/**
+ * The BS date where the engine can name one, the **English date** otherwise.
+ * This returned `'—'` outside the BS table, which claimed the case had no
+ * opened-on date at all when the AD instant was in hand — see `lib/bs.ts`
+ * `formatBsOrAd`, which is the one place that rule lives.
+ */
 function createdBsOf(c: Case): string {
-  const bs = toBs(c.openedAd)
-  return bs ? formatBs(bs) : '—'
+  return formatBsOrAd(c.openedAd)
 }
 
 

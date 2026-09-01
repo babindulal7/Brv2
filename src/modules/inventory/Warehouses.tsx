@@ -1850,7 +1850,8 @@ export default function Warehouses() {
                           <tbody>
                             {profileTransfers.map((t) => {
                               const flow = TRANSFER_FLOW[t.status]
-                              const bs = toBs(new Date(`${t.dateAD}T00:00:00Z`))
+                              const transferAd = new Date(`${t.dateAD}T00:00:00Z`)
+                              const bs = toBs(transferAd)
                               return (
                                 <tr key={t.id} style={{ borderBottom: '1px solid var(--border)' }}>
                                   <td style={td}>
@@ -1873,10 +1874,19 @@ export default function Warehouses() {
                                   </td>
                                   <td style={{ ...td, color: 'var(--text2)' }}>{t.requestedBy}</td>
                                   <td style={td}>
-                                    <span style={{ display: 'block', color: 'var(--text)' }}>{bs ? formatBs(bs) : '—'}</span>
-                                    <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                                      {formatAd(new Date(`${t.dateAD}T00:00:00Z`))}
+                                    {/* BS leads, AD beneath — but only while the
+                                        engine can name the BS day. Outside its
+                                        table the English date takes the lead
+                                        line rather than leaving a dash above a
+                                        date the row already holds. */}
+                                    <span style={{ display: 'block', color: 'var(--text)' }}>
+                                      {bs ? formatBs(bs) : formatAd(transferAd)}
                                     </span>
+                                    {bs && (
+                                      <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                                        {formatAd(transferAd)}
+                                      </span>
+                                    )}
                                   </td>
                                   <td style={{ ...td, textAlign: 'right' }}>
                                     <span style={{ display: 'inline-flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
@@ -2087,7 +2097,7 @@ export default function Warehouses() {
                       <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>{a.action}</div>
                       <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{a.warehouse}</div>
                       <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                        {bs ? formatBs(bs) : '—'} · {formatAd(a.ad)}
+                        {bs ? `${formatBs(bs)} · ${formatAd(a.ad)}` : formatAd(a.ad)}
                       </div>
                     </div>
                   </div>

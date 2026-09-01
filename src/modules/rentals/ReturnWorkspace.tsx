@@ -13,7 +13,7 @@ import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
-import { toBs, formatBs, formatAd, formatAdDateTime } from '../../lib/bs'
+import { formatBsOrAd, formatAd, formatAdDateTime } from '../../lib/bs'
 /* `lateBand` and its two formatters return no monetary value — that is the
    whole reason they exist. `lib/money.ts` stays unimported here (§8.3). */
 import { lateBand, formatOverage, bandConsequence } from '../../lib/lateFee'
@@ -364,11 +364,17 @@ function rentalDays(pickupIso: string, returnIso: string): number {
   return Math.max(1, Math.round(ms / 86_400_000))
 }
 
-/** BS above AD, and an honest dash outside `bs.ts`'s vouched range. */
+/**
+ * BS where the engine can name it, the **English date** otherwise.
+ *
+ * The dash survives for `!iso` — no instant, nothing to render. It no longer
+ * survives the second case: an instant outside `bs.ts`'s BS table is still a
+ * date, and dashing it hid a known return date on every row once the clock left
+ * Shrawan 2083. `formatBsOrAd` owns that fallback.
+ */
 function bsLabel(iso: string | null): string {
   if (!iso) return '—'
-  const bs = toBs(new Date(iso))
-  return bs ? formatBs(bs) : '—'
+  return formatBsOrAd(new Date(iso))
 }
 
 /** A local signature capture — name + instant. Rides the session notes on dispatch. */

@@ -858,7 +858,13 @@ function BillingKpiTile({ billing }: { billing: ReturnType<typeof crewBilling> }
       <div style={{ marginTop: 9, display: 'flex', gap: 'var(--sp-md)' }}>
         <MoneyStat label="Billed" value={billing.billedPaisa} />
         <MoneyStat label="Cost" value={billing.costPaisa} />
-        <MoneyStat label="Margin" value={billing.marginPaisa} tone={billing.marginPaisa !== null && billing.marginPaisa < 0 ? 'var(--st-danger-fg)' : 'var(--st-in-fg)'} />
+        {/* MoneyStat spends `tone` as a bare `color:` on the figure (see its
+            definition below), so it takes the TEXT-safe pair. --st-danger-fg /
+            --st-in-fg are --on-danger / --on-success — both #ffffff in BOTH
+            themes, ink for a solid fill — and this card has no fill, so the
+            Margin figure rendered white on the card and was invisible either
+            side of zero on the now-default light theme. */}
+        <MoneyStat label="Margin" value={billing.marginPaisa} tone={billing.marginPaisa !== null && billing.marginPaisa < 0 ? 'var(--danger-text)' : 'var(--success-text)'} />
       </div>
       <div style={{ marginTop: 6, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>This month</div>
     </article>
@@ -999,7 +1005,17 @@ function WeekCalendar({ assignments, conflictIds }: { assignments: CrewAssignmen
                             fontWeight: 600,
                             overflow: 'hidden',
                             whiteSpace: 'nowrap',
-                            border: conflictIds.has(block.id) ? '1px solid var(--st-danger-fg)' : undefined,
+                            /* --danger, the LINE colour, not --st-danger-fg.
+                               This ring is drawn against `tone.bg` — whichever
+                               status fill the block already carries, which is
+                               never guaranteed to be the red one — so it needs
+                               a hue that stands on its own. --st-danger-fg is
+                               --on-danger = #ffffff in both themes, so the
+                               conflict ring was white on a light chip and the
+                               conflict signal disappeared entirely. Matches
+                               `data/calendar.ts`, which already names
+                               `line: 'var(--danger)'` for the same purpose. */
+                            border: conflictIds.has(block.id) ? '1px solid var(--danger)' : undefined,
                           }}
                         >
                           <Icon

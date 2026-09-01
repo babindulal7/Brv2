@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { BS_MONTHS, getBusinessToday, kathmanduCivil, toBs, formatBs, formatAd, eachDay, isWeekend } from '../bs'
+import { BS_MONTHS, getBusinessToday, kathmanduCivil, toBs, formatBs, formatBsOrAd, formatAd, eachDay, isWeekend } from '../bs'
 
 const ad = (y: number, m: number, d: number, h = 0, min = 0) => new Date(Date.UTC(y, m - 1, d, h, min))
 
@@ -50,6 +50,39 @@ describe('toBs — month boundaries', () => {
       expect(bs.day).toBeGreaterThanOrEqual(1)
       expect(bs.day).toBeLessThanOrEqual(32)
     }
+  })
+})
+
+/* ── the fallback — a missing BS name never hides a known date ──────────── */
+
+describe('formatBsOrAd — the English date where BS cannot be named', () => {
+  it('gives the BS date inside the table', () => {
+    expect(formatBsOrAd(ad(2026, 7, 31))).toBe('16 Shrawan 2083 BS')
+  })
+
+  it('gives the English date outside it — never an em dash', () => {
+    // The regression this guards: eight call sites rendered `bs ? formatBs(bs) : '—'`,
+    // so from 17 Aug 2026 the Dashboard pill, the Finance As-of pill, client rows,
+    // case rows and three floor workspaces showed "—" for dates the app held. On the
+    // two pills the dash took the BOLD line while the real date sat muted beneath.
+    // 'Sept', not 'Sep' — en-GB's short month for September is four letters.
+    expect(formatBsOrAd(ad(2026, 9, 1))).toBe('1 Sept 2026')
+    expect(formatBsOrAd(ad(2026, 8, 17))).toBe('17 Aug 2026')
+    expect(formatBsOrAd(ad(2026, 7, 15))).toBe('15 Jul 2026')
+  })
+
+  it('never returns an em dash or an empty string for any day across two years', () => {
+    for (let offset = -400; offset < 400; offset += 1) {
+      const out = formatBsOrAd(new Date(ad(2026, 7, 16).getTime() + offset * 86_400_000))
+      expect(out).not.toBe('—')
+      expect(out.trim()).not.toBe('')
+    }
+  })
+
+  it('resolves the civil date in Kathmandu on the fallback path too', () => {
+    // 31 Aug 18:15 UTC is already 1 Sep in Kathmandu; the AD fallback must not
+    // answer a day behind the BS path it stands in for.
+    expect(formatBsOrAd(ad(2026, 8, 31, 18, 15))).toBe('1 Sept 2026')
   })
 })
 

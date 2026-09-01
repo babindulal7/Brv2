@@ -18,6 +18,7 @@ import {
   type LivePeriod,
   type MovementRow,
 } from '../../data/today'
+import { BS_UNSUPPORTED_NOTE } from '../../lib/bs'
 import { listBookings, overdue } from '../../lib/queries/bookings'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import { useList, type ListQueryResult, type ListResult } from '../../lib/queries/useList'
@@ -69,10 +70,22 @@ function DatePill() {
         <Icon name="calendar" size={14} />
       </div>
       <span style={{ textAlign: 'left', lineHeight: 1.25 }}>
+        {/* BS leads and AD sits beneath (Law 9) — but only while the Date
+            Engine can name the BS day. Outside its table `TODAY_DATE.bs` is
+            null and the English date takes the lead line alone, because the
+            alternative shipped an em dash in the bold slot above the date the
+            app actually knew. `title` names the gap rather than leaving a
+            silently one-line pill. */}
         <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', letterSpacing: '0.01em' }}>
-          {TODAY_DATE.bs}
+          {TODAY_DATE.bs ?? TODAY_DATE.ad}
         </span>
-        <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 500 }}>{TODAY_DATE.ad}</span>
+        {TODAY_DATE.bs ? (
+          <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 500 }}>{TODAY_DATE.ad}</span>
+        ) : (
+          <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 500 }} title={BS_UNSUPPORTED_NOTE}>
+            Nepali date unavailable
+          </span>
+        )}
       </span>
     </button>
   )
@@ -798,7 +811,11 @@ export default function Today() {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text2)' }}>
             <span>Overdue</span>
-            <span className="figure" style={{ fontWeight: 700, color: 'var(--st-danger-fg)' }}>{countOf(alerts, alerts.rows.length)}</span>
+            {/* --danger-text, not --st-danger-fg: the fg half of a status pair
+                is white ink for a SOLID red fill, so bare on this card it was
+                white-on-white and the figure disappeared under the light
+                default. The Active rentals figure above is the pattern. */}
+            <span className="figure" style={{ fontWeight: 700, color: 'var(--danger-text)' }}>{countOf(alerts, alerts.rows.length)}</span>
           </div>
         </div>
       </Card>

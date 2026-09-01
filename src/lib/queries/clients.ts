@@ -29,7 +29,7 @@
 import { supabase, newClientUuid } from '../supabase'
 import type { Database } from '../../types/supabase'
 import { rupees, type Paisa } from '../money'
-import { toBs, formatBs, formatAd } from '../bs'
+import { formatBsOrAd, formatAd } from '../bs'
 import type { ClientRecord, MembershipTier } from '../../data/clients'
 
 type ClientView = Database['public']['Views']['clients_v']['Row']
@@ -326,10 +326,14 @@ function kycStatusFrom(total: number, verified: number): ClientRecord['kycStatus
   return 'Pending Review'
 }
 
-/** BS label for an AD instant, or '—' when the date falls outside lib/bs.ts's vouched range. */
+/**
+ * BS label for an AD instant, falling back to the **English date** outside
+ * `lib/bs.ts`'s vouched range. It used to return `'—'`, which read as "no date"
+ * for every client row once the clock left Shrawan 2083 — the date was known
+ * throughout. `formatBsOrAd` owns that fallback for the whole app.
+ */
 function bsLabel(iso: string): string {
-  const bs = toBs(new Date(iso))
-  return bs ? formatBs(bs) : '—'
+  return formatBsOrAd(new Date(iso))
 }
 
 export interface ListClientsOptions {

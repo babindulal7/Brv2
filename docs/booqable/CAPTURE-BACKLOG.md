@@ -509,22 +509,106 @@ commit as the work.
       uses `client_id = (SELECT id FROM clients LIMIT 1)` and `pickup_at = return_at = NOW()`, and
       their idempotency guard checks `external_refs` rows that were never written — so running
       either file today permanently inserts 100 (or 25) mis-clientned, zero-length bookings. §5.
-- [ ] **`booking_facets()` RPC + FilterRail on Rentals** (RAIL spec §1, §3.1–3.2). ⚠ §6.5: the RPC
-      is a v2.5 fabrication today — design it fresh, do not transcribe v2.5's description. Chip
-      grammar identity → lifecycle → dates → tags; Export/Import move into the rail when it lands.
-      ⚠ Partly moved since the walk: `facetCounts` was wired to `/rentals` on 31 Aug (PROGRESS
-      "facetCounts wired to /rentals"), and layer-d found a *second* `facetCounts.ts` — grep for
-      both before building; the walk's "no facet counts anywhere" no longer holds.
-- [ ] **Next-verb header on Booking Detail** (F5/§10.1) — single primary from `lib/workflow`'s
-      next transition; replaces the generic "Operations" link + ⋮.
-- [ ] **RangePicker presets via `periodRange`** (DATE_TIME_PICKER v1.0 §4.1 — 13 Booqable presets
-      + This/Last fiscal year + Next 7 days), shared by rails and the report toolbar.
-- [ ] **PeriodPicker, uncoloured first** (§4.2) — availability colouring stays blocked on the
-      §10.6 availability source; neutral calendar until it exists, never guessed green.
-- [ ] **Verify the "Payment Due" grey chip as Warehouse** — if that grey is the money gate, the
-      rule is absent-not-disabled (Law 6). Unverifiable from an Owner session; also I5-adjacent.
-- [ ] **P2 sweep** — deposit column: decide §9.8 or hide until D1 backfill · duplicate "More
-      Filters" on Dashboard · Finance period control renders "— 31 Aug 2026" with a blank start.
+> **All boxes below were re-scoped 1 Sep against source** — see
+> [`GAP-CHECK-VERIFICATION.md`](GAP-CHECK-VERIFICATION.md) (38 claims: 17 confirmed, 17 partial,
+> **4 false**). Several were mis-scoped by the walk. Read the verification before starting any of
+> them.
+
+- [ ] **Facet counts + the rail — RE-SCOPED, the original framing was false.** `FilterRail` already
+      exists and is live on Inventory (`Inventory.tsx:925`, reflows below 1280); three more pages
+      carry a `SideRail label="Filters"`. `facetCounts.ts` is **already wired on Rentals**
+      (`RentalsList.tsx:27,563,618`) behind the collapsed Status accordion (`enabled: open`) — the
+      walk never opened it. The "second `facetCounts.ts`" is a **git-worktree copy**, not a second
+      module; that earlier note was wrong. **The genuinely dead piece is `FilterOptionList`**
+      (`FilterDrawer.tsx:676`, zero production importers) while Rentals hand-rolls
+      `StatusFilterGroup`. Real work: adopt the drawer→rail grammar and retire one of the two
+      count-rendering paths. ⚠ `booking_facets()` remains a v2.5 fabrication (§6.5) — design fresh
+      if wanted at all, given counts already work without it.
+- [ ] **Next-verb header on Booking Detail — bigger than it reads.** The header claim is CONFIRMED
+      (`BookingDetail.tsx:1358-1418`; `OperationsLauncher:363` hardcodes the "Operations" label).
+      But `lib/workflow` has **no** single-stage next-verb function — only `canAdvance(from,to)`,
+      `jobThatSets(to)`, `planTransition({from,to})`. The lookup exists three times elsewhere
+      (`data/operations.ts:175 jobForStage` live; `operationsShell.ts:97` dead;
+      `OperationsShell.tsx:85` live duplicate), and a "Reset" primary already renders on Operations
+      Queues and Today. So the Booking Detail fix is a **label**, plus collapsing three duplicates.
+      ⛔ **But "Reset/Close" is unbuildable as written: there is no Close verb anywhere.**
+      `Reset.sets` is `null`; `closeGates` has no production caller; ResetWorkspace's terminal
+      control records a reset and does not close. **Returned → Closed must be built from scratch —
+      file it as its own item before scoping this one.**
+- [ ] **RangePicker presets — RE-SCOPED.** `periodRange` (`data/today.ts:835`) is live with four
+      importers but answers **6 of 16** presets, and **`ReportToolbar` does not share it** (private
+      `presetWindow`, `:240`). Finance's rail dates and Rentals' Custom range are bare
+      `<input type="date">`. Real work: extend `periodRange` by ~10 cases (fiscal-year helpers
+      already exist at `data/pulse.ts:547`) and migrate ReportToolbar onto it.
+- [ ] **PeriodPicker — the picker is already built; only the colour is missing.**
+      `booking/DateTimeField.tsx:270-403` is the §4.2 shape (inline date+time, `CalendarPopover`
+      with BS under each AD numeral, Esc/outside-click, `TimeListPopover`), live in NewRental. A
+      tri-state `AvailabilityVerdict` vocabulary exists (`itemCatalogue.ts:97-136`) but **per item,
+      not per day**. Still missing: day colouring, 15-min interval (it builds 48 half-hour slots),
+      and the `operationalDayStart` anchor. ⚠ `booqable/map/availability.ts:461` is a documented
+      **no-op**, so the day source the spec assumes does not exist. Also: the two calendars in the
+      repo are **private duplicates** — the spec's shared calendar core has to be extracted.
+- [x] **"Payment Due" grey chip — RESOLVED FROM SOURCE 1 Sep. No Law 6 breach; no Warehouse session
+      needed.** The grey is `c.unavailable` (`data/rentals.ts:606`) because **no outstanding-balance
+      column exists to query**. The absent-not-disabled rule is **already implemented** —
+      `chipsFor(canSeeMoney)` (`data/rentals.ts:612`) strips the chip before render, locked by
+      `rentalsList.test.ts:133-134`. ⚠ Do not "fix" this: re-enabling the chip ships a money filter
+      with nothing behind it.
+- [ ] **P2 sweep — RE-DIAGNOSED; two of the three original items were wrong.**
+      - *Deposit "Rs 0"*: wire is correct end-to-end; **the data is genuinely zero** (live: 245 of
+        246 are `0`, **zero nulls**). Root cause is `0002_bookings.sql:38` `not null default 0`, so
+        "undecided" and "zero" are the same value and the `—` branch is unreachable. **The cited
+        "§9.8" does not exist in PLAN.md** — the real open item is that migration's own TODO.
+      - *"Duplicate More Filters"*: **not duplicates.** `Today.tsx:894/:898` own different state
+        (`pickedOut`/`pickedIn`) with distinct accessible names (`:206`). Deleting one strips a list
+        of its only filter entry point. **Close this item — nothing to fix.**
+      - *"Finance blank start date"*: **false as diagnosed, real as a bug** — see the BS item below.
+      - *"11:30 AM seed values"*: not seed (`ROWS` is dead in production). The uniform figure is
+        **11:45**, Booqable-imported; 11:30 is one real row (B-701). Lever is
+        `scripts/sync-all-booqable-data.mjs:111-118`, **not** `seed.ts`.
+
+### New defects found by the 1 Sep verification — none of these are in the gap check
+
+- [x] **🐞 The em-dash half is FIXED, 1 Sep — dates no longer hide.** Eight sites rendered
+      `bs ? formatBs(bs) : '—'`, so from 17 Aug every one showed "—" for a date the app held; on the
+      Dashboard and Finance pills the dash took the **bold** line while the real date sat muted
+      beneath. All eight now fall back to the English date via `lib/bs.ts:135 formatBsOrAd()` (which
+      was dead code with zero importers and now has four tests). The two pills promote the AD date
+      to the lead line and print "Nepali date unavailable" beneath, `title`-carrying
+      `BS_UNSUPPORTED_NOTE`. Verified in the running app: the Dashboard pill reads **1 Sept 2026**,
+      not **—**. Gates green (`tsc` 0 · 96 files / 2,282 tests). The `!iso` dash is deliberately
+      kept — no instant is genuinely no date.
+- [ ] **⛔ STILL OPEN — the BS month-length table itself (needs Babin).** `lib/bs.ts` can still only
+      name days inside **Shrawan 2083 (16 Jul – 16 Aug 2026)**, so BS dates are *absent*, not wrong,
+      everywhere else — the app shows English throughout. Closing this needs the **2080–2090 BS
+      month-length table**, which is published calendar *data*: a BS month is 29/30/31/32 days with
+      no rule, cycle or leap formula to derive it from. `bs.ts:50-65` forbids extrapolating, and no
+      such table exists anywhere in this workspace (searched 1 Sep, including the spec library).
+      **An agent must not invent these lengths** — a wrong month length silently shifts every later
+      date, which is `Calendar.md` §4.2's highest-priority bug in a new costume. Babin supplies or
+      approves a source; then `toBs` becomes a table walk and `BS_UNSUPPORTED_NOTE` retires.
+- [ ] **🐞 `/rentals/B-701/evidence` refuses to load.** `EvidenceWorkspace.tsx:174-175` hard-gates
+      `bookingNo !== BOOKING.no` (B-715) and `:111` uses it as a route default. The B-715 constant
+      is **not** gone — Booking Detail was fixed, Evidence was not.
+- [ ] **🐞 A case logged with no booking is filed against B-715.** `LogCaseModal.tsx:90`
+      `linkedRecordId: booking || 'B-715'`.
+- [ ] **🐞 Operations and Today disagree about where a day starts.**
+      `OperationsQueues.tsx:201-208` builds Today/Tomorrow from raw Kathmandu midnights and never
+      calls `operationalDayBounds`, while Today is anchored at 06:00. D4 is built but has **one**
+      importer (`queries/bookings.ts`). Directly undermines the D4 ruling.
+- [ ] **⌘K is not global search.** `CommandPalette.tsx:100-130` searches nav destinations plus two
+      actions; the box advertises *"Search equipment, serial, SKU, category…"* (`App.tsx:276`).
+      Either build record search or fix the placeholder's promise.
+- [ ] **Dead controls to finish or remove:** `EvidenceWorkspace.tsx:434-448` bulk bar (seven buttons,
+      no `onClick`); `RentalsList.tsx:1547` "Save View" (disabled placeholder — the gap check lists
+      it as a shipped feature); `FilterOptionList`; `ReportToolbar` (test-only importer).
+- [ ] **Four routed screens have no query at all** — Crew, Calendar, Documents, Pulse render seeded
+      constants; the skeleton the walk saw is `App.tsx:1049`'s chunk fallback, not a data state.
+- [ ] **Doc rot to correct:** `ReportToolbar.tsx:75` asserts "the header pill says FY 2083/84" —
+      **the header has no FY or branch element at all** (`Header.tsx`, 416 lines, zero matches).
+      That comment likely seeded the gap check's false praise. Also `DateTimeField.tsx:14-16`
+      ("No date-picker existed anywhere before this one") and `data/rentals.ts:58-62` (claims
+      ClientDetail reads `ROWS`; it does not) are stale.
 - [x] **Deliver or retire the v1.1 date-picker spec — DONE 03:13 1 Sep, by the concurrent
       session.** [`DATE_TIME_PICKER_SPEC_v1.1.md`](DATE_TIME_PICKER_SPEC_v1.1.md) filed from
       Babin's delivery (§4.4 flips to BS-prominent, matching the app); v1.0 bannered superseded.

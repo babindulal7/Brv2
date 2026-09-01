@@ -226,7 +226,14 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
                     ? 'var(--muted)'
                     : syncStatus === 'error'
                     ? 'var(--danger-text)'
-                    : 'var(--st-in-fg)',
+                    /* --success-text, not --st-in-fg. Every other branch here
+                       already names a text-safe token; the settled branch was
+                       the odd one out. --st-in-fg is --on-success = #ffffff in
+                       BOTH themes — ink for a solid green fill — but this
+                       chip's settled background is --surface-2, not green, so
+                       the word "Synced" was white on a light surface and the
+                       chip read as empty on the now-default light theme. */
+                    : 'var(--success-text)',
                 cursor: 'pointer',
                 fontFamily: 'inherit',
               }}

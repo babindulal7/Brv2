@@ -163,8 +163,12 @@ export default function WallDisplay() {
           </span>
         </span>
         <span className="figure" style={{ textAlign: 'right', color: 'var(--text)', fontWeight: 700, lineHeight: 1.3 }}>
-          <span style={{ display: 'block' }}>{TODAY_DATE.bs}</span>
-          <span style={{ display: 'block', fontWeight: 500, color: 'var(--text2)' }}>{TODAY_DATE.ad}</span>
+          {/* `TODAY_DATE.bs` is null outside the Date Engine's BS table; the
+              English date takes the lead line rather than leaving this one blank. */}
+          <span style={{ display: 'block' }}>{TODAY_DATE.bs ?? TODAY_DATE.ad}</span>
+          {TODAY_DATE.bs && (
+            <span style={{ display: 'block', fontWeight: 500, color: 'var(--text2)' }}>{TODAY_DATE.ad}</span>
+          )}
         </span>
       </header>
 

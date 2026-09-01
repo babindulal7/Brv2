@@ -43,6 +43,33 @@ export const ORGANISATION_SECTIONS: Section[] = [
       },
       { label: 'VAT number', note: 'Printed on tax invoices.', settingKey: 'vatNumber', readBy: 'the invoice header' },
       { label: 'Business description', note: 'One line, used on quotes and the portal.', settingKey: 'businessDescription' },
+      /* WHATSAPP_LINKS_SPEC v1.0 §6.1. Blank is a legal, meaningful value for
+         all four: the templates that need one are offered disabled with the
+         reason until it is filled, rather than sent with a placeholder. */
+      {
+        label: 'Contact number for clients',
+        note: 'Given in the overdue notice so a client can ring instead of replying. Blank disables that message.',
+        settingKey: 'businessPhone',
+        readBy: 'the WhatsApp overdue notice',
+      },
+      {
+        label: 'Owner WhatsApp number',
+        note: 'The only recipient of the daily digest — it carries takings, so it never goes to a client number.',
+        settingKey: 'ownerWhatsappNumber',
+        readBy: 'the WhatsApp daily digest',
+      },
+      {
+        label: 'Usual pickup time',
+        note: 'Written HH:mm. Not the operational day start — 06:00 is when the rental day rolls over, not when the counter opens.',
+        settingKey: 'defaultPickupTime',
+        readBy: 'the WhatsApp booking confirmation and pickup reminder',
+      },
+      {
+        label: 'Usual return time',
+        note: 'Written HH:mm. Blank disables the return reminder rather than guessing an hour.',
+        settingKey: 'defaultReturnTime',
+        readBy: 'the WhatsApp return reminder',
+      },
     ],
   },
   {

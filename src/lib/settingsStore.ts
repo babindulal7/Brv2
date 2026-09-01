@@ -56,6 +56,18 @@ export type SettingKey =
   | 'packingTreeGrouping'
   | 'packingPhotosRequired'
   | 'evidenceRetentionDays'
+  /* ── WhatsApp deep links, added 1 Sep 2026 ───────────────────────────────
+   * `docs/WHATSAPP_LINKS_SPEC_v1.0.md` §6.1 lists these as the spec's own OPEN
+   * items. They are added here as FIELDS, not as answers: every default below
+   * is empty, so this change asserts no pickup time, no business phone and no
+   * owner number. Until the owner fills one in, the templates that need it are
+   * offered disabled with the reason — which is the honest state, and is what
+   * stops a session inventing "10:00 AM" to unblock itself (CLAUDE.md).
+   */
+  | 'businessPhone'
+  | 'ownerWhatsappNumber'
+  | 'defaultPickupTime'
+  | 'defaultReturnTime'
 
 export type SettingValue = string | number
 
@@ -343,6 +355,68 @@ export const SETTING_SPECS: Record<SettingKey, SettingSpec> = {
       return null
     },
   },
+
+  /**
+   * **WHATSAPP_LINKS_SPEC v1.0 §6.1** — the number a client is told to ring in
+   * the `overdue` template, and nowhere else.
+   *
+   * Empty by default and deliberately so: an overdue notice that names a wrong
+   * number is worse than one the staff member cannot send, so while this is
+   * blank the overdue template is offered DISABLED with that reason rather
+   * than sent with a placeholder.
+   */
+  businessPhone: {
+    default: '',
+    kind: 'text',
+    validate: (v) => {
+      const s = String(v).trim()
+      if (s === '') return null
+      return s.replace(/\D/g, '').length >= 6
+        ? null
+        : 'A contact number clients can ring, or leave blank. Digits, spaces and dashes.'
+    },
+  },
+
+  /**
+   * **WHATSAPP_LINKS_SPEC v1.0 §2, §6.1** — the owner's OWN WhatsApp number,
+   * the only recipient of the daily digest. It is not a client-facing field:
+   * the digest carries takings and receivables (Law 6), so it goes to one
+   * number the owner sets, never to a number derived from a booking.
+   */
+  ownerWhatsappNumber: {
+    default: '',
+    kind: 'text',
+    validate: (v) => {
+      const s = String(v).trim()
+      if (s === '') return null
+      return s.replace(/\D/g, '').length >= 8
+        ? null
+        : 'The full WhatsApp number, with or without +977. Leave blank to disable the digest.'
+    },
+  },
+
+  /**
+   * **WHATSAPP_LINKS_SPEC v1.0 §6.1** — the counter's usual pickup and return
+   * times, written in the same `HH:mm` clock vocabulary as
+   * `operationalDayStart`, which is what §6.1 means by *"read the D4
+   * operationalDayStart world, not new literals"*.
+   *
+   * These are NOT derived from `operationalDayStart`: 06:00 is when the rental
+   * DAY rolls over, not when a counter opens, and printing "Pickup from 06:00"
+   * to a client because the two share a clock would be a fabricated fact. They
+   * are separate, owner-set, and blank until then.
+   */
+  defaultPickupTime: { default: '', kind: 'text', suffix: ' (HH:mm)', validate: hhmmOrBlank },
+  defaultReturnTime: { default: '', kind: 'text', suffix: ' (HH:mm)', validate: hhmmOrBlank },
+}
+
+/** `HH:mm`, or blank for "not set". Shared by the two WhatsApp time fields. */
+function hhmmOrBlank(v: SettingValue): string | null {
+  const s = String(v).trim()
+  if (s === '') return null
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(s)
+    ? null
+    : 'A clock time written HH:mm — e.g. 10:00. Leave blank if there is no usual time.'
 }
 
 /** Maps the stored label to the code `lib/i18n.ts` works in. */
