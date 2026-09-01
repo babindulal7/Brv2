@@ -7,7 +7,9 @@ import { useViewport } from '../../lib/device'
 import { formatMoney, parseMoney, type Paisa } from '../../lib/money'
 import { formatAd, toBs, formatBs, getBusinessToday } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
-import { canViewMoney } from '../../lib/rbac'
+import { canViewMoney, canApproveDailyClosing } from '../../lib/rbac'
+import { newClientUuid } from '../../lib/supabase'
+import { approveDailyClosing } from '../../actions/finance/approveDailyClosing'
 import { readSettings } from '../../lib/settingsStore'
 import { fetchDailyClosing, varianceLine, type DailyClosing as ClosingFigures } from '../../lib/queries/closing'
 import { dailyDigest } from '../../lib/whatsappTemplates'
@@ -28,14 +30,17 @@ import { buildWaLink } from '../../lib/whatsapp'
  * record, who may approve one, whether a day can be re-opened, what happens to
  * an unexplained variance. None of it is invented below (`CLAUDE.md`).
  *
- * The consequence is stated on the screen rather than hidden: **APPROVE does
- * not persist.** There is no closing table in the schema — checked against the
- * live database, 1 Sep 2026: nothing matching clos/cash/till/reconcil exists.
- * So the button that would write one is rendered as an unavailable control
- * carrying that reason, exactly like the PIN button on Login, and the digest is
- * gated on the COUNT instead — the one act that is real here. A green
- * "Approved" that vanished on reload would be the fabrication this repo's
- * success-fabrication register exists to catch.
+ * **APPROVE now persists** — migration `0078_daily_closings` applied 1 Sep 2026
+ * (`20260901114821`) and `actions/finance/approveDailyClosing.ts` writes it.
+ * The row is immutable once signed: a correction is a void plus a new closing,
+ * enforced by 0078's freeze trigger rather than by this screen.
+ *
+ * What is still NOT ruled is **who** may sign one. INSERT is gated on
+ * `auth_is_finance_or_admin()` and `rbac.canApproveDailyClosing` mirrors it
+ * exactly (§4.20's method); PLAN.md §4.40(a) records that an Owner/Manager
+ * reading is open. This screen therefore hides the control for a role the
+ * database would refuse, rather than offering a button that fails at the last
+ * step.
  *
  * ## The count is the only input, and it is cash only
  *
@@ -94,6 +99,12 @@ export default function DailyClosing() {
      half-entered "1,2" is not silently read as 12 — `parseMoney` decides, and
      `null` means "not counted", which is NOT zero anywhere below. */
   const [countRaw, setCountRaw] = useState('')
+  /** Minted once per screen so a double press is ONE closing (Law 8). Re-minted
+   *  after a success, because the next closing is a different record. */
+  const [closingUuid, setClosingUuid] = useState(() => newClientUuid())
+  const [approving, setApproving] = useState(false)
+  const [approvedId, setApprovedId] = useState<string | null>(null)
+  const [approveError, setApproveError] = useState<string | null>(null)
   const counted: Paisa | null = countRaw.trim() === '' ? null : parseMoney(countRaw)
   const countInvalid = countRaw.trim() !== '' && counted === null
 
@@ -135,6 +146,45 @@ export default function DailyClosing() {
       : !String(readSettings().ownerWhatsappNumber)
         ? 'No owner WhatsApp number is set. The digest carries the day’s takings, so it goes to one number the owner sets — Settings ▸ Organisation ▸ General.'
         : 'The owner number on file is not a number this can dial.'
+
+  const mayApprove = user ? canApproveDailyClosing(user.role) : false
+
+  const onApprove = async () => {
+    if (!figures || counted === null || !user) return
+    setApproving(true)
+    setApproveError(null)
+    try {
+      const res = await approveDailyClosing(
+        {
+          /* The DAY, not the instant — `business_date` is a date column and
+             `dayAd` is an ISO timestamp. */
+          businessDate: figures.dayAd.slice(0, 10),
+          countedCash: counted,
+          expectedCash: figures.collected.cash,
+          variance: (counted - figures.collected.cash) as Paisa,
+          pickupsCount: figures.pickupsCount,
+          returnsCount: figures.returnsCount,
+          newCount: figures.newCount,
+          collectedCash: figures.collected.cash,
+          collectedBank: figures.collected.bank,
+          collectedCard: figures.collected.card,
+          collectedOther: figures.collected.other,
+          receivables: figures.receivablesTotal,
+          depositsHeld: figures.depositsHeld,
+          clientUuid: closingUuid,
+        },
+        { userId: user.id, role: user.role },
+      )
+      setApprovedId(res.closingId)
+      setClosingUuid(newClientUuid())
+    } catch (e: unknown) {
+      /* Law 12 — inline and persistent. The message is the action's, which
+         already says whether anything was written. */
+      setApproveError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setApproving(false)
+    }
+  }
 
   if (!maySeeMoney) {
     return (
@@ -296,12 +346,37 @@ export default function DailyClosing() {
                 </Unavailable>
               )}
 
-              <Unavailable reason="Approving a closing would write a record, and there is no closing table in the schema — checked against the live database. LOCAL_FIRST_CORE_SPEC §6, which §5.4 defers to for this ritual, is not in this repo, so who may approve, whether a day can be re-opened and what an unexplained variance costs are all unruled. The count and the digest above are real; a green Approved that vanished on reload would not be.">
-                <Button variant="secondary" disabled>
-                  Approve closing
-                </Button>
-              </Unavailable>
+              {/* §5.4's approve. Absent — not disabled — for a role the
+                  database would refuse: `canApproveDailyClosing` mirrors
+                  0078's INSERT policy, so a visible-but-failing button would
+                  be the only way this disagreed with Postgres. */}
+              {mayApprove &&
+                (approvedId ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, gap: 7, fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--st-in-fg)' }}>
+                    Closed and signed — this day is now a record.
+                  </span>
+                ) : (
+                  <Button variant="secondary" onClick={onApprove} disabled={counted === null || approving}>
+                    {approving ? 'Signing…' : 'Approve closing'}
+                  </Button>
+                ))}
+
+              {mayApprove && counted === null && !approvedId && (
+                <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                  Count the drawer before signing — a closing states a variance.
+                </span>
+              )}
             </div>
+
+            {approveError && (
+              /* Law 12 — errors inline and persistent, never a toast. It stays
+                 until the next attempt resolves it. */
+              <div style={{ ...cardStyle, gridColumn: onPhone ? 'auto' : '1 / -1', borderColor: 'var(--st-danger-fg)' }}>
+                <p role="alert" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--st-danger-fg)', lineHeight: 1.5 }}>
+                  {approveError}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </PageBody>

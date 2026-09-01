@@ -274,6 +274,71 @@ Rail collapse/expand · no horizontal scroll at 375/800/1440 · failure banners 
 Sandbox note: six mock bookings were moved onto today's date (browser-local overlay
 only) so the day panels are demonstrable; the mock banner already disclaims the data.
 
+## 2026-09-01 (cont. 7) — The closing write path: APPROVE persists. Proven live, both ways
+**Phase:** Phase 6 + actions · **Status:** built, driven, gate green
+
+Babin: "build the write path". 0078 landed the table last entry; this is the action that fills
+it and the button that calls it.
+
+### Did
+1. **`rbac.canApproveDailyClosing`** — §4.20’s method. It mirrors
+   `daily_closings_finance_insert`’s predicate `auth_is_finance_or_admin()` (Owner · Admin ·
+   Manager · Coordinator · Accounts), read from `pg_get_functiondef` on the live project rather
+   than from a migration file. Offline refused, like every other money write.
+2. **`closing.approve`** in `actions/core.ts`. Its OWN rule rather than one of the existing
+   sets, because none carries that exact five — `canRecordPayment` is Owner/Coordinator/
+   Accounts and `canPerformOperations` is a floor set. Mirroring a policy means mirroring it.
+3. **`actions/finance/approveDailyClosing.ts`** — validate, resolve branch, insert, verify.
+4. **The screen’s APPROVE is live**, its stale "there is no closing table" reason removed, and
+   an inline error surface added (Law 12 — never a toast for a failure).
+
+### Found — the read-back would have broken this silently
+0078 revoked table-level SELECT and granted back only the 13 non-money columns. PostgREST runs
+`RETURNING` **as the same role**, so `idempotentInsert`’s default read-back (`select()`,
+unqualified) would have been denied on `counted_cash` — **the row commits and the write looks
+like a failure.** That is the two-permissions trap `InsertOptions` already documents against
+`audit_events` (§4.36 / `R3-5`), hit a second time by a different table.
+
+Fixed by naming `returningColumns: 'id, approved_at'`, both inside the grant. **Proven, not
+reasoned:** as `authenticated`, the insert returns both columns, and a raw `counted_cash`
+read-back on the same row raises **42501**. The trap is real; the fix closes it.
+
+### Two design choices, stated
+- **The figures travel with the press.** The action does not re-read the day. If it did, a
+  payment landing between the render and the press would mean the approver signed one statement
+  and stored another. `variance` is passed and 0078’s CHECK re-derives it, so bad arithmetic is
+  refused by Postgres rather than quietly stored. Law 2 is satisfied upstream — the screen did
+  not compute them either, `lib/queries/closing.ts` read them.
+- **The button is ABSENT, not disabled, for a role the database would refuse.** A
+  visible-but-failing control is the only way this screen could disagree with Postgres.
+- **Branch is read from `users.branch_id`**, not defaulted. `recordPayment` inherits its branch
+  from the invoice it settles; a closing has no parent row. A user with no branch is refused by
+  name — defaulting to the first branch would file one branch’s takings under another, silently.
+
+### Verified
+- `npx tsc --noEmit` exit 0 · `npx vitest run`: **100 files, 2338 tests, all green** (17 new).
+  ⚠ The first gate run had tsc RED — four strict-index errors in the new test file — while the
+  suite passed. Fixed and re-run; recorded because "tests pass" and "typechecks" are different
+  claims and this session nearly reported the first as both.
+- **Live, role-simulated, rolled back:** an Owner’s `users.branch_id` reads under RLS · INSERT
+  **accepted** · `id, approved_at` both returned · raw `counted_cash` read-back **42501** ·
+  **Warehouse INSERT refused**. `daily_closings` still holds **0 rows**.
+- **Driven in the app** (mock, Owner): the button appears with its "count the drawer before
+  signing" hint, enables on a count, and settles to "Closed and signed — this day is now a
+  record."
+
+### Blocked / next
+- **PLAN.md §4.40(a) stays OPEN** — who may sign. The wider reading is implemented. If Babin
+   rules Owner/Manager, change the POLICY first and `canApproveDailyClosing` second, so the
+   database is never the looser of the two.
+- **The void path is schema-only.** 0078 permits live → voided and the screen offers no way to
+   do it, deliberately: §4.40(b) has not ruled who may void, and a control that guesses is the
+   thing this repo keeps removing.
+- **Not driven against the live project end to end.** The app write was exercised in mock; the
+   live half was proven at the SQL layer inside a rolled-back transaction. Approving for real
+   writes a permanent record — Law 3 allows only a void, never a delete — so it waits for a day
+   Babin actually wants closed.
+
 ## 2026-09-01 (cont. 6) — 0078_daily_closings APPLIED to the live project (owner-approved)
 **Phase:** Phase 1 schema · **Status:** applied and verified · **Approval:** Babin, explicit, in-session ("apply it")
 

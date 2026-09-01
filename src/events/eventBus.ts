@@ -72,6 +72,8 @@ export const EVENT_TYPES = {
   RENTAL_EXTENDED: 'rental.extended',
   NOTE_ADDED: 'booking.note_added',
   UNIT_RELEASED: 'booking.unit_released',
+  /** WHATSAPP_LINKS_SPEC v1.0 §5.4 — one branch-day signed off (0078). */
+  DAILY_CLOSING_APPROVED: 'finance.daily_closing_approved',
   RENTAL_RESET_COMPLETED: 'rental.reset_completed',
   RENTAL_HANDED_OVER: 'rental.handed_over',
   EVIDENCE_REVIEWED: 'rental.evidence_reviewed',

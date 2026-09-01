@@ -202,6 +202,15 @@ async function checkCapability(capability: string, ctx: ActionContext): Promise<
     case 'unit.release':
       return rbac.canWriteBookingDesk(ctx.role);
 
+    /* `closing.approve` (1 Sep, §5.4) mirrors `daily_closings_finance_insert`
+       (0078) — `auth_is_finance_or_admin()`, read off the live project the day
+       it applied. It is its OWN rule rather than one of the sets below because
+       no existing helper carries that exact five: `canRecordPayment` is
+       Owner/Coordinator/Accounts and `canPerformOperations` is a floor set.
+       §4.40(a) records that a narrower Owner/Manager reading is open. */
+    case 'closing.approve':
+      return rbac.canApproveDailyClosing(ctx.role);
+
     case 'rental.pickup':
     case 'rental.return':
     case 'inventory.pack':
