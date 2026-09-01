@@ -135,6 +135,77 @@ Rail collapse/expand · no horizontal scroll at 375/800/1440 · failure banners 
 Sandbox note: six mock bookings were moved onto today's date (browser-local overlay
 only) so the day panels are demonstrable; the mock banner already disclaims the data.
 
+## 2026-09-01 (cont. 2) — WHATSAPP_LINKS_SPEC v1.0 built: §5.1 and §5.2 shipped · §6.1 settings added blank · two of my own defects caught by tests
+**Phase:** Phase 6 (screens) + lib · **Status:** §5.1/§5.2 done and green; §5.3/§5.4 blocked, named below
+
+Babin delivered `WHATSAPP_LINKS_SPEC v1.0` — wa.me compose links, no API. Filed verbatim at
+[`docs/WHATSAPP_LINKS_SPEC_v1.0.md`](docs/WHATSAPP_LINKS_SPEC_v1.0.md) per its own Venue line.
+
+### Did
+1. **§5.1 — `lib/whatsapp.ts`** (977 normalisation, `buildWaLink`, `NO_PHONE_REASON`,
+   `openWaLink` with the `noopener` pair) and **`lib/whatsappTemplates.ts`** — all eight
+   templates as PURE formatters. Law 2 is stated as a type: the input objects have no room for
+   a figure the module could compute, so a wrong number in a message is a wrong number in the
+   query that produced it. Law 6 is enforced in the REGISTRY (`templatesForStage` drops the
+   three `money: true` templates for a money-blind role), which is what §4 asks for — a button
+   is one screen’s decision, the registry is every screen’s.
+2. **`lib/whatsappActions.ts`** — the layer §3 actually needs: *can this be composed right now,
+   and if not, what is the true reason?* Pure, so every refusal is unit-testable rather than
+   only reachable by driving a screen with four settings in four states.
+3. **§5.2 — Booking Detail** carries ONE "Message client" row with a stage-aware submenu.
+   `OverflowItem` gained an optional `submenu`.
+4. **§6.1 settings added as FIELDS, not answers** — `businessPhone`, `ownerWhatsappNumber`,
+   `defaultPickupTime`, `defaultReturnTime`, every default **blank**, plus their rows in
+   Settings ▸ Organisation ▸ General. This asserts no pickup time and no contact number; until
+   the owner sets one, the templates that need it are offered disabled **naming the setting and
+   where to change it**. That is the point: "10:00 AM" invented here would be a fabricated fact
+   in writing to a client, and `CLAUDE.md` forbids inventing the product decision.
+
+### Found — two defects of mine, both caught by the suite, both real
+1. **A hooks-order violation, 32 failing tests.** I placed the three new hooks AFTER
+   BookingDetail’s `if (!booking) return` guard, so they ran only on the loaded branch — React
+   threw on the first render of any booking still loading, taking the whole screen down for a
+   courtesy menu. Hoisted above the guard, with a ⚠ comment at the site saying they must stay
+   there and why. **The failure was worth more than the feature**: a conditional hook is the
+   kind of bug that reaches production looking like an intermittent blank screen.
+2. **Flat menu entries were the wrong design, and an existing test said so.** I first spread the
+   valid templates as four rows, which pushed Extend and Assign Crew — the verbs people open
+   that menu for — down the list. `BookingDetail.layout.test.tsx` §4.2 failed on it. Rather
+   than edit the test to accept the bloat I built what §3 rules: one entry, one submenu. My
+   earlier note calling the flattening an acceptable deviation was wrong and is withdrawn.
+
+### Verified
+- `npx tsc --noEmit` exit 0 · `npx vitest run`: **97 files, 2298 tests, all green** (53 new).
+- ⚠ **Test edited, declared:** §4.2’s overflow assertion was exact array equality on four
+   labels. Its stated ruling is that NOTHING was dropped, so the four verbs are still asserted
+   present and in order; equality was replaced by `toHaveLength(5)`, which guards something
+   stronger — the overflow stays five rows however many messages a stage offers, which is the
+   whole reason the submenu exists.
+- Not driven in a browser: another session holds this folder’s dev-server port. The composed
+   text, the stage rules and every refusal reason are covered by the 53 unit tests; what is NOT
+   verified by driving is the submenu’s expand/collapse in a real browser.
+
+### Found — the spec against the repo
+- **`BookingListRow` carries no phone and no total.** A booking row is not a contact record, by
+   design. The phone is read once from `getClient(clientId)`; the total, advance and balance
+   come from the invoice rows this screen already fetches. Nothing new was computed.
+- **§4 vs §1 disagree on a 9-digit number.** §4 reads as though short input is refused; §1 rules
+   "anything else → as-is if ≥ 8 digits". So a mistyped 9-digit local mobile passes through
+   UNPREFIXED rather than being rejected — which is the safer failure (an unresolvable number,
+   not a Nepali stranger), and is asserted explicitly so it stays deliberate. Babin’s to
+   confirm; §1 was followed as the ruling.
+
+### Blocked
+1. **§5.3 receipt on the payment toast** — `ToastContextValue` exposes only
+   `showSuccessToast(title, message?)`. It needs an action affordance before a "Send receipt"
+   can ride a success toast. Not added on the way past: it is a global component and a change
+   there touches every success in the product.
+2. **§5.4 daily digest** — there is no Daily Closing screen in the tree. The spec already ties
+   it to LOCAL_FIRST_CORE_SPEC §6, so it lands with that screen. `dailyDigest()` and
+   `ownerWhatsappNumber` are built and waiting.
+3. **§6 Open ⭐ 2/3** — crew and supplier templates, and the Cloud API transport, are out of v1
+   by the spec’s own ruling.
+
 ## 2026-09-01 (cont.) — "finish all to dos": sync error surfaced · two docs falsified by 0077 corrected · seven junk files removed
 **Phase:** cross-phase close-out · **Status:** done; what remains is Babin's, itemised below
 

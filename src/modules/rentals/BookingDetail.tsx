@@ -38,6 +38,10 @@ import type { InvoiceListRow, PaymentListRow } from '../../lib/queries/finance'
 import { listBookingNotes, notesForBooking } from '../../lib/queries/bookingNotes'
 import type { BookingNoteRow, BookingNoteType } from '../../lib/queries/bookingNotes'
 import { addBookingNote } from '../../actions/notes/addBookingNote'
+import { getClient } from '../../lib/queries/clients'
+import { whatsappActionsFor } from '../../lib/whatsappActions'
+import { openWaLink } from '../../lib/whatsapp'
+import { readSettings } from '../../lib/settingsStore'
 import { releaseBookingLineUnit } from '../../actions/rentals/releaseBookingLineUnit'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { isSubRentedLine, isSubRentalBooking } from '../../data/booking'
@@ -380,10 +384,22 @@ interface OverflowItem {
   onClick: () => void
   /** §4.2: disabled entries stay visible and greyed with the reason on hover/focus/long-press. */
   unavailable?: string
+  /**
+   * A nested group, opened in place rather than as a second floating layer.
+   *
+   * WHATSAPP_LINKS_SPEC v1.0 §3 asks for **one** "Message client" entry with a
+   * stage-aware submenu, and this is why: a booking can offer four messages at
+   * once, and spreading them flat pushes Extend and Assign Crew — the verbs
+   * people actually open this menu for — off the top. One entry that expands
+   * keeps the overflow's shape fixed however many messages apply.
+   */
+  submenu?: { label: string; onClick: () => void; unavailable?: string }[]
 }
 
 function OverflowMenu({ items }: { items: OverflowItem[] }) {
   const [open, setOpen] = useState(false)
+  /** Which submenu is expanded, by label. One at a time. */
+  const [expanded, setExpanded] = useState<string | null>(null)
   const ref = useRef<HTMLSpanElement>(null)
 
   useEffect(() => {
@@ -400,6 +416,12 @@ function OverflowMenu({ items }: { items: OverflowItem[] }) {
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
     }
+  }, [open])
+
+  /* A submenu left expanded would re-open with the menu, showing a stale group
+     for a booking whose stage may have moved on since. */
+  useEffect(() => {
+    if (!open) setExpanded(null)
   }, [open])
 
   return (
@@ -476,6 +498,61 @@ function OverflowMenu({ items }: { items: OverflowItem[] }) {
                     {body}
                   </button>
                 </Unavailable>
+              )
+            }
+            if (it.submenu) {
+              const isOpen = expanded === it.label
+              return (
+                <div key={it.label}>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-haspopup="menu"
+                    aria-expanded={isOpen}
+                    onClick={() => setExpanded(isOpen ? null : it.label)}
+                    style={rowStyle}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    {body}
+                    <Icon name="chevron_right" size={12} style={{ color: 'var(--text2)' }} />
+                  </button>
+                  {isOpen &&
+                    it.submenu.map((sub) => {
+                      const subStyle = {
+                        ...rowStyle,
+                        paddingLeft: 33,
+                        color: sub.unavailable ? 'var(--muted)' : 'var(--text)',
+                        cursor: sub.unavailable ? ('not-allowed' as const) : ('pointer' as const),
+                      }
+                      if (sub.unavailable) {
+                        return (
+                          <Unavailable key={sub.label} reason={sub.unavailable}>
+                            <button type="button" role="menuitem" disabled aria-disabled style={subStyle}>
+                              <span style={{ flex: 1 }}>{sub.label}</span>
+                              <Icon name="close" size={12} style={{ color: 'var(--disabled)' }} />
+                            </button>
+                          </Unavailable>
+                        )
+                      }
+                      return (
+                        <button
+                          key={sub.label}
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setOpen(false)
+                            sub.onClick()
+                          }}
+                          style={subStyle}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                        >
+                          <span style={{ flex: 1 }}>{sub.label}</span>
+                        </button>
+                      )
+                    })}
+                </div>
               )
             }
             return (
@@ -726,7 +803,10 @@ function NotesCard({
     <Card title="Notes">
       {error ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', alignItems: 'flex-start' }}>
-          <p role="alert" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--st-danger-fg)' }}>{error}</p>
+          {/* --danger-text: bare error copy on a card, with no red fill behind
+              it, so it needs the text-safe red rather than --st-danger-fg
+              (white ink for a solid block — invisible on the light card). */}
+          <p role="alert" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--danger-text)' }}>{error}</p>
           <Button icon="refresh" onClick={onRetry}>
             Retry
           </Button>
@@ -813,8 +893,10 @@ function NotesCard({
             /* role="alert" — the page's own convention for inline errors (the
                confirm-dispatch error above, and every modal this card's Quick
                Actions launch); without it a failed save is silent to a
-               screen reader, and no toast fires on failure (§12). */
-            <p role="alert" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--st-danger-fg)' }}>{formError}</p>
+               screen reader, and no toast fires on failure (§12). Since this
+               line IS the only failure signal, it also has to be legible:
+               --danger-text, not the solid-fill ink --st-danger-fg. */
+            <p role="alert" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--danger-text)' }}>{formError}</p>
           )}
           <div>
             <Button icon="plus" variant="primary" onClick={() => void submit()} disabled={saving || body.trim() === ''}>
@@ -1177,6 +1259,81 @@ export default function BookingDetail() {
         ? 'repeat(2, minmax(0,1fr))'
         : '1fr'
 
+  /* ── WhatsApp compose links — WHATSAPP_LINKS_SPEC v1.0 §3 ────────────────
+   *
+   * ⚠ These three hooks sit ABOVE the `if (!booking)` guard below, and must
+   * stay there. Placed after it they run only on the loaded branch, which is a
+   * conditional hook call — React throws on the very first render of a booking
+   * that is still loading, taking the whole screen down for a courtesy menu.
+   *
+   * The recipient's number is the one field this screen's queries do not
+   * carry: `BookingListRow` has `clientId` but no phone, by design — a booking
+   * row is not a contact record. So it is read once from the canonical client
+   * query, and a failure is swallowed to `null`: an unreachable client record
+   * leaves the menu offering its entries disabled with the no-phone reason,
+   * the same honest end state as a client who has no number.
+   */
+  const [clientPhone, setClientPhone] = useState<string | null>(null)
+  useEffect(() => {
+    const cid = booking?.clientId
+    if (!cid) return
+    let cancelled = false
+    getClient(cid)
+      .then((c) => {
+        if (!cancelled) setClientPhone(c?.phone ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setClientPhone(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [booking?.clientId])
+
+  const waActions = useMemo(() => {
+    if (!booking || !user) return []
+    const s = readSettings()
+    return whatsappActionsFor({
+      role: user.role,
+      clientPhone,
+      settings: {
+        businessName: String(s.organisationName),
+        businessPhone: String(s.businessPhone),
+        defaultPickupTime: String(s.defaultPickupTime),
+        defaultReturnTime: String(s.defaultReturnTime),
+      },
+      facts: {
+        clientName: booking.clientName,
+        bookingNo: booking.bookingNo,
+        stage: booking.stage,
+        startIso: booking.pickupAtAd,
+        endIso: booking.returnAtAd,
+        itemCount: booking.itemCount,
+        /* Read from `floor` rather than the `lines` const below, which is
+           re-created every render and would re-read localStorage with it.
+           Three is what fits one line before it reads as a packing list. */
+        topLines: (floor?.lines ?? [])
+          .slice(0, 3)
+          .map((l) => l.productName ?? l.description)
+          .filter((x): x is string => !!x),
+        /* Past its return date and not yet back — the same read the page's own
+           overdue chip uses, not a second definition of late. */
+        isOverdue:
+          !booking.isClosed &&
+          !booking.isCancelled &&
+          booking.actualReturnAtAd === null &&
+          new Date(booking.returnAtAd) < new Date(),
+        /* Law 6 — a session that may not see these figures is handed nulls,
+           and `whatsappActionsFor` refuses to state a total it does not have
+           rather than printing a zero. */
+        total: canBookingMoney && hasInvoice ? (totals.total as Paisa) : null,
+        advance: canBookingMoney && hasInvoice ? (totals.paid as Paisa) : null,
+        deposit: canBookingMoney ? booking.depositRequired : null,
+        balance: canBookingMoney && hasInvoice ? (totals.outstanding as Paisa) : null,
+      },
+    })
+  }, [booking, user, clientPhone, floor, canBookingMoney, hasInvoice, totals])
+
   if (!booking) {
     /*
      * Loading / error / not-found, through PageBody's fixed ladder. An unknown
@@ -1395,6 +1552,31 @@ export default function BookingDetail() {
                 the capability matrix TODO(decision) lives with core.ts. */}
             <OverflowMenu
               items={[
+                /* §3 — ONE "Message client" entry with a stage-aware submenu.
+                   WhatsApp is never the primary verb and never a row verb
+                   (RAIL_AND_QUICK_ACTIONS F5); it lives here, behind one row,
+                   so a booking offering four messages cannot push the
+                   operational verbs down. A message that cannot be composed
+                   stays VISIBLE and disabled with its reason (§4.2). */
+                {
+                  label: 'Message client',
+                  icon: 'message' as const,
+                  onClick: () => undefined,
+                  ...(waActions.length === 0
+                    ? {
+                        unavailable:
+                          'No message applies at this stage — a quote has nothing to confirm, and a returned booking has nothing to chase.',
+                      }
+                    : {
+                        submenu: waActions.map((a) => ({
+                          label: a.label,
+                          onClick: () => {
+                            if (a.href) openWaLink(a.href)
+                          },
+                          ...(a.unavailable ? { unavailable: a.unavailable } : {}),
+                        })),
+                      }),
+                },
                 ...(canBookingMoney && canOperate
                   ? [{ label: 'Extend rental', icon: 'calendar' as const, onClick: () => setShowExtendModal(true) }]
                   : []),

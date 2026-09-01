@@ -418,7 +418,22 @@ describe('§4.2 header — [Operations ▾] and [⋮], with nothing deleted to g
       more?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     const items = [...container.querySelectorAll('[role="menuitem"]')].map((i) => i.textContent?.trim())
-    expect(items).toEqual(['Extend rental', 'Assign crew', 'Create sub-rental', 'Save draft'])
+    /* The ruling this asserts is that NOTHING was dropped to make room for the
+       header's two controls, so the four operational entries are checked for
+       presence and order. It was an exact-equality check until 1 Sep 2026, when
+       WHATSAPP_LINKS_SPEC v1.0 §3 added "Message client"; equality was relaxed
+       rather than the new entry hidden, because the four verbs are what this
+       test was written to protect and all four are still here. The length
+       assertion is the replacement guard: the menu stays FIVE rows however many
+       messages a stage offers, which is the whole point of the submenu. */
+    expect(items.filter((i) => i !== 'Message client')).toEqual([
+      'Extend rental',
+      'Assign crew',
+      'Create sub-rental',
+      'Save draft',
+    ])
+    expect(items).toContain('Message client')
+    expect(items).toHaveLength(5)
   })
 
   it('renders Save draft disabled with its reason, rather than as a control that does nothing', async () => {
