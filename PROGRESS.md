@@ -2,6 +2,53 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-01 — BUG-002 fixed as far as it can be without a ruling: the fake "12 unread" is gone, both dead controls now say why
+**Phase:** Phase 4/5 — honesty of controls · **Status:** the bug is fixed; the **feature** is filed, not built
+
+`FUNCTIONAL_BUGS.md` BUG-002 (P1): the header's notification bell and Help button had **no
+`onClick` on any of the 56 routes**, and the bell carried a **hardcoded unread badge of 12**.
+
+### Established first — there is no notification feature to wire to
+- `notifications` exists live (12 columns) and holds **zero rows**.
+- **Nothing in `src/` writes one.** The only inbox UI is
+  `src/archive/notifications/UnifiedInbox.tsx` — archived, no route, no importer outside its own
+  test.
+- No `/notifications` or `/help` route exists in `App.tsx`.
+
+So the badge was advertising twelve pieces of pending work that did not exist and could not be
+opened — and it rendered in the **danger pair**, so it read as urgent. That is a fabricated figure
+of exactly the kind the no-fabrication register exists to stop, and it needed no ruling to remove.
+
+### Did
+- **Deleted the hardcoded `12`** and its badge, and the `aria-label="Notifications, 12 unread"` —
+  the label lied to screen readers specifically, which is worse than the visual because there is no
+  second channel to correct it.
+- **Both controls are now `Unavailable` + `disabled`**, the house pattern already used by
+  RentalsList's "Save View" and Inventory's "Bulk Actions". `Unavailable` states the reason on hover
+  **and on a 500 ms long-press**, so the warehouse tablet gets the explanation too — a bare `title`
+  would have left touch users with nothing.
+- Reasons name the open decision rather than the implementation: *"Notifications are not built yet
+  — nothing writes one, so there is nothing to open."* / *"Help is not built yet — no destination is
+  settled: in-app guide, docs site, or a support contact."*
+
+### Deliberately NOT "absent, not disabled"
+That rule is Law 6 — hiding money from money-blind roles, so a greyed control cannot advertise that
+money exists. These two are unbuilt **for everyone**, which is a different fact and is worth saying
+out loud rather than hiding. Removing them would also have quietly deleted the only affordance
+where notifications will eventually live.
+
+### Verified
+- `npx tsc --noEmit` **exit 0** · `npx vitest run` **exit 0 — 99 files, 2,321 tests**.
+- **Driven in `dev:mock`, logged in, at 1440×900:** both buttons report `disabled: true` with their
+  reason on the wrapper; the header contains no `12`; no `aria-label` containing "unread" survives
+  anywhere. Screenshot taken — the bell renders with no red badge.
+
+### Still open — needs Babin, and this is the feature half
+Building the notification centre is unruled on three points: **what generates a notification**,
+**what "unread" means per user**, and **where a click lands**. Help needs one decision: destination.
+Until those are answered the controls stay honest rather than dead. BUG-003 (inert Client Reports
+pagination, 11 dead controls) is untouched and still open.
+
 ## 2026-09-01 — BUG-001 fixed: red `[Icon:…]` debug text is gone from client-facing UI, and the type now forbids it
 **Phase:** Phase 4/5 — design-system enforcement · **Status:** fixed, driven, gate green
 

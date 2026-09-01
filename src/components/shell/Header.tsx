@@ -1,4 +1,5 @@
 import Icon from '../ui/Icon'
+import { Unavailable } from '../ui/Unavailable'
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../lib/auth'
@@ -313,46 +314,41 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexShrink: 0 }}>
         {actions}
 
-        <button type="button" aria-label="Notifications, 12 unread" style={{ ...iconBtn, position: 'relative' }}>
-          <Icon name="bell" size={17} />
-          <span
-            className="figure"
-            style={{
-              position: 'absolute',
-              top: 1,
-              right: 1,
-              minWidth: 16,
-              height: 16,
-              borderRadius: 'var(--r-badge)',
-              /*
-               * The status pair, read the right way round.
-               *
-               * These two were SWAPPED — background took `-fg` and colour took
-               * `-bg` — so the alert badge rendered as a white pill with red
-               * digits. Pre-v4.1 the danger pair was a soft wash and the swap
-               * was survivable; v4.1 §4 makes every pair a solid block, and
-               * white-on-red inverted to red-on-white.
-               *
-               * The old comment argued from `--danger` = #ef4444; v4.1's value
-               * is #C73A3A, measured at 5.13:1 against white (spec §10), so the
-               * pair is AA either way — it just has to be used in order.
-               */
-              background: 'var(--st-danger-bg)',
-              color: 'var(--st-danger-fg)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 700,
-              display: 'grid',
-              placeItems: 'center',
-              border: '2px solid var(--sidebar)',
-            }}
-          >
-            12
-          </span>
-        </button>
+        {/*
+          BUG-002 — both of these were live-looking buttons with no `onClick` on
+          all 56 routes, and the bell carried a **hardcoded unread count of 12**.
 
-        <button type="button" aria-label="Help" style={iconBtn}>
-          <Icon name="info" size={17} />
-        </button>
+          The count was the serious half. `notifications` exists live (12 columns)
+          and holds **zero rows**; nothing in `src/` writes one, and the only
+          inbox UI is `src/archive/notifications/UnifiedInbox.tsx`, which has no
+          route and no importer outside its own test. So the badge advertised
+          twelve pieces of pending work that did not exist and could not be
+          opened — a fabricated figure of exactly the kind the no-fabrication
+          register exists to stop, and it read as urgent because it rendered in
+          the danger pair.
+
+          Building the notification centre is a FEATURE, not this fix: what
+          generates a notification, what "unread" means per user, and where a
+          click lands are all unruled. Until then these follow the house pattern
+          for an unbuilt control — `Unavailable` + `disabled`, the same treatment
+          as RentalsList's "Save View" — which states the reason on hover AND on
+          a long-press, so the warehouse tablet gets the explanation too.
+
+          Deliberately NOT the "absent, not disabled" rule: that one is Law 6,
+          about hiding money from money-blind roles. These are unbuilt for
+          everyone, which is a different fact and is worth saying out loud.
+        */}
+        <Unavailable reason="Notifications are not built yet — nothing writes one, so there is nothing to open.">
+          <button type="button" aria-label="Notifications" style={iconBtn} disabled>
+            <Icon name="bell" size={17} />
+          </button>
+        </Unavailable>
+
+        <Unavailable reason="Help is not built yet — no destination is settled: in-app guide, docs site, or a support contact.">
+          <button type="button" aria-label="Help" style={iconBtn} disabled>
+            <Icon name="info" size={17} />
+          </button>
+        </Unavailable>
 
         {/*
           Not a <button>: this wrapper carries no click handler of its own —
