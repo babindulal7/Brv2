@@ -1,7 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = 'https://sxguwvgoserhdolewibb.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4Z3V3dmdvc2VyaGRvbGV3aWJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyNTk3OTksImV4cCI6MjA5MzgzNTc5OX0.1KX30S4B78yKO4l2bG-hhgQVflr4REAUISTa2B1YY3I';
+/* Environment only, like BOOQABLE_TOKEN below. Falls back to the anon key
+   from .env.local for RLS-scoped runs.
+   PowerShell:  $env:SUPABASE_SERVICE_ROLE_KEY="<key>" */
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+if (!SUPABASE_SERVICE_ROLE_KEY) {
+  console.error('Set SUPABASE_SERVICE_ROLE_KEY (or VITE_SUPABASE_ANON_KEY, value in .env.local) first. It is no longer stored in this file.');
+  process.exit(1);
+}
 
 const BOOQABLE_SLUG = process.env.BOOQABLE_COMPANY || 'babin-rentals';
 /*

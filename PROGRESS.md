@@ -2,6 +2,30 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-02 — Hardcoded Supabase anon key removed from the three sync scripts
+**Phase:** housekeeping · **Status:** complete
+
+### Did
+The 2 Sep history scrub removed the Booqable token from `import-booqable-direct.mjs`,
+`run-full-sync.ts` and `sync-booqable-data.mjs`, but all three still carried the live
+**anon key** as an inline fallback. Now environment-only, matching the `BOOQABLE_TOKEN`
+pattern already in the same files: the `.mjs` pair read `SUPABASE_SERVICE_ROLE_KEY` (or
+`VITE_SUPABASE_ANON_KEY` from `.env.local`) and exit with instructions when neither is
+set; `run-full-sync.ts` polyfills `import.meta.env` from `process.env` with the same
+guard. The project URL stays literal — it is not a secret.
+
+### Verified
+- `node --check` on both `.mjs` scripts; esbuild parse of `run-full-sync.ts` — all clean.
+- `grep eyJhbGciOiJ` across `scripts/`, `src/`, `supabase/`, `docs/` and the repo's
+  tracked text files: zero hits.
+- Not verified: the scripts were not run against the live DB.
+
+### Worth knowing
+The key was committed before the 2 Sep rewrite, so it may survive in the pre-scrub
+backup (`backups/git-history-2026-09-01-pre-scrub/`) and any un-rewritten clones. The
+anon key ships in the browser bundle by design, so rotation is optional — but weigh it
+against the Law 6 masking gaps before deciding it is harmless.
+
 ## 2026-09-01 — BUG-003 fixed: the Client Ledger pager is gone, because there was never a page 2
 **Phase:** Phase 4/5 — honesty of controls · **Status:** fixed and driven; ⚠ repo typecheck is RED on another session's file
 

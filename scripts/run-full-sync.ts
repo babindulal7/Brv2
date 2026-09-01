@@ -1,8 +1,14 @@
-// Polyfill import.meta.env for Node environment before module evaluation
+// Polyfill import.meta.env for Node environment before module evaluation.
+// The anon key is environment only (value in .env.local) — it is no longer
+// stored in this file.  PowerShell:  $env:VITE_SUPABASE_ANON_KEY="<key>"
 if (typeof import.meta.env === 'undefined') {
+  if (!process.env.VITE_SUPABASE_ANON_KEY) {
+    console.error('Set VITE_SUPABASE_ANON_KEY first (value in .env.local). It is no longer stored in this file.')
+    process.exit(1)
+  }
   (import.meta as any).env = {
-    VITE_SUPABASE_URL: 'https://sxguwvgoserhdolewibb.supabase.co',
-    VITE_SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4Z3V3dmdvc2VyaGRvbGV3aWJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyNTk3OTksImV4cCI6MjA5MzgzNTc5OX0.1KX30S4B78yKO4l2bG-hhgQVflr4REAUISTa2B1YY3I'
+    VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL || 'https://sxguwvgoserhdolewibb.supabase.co',
+    VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY
   };
 }
 
