@@ -30,3 +30,9 @@ docs/docs.zip
 # directory a tool happened to run in. Regenerable noise, not project history.
 receipts/
 review-receipts/
+
+# The impeccable design hook's cache — per-session edit counts and "clean"
+# acknowledgements, keyed by session id. Every concurrent session rewrites it,
+# so a tracked copy turns each commit into a snapshot of whatever OTHER sessions
+# happened to be editing at the time. Regenerable bookkeeping, not project history.
+/.impeccable/
