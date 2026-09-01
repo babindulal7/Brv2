@@ -613,6 +613,48 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
+## 4.40 ⬅ OPEN ×2 — who signs a daily closing, and may a day be re-opened?
+
+**Raised 1 Sep 2026** building the Daily Closing screen and
+`0078_daily_closings.sql` (DRAFT, pre-flighted, **not applied**).
+
+`WHATSAPP_LINKS_SPEC v1.0` §5.4 defers the closing ritual to
+`LOCAL_FIRST_CORE_SPEC` §6. **That document is not in this repo** — the same
+absence §4.38(b) records for the 20/24/29 Aug rulings — so the table stores what
+the screen computes and leaves the two questions it cannot answer:
+
+### (a) Who may approve a closing?
+
+0078 gates INSERT on **`auth_is_finance_or_admin()`** — Owner, Admin, Manager,
+Coordinator, Accounts — because that is the EXISTING predicate for writing
+finance, mirrored per §4.20 rather than invented. But approving a closing is
+arguably an *approval*, not a *write*, and the schema already has a narrower
+predicate for that class: `auth_can_approve_late_fee_waiver()` is **Owner and
+Manager only**.
+
+Both readings are defensible and the schema contains both. Narrowing later is
+one `create policy … replace` and breaks no stored row, so the wider set was
+taken as the reversible option — not as a ruling.
+
+### (b) May a day be re-opened, and by whom?
+
+Answered only as far as Law 3 forces: an approved closing is **immutable**, and
+a correction is a **void plus a new closing** (proven against the live database
+inside a rolled-back transaction — the void is accepted, the edit and the delete
+are refused, and a second live closing for the same branch/day is refused by a
+partial unique index). What is NOT ruled is whether staff may void at all, or
+only the approver, or only an Owner. Today it follows (a).
+
+### Deliberately NOT ruled here: what an unexplained variance costs
+
+`variance_reason` is **optional**. Requiring one above a threshold would be a new
+gate, and §4.38(b) records Babin's 24 Aug standing constraint — *build first,
+rules later*. The column exists so a reason can be recorded the day someone rules
+it must be; no CHECK demands it. The 31 Aug discount-policy work was the first
+thing that stance stopped; this is the second.
+
+---
+
 ## 4.39 ✅ RULED 31 Aug 2026 — option (a): released_at/released_by, append-style release
 
 **The owner ruled (a)** the same day this was filed, and **approved applying it the same

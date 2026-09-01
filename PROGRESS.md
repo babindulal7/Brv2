@@ -183,6 +183,63 @@ Rail collapse/expand · no horizontal scroll at 375/800/1440 · failure banners 
 Sandbox note: six mock bookings were moved onto today's date (browser-local overlay
 only) so the day panels are demonstrable; the mock banner already disclaims the data.
 
+## 2026-09-01 (cont. 5) — 0078_daily_closings DRAFTED and proven against live, NOT applied
+**Phase:** Phase 1 schema · **Status:** draft written and pre-flighted; **needs Babin to apply**
+
+Babin: "add closing table migration". Written, pre-flighted, **not applied** — CLAUDE.md:
+never apply a migration to the live project without explicit approval, and "add the migration"
+is not "run it".
+
+### Did
+`supabase/migrations/0078_daily_closings.sql` — the record an APPROVE writes, which the Daily
+Closing screen currently renders unavailable for want of a table.
+- **The figures are STORED, not recomputed.** All nine are derivable from `payments`/
+  `invoices`/`clients` — `lib/queries/closing.ts` derives exactly them. A closing is a
+  statement somebody SIGNED, and recomputing a March closing from today’s ledger would
+  silently restate it every time a late correction landed. Same reasoning `invoices` stores its
+  own totals instead of summing lines on read.
+- **Append-only.** `trg_daily_closings_freeze` (BEFORE UPDATE, so it binds Owner and
+  `service_role`) permits exactly one transition — live → voided, touching only the three void
+  columns. `trg_daily_closings_reject_delete` reuses 0044’s Law 3 backstop. A correction is a
+  void plus a new closing; a partial unique index keeps one LIVE closing per branch per day and
+  lets the replacement through.
+- **Law 6, the 0062 shape not the 0019 shape.** The table is money end to end, so
+  `authenticated` loses the blanket SELECT and gets back only the non-money half; the amounts
+  live behind `daily_closings_v`. A Warehouse session can see THAT a day closed and by whom
+  without seeing a rupee — which is operationally useful and is why the counts stay ungated.
+- Post-conditions in the file re-check every one of those at apply time.
+
+### Verified — proven, not asserted
+- The whole body ran against the **live** database inside `begin; … rollback;`. Post-conditions
+  passed; **PREFLIGHT OK**.
+- Behaviour exercised on real rows in a second rolled-back transaction, seven checks, all as
+  intended: insert accepted · **edit refused** · **delete refused** · second live closing for
+  the same branch/day refused · void accepted · **corrected closing after the void accepted**
+  (the whole re-open path) · a variance that disagrees with its own two figures refused.
+- **Nothing persisted.** Re-read after rollback: `daily_closings` 0, `daily_closings_v` 0,
+  `reject_update_daily_closing` 0, ledger still tops out at `20260901050002` (0077).
+
+### Found — two rulings the file deliberately does not take (PLAN.md §4.40)
+1. **Who may approve.** INSERT is gated on `auth_is_finance_or_admin()` (Owner, Admin, Manager,
+   Coordinator, Accounts) — the existing finance-write predicate, mirrored per §4.20. But the
+   schema also has `auth_can_approve_late_fee_waiver()` = **Owner/Manager only**, and a closing
+   is arguably that class of act. The wider set was taken because narrowing later is one policy
+   replace and breaks no stored row. Babin’s call.
+2. **Whether a day may be re-opened, and by whom.** The mechanism exists and is proven; the
+   permission follows (1) until ruled.
+
+**Deliberately not ruled:** `variance_reason` is OPTIONAL. Requiring one would be a new gate,
+and §4.38(b) carries the 24 Aug "build first, rules later" constraint.
+
+### Blocked / next
+- **Applying 0078 needs Babin.** It is additive — a new table, one view, two triggers, no
+   existing object altered — so unlike a corpus insert it is genuinely reversible by dropping
+   what it created, and nothing reads it yet.
+- **The screen still shows APPROVE as unavailable** and will until 0078 applies AND the write
+   path is built (an action + `actions/core.ts` capability string). Deliberately not written
+   ahead of the table: a write path against a table that does not exist is the half-landed
+   state this repo keeps finding.
+
 ## 2026-09-01 (cont. 4) — Daily Closing screen built · §5.4 digest shipped · driven in the browser
 **Phase:** Phase 6 (screens) · **Status:** built, driven, green. APPROVE is deliberately not built — reason below
 
