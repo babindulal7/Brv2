@@ -42,7 +42,7 @@ const iconBtn = {
  */
 export default function Header({ crumbs, searchPlaceholder = 'Search…', actions }: HeaderProps) {
   const { user, logout, lockNow, hasPin } = useAuth()
-  const { status: syncStatus, pendingCount, triggerSync } = useSync()
+  const { status: syncStatus, pendingCount, error: syncError, triggerSync } = useSync()
   const navigate = useNavigate()
   const vp = useViewport()
   const isPhone = vp === 'phone'
@@ -69,6 +69,20 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
   const initials = user ? user.name.slice(0, 2).toUpperCase() : 'BR'
 
   return (
+    /*
+      The fragment is load-bearing: HandoverSheet is a Modal, and Modal paints
+      `position: fixed; inset: 0` in place (this codebase uses no portals — see
+      Modal.tsx, Select.tsx, MoreSheet.tsx, CommandPalette.tsx). An ancestor
+      carrying `backdrop-filter` is a containing block for fixed descendants in
+      WebKit and per the containing-block rules, so leaving the sheet INSIDE the
+      glass <header> risks collapsing a full-screen modal into the 59px header
+      strip on Safari/iPad. Measured here on Chromium 148: `filter` and
+      `transform` do trap a fixed child, `backdrop-filter` currently does not —
+      so this is engine-dependent, which is exactly why the sheet is a sibling
+      rather than a descendant. BottomBar.tsx:128 already renders MoreSheet this
+      way, outside its own glass <nav>; this matches it.
+    */
+    <>
     <header
       style={{
         display: 'flex',
@@ -224,7 +238,10 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
                   : syncStatus === 'offline'
                   ? 'Offline Mode active (Dexie cache). Click to sync when reconnected.'
                   : syncStatus === 'error'
-                  ? 'Sync warning. Click to retry.'
+                  /* Law 12 - the failure is stated here, persistently, rather than
+                     in a toast that expires before it is read. `syncError` is what
+                     syncAll() caught; the fallback covers a failure with no message. */
+                  ? `Sync failed: ${syncError ?? 'no reason reported'}. Click to retry.`
                   : 'Cloud Database & Local Cache Synced. Click to force sync.'
               }
             >
@@ -403,14 +420,16 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
         </div>
       </div>
 
-      {showHandover && (
-        <HandoverSheet
-          isOpen={showHandover}
-          onClose={() => setShowHandover(false)}
-          userName={user?.name}
-          userRole={user?.role}
-        />
-      )}
     </header>
+
+    {showHandover && (
+      <HandoverSheet
+        isOpen={showHandover}
+        onClose={() => setShowHandover(false)}
+        userName={user?.name}
+        userRole={user?.role}
+      />
+    )}
+    </>
   )
 }

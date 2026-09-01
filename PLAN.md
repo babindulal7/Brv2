@@ -135,8 +135,25 @@ The critical path. 60+ specs assume tables that have never been written down.
       The three that remain are `portal_users`, `portal_sessions`, `portal_auth_challenges` —
       deny-all to everyone including the owner, so **the Client Portal cannot function**; they
       need their own non-`system_role` auth scheme and the session→`client_id` binding ruled.
-- [ ] Column-level money hiding for Warehouse (law 6) — **NOT ENFORCED. Downgraded from `[~]`
-      to MISSING on 16 Aug 2026 by executing as a Warehouse session** (see the gate verdict).
+- [~] Column-level money hiding for Warehouse (law 6) — **ARMED ON 8 TABLES, open on the rest.**
+      *Re-verified against the live database 1 Sep 2026 (read-only, then a role-simulated probe).*
+      `has_table_privilege(authenticated, …, 'SELECT')` is now **false** on `bookings` (27 column
+      grants), `products` (35), `product_units` (29), `booking_lines` (19), `accessories` (11),
+      `booking_transport` (12), `maintenance_records` (20) and `vehicle_fuel_logs` (10) — plus
+      `staff_auth_pins`, denied outright. `0062` armed the first four; **`0077` (applied 1 Sep,
+      §4.38-era)** armed the last four, the I5 breaches. The remaining ~30 money base tables still
+      carry the blanket grant, so their `_v` mask stays bypassable — that is what keeps this `[~]`
+      and not `[x]`.
+      ⚠ **The three reads this entry named as proof are now refused.** Probed as `authenticated`
+      inside a rolled-back transaction: `bookings.deposit_required`, `booking_lines.rate` and
+      `products.daily_rate` each raise **42501**, while `bookings.project` still reads — so the
+      revoke is armed and is not over-broad. The 16 Aug text below is kept under Law 3 as the
+      record of what was true then; it is no longer the live state.
+
+  <details><summary>Superseded — the 16 Aug 2026 finding, kept verbatim</summary>
+
+  **NOT ENFORCED. Downgraded from `[~]` to MISSING on 16 Aug 2026 by executing as a Warehouse
+  session** (see the gate verdict).
       → The 21 `_v` views are correct and do mask (`booking_lines_v.rate` reads `null` for
       Warehouse). **The `revoke select (col)` half is a no-op**: `authenticated` holds
       table-level SELECT, which covers every column, so the column revokes never took —
@@ -146,6 +163,9 @@ The critical path. 60+ specs assume tables that have never been written down.
       tables it was written to guard" — that is **no longer true** (9 `_v` reads exist in
       `src/`, listed in §4.28), but the guard beside them was never armed.
       **Blocked on §4.28** — the fix breaks base-table reads until 10 call sites move to `_v`.
+  *(That blocker did not materialise for the eight: `0062` moved its call sites, and `0077`
+  found zero call sites to move.)*
+  </details>
 - [x] Indexes: lifecycle-order status sort, AD date sort, GIST range overlap, serial lookup, `client_uuid` unique
       → All present, correctly re-created after the `0015` enum rebuild; 85 `client_uuid`
       unique constraints.

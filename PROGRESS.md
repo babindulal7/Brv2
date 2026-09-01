@@ -2,6 +2,58 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-01 (cont.) — "finish all to dos": sync error surfaced · two docs falsified by 0077 corrected · seven junk files removed
+**Phase:** cross-phase close-out · **Status:** done; what remains is Babin's, itemised below
+
+Sweeping the standing list to the end. Everything an agent may take is taken.
+
+### Did
+1. **`syncState.error` now has a surface** — the other half of yesterday's Law 12 fix.
+   `Header.tsx` destructures `error` from `useSync()` and the sync chip's title reads
+   `Sync failed: <reason>. Click to retry.` The chip was already persistent and Law 11-clean
+   (dot + label + colour); what was missing was **which** failure. Stated plainly: this is a
+   `title` tooltip on an existing status chip, not a new inline banner — the reason is now
+   reachable and permanent rather than lost to an expiring toast, which is what Law 12 asks;
+   a fuller banner was not built. Also note the chip is `!isPhone`-gated, so a phone shows no
+   sync state at all — pre-existing, not fixed here.
+2. **`PLAN.md` §6's Law 6 checkbox was materially FALSE and is corrected.** It read `[ ]` **NOT
+   ENFORCED** and named three reads as its proof. Re-probed as `authenticated` in a rolled-back
+   transaction: `bookings.deposit_required`, `booking_lines.rate` and `products.daily_rate` each
+   raise **42501**, while `bookings.project` still reads. Now `[~]` — armed on **8** tables
+   (`bookings` 27 column grants, `products` 35, `product_units` 29, `booking_lines` 19,
+   `accessories` 11, `booking_transport` 12, `maintenance_records` 20, `vehicle_fuel_logs` 10,
+   plus `staff_auth_pins` denied outright), ~30 money tables still open. Original kept in a
+   `<details>` under Law 3.
+3. **`I5-RLS-MONEY-VERIFICATION.md` bannered and its §3 fix struck.** Its one-line
+   `REVOKE SELECT (col)` recommendation does not work — inert against a table-level grant, and
+   two of its four lines had already been issued in `0035`/`0036` to no effect. §1/§2 stand.
+   `DOC_STATUS.md` gains a 1 Sep addendum recording both corrections, per its own rule that an
+   audit is amended rather than left for the reader to disprove.
+4. **Seven junk files deleted** from the repo root (`-`, `10%`, `4`, `n`, `project(c`,
+   `r.join('`, `rentalsQuery(chip`) — all **0 bytes**, checked before deleting; botched shell
+   redirects, never tracked.
+
+### Verified
+- `npx tsc --noEmit` exit 0 · `npx vitest run`: **95 files, 2241 tests, all green**.
+- The 8-table Law 6 state and the three 42501s were read from the live database, not inferred
+   from migration headers ([[migration-headers-lie]] is why).
+- Not driven in a browser: the only UI change is one tooltip string, and another session holds
+  the dev-server port.
+
+### Blocked — all of it needs Babin, none of it is an agent's to take
+1. **🔑 Rotate the Booqable token** (committed since `201f772`, 13 Aug). Order matters:
+   **rotate → move to the proxy env → scrub**. Scrubbing first is theatre — the token stays
+   valid and lives on in history. Re-grepped today: the four scripts already listed carry the
+   Booqable token, and **`scripts/run-full-sync.ts` is a fifth file** carrying the Supabase key
+   — a four-file scrub list would miss it. Rotation also unblocks D1.
+2. **The `B-900…B-945` numbering collision** with real Booqable orders (`booking_no` is UNIQUE).
+3. **Fix or quarantine** `full_sync.sql` / `generated_import.sql`.
+4. **§4.38(b)** document precedence · **§4.23** waiver-vs-discount asymmetry · the `seed.ts`
+   anchor `TODO(decision)` — three rulings. “Do all” grants approval, not the content of a
+   decision, and `CLAUDE.md` forbids inventing one.
+5. The ~30 money tables still carrying a blanket grant — a `0077`-shaped repeat each, and each
+   needs its call sites checked first the way `0062` did.
+
 ## 2026-09-01 — "ok do all": 0077 APPLIED (owner-approved) · sync WIP typed green and Law-12’d · gate green · wave committed
 **Phase:** Phase 1 schema + cross-phase close-out · **Status:** applied, verified, committed
 
@@ -31,8 +83,8 @@ Babin’s “ok do all” on the standing todo list. Item by item:
    to `string | undefined` for `exactOptionalPropertyTypes`, and — the real one —
    `syncContext.tsx` called `showErrorToast`, which `ToastContextValue` deliberately does not
    have (Law 12: toasts carry successes only). The two error toasts are gone; offline and
-   failure outcomes land in `SyncState` for inline rendering. ⚠ Nothing in the shell renders
-   `syncState.error` yet — the state is written, the inline surface is a follow-up.
+   failure outcomes land in `SyncState` for inline rendering. ⚠ Nothing in the shell rendered
+   `syncState.error` yet — **closed in the entry above, same day**: `Header.tsx` now reads it.
 
 ### Verified
 - `npx tsc --noEmit` exit 0. `npx vitest run`: **95 files, 2241 tests, all green** — incl.
@@ -207,6 +259,132 @@ family, commit-model ruling, open decisions 1–3) is verbatim v1.0.
   correction BS-large is the *default*, so the open decision is really whether an
   AD-primary comfort toggle exists. Kept verbatim (not our decision to rewrite);
   flag when decision 2 is ruled.
+## 2026-09-01 (cont. 2) — The gap check's 38 P1/P2 claims verified against source: 4 false, 17 partial · eight new defects found, one of them a live law breach
+**Phase:** verification · **Status:** done, read-only. Record:
+[`docs/booqable/GAP-CHECK-VERIFICATION.md`](docs/booqable/GAP-CHECK-VERIFICATION.md)
+
+I had turned the gap check's P1/P2 items into backlog checkboxes on the walk's word alone. Ten
+agents (five verifying clusters, five adversarially attacking every "X does not exist" verdict)
+re-derived all 38 from source with `file:line`. **17 CONFIRMED · 17 PARTIAL · 4 FALSE · 0
+UNVERIFIABLE.** No absence verdict survived unchanged.
+
+**The repeated shape: built somewhere, missing here.** A UI walk cannot tell built from wired, or
+here from anywhere — that is the structural limit this exercise measured.
+
+### The four that were simply wrong
+- **`FilterRail` exists** — `Inventory.tsx:925`, live, reflows below 1280, and predates the walk by
+  three days. Three more pages carry a `SideRail label="Filters"`. The genuinely dead piece is
+  `FilterOptionList` (zero production importers).
+- **Facet counts exist** — wired on Rentals (`RentalsList.tsx:27,563,618`) behind the collapsed
+  Status accordion (`enabled: open`). Also: **the "second `facetCounts.ts`" the layer-d pass
+  reported is a git-worktree copy**, byte-identical — corrected in the backlog.
+- **The FY 2083/84 + branch chip it praises does not exist.** `Header.tsx` has zero matches. It was
+  likely seeded by doc rot: `ReportToolbar.tsx:75` asserts the header pill says FY 2083/84.
+- **"Finance blank start date"** — misread; see the BS defect below.
+
+### Both build-order assumptions are half wrong
+- **Item 3:** `lib/workflow` has **no** single-stage next-verb function (only `canAdvance(from,to)`,
+  `jobThatSets(to)`, `planTransition({from,to})`); the lookup exists three times elsewhere, and a
+  "Reset" primary already renders on Operations Queues and Today — so the Booking Detail fix is a
+  **label**. ⛔ **But there is no Close verb anywhere** (`Reset.sets` null, `closeGates` has no
+  production caller, ResetWorkspace records a reset and does not close). Returned → Closed must be
+  built from scratch; item 3's "Reset/Close" is unbuildable as written.
+- **Item 4:** `periodRange` answers **6 of 16** presets and **ReportToolbar does not share it**.
+  The item is "extend by ten cases and migrate ReportToolbar", not "wire to an existing engine".
+
+### 🐞 Eight defects the walk missed — full list in the doc, the load-bearing ones here
+1. **BS dates are broken for every date after 16 Aug 2026.** `lib/bs.ts` covers only Shrawan 2083
+   (anchor 16 Jul + 32 days); `toBs` returns null beyond it, so the Finance header pill
+   (`Finance.tsx:180`) and Dashboard date pill (`data/today.ts:76-80`) render `—`. **The
+   BS-above-AD law is failing in production** — live only inside a window that closed a fortnight
+   before the walk praised it. Fix exists as dead code: `bs.ts:135 formatBsOrAd()`, zero importers.
+2. **`/rentals/B-701/evidence` refuses to load** — `EvidenceWorkspace.tsx:174-175` hard-gates on
+   `BOOKING.no` (B-715). The constant is not gone; Booking Detail was fixed, Evidence was not.
+3. **`LogCaseModal.tsx:90`** files a booking-less case against `'B-715'`.
+4. **Operations bypasses `operationalDayBounds`** (`OperationsQueues.tsx:201-208`, raw midnights)
+   while Today is 06:00-anchored — **two screens disagree about "today"**, undermining D4.
+
+### Corrections that prevent damage
+- **Payment Due grey is NOT a Law 6 breach** (settled from source, no Warehouse session needed).
+  `chipsFor(canSeeMoney)` already strips the chip before render, test-locked. Re-enabling it would
+  ship a money filter with no column behind it. **Box closed.**
+- **The two "duplicate" More Filters are not duplicates** — different state, distinct accessible
+  names, and a code comment naming that exact hazard. Deleting one strips a list's only filter.
+- **Deposit "Rs 0" is honest** — 245 of 246 rows genuinely store `0`, zero nulls; root cause is
+  `0002_bookings.sql:38 not null default 0`. **The cited "§9.8" does not exist in PLAN.md.**
+
+### Blocked / next
+Backlog §8 is fully re-scoped against these findings. Nothing here was fixed — all read-only.
+Recommended first build: **the BS calendar table** (a law breach, fix half-written and dead), then
+the two B-715 gates. The rail/facets item should be re-planned rather than built as specced.
+
+## 2026-09-01 (cont.) — Scoping the gap check's P0 found a blocking numbering collision, two corrupting import scripts, and a committed API token
+**Phase:** investigation · **Status:** findings recorded; **three items need Babin, none actionable by an agent**
+
+Filing the gap check left "corpus import/bridge" as an open box. Scoping what it would actually
+cost turned up four things, all measured 1 Sep against the live DB (MCP, read-only) and the tree.
+Full writeup: [`docs/booqable/BRIDGE-AND-CORPUS-STATE.md`](docs/booqable/BRIDGE-AND-CORPUS-STATE.md).
+**No sync was run, no migration applied, no Booqable API call made.**
+
+### ⛔ 1. The applied 0076 seed corpus squats on live Booqable booking numbers
+`bookings.booking_no` is **UNIQUE**. Booking numbers map 1:1 to Booqable order numbers — live
+**`B-898` carries `return_at = 2026-08-31 06:00`, exactly the due-back the gap check reports for
+Booqable #898.** The import covered orders **700–899** (`B-700…B-899`, 200 rows). Then
+`0076_seed_operational_stage_corpus` inserted 46 synthetic rows numbered **`B-900…B-945`** — the
+range the next real orders need (the capture probed Booqable **#906** live on 31 Aug).
+
+Importing #900+ now fails on the unique index. **The blocking rows cannot be deleted** (Law 3 /
+`trg_bookings_reject_delete`, every role incl. `service_role`), and **cancelling does not free the
+number**. Options costed in §4; (a) renumbering 0076's rows via a new migration looks cheapest and
+keeps the #N ↔ B-N convention — but it is a live write against an applied migration and is
+**Babin's ruling**.
+
+Knock-on: the gap check's own acceptance test names #898 and #903. B-898 is real; **B-903 is a
+synthetic seed row wearing that number** (unrelated dates). Half that test currently reads a fake.
+
+### 2. The bridge is built and off-line — this was never a build task
+`src/lib/booqable/sync.ts` (109 KB, dependency-ordered pull phases, `external_refs` bookkeeping,
+`sync_conflicts`, write-back allowlist) + seven mappers (~270 KB) +
+`supabase/functions/booqable-proxy/index.ts` (**exists** — `client.ts`'s "proxy not written in
+this pass" header is stale) + `scripts/run-full-sync.ts` calling `runFullPull`.
+**Nothing under `src/` imports any of it** — every outside mention is prose in a module header or
+an error string. Not dead: off-line.
+
+Corpus: 246 bookings · 366 clients · 204 products · **0** payments/invoices/product_units/
+stage_transitions. `external_refs` covers only `clients` (100) and `products` (71) — **zero
+`orders` refs**, so no booking traces back to Booqable and a re-sync would **duplicate rather than
+update**. A refs back-fill is a prerequisite to any re-sync.
+
+### 3. Two import scripts would corrupt bookings if run today
+`scripts/full_sync.sql` (223 KB) and `generated_import.sql` insert every booking with
+`client_id = (SELECT id FROM public.clients LIMIT 1)` — arbitrary, no ORDER BY — and
+`pickup_at = return_at = NOW()`. Their idempotency guard checks `external_refs` rows with
+`entity='orders'` that **were never written**, so it suppresses nothing: a run inserts 100 (or 25)
+mis-clientned zero-length bookings, permanently.
+
+⚠ **A hypothesis I had and then refuted, recorded so it is not re-run:** I expected the live 200 to
+show this damage. They do not — 86 distinct clients, 72 distinct pickup times, 22 Jul → 25 Nov
+spread, zero zero-length rentals. **The live 200 came from a better path, not from these files.**
+The files remain a loaded gun; they have not fired.
+
+### 4. 🔑 A live Booqable API token is committed
+Hard-coded with a Supabase key in four git-tracked scripts (`import-booqable-direct.mjs`,
+`import-via-mcp-sql.mjs`, `sync-all-booqable-data.mjs`, `sync-booqable-data.mjs`) since commit
+`201f772`, **13 Aug 2026**. It contradicts the architecture `client.ts`'s own header documents
+(no token outside the Edge Function's `Deno.env`). **Mitigating: the repo has no git remote and
+has never been pushed** — exposure is local. **Not mitigating:** this workspace ships `.rar`/`.zip`
+handoffs, and history rides along.
+
+Order matters: **rotate first, then move it to the `booqable-proxy` env, then scrub the scripts** —
+scrubbing first leaves a valid token in history. **An agent must not rotate a credential; this one
+did not.** Note this also touches D1, which `PROGRESS`/memory record as "awaiting a Booqable API
+token" — the real blocker is a *safe* token, and rotation unblocks D1 as a side effect.
+
+### Blocked / next
+Three rulings for Babin: the B-900…B-945 numbering collision (§4), the token rotation (§6), and
+whether to fix or quarantine the two import scripts (§5). Backlog §8 carries all three as boxes.
+Wave 1 wiring is unaffected and remains the unblocked half of the gap check's P0.
+
 ## 2026-09-01 — Babin's 31 Aug app-vs-capture GAP CHECK filed and verified · docs only · a lost PROGRESS heading restored
 **Phase:** documentation · **Status:** done — no `src/`, no `supabase/`, no migration touched
 

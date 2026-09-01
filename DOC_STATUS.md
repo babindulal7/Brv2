@@ -26,6 +26,18 @@ in this list outranks those three.
 > first / rules later, 29 Aug Foundation v3.0 — are recorded for the first time; their precedence
 > is `PLAN.md` §4.38b, OPEN. Register rows below are otherwise unchanged.
 
+> **1 Sep 2026 addendum — 0077 applied, two documents amended.** Applying
+> `0077_law6_arm_the_four_unarmed_tables` to the live project falsified claims in two files, both
+> corrected in place with the originals kept (Law 3):
+> **(a)** `PLAN.md` §6's *"Column-level money hiding for Warehouse (law 6)"* was `[ ]` **NOT
+> ENFORCED** and named three base-table reads as proof. All three now raise 42501 — re-probed as
+> `authenticated` in a rolled-back transaction. Now `[~]`: armed on 8 tables, ~30 still open.
+> **(b)** `docs/booqable/I5-RLS-MONEY-VERIFICATION.md` §3's proposed one-line fix
+> (`REVOKE SELECT (col)`) is **inert** against a table-level grant, and two of its four lines had
+> already been issued in `0035`/`0036` to no effect. Bannered at the top and struck at §3;
+> §1/§2 stand. The `device.ts` follow-up named in the 31 Aug addendum above is **closed** — it
+> had already landed in `8a16cd7` as `lib/breakpoints.ts`.
+
 ---
 
 ## 1 · The register

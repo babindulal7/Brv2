@@ -5,6 +5,23 @@
 `CAPTURE-BACKLOG.md` §5 called this *"the highest-value check in the pack — a wrong policy is a
 Law 6 breach no UI gating can repair."* This file answers it.
 
+> ## ⚠ AMENDED 1 Sep 2026 — read this before §3
+>
+> **The four breaches below are CLOSED.** `0077_law6_arm_the_four_unarmed_tables` was applied to
+> the live project on 1 Sep 2026 (version `20260901050002`, owner-approved) and verified with
+> role-simulated probes: all four money columns now raise **42501** for `authenticated`, the
+> operational columns still read, and all four `_v` views serve.
+>
+> **§3's proposed one-line fix was WRONG and must not be reused.** `REVOKE SELECT (col)` is inert
+> against a table-level grant — that is `0062`'s entire subject, and two of the four lines below
+> had in fact *already been issued* (`0035:38`, `0036:151`) and done nothing; `pg_attribute.attacl`
+> was null on all four tables. The mechanism that works is `0062`'s and is the reverse: **revoke the
+> TABLE grant, then grant back the non-money columns by name**. `0077` also had to CREATE
+> `booking_transport_v` and `maintenance_records_v`, which §3 assumed existed — they never did.
+>
+> The §1/§2 findings and the methodology are unaffected and stand. Original text kept below under
+> Law 3.
+
 ---
 
 ## Headline
@@ -175,7 +192,10 @@ legitimately needs the trip and the vehicle. But the same policy hands over `cos
 `delivery_charge` and `fuel_charge`, because RLS filters **rows, not columns**. The policy is doing
 what it was written to do; the mistake is expecting it to carry Law 6, which it structurally cannot.
 
-### The fix, and why it is one line per table
+### ~~The fix, and why it is one line per table~~ — ⚠ SUPERSEDED, THIS DOES NOT WORK
+
+> Kept as written. See the 1 Sep amendment at the top: these four statements are no-ops against a
+> table-level grant, and `0077` used `0062`'s revoke-table-then-grant-columns shape instead.
 
 Revoke the money columns rather than the table, so the existing `_v` views keep working:
 
