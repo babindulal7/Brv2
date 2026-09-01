@@ -40,6 +40,8 @@ import type { BookingNoteRow, BookingNoteType } from '../../lib/queries/bookingN
 import { addBookingNote } from '../../actions/notes/addBookingNote'
 import { getClient } from '../../lib/queries/clients'
 import { whatsappActionsFor } from '../../lib/whatsappActions'
+import { paymentReceipt } from '../../lib/whatsappTemplates'
+import { buildWaLink } from '../../lib/whatsapp'
 import { openWaLink } from '../../lib/whatsapp'
 import { readSettings } from '../../lib/settingsStore'
 import { releaseBookingLineUnit } from '../../actions/rentals/releaseBookingLineUnit'
@@ -2350,9 +2352,67 @@ export default function BookingDetail() {
           }))}
           initialInvoiceId={primaryInvoice.invoiceNo}
           onSuccess={(p) => {
-            showSuccessToast('Payment Recorded', `${formatMoney(p.amountPaisa)} against ${p.invoiceId}`)
             paymentsList.refetch()
             invoicesList.refetch()
+
+            /*
+             * WHATSAPP_LINKS_SPEC v1.0 §5.3 — "Send receipt" rides the success
+             * toast (a toast carrying a follow-on to something that SUCCEEDED
+             * is still Law 12).
+             *
+             * ⚠ The toast is raised AFTER a fresh invoice read, not before,
+             * and that ordering is the whole correctness of this handler. The
+             * receipt states a remaining balance. `totals.outstanding` in this
+             * closure is the PRE-payment figure — the refetch above has not
+             * landed — so composing from it would tell a client they still owe
+             * the money they just handed over. The alternative, subtracting
+             * the amount here, is the UI doing money arithmetic that
+             * `sync_payment_to_invoice()` owns (Law 2). So the balance is READ
+             * back from the invoices, and the ~100ms that costs is invisible
+             * next to a wrong figure in writing.
+             *
+             * Composing the URL up front is also what lets the toast offer a
+             * real anchor rather than a click handler: `window.open` after an
+             * await has left its user gesture behind and is blocked.
+             */
+            void (async () => {
+              const label = `${formatMoney(p.amountPaisa)} against ${p.invoiceId}`
+              /* Law 6 — a session that may not see money never composes a
+                 receipt, and the no-phone case simply has nowhere to send it. */
+              if (!bookingId || !canBookingMoney || !clientPhone) {
+                showSuccessToast('Payment Recorded', label)
+                return
+              }
+              try {
+                const fresh = await listInvoices(invoicesForBooking(bookingId))
+                const live = fresh.rows.filter((r) => !r.isVoid)
+                const balance = live.reduce((sum, r) => sum + r.outstandingAmount, 0) as Paisa
+                const s = readSettings()
+                const href = buildWaLink(
+                  clientPhone,
+                  paymentReceipt(
+                    {
+                      clientName: booking.clientName,
+                      bookingNo: booking.bookingNo,
+                      amount: p.amountPaisa,
+                      method: p.method,
+                      balance,
+                    },
+                    { businessName: String(s.organisationName), businessPhone: String(s.businessPhone) },
+                  ),
+                )
+                showSuccessToast(
+                  'Payment Recorded',
+                  label,
+                  href ? { label: 'Send receipt on WhatsApp', href } : undefined,
+                )
+              } catch {
+                /* The payment IS recorded — that is what the toast reports. A
+                   receipt that cannot be composed loses the offer, not the
+                   confirmation, and never turns a success into an error. */
+                showSuccessToast('Payment Recorded', label)
+              }
+            })()
           }}
         />
       )}

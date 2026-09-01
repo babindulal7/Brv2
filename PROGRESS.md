@@ -135,6 +135,64 @@ Rail collapse/expand · no horizontal scroll at 375/800/1440 · failure banners 
 Sandbox note: six mock bookings were moved onto today's date (browser-local overlay
 only) so the day panels are demonstrable; the mock banner already disclaims the data.
 
+## 2026-09-01 (cont. 3) — §5.3 shipped: the toast can carry ONE action, and the receipt reads its balance back
+**Phase:** Phase 6 (screens) + components · **Status:** §5.3 done and green. §5.4 blocked on a screen that does not exist
+
+Babin: "build 5. and toast action". §5.3 is the toast action, so this is that item and the
+component change it needed.
+
+### Did
+1. **`components/ui/Toast.tsx` gains an optional `action`** — `{ label, href }`, rendered as a
+   real `<a target="_blank" rel="noopener noreferrer">`. Law 12 is intact: the action is a
+   follow-on to something that already SUCCEEDED, never a retry for a failure.
+   **It is an href and not a callback on purpose.** The caller has to await a query before it
+   can compose the link, and a `window.open` fired after an await has left its user gesture
+   behind — browsers block it. An anchor cannot be blocked. That one constraint is what forces
+   the caller to compose the URL BEFORE raising the toast, which is what makes the figures in
+   it real (see 2).
+2. **Dwell: 12s with an action, 4s without.** Four seconds is right for "that worked". It is
+   about the time it takes to read a line, decide, and move a pointer — so an actionable toast
+   at 4s vanishes under the cursor roughly as often as it is caught. Toasts with no action are
+   untouched, so nothing else in the product got slower.
+3. **§5.3 — "Send receipt on WhatsApp" on the Record Payment success**
+   (`BookingDetail.tsx`). Money-gated and phone-gated: no `canBookingMoney`, no phone, or no
+   composable link ⇒ the plain confirmation toast, with no action offered.
+
+### Found — the receipt would have stated the wrong balance, and the fix is an ordering
+`paymentReceipt` prints a remaining balance. Inside the `onSuccess` closure
+`totals.outstanding` is the **PRE-payment** figure — the refetch fired on the line above has
+not landed — so composing there tells a client they still owe the money they just handed over.
+The other obvious route, subtracting the amount, is the UI doing money arithmetic that
+`sync_payment_to_invoice()` owns (Law 2).
+
+So the balance is **read back**: the handler awaits a fresh `listInvoices(invoicesForBooking)`,
+sums the live rows, and only then raises the toast with the composed link. The ~100ms is
+invisible next to a wrong figure in writing to a client. A failed read loses the OFFER, not the
+confirmation — the payment is recorded either way, and a success never turns into an error.
+
+### Verified
+- `npx tsc --noEmit` exit 0 · full suite green (see the run in this entry’s session).
+- **6 new tests** in `components/ui/__tests__/toastAction.test.tsx`, driven through a real
+   `ToastProvider`: the action is an anchor, `href` is the composed link, `target=_blank` with
+   BOTH `noopener` and `noreferrer` (wa.me is a third-party origin and could otherwise reach
+   back through `window.opener`), the row keeps a 44px target (Law 15), and the two dwells are
+   asserted with fake timers — the actionable toast survives 4.5s and is gone by 12.5s, while a
+   plain one is gone by 4.5s.
+- **NOT verified by driving:** the receipt path end to end needs a booking with a live invoice,
+   a client phone and a recorded payment; another session holds this folder’s dev-server port.
+   The composition, the gates and the toast rendering are unit-covered; what is unproven is the
+   real click opening WhatsApp.
+
+### Blocked — §5.4, and it is not close
+The daily digest needs a **Daily Closing screen, which does not exist**: grepped `src/` and
+`docs/` for closing / cash-count / variance surfaces and found only this spec’s own mention.
+`LOCAL_FIRST_CORE_SPEC`, which §5.4 defers to, **is not in this repo either** — `docs/` has
+`LOCAL_DATABASE.md` and nothing else local-first. Building the digest would mean inventing the
+closing workflow it reports on (cash counts, variance, an approval step), which is a product
+decision this session does not get to make (`CLAUDE.md`). `dailyDigest()` and
+`ownerWhatsappNumber` are built, tested and waiting; the button is one call when the screen
+lands.
+
 ## 2026-09-01 (cont. 2) — WHATSAPP_LINKS_SPEC v1.0 built: §5.1 and §5.2 shipped · §6.1 settings added blank · two of my own defects caught by tests
 **Phase:** Phase 6 (screens) + lib · **Status:** §5.1/§5.2 done and green; §5.3/§5.4 blocked, named below
 
