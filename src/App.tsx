@@ -65,6 +65,12 @@ const Payments          = lazy(() => import('./modules/finance/Payments'))
    `/reports/expenses`, which is the Expense *report* over a fixture; this is the
    ledger, reading `expenses` through `lib/queries/finance.ts`. */
 const Expenses          = lazy(() => import('./modules/finance/Expenses'))
+/* WHATSAPP_LINKS_SPEC v1.0 §5.4. A ROUTE, not a tab and not a nav entry: the
+   nav is the ruled 11 and `09_FINANCE.md` line 4 rules Finance's six tabs, so
+   a seventh of either would breach a written list. Reached from the Finance
+   Dashboard. Placement is the one part of this screen nobody has ruled — see
+   its header. */
+const DailyClosing      = lazy(() => import('./modules/finance/DailyClosing'))
 const Settings          = lazy(() => import('./modules/settings/Settings'))
 const ToolsLanding      = lazy(() => import('./modules/tools/ToolsLanding'))
 const DepreciationCalculator = lazy(() => import('./modules/tools/DepreciationCalculator'))
@@ -425,6 +431,19 @@ export default function App() {
             for a money-blind role without `MONEY_ROUTES` gaining an entry. The
             screen spreads `financeRestriction()` too: the guard is a route table,
             that one is the query's own contract. */}
+        {/* §5.4. Money surface by prefix — `isMoneySurface('/finance/closing')`
+            matches on `/finance`, so the Shell guard already refuses a typed
+            URL for a money-blind role; the screen carries its own Law 6 guard
+            too, because a route table and a screen answer different questions. */}
+        <Route
+          path="/finance/closing"
+          element={
+            <Shell crumbs={[{ label: 'Finance' }, { label: 'Daily Closing' }]}>
+              <DailyClosing />
+            </Shell>
+          }
+        />
+
         <Route
           path="/finance/payments"
           element={

@@ -135,6 +135,70 @@ Rail collapse/expand · no horizontal scroll at 375/800/1440 · failure banners 
 Sandbox note: six mock bookings were moved onto today's date (browser-local overlay
 only) so the day panels are demonstrable; the mock banner already disclaims the data.
 
+## 2026-09-01 (cont. 4) — Daily Closing screen built · §5.4 digest shipped · driven in the browser
+**Phase:** Phase 6 (screens) · **Status:** built, driven, green. APPROVE is deliberately not built — reason below
+
+Babin: "build the daily closing screen". It was the last blocker on
+`WHATSAPP_LINKS_SPEC v1.0` §5.4, so the digest ships with it.
+
+### Did
+1. **`lib/queries/closing.ts`** — `fetchDailyClosing(dayAd)` gathers all eight figures the
+   digest states, in ONE place, so the screen a person signs off and the message that leaves
+   the building cannot disagree. Six queries in parallel; every figure a sum of columns the
+   database already maintains (`invoices.outstanding_amount`, `clients.deposit_held_amount`).
+   Nothing re-prices. A single query failure rejects the whole read rather than returning a
+   partial closing — a silent zero is indistinguishable from a real quiet day.
+2. **`modules/finance/DailyClosing.tsx`** at **`/finance/closing`**, reached from a link in the
+   Finance header. **A route, not a tab and not a nav entry:** the nav is the ruled 11 and
+   `09_FINANCE.md` line 4 rules Finance’s six tabs, so neither list could grow for this.
+3. **§5.4 — "Send digest on WhatsApp"**, composed from the same figures, gated on the count.
+
+### Found — three things the spec did not answer, none invented
+1. **APPROVE has nowhere to write, so it is not built.** Checked against the live database:
+   no table matching clos/cash/till/reconcil/shift exists. `LOCAL_FIRST_CORE_SPEC` §6, which
+   §5.4 defers to for this ritual, **is not in this repo** — so whether a closing persists, who
+   may approve one, whether a day can be re-opened and what an unexplained variance costs are
+   ALL unruled. The button renders unavailable carrying that reason, and the digest is gated on
+   the COUNT instead — the one act here that is real. A green "Approved" that vanished on
+   reload is precisely what `SUCCESS_FABRICATION_REGISTER` exists to catch.
+2. **The ruled digest has four money buckets; `payment_channel_group` has five.** Cash, Bank
+   and Cards keep their lines; **Digital wallets folds into "other"** — and that hides
+   something real, because eSewa/Khalti are a first-class channel in this market, not a
+   remainder. Adding a fifth line would change a ruled message; dropping wallets would stop the
+   four totals adding up to the day’s takings. So it folds, the SCREEN shows the split the
+   message cannot, and it is filed for the spec’s §6. Payments with NO channel are counted and
+   shown separately rather than guessed into a bucket.
+3. **Two different days are in one object, deliberately.** Movement counts use the operational
+   day (D4, 06:00); collections use the calendar day, because `operationalDay.ts`’s header
+   rules finance and audit boundaries stay at midnight for VAT. Not an oversight and not to be
+   "fixed" by moving one — it is stated on the screen instead, so nobody meets it first as a
+   variance they cannot explain.
+
+Also ruled by the shape of the problem: **the count compares against CASH only.** Bank, card
+and wallet takings are not in a drawer, so folding them into an expected figure would produce a
+variance nobody could act on.
+
+### Verified
+- `npx tsc --noEmit` exit 0 · `npx vitest run`: **99 files, 2321 tests, all green** (17 new).
+- **Driven in the browser** (mock corpus, signed in as Owner, `/finance/closing`): the screen
+   loads real figures — deposits held **Rs 5,82,500** — a counted `2500` against `Rs 0` cash
+   renders **"Rs 2,500 over"**, the disabled digest carries the exact owner-number reason, and
+   with a number set the link composes to `wa.me/977…` whose decoded text is the §2 template
+   verbatim, `target=_blank` with `noopener noreferrer`. Screenshot taken.
+- The tests pin what a mock corpus cannot: five channel groups into four buckets, the four
+   adding up to the total, a null-channel payment counted, voided invoices excluded, a null
+   deposit read as nothing, and `varianceLine(null)` returning **"not counted"** rather than
+   "balanced" — an uncounted drawer reported as balanced would claim a reconciliation that
+   never happened.
+
+### Blocked / next
+- **The closing record itself.** If Babin wants an approved closing to persist, it needs a
+   table and a ruling on the four questions above. Filed as the open item; a migration is one
+   session once the ruling exists.
+- **`LOCAL_FIRST_CORE_SPEC` is still not in the repo** — the same absence §4.38(b) records for
+   the 20/24/29 Aug documents. Placement of this screen (Finance vs Tools vs its own surface)
+   is the one part nobody has ruled; it is in Finance because a closing is money.
+
 ## 2026-09-01 (cont. 3) — §5.3 shipped: the toast can carry ONE action, and the receipt reads its balance back
 **Phase:** Phase 6 (screens) + components · **Status:** §5.3 done and green. §5.4 blocked on a screen that does not exist
 

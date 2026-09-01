@@ -1015,6 +1015,31 @@ export default function Finance() {
 
   const headerActions = (
     <>
+      {/* WHATSAPP_LINKS_SPEC v1.0 §5.4 — the day's closing. A LINK, not a
+          seventh tab: `09_FINANCE.md` line 4 rules the six, and the nav is the
+          ruled 11, so neither list may grow for this. Placement is the part of
+          that spec nobody ruled — it is here because a closing is money and
+          this is where money lives. */}
+      <Link
+        to="/finance/closing"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 7,
+          height: 34,
+          padding: '0 11px',
+          borderRadius: 'var(--r-btn)',
+          border: '1px solid var(--border)',
+          background: 'var(--card)',
+          color: 'var(--text)',
+          fontSize: 'var(--t-meta)',
+          fontWeight: 700,
+          textDecoration: 'none',
+        }}
+      >
+        <Icon name="checklist" size={14} style={{ color: 'var(--muted)' }} />
+        Daily Closing
+      </Link>
       <span
         style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 34, padding: '0 11px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card)' }}
       >
