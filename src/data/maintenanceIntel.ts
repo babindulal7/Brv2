@@ -129,7 +129,7 @@ export function maintenanceDetailGroups(row: MaintenanceRecord, gctx: GateContex
     title: 'Linked records',
     fields: [
       row.linkedCaseId
-        ? ({ label: 'Linked damage case', value: row.linkedCaseId, trigger: { label: 'Open case', to: `/operations/cases/${row.linkedCaseId}` } } as IntelField)
+        ? ({ label: 'Linked damage case', value: row.linkedCaseId, trigger: { label: 'Open case', to: `/inventory/cases/${row.linkedCaseId}` } } as IntelField)
         : ({ label: 'Linked damage case', value: 'No case on file' } as IntelField),
       row.bookingImpact
         ? ({ label: 'Booking impact', value: row.bookingImpact, trigger: { label: 'Open booking', to: `/rentals/${row.bookingImpact}` } } as IntelField)

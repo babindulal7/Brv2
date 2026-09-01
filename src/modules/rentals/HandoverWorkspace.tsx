@@ -18,6 +18,7 @@ import { newClientUuid } from '../../lib/supabase'
 import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/queries/bookings'
 import type { FloorLineInput } from '../../actions/rentals/floorVerb'
 import { CompactButton } from '../../components/ui/TouchTarget'
+import { deliveryTypeLabel } from '../../lib/format'
 
 /**
  * **Handover Workspace** — `Handover Workflow.md` v1.1 (Build Locked), wired
@@ -810,7 +811,7 @@ export default function HandoverWorkspace() {
                 { l: 'Stage', v: floor.stage, big: true },
                 { l: 'Handover job', v: jobState },
                 { l: 'Units', v: String(totalUnits) },
-                { l: 'Delivery', v: floor.deliveryType ?? '—' },
+                { l: 'Delivery', v: deliveryTypeLabel(floor.deliveryType) },
               ].map((f) => (
                 <div key={f.l} style={{ padding: '11px 14px', borderRight: '1px solid var(--border)', minWidth: 0, flex: '1 1 auto' }}>
                   <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{f.l}</div>
@@ -842,7 +843,7 @@ export default function HandoverWorkspace() {
                 <Card title="Receiver Verification">
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <InfoRow label="Client" value={floor.clientName ?? '—'} />
-                    <InfoRow label="Delivery" value={floor.deliveryType ?? '—'} />
+                    <InfoRow label="Delivery" value={deliveryTypeLabel(floor.deliveryType)} />
                   </div>
                   <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 7 }}>
                     <CheckLine label="Government ID Verified" checked={govIdVerified} onToggle={() => setGovIdVerified((v) => !v)} disabled={dispatching} />

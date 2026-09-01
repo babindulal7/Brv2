@@ -7,6 +7,7 @@ import { BRANCH, FOOTER_NOTE } from './nav'
 import { WAREHOUSES } from './warehouse'
 import type { Warehouse } from './warehouse'
 import { PLANS } from './membership'
+import { openCasesCount } from './cases'
 
 /*
  * `FEE_PER_CREW_DAY_PAISA` used to be declared here too, at rupees(500), dead
@@ -494,7 +495,11 @@ export const BRANCH_ALERTS: CountAlert[] = [
   { label: 'Maintenance Due', count: 12, tone: 'progress', icon: 'tool', dest: { kind: 'route', to: '/inventory' } },
   { label: 'Overdue Returns', count: 5, tone: 'danger', icon: 'return_arrow', dest: { kind: 'route', to: '/rentals' } },
   { label: 'Staff Shortage', count: 2, tone: 'progress', icon: 'users', dest: { kind: 'route', to: '/crew' } },
-  { label: 'Open Cases', count: 8, tone: 'primary', icon: 'flag', dest: { kind: 'route', to: '/operations/cases' } },
+  /* Derived, not typed — cases.ts correction #2: this tile navigates to the
+     Cases page, so its figure MUST be the page's own `isOpenStatus` count or
+     the click contradicts the destination (§5.8). The hand-typed 8 it
+     replaced disagreed with the 12 the page derives. */
+  { label: 'Open Cases', count: openCasesCount(), tone: 'primary', icon: 'flag', dest: { kind: 'route', to: '/inventory/cases' } },
 ]
 
 export type Priority = 'Critical' | 'High' | 'Medium' | 'Low'

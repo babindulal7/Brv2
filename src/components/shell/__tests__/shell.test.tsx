@@ -58,7 +58,7 @@ afterEach(async () => {
 
 describe('Sidebar — Law 13, width decides', () => {
   it('is 219px at desktop, with all eleven labels readable', async () => {
-    await mount(<Sidebar active="/today" />)
+    await mount(<Sidebar active="/dashboard" />)
     const aside = container.querySelector('aside')
     expect(aside?.style.width).toBe('219px')
     expect(container.querySelectorAll('nav[aria-label="Main"] a')).toHaveLength(11)
@@ -67,7 +67,7 @@ describe('Sidebar — Law 13, width decides', () => {
 
   it('is a 72px icon rail at tablet, with no labels and no collapse toggle', async () => {
     viewport = 'tablet'
-    await mount(<Sidebar active="/today" />)
+    await mount(<Sidebar active="/dashboard" />)
     expect(container.querySelector('aside')?.style.width).toBe('72px')
     expect(container.textContent).not.toContain('Crew Assist')
     expect(container.querySelector('[aria-label="Collapse navigation"]')).toBeNull()
@@ -76,7 +76,7 @@ describe('Sidebar — Law 13, width decides', () => {
 
   it('still speaks each label in the rail — title on every row', async () => {
     viewport = 'tablet'
-    await mount(<Sidebar active="/today" />)
+    await mount(<Sidebar active="/dashboard" />)
     const titles = [...container.querySelectorAll('nav[aria-label="Main"] a')].map((a) => a.getAttribute('title'))
     expect(titles).toContain('Crew Assist')
     expect(titles.every((t) => t !== null && t.length > 0)).toBe(true)
@@ -87,20 +87,20 @@ describe('Sidebar — Law 13, width decides', () => {
        768–1279 band says 72. Width wins. */
     collapsedPref = false
     viewport = 'tablet'
-    await mount(<Sidebar active="/today" />)
+    await mount(<Sidebar active="/dashboard" />)
     expect(container.querySelector('aside')?.style.width).toBe('72px')
   })
 
   it('honours the manual collapse only at desktop', async () => {
     collapsedPref = true
-    await mount(<Sidebar active="/today" />)
+    await mount(<Sidebar active="/dashboard" />)
     expect(container.querySelector('aside')?.style.width).toBe('72px')
     expect(container.querySelector('[aria-label="Expand navigation"]')).not.toBeNull()
   })
 
   it('renders nothing at phone — the bottom bar is the nav below 768', async () => {
     viewport = 'phone'
-    await mount(<Sidebar active="/today" />)
+    await mount(<Sidebar active="/dashboard" />)
     expect(container.querySelector('aside')).toBeNull()
   })
 })
@@ -140,14 +140,14 @@ describe('BottomBar — five fixed slots', () => {
   })
 
   it('is Today · Rentals · Scan · Inventory · More, in that order', async () => {
-    await mount(<BottomBar active="/today" />)
+    await mount(<BottomBar active="/dashboard" />)
     const nav = container.querySelector('nav[aria-label="Main"]')
     const slots = [...(nav?.children ?? [])].map((el) => el.textContent)
-    expect(slots).toEqual(['Today', 'Rentals', 'Scan', 'Inventory', 'More'])
+    expect(slots).toEqual(['Dashboard', 'Rentals', 'Scan', 'Inventory', 'More'])
   })
 
   it('triggers the one Scanner rather than carrying its own', async () => {
-    await mount(<BottomBar active="/today" />)
+    await mount(<BottomBar active="/dashboard" />)
     const fired = vi.fn()
     window.addEventListener(SCANNER_TOGGLE_EVENT, fired)
     const scan = container.querySelector<HTMLButtonElement>('[aria-label="Scan"]')
@@ -160,7 +160,7 @@ describe('BottomBar — five fixed slots', () => {
   })
 
   it('opens a real modal sheet from More, and Escape closes it', async () => {
-    await mount(<BottomBar active="/today" />)
+    await mount(<BottomBar active="/dashboard" />)
     const more = [...container.querySelectorAll('button')].find((b) => b.textContent === 'More')
     await act(async () => more?.click())
 
@@ -177,7 +177,7 @@ describe('BottomBar — five fixed slots', () => {
   })
 
   it('gives every slot a 44px minimum hit area (Law 15)', async () => {
-    await mount(<BottomBar active="/today" />)
+    await mount(<BottomBar active="/dashboard" />)
     const nav = container.querySelector('nav[aria-label="Main"]')
     for (const el of [...(nav?.children ?? [])] as HTMLElement[]) {
       expect(el.style.minHeight).toBe('44px')
@@ -192,7 +192,7 @@ describe('BottomBar — five fixed slots', () => {
        of the declaration — `height` must carry the inset, because with
        `* { box-sizing: border-box }` (theme.css) a `height: 58` + separate
        `padding-bottom: env(...)` pair reserves nothing at all. */
-    await mount(<BottomBar active="/today" />)
+    await mount(<BottomBar active="/dashboard" />)
     const bar = container.querySelector<HTMLElement>('nav[aria-label="Main"]')
     expect(bar?.style.height).toContain('58px')
     expect(bar?.style.height).toContain('env(safe-area-inset-bottom')

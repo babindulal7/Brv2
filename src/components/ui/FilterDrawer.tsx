@@ -239,7 +239,11 @@ export function FilterDrawer({
           height: phone ? 'auto' : '100%',
           display: 'flex',
           flexDirection: 'column',
+          /* v4.2 §4 — drawers/sheets are glass at the 16px step. --card is a
+             0.88 tint; without the blur the page shows through it unsoftened. */
           background: 'var(--card)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
           borderLeft: phone || side === 'left' ? 'none' : '1px solid var(--border)',
           borderRight: phone || side === 'right' ? 'none' : '1px solid var(--border)',
           borderTop: phone ? '1px solid var(--border)' : 'none',
@@ -532,11 +536,11 @@ export function ActiveFilterChips({
             height: CHIP_H,
             padding: '0 4px 0 10px',
             borderRadius: 'var(--r-badge)',
-            border: '1px solid var(--border)',
-            background: 'var(--card2)',
+            border: 'none',
+            background: 'var(--chip-blue-bg)',
             fontSize: 'var(--t-meta)',
             fontWeight: 600,
-            color: 'var(--text)',
+            color: 'var(--chip-blue-fg)',
           }}
         >
           {f.label}

@@ -1,10 +1,11 @@
 import Icon from '../ui/Icon'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../lib/auth'
 import { useViewport } from '../../lib/device'
 import { openCommandPalette } from './CommandPalette'
 import HandoverSheet from '../../modules/auth/HandoverSheet'
+import { useSync } from '../../lib/syncContext'
 
 export interface Crumb {
   label: string
@@ -37,17 +38,21 @@ const iconBtn = {
 
 /**
  * Generation C top strip — breadcrumb left, global search centred, chrome right.
- *
- * Transcribed from `12402A27` and `09168AC3`. The page title does NOT live here;
- * it sits in `PageHeader` below, so a page can put its own action cluster beside
- * its own title without fighting the global chrome for space.
+ * Enhanced with Miraz POS Live Clock, Sync Heartbeat & Tactile Search.
  */
 export default function Header({ crumbs, searchPlaceholder = 'Search…', actions }: HeaderProps) {
   const { user, logout, lockNow, hasPin } = useAuth()
+  const { status: syncStatus, pendingCount, triggerSync } = useSync()
   const navigate = useNavigate()
   const vp = useViewport()
   const isPhone = vp === 'phone'
   const [showHandover, setShowHandover] = useState(false)
+  const [now, setNow] = useState(new Date())
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(t)
+  }, [])
 
   const handleLogoutRequest = () => {
     if (!user) return
@@ -78,7 +83,12 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
            border below. */
         minHeight: 'var(--header-h)',
         borderBottom: '1px solid var(--border)',
+        /* v4.2 §4 — chrome is glass at 20–24px. --sidebar is a 0.88 tint, and a
+           sticky bar that content scrolls UNDER must blur what passes behind it
+           or the tint just smears the page through itself. */
         background: 'var(--sidebar)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
         transition: 'background-color var(--dur-theme) ease',
         position: 'sticky',
         top: 0,
@@ -168,9 +178,94 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
           </button>
         )}
 
-        {/* Branch & Fiscal Year Pills */}
+        {/* Live Clock & Sync Status Badge */}
         {!isPhone && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={() => triggerSync()}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '3px 8px',
+                borderRadius: 'var(--r-xs)',
+                background:
+                  syncStatus === 'syncing'
+                    ? 'var(--nav-active-bg)'
+                    : syncStatus === 'pending'
+                    ? 'rgba(232, 118, 45, 0.12)'
+                    : syncStatus === 'offline'
+                    ? 'var(--surface-2)'
+                    : syncStatus === 'error'
+                    ? 'var(--danger-soft)'
+                    : 'var(--surface-2)',
+                border: '1px solid var(--border)',
+                fontSize: '11px',
+                fontWeight: 600,
+                color:
+                  syncStatus === 'syncing'
+                    ? 'var(--primary-text)'
+                    : syncStatus === 'pending'
+                    ? 'var(--warn-text)'
+                    : syncStatus === 'offline'
+                    ? 'var(--muted)'
+                    : syncStatus === 'error'
+                    ? 'var(--danger-text)'
+                    : 'var(--st-in-fg)',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+              title={
+                syncStatus === 'syncing'
+                  ? 'Syncing with Supabase Cloud...'
+                  : syncStatus === 'pending'
+                  ? `${pendingCount} offline mutations pending. Click to sync now.`
+                  : syncStatus === 'offline'
+                  ? 'Offline Mode active (Dexie cache). Click to sync when reconnected.'
+                  : syncStatus === 'error'
+                  ? 'Sync warning. Click to retry.'
+                  : 'Cloud Database & Local Cache Synced. Click to force sync.'
+              }
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: 'currentColor',
+                  display: 'inline-block',
+                }}
+              />
+              <span>
+                {syncStatus === 'syncing'
+                  ? 'Syncing…'
+                  : syncStatus === 'pending'
+                  ? `Pending (${pendingCount})`
+                  : syncStatus === 'offline'
+                  ? 'Offline'
+                  : syncStatus === 'error'
+                  ? 'Sync Error'
+                  : 'Synced'}
+              </span>
+            </button>
+
+            <div
+              style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                color: 'var(--text)',
+                fontFamily: 'var(--font-mono, monospace)',
+                fontVariantNumeric: 'tabular-nums',
+                padding: '3px 8px',
+                background: 'var(--surface-2)',
+                borderRadius: 'var(--r-xs)',
+                border: '1px solid var(--border)',
+              }}
+            >
+              {now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+            </div>
+
             <span
               style={{
                 fontSize: '11px',
@@ -185,21 +280,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
                 gap: 'var(--sp-xs)',
               }}
             >
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--text-3)' }} />
               Kathmandu HQ
-            </span>
-            <span
-              style={{
-                fontSize: '11px',
-                fontWeight: 600,
-                padding: '3px 8px',
-                borderRadius: 'var(--r-xs)',
-                background: 'var(--surface-2)',
-                color: 'var(--text2)',
-                border: '1px solid var(--border)',
-              }}
-            >
-              FY 2083/84
             </span>
           </div>
         )}

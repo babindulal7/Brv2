@@ -5,6 +5,7 @@ import { getSetting } from '../settingsStore'
 import {
   selectUnitsForLine,
   explainShortfall,
+  rankLeastUsed,
   unitStatesForRule,
   boundsForTurnaround,
   type BoundConvention,
@@ -415,6 +416,144 @@ export class AssignmentIncompleteError extends Error {
     this.name = 'AssignmentIncompleteError'
     this.plan = plan
   }
+}
+
+/* ── D5 · units at CREATION ───────────────────────────────────────────────
+ *
+ * Ruled 30 Aug 2026 (REFERENCE_SPEC v2.5 Appendix A0, D5): serials are
+ * assigned at booking creation, least-used first — the 27 Jul lock stands.
+ * `planAssignment` above serves Confirm, where a booking row already exists;
+ * creation has no row yet, so this variant takes the window and the intended
+ * lines directly. `readHolds(null)` was built for exactly this tentative case.
+ * ----------------------------------------------------------------------- */
+
+/** One intended line of a booking that does not exist yet. */
+export interface CreationLineRequest {
+  /** Any caller-stable key — the index, or the line's minted client_uuid. */
+  readonly key: string
+  /** `products.id`, or null for bundle/service/manual lines (skipped). */
+  readonly productId: string | null
+  readonly qty: number
+  /** What the operator sees in a shortfall sentence. */
+  readonly label: string
+}
+
+export interface CreationUnitPlan {
+  /**
+   * `key` → the `product_units.id`s to send as the line's `units`. A key may
+   * map to FEWER ids than its qty — partial cover is not guessing, the
+   * assigned units are genuinely free; Pack fills the rest (D5). Keys for
+   * product-less lines are absent.
+   */
+  readonly unitsByKey: ReadonlyMap<string, readonly string[]>
+  /** Law 12 sentences for anything short — rendered inline, never invented. */
+  readonly problems: readonly string[]
+  /**
+   * `'planned'` — the reads succeeded and the map is meaningful (possibly
+   * empty). `'unavailable'` — a read failed, so per D5 the caller sends NO
+   * units rather than guessing: `inventory_reservations` is Booqable-mastered
+   * during the bridge (dataAccess.ts:201), and an unreadable availability
+   * source must degrade to the unit-less fallback, never to a wrong green.
+   */
+  readonly source: 'planned' | 'unavailable'
+}
+
+/**
+ * How many times each candidate unit has EVER been assigned — the least-used
+ * counter. `booking_line_units` rows are never deleted at all — 0044's Law 3
+ * backstop rejects DELETE for every role, and §4.39(a) ends an assignment by
+ * marking it released (`released_at`, migration 0076), leaving the row — so
+ * counting rows per `asset_id` is the usage history the 27 Jul lock asks for.
+ * Released rows are counted ON PURPOSE: an assignment that happened is usage
+ * even if it later ended (0076's header records this as a §4.37(e)-adjacent
+ * tuning question, not a bug). Counted here and ranked in
+ * `lib/availability.ts:rankLeastUsed` (Law 1 — the preference is a rule, this
+ * is only the read).
+ */
+async function readUsageCounts(unitIds: readonly string[]): Promise<Map<string, number>> {
+  const counts = new Map<string, number>()
+  if (unitIds.length === 0) return counts
+
+  const { data, error } = await supabase.from('booking_line_units').select('asset_id').in('asset_id', unitIds)
+
+  if (error) throw new Error(`Could not read unit usage history: ${error.message}`)
+
+  for (const row of (data ?? []) as unknown as Array<{ asset_id: string | null }>) {
+    if (row.asset_id === null) continue
+    counts.set(row.asset_id, (counts.get(row.asset_id) ?? 0) + 1)
+  }
+  return counts
+}
+
+/**
+ * What creation should assign — least-used free units per line, or the honest
+ * refusal to guess.
+ *
+ * **Never throws on a failed read.** `createRental` must not be blocked by an
+ * availability outage — D5 names the fallback (unit-less lines, Pack fills),
+ * so an unreadable source returns `source: 'unavailable'` with an empty map
+ * and the sentence saying why. A thrown error here would turn a sync gap into
+ * a floor stoppage, which is exactly what the ruling's fallback clause exists
+ * to prevent.
+ */
+export async function planCreationUnits(
+  window: RentalWindow,
+  lines: readonly CreationLineRequest[],
+): Promise<CreationUnitPlan> {
+  const assignable = lines.filter((line) => line.productId !== null && line.qty >= 1)
+  if (assignable.length === 0) return { unitsByKey: new Map(), problems: [], source: 'planned' }
+
+  let candidatesByProduct: Map<string, UnitCandidate[]>
+  let holds: UnitHold[]
+  let usage: Map<string, number>
+  try {
+    ;[candidatesByProduct, holds] = await Promise.all([
+      readCandidates(assignable.map((line) => line.productId as string)),
+      readHolds(null),
+    ])
+    const allUnitIds = [...candidatesByProduct.values()].flat().map((unit) => unit.unitId)
+    usage = await readUsageCounts(allUnitIds)
+  } catch (err) {
+    return {
+      unitsByKey: new Map(),
+      problems: [
+        'Availability could not be read, so no units were assigned at creation — the booking is created ' +
+          `with unit-less lines and Packing assigns them. (${err instanceof Error ? err.message : String(err)})`,
+      ],
+      source: 'unavailable',
+    }
+  }
+
+  const rules = availabilityRules()
+  const claimed = new Set<string>()
+  const unitsByKey = new Map<string, readonly string[]>()
+  const problems: string[] = []
+
+  for (const line of assignable) {
+    const pool = rankLeastUsed(
+      (candidatesByProduct.get(line.productId as string) ?? []).filter((unit) => !claimed.has(unit.unitId)),
+      usage,
+    )
+    const outcome = selectUnitsForLine({
+      needed: line.qty,
+      window,
+      candidates: pool,
+      holds,
+      disqualifyingStates: rules.disqualifyingStates,
+      bounds: rules.bounds,
+    })
+    for (const unit of outcome.assigned) claimed.add(unit.unitId)
+    if (outcome.assigned.length > 0) {
+      unitsByKey.set(
+        line.key,
+        outcome.assigned.map((unit) => unit.unitId),
+      )
+    }
+    const problem = explainShortfall(outcome, line.label)
+    if (problem !== null) problems.push(problem)
+  }
+
+  return { unitsByKey, problems, source: 'planned' }
 }
 
 export interface ReservationResult {

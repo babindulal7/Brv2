@@ -10,8 +10,11 @@ function block(sel){
   for(const m of css.slice(s,e).matchAll(/(--[a-z0-9-]+):\s*(#[0-9a-fA-F]{6})/g)) out[m[1]]=m[2]
   return out
 }
-const D=block(":root,\n:root[data-theme='dark'] {")
-const L=block(":root[data-theme='light'] {")
+/* v4.2 §2.1 flipped the default: bare :root now carries the LIGHT values and
+   dark is the addressed theme. The selectors here mirror theme.css exactly —
+   this gate parses the shipped file, so it must track the shipped shape. */
+const D=block(":root[data-theme='dark'] {")
+const L=block(":root,\n:root[data-theme='light'] {")
 
 function srgb(c){c/=255;return c<=0.04045?c/12.92:Math.pow((c+0.055)/1.055,2.4)}
 function lum(x){const h=x.replace('#','')
@@ -43,6 +46,10 @@ for(const [theme,T] of [['DARK ',D],['LIGHT',L]]){
   chk(theme,T,'ext-fg / surface','--ext-fg','--surface',4.5)
   chk(theme,T,'ext-fg / bg','--ext-fg','--bg',4.5)
   chk(theme,T,'ext-line / surface (3:1)','--ext-line','--surface',3.0)
+  // v4.2 §3 — the gold outline on the CANVAS gradient's darker stop. This is
+  // the warning the spec ships with the cream canvas: the mark must stay
+  // legible on it, and #af903a measured 2.70:1 there before the fix.
+  chk(theme,T,'ext-line / bg-gradient-1 (3:1)','--ext-line','--bg-gradient-1',3.0)
   // status text-safe variants used as micro-copy on cards
   chk(theme,T,'primary-text / surface','--primary-text','--surface',4.5)
   chk(theme,T,'success-text / surface','--success-text','--surface',4.5)

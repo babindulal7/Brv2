@@ -1,11 +1,9 @@
 import { useCallback, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { PageHeader, Button, FooterNote, KpiStrip, type Kpi } from '../../components/ui/Page'
+import { PageHeader, Button, FooterNote, KpiStrip, Rail, Card, type Kpi } from '../../components/ui/Page'
 import MovementList from './MovementList'
-import AlertsPanel from './AlertsPanel'
 import TimelinePanel from './TimelinePanel'
-import CalendarPanel from './CalendarPanel'
 import {
   TODAY_DATE,
   MORE_FILTERS,
@@ -17,12 +15,10 @@ import {
   pickupsQuery,
   returnsQuery,
   toMovementRow,
-  overdueAlert,
-  quoteLapsedAlert,
   type LivePeriod,
   type MovementRow,
 } from '../../data/today'
-import { listBookings, overdue, quotesExpiring, type BookingListRow } from '../../lib/queries/bookings'
+import { listBookings, overdue } from '../../lib/queries/bookings'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import { useList, type ListQueryResult, type ListResult } from '../../lib/queries/useList'
 import { useDomainEvent } from '../../events/useDomainEvent'
@@ -167,9 +163,11 @@ function PeriodControl({ period, setPeriod }: { period: LivePeriod; setPeriod: (
  * one per option — nothing here decides availability, it only renders it.
  */
 function MoreFilters({
+  list,
   picked,
   setPicked,
 }: {
+  list: 'Outgoing' | 'Incoming'
   picked: string[]
   setPicked: (fn: (p: string[]) => string[]) => void
 }) {
@@ -178,11 +176,16 @@ function MoreFilters({
   const toggle = (o: string) => setPicked((p) => (p.includes(o) ? p.filter((x) => x !== o) : [...p, o]))
 
   return (
-    <div style={{ position: 'relative' }}>
+    /* Full-width so the panel below can anchor to the LIST COLUMN's edges, not
+       the trigger's. Anchored to the trigger (`right: 0` + a 760px sheet) the
+       Outgoing column's panel ran off the left viewport edge — its right edge
+       sits mid-page, and 760px of sheet has nowhere to go but off-screen. */
+    <div style={{ position: 'relative', width: '100%', display: 'flex', justifyContent: 'flex-end' }}>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
         {picked.length > 0 && (
           <button
             type="button"
+            aria-label={`Clear ${list.toLowerCase()} list filters (${picked.length})`}
             onClick={() => setPicked(() => [])}
             style={{
               border: 'none',
@@ -200,6 +203,7 @@ function MoreFilters({
         )}
         <button
           type="button"
+          aria-label={`More filters for the ${list.toLowerCase()} list`}
           onClick={() => setMore((m) => !m)}
           aria-expanded={more}
           style={{
@@ -248,9 +252,9 @@ function MoreFilters({
           style={{
             position: 'absolute',
             top: 'calc(100% + 8px)',
+            left: 0,
             right: 0,
             zIndex: 45,
-            width: 'min(760px, calc(100vw - 40px))',
             padding: 18,
             borderRadius: 'var(--r-card)',
             background: 'var(--card)',
@@ -339,17 +343,17 @@ function MoreFilters({
 /* ── the phone segmented control ───────────────────────────────────────── */
 
 /**
- * Spec 02's phone layout — `[Out][In][Alerts]`, one panel at a time.
+ * Phone layout — `[Out][In]`, one list at a time. Was `[Out][In][Alerts]`
+ * until 30 Aug, when the Alerts panel moved to /operations with the rest of
+ * the floor's exceptions.
  *
- * Law 14: this is a WIDTH decision (`useViewport()`), never a platform one. The
- * same three panels sit side by side at desktop and stacked at tablet; below
- * 768 there is not room for three columns of card rows and a segmented control
- * is the locked alternative.
+ * Law 14: this is a WIDTH decision (`useViewport()`), never a platform one.
+ * Below 768 there is not room for two columns of card rows and a segmented
+ * control is the locked alternative.
  */
 const SEGMENTS = [
   { key: 'out', label: 'Out' },
   { key: 'in', label: 'In' },
-  { key: 'alerts', label: 'Alerts' },
 ] as const
 
 type Segment = (typeof SEGMENTS)[number]['key']
@@ -461,10 +465,9 @@ const NOT_TRACKED = 'Not tracked yet'
  *
  * | Query | Feeds |
  * |---|---|
- * | `pickupsQuery(period, picked)` | Outgoing list · Timeline · Calendar day list · Outgoing KPI |
- * | `returnsQuery(period, picked)` | Incoming list · Timeline · Calendar day list · Incoming KPI |
- * | `overdue(NOW_AD)` | Alerts (Critical) · Overdue KPI · the Incoming list's badge |
- * | `quotesExpiring(NOW_AD)` | Alerts (High) |
+ * | `pickupsQuery(period, pickedOut)` | Outgoing list · Timeline · Outgoing KPI |
+ * | `returnsQuery(period, pickedIn)` | Incoming list · Timeline · Incoming KPI |
+ * | `overdue(NOW_AD)` | Overdue KPI |
  * | `ACTIVE_RENTALS_FILTERS` | Active Rentals KPI (count only — one row fetched) |
  *
  * Every one is `listBookings`, Law 2's one booking query. There is no second
@@ -475,26 +478,32 @@ const NOT_TRACKED = 'Not tracked yet'
  * Spec 02 §2.1 draws KPI strip → OUTGOING and INCOMING in time order on the
  * left → ALERTS and a CALENDAR mini on the right rail.
  *
- *  - **Desktop ≥1280** — two tracks: the two lists stacked on the left, the two
- *    rail cards stacked on the right.
- *  - **Tablet 768–1279** — one track. The rail *reflows* beneath the lists; it
- *    is NOT hidden and is deliberately not wrapped in `CollapsibleAside`
- *    (rulings §7 — "collapse below 1280 means reflow, not hide", and other
- *    pages depend on that component's defaults).
- *  - **Phone <768** — the `[Out][In][Alerts]` segmented control shows one of
- *    the three at a time, as card rows.
+ *  - **Desktop/tablet ≥768** — the two lists side by side; the Timeline
+ *    full-width beneath. The old lower rail (Alerts · mini Calendar) was
+ *    removed 30 Aug: Alerts lives on /operations now, and the mini Calendar is
+ *    gone — the date pill already opens /calendar at today.
+ *  - **Phone <768** — the `[Out][In]` segmented control shows one of the two
+ *    lists at a time, as card rows.
  */
 export default function Today() {
   const navigate = useNavigate()
   const viewport = useViewport()
   const money = useCanViewMoney()
   const [period, setPeriod] = useState<LivePeriod>('Today')
-  const [picked, setPicked] = useState<string[]>([])
+  /*
+   * Per-list filters (30 Aug, Booqable-shape rework): Outgoing and Incoming
+   * each own their picked set, so narrowing pickups can no longer silently
+   * narrow returns. The period stays PAGE-level — it governs the Timeline's
+   * merged rows, and two lists on two different days merged into one timeline
+   * would be a lie with a heading.
+   */
+  const [pickedOut, setPickedOut] = useState<string[]>([])
+  const [pickedIn, setPickedIn] = useState<string[]>([])
   const [segment, setSegment] = useState<Segment>('out')
   const [allKpis, setAllKpis] = useState(false)
 
-  const pickupSet = pickupsQuery(period, picked)
-  const returnSet = returnsQuery(period, picked)
+  const pickupSet = pickupsQuery(period, pickedOut)
+  const returnSet = returnsQuery(period, pickedIn)
 
   /*
    * Did the OPERATOR narrow this? `useList`'s heuristic cannot answer it here:
@@ -503,14 +512,28 @@ export default function Today() {
    * anything anyone clicked, so the heuristic answers true unconditionally.
    *
    * This is the same boolean that decides whether the empty state's "Clear
-   * filters" button is worth offering — and `clearFilters` below is what it
-   * clears, which is why the period counts: a page sitting on "Tomorrow" with
+   * filters" button is worth offering — and `clearOut`/`clearIn` below are what
+   * it clears, which is why the period counts: a page sitting on "Tomorrow" with
    * nothing scheduled needs the way back, not an "add one" prompt.
    */
-  const isFiltered = picked.length > 0 || period !== 'Today'
+  const outFiltered = pickedOut.length > 0 || period !== 'Today'
+  const inFiltered = pickedIn.length > 0 || period !== 'Today'
 
-  const clearFilters = useCallback(() => {
-    setPicked([])
+  /* Each list's "Clear filters" clears ITS chips; the period resets with either
+     because a page sitting on "Tomorrow" with nothing scheduled needs the way
+     back, not an "add one" prompt. */
+  const clearOut = useCallback(() => {
+    setPickedOut([])
+    setPeriod('Today')
+  }, [])
+  const clearIn = useCallback(() => {
+    setPickedIn([])
+    setPeriod('Today')
+  }, [])
+  /* The Timeline merges BOTH lists, so its clear clears both sets. */
+  const clearBoth = useCallback(() => {
+    setPickedOut([])
+    setPickedIn([])
     setPeriod('Today')
   }, [])
 
@@ -545,12 +568,12 @@ export default function Today() {
     [returnSet.impossible],
   )
 
-  const pickups: ListResult<MovementRow> = useList(fetchPickups, pickupSet.filters, { isFilteredOverride: isFiltered })
-  const returns: ListResult<MovementRow> = useList(fetchReturns, returnSet.filters, { isFilteredOverride: isFiltered })
+  const pickups: ListResult<MovementRow> = useList(fetchPickups, pickupSet.filters, { isFilteredOverride: outFiltered })
+  const returns: ListResult<MovementRow> = useList(fetchReturns, returnSet.filters, { isFilteredOverride: inFiltered })
 
-  /* The Alerts panel, the Overdue KPI and the Incoming badge, from one query. */
+  /* The Overdue KPI's query. The Alerts panel itself moved to /operations
+     (30 Aug) and fetches there; this page keeps only the count it renders. */
   const alerts = useList(listBookings, overdue(NOW_AD), { isFilteredOverride: false })
-  const quotes = useList(listBookings, quotesExpiring(NOW_AD), { isFilteredOverride: false })
 
   /*
    * Count only. One row is fetched purely because PostgREST needs a range to
@@ -571,9 +594,8 @@ export default function Today() {
     pickups.refetch()
     returns.refetch()
     alerts.refetch()
-    quotes.refetch()
     active.refetch()
-  }, [pickups.refetch, returns.refetch, alerts.refetch, quotes.refetch, active.refetch])
+  }, [pickups.refetch, returns.refetch, alerts.refetch, active.refetch])
 
   useDomainEvent(EVENT_TYPES.RENTAL_PICKED_UP, refetchAll)
   useDomainEvent(EVENT_TYPES.RENTAL_RETURNED, refetchAll)
@@ -593,31 +615,6 @@ export default function Today() {
    * counted off the rows the list is showing.
    */
   const overdueReturns = returns.rows.filter((r) => r.flags.includes('Overdue')).length
-
-  /*
-   * §8 — priority sorted, and every alert carries its own primary action. Both
-   * priorities are already fetched; `AlertsPanel` orders them.
-   *
-   * ⚠ This is the change spec 02 forces. `AlertsPanel` used to render the
-   * Critical rows ONLY, citing §5.6's "Critical Alerts KPI … must equal the
-   * Alerts column count" as its authority. Spec 02's KPI strip is
-   * Out · In · Overdue · Cash due — there is no Critical Alerts card for that
-   * invariant to hold against, so the filter would have been left with a
-   * dangling justification, quietly hiding every High-priority row for a reason
-   * no longer stated anywhere. The panel now shows ALL alerts, priority-sorted,
-   * and the reachable "Alerts" KPI below counts exactly what the panel renders
-   * — so §5.6's card-equals-column rule survives in the only form spec 02
-   * leaves room for.
-   */
-  const alertRows = useMemo(() => [
-    ...alerts.rows.map((r: BookingListRow) => overdueAlert(r, NOW_AD)),
-    ...quotes.rows.map((r: BookingListRow) => quoteLapsedAlert(r)),
-  ], [alerts.rows, quotes.rows])
-  
-  const alertsState = useMemo(() => ({ 
-    loading: alerts.loading || quotes.loading, 
-    error: alerts.error ?? quotes.error 
-  }), [alerts.loading, quotes.loading, alerts.error, quotes.error])
 
   /*
    * §5.8 — "card counts must equal the counts shown on the panels below." Each
@@ -701,14 +698,7 @@ export default function Today() {
       accent: 'primary',
       note: 'On Rent now',
     },
-    {
-      label: 'Alerts',
-      value: countOf(alertsState, alertRows.length),
-      icon: 'bell',
-      accent: 'danger',
-      note: 'Exactly what the Alerts panel lists',
-    },
-  ], [active, alertsState, alertRows.length])
+  ], [active])
 
   /*
    * The lists title themselves "Outgoing today" / "Incoming today". That is only
@@ -728,7 +718,7 @@ export default function Today() {
       noun="pickups"
       periodLabel={phrase}
       viewAll="/operations"
-      onClearFilters={clearFilters}
+      onClearFilters={clearOut}
     />
   )
 
@@ -742,24 +732,7 @@ export default function Today() {
       noun="returns"
       periodLabel={phrase}
       viewAll="/operations"
-      onClearFilters={clearFilters}
-    />
-  )
-
-  const alertsPanel = (
-    <AlertsPanel alerts={alertRows} loading={alertsState.loading} error={alertsState.error} onRetry={refetchAll} />
-  )
-
-  const calendar = (
-    <CalendarPanel
-      period={period}
-      rows={day}
-      loading={dayLoading}
-      error={dayError}
-      isFiltered={isFiltered}
-      onRetry={refetchAll}
-      onClearFilters={clearFilters}
-      periodLabel={phrase}
+      onClearFilters={clearIn}
     />
   )
 
@@ -777,27 +750,85 @@ export default function Today() {
       rows={day}
       loading={dayLoading}
       error={dayError}
-      isFiltered={isFiltered}
+      isFiltered={outFiltered || inFiltered}
       onRetry={refetchAll}
-      onClearFilters={clearFilters}
+      onClearFilters={clearBoth}
       periodLabel={phrase}
     />
   )
 
   const stack = { display: 'flex', flexDirection: 'column' as const, gap: 'var(--sp-md)', minWidth: 0 }
 
+  /*
+   * The right quick panel (30 Aug, Booqable-shape rework) — `Rail`, so it
+   * collapses to a 44px handle and remembers the choice per route.
+   *
+   * Quick Actions are LINKS to the four verbs an operator reaches for from
+   * here; nothing on this panel computes. Record Payment is money-gated the
+   * §2.1 way — OMITTED for a money-blind session, never blanked (Law 6).
+   *
+   * Quick Info re-reads the SAME query results the KPI strip reads (`active`,
+   * `alerts`), so the two surfaces cannot quote different figures (§5.8).
+   */
+  const quickPanel = (
+    <div style={stack}>
+      <Card title="Quick Actions">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
+          <Button icon="plus" variant="primary" onClick={() => navigate('/rentals/new')}>
+            New Rental
+          </Button>
+          {money && (
+            <Button icon="dollar" onClick={() => navigate('/finance/payments')}>
+              Record Payment
+            </Button>
+          )}
+          <Button icon="queues" onClick={() => navigate('/operations')}>
+            Open Operation
+          </Button>
+          <Button icon="calendar" onClick={() => navigate(`/calendar?d=${CAL_TODAY_ISO}`)}>
+            Open Calendar
+          </Button>
+        </div>
+      </Card>
+      <Card title="Quick Info">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text2)' }}>
+            <span>Active rentals</span>
+            <span className="figure" style={{ fontWeight: 700, color: 'var(--text)' }}>{countOf(active, active.total)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text2)' }}>
+            <span>Overdue</span>
+            <span className="figure" style={{ fontWeight: 700, color: 'var(--st-danger-fg)' }}>{countOf(alerts, alerts.rows.length)}</span>
+          </div>
+        </div>
+      </Card>
+    </div>
+  )
+
+  /* One per-list filter row — the SAME `MoreFilters` control, now owned by a
+     single list instead of the page. Right-aligned above its list. `list`
+     names the owner two ways: it keys the row, so on the phone the panel
+     REMOUNTS (closed) when the segment flips instead of silently rebinding an
+     open panel to the other list's chips; and it reaches the buttons'
+     accessible names, because two bare "More Filters" buttons on one page
+     give a screen-reader user no way to say which list they are narrowing. */
+  const filterRow = (list: 'Outgoing' | 'Incoming', picked: string[], setPicked: (fn: (p: string[]) => string[]) => void) => (
+    <div key={list} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <MoreFilters list={list} picked={picked} setPicked={setPicked} />
+    </div>
+  )
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       {/* §3 — the title is "Today". No number prefix, in the page or the sidebar.
           Breadcrumbs live in the shell; rulings §4 — no Back button here. */}
       <PageHeader
-        title="Today"
-        description="Today's jobs. Every other day lives in Operation."
+        title="Dashboard"
+        description="Today's jobs at a glance. Alerts and every other day live in Operation."
         actions={
           <>
             <DatePill />
             <PeriodControl period={period} setPeriod={setPeriod} />
-            <MoreFilters picked={picked} setPicked={setPicked} />
             <Button icon="plus" variant="primary" onClick={() => navigate('/rentals/new')}>
               New Rental
             </Button>
@@ -832,56 +863,68 @@ export default function Today() {
           }}
         >
           <Icon name={allKpis ? 'chevron_up' : 'chevron_down'} size={13} />
-          {allKpis ? 'Fewer figures' : `${reachableKpis.length} more figures`}
+          {allKpis ? 'Fewer figures' : `${reachableKpis.length} more figure${reachableKpis.length === 1 ? '' : 's'}`}
         </button>
       </div>
 
-      {viewport !== 'phone' ? (
-        <>
-          {/* Main 2-Column Grid: Left Column = Pickups (Outgoing), Right Column = Returns (Incoming) */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-              gap: 'var(--sp-md)',
-              alignItems: 'start',
-            }}
-          >
-            <div style={stack}>{outgoing}</div>
-            <div style={stack}>{incoming}</div>
-          </div>
-
-          {/* Lower 2-Column Grid: Left Column = Alerts, Right Column = Mini Calendar */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr)',
-              gap: 'var(--sp-md)',
-              alignItems: 'start',
-            }}
-          >
-            <div style={stack}>{alertsPanel}</div>
-            <div style={stack}>{calendar}</div>
-          </div>
-        </>
-      ) : (
-        /* Phone (<768px) — segmented control tab view */
+      {/* Booqable-shape body (30 Aug): main column | quick panel. The quick
+          panel is a `Rail`, so it collapses to a handle (default-collapsed at
+          tablet width) and never squeezes the two lists. Phone gets no rail —
+          the bottom bar already carries the same destinations. */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: viewport === 'phone' ? '1fr' : 'minmax(0, 1fr) auto',
+          gap: 'var(--sp-md)',
+          alignItems: 'start',
+        }}
+      >
         <div style={stack}>
-          <SegmentedControl
-            segment={segment}
-            setSegment={setSegment}
-            counts={{
-              out: countOf(pickups, pickups.rows.length),
-              in: countOf(returns, returns.rows.length),
-              alerts: countOf(alertsState, alertRows.length),
-            }}
-          />
-          {segment === 'out' ? outgoing : segment === 'in' ? incoming : alertsPanel}
-          {calendar}
-        </div>
-      )}
+          {viewport !== 'phone' ? (
+            /* Main 2-Column Grid — each column: its own filter row, then its list. */
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                gap: 'var(--sp-md)',
+                alignItems: 'start',
+              }}
+            >
+              <div style={stack}>
+                {filterRow('Outgoing', pickedOut, setPickedOut)}
+                {outgoing}
+              </div>
+              <div style={stack}>
+                {filterRow('Incoming', pickedIn, setPickedIn)}
+                {incoming}
+              </div>
+            </div>
+          ) : (
+            /* Phone (<768px) — segmented control; the filter row follows the
+               segment, so the chips on screen always govern the list on screen. */
+            <div style={stack}>
+              <SegmentedControl
+                segment={segment}
+                setSegment={setSegment}
+                counts={{
+                  out: countOf(pickups, pickups.rows.length),
+                  in: countOf(returns, returns.rows.length),
+                }}
+              />
+              {segment === 'out' ? filterRow('Outgoing', pickedOut, setPickedOut) : filterRow('Incoming', pickedIn, setPickedIn)}
+              {segment === 'out' ? outgoing : incoming}
+            </div>
+          )}
 
-      {timeline}
+          {timeline}
+        </div>
+
+        {viewport !== 'phone' && (
+          <Rail label="Quick actions" width={272}>
+            {quickPanel}
+          </Rail>
+        )}
+      </div>
 
       <FooterNote />
     </div>

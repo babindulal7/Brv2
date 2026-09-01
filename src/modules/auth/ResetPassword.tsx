@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Button, Input } from '../../components/ui'
+import { Button } from '../../components/ui'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { useAuth } from '../../lib/auth'
 import { AuthCard } from './AuthCard'
+import { PasswordInput } from './PasswordInput'
 
 /**
  * **Set a new password.** Where the emailed reset link lands. Built 15 Aug 2026.
@@ -101,7 +102,7 @@ export default function ResetPassword() {
     }
 
     // The recovery session is a real session — they are signed in as themselves.
-    navigate('/today', { replace: true })
+    navigate('/dashboard', { replace: true })
   }
 
   if (!isPasswordRecovery) {
@@ -158,9 +159,8 @@ export default function ResetPassword() {
           >
             New Password
           </label>
-          <Input
+          <PasswordInput
             id="new-password"
-            type="password"
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -184,9 +184,8 @@ export default function ResetPassword() {
           >
             Confirm New Password
           </label>
-          <Input
+          <PasswordInput
             id="confirm-password"
-            type="password"
             autoComplete="new-password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}

@@ -24,6 +24,7 @@ import { OPERATIONS } from '../../data/booking'
 import { listBookings, type BookingListRow } from '../../lib/queries/bookings'
 import { useList, type ListQueryResult } from '../../lib/queries/useList'
 import { useFilters } from '../../lib/queries/useFilters'
+import { useFacetCounts } from '../../lib/queries/facetCounts'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import { NOW_AD } from '../../data/today'
 import {
@@ -528,17 +529,38 @@ function ColumnMenu({
  * (Foundation's six stages, `lib/workflow.ts`), checkbox per stage. It is sent
  * to the server as one `chips: { stage: [...] }` group, INTERSECTED with the
  * quick-filter chip's own stage set (`rentalsQuery`), never replacing it.
+ *
+ * ## §10 — the count beside each stage
+ *
+ * `useFacetCounts` runs one count per option, but this group cannot use its
+ * default base-stripping: `chips.stage` here is the chip's structural set
+ * INTERSECTED with the Status picks, and stripping it would count `Quote`
+ * under an `Active` chip as "all quotes" when ticking it actually renders the
+ * empty state. So the hook is given the probe under a column name the server
+ * never sees (`status`), and `countRows` — the page's injected counter, which
+ * is the module's own extension point — rebuilds the real query through
+ * `rentalsQuery` with the probe as the whole Status group. The chip's
+ * structural stages stay in the base `filters`, untouched by the strip,
+ * which is also what keys a re-count when the chip changes.
+ *
+ * `enabled: open` — six `count=exact` HEAD queries are only worth running
+ * while the accordion is showing them (the module header's own advice).
  */
 function StatusFilterGroup({
   icon,
   selected,
   toggle,
+  countRows,
+  countBase,
 }: {
   icon: Parameters<typeof Icon>[0]['name']
   selected: Set<BookingStatus>
   toggle: (s: BookingStatus) => void
+  countRows: (filters: ListFilters) => Promise<number | null>
+  countBase: ListFilters
 }) {
   const [open, setOpen] = useState(false)
+  const { counts, loading: countsLoading } = useFacetCounts(countRows, countBase, 'status', STATUS_ORDER, open)
   return (
     <div>
       <button
@@ -590,6 +612,15 @@ function StatusFilterGroup({
             >
               <input type="checkbox" checked={selected.has(s)} onChange={() => toggle(s)} />
               <span style={{ flex: 1 }}>{s}</span>
+              {/* §10's rendering rule, same as `FilterOptionList`: a dash while
+                  unknown, never a zero — `0` says "ticking this empties the
+                  list" and must only appear when that is a computed fact. */}
+              <span
+                className="figure"
+                style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}
+              >
+                {countsLoading || counts[s] === undefined || counts[s] === null ? '—' : counts[s]}
+              </span>
             </label>
           ))}
         </div>
@@ -906,6 +937,42 @@ export default function RentalsList() {
    * NONE of them passes `withDeposit`.
    */
   const countFetcher = useCallback((filters: ListFilters) => listBookings({ ...filters, withCount: true }), [])
+
+  /*
+   * §10 facet counts for the Status accordion — see `StatusFilterGroup`'s
+   * header for why the probe travels under `status` rather than `stage`.
+   *
+   * The base is this page's query with NO Status picks: the strip that
+   * `countFacet` performs on a plain group is done here by construction,
+   * while the chip's structural `stage` set, the date range and the
+   * Sub-Rental `id` set all stay — both as constraints and as the change key
+   * that re-fires the counts when any of them moves.
+   *
+   * NEITHER call passes `withDeposit` (Law 6) — a count carries no money.
+   */
+  const statusCountBase = useMemo(
+    () => rentalsQuery(chip, { from, to }, [], NOW_AD, { on: subOn, bookingIds: subIds }).filters,
+    [chip, from, to, subOn, subIds],
+  )
+  const statusCountRows = useCallback(
+    async (filters: ListFilters): Promise<number | null> => {
+      const probe = (filters.chips?.['status'] ?? []) as readonly BookingStatus[]
+      const q = rentalsQuery(chip, { from, to }, probe, NOW_AD, { on: subOn, bookingIds: subIds })
+      if (q.impossible) {
+        /*
+         * Two different refusals share this flag. A stage the chip does not
+         * carry (`Quote` under `Active`) is a COMPUTED zero — ticking it
+         * renders the empty state, and 0 is the §10 sentence for that. The
+         * Sub-Rental set still being unanswered (`bookingIds === null`) is
+         * not a zero of any kind, so it stays a dash.
+         */
+        return subOn && subIds === null ? null : 0
+      }
+      const res = await listBookings({ ...q.filters, withCount: true, page: { index: 0, size: 1 } })
+      return res.total ?? null
+    },
+    [chip, from, to, subOn, subIds],
+  )
   const activeKpi = useList<BookingListRow>(countFetcher, RENTAL_KPI_FILTERS.active, { isFilteredOverride: false })
   const pickupsKpi = useList<BookingListRow>(countFetcher, RENTAL_KPI_FILTERS.pickups, { isFilteredOverride: false })
   const returnsKpi = useList<BookingListRow>(countFetcher, RENTAL_KPI_FILTERS.returns, { isFilteredOverride: false })
@@ -1078,7 +1145,14 @@ export default function RentalsList() {
           that open onto nothing. */}
       {filterGroups.map((g) =>
         g.label === 'Status' ? (
-          <StatusFilterGroup key={g.label} icon={g.icon} selected={statusFilter} toggle={toggleStatus} />
+          <StatusFilterGroup
+            key={g.label}
+            icon={g.icon}
+            selected={statusFilter}
+            toggle={toggleStatus}
+            countRows={statusCountRows}
+            countBase={statusCountBase}
+          />
         ) : (
           <button
             key={g.label}

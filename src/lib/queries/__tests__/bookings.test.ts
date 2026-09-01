@@ -381,12 +381,14 @@ describe('named filter sets → ListFilters', () => {
     expect(quotesExpiring(now).dateRange?.fromAd).toBeUndefined()
   })
 
-  it('todaysOutgoing bounds a Kathmandu day, not a UTC one', () => {
+  it('todaysOutgoing bounds a Kathmandu OPERATIONAL day — 06:00 → 06:00 by default (D4)', () => {
     expect(todaysOutgoing('2026-08-12')).toEqual({
       dateRange: {
         column: 'pickup_at',
-        fromAd: '2026-08-12T00:00:00.000+05:45',
-        toAd: '2026-08-12T23:59:59.999+05:45',
+        // D4, ruled 30 Aug 2026: the day starts at operationalDayStart
+        // (default 06:00), so "12 Aug" runs to 05:59:59.999 on the 13th.
+        fromAd: '2026-08-12T06:00:00.000+05:45',
+        toAd: '2026-08-13T05:59:59.999+05:45',
       },
       chips: { stage: ['Booked', 'Packed'] },
       presence: { cancelled_at: false },
@@ -398,8 +400,8 @@ describe('named filter sets → ListFilters', () => {
     expect(todaysIncoming('2026-08-12')).toEqual({
       dateRange: {
         column: 'return_at',
-        fromAd: '2026-08-12T00:00:00.000+05:45',
-        toAd: '2026-08-12T23:59:59.999+05:45',
+        fromAd: '2026-08-12T06:00:00.000+05:45',
+        toAd: '2026-08-13T05:59:59.999+05:45',
       },
       chips: { stage: ['On Rent'] },
       presence: { cancelled_at: false, actual_return_at: false },
@@ -496,8 +498,8 @@ describe('named filter sets → the calls that actually reach the builder', () =
     expect(db.state.calls).toEqual([
       ['is', 'booking_lines.voided_at', null],
       ['in', 'stage', ['Booked', 'Packed']],
-      ['gte', 'pickup_at', '2026-08-12T00:00:00.000+05:45'],
-      ['lte', 'pickup_at', '2026-08-12T23:59:59.999+05:45'],
+      ['gte', 'pickup_at', '2026-08-12T06:00:00.000+05:45'],
+      ['lte', 'pickup_at', '2026-08-13T05:59:59.999+05:45'],
       ['is', 'cancelled_at', null],
       ['order', 'pickup_at', { ascending: true }],
       ['order', 'id', { ascending: true }],

@@ -67,6 +67,13 @@ export default defineConfig({
     })
   ],
   build: {
+    /* Explicitly off, not merely defaulted. Rentman ships `*.js.map` with
+       `sourcesContent` in its production bundle, which is how the 30 Aug 2026
+       forensics pack reconstructed 1,500 of their source paths, their whole
+       route tree, and their enum values. Same stack as ours. Keep this pinned
+       so no config edit or Capacitor template flips it silently, and re-verify
+       the wrapped bundle before any store upload. */
+    sourcemap: false,
     rollupOptions: {
       /* Two documents, deliberately. `marketing.html` is the public site; it
          must not pull the ops app's bundle (Supabase, dexie, the router, every

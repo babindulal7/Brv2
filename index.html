@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#050b12" />
+    <meta name="theme-color" content="#fdefdc" />
     <title>Babin Rentals OS</title>
 
     <!--
@@ -39,12 +39,12 @@
     <script>
       (function () {
         var mode = localStorage.getItem('br-theme-mode')
-        // DESIGN_DIRECTION_SPEC_v4.1 §1 — dark is the in-app default.
-        // This branch USED to fall through to prefers-color-scheme for an
-        // unset user, which disagreed with lib/theme.tsx once that defaulted
-        // to 'dark': a first-time visitor on a light-preferring OS got one
-        // painted frame of light before React corrected it. The two now agree,
-        // and 'system' is still honoured for anyone who chose it explicitly.
+        // DESIGN_DIRECTION_SPEC_v4.2 §2.1 — LIGHT is the in-app default,
+        // superseding v4.1's dark-first ruling. The unset branch must agree
+        // with lib/theme.tsx (which also resolves an unset user to 'light'),
+        // or a first-time visitor gets one painted frame of the wrong theme
+        // before React corrects it. 'system' is still honoured for anyone who
+        // chose it explicitly; the per-user toggle persists either way.
         var resolved =
           mode === 'dark' || mode === 'light'
             ? mode
@@ -52,7 +52,7 @@
               ? window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
                 ? 'dark'
                 : 'light'
-              : 'dark'
+              : 'light'
         document.documentElement.setAttribute('data-theme', resolved)
       })()
     </script>

@@ -524,7 +524,7 @@ export const TOOLS: readonly Tool[] = [
   {
     id: 'discount',
     name: 'Discount Check',
-    blurb: 'Whether a discount clears the 10% reason gate and the 25% hard cap.',
+    blurb: 'Whether a number is a valid discount at all — 0 to 100%. The old reason gate and 25% cap were removed 31 Aug 2026.',
     icon: 'receipt',
     group: 'finance',
     action: { kind: 'calculator', calc: 'discount' },

@@ -111,6 +111,18 @@ vi.mock('../../../lib/queries/bookings', () => {
   }
 })
 
+/* The page's third query seam (31 Aug, the Notes wave) — mocked like the two
+   above so no mount reaches the real supabase client (vitest loads .env.local,
+   whose VITE_DATA_SOURCE=live would otherwise send booking_notes reads over
+   the wire mid-suite). */
+vi.mock('../../../lib/queries/bookingNotes', () => ({
+  notesForBooking: (bookingId: string) => ({
+    chips: { booking_id: [bookingId] },
+    sort: { column: 'created_at', ascending: false },
+  }),
+  listBookingNotes: async () => ({ rows: [] }),
+}))
+
 vi.mock('../../../lib/queries/finance', () => {
   const INVOICE = {
     id: 'inv-1',

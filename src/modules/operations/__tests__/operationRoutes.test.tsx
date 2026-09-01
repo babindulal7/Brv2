@@ -263,7 +263,7 @@ describe('Spec 03 §3.1 — queue chips filter ONE time-ordered list', () => {
   it('leaves Cases its own route rather than a chip that swaps the list out', async () => {
     await mount(<OperationsQueues />, '/operations')
     const cases = [...container.querySelectorAll('a')].find((a) => (a.textContent ?? '').includes('Cases'))
-    expect(cases?.getAttribute('href')).toBe('/operations/cases')
+    expect(cases?.getAttribute('href')).toBe('/inventory/cases')
   })
 
   it('carries the day scope the §3.1 header draws', async () => {

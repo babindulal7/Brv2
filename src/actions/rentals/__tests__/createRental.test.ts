@@ -244,6 +244,57 @@ describe('refusals — each names the problem, and nothing is sent', () => {
   })
 })
 
+describe('D5 — serials assigned at creation (ruled 30 Aug 2026, spec A0)', () => {
+  const UNIT_A = 'aaaaaaaa-1111-4111-8111-111111111111'
+  const UNIT_B = 'bbbbbbbb-2222-4222-8222-222222222222'
+  const sent = () => rpc.state.calls.length
+
+  it('sends units per line, each unit carrying its OWN Law 8 key', async () => {
+    await run({
+      lines: [{ lineType: 'Equipment', productId: PRODUCT_ID, qty: 2, days: 3, rate: 5000, units: [UNIT_A, UNIT_B] }],
+    })
+    const p = (rpc.state.calls[0]?.args as { p_payload: { lines: Array<Record<string, unknown>> } }).p_payload
+    const units = p.lines[0]?.['units'] as Array<{ client_uuid: string; asset_id: string }>
+    expect(units.map((u) => u.asset_id)).toEqual([UNIT_A, UNIT_B])
+    // One minted key per unit ROW — booking_line_units.client_uuid is UNIQUE,
+    // so reuse of the line's (or the action's) key would collide.
+    const keys = [String(p.lines[0]?.['client_uuid']), ...units.map((u) => u.client_uuid)]
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  it('absent units is the D5 fallback and sends an empty array, not a guess', async () => {
+    await run()
+    const p = (rpc.state.calls[0]?.args as { p_payload: { lines: Array<Record<string, unknown>> } }).p_payload
+    expect(p.lines[0]?.['units']).toEqual([])
+  })
+
+  it('refuses more units than qty — trimming would silently pick which serial to drop', async () => {
+    await expect(
+      run({ lines: [{ lineType: 'Equipment', productId: PRODUCT_ID, qty: 1, days: 3, units: [UNIT_A, UNIT_B] }] }),
+    ).rejects.toThrow(/more serials than items/)
+    expect(sent()).toBe(0)
+  })
+
+  it('refuses a unit that is not a product_units.id uuid', async () => {
+    await expect(
+      run({ lines: [{ lineType: 'Equipment', productId: PRODUCT_ID, qty: 1, days: 3, units: ['CAM-01'] }] }),
+    ).rejects.toThrow(/not a product_units\.id uuid/)
+    expect(sent()).toBe(0)
+  })
+
+  it('refuses the same physical unit on two lines — one serial covers one item', async () => {
+    await expect(
+      run({
+        lines: [
+          { lineType: 'Equipment', productId: PRODUCT_ID, qty: 1, days: 3, units: [UNIT_A] },
+          { lineType: 'Equipment', productId: PRODUCT_ID, qty: 1, days: 3, units: [UNIT_A] },
+        ],
+      }),
+    ).rejects.toThrow(/assigned to two lines/)
+    expect(sent()).toBe(0)
+  })
+})
+
 describe('the write is not reported unless the function reports it', () => {
   it('refuses a null answer even though no error was raised', async () => {
     rpc.state.reply = { data: null, error: null }

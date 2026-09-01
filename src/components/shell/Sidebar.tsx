@@ -84,7 +84,12 @@ export default function Sidebar({ active }: SidebarProps) {
         height: '100vh',
         position: 'sticky',
         top: 0,
-        transition: 'background-color var(--dur-theme) ease',
+        /* v4.2 §5 — the collapse animates at 240ms on the app easing token.
+           Width transitions lay the page out every frame; the spec accepts that
+           as a one-off on collapse. theme.css's prefers-reduced-motion block
+           (`* { transition: none !important }`) beats this inline value, so the
+           opt-out is already honoured. */
+        transition: 'width 240ms var(--ease), background-color var(--dur-theme) ease',
       }}
     >
       <div

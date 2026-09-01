@@ -83,60 +83,36 @@ describe('isStaff', () => {
   })
 })
 
-/* ── Law 10 · discount approval ─────────────────────────────────────────── */
+/* ── Law 10 as amended 31 Aug 2026 — the gate is GONE ───────────────────── */
 
-describe('canApproveDiscount — Law 10', () => {
-  it('caps at 25% for everyone, Owner included — no role bypass', () => {
-    expect(canApproveDiscount('Owner', 25)).toBe(true)
-    expect(canApproveDiscount('Owner', 25.01)).toBe(false)
-    expect(canApproveDiscount('Owner', 30)).toBe(false)
-    for (const role of ALL_ROLES) expect(canApproveDiscount(role, 26)).toBe(false)
-  })
-
-  it('lets Admin and Manager approve up to 15% and no further', () => {
-    for (const role of ['Admin', 'Manager'] as const) {
+describe('canApproveDiscount — ungated (D3, Babin 31 Aug: "don\'t put any gate on discount")', () => {
+  it('no cap, no role tier, no offline block — every role, any sane percent, online or not', () => {
+    for (const role of ALL_ROLES) {
+      expect(canApproveDiscount(role, 0)).toBe(true)
       expect(canApproveDiscount(role, 15)).toBe(true)
-      expect(canApproveDiscount(role, 15.01)).toBe(false)
-      expect(canApproveDiscount(role, 20)).toBe(false)
+      expect(canApproveDiscount(role, 26)).toBe(true)
+      expect(canApproveDiscount(role, 100)).toBe(true)
+      expect(canApproveDiscount(role, 5, false)).toBe(true)
     }
-    // Owner keeps the band between 15 and 25 to itself.
-    expect(canApproveDiscount('Owner', 20)).toBe(true)
-  })
-
-  it('gives no other role any approval authority', () => {
-    for (const role of ['Coordinator', 'Warehouse', 'Technician', 'Accounts', 'Driver', 'Client'] as const) {
-      expect(canApproveDiscount(role, 1)).toBe(false)
-      expect(canApproveDiscount(role, 15)).toBe(false)
-    }
-  })
-
-  it('treats a zero discount as needing no approval at all', () => {
-    for (const role of ALL_ROLES) expect(canApproveDiscount(role, 0)).toBe(true)
   })
 
   /*
-   * R3-1, fixed 16 Aug 2026. The guard was `if (percent <= 0) return true`,
-   * ABOVE every role check — so a negative percent was approvable by anyone,
-   * the external Client included. A negative discount is a price increase, and
-   * `lib/discount.ts` plus the database's `booking_discounts_hard_cap` already
-   * refused it; this function was one of two that did not.
+   * R3-1, fixed 16 Aug 2026 and DELIBERATELY KEPT through the gate removal:
+   * a negative percent was once approvable by anyone, the external Client
+   * included. A negative discount is a price increase, and removing the gate
+   * does not reopen that hole.
    */
-  it('refuses a NEGATIVE discount for every role — it is a price increase, not a discount', () => {
+  it('still refuses a NEGATIVE discount for every role — a price increase is not a discount', () => {
     for (const role of ALL_ROLES) {
       expect(canApproveDiscount(role, -5)).toBe(false)
       expect(canApproveDiscount(role, -0.01)).toBe(false)
     }
-  })
-
-  it('does not let a negative percent short-circuit the role check', () => {
-    // The specific regression: Client is external and holds no approval anywhere.
     expect(canApproveDiscount('Client', -5)).toBe(false)
     expect(canApproveDiscount('Driver', -100)).toBe(false)
   })
 
-  it('blocks approval offline for every role, including Owner', () => {
-    for (const role of ALL_ROLES) expect(canApproveDiscount(role, 5, false)).toBe(false)
-    expect(canApproveDiscount('Owner', 0, false)).toBe(false)
+  it('still refuses above 100% — a negative price, not a discount', () => {
+    for (const role of ALL_ROLES) expect(canApproveDiscount(role, 100.01)).toBe(false)
   })
 })
 
@@ -218,7 +194,8 @@ describe('the Client role holds no staff capability', () => {
     expect(canVoidInvoice('Client')).toBe(false)
     expect(canOverrideCreditLimit('Client')).toBe(false)
     expect(canManageSettings('Client')).toBe(false)
-    expect(canApproveDiscount('Client', 5)).toBe(false)
+    // canApproveDiscount is deliberately absent here since 31 Aug 2026: with
+    // the gate gone there is no approval capability to withhold from anyone.
     expect(isStaff('Client')).toBe(false)
   })
 })

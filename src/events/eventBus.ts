@@ -70,6 +70,8 @@ export const EVENT_TYPES = {
   RENTAL_RETURN_STARTED: 'rental.return_started',
   RENTAL_RETURNED: 'rental.returned',
   RENTAL_EXTENDED: 'rental.extended',
+  NOTE_ADDED: 'booking.note_added',
+  UNIT_RELEASED: 'booking.unit_released',
   RENTAL_RESET_COMPLETED: 'rental.reset_completed',
   RENTAL_HANDED_OVER: 'rental.handed_over',
   EVIDENCE_REVIEWED: 'rental.evidence_reviewed',

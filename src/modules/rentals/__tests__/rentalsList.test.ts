@@ -224,21 +224,23 @@ describe('All — the default scope, not a date filter', () => {
 })
 
 describe('the date chips — Kathmandu day boundaries, read off the named sets', () => {
-  it('Tomorrow is one Nepal calendar day on pickup_at, inclusive at both ends', () => {
+  it('Tomorrow is one Nepal OPERATIONAL day on pickup_at, inclusive at both ends', () => {
     // +05:45, never `Z`. Midnight UTC is 05:45 in Kathmandu, so a UTC-bounded
-    // "tomorrow" would lose the early shift's pickups to today's list.
+    // "tomorrow" would lose the early shift's pickups to today's list. Since
+    // D4 (ruled 30 Aug 2026) the day runs 06:00 → 06:00 by default, so
+    // tomorrow ends at 05:59:59.999 the morning after.
     expect(q('Tomorrow').filters.dateRange).toEqual({
       column: 'pickup_at',
-      fromAd: `${day(1)}T00:00:00.000+05:45`,
-      toAd: `${day(1)}T23:59:59.999+05:45`,
+      fromAd: `${day(1)}T06:00:00.000+05:45`,
+      toAd: `${day(2)}T05:59:59.999+05:45`,
     })
   })
 
   it('Next 7 Days is today plus the next six, on pickup_at', () => {
     expect(q('Next 7 Days').filters.dateRange).toEqual({
       column: 'pickup_at',
-      fromAd: `${day(0)}T00:00:00.000+05:45`,
-      toAd: `${day(6)}T23:59:59.999+05:45`,
+      fromAd: `${day(0)}T06:00:00.000+05:45`,
+      toAd: `${day(7)}T05:59:59.999+05:45`,
     })
   })
 
@@ -268,11 +270,11 @@ describe('the date chips — Kathmandu day boundaries, read off the named sets',
   it('Custom accepts one open end', () => {
     expect(q('Custom', [], { from: '2026-08-03', to: '' }).filters.dateRange).toEqual({
       column: 'pickup_at',
-      fromAd: '2026-08-03T00:00:00.000+05:45',
+      fromAd: '2026-08-03T06:00:00.000+05:45',
     })
     expect(q('Custom', [], { from: '', to: '2026-08-05' }).filters.dateRange).toEqual({
       column: 'pickup_at',
-      toAd: '2026-08-05T23:59:59.999+05:45',
+      toAd: '2026-08-06T05:59:59.999+05:45',
     })
   })
 })
@@ -288,7 +290,7 @@ describe('the return-side chips', () => {
     expect(q('Returning').filters).toEqual({
       chips: { stage: ['On Rent'] },
       presence: { cancelled_at: false, actual_return_at: false },
-      dateRange: { column: 'return_at', toAd: `${day(1)}T23:59:59.999+05:45` },
+      dateRange: { column: 'return_at', toAd: `${day(2)}T05:59:59.999+05:45` },
       sort: { column: 'return_at', ascending: true },
     })
   })

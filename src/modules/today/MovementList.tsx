@@ -15,6 +15,7 @@ import { useToast } from '../../components/ui/Toast'
 import { useAuth } from '../../lib/auth'
 import { useViewport } from '../../lib/device'
 import type { SystemRole } from '../../types/database'
+import { deliveryTypeLabel } from '../../lib/format'
 
 interface MovementListProps {
   title: string
@@ -215,7 +216,7 @@ function HoverCard({ m, onMovement }: { m: MovementRow; onMovement: MovementDisp
     // Units across the booking's live lines — "Alexa Mini ×5" counts 5.
     ['Equipment', `${m.itemCount} ${m.itemCount === 1 ? 'item' : 'items'}`],
     // `delivery_type`'s enum members are data, not UI copy (Law 17 note).
-    ['Delivery mode', m.deliveryType],
+    ['Delivery mode', deliveryTypeLabel(m.deliveryType)],
     ['Collect from', m.pickupLocation ?? NONE],
     ['Return to', m.returnLocation ?? NONE],
   ]

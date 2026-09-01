@@ -44,6 +44,7 @@ export type SettingKey =
   | 'decimalPlaces'
   | 'weekStarts'
   | 'language'
+  | 'operationalDayStart'
   /* ── Operations rules, added 16 Aug 2026 ──────────────────────────────────
    * Each of these was a hardcoded constant carrying a PLAN.md ruling. They are
    * here because they are genuinely variable business rules rather than
@@ -203,6 +204,36 @@ export const SETTING_SPECS: Record<SettingKey, SettingSpec> = {
    * `lib/i18n.ts` owns the coverage gate; this only stores the choice.
    */
   language: { default: 'English', kind: 'select', options: ['English', 'नेपाली'] },
+
+  /**
+   * **D4, ruled 30 Aug 2026** (`docs/booqable/REFERENCE_SPEC_v2.5.md`
+   * Appendix A0) — the operational day runs 06:00 → 06:00, **as a setting**.
+   *
+   * The clock time (Kathmandu) at which the rental day begins. "Today's
+   * pickups" and "today's returns" run from this time today to this time
+   * tomorrow, so a 05:30 return belongs to yesterday's operational day when
+   * this reads 06:00 — which is what stops the Dashboard disagreeing with the
+   * floor at 5am. `00:00` is a legal value and restores plain calendar days.
+   *
+   * Read by `queries/bookings.ts`'s day-boundary helpers (per call, like every
+   * other consumer), which every named filter set — Dashboard panels, the
+   * Operations day scope, the pickups drill-down — builds on. The pure
+   * arithmetic lives in `lib/operationalDay.ts`; this key only stores the
+   * choice (Law 1).
+   *
+   * Deliberately NOT applied to finance, audit or BS-calendar day boundaries —
+   * see the header of `lib/operationalDay.ts` for why those stay calendar days.
+   */
+  operationalDayStart: {
+    default: '06:00',
+    kind: 'text',
+    suffix: ' (HH:mm)',
+    validate: (v) => {
+      return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(v).trim())
+        ? null
+        : 'The operational day starts at a clock time, written HH:mm — e.g. 06:00. Use 00:00 for plain calendar days.'
+    },
+  },
 
   /* ── Operations rules ──────────────────────────────────────────────────────
    *

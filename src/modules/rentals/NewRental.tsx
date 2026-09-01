@@ -13,7 +13,6 @@ import { statusToken } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { validateDiscount } from '../../lib/discount'
-import type { DiscountValidationResult } from '../../lib/discount'
 import { getSetting } from '../../lib/settingsStore'
 import { price, formatMoney, rupees, roundHalfUp } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
@@ -94,10 +93,11 @@ function readVatRatePercent(): number {
 /**
  * 01_NEW_RENTAL §1.1 rail — `Discount  chips`.
  *
- * Law 10 caps discounts at 25%, so **no chip may exceed 25** and none does.
- * Anything above 10 opens the reason + approver popover before it can be
- * applied; `lib/discount.ts`'s `validateDiscount()` is what actually gates
- * Confirm, so a chip can never quietly authorise itself.
+ * Common presets, NOT a ceiling. Law 10 as amended 31 Aug 2026 (D3, Babin:
+ * "don't put any gate on discount"): no reason, no approver, no cap below
+ * 100%. The reason+approver popover the chips used to open left with the
+ * gate; `validateDiscount()` still gates Confirm, but only on arithmetic
+ * validity (negative, >100%), which no chip can produce.
  */
 const DISCOUNT_CHIPS = [0, 5, 10, 15, 20, 25] as const
 
@@ -962,63 +962,26 @@ function VatToggle({ ratePercent, on, onChange }: { ratePercent: number; on: boo
 }
 
 /**
- * The rail's `Discount  chips` row, plus the Law 10 popover it opens.
+ * The rail's `Discount  chips` row.
  *
- * `WIREFRAME_RULINGS_2026-08-12.md` §7: *"Chips open a popover carrying both
- * fields; `validateDiscount()` gates Confirm; no chip above 25%."* A 300px rail
- * has nowhere to put a ten-character reason and a named approver inline, and
- * the chip row on its own cannot satisfy Law 10 — so a chip above 10% opens
- * the popover and the popover carries both fields.
- *
- * The chips do **not** authorise anything. They set the percent; the page's
- * `validateDiscount()` verdict is what blocks Confirm, and it stays blocked
- * until the reason and the approver are real.
+ * The Law 10 approval popover this component used to open — reason ≥10 chars,
+ * named approver, the "Approval needed" badge — left with the discount gate
+ * (D3 ruled 30 Aug 2026; Babin's final word 31 Aug: "don't put any gate on
+ * discount"). The chips set a percent and nothing else needs to happen.
+ * `validateDiscount()` still gates Confirm, but only on arithmetic validity,
+ * which no chip can violate.
  */
 function DiscountChips({
   percent,
   onPercent,
-  reason,
-  onReason,
-  approver,
-  onApprover,
-  verdict,
   amount,
-  open,
-  onOpenChange,
-  inputStyle: fieldStyle,
 }: {
   percent: number
   onPercent: (n: number) => void
-  reason: string
-  onReason: (v: string) => void
-  approver: string
-  onApprover: (v: string) => void
-  verdict: DiscountValidationResult
   amount: string
-  open: boolean
-  onOpenChange: (v: boolean) => void
-  inputStyle: React.CSSProperties
 }) {
-  const rootRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node | null)) onOpenChange(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onOpenChange(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [open, onOpenChange])
-
   return (
-    <div ref={rootRef} style={{ position: 'relative', padding: '3px 0' }}>
+    <div style={{ position: 'relative', padding: '3px 0' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
         <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Discount</span>
         <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: percent > 0 ? 'var(--danger-text)' : 'var(--text)', whiteSpace: 'nowrap' }}>
@@ -1035,13 +998,7 @@ function DiscountChips({
               className="press"
               aria-pressed={active}
               aria-label={`${p}% discount`}
-              onClick={() => {
-                onPercent(p)
-                // Law 10 — anything above the threshold needs a reason and an
-                // approver, so the fields open with the chip rather than the
-                // operator having to find them.
-                onOpenChange(p > 10)
-              }}
+              onClick={() => onPercent(p)}
               style={{
                 position: 'relative',
                 minHeight: 24,
@@ -1062,81 +1019,7 @@ function DiscountChips({
             </button>
           )
         })}
-        {/* The chips are presets, not the whole range — a 7% booking must still
-            be reachable, and it is, from Pricing & Payments' own field. This
-            button is how the operator gets from the rail to that field's
-            approval pair without leaving the summary. */}
-        {percent > 10 && (
-          <button
-            type="button"
-            className="press"
-            aria-expanded={open}
-            aria-label={verdict.valid ? 'Edit discount approval' : 'Discount approval required'}
-            onClick={() => onOpenChange(!open)}
-            style={{
-              position: 'relative',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              minHeight: 24,
-              padding: '0 9px',
-              borderRadius: 'var(--r-badge)',
-              border: `1px solid ${verdict.valid ? 'var(--st-in-fg)' : 'var(--st-danger-fg)'}`,
-              background: verdict.valid ? 'var(--st-in-bg)' : 'var(--st-danger-bg)',
-              color: verdict.valid ? 'var(--st-in-fg)' : 'var(--st-danger-fg)',
-              fontFamily: 'inherit',
-              fontSize: 'var(--t-th)',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
-          >
-            <TouchInset />
-            <Icon name={verdict.valid ? 'check' : 'error'} size={11} />
-            {verdict.valid ? 'Approved' : 'Approval needed'}
-          </button>
-        )}
       </div>
-
-      {open && (
-        <div
-          role="group"
-          aria-label="Discount approval"
-          style={{
-            position: 'absolute',
-            zIndex: 40,
-            top: 'calc(100% + 6px)',
-            right: 0,
-            left: 0,
-            padding: 10,
-            background: 'var(--dropdown)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--r-card)',
-            boxShadow: 'var(--shadow-modal)',
-          }}
-        >
-          <p style={{ margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--danger-text)', lineHeight: 1.4 }}>
-            <Icon name="error" size={12} style={{ flexShrink: 0, marginTop: 2 }} />
-            {verdict.error ?? 'Above 10% — a reason of at least 10 characters and a named approver. No bypass, including Owner.'}
-          </p>
-          <Input
-            value={reason}
-            onChange={(e) => onReason(e.target.value)}
-            placeholder="Reason (10 characters minimum)"
-            aria-label="Discount reason"
-            style={{ ...fieldStyle, marginTop: 7 }}
-          />
-          <Input
-            value={approver}
-            onChange={(e) => onApprover(e.target.value)}
-            placeholder="Approver"
-            aria-label="Discount approver"
-            style={{ ...fieldStyle, marginTop: 6 }}
-          />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-            <Button onClick={() => onOpenChange(false)}>Done</Button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -1347,10 +1230,8 @@ export default function NewRental() {
   const [deliveryChargePaisa, setDeliveryChargePaisa] = useState<Paisa>(rupees(0) as Paisa)
   const [fuelChargePaisa, setFuelChargePaisa] = useState<Paisa>(rupees(0) as Paisa)
   const [discountPct, setDiscountPct] = useState(7)
-  const [discountReason, setDiscountReason] = useState('')
-  const [approver, setApprover] = useState('')
-  /** The rail's chip row opens this when a chip above 10% is chosen (Law 10). */
-  const [discountPopoverOpen, setDiscountPopoverOpen] = useState(false)
+  /* `discountReason` / `approver` / `discountPopoverOpen` left with the
+     discount gate (31 Aug 2026 — D3, Babin: "don't put any gate on discount"). */
   /**
    * The VAT rate, read from Settings ▸ Financial once per mount. The literal
    * `VAT_PCT = 13` this page used to carry is deleted — see `readVatRatePercent`.
@@ -1413,15 +1294,14 @@ export default function NewRental() {
   // §03 — a real conflict reads the unit's own status/booking, not a fabricated one.
   const conflictLines = lines.filter((l) => l.status !== 'In Stock')
   /**
-   * Law 10, through the engine rather than a re-derivation on the page.
-   *
-   * This used to be a hand-written `discountPct > 10 && (reason < 10 ||
-   * !approver)` here — the same rule `lib/discount.ts` already owns, which is
-   * exactly the Law 1 duplication that lets one copy drift. `validateDiscount`
-   * is now the single source, it is what gates Confirm, and its own message is
-   * what the operator reads.
+   * Law 10 as amended 31 Aug 2026, through the engine rather than a
+   * re-derivation on the page. The gate is GONE (D3, Babin: "don't put any
+   * gate on discount") — `validateDiscount` now refuses only a negative
+   * percent (a price rise) and >100% (a negative price), and no chip or
+   * clamp on this page can produce either. The verdict still gates Confirm
+   * so the arithmetic refusals surface if state is ever set another way.
    */
-  const discountVerdict = validateDiscount(discountPct, discountReason, approver.trim() || null)
+  const discountVerdict = validateDiscount(discountPct)
   const discountUnapproved = !discountVerdict.valid
 
   const alerts: Array<{ text: string; severity: 'Critical' | 'Warning' | 'Information'; action: string }> = [
@@ -1433,7 +1313,7 @@ export default function NewRental() {
     ...(!client ? [{ text: 'No client selected', severity: 'Critical' as const, action: 'Select Client' }] : []),
     ...(client && govId.trim().length === 0 ? [{ text: 'Missing client ID or PAN', severity: 'Critical' as const, action: 'Edit Client' }] : []),
     ...(discountUnapproved
-      ? [{ text: discountVerdict.error ?? 'Discount is not authorised.', severity: 'Critical' as const, action: 'Request Approval' }]
+      ? [{ text: discountVerdict.error ?? 'Discount is not a valid percentage.', severity: 'Critical' as const, action: 'Fix Discount' }]
       : []),
     // §02 — client financial warning. Booking may still proceed; this is a warning, not a block.
     ...(canBookingMoney && client && client.outstandingPaisa > 0
@@ -1767,8 +1647,10 @@ export default function NewRental() {
       // Client section, so that is where it goes.
       if (action === 'Select Client') jumpToSection('section-0')
       if (action === 'Open Dates') jumpToSection('section-1')
-      if (action === 'Request Approval') {
-        setDiscountPopoverOpen(true)
+      if (action === 'Fix Discount') {
+        // The approval popover this used to open left with the discount gate
+        // (31 Aug 2026); the fix for an arithmetic refusal is the percent
+        // field itself, which lives in the Summary card.
         document.getElementById('rail-booking-summary')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }
       // redesign v1 §1 / §7.3 — a notice never repeats the money buttons; it
@@ -2000,19 +1882,7 @@ export default function NewRental() {
       <MoneyRow label="Delivery" value={formatMoney(transportPaisa)} />
 
       <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
-        <DiscountChips
-          percent={discountPct}
-          onPercent={setDiscountPct}
-          reason={discountReason}
-          onReason={setDiscountReason}
-          approver={approver}
-          onApprover={setApprover}
-          verdict={discountVerdict}
-          amount={formatMoney(breakdown.discount)}
-          open={discountPopoverOpen}
-          onOpenChange={setDiscountPopoverOpen}
-          inputStyle={inputStyle}
-        />
+        <DiscountChips percent={discountPct} onPercent={setDiscountPct} amount={formatMoney(breakdown.discount)} />
         <VatToggle ratePercent={vatRatePercent} on={vatOn} onChange={setVatOn} />
         <MoneyRow label={vatOn ? `VAT at ${vatRatePercent}%` : 'VAT not applied'} value={formatMoney(breakdown.vat)} />
       </div>
@@ -2954,23 +2824,26 @@ export default function NewRental() {
                       <Input
                         type="number"
                         min={0}
-                        max={25}
+                        max={100}
                         value={discountPct}
-                        onChange={(e) => setDiscountPct(Math.min(25, Math.max(0, Number(e.target.value) || 0)))}
+                        /* The old clamp-to-25 left with the gate (31 Aug 2026 —
+                           D3, no gate). 0–100 is arithmetic validity, not a
+                           chosen cap: negative is a price rise, >100% a
+                           negative price. */
+                        onChange={(e) => setDiscountPct(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
                         style={inputStyle}
                       />
                     </Field>
-                    {/* Law 10 — hard block: ≥10 characters of reason AND a named
-                        approver. The message is `validateDiscount()`'s own, so the
-                        rail's popover and this block cannot state different rules. */}
-                    {discountPct > 10 && (
+                    {/* Law 12 — an arithmetic refusal (should state ever carry
+                        one) surfaces inline with the engine's own words. The
+                        reason/approver inputs that lived here left with the
+                        gate. */}
+                    {!discountVerdict.valid && (
                       <div style={{ marginTop: 9, padding: 10, borderRadius: 'var(--r-btn)', background: 'var(--st-danger-bg)' }}>
                         <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--st-danger-fg)', lineHeight: 1.4 }}>
                           <Icon name="error" size={12} style={{ flexShrink: 0, marginTop: 2 }} />
-                          {discountVerdict.error ?? 'Above 10% — a reason of at least 10 characters and a named approver. No bypass, including Owner.'}
+                          {discountVerdict.error}
                         </div>
-                        <Input value={discountReason} onChange={(e) => setDiscountReason(e.target.value)} placeholder="Reason" aria-label="Discount reason" style={{ ...inputStyle, marginTop: 7 }} />
-                        <Input value={approver} onChange={(e) => setApprover(e.target.value)} placeholder="Approver" aria-label="Discount approver" style={{ ...inputStyle, marginTop: 6 }} />
                       </div>
                     )}
                   </div>

@@ -509,9 +509,14 @@ describe('CREATE_BUNDLE — validate', () => {
     expect(() => check({ items })).toThrow(/below 1/i)
   })
 
-  it('refuses an over-10% discount with no reason or approver — Law 10, unchanged from the old body', () => {
+  it('accepts an over-10% discount with no reason or approver — the gate is gone (Law 10 amended 31 Aug 2026)', () => {
     const items = [{ modelId: 'M-X', productName: 'X', qty: 1, discountPct: 15, clientUuid: 'k1' }]
-    expect(() => check({ items })).toThrow(/reason|approver/i)
+    expect(() => check({ items })).not.toThrow()
+  })
+
+  it('still refuses an arithmetic non-discount — negative, or past 100%', () => {
+    expect(() => check({ items: [{ modelId: 'M-X', productName: 'X', qty: 1, discountPct: -5, clientUuid: 'k1' }] })).toThrow(/negative/i)
+    expect(() => check({ items: [{ modelId: 'M-X', productName: 'X', qty: 1, discountPct: 140, clientUuid: 'k1' }] })).toThrow(/negative price/i)
   })
 })
 

@@ -105,7 +105,11 @@ export default function BottomBar({ active }: { active: string }) {
              full box and the labels sit over the home indicator again. */
           gridTemplateRows: `${BOTTOM_BAR_HEIGHT}px`,
           alignContent: 'start',
+          /* v4.2 §4 — chrome glass, same reasoning as Header.tsx: content
+             scrolls under this fixed bar, so the 0.88 tint needs the blur. */
           background: 'var(--sidebar)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
           borderTop: '1px solid var(--border)',
           zIndex: 50,
         }}

@@ -22,6 +22,7 @@ import {
   IconDownload,
   IconRefresh,
   IconEye,
+  IconEyeOff,
   IconDotsVertical,
   IconAlertCircle,
   IconAlertTriangle,
@@ -135,6 +136,9 @@ const REGISTRY = {
   download: IconDownload,
   refresh: IconRefresh,
   eye: IconEye,
+  // Password reveal toggles (modules/auth/PasswordInput) — the pressed state
+  // must read in shape, not colour alone, so hide gets its own glyph.
+  eye_off: IconEyeOff,
   error: IconAlertCircle,
   flag: IconFlag,
   info: IconInfoCircle,

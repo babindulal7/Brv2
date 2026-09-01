@@ -27,6 +27,11 @@ const SIZE_STYLES: Record<
   lg: { minHeight: 48, padding: '0 24px', fontSize: 'var(--t-body)', gap: 10, iconSize: 18 },
 }
 
+/*
+ * No orange variant, deliberately. DESIGN_DIRECTION_SPEC_v4.2 §2.3: orange is a
+ * status hue only (the On Rent family) — "never on buttons". Blue is the one
+ * action colour; a Miraz-style `brand`/`action` orange button is a defect here.
+ */
 function variantStyle(variant: NonNullable<ButtonProps['variant']>): CSSProperties {
   switch (variant) {
     case 'primary':

@@ -18,7 +18,7 @@ import { Unavailable } from '../../components/ui/Unavailable'
 import { useAuth } from '../../lib/auth'
 import { newClientUuid } from '../../lib/supabase'
 import { gateContext, canViewMoneyField } from '../../lib/fieldGating'
-import { canRecordPayment, canPerformOperations } from '../../lib/rbac'
+import { canRecordPayment, canPerformOperations, canWriteBookingDesk } from '../../lib/rbac'
 import { IntelCard } from '../../components/ui/IntelCard'
 import { useToast } from '../../components/ui/Toast'
 import { formatMoney, grouped, toRupees } from '../../lib/money'
@@ -35,8 +35,14 @@ import { listBookings, fetchFloorBooking } from '../../lib/queries/bookings'
 import type { BookingListOptions, BookingListRow, FloorBooking, FloorLine } from '../../lib/queries/bookings'
 import { listInvoices, invoicesForBooking, listPayments, paymentsForBooking } from '../../lib/queries/finance'
 import type { InvoiceListRow, PaymentListRow } from '../../lib/queries/finance'
+import { listBookingNotes, notesForBooking } from '../../lib/queries/bookingNotes'
+import type { BookingNoteRow, BookingNoteType } from '../../lib/queries/bookingNotes'
+import { addBookingNote } from '../../actions/notes/addBookingNote'
+import { releaseBookingLineUnit } from '../../actions/rentals/releaseBookingLineUnit'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { isSubRentedLine, isSubRentalBooking } from '../../data/booking'
 import type { PaymentHistoryRow } from '../../data/booking'
+import { deliveryTypeLabel } from '../../lib/format'
 
 /**
  * # Booking Detail — live, for ANY `:bookingNo`
@@ -620,6 +626,207 @@ const th = {
  */
 const td = { height: 'var(--row-min-h)', padding: '9px 10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
 
+/**
+ * ── Notes — `booking_notes`' first UI (the "notes somewhere" of the 30 Aug
+ * request) ──────────────────────────────────────────────────────────────────
+ *
+ * Reading is all-staff (`booking_notes_select` = `auth_is_staff()`), so the
+ * list renders for every signed-in role; WRITING mirrors `booking_notes_all`
+ * through `note.create` → `canWriteBookingDesk`, so the composer is omitted —
+ * not disabled — for a role outside that set (`Accounts`, `Technician`).
+ *
+ * The type toggle offers Booking | Internal only. `History` is the enum's
+ * system-written member; `addBookingNote.validate` refuses it by name and the
+ * UI simply never offers it. Internal's chip says what the schema enforces
+ * elsewhere: a database view excludes Internal notes from every print path
+ * (0002:764) — nothing this screen must (or could) do.
+ *
+ * Law 8: the idempotency key is minted on the FIRST press and reused across
+ * retries of the same content; editing the body OR the type mints a fresh
+ * intent. Errors render inline in the card (§12 — errors inline, toasts for
+ * successes only).
+ */
+function NotesCard({
+  bookingId,
+  ctx,
+  canWrite,
+  rows,
+  loading,
+  error,
+  onRetry,
+  onSaved,
+}: {
+  bookingId: string
+  ctx: ActionContext | null
+  canWrite: boolean
+  rows: BookingNoteRow[]
+  loading: boolean
+  error: string | null
+  onRetry: () => void
+  onSaved: () => void
+}) {
+  const [body, setBody] = useState('')
+  const [noteType, setNoteType] = useState<Exclude<BookingNoteType, 'History'>>('Booking')
+  const [formError, setFormError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  /* Law 8 — one key per intent, held across retries, dropped when the text changes. */
+  const pendingUuid = useRef<string | null>(null)
+
+  const submit = async () => {
+    if (!ctx || saving) return
+    setSaving(true)
+    setFormError(null)
+    const clientUuid = pendingUuid.current ?? (pendingUuid.current = newClientUuid())
+    try {
+      await addBookingNote({ bookingId, noteType, body, clientUuid }, ctx)
+      pendingUuid.current = null
+      setBody('')
+      onSaved()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const typeChip = (t: Exclude<BookingNoteType, 'History'>, hint: string) => (
+    <button
+      key={t}
+      type="button"
+      onClick={() => {
+        setNoteType(t)
+        /* New TYPE is a new intent too — without this, a retry after a
+           committed-but-unconfirmed press reuses the old key, and
+           `idempotentInsert`'s 23505 re-fetch would return the OLD row as a
+           success reported under the NEW type. The type decides whether the
+           note prints (0002:764), so a mislabel here is not cosmetic. */
+        pendingUuid.current = null
+      }}
+      aria-pressed={noteType === t}
+      title={hint}
+      className="tap"
+      style={{
+        height: 28,
+        padding: '0 12px',
+        borderRadius: 'var(--r-badge)',
+        border: `1px solid ${noteType === t ? 'transparent' : 'var(--border)'}`,
+        background: noteType === t ? 'var(--st-primary-bg)' : 'var(--card2)',
+        color: noteType === t ? 'var(--st-primary-fg)' : 'var(--text2)',
+        fontSize: 'var(--t-meta)',
+        fontWeight: 600,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+      }}
+    >
+      {t}
+    </button>
+  )
+
+  return (
+    <Card title="Notes">
+      {error ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', alignItems: 'flex-start' }}>
+          <p role="alert" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--st-danger-fg)' }}>{error}</p>
+          <Button icon="refresh" onClick={onRetry}>
+            Retry
+          </Button>
+        </div>
+      ) : loading ? (
+        <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Loading notes…</p>
+      ) : rows.length === 0 ? (
+        <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+          No notes on this booking yet.
+        </p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
+          {rows.map((n) => (
+            <div
+              key={n.id}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+                padding: '8px 10px',
+                borderRadius: 'var(--r-xs)',
+                border: '1px solid var(--border)',
+                background: 'var(--card2)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span
+                  title={n.noteType === 'Internal' ? 'Internal — never printed or exported' : undefined}
+                  style={{
+                    padding: '1px 8px',
+                    borderRadius: 'var(--r-badge)',
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: 600,
+                    background: n.noteType === 'Internal' ? 'var(--st-progress-bg)' : 'var(--st-primary-bg)',
+                    color: n.noteType === 'Internal' ? 'var(--st-progress-fg)' : 'var(--st-primary-fg)',
+                  }}
+                >
+                  {n.noteType}
+                </span>
+                <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{formatAdDateTime(n.createdAtAd)}</span>
+              </div>
+              <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                {n.body}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {canWrite && ctx && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', marginTop: 'var(--sp-md)' }}>
+          <div role="group" aria-label="Note type" style={{ display: 'flex', gap: 6 }}>
+            {typeChip('Booking', 'Visible on booking paperwork')}
+            {typeChip('Internal', 'Internal — never printed or exported')}
+          </div>
+          {noteType === 'Internal' && (
+            <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+              Internal notes never print or export — a database view keeps them off every document.
+            </p>
+          )}
+          <textarea
+            value={body}
+            onChange={(e) => {
+              setBody(e.target.value)
+              /* New text is a new intent — a retry of it gets a fresh key. */
+              pendingUuid.current = null
+            }}
+            placeholder="Write a note for this booking…"
+            aria-label="Note text"
+            rows={3}
+            style={{
+              padding: '9px 10px',
+              borderRadius: 'var(--r-input)',
+              border: '1px solid var(--input-border)',
+              background: 'var(--input-bg)',
+              color: 'var(--text)',
+              fontSize: 'var(--t-meta)',
+              fontFamily: 'inherit',
+              resize: 'vertical',
+              minHeight: 44,
+            }}
+          />
+          {formError && (
+            /* role="alert" — the page's own convention for inline errors (the
+               confirm-dispatch error above, and every modal this card's Quick
+               Actions launch); without it a failed save is silent to a
+               screen reader, and no toast fires on failure (§12). */
+            <p role="alert" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--st-danger-fg)' }}>{formError}</p>
+          )}
+          <div>
+            <Button icon="plus" variant="primary" onClick={() => void submit()} disabled={saving || body.trim() === ''}>
+              {saving ? 'Saving…' : 'Add Note'}
+            </Button>
+          </div>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 /** A muted in-card paragraph for a surface whose read genuinely does not exist yet. */
 function NotWiredNote({ children }: { children: React.ReactNode }) {
   return (
@@ -723,6 +930,9 @@ export default function BookingDetail() {
   const [floor, setFloor] = useState<FloorBooking | null>(null)
   const [floorLoading, setFloorLoading] = useState(true)
   const [floorError, setFloorError] = useState<string | null>(null)
+  /** Bumped after a unit release so the chip row re-reads what the database
+   *  now says, instead of this screen editing its own copy of the truth. */
+  const [floorVersion, setFloorVersion] = useState(0)
   useEffect(() => {
     let cancelled = false
     setFloorLoading(true)
@@ -741,7 +951,70 @@ export default function BookingDetail() {
     return () => {
       cancelled = true
     }
-  }, [id])
+  }, [id, floorVersion])
+
+  /* ── unit release — §4.38 ruled (a), the serial chip's × ──────────────────
+   *
+   * Gate mirrors `unit.release`'s rule (`canWriteBookingDesk` =
+   * `booking_line_units_all`'s five roles) so the × is never drawn live for a
+   * session the dispatcher would refuse. v2.5 §10.4's confirm applies when the
+   * booking is PAST Packed — the stage order is Foundation's own, so "past" is
+   * an index comparison, not a status list this file could let drift.
+   *
+   * Law 8: the key is minted at the press and kept per unit row until that
+   * unit's release succeeds, so a retry of a failed press replays the SAME
+   * write rather than minting a second action.
+   */
+  const canReleaseUnits = user ? canWriteBookingDesk(user.role) : false
+  const [releasingUnitId, setReleasingUnitId] = useState<string | null>(null)
+  const [releaseError, setReleaseError] = useState<string | null>(null)
+  const [confirmRelease, setConfirmRelease] = useState<{ unitRowId: string; label: string } | null>(null)
+  const releaseKeys = useRef<Map<string, string>>(new Map())
+
+  const floorStage = floor?.stage ?? null
+  const pastPacked =
+    floorStage !== null &&
+    STATUS_ORDER.indexOf(floorStage as BookingStatus) > STATUS_ORDER.indexOf('Packed')
+
+  const doReleaseUnit = useCallback(
+    async (unitRowId: string, label: string) => {
+      const ctx = actionCtx(user)
+      if (!ctx || releasingUnitId) return
+      const key =
+        releaseKeys.current.get(unitRowId) ?? (() => {
+          const k = newClientUuid()
+          releaseKeys.current.set(unitRowId, k)
+          return k
+        })()
+      setReleasingUnitId(unitRowId)
+      setReleaseError(null)
+      try {
+        await releaseBookingLineUnit({ unitRowId, unitLabel: label, clientUuid: key }, ctx)
+        releaseKeys.current.delete(unitRowId)
+        // §12 — a success is a toast; the chip clears when the refetch lands.
+        showSuccessToast(`${label} released — the unit is back in the pool.`)
+        setFloorVersion((v) => v + 1)
+      } catch (err) {
+        // §12 — inline and persistent, above the lines table. The chip stays,
+        // because the database says the assignment still stands.
+        setReleaseError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setReleasingUnitId(null)
+      }
+    },
+    [user, releasingUnitId, showSuccessToast],
+  )
+
+  const requestReleaseUnit = useCallback(
+    (unitRowId: string, label: string) => {
+      if (pastPacked) {
+        setConfirmRelease({ unitRowId, label })
+        return
+      }
+      void doReleaseUnit(unitRowId, label)
+    },
+    [pastPacked, doReleaseUnit],
+  )
 
   /* ── money — the same reads Finance renders ──────────────────────────────
    *
@@ -764,6 +1037,21 @@ export default function BookingDetail() {
     (f) => (bookingId && canBookingMoney ? listPayments(f) : Promise.resolve({ rows: [] })),
     payFilters,
     { baseline: payFilters },
+  )
+
+  /* ── notes — `booking_notes`' first consumer ─────────────────────────────
+   * Read is all-staff (`booking_notes_select`), so no money gate: every
+   * signed-in role sees the list. The COMPOSER gates on `note.create`'s rule
+   * (`canWriteBookingDesk`, mirroring `booking_notes_all`) — omitted, not
+   * disabled, for Accounts and Technician. Same no-op-until-uuid shape as the
+   * money reads above.
+   */
+  const canWriteNotes = user ? canWriteBookingDesk(user.role) : false
+  const notesFilters = useMemo(() => (bookingId ? notesForBooking(bookingId) : {}), [bookingId])
+  const notesList = useList<BookingNoteRow>(
+    (f) => (bookingId ? listBookingNotes(f) : Promise.resolve({ rows: [] })),
+    notesFilters,
+    { baseline: notesFilters },
   )
 
   /* Law 3 — a voided invoice still exists, but its money is settled by its
@@ -1002,34 +1290,45 @@ export default function BookingDetail() {
 
       {showSegment('Docs') && (
         <>
+          {/* Real verbs only (30 Aug rework; the Dashboard quick panel is the
+              precedent). The three buttons this replaced — Print / Share /
+              More — had no onClick: dead controls dressed as actions, the
+              exact shape Law 16's discipline elsewhere on this page refuses.
+              Each action below reuses a launcher that already works, under
+              the SAME gates its other launchers carry — money visibility AND
+              capability, omitted not disabled. */}
           <Card title="Quick Actions">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 'var(--sp-sm)' }}>
-              {(['Print', 'Share', 'More'] as const).map((a, i) => (
-                <button
-                  key={a}
-                  type="button"
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '12px 4px',
-                    borderRadius: 'var(--r-btn)',
-                    border: '1px solid var(--border)',
-                    background: 'var(--card2)',
-                    color: 'var(--text)',
-                    fontSize: 'var(--t-meta)',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  <Icon name={i === 0 ? 'file' : i === 1 ? 'arrow_right' : 'more_vert'} size={17} style={{ color: 'var(--text2)' }} />
-                  {a}
-                </button>
-              ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
+              {canBookingMoney && canTakePayment && recordPaymentButton('Receive Payment')}
+              <Button icon="queues" onClick={() => setShellOpen(true)}>
+                Open Operations
+              </Button>
+              {canBookingMoney && canOperate && (
+                <Button icon="calendar" onClick={() => setShowExtendModal(true)}>
+                  Extend Rental
+                </Button>
+              )}
+              {canCrewMoney && canOperate && (
+                <Button icon="users" onClick={() => setShowCrewModal(true)}>
+                  Assign Crew
+                </Button>
+              )}
             </div>
           </Card>
+
+          <NotesCard
+            bookingId={bookingId ?? ''}
+            ctx={user ? { userId: user.id, role: user.role } : null}
+            canWrite={canWriteNotes}
+            rows={notesList.rows}
+            loading={notesList.loading}
+            error={notesList.error}
+            onRetry={notesList.refetch}
+            onSaved={() => {
+              showSuccessToast('Note Added', `Recorded against ${booking.bookingNo}`)
+              notesList.refetch()
+            }}
+          />
 
           <Card title="Alerts">
             {/* The seed carried three invented alerts. There is no alerts
@@ -1255,6 +1554,13 @@ export default function BookingDetail() {
                 </Unavailable>
               }
             >
+              {/* §12 — a failed release is inline and persistent, above the
+                  table whose chip refused to clear. Success is a toast. */}
+              {releaseError && (
+                <div style={{ marginBottom: 'var(--sp-sm)' }}>
+                  <ErrorBanner title="Could not release the unit" message={releaseError} />
+                </div>
+              )}
               {floorError ? (
                 <ErrorBanner title="Could not load this booking's items" message={floorError} />
               ) : floorLoading ? (
@@ -1324,19 +1630,73 @@ export default function BookingDetail() {
                               )}
                             </td>
                             <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                              {l.units
-                                .filter((u) => u.serial || u.assetTag)
-                                .map((u, i, arr) => {
-                                  const label = u.serial ?? u.assetTag ?? ''
-                                  return (
-                                    <span key={u.id}>
-                                      <Link to={`/inventory/${label}`} style={{ color: 'inherit', textDecoration: 'none' }}>
-                                        {label}
-                                      </Link>
-                                      {i < arr.length - 1 ? ', ' : ''}
-                                    </span>
-                                  )
-                                })}
+                              {/*
+                                Chips, not a comma list — v2.5 §10.4's ruled shape for
+                                creation-time serial assignments. The × is VISIBLE, never
+                                hover-revealed (§10.4 observed Booqable's hover-only × and
+                                ruled "do not copy"), and LIVE since §4.39 was ruled (a):
+                                the press RELEASES the assignment — `released_at`/
+                                `released_by` on the row (migration 0076), never a DELETE,
+                                which 0044's Law 3 backstop rejects for every role. Past
+                                Packed the press asks first (§10.4's confirm); the role
+                                gate mirrors `unit.release` = `booking_line_units_all`'s
+                                five, and for everyone else the control is ABSENT, not
+                                disabled — the same shape as the payment buttons (Law 6's
+                                omitted-not-masked direction applied to a verb).
+                              */}
+                              <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                {l.units
+                                  .filter((u) => u.serial || u.assetTag)
+                                  .map((u) => {
+                                    const label = u.serial ?? u.assetTag ?? ''
+                                    return (
+                                      <span
+                                        key={u.id}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: 2,
+                                          border: '1px solid var(--border)',
+                                          borderRadius: 'var(--r-chip)',
+                                          background: 'var(--card2)',
+                                          padding: canReleaseUnits ? '1px 2px 1px 7px' : '1px 7px',
+                                        }}
+                                      >
+                                        <Link to={`/inventory/${label}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                                          {label}
+                                        </Link>
+                                        {canReleaseUnits && (
+                                          <button
+                                            type="button"
+                                            onClick={() => requestReleaseUnit(u.id, label)}
+                                            disabled={releasingUnitId !== null}
+                                            aria-label={`Release ${label}`}
+                                            title={
+                                              pastPacked
+                                                ? `Release ${label} — this booking is past Packed, so you will be asked to confirm`
+                                                : `Release ${label} from this booking`
+                                            }
+                                            style={{
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              justifyContent: 'center',
+                                              width: 20,
+                                              height: 20,
+                                              padding: 0,
+                                              border: 'none',
+                                              background: 'transparent',
+                                              color: releasingUnitId === u.id ? 'var(--disabled)' : 'var(--muted)',
+                                              cursor: releasingUnitId !== null ? 'wait' : 'pointer',
+                                              borderRadius: 'var(--r-xs)',
+                                            }}
+                                          >
+                                            <Icon name="close" size={12} />
+                                          </button>
+                                        )}
+                                      </span>
+                                    )
+                                  })}
+                              </span>
                             </td>
                             <td className="figure" style={{ ...td, textAlign: 'right' }}>{l.qty}</td>
                             <td style={td}>
@@ -1450,7 +1810,7 @@ export default function BookingDetail() {
                         fontWeight: 600,
                       }}
                     >
-                      {booking.deliveryType}
+                      {deliveryTypeLabel(booking.deliveryType)}
                     </span>
                   </div>
                   {[
@@ -1814,6 +2174,25 @@ export default function BookingDetail() {
           }}
         />
       )}
+
+      {/* v2.5 §10.4 — release confirms when the booking is past Packed. The
+          dialog only ever mounts from `requestReleaseUnit`, which asked the
+          stage question; before Packed the press releases directly. */}
+      <ConfirmDialog
+        isOpen={confirmRelease !== null}
+        onClose={() => setConfirmRelease(null)}
+        onConfirm={() => {
+          if (!confirmRelease) return
+          const { unitRowId, label } = confirmRelease
+          setConfirmRelease(null)
+          void doReleaseUnit(unitRowId, label)
+        }}
+        title={`Release ${confirmRelease?.label ?? 'this unit'}?`}
+        description={`This booking is ${floorStage ?? 'past Packed'} — the unit has already been through packing. Releasing it marks the assignment ended (the row is kept, Law 3) and the serial leaves this booking's floor lists.`}
+        confirmLabel="Release unit"
+        variant="danger"
+        isSubmitting={releasingUnitId !== null}
+      />
 
       <ExtendRentalModal
         isOpen={showExtendModal}

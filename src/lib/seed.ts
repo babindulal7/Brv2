@@ -632,7 +632,7 @@ const CLIENTS: readonly ClientSpec[] = [
 ]
 
 /**
- * The day the app treats as *now* — `bs.ts`'s `TODAY`, 31 Jul 2026.
+ * The day this corpus treats as *now* — 31 Jul 2026 (month is 0-indexed).
  *
  * Every generated booking is placed relative to this rather than to a real
  * clock, for the same reason the corpus has no `Math.random`: a seed whose
@@ -640,6 +640,33 @@ const CLIENTS: readonly ClientSpec[] = [
  * was written, and "is Today broken or is the data just old" is not a question
  * anyone should have to ask. The rental day runs 06:00→06:00, so that is the
  * hour these land on.
+ *
+ * ⛔ **This comment used to say "`bs.ts`'s `TODAY`, 31 Jul 2026". That constant
+ * no longer exists,** and the justification above has quietly inverted.
+ * `bs.ts:255` records that `export const TODAY = new Date(Date.UTC(2026, 6, 31))`
+ * was replaced by `getBusinessToday()`, which reads the **real clock**, because
+ * "every overdue chip, ageing count and days-left figure derived from it was
+ * measuring distance from a day in the past".
+ *
+ * **The app was un-frozen; this anchor was not.** They now disagree by however
+ * long ago 31 Jul 2026 was, and the failure the paragraph above warns about is
+ * the one this constant now causes: `STAGE_PLAN` puts `Packed` at 0–2 days out,
+ * so regenerating the corpus today emits Packed pickups dated 31 Jul – 2 Aug and
+ * **Today ▸ Going out renders empty anyway**. Both a drifting anchor and a frozen
+ * one end at the same empty screen; only the direction of the lie differs.
+ *
+ * TODO(decision): PLAN.md §4 — should the anchor track the clock at GENERATION
+ * time (`npm run seed:sql` emits dates relative to the day it is run) or stay
+ * fixed? Fixed keeps `0047` byte-reproducible and keeps the test suite's
+ * expectations stable, which is why it is not simply changed here. Clock-relative
+ * keeps the Today screens meaningful without a re-anchor every month. The cost of
+ * getting it wrong: fixed means every demo after the anchor date shows an empty
+ * floor; clock-relative means a regenerated `0047` no longer matches the one on
+ * record, and any test asserting a literal seeded instant breaks.
+ *
+ * Not urgent for the live corpus, which is not generated from this file at all —
+ * see `supabase/migrations/0074_seed_operational_stage_corpus.sql`, which seeds
+ * the two missing stages from the clock at apply time.
  */
 const ANCHOR = kathmandu(2026, 6, 31, 6, 0)
 const DAY_MS = 24 * 60 * 60_000

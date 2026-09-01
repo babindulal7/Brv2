@@ -5,7 +5,6 @@ import {
   canViewMoney,
   canRecordPayment,
   canVoidInvoice,
-  canApproveDiscount,
   canOverrideCreditLimit,
   canPerformOperations,
   canManageSettings,
@@ -32,7 +31,10 @@ const CAPABILITIES: Array<{ label: string; note: string; test: (r: SystemRole) =
   { label: 'See money', note: 'Warehouse, Technician, Driver and Client see none, anywhere.', test: canViewMoney },
   { label: 'Record payment', note: 'Advances and security deposits.', test: (r) => canRecordPayment(r) },
   { label: 'Void invoice', note: 'Corrections are reversal rows, never edits.', test: (r) => canVoidInvoice(r) },
-  { label: 'Approve 15% discount', note: 'Above 10% needs a reason and an approver.', test: (r) => canApproveDiscount(r, 15) },
+  /* The 'Approve 15% discount' row left this matrix on 31 Aug 2026 — the
+     discount gate is gone (D3, Babin: "don't put any gate on discount"), so
+     there is no approval capability to compare roles by. A row every role
+     passes is a row that says nothing. */
   { label: 'Override credit limit', note: 'Book past a client’s ceiling.', test: (r) => canOverrideCreditLimit(r) },
   { label: 'Run operations', note: 'Pack, handover, return, reset.', test: canPerformOperations },
   { label: 'Manage settings', note: 'This screen, and everything under it.', test: canManageSettings },

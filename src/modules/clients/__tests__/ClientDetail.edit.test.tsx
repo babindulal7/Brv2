@@ -237,13 +237,26 @@ describe('ClientDetail — inline edit', () => {
   })
 
   it('a failing member blocks the whole group', async () => {
+    // 40% was the failing case while the discount gate stood; ungated
+    // (D3, 31 Aug 2026) it saves freely, so the group-blocking behaviour is
+    // pinned with a value that is still invalid — a >100% "discount" is a
+    // negative price, which no ruling made legal.
     await click(button('Edit Client'))
     await type(field('discountSource'), 'Membership')
-    await type(field('standingDiscountPercent'), '40')
+    await type(field('standingDiscountPercent'), '140')
     await click(saveButtons()[0])
     // Nothing saved: both are still dirty, and the reason is on the screen.
-    expect(container.textContent).toContain('Law 10')
+    expect(container.textContent).toContain('negative price')
     expect(saveButtons().length).toBeGreaterThan(0)
+  })
+
+  it('a standing discount above the old 10% threshold saves without ceremony — the gate is gone', async () => {
+    await click(button('Edit Client'))
+    await type(field('discountSource'), 'Membership')
+    await type(field('standingDiscountPercent'), '20')
+    await click(saveButtons()[0])
+    expect(saveButtons()).toHaveLength(0)
+    expect((field('standingDiscountPercent') as HTMLInputElement).value).toBe('20')
   })
 
   it('says plainly that nothing is persisted yet', async () => {

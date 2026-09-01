@@ -41,13 +41,15 @@ export function Card({
 }: CardProps) {
   const rootStyle: CSSProperties = {
     background: 'var(--card)',
+    backdropFilter: 'blur(14px)',
+    WebkitBackdropFilter: 'blur(14px)',
     border: '1px solid var(--border)',
     borderRadius: 'var(--r-card)',
     boxShadow: 'var(--shadow-card)',
     color: 'var(--text)',
     display: 'flex',
     flexDirection: 'column',
-    transition: 'background-color var(--dur-theme) ease, border-color var(--dur-theme) ease',
+    transition: 'transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), background-color var(--dur-theme) var(--ease), border-color var(--dur-theme) var(--ease)',
     ...style,
   }
 
@@ -111,34 +113,37 @@ export function KpiCard({ label, value, subtext, trend, icon, onClick }: KpiCard
   return (
     <div
       onClick={onClick}
+      className={onClick ? 'lift' : undefined}
       style={{
         background: 'var(--card)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--r-card)',
         boxShadow: 'var(--shadow-card)',
-        padding: 'var(--sp-lg)',
+        padding: '16px 20px',
         display: 'flex',
         flexDirection: 'column',
         gap: 'var(--sp-sm)',
         cursor: onClick ? 'pointer' : undefined,
-        transition: 'background-color var(--dur-theme) ease, border-color var(--dur-theme) ease',
+        transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--muted)' }}>
-        <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+        <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
           {label}
         </span>
-        {icon && <span style={{ color: 'var(--muted)' }}>{icon}</span>}
+        {icon && <span style={{ color: 'var(--muted)', display: 'flex', alignItems: 'center' }}>{icon}</span>}
       </div>
 
-      <div style={{ fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>
+      <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
         {value}
       </div>
 
       {(subtext || trend) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)' }}>
+          {/* *-text tokens, not st-*-fg: the fg pair is ink for a SOLID status
+              fill — white in light theme, invisible on this white card. */}
           {trend && (
-            <span style={{ fontWeight: 700, color: trend.isPositive ? 'var(--st-in-fg)' : 'var(--st-progress-fg)' }}>
+            <span style={{ fontWeight: 700, color: trend.isPositive ? 'var(--success-text)' : 'var(--ready-text)', fontVariantNumeric: 'tabular-nums' }}>
               {trend.value}
             </span>
           )}

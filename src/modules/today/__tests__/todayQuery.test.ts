@@ -343,14 +343,16 @@ describe('pickupsQuery / returnsQuery · the filter set that reaches Postgres', 
     const range = pickupsQuery('Next 7 Days', []).filters.dateRange
     expect(range?.column).toBe('pickup_at')
     // Both bounds carry Nepal's offset, taken from the named set rather than
-    // rebuilt here — a UTC-bounded "today" runs 05:45 to 05:45.
-    expect(range?.fromAd).toBe(`${day(0)}T00:00:00.000+05:45`)
-    expect(range?.toAd).toBe(`${day(6)}T23:59:59.999+05:45`)
+    // rebuilt here — a UTC-bounded "today" runs 05:45 to 05:45. Since D4 the
+    // day is the OPERATIONAL day (default 06:00 → 06:00), so a 7-day chip runs
+    // 06:00 on day 0 to 05:59:59.999 on the morning AFTER day 6.
+    expect(range?.fromAd).toBe(`${day(0)}T06:00:00.000+05:45`)
+    expect(range?.toAd).toBe(`${day(7)}T05:59:59.999+05:45`)
   })
 
   it('returns are ranged on return_at, pickups on pickup_at', () => {
     expect(returnsQuery('Tomorrow', []).filters.dateRange?.column).toBe('return_at')
-    expect(returnsQuery('Tomorrow', []).filters.dateRange?.fromAd).toBe(`${day(1)}T00:00:00.000+05:45`)
+    expect(returnsQuery('Tomorrow', []).filters.dateRange?.fromAd).toBe(`${day(1)}T06:00:00.000+05:45`)
   })
 
   it('All drops the date range and keeps everything else', () => {
@@ -402,7 +404,7 @@ describe('Status chips · intersection, never replacement', () => {
   })
 
   it('does not disturb the period range', () => {
-    expect(pickupsQuery('Tomorrow', ['Packed']).filters.dateRange?.fromAd).toBe(`${day(1)}T00:00:00.000+05:45`)
+    expect(pickupsQuery('Tomorrow', ['Packed']).filters.dateRange?.fromAd).toBe(`${day(1)}T06:00:00.000+05:45`)
   })
 })
 

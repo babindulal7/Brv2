@@ -19,10 +19,12 @@ import { useViewport } from '../../lib/device'
 
 export const cardStyle = {
   background: 'var(--card)',
+  backdropFilter: 'blur(14px)',
+  WebkitBackdropFilter: 'blur(14px)',
   border: '1px solid var(--border)',
   borderRadius: 'var(--r-card)',
   boxShadow: 'var(--shadow-card)',
-  transition: 'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color var(--dur-theme) ease, border-color var(--dur-theme) ease',
+  transition: 'transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), background-color var(--dur-theme) var(--ease), border-color var(--dur-theme) var(--ease)',
 } as const
 
 export function Card({

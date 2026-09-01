@@ -26,7 +26,7 @@ describe('the fixed 11', () => {
   it('is exactly the wireframe list, in order', () => {
     expect(NAV.map((s) => s.label)).toEqual([
       'New Rental',
-      'Today',
+      'Dashboard',
       'Operation', // singular — every spec file writes it that way
       'Rentals',
       'Calendar',
@@ -142,7 +142,7 @@ describe('active row — most specific wins, exactly one owner', () => {
 describe('phone bottom bar — five fixed slots', () => {
   it('is Today · Rentals · Scan · Inventory · More for a permitted role', () => {
     expect(bottomBarSlots('Owner').map((s) => (s.kind === 'nav' ? s.section.label : s.kind))).toEqual([
-      'Today',
+      'Dashboard',
       'Rentals',
       'scan',
       'Inventory',
@@ -153,7 +153,7 @@ describe('phone bottom bar — five fixed slots', () => {
   it('is the same fixed bar for a money-blind role — none of its slots is a money surface', () => {
     const slots = bottomBarSlots('Warehouse')
     expect(slots.map((s) => (s.kind === 'nav' ? s.section.to : s.kind))).toEqual([
-      '/today',
+      '/dashboard',
       '/rentals',
       'scan',
       '/inventory',

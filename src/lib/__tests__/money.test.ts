@@ -16,7 +16,6 @@ import {
   calculatePrice,
   discountGate,
   DISCOUNT_CAP,
-  DISCOUNT_APPROVAL_THRESHOLD,
   crewBilling,
   lateFee,
   REFERENCE_CASE,
@@ -304,64 +303,47 @@ describe('the §2.8 reference case', () => {
   })
 })
 
-/* ── §2.5 · discount gate ───────────────────────────────────────────────── */
+/* ── discount gate — GONE. Law 10 as amended 31 Aug 2026 ────────────────── */
 
-describe('discountGate — Law 10 / §2.5', () => {
-  it('allows anything at or below the 10% approval threshold with no reason or approver', () => {
-    expect(discountGate(0, '', null).ok).toBe(true)
-    expect(discountGate(10, '', null).ok).toBe(true)
-    expect(DISCOUNT_APPROVAL_THRESHOLD).toBe(10)
+describe('discountGate — ungated (D3, Babin 31 Aug: "don\'t put any gate on discount")', () => {
+  it('allows any percentage 0–100 with no reason, no approver, no cap, no role', () => {
+    for (const pct of [0, 10, 11, 25, 25.01, 40, 100]) {
+      expect(discountGate(pct, '', null).ok).toBe(true)
+    }
+    // The 100 here is the ARITHMETIC ceiling a percentage has, not a chosen cap.
+    expect(DISCOUNT_CAP).toBe(100)
   })
 
   /*
-   * R3-1, fixed 16 Aug 2026. `-5` fell through `percent <= 10` and returned
-   * `{ok:true}`, which the Settings ▸ Tools calculator rendered as a green tick
-   * (`Tools.tsx:783`, `:817`; the input is `type="number"` with no `min`). A
-   * negative discount is a price increase. `lib/discount.ts:validateDiscount`
-   * and the DB's `booking_discounts_hard_cap` already refused it.
+   * R3-1, fixed 16 Aug 2026 and DELIBERATELY KEPT through the gate removal.
+   * `-5` once fell through and drew an approving green tick on Settings ▸
+   * Tools. A negative discount is a price increase; removing the gate does
+   * not reopen that hole.
    */
-  it('refuses a NEGATIVE percent — a price increase is not a discount', () => {
+  it('still refuses a NEGATIVE percent — a price increase is not a discount', () => {
     const neg = discountGate(-5, '', null)
     expect(neg.ok).toBe(false)
     expect(neg.ok === false && neg.why).toMatch(/negative|price increase/i)
 
-    expect(discountGate(-0.01, 'a long enough reason', 'user-1').ok).toBe(false)
-    // The boundary stays open: zero is allowed, there is nothing to approve.
+    expect(discountGate(-0.01, '', null).ok).toBe(false)
     expect(discountGate(0, '', null).ok).toBe(true)
   })
 
-  it('agrees with the other implementations of Law 10 on the sign', () => {
+  it('agrees with the other implementations on the sign', () => {
     // The point of R3-1 was disagreement between engines, not the rule itself.
     expect(discountGate(-5, '', null).ok).toBe(false)
     expect(canApproveDiscount('Owner', -5)).toBe(false)
   })
 
-  it('refuses above the 25% hard cap', () => {
-    expect(DISCOUNT_CAP).toBe(25)
-    expect(discountGate(25, 'a long enough reason', 'user-1').ok).toBe(true)
-    const over = discountGate(25.01, 'a long enough reason', 'user-1')
+  it('refuses above 100% — a negative price, not a discount', () => {
+    const over = discountGate(100.01, '', null)
     expect(over.ok).toBe(false)
-    expect(over.ok === false && over.why).toContain('25%')
+    expect(over.ok === false && over.why).toMatch(/negative price/)
   })
 
-  it('above 10% needs a reason of at least 10 characters', () => {
-    const short = discountGate(11, 'too short', 'user-1')
-    expect(short.ok).toBe(false)
-    expect('nine char'.length).toBeLessThan(10)
-    expect(discountGate(11, '          ', 'user-1').ok).toBe(false) // whitespace is not a reason
-    expect(discountGate(11, 'exactly10c', 'user-1').ok).toBe(true)
-  })
-
-  it('above 10% needs a named approver', () => {
-    const noApprover = discountGate(11, 'a genuinely long reason', null)
-    expect(noApprover.ok).toBe(false)
-    expect(noApprover.ok === false && noApprover.why).toContain('Manager')
-    expect(discountGate(11, 'a genuinely long reason', 'user-1').ok).toBe(true)
-  })
-
-  it('takes no role argument, so no role — including Owner — can bypass the cap', () => {
-    expect(discountGate.length).toBe(3)
-    expect(discountGate(30, 'the owner said so, at length', 'the-owner').ok).toBe(false)
+  it('ignores reason and approver entirely — required never, harmless always', () => {
+    expect(discountGate(40, '', null).ok).toBe(true)
+    expect(discountGate(40, 'a reason nobody asked for', 'usr-owner').ok).toBe(true)
   })
 })
 

@@ -214,8 +214,14 @@ export const createBundleConfig: ActionConfig<CreateBundleInput, CreateBundleRes
             `Line ${i + 1} has a quantity below 1 — bundle_items_qty_positive refuses it (0004:420).`,
           );
         }
-        if (item.discountPct && item.discountPct > 0) {
-          const v = validateDiscount(item.discountPct, item.discountReason, item.approvedBy);
+        /* ⛔ Was `item.discountPct && item.discountPct > 0` — which SKIPPED
+           validation for a negative percent, silently accepting a price rise
+           dressed as a discount (the exact R3-1 hole, in a fourth place).
+           Found 31 Aug while removing the discount gate; the ungated
+           `validateDiscount` still refuses negative and >100%, and now it is
+           actually asked. */
+        if (item.discountPct !== undefined && item.discountPct !== 0) {
+          const v = validateDiscount(item.discountPct);
           if (!v.valid) {
             throw new Error(v.error ?? 'Invalid item discount in bundle.');
           }

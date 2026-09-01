@@ -297,14 +297,16 @@ export function canApprovePurchase(role: SystemRole): boolean {
  * (`booking_discounts_hard_cap`, `0002_bookings.sql`). This function and
  * `money.ts:discountGate` were the two that disagreed.
  */
-export function canApproveDiscount(role: SystemRole, percent: number, isOnline: boolean = true): boolean {
-  if (!isOnline) return false // Approval action blocked offline
-  if (percent < 0) return false // A negative discount is a price rise. Never approvable.
-  if (percent === 0) return true // Nothing to approve.
-  if (percent > 25) return false // 25% hard cap (Law 10)
-  if (role === 'Owner') return true
-  if ((role === 'Admin' || role === 'Manager') && percent <= 15) return true
-  return false
+export function canApproveDiscount(_role: SystemRole, percent: number, _isOnline: boolean = true): boolean {
+  /* The gate is GONE — D3 (30 Aug), Babin's final word 31 Aug: "don't put any
+     gate on discount." No approval exists, so nothing is ever blocked on an
+     approver, a role tier, the old 25% cap, or being offline. The function
+     survives (absent-not-disabled applies to UI, not to engine exports with
+     six call sites) and now answers the only questions left — arithmetic
+     validity, keeping the R3-1 hole closed: */
+  if (percent < 0) return false // a negative discount is a price rise, not approvable-because-not-a-discount
+  if (percent > 100) return false // a >100% discount is a negative price
+  return true
 }
 
 /** Check if role can void an invoice */

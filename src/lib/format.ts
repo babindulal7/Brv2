@@ -55,3 +55,26 @@ export function rs(n: number): string {
 export function bsAdPair(bsDay: number, bsMonth: string, bsYear: number, adLabel: string): { bs: string; ad: string } {
   return { bs: `${bsDay} ${bsMonth} ${bsYear} BS`, ad: adLabel }
 }
+
+/**
+ * Renders a stored `bookings.delivery_type` for an operator to read.
+ *
+ * **Law 17 / PLAN.md §6.1 — the word "customer" appears nowhere in the UI.**
+ * The Postgres enum spells one member `'Customer Pickup'` (`0001_enums.sql:34`)
+ * and that is correct: Law 17 governs what the operator reads, not what
+ * Postgres stores. The write path already maps label → enum
+ * (`deliveryTypeFromLabel`, `actions/rentals/createRental.ts:100`); this is the
+ * inverse that was never written, so the raw enum reached the DOM at six render
+ * sites. Every one of the 246 live bookings carries `'Customer Pickup'`, so the
+ * banned word rendered on every booking, not on an edge case.
+ *
+ * This is **not** a rename and it moves no stored data — the coordinated
+ * schema-wide rename is still `AUDIT_FINDINGS.md` P3, unstarted. Do not use it
+ * for comparisons: logic that tests the stored value (e.g.
+ * `driverSignatureRequired` in `HandoverWorkspace.tsx`) must keep comparing the
+ * enum, never this label.
+ */
+export function deliveryTypeLabel(value: string | null | undefined, fallback = '—'): string {
+  if (value == null || value === '') return fallback
+  return value === 'Customer Pickup' ? 'Client Pickup' : value
+}

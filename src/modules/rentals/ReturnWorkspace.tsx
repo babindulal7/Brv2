@@ -22,6 +22,7 @@ import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/
 import type { FloorLineInput } from '../../actions/rentals/floorVerb'
 import type { ItemCondition, NotReturnedDecision } from '../../types/database'
 import { CompactButton } from '../../components/ui/TouchTarget'
+import { deliveryTypeLabel } from '../../lib/format'
 
 /**
  * **Return & Inspection Workspace** — the floor-loop model
@@ -869,7 +870,7 @@ export default function ReturnWorkspace() {
                 { l: 'Status', v: floor.stage, big: true },
                 { l: 'Return job', v: jobState },
                 { l: 'Units', v: String(totalUnits) },
-                { l: 'Delivery', v: floor.deliveryType ?? '—' },
+                { l: 'Delivery', v: deliveryTypeLabel(floor.deliveryType) },
               ].map((f) => (
                 <div key={f.l} style={{ padding: '11px 14px', borderRight: '1px solid var(--border)', minWidth: 0, flex: '1 1 auto' }}>
                   <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{f.l}</div>

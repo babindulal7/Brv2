@@ -2,6 +2,301 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-01 — "ok do all": 0077 APPLIED (owner-approved) · sync WIP typed green and Law-12’d · gate green · wave committed
+**Phase:** Phase 1 schema + cross-phase close-out · **Status:** applied, verified, committed
+
+Babin’s “ok do all” on the standing todo list. Item by item:
+
+### Did
+1. **`0077_law6_arm_the_four_unarmed_tables` APPLIED live** (version 20260901050002, the
+   “ok do all” as the explicit approval). Pre-flighted first: the full body inside
+   `begin; … rollback;` — its own post-condition block passed and a re-read confirmed the
+   blanket grants were untouched after rollback. Then applied, then verified from the
+   catalogue (blanket SELECT false on all four tables, all four `_v` views present), then
+   the §7-style hand check — **12 role-simulated probes** as `authenticated`: the four
+   money columns 42501, four operational columns readable, all four `_v` views serving.
+   File header updated to record the apply (with the usual warning that headers are not
+   evidence).
+2. **Found already done — verified instead of redone:** `0075_drop_invoice_lines_discount_gate`
+   (applied 31 Aug 13:19) and `0076_booking_line_units_release` (applied 31 Aug 21:33), both
+   read from the ledger; and the `FLOOR_UNIT_COLUMNS` live-branch flip — `queries/bookings.ts`
+   now names `released_at` unconditionally. The 0076 filename collision is **MOOT**: both
+   files are recorded live under distinct timestamps, so renumbering either NOW would desync
+   the ledger. Do not renumber.
+3. **ClientDetail’s stale hint corrected** — “Above 10% needs Law 10 approval this record
+   cannot yet carry” → ungated copy. The validator itself was already ungated; only the
+   UI string still claimed the ceremony.
+4. **The stalled sync/offline WIP (untracked since 31 Aug 22:26) typed green and brought
+   under Law 12.** Seven tsc errors: three unused imports removed, `SyncState.error` widened
+   to `string | undefined` for `exactOptionalPropertyTypes`, and — the real one —
+   `syncContext.tsx` called `showErrorToast`, which `ToastContextValue` deliberately does not
+   have (Law 12: toasts carry successes only). The two error toasts are gone; offline and
+   failure outcomes land in `SyncState` for inline rendering. ⚠ Nothing in the shell renders
+   `syncState.error` yet — the state is written, the inline surface is a follow-up.
+
+### Verified
+- `npx tsc --noEmit` exit 0. `npx vitest run`: **95 files, 2241 tests, all green** — incl.
+  the breakpoints guard, the §7 reflow suites, `releaseBookingLineUnit`, `syncEngine` and
+  `posEngines`.
+- Not driven in the browser: another session’s dev server holds this folder’s port, and the
+  only UI-visible change this session is one hint string.
+
+### Blocked / deliberately not taken
+- §4.38(b) document precedence, §4.23 waiver asymmetry, the seed-anchor `TODO(decision)` —
+  owner rulings; “do all” supplies approval, not the content of a ruling.
+- D1 (Booqable purchase-cost audit) still awaits an API token.
+
+## 2026-09-01 — DESIGN_DIRECTION_SPEC v4.2 (Miraz feel) applied end to end
+**Phase:** design system · **Status:** applied and verified in the running app
+
+`docs/DESIGN_DIRECTION_SPEC_v4.2.md` (31 Aug ruling) is now fully applied. Most of the
+token work had already landed in the tree (canvas gradients, shadow scale, card glass
+vars, soft-chip tokens, theme.tsx light default); this session closed the gaps and
+removed two spec violations that had ridden in with it.
+
+### Defects found and fixed
+- **`--ease` was read in 4 places and defined nowhere** (theme.css body + `.card`,
+  `Page.tsx`, `Card.tsx`). An undefined custom property invalidates the whole
+  declaration at computed-value time, so those transitions were silently dead — the
+  same bug class theme.css's alias registry documents. Defined in `:root` (§5).
+- **Miraz orange had crept back onto actions**: `--theme`/`--brand-accent`/friends
+  (`#F4911E`) in both theme blocks, and Button's `brand`/`action` variants painting an
+  orange button (zero call sites). All removed — §2.3: orange is a status hue only,
+  never on buttons.
+- **index.html still resolved an unset user to dark** (`data-theme="dark"`, fallback
+  `'dark'`) while theme.tsx resolved to light — a guaranteed wrong-theme first paint
+  for new users. Flipped to light + `theme-color` → `#fdefdc` (§2.1).
+- **Gold on cream fails, as §3 warned**: light `--ext-line` `#af903a` measured
+  **2.70:1** on `#FDEFDC` (floor is 3:1). Moved to `#8f7526` → 3.91:1 on cream,
+  4.43:1 on white. `check:contrast` now gates `--ext-line` against
+  `--bg-gradient-1` in both themes (dark navy stop passes at 3.37:1 — that also
+  answers open item §9.1 with a measurement).
+- **The canvas was invisible**: `App.tsx` shell and `AuthCard.tsx` painted opaque
+  `var(--app)` over the whole viewport, hiding the body gradient and giving glass
+  nothing to blur. Both wrappers are now transparent (§3).
+- **KpiCard trend used `--st-in-fg`** (white ink for solid fills) on a white card —
+  invisible in light theme. Moved to `--success-text`/`--ready-text`.
+
+### Spec items landed this session
+- `--r-card` 8px → **14px** (§2.4 radius map 6/8/14/999; §6 "Radius stays 14").
+- Keyframes `fadeIn`/`slideUp`/`toastIn`/`pop` ported on our duration scale (§5).
+- Sidebar collapse now transitions `width 240ms var(--ease)` (§5); the global
+  `prefers-reduced-motion` block already kills it.
+- Glass kill-switches (§4): `prefers-reduced-transparency` / `prefers-contrast: more`
+  / `[data-floor]` repoint `--card`/`--surface-card`/`--sidebar` at solid surfaces and
+  set `backdrop-filter: none !important` on `*` (beats the inline blurs).
+- Chrome glass completed: sticky Header + phone BottomBar were 0.88 tints with **no
+  blur** (content smears through a tint that doesn't blur); both now blur(20px).
+  FilterDrawer panel gets the 16px sheet step.
+- `scripts/check-contrast.cjs` retargeted to the light-first selector shape (it was
+  already broken by the flip — it looked for `:root,\n:root[data-theme='dark']`).
+
+### Wave 0 (§7) — verified already merged, not redone
+`lib/breakpoints.ts` + `lib/device.ts` + `styles/responsive.css` (imported in
+main.tsx) + the index.html pre-paint band script, with `breakpoints.test.ts` guarding
+the 768/1280 duplication. Nothing to do.
+
+### Verified
+- `check:contrast`: **40/40 pass** (including the two new gold-on-canvas gates).
+- `vitest run`: **94 files, 2224 tests, all pass**.
+- `tsc --noEmit`: clean for every file this session touched (remaining errors are in
+  another session's untracked `syncEngine.ts`/`syncContext.tsx`/`posEngines.test.ts`).
+- **Driven in the app** (mock mode, fresh profile): opens LIGHT with the cream
+  gradient canvas behind the auth card; signed in as owner — dashboard on the warm
+  canvas, 14px cards, blue primary; toggled dark — navy gradient
+  (`#050B12→#0B1622`), sidebar computed transition shows
+  `width 0.24s cubic-bezier(0.16, 1, 0.3, 1)` (i.e. `--ease` resolves).
+
+### Blocked / for Babin
+- **§8's same-pass downstream updates cannot be done from this machine**: no
+  `DESIGN_DIRECTION_SPEC_v4.1.md`, `UI_UX_SPEC`, `CLAUDE_DESIGN_INSTRUCTIONS`,
+  babin-kit `tokens.css`, or `docs/benchmarks/` (today-page/status-buttons HTML)
+  exists anywhere in this workspace or the v2 reference repo. They live wherever the
+  spec was authored. Until they're delivered, the next MD regeneration can revert the
+  identity words — the risk §8 itself names.
+- Open §9.3 (external surfaces light-first) still needs Babin's confirmation —
+  `marketing.html` currently hardcodes `data-theme="dark"` and was left alone; no
+  Client Portal surface exists in src yet. §9.1 is answered by measurement above;
+  §9.2 is resolved by the `#8f7526` pair.
+- `--r-modal` stays 12px — off the §2.4 map (6/8/14/999) but not named by v4.2;
+  flagged rather than guessed.
+- Card glass on floor screens stays killed via `[data-floor]` until the 200-row
+  packing list is measured on the real warehouse tablet (§4).
+
+## 2026-08-31 — 0076 APPLIED to the live project (owner-approved) · §4.39(a) now live end to end
+**Phase:** Phase 1 — schema · **Status:** applied and behaviourally verified
+
+The owner approved applying 0076. **This is a real change to the live Supabase project
+`sxguwvgoserhdolewibb`** — recorded in `supabase_migrations.schema_migrations` as
+**20260831213343**.
+
+### Preflight (before any DDL)
+- `released_at`/`released_by` absent (0 of 2) — nothing to collide with.
+- `booking_line_units` had **0 rows**, so the new CHECK could not fail an existing row
+  and no backfill was needed.
+- Existing triggers: only `trg_booking_line_units_reject_delete` — no conflict.
+- **`users` exists in BOTH `auth` and `public`.** Checked the table's own
+  `created_by`/`packed_by` FKs first: they resolve to `public.users(id)`, so the
+  unqualified `references users (id)` in 0076 lands on the same target. Verified after
+  the fact too — `FOREIGN KEY (released_by) REFERENCES users(id)`.
+
+### Applied, then verified as STRUCTURE
+Both columns with correct types · the both-or-neither CHECK · the `released_by` FK ·
+both triggers registered (0044's delete backstop + this file's freeze) · the
+`released_at is null` partial index.
+
+### Verified as BEHAVIOUR — the part a header cannot prove
+Ran the real operations on real rows inside a **deliberately rolled-back transaction**
+(a DO block that raises at the end, so nothing persists):
+1. insert a live assignment → OK
+2. the release UPDATE (`released_at` + `released_by`) → OK
+3. a SECOND update on the released row → **rejected by the freeze trigger**
+4. `released_at` with no `released_by` → **rejected by the CHECK**
+5. DELETE → **still refused** (0044 untouched)
+Confirmed afterwards: `booking_line_units` back to **0 rows, 0 released**.
+
+### Code changes that the apply unblocked
+- `queries/bookings.ts`: the mock-only branch on `released_at` is **deleted** — both
+  schemas carry the column now, so `FLOOR_COLUMNS` names it unconditionally.
+  `RawFloorUnit.released_at` tightened from optional to required.
+- `0076`'s header rewritten from "DRAFT — NOT APPLIED" to the applied state, **with the
+  standing warning that the header is still not evidence** and the verifying query
+  inline (the migration-headers-lie pattern that has caused three wrong diagnoses).
+
+### Verified after the code change
+- Live: the floor embed shape (`booking_line_units` joined with `released_at is null`)
+  runs against the live schema.
+- Mock: B-715 still renders 18 chips with 18 Release controls, stage Packed, console
+  clean — no regression from collapsing the branch.
+- `vitest`: releaseBookingLineUnit (8) + bookingQuery (151) = **159/159 pass**.
+- `npx tsc --noEmit`: **zero errors in any file this session touched.** The run fails on
+  the parallel session's in-flight work only — `syncEngine.ts` (4), `syncContext.tsx`
+  (1, `showErrorToast` missing from ToastContextValue), `posEngines.test.ts` (1).
+  Not mine, not fixed here.
+
+### Note for whoever reads this next
+`queries/bookings.ts` had my `IS_MOCK` import replaced by a locally-defined const at
+some point mid-session (parallel session or a hook). It was coherent, so it typechecked;
+the collapse removed the local const along with the branch. Flagging it because it means
+that file is being edited from more than one place.
+
+## 2026-09-01 — DATE_TIME_PICKER_SPEC bumped to v1.1 (docs only, no code)
+**Phase:** reference capture · **Status:** filed
+
+Babin delivered v1.1 of the picker interaction spec. Sole substantive change is **§4.4**:
+the live app renders **BS above AD everywhere** (Booking Detail "7 Shrawan 2083 BS /
+22 Jul 2026, 11:30 AM"; footer states the convention), so calendar cells are now specced
+**BS-numeral prominent, AD small beneath**, month header `भदौ २०८३ · Aug–Sep 2026` —
+reversing v1.0's AD-primary draft. Everything else (both Booqable tools, the three-variant
+family, commit-model ruling, open decisions 1–3) is verbatim v1.0.
+
+### Did
+- Filed [`docs/booqable/DATE_TIME_PICKER_SPEC_v1.1.md`](docs/booqable/DATE_TIME_PICKER_SPEC_v1.1.md).
+- v1.0 kept in place with a ⚠ superseded banner (do-not-build-from note), matching the
+  library's archive-don't-delete habit.
+- `00-INDEX.md` §1 and §9 tables now point at v1.1.
+
+### Verified
+- Diffed the delivered text against v1.0 line by line: title + §4.4 first bullet are the
+  only changes. `src/components/ui/DatePicker/` does not exist yet, so the correction
+  contradicts no built code.
+
+### Noted, not fixed
+- v1.1 §5 decision 2 still reads "BS-primary mode — a per-user toggle rendering BS
+  large / AD small … vs fixed AD-primary", which is v1.0's framing; after the §4.4
+  correction BS-large is the *default*, so the open decision is really whether an
+  AD-primary comfort toggle exists. Kept verbatim (not our decision to rewrite);
+  flag when decision 2 is ruled.
+## 2026-09-01 — Babin's 31 Aug app-vs-capture GAP CHECK filed and verified · docs only · a lost PROGRESS heading restored
+**Phase:** documentation · **Status:** done — no `src/`, no `supabase/`, no migration touched
+
+Babin delivered "GAP CHECK v1.0", a read-only walk of localhost:3000 (31 Aug) against the
+capture specs. Filed verbatim at
+[`docs/booqable/GAP-CHECK_2026-08-31.md`](docs/booqable/GAP-CHECK_2026-08-31.md) under a dated
+filing note; indexed in `00-INDEX.md`; its trackable items are now checkboxes in
+[`CAPTURE-BACKLOG.md`](docs/booqable/CAPTURE-BACKLOG.md) §8.
+
+### Verified at filing (1 Sep)
+- **Its acceptance test ("Rentals says 653, Dashboard shows #898/#903") spans two work items.**
+  Live DB counts run today over MCP: **246 bookings · 0 payments · 0 invoices · 92
+  booking_lines**. Wave 1 wiring alone cannot produce Booqable's numbers — the business corpus
+  is not in our DB; import/bridge is a separate, undecided item (backlog §8, needs Babin).
+- **The `DATE_TIME_PICKER v1.1` it cites was not on disk at filing time** (only v1.0, both in
+  repo and `Downloads/`) — then the concurrent session filed v1.1 at 03:13 while this pass was
+  running, resolving it. The walk's claims are ahead of, then caught by, the tree — twice.
+- **Several of its gap lines had already moved by filing time:** D4 built 31 Aug;
+  `0076_seed_operational_stage_corpus` applied (Going out 0 → 6, so the walk's "0 due today"
+  P0 symptom is part-corpus, not all wiring); `facetCounts` wired to `/rentals` on 31 Aug
+  ("no facet counts anywhere" no longer holds). Each is annotated in the filed doc/backlog.
+- Footer v3.0.0 = `nav.ts:508` constant (`package.json` 0.1.0 — claim accurate as stated);
+  `booking_facets()` unbuilt AND a v2.5 fabrication (backlog §6.5) — design fresh if adopted;
+  "Wave 1" lives in `WIRING_PLAN_12Aug2026.md`/PROGRESS, not PLAN.md, and its 12 Aug
+  conversion was never driven before `Today.tsx`/`OperationsQueues.tsx` were overwritten
+  00:28:52 31 Aug — re-scope before building.
+
+### Also fixed here
+- **Restored the `## 2026-08-31 — §4.39 RULED (a) and BUILT…` heading below** — the 03:13
+  v1.1 insert had overwritten the heading line, leaving that entry's body headless.
+
+### Blocked / next
+Backlog §8's first two boxes gate the gap check's own acceptance test: Wave 1 re-scope +
+wiring, and the corpus import/bridge ruling (Babin's). Nothing in this session applies to live.
+
+## 2026-08-31 — §4.39 RULED (a) and BUILT: unit release end to end · 0076 drafted, NOT applied
+**Phase:** Phase 2/3/6 — migration draft, action, UI · **Status:** complete in mock; live awaits 0076
+
+The owner ruled §4.39 option (a) — `released_at`/`released_by`, append-style release —
+hours after it was filed. Built the full stack the same session.
+
+### Did
+1. **`supabase/migrations/0076_booking_line_units_release.sql` — DRAFT, NOT APPLIED.**
+   The pair + both-or-neither CHECK, a freeze trigger (`reject_update_released_unit` —
+   a released row is immutable history for every role incl. Owner/service_role, the
+   0044 pattern), and a live-rows partial index. Header names the apply-day step:
+   the live branch of `FLOOR_UNIT_COLUMNS` gains `released_at`.
+   ⚠ Numbering: two 0074s and two 0075s already exist from parallel sessions; 0076
+   was the first free number.
+2. **`actions/rentals/releaseBookingLineUnit.ts`** — `unit.release` mirrors
+   `booking_line_units_all` (§4.20 method; = `canWriteBookingDesk`, the note.create
+   set — Technician deliberately refused). Law 8 key required; offline refused, not
+   queued; freeze-trigger and missing-column failures translated to sentences; the
+   result is only reported after the row echoes the `released_at` Postgres accepted.
+   `UNIT_RELEASED` event added to the bus. 8-test suite passes (gate ×3, Law 8,
+   payload shape, both DB refusals, unconfirmed write).
+3. **`queries/bookings.ts`** — `FLOOR_UNIT_COLUMNS` is mode-scoped: mock selects
+   `released_at` today; live CANNOT until 0076 applies (42703 on every floor read —
+   the reason for the branch, stated inline). The floor mapper filters released rows
+   tolerantly (`== null`), so live behavior is unchanged until the apply.
+4. **BookingDetail** — the chip's × is LIVE: absent (not disabled) for roles outside
+   the desk five; direct release at ≤ Packed; ConfirmDialog past Packed (v2.5 §10.4);
+   per-unit Law 8 keys held across retries; success = toast + refetch (`floorVersion`),
+   failure = persistent inline ErrorBanner above the lines table (§12).
+5. `queries/availability.ts` `readUsageCounts` header corrected — it claimed "a removed
+   chip deletes one row"; released rows stay and are counted as usage on purpose
+   (recorded in 0076's header as §4.37(e)-adjacent tuning, not a bug).
+
+### Verified (mock app, driven end to end)
+- **Direct path** (B-715 at Packed): × on SN-CAM-0001 → no dialog → success toast →
+  chip gone on refetch, 18→17 release controls.
+- **Confirm path** (B-715 flipped to On Rent via the mock seam, in-sandbox): ×
+  → ConfirmDialog with the stage named in the copy → Release unit → toast
+  "SN-CAM-0002 released" → dialog closed, chip gone, 17 controls.
+- **Tallies**: "Packed" dropped 18→17 (counts live units); "Total Items" stayed 18 —
+  CORRECT: release unpins the serial, it does not shrink the line's ordered qty.
+- Sandbox restored after (stage back to Packed, test releases undone via the same
+  mock seam — mock-only state, nothing left mutated).
+- `npx tsc --noEmit` exit 0 (whole project, including the parallel session's files).
+- Live DB untouched: 0076 not applied; the only live queries this session were
+  read-only pg_policies checks.
+
+### Blocked / next
+- **0076 awaits explicit approval to apply** (CLAUDE.md rule). Applying is two steps:
+  the migration, then the one-line `FLOOR_UNIT_COLUMNS` live-branch edit its header
+  names. Until then the live × fails honestly ("migration 0076 is drafted, not
+  applied") and live floor reads are unchanged.
+- The 44×44 hit target on the × (TouchTarget) still owes the chip-row spacing pass —
+  deliberately deferred (adjacent targets inside 44px; see the 30 Aug entry).
+
 ## 2026-08-31 (cont. 2) — Booking Detail wave: Notes shipped (booking_notes' first reader AND first writer) · dead Quick Actions replaced with real verbs
 **Phase:** Phase 4/5 — the handoff's named next wave · **Status:** complete (built + reviewed + fixed)
 
@@ -153,14 +448,25 @@ drop is one draft migration awaiting apply approval.
   included.
 - Affected suites all green after the sweep: discount (4) · money (52) · rbac (49) ·
   bookingQuery (151) · calculators (13) · createRental (33) · inventoryWrites (66) ·
-  ClientDetail.edit (14, incl. a new "20% saves without ceremony" pin). Full-suite run at the
-  end of the session below.
-- NOT verified in a browser; no migration applied; nothing touched the live DB.
+  ClientDetail.edit (14, incl. a new "20% saves without ceremony" pin). Full suite:
+  **91 files / 2,209 tests, exit 0.**
+- **Verified by driving the app** (mock mode, signed in as Owner): the Pricing sandbox
+  applies a 40% custom discount instantly — Discount 40% · −Rs 4,000 · Total Rs 6,780 on a
+  Rs 10,000 line — with no alert, no reason/approver prompt and no cap refusal; the chip row
+  renders 0–25% presets with no approval affordance. Settings ▸ Business renders the D4
+  "Operational day starts" row at 06:00 (HH:mm) with its read-by note, and the membership
+  matrix footnote renders the amended Law 10 text. Zero console errors.
+- No migration applied; nothing touched the live DB.
 
 ### Blocked / Next
-- **0074 needs Babin's apply approval.** Until then the live constraints still reject
-  >10%-no-reason rows — loudly, and no live discount write path exists today, so the
-  mismatch window is theoretical. Apply promptly once approved.
+- ~~**0074 needs Babin's apply approval.**~~ **RESOLVED 1 Sep.** Babin said "apply both";
+  the live ledger showed a concurrent session had already applied 0071 (31 Aug 11:57),
+  0072 (12:01) and 0074 (12:42) — plus 0075 catching `invoice_lines`' own gate — so
+  nothing was re-applied. Post-state verified live from THIS session instead: 0 gate
+  constraints remain, both `*_percent_sane` (0–100) CHECKs present, the exclusivity
+  stacking trigger alive, `create_booking` writes `booking_line_units`, 11 portal
+  policies + `portal_claim_by_verified_email()` present. App and database now agree:
+  the gate is gone end to end.
 - The `booking_discounts.reason`/`approver_id` columns stay as optional record-keeping.
 
 ## 2026-08-31 — Unit chips on BookingDetail built · removal BLOCKED by Law 3, verified live · §4.39 filed
@@ -293,20 +599,125 @@ pack records was read against the rulings he made in sessions that had no repo a
 5. **Place the 20/24/29 Aug documents in the repo** and rule their precedence — PLAN.md §4.38(b),
    Babin's call.
 
-## 2026-08-31 (cont.) — 0075 drafted: the four I5 breaches, armed the way 0062 actually works
+## 2026-09-01 — Law 17 closed on the read path: one function, six sites, and a test that renders
+**Phase:** Phase 4/5 — UI · **Status:** complete · **Code changed** (7 files, all previously clean in `git status`)
+
+### Did
+Implemented the fix `layer-d/product-settings-clients.md` §6 prescribed — *"Fix Law 17 with one
+function, not six edits, and test it by rendering."*
+
+1. **`deliveryTypeLabel(value, fallback = '—')` added to `src/lib/format.ts`** — the inverse of
+   `createRental.ts:100`'s `deliveryTypeFromLabel`, in the display engine rather than the action
+   layer, so screens do not import from `actions/`. Its doc states what it is not: **not a rename**,
+   no stored data moves (the schema-wide rename is still `AUDIT_FINDINGS.md` P3), and it must never
+   be used for comparisons.
+2. **Applied at all six render sites** — `BookingDetail.tsx`, `MovementList.tsx`,
+   `PackingWorkspace.tsx`, `HandoverWorkspace.tsx` (×2), `ReturnWorkspace.tsx`. The `?? '—'` at four
+   of them is subsumed by the fallback.
+3. **Left the logic alone.** `driverSignatureRequired` (`HandoverWorkspace.tsx:194-195`) still
+   compares the **enum** — `'Client Pickup'` is not a `delivery_type` member and would never match.
+   A test pins that it stays that way.
+
+### Found
+**The breach was not an edge case.** Live: `select delivery_type, count(*) from bookings group by 1`
+returns a single row — **`Customer Pickup`, 246 of 246**. Every booking detail, packing, handover
+and return screen was showing the banned word on every booking.
+
+### Verified
+- **New `src/lib/__tests__/deliveryTypeLabel.test.ts`** — 15 tests: the mapping, the three
+  pass-through members, the fallbacks, "never returns the banned word for any enum member", plus a
+  source guard over the five files pinning the four raw-render shapes that shipped the bug.
+- **`BookingDetail.layout.test.tsx` extended with a DOM assertion** — the harness's fixture already
+  carried `deliveryType: 'Customer Pickup'`, so it renders the real stored value and asserts the DOM
+  reads **"Client Pickup"**, and contains no "customer" at 390 / 1024 / 1440. **This is the test the
+  three existing Law-17 tests could not be** — they assert over static label constants and cannot
+  see a value arriving from the database. Revert the fix and it fails.
+- `npx vitest run src/modules/rentals src/modules/today src/lib/__tests__/deliveryTypeLabel.test.ts`
+  → **240 passed, 9 files**; the layout suite alone → **22 passed**.
+- `npx tsc --noEmit` → **zero errors in any file touched here.** The tree is not clean, but every
+  remaining error is in `syncEngine.ts`, `syncContext.tsx` and `posEngines.test.ts` — another
+  session's in-flight refactor, untouched.
+
+### Not done
+**Not driven in the browser**, against `CLAUDE.md`'s usual rule. `SyncProvider` wraps the whole app
+(`App.tsx:96`) and `syncContext.tsx:20` currently references a `showErrorToast` that does not exist
+on `ToastContextValue` — a live error in another session's in-flight work that would likely take the
+shell down. Driving it now would test their broken state, not this change. **Worth a browser pass on
+`/rentals/B-715` once that refactor settles.**
+
+---
+
+## 2026-09-01 — Law 6 exercised per role at runtime: gate is correct; `clients` is a LIVE breach, not a latent one
+**Phase:** cross-phase verification (**no code changed, no migration applied**) · **Status:** complete
+
+### Did
+Closed `DECISION-SHEET.md` §5's first item — *"the highest-value follow-up in the pack"* — by
+**exercising** Law 6 rather than reading policies. Each probe: `begin; set local role authenticated;
+set_config('app.current_user_id', …); … rollback;`. Written up in
+[`docs/booqable/RLS-PER-ROLE-2026-08-31.md`](docs/booqable/RLS-PER-ROLE-2026-08-31.md).
+
+### Verified
+- **RLS provably filters at runtime** — same connection, Warehouse sees 246 bookings / 366 clients,
+  Client sees **0 / 0**. Unknown uid fails closed to `Client`.
+- **The gate is correct for all four money-blind roles.** Each money table carries two permissive
+  SELECT policies which Postgres OR-combines; evaluated across the whole `system_role` enum the two
+  predicates agree on all nine roles, so the OR is redundant today.
+- **The `_v` masks work on live data** — `clients_v`, identical 366 rows: Owner reads
+  `payment_terms` 366 times, Warehouse **0**.
+- **`payments` immutability is enforced by the database** — no UPDATE and no DELETE policy exists,
+  so both are denied. All three money tables have real `with_check` allowlists on INSERT, none null.
+- **0062's mechanism works where it was applied** — a Warehouse read of `bookings.deposit_required`
+  returns `ERROR 42501: permission denied for table bookings`.
+
+### Found
+**Base `clients` leaks what `clients_v` masks.** A Warehouse session reads `payment_terms` for all
+**366** clients from the base table. `0062` armed the column mask for exactly four tables —
+`bookings`, `booking_lines`, `products`, `product_units` — and **`clients` is not in it**;
+`0038`'s column-revoke on `clients` is the shape `0062`'s own header calls ineffective.
+`src/lib/queries/clients.ts:18-20` asserts the opposite as settled fact: *"selecting them from
+`clients` fails outright for everyone."* It does not.
+
+**This one is live, not latent — the distinction from I5.** 0077's four tables have no reader in
+`src/` (its own §3). `clients` does, and it is reachable by every signed-in role:
+`Header.tsx:45 triggerSync` → `syncContext.tsx:36 syncAll()` → `syncEngine.ts:166`
+`.from('clients').select('*').limit(300)` → money into IndexedDB as a Warehouse session.
+`App.tsx:96` mounts `SyncProvider` app-wide.
+
+### Ruled
+Nothing. Two options surfaced, neither taken: add `clients` to `0077` (same mechanism, same shape),
+and/or narrow `syncEngine.ts:166` to an explicit non-money column list — a one-line change that
+closes the live path immediately without `0062`'s ordering hazard. **A migration needs Babin's
+approval (`CLAUDE.md`), and the call-site change must ship first.**
+
+### Blocked
+- `tsc --noEmit` not clean; errors move between runs and belong to another session's in-flight
+  refactors. Not touched.
+
+---
+
+## 2026-09-01 — 0077 drafted: the four I5 breaches, armed the way 0062 actually works
 **Phase:** Phase 1 schema · **Status:** draft written, **NOT APPLIED** — needs approval
 
 I5 found four tables whose money columns are raw behind a row policy that admits a money-blind
 role, and proposed a four-line fix. The fix as written would have closed nothing. New migration:
-[`0075_law6_arm_the_four_unarmed_tables.sql`](supabase/migrations/0075_law6_arm_the_four_unarmed_tables.sql).
-Numbered after 0074, the current highest on disk.
+[`0077_law6_arm_the_four_unarmed_tables.sql`](supabase/migrations/0077_law6_arm_the_four_unarmed_tables.sql).
 
-⚠ **There are two different 0074s**, both written by the concurrent session while this one ran:
-`0074_drop_discount_gate.sql` (17:33, the renamed `0073_discount_policies.sql`) and
-`0074_seed_operational_stage_corpus.sql` (17:57). Same collision class as the 0017/0018 one
-0019's header records from 9 Aug. 0075 is unaffected — it is still the next free number — but
-**one of the two 0074s must be renumbered before either is applied.** Not touched here; they are
-the other session's files.
+### ⚠ Two premises this session was given turned out to be false
+Both were caught by reading the live ledger, and both would have shipped a broken file.
+
+1. **"Live is at 0070; 0071–0073 are drafts awaiting approval."** Live is at **0076**.
+   `schema_migrations` shows 0071 (31 Aug 11:57), 0072 (12:01), 0074_drop_discount_gate (12:42),
+   **0075_drop_invoice_lines_discount_gate (13:19)** and **0076_seed_operational_stage_corpus
+   (14:12)** all applied. Nothing is awaiting approval.
+2. **Therefore this file could not be 0075.** It was written as 0075 and **renumbered to 0077**
+   — 0075 and 0076 were both taken by the concurrent session *while it was being written*.
+   Numbering moved four times in one session: `0073_discount_policies.sql` → 0074 at 17:33, then
+   a second 0074 at 17:57, then 0075 at 18:59, 0076 at 19:58, another 0076 at 20:17.
+
+⚠ **`0076_booking_line_units_release.sql` is on disk, is NOT in the ledger, and collides with the
+applied `0076_seed_operational_stage_corpus`.** Same collision class as the 0017/0018 one 0019's
+header records from 9 Aug. It needs renumbering before it can apply. Not touched — another
+session's file. **Re-read the ledger before trusting any number in that directory.**
 
 ### Found — before writing a line
 1. **I5 §3's one-liner is a no-op, and two of its four lines have already been issued once.**
@@ -318,25 +729,25 @@ the other session's files.
    and I5's own probe then read both columns as Warehouse. That is the mechanism being falsified
    on live data, not a theory. §3's claim that this is "the mechanism 0062 established" reads
    0062 backwards: 0062's mechanism is the reverse — `revoke select ON TABLE`, then
-   `grant select (<non-money columns>)`. 0075 does that.
+   `grant select (<non-money columns>)`. 0077 does that.
 2. **Two of the four `_v` views do not exist.** §3 says each table "has a masked `_v` sibling
    (`accessories_v`, `vehicle_fuel_logs_v`, …)" — the ellipsis is wrong. `booking_transport_v`
    and `maintenance_records_v` have never been written in any file. `bookingQuery.ts:466` says so
    independently. A bare revoke would have left Owner/Admin/Coordinator with **no** path to
-   `delivery_charge` / `fuel_charge` / `cost`, not a masked one. 0075 creates both, in the same
+   `delivery_charge` / `fuel_charge` / `cost`, not a masked one. 0077 creates both, in the same
    file as the revoke — the 0019/0035/0036 convention.
 3. **Nothing in `src/` reads any of the four tables.** Zero `.from('accessories' | 'booking_transport'
    | 'maintenance_records' | 'vehicle_fuel_logs')`, single- or double-quoted. Every column-name hit
    is generated types, one Law 6 forbidden-word list in `floorVerbs.test.ts:475`, or prose. No SQL
-   function or trigger reads them either — the only `from <table>` in 74 migrations is the two
-   masking-view bodies. **So 0075 needs no call-site migration**, unlike 0062, which needed a
+   function or trigger reads them either — the only `from <table>` anywhere in the tree is the two
+   masking-view bodies. **So 0077 needs no call-site migration**, unlike 0062, which needed a
    74-site audit and 0065's two schema prerequisites. It is the cheapest of the pending drafts.
 
 ### Did
 - Revoke + non-money grant for all four: accessories (12 cols, 11 granted), booking_transport
   (14/12), maintenance_records (21/20), vehicle_fuel_logs (11/10). Lists read from the `create
   table` blocks after confirming no `alter table … add/drop/rename column` touches any of the four
-  in 0001–0074; two counts corroborated by 0048's own asserted view counts. Grant lists and view
+  in any migration; two counts corroborated by 0048's own asserted view counts. Grant lists and view
   column lists were then diffed against the DDL mechanically, not by eye.
 - Created `booking_transport_v` and `maintenance_records_v`, definer-rights with the row predicate
   inlined (0048/0065 pattern). Predicates read off the policies: transport mirrors
@@ -347,16 +758,31 @@ the other session's files.
   (catches an over-broad revoke) · base-table column counts match what the grant lists assume ·
   all four views exist, carry a WHERE, and are **not** `security_invoker`.
 
-### Verified — the existing views survive the revoke
-`security_invoker` appears in five files (0019, 0048, 0061, 0065, 0067). The only view ever set to
-invoker rights is `bookings_deposit_v` (0061:78), reset by 0065:242. Neither `accessories_v` nor
-`vehicle_fuel_logs_v` is named in any of them, so both are definer-rights — the owner reads the
-base table and the caller needs no column grant. **No view breaks; no money-visible screen blanks.**
+### Verified against the live database (read-only, 1 Sep — nothing applied)
+Every assumption in the file was first derived statically from the tree, then confirmed against
+the live catalogue. All six checks agreed with the static reading:
+
+| Check | Result |
+|---|---|
+| Column names/order/counts (`pg_attribute`) | **exact match** — 12 · 14 · 21 · 11, same order as the grant lists |
+| `has_table_privilege(authenticated,'SELECT')` on the four | **true** on all four — the breach is open |
+| Column-level ACLs on the four (`attacl`) | **0** — 0035/0036's column revokes left no trace at all |
+| Same two checks on `bookings` / `products` | **false**, with 27 / 35 column ACLs — **0062 is applied and working** |
+| `pg_policies` on the four | all six predicates match what the new views inline, verbatim |
+| `reloptions` on `accessories_v` / `vehicle_fuel_logs_v` | **(none)** → definer-rights; `booking_transport_v` / `maintenance_records_v` **absent** |
+| Row counts | **0 · 0 · 0 · 0** — still empty, so applying changes no visible figure |
+
+Two things that matter beyond this file. The `attacl = 0` row is the one-line fix being falsified
+on live data rather than quoted from 0062's header — PostgreSQL did not record those revokes at
+all. And the `bookings`/`products` row is the same defect **already fixed correctly**, which is
+what makes 0077 a repeat of a proven change rather than a first attempt.
+
+**No view breaks; no money-visible screen blanks.**
 
 ### Flagged, deliberately not fixed
 - **`vehicle_fuel_logs_v`'s row predicate is broader than its own table's policy.** 0048's header
   says the view should carry the `vehicle_fuel_logs_all` list; the SQL it shipped (0048:731) says
-  `where auth_is_staff()`, which also admits Accounts and Technician. 0075 does not widen it, but
+  `where auth_is_staff()`, which also admits Accounts and Technician. 0077 does not widen it, but
   it becomes the sanctioned gate once the base table closes. Needs a ruling.
 - **`booking_transport_driver_read` excludes Manager *and* Accounts.** Accounts is money-visible and
   still cannot read a transport row at all. Pre-existing; the new view mirrors the policy rather
@@ -367,13 +793,19 @@ base table and the caller needs no column grant. **No view breaks; no money-visi
   `Client`), so the columns are unreachable — but by a **row** denial, not a grant denial.
 
 ### Blocked / next
-Not applied, per CLAUDE.md. Before anyone applies it: confirm from `schema_migrations` and
-`pg_class.relacl` — **not from any file's own header** — that 0062 is really in. This session was
-told live stands at 0070, which puts 0062/0065 in and makes 0075's pattern already-proven; 0062's
-own header still reads ⛔ DO NOT APPLY. 0075 has no ordering dependency on 0071/0072/0074.
-Forward obligation once applied: the first write path built against any of these four tables must
-send `Prefer: return=minimal` or name granted columns — PostgREST's unqualified `RETURNING` will
-42501 otherwise (0065's hazard, here future rather than live).
+**Not applied, per CLAUDE.md — awaiting approval.** Everything that would normally gate it is now
+settled rather than assumed: 0062/0065 are confirmed applied (0065 first, as its header requires),
+the pattern is confirmed working on `bookings`/`products`, the four tables are confirmed empty, and
+0077 has no ordering dependency on 0071/0072/0074/0075/0076 — disjoint tables. The remaining gate
+is a decision, not a check.
+
+Two things to carry forward:
+- **Stop diagnosing from migration headers.** 0062's own file still reads ⛔ DO NOT APPLY and has
+  been applied since 28 Aug. The ledger is the authority; this is now the fourth time that
+  confusion has cost a session.
+- **Forward obligation once applied:** the first write path built against any of these four tables
+  must send `Prefer: return=minimal` or name granted columns — PostgREST's unqualified `RETURNING`
+  will 42501 otherwise (0065's hazard, future here rather than live, since nothing writes them yet).
 
 ## 2026-08-31 — facetCounts wired to /rentals: the Status accordion shows §10 option counts
 **Phase:** Phase 6 wiring (no schema/engine changes) · **Status:** complete
@@ -428,6 +860,23 @@ filter group without an accordion (Inventory's category rail is the likely first
 > Booked **30** · **Today ▸ Going out 0 → 6**, Tomorrow 9, Next 7 days 26. Rows `B-900 … B-945`,
 > one per client, 2 lines / 3 items each, values from each product's own `daily_rate`.
 > Sampled after applying: six Packed pickups today at 07:30 / 09:15 NPT against real client names.
+>
+> **Verified through the RLS path, not just as an admin.** Re-run inside
+> `set local role authenticated` + `app.current_user_id` as **Coordinator**, the Dashboard's exact
+> `todaysOutgoing` predicate returns those same six rows with their client names — so the panel
+> will populate for a real staff session, not merely for a privileged connection.
+> **Browser verification was NOT completed**: `/dashboard` requires sign-in, and entering
+> credentials is not something this session will do. The dev server boots clean against the correct
+> project (no console errors) and the query is proven at the RLS layer — but nobody has yet *seen*
+> the panel render. Worth one look when you are next signed in.
+>
+> ⚠ **A correction to the I5 write-up, found while doing this.** I5 said `bookings` / `products` /
+> `product_units` have "the grant revoked" for `authenticated`. The revoke is **column-level, not
+> table-level** (the `0062` mechanism): `has_table_privilege(...,'SELECT')` returns `false` while
+> `select count(*) from bookings` as `authenticated` returns all 246 rows. This matters because
+> `listBookings` reads `.from('bookings')` directly (`queries/bookings.ts:420`) — a table-level
+> revoke would break every list screen in the product. `I5-RLS-MONEY-VERIFICATION.md` §2.3 is
+> corrected; its §3 fix recommendation is unchanged and now confirmed as the established pattern.
 >
 > **It was renumbered 0074 → 0076 minutes before applying, and that is the finding worth keeping.**
 > A concurrent session had written a *different* `0074_drop_discount_gate` and **applied it at
@@ -694,6 +1143,53 @@ error. The correction is recorded in the file itself rather than quietly dropped
 
 ---
 
+## 2026-08-31 (cont.) — Law 6 VERIFIED per role: it passes, at all three layers
+**Phase:** cross-phase verification (no code changed, read-only SQL) · **Status:** complete
+
+### Did
+Ran the check this repo's own docs twice named the highest-value outstanding follow-up: **is Law 6
+correct per role, not merely enabled?** `auth_user_role()` resolves `app.current_user_id` before
+`auth.uid()`, so a role can be impersonated in one transaction without credentials —
+`select set_config('app.current_user_id','<uuid>',false); set local role authenticated;`.
+Written up in `docs/booqable/LIVE-DB-VERIFICATION.md` §9.
+
+### Verified — Law 6 PASSES
+- **Row denial.** `bank_accounts` (the only money table with rows live, 2): **Warehouse 0 · Owner 2**.
+  Same query, opposite results. `payments` / `invoices` / `expenses` returned 0 for **both** roles —
+  those tables are empty, so those comparisons are **vacuous and prove nothing**; recorded as such.
+- **Column masking.** `bookings_deposit_v`: **both** roles see all **246 rows**; non-null
+  `deposit_required` is **Warehouse 0 · Owner 246**. Exactly what Law 6 needs — the operator sees the
+  booking and not its money, which row denial cannot express.
+- **The grant that arms the mask.** `0062_law6_column_grants_arm_the_mask` works: `authenticated`
+  holds SELECT on every `bookings` column **except `deposit_required`**, and a direct
+  `select deposit_required from bookings` fails `42501: permission denied`. The masking view is not
+  the polite route to the money — it is the **only** route.
+
+### Found — two asymmetries, neither a live breach
+1. ⚠ **`anon` retains SELECT on `deposit_required`; `authenticated` does not.** Measured as `anon`:
+   **0 rows** from `bookings`, so RLS denies it before any column is read — unreachable today. Worth
+   closing anyway: it is unreachable *only* because no permissive `anon` policy exists. The day one is
+   added (public availability, a share link), the money column rides along silently. The
+   unauthenticated role should not be the looser of the two.
+2. Both `anon` and `authenticated` hold INSERT/UPDATE on `deposit_required` while `authenticated`
+   cannot SELECT it. Not a read-breach; an integrity hazard that reads as oversight.
+
+### Found — a correction to this repo's own guidance, and a second way to misread a zero
+**`docs/booqable/LIVE-DB-VERIFICATION.md` §7 previously said the MCP route "reads past RLS, so a zero
+from it is a real zero." That is too broad and has been corrected.** MCP connects as `postgres`,
+which bypasses RLS **on base tables** — but `auth_user_role()` finds no `app.current_user_id` and no
+`auth.uid()`, so it **falls through to its `'Client'` default**. On that connection
+`auth_can_view_money()` is **false**, and every `_v` view filters on it in its own `WHERE` clause,
+which nothing bypasses. Measured in one statement: `clients` **366 rows**, `clients_v` **0 rows**.
+**So there are two ways to read a misleading zero here, not one:** `check:db` as `anon`, and **MCP as
+`postgres` against any `_v` view.** Impersonate before inspecting a view.
+
+### Not verified
+**Technician, Driver and Client could not be tested — no users hold those roles** (live: Owner ×2,
+Admin, Coordinator, Warehouse). They share the same `auth_can_view_money()` predicate, which is a
+strong argument they behave identically, but that is an argument, not a measurement. No `_v` view
+other than `bookings_deposit_v` was checked column by column.
+
 ## 2026-08-31 (cont.) — Migrations 0071 · 0072 · 0074 APPLIED to the live project
 **Phase:** Phase 1 — Schema · **Status:** applied and verified · **Approval:** Babin, explicit, in-session
 
@@ -753,9 +1249,30 @@ and it is a product call — Babin may well want the invoice path gated.
   Named-client rates) is intact, as intended.
 - Portal: `auth_user_id` column present, `portal_link_requests` created, **11** policies,
   `portal_claim_by_verified_email()` present.
-- **Not verified:** no test suite was run and no app path was driven. `create_booking`'s new `units[]`
-  branch has not been exercised against the live project — `product_units` has **0 rows**, so the
-  unit-assignment path cannot be tested with real data yet.
+- **All three §7 gates run after the four migrations landed, on the current working tree:**
+  `tsc --noEmit` **0 errors** · `vitest run` **91 files / 2,209 tests, 100% passing** (exit 0, 839s) ·
+  `vite build` **exit 0** (3m 43s, PWA precache 140 entries). The suite is up from the 87/2,169
+  baseline recorded this morning — +4 files, +40 tests, including `operationalDay.test.ts` (15).
+- **The discount tests were rewritten, not deleted** — checked because a suite that greens right after
+  a constraint is dropped is exactly when to be suspicious. `git diff --stat` shows `money.test.ts`
+  and `rbac.test.ts` net −41 lines (38 added, 79 removed), and `discount.test.ts` now pins the NEW
+  contract in four tests: any 0–100% with no reason and no approver; the old ceremony inputs accepted
+  and **ignored**; negative still refused (R3-1 stays closed); >100% still refused. That matches the
+  live schema exactly — `percent >= 0 and <= 100` on all three tables.
+- **DRIVEN IN THE BROWSER** (mock corpus, `dev:mock`, signed in as Owner) — per CLAUDE.md's rule that
+  verification means driving the app, not reading the code just written. App boots with **zero
+  console errors**; the 11-item flat nav renders. On **Tools ▸ Pricing** (the same discount engine as
+  New Rental): selecting **25%** engages cleanly — `aria-pressed` moves to 25%, and a DOM probe
+  returns `mentions_reason: false`, `mentions_approver: false`, **0 reason/approver inputs**, no
+  dialog, no error text. **The ceremony is genuinely gone from the UI**, matching the schema.
+- ⚠ **Found while driving: the discount chips still stop at 25%** — the OLD Law 10 hard cap. The
+  database now permits `0–100`, but the picker offers only `0 · 5 · 10 · 15 · 20 · 25`, so the UI
+  cannot express what the schema allows. Not a defect in anything shipped today; a leftover of the
+  reversed law. Whether to extend the chips, add free entry, or deliberately keep 25% as a *soft*
+  house maximum is a product call — logged, not taken.
+- **Still not verified:** `create_booking`'s new `units[]` branch has not been exercised against the
+  live project — `product_units` has **0 rows**, so the unit-assignment path cannot be tested with
+  real data yet. The browser run above was against the **mock** corpus, not Supabase.
 
 ### Next
 - Decide whether `invoice_lines` (and the three ≤25 caps) follow `booking_discounts` out, or whether

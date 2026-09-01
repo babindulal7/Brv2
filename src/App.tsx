@@ -11,6 +11,7 @@ import { LoadingSkeleton, RestrictedState } from './components/ui/StateViews'
 import Placeholder from './modules/Placeholder'
 import { NAV, isMoneySurface, isStaffSurface, FLOOR_ROUTE_SUFFIXES } from './data/nav'
 import { ToastProvider } from './components/ui/Toast'
+import { SyncProvider } from './lib/syncContext'
 import { CommandPalette } from './components/shell/CommandPalette'
 import Login from './modules/auth/Login'
 import ForgotPassword from './modules/auth/ForgotPassword'
@@ -92,9 +93,10 @@ export default function App() {
   const { user } = useAuth()
   return (
     <ToastProvider>
-      <CommandPalette />
-      <Routes>
-        <Route path="/login" element={<Login />} />
+      <SyncProvider>
+        <CommandPalette />
+        <Routes>
+          <Route path="/login" element={<Login />} />
         {/*
           Password reset, built 15 Aug 2026. Mounted beside /login and outside
           <Shell> for the same reason: a locked-out operator has no session, so
@@ -108,7 +110,7 @@ export default function App() {
         */}
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
-        <Route path="/" element={<Navigate to={user ? "/today" : "/login"} replace />} />
+        <Route path="/" element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />
 
         {/*
           v2.0 §5.1 removed Reports from the sidebar — it is a Finance tab
@@ -155,13 +157,18 @@ export default function App() {
         />
 
         <Route
-          path="/today"
+          path="/dashboard"
           element={
-            <Shell crumbs={[{ label: 'Today Operations' }]} search="Search booking no, client, equipment…">
+            <Shell crumbs={[{ label: 'Dashboard' }]} search="Search booking no, client, equipment…">
               <Today />
             </Shell>
           }
         />
+
+        {/* Legacy path — the page lived at /today until the 30 Aug rename, so
+            bookmarks and any deep link keep working. `replace` so Back does
+            not bounce through the retired address. */}
+        <Route path="/today" element={<Navigate to="/dashboard" replace />} />
 
         <Route
           path="/rentals"
@@ -364,25 +371,32 @@ export default function App() {
           }
         />
 
+        {/* Moved under Inventory 30 Aug — a case is a finding about GEAR (missing,
+            damaged), so it files with the assets it concerns. The Operation page
+            keeps its Cases chip; only the address moved. */}
         <Route
-          path="/operations/cases"
+          path="/inventory/cases"
           element={
-            <Shell crumbs={[{ label: 'Operations' }, { label: 'Cases' }]} search="Search case ID, title, client…">
+            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Cases' }]} search="Search case ID, title, client…">
               <CasesWorkspace />
             </Shell>
           }
         />
 
-        {/* Dynamic sibling of /operations/cases, same convention as /clients/:id
+        {/* Dynamic sibling of /inventory/cases, same convention as /clients/:id
             and /inventory/:assetId — declared right after its static parent. */}
         <Route
-          path="/operations/cases/:id"
+          path="/inventory/cases/:id"
           element={
-            <Shell crumbs={[{ label: 'Operations' }, { label: 'Cases' }]} search="Search case ID, title, client…">
+            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Cases' }]} search="Search case ID, title, client…">
               <CasesWorkspace />
             </Shell>
           }
         />
+
+        {/* Legacy addresses — Cases lived under /operations until 30 Aug. */}
+        <Route path="/operations/cases" element={<Navigate to="/inventory/cases" replace />} />
+        <Route path="/operations/cases/:id" element={<CasesLegacyRedirect />} />
 
         {/* Moved to a top-level route 9 Aug 2026 (Crew Booking spec v3.2 §1) —
             Crew Assist is its own sidebar module, not an Operations queue. */}
@@ -720,7 +734,7 @@ export default function App() {
                 <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>Page not found</h1>
                 <p style={{ color: 'var(--muted)', marginBottom: 20 }}>The URL does not exist in Babin Rentals OS.</p>
                 <a
-                  href="/today"
+                  href="/dashboard"
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -742,6 +756,7 @@ export default function App() {
           }
         />
       </Routes>
+      </SyncProvider>
     </ToastProvider>
   )
 }
@@ -768,7 +783,7 @@ export default function App() {
 const BUILT = new Set(
   [
     '/rentals/new', //  1  New Rental
-    '/today', //        2  Today
+    '/dashboard', //    2  Dashboard
     '/operations', //   3  Operation
     '/rentals', //      4  Rentals
     '/calendar', //     5  Calendar
@@ -902,6 +917,15 @@ function MockBanner() {
  * the crumb four lines below it restated it anyway. Reading `useParams` is the
  * fix that cannot drift, because there is nowhere left to write the number down.
  */
+/**
+ * `/operations/cases/:id` → `/inventory/cases/:id` (the 30 Aug move). A plain
+ * `<Navigate>` cannot carry a param across, so this one-liner reads it.
+ */
+function CasesLegacyRedirect() {
+  const { id } = useParams()
+  return <Navigate to={id ? `/inventory/cases/${id}` : '/inventory/cases'} replace />
+}
+
 function BookingShell({
   tail,
   search,
@@ -993,8 +1017,11 @@ function Shell({
       style={{
         display: 'flex',
         minHeight: '100vh',
-        background: 'var(--app)',
-        transition: 'background-color var(--dur-theme) ease',
+        /* v4.2 §3 — the shell is TRANSPARENT so <body>'s fixed canvas gradient
+           is the app's backdrop. Painting --app here was hiding the canvas
+           behind an opaque flat fill, which also left the glass surfaces
+           nothing to blur. Theme transition moved to body (theme.css). */
+        background: 'transparent',
       }}
     >
       {!phone && <Sidebar active={pathname + query} />}

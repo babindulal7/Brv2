@@ -74,6 +74,16 @@ export const ORGANISATION_SECTIONS: Section[] = [
       },
       { label: 'Week starts', note: 'Saturday is the weekend in Nepal.', settingKey: 'weekStarts' },
       {
+        /* D4, ruled 30 Aug 2026 (REFERENCE_SPEC v2.5 Appendix A0): the rental
+           day runs 06:00→06:00 as a setting. Read by the day boundaries in
+           queries/bookings.ts — Dashboard panels, Operations day scope and the
+           pickups drill-down all move with it. 00:00 = plain calendar days. */
+        label: 'Operational day starts',
+        note: "The floor's day. Today's pickups and returns run from this time today to this time tomorrow — a 05:30 return belongs to yesterday's day.",
+        settingKey: 'operationalDayStart',
+        readBy: 'every "today" list — Dashboard, Operations, the pickups report',
+      },
+      {
         label: 'Number format',
         note: 'South Asian grouping — Rs 1,85,000.',
         value: 'Lakh / crore grouping',

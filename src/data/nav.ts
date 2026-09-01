@@ -66,7 +66,7 @@ const SETTINGS_SECTION: NavSection = { label: 'Settings', icon: 'settings', to: 
  */
 export const NAV: NavSection[] = [
   { label: 'New Rental', icon: 'plus', to: '/rentals/new' }, //      1
-  { label: 'Today', icon: 'home', to: '/today' }, //                 2
+  { label: 'Dashboard', icon: 'home', to: '/dashboard' }, //         2
   { label: 'Operation', icon: 'queues', to: '/operations' }, //      3
   { label: 'Rentals', icon: 'checklist', to: '/rentals' }, //        4
   { label: 'Calendar', icon: 'calendar', to: '/calendar' }, //       5
@@ -290,7 +290,7 @@ export function activeNavTo(sections: NavSection[], path: string): string | null
  * slot for it and the fixed bar cannot become an RBAC hole. A dropped slot
  * leaves four, not a dead button.
  */
-export const BOTTOM_BAR_ROUTES: readonly string[] = ['/today', '/rentals', '/inventory']
+export const BOTTOM_BAR_ROUTES: readonly string[] = ['/dashboard', '/rentals', '/inventory']
 
 /**
  * Where **Scan ⦿** sits among {@link BOTTOM_BAR_ROUTES} — index 2, the centre of

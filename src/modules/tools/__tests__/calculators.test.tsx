@@ -119,8 +119,13 @@ describe('Pricing — the VAT rate comes from Settings, never from a literal', (
   })
 })
 
-describe('Pricing — Law 10 has no sandbox exemption', () => {
-  it('offers no chip above the 25% hard cap', async () => {
+describe('Pricing — the discount gate is GONE (Law 10 as amended 31 Aug 2026)', () => {
+  /* D3 ruled 30 Aug; Babin's final word 31 Aug: "don't put any gate on
+     discount." No reason, no approver, no 25% cap. The chips remain presets
+     (all ≤ the arithmetic ceiling), and the only refusals left are negative
+     and >100% — which the sandbox's own inputs cannot produce. */
+
+  it('offers preset chips, all within the arithmetic ceiling', async () => {
     await mount(<PricingCalculator />)
     const chips = [...container.querySelectorAll('button')]
       .map((b) => (b.textContent ?? '').trim())
@@ -130,41 +135,31 @@ describe('Pricing — Law 10 has no sandbox exemption', () => {
     expect(Math.max(...chips)).toBeLessThanOrEqual(DISCOUNT_CAP)
   })
 
-  it('refuses to apply a discount above 10% until a reason and an approver exist', async () => {
+  it('applies a 20% discount immediately — no reason, no approver, no alert', async () => {
     await mount(<PricingCalculator />)
     await type(fieldNamed('Rate / day'), '10000')
     await type(byLabel('Custom discount percent'), '20')
-
-    /* The gate speaks inline and persistently — Law 12, never a toast. */
-    const alert = container.querySelector('[role="alert"]')
-    expect(alert).not.toBeNull()
-    expect(alert?.textContent).toMatch(/reason of at least 10 characters/i)
-
-    /* And the ladder shows the undiscounted figures rather than a total the
-       gate refused. */
-    expect(container.textContent).toContain('− Rs 0')
-  })
-
-  it('applies it once both fields are supplied', async () => {
-    await mount(<PricingCalculator />)
-    await type(fieldNamed('Rate / day'), '10000')
-    await type(byLabel('Custom discount percent'), '20')
-    await type(fieldNamed('Reason'), 'Long-standing client, agreed with Babin')
-    await type(fieldNamed('Approver'), 'Sushant Shrestha')
 
     expect(container.querySelector('[role="alert"]')).toBeNull()
     expect(container.textContent).toContain('Discount 20%')
     expect(container.textContent).toContain('− Rs 2,000')
   })
 
-  it('refuses anything above the cap outright, however well justified', async () => {
+  it('applies 40% — the old 25% cap left with the gate', async () => {
     await mount(<PricingCalculator />)
     await type(fieldNamed('Rate / day'), '10000')
     await type(byLabel('Custom discount percent'), '40')
-    await type(fieldNamed('Reason'), 'Long-standing client, agreed with Babin')
-    await type(fieldNamed('Approver'), 'Sushant Shrestha')
 
-    expect(container.querySelector('[role="alert"]')?.textContent).toMatch(/25% hard cap/i)
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+    expect(container.textContent).toContain('− Rs 4,000')
+  })
+
+  it('still refuses past 100% — a negative price, not a discount', async () => {
+    await mount(<PricingCalculator />)
+    await type(fieldNamed('Rate / day'), '10000')
+    await type(byLabel('Custom discount percent'), '120')
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toMatch(/negative price/i)
     expect(container.textContent).toContain('− Rs 0')
   })
 })

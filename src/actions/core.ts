@@ -192,6 +192,14 @@ async function checkCapability(capability: string, ctx: ActionContext): Promise<
     case 'inventory.reserve':
     case 'document.create':
     case 'subrental.create':
+    // `note.create` (31 Aug) mirrors `booking_notes_all` (0024:73-76) — the
+    // same five-role set, per the §4.20 method. Reading notes is broader
+    // (`booking_notes_select` = all staff); this gates only the write.
+    case 'note.create':
+    // `unit.release` (31 Aug, §4.39a) mirrors `booking_line_units_all` (0024)
+    // — the identical five-role set, confirmed against pg_policies the same
+    // day. The release is an UPDATE on that table; no narrower policy exists.
+    case 'unit.release':
       return rbac.canWriteBookingDesk(ctx.role);
 
     case 'rental.pickup':

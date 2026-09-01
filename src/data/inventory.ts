@@ -262,7 +262,8 @@ export const CONDITION_INK: Record<Condition, string> = {
  * rather than an omission in an ASCII box (`WIREFRAME_RULINGS_2026-08-12.md` §1):
  *
  *  - *"Sub-Rental and Cases dropped as duplicates"* — both were tabs here and
- *    both keep their own routes (`/operations/sub-rental`, `/operations/cases`).
+ *    both keep their own routes: `/operations/sub-rental` still, and Cases at
+ *    `/inventory/cases` since 30 Aug (`/operations/cases` replace-redirects).
  *    Nothing is deleted; they simply stop being reachable twice.
  *  - *"Warehouses moved to Settings"* — see the note on
  *    `modules/inventory/Warehouses.tsx`. The file and its route stay put.

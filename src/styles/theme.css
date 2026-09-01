@@ -33,8 +33,10 @@
    DESIGN_DIRECTION_SPEC_v4.1 — the seven-hue palette. Ruled 24 Aug 2026.
    docs/DESIGN_DIRECTION_SPEC_v4.1.md is the authority; this file only sets it.
 
-   DARK IS THE DEFAULT. Bare `:root` carries the dark values so a reload cannot
-   flash light before `lib/theme.tsx` stamps `data-theme` (v4.1 §1).
+   LIGHT IS THE DEFAULT — DESIGN_DIRECTION_SPEC_v4.2 §2.1 supersedes the 24 Aug
+   dark-first ruling. Bare `:root` carries the LIGHT values so a reload cannot
+   flash dark before `lib/theme.tsx` stamps `data-theme`; index.html's pre-paint
+   script resolves an unset user to light for the same reason.
 
    Every value here is the MEASURED set. Seven cells moved off the ruling draft
    because they failed the §7.8 gate at 4.5:1 — recorded in §10 of the spec with
@@ -51,127 +53,21 @@
    ========================================================================== */
 
 :root,
-:root[data-theme='dark'] {
-  /* ---- §3.1 core ---- */
-  --bg: #101114;
-  --surface: #15171B;
-  --surface-2: #1a1c21;
-  --border: #22242a;
-  --border2: #2a2d34;
-  --divider: #1e2026;
-
-  /* Text ramp. --muted is v4.1's --text-2 value (#8B8E96, measured 5.48:1 on
-     --surface) because --muted is what 1,118 `color:` declarations already
-     read; the `--text-2` alias below points at it, so the spec's name and the
-     codebase's name resolve to the same measured colour. */
-  --text: #e6e7ea;
-  --text2: #a9acb4;
-  --muted: #8b8e96;
-  --disabled: #62656b;
-
-  --primary: #386af7;      /* draft #3D6EF7 → white was 4.40, now 4.59 */
-  --on-primary: #ffffff;
-  --primary-text: #7ea2ff; /* text-safe blue on --surface */
-
-  /* ---- §3.2 status hues + their on-colours ---- */
-  --success: #1e864a;      /* draft #1F8A4C → white was 4.38, now 4.60 */
-  --on-success: #ffffff;
-  --success-text: #4ade80;
-
-  --danger: #c73a3a;
-  --on-danger: #ffffff;
-  --danger-text: #f08a8a;
-
-  --warn: #e8762d;         /* ORANGE — "out with the client". Never a button. */
-  --on-warn: #1c1005;
-  --warn-text: #f0985e;
-
-  --ready: #edbe2a;        /* YELLOW — in-house work / waiting. Never a button. */
-  --on-ready: #1c1405;
-  --ready-text: #edbe2a;
-
-  --neutral: #3a3e47;      /* GRAY — not started yet */
-  --on-neutral: #c9cbd1;
-
-  --dim: #24262c;          /* DIM — finished / inactive. Draft #26282E → 4.61 */
-  --on-dim: #8b8e96;
-
-  /* Gold — outline only, never solid, never a status, never an action.
-     Border lightened from the draft #6B5A2E (2.67:1) to clear 3:1 so the one
-     outline on screen can actually be seen. */
-  --ext-fg: #d9b45a;
-  --ext-line: #756332;
-  --ext-bg: rgba(217, 180, 90, 0.08);
-  --gold: #d9b45a;
-  --brand-mark: #d9b45a;
-
-  /* ---- surfaces the app already names ---- */
-  --app: #101114;
-  --sidebar: #15171b;
-  --card: #15171b;
-  --card2: #1a1c21;
-  --modal: #1a1c21;
-  --dropdown: #1a1c21;
-
-  --hover-card: #1e2027;
-  --hover-sidebar: #1c1e24;
-  --hover-button: #2f5ce0;
-  --hover-row: #1b1d23;
-
-  /* ---- §5 buttons: quiet, so the statuses stay loud ---- */
-  --btn-primary-bg: #386af7;
-  --btn-primary-fg: #ffffff;
-  --btn-secondary-bg: transparent;
-  --btn-secondary-border: #22242a;
-  --btn-danger-bg: #c73a3a;
-  --btn-danger-fg: #ffffff;
-
-  /* Sidebar active is BLUE now — gold retired from every action (§2). */
-  --nav-active-accent: #386af7;
-  --nav-active-bg: #1a2033;
-  --nav-icon: #8b8e96;
-
-  --input-bg: #101114;
-  --input-border: #2a2d34;
-  --input-placeholder: #62656b;
-  --input-focus: #386af7;
-
-  --th-bg: #15171b;
-  --tr-bg: #15171b;
-  --tr-hover: #1b1d23;
-  --tr-alt: #1a1c21;
-
-  /* §3.3 — multi-tiered soft shadows & glowing elevation */
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.4);
-  --shadow-card: 0 4px 12px -2px rgba(0, 0, 0, 0.35);
-  --shadow-kpi: 0 4px 12px -2px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 8px 20px -3px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 16px 32px -4px rgba(0, 0, 0, 0.55);
-  --shadow-modal: 0 20px 48px rgba(0, 0, 0, 0.7);
-  --shadow-primary-glow: 0 8px 20px -4px rgba(56, 106, 247, 0.35);
-
-  --danger-soft: #1a1315;
-  --scrim: rgba(0, 0, 0, 0.65);
-
-  --chart-grid: #22242a;
-  --cat-1: #3b82d6;
-  --cat-2: #b87a1e;
-  --cat-3: #249e76;
-  --cat-4: #d9613c;
-  --cat-5: #5a76c2;
-  --cat-6: #c25588;
-  --cat-7: #7a8c3e;
-  --cat-8: #5d71b0;
-}
-
 :root[data-theme='light'] {
+  /* ---- §3.1 core ---- */
   --bg: #fafaf8;
   --surface: #ffffff;
   --surface-2: #f2f1ec;
   --border: #e3e2dd;
   --border2: #eceae4;
   --divider: #eceae4;
+
+  /* DESIGN_DIRECTION_SPEC v4.2 §3 Canvas Gradients (Miraz Cream) */
+  --bg-gradient-1: #FDEFDC;
+  --bg-gradient-2: #FFF9F0;
+  --surface-card: rgba(255, 255, 255, 0.88);
+  --surface-card-hover: rgba(255, 255, 255, 0.95);
+  --glass-tint: 0.88;
 
   --text: #1c1e22;
   --text2: #4b4e54;
@@ -207,14 +103,18 @@
   --on-dim: #5a5d63;
 
   --ext-fg: #8a6d1f;
-  --ext-line: #af903a;  /* draft #CDB268 was 2.07:1 — invisible on white */
+  /* v4.2 §3 gold-on-cream check, measured 31 Aug: #af903a was 3.06:1 on white
+     but only 2.70:1 on the new #FDEFDC canvas — under the 3:1 non-text floor.
+     #8f7526 measures 3.91:1 on cream, 4.43:1 on white. (--ext-fg is 4.33:1 on
+     bare cream and ~4.9:1 on the card/row surfaces it actually sits on.) */
+  --ext-line: #8f7526;
   --ext-bg: rgba(205, 178, 104, 0.1);
   --gold: #c9982f;
   --brand-mark: #8a6d1f;
 
   --app: #fafaf8;
-  --sidebar: #ffffff;
-  --card: #ffffff;
+  --sidebar: rgba(255, 255, 255, 0.88);
+  --card: rgba(255, 255, 255, 0.88);
   --card2: #f2f1ec;
   --modal: #ffffff;
   --dropdown: #ffffff;
@@ -245,14 +145,25 @@
   --tr-hover: #f7f6f2;
   --tr-alt: #fafaf8;
 
-  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-sm: 0 2px 4px rgba(15, 23, 42, 0.05);
-  --shadow-card: 0 4px 12px -2px rgba(15, 23, 42, 0.06);
-  --shadow-kpi: 0 4px 12px -2px rgba(15, 23, 42, 0.06);
+  /* DESIGN_DIRECTION_SPEC v4.2 §6 Shadow Scale */
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --shadow-card: var(--shadow);
+  --shadow-kpi: var(--shadow);
   --shadow-md: 0 8px 20px -3px rgba(15, 23, 42, 0.08);
-  --shadow-lg: 0 16px 32px -4px rgba(15, 23, 42, 0.12);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.10), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   --shadow-modal: 0 20px 48px rgba(15, 23, 42, 0.16);
   --shadow-primary-glow: 0 8px 20px -4px rgba(36, 86, 214, 0.25);
+
+  /* DESIGN_DIRECTION_SPEC v4.2 §6 Soft-tint non-status chips */
+  --chip-blue-bg: #DBEAFE;
+  --chip-blue-fg: #1E40AF;
+  --chip-gray-bg: #F3F4F6;
+  --chip-gray-fg: #374151;
+  --chip-amber-bg: #FEF3C7;
+  --chip-amber-fg: #92400E;
 
   --danger-soft: #fdf6f6;
   --scrim: rgba(15, 23, 42, 0.45);
@@ -268,12 +179,134 @@
   --cat-8: #8b3a0e;
 }
 
+:root[data-theme='dark'] {
+  /* ---- §3.1 core ---- */
+  --bg: #101114;
+  --surface: #15171B;
+  --surface-2: #1a1c21;
+  --border: #22242a;
+  --border2: #2a2d34;
+  --divider: #1e2026;
+
+  /* DESIGN_DIRECTION_SPEC v4.2 §3 Canvas Gradients (Navy Dark) */
+  --bg-gradient-1: #050B12;
+  --bg-gradient-2: #0B1622;
+  --surface-card: rgba(11, 22, 34, 0.85);
+  --surface-card-hover: rgba(16, 30, 46, 0.92);
+  --glass-tint: 0.85;
+
+  --text: #e6e7ea;
+  --text2: #a9acb4;
+  --muted: #8b8e96;
+  --disabled: #62656b;
+
+  --primary: #386af7;      /* draft #3D6EF7 → white was 4.40, now 4.59 */
+  --on-primary: #ffffff;
+  --primary-text: #7ea2ff; /* text-safe blue on --surface */
+
+  /* ---- §3.2 status hues + their on-colours ---- */
+  --success: #1e864a;      /* draft #1F8A4C → white was 4.38, now 4.60 */
+  --on-success: #ffffff;
+  --success-text: #4ade80;
+
+  --danger: #c73a3a;
+  --on-danger: #ffffff;
+  --danger-text: #f08a8a;
+
+  --warn: #e8762d;         /* ORANGE — "out with the client". Never a button. */
+  --on-warn: #1c1005;
+  --warn-text: #f0985e;
+
+  --ready: #edbe2a;        /* YELLOW — in-house work / waiting. Never a button. */
+  --on-ready: #1c1405;
+  --ready-text: #edbe2a;
+
+  --neutral: #3a3e47;      /* GRAY — not started yet */
+  --on-neutral: #c9cbd1;
+
+  --dim: #24262c;          /* DIM — finished / inactive. Draft #26282E → 4.61 */
+  --on-dim: #8b8e96;
+
+  --ext-fg: #d9b45a;
+  --ext-line: #756332;
+  --ext-bg: rgba(217, 180, 90, 0.08);
+  --gold: #d9b45a;
+  --brand-mark: #d9b45a;
+
+  --app: #101114;
+  --sidebar: rgba(21, 23, 27, 0.88);
+  --card: rgba(11, 22, 34, 0.85);
+  --card2: #1a1c21;
+  --modal: #1a1c21;
+  --dropdown: #1a1c21;
+
+  --hover-card: #1e2027;
+  --hover-sidebar: #1c1e24;
+  --hover-button: #2f5ce0;
+  --hover-row: #1b1d23;
+
+  --btn-primary-bg: #386af7;
+  --btn-primary-fg: #ffffff;
+  --btn-secondary-bg: transparent;
+  --btn-secondary-border: #22242a;
+  --btn-danger-bg: #c73a3a;
+  --btn-danger-fg: #ffffff;
+
+  --nav-active-accent: #386af7;
+  --nav-active-bg: #1a2033;
+  --nav-icon: #8b8e96;
+
+  --input-bg: #101114;
+  --input-border: #2a2d34;
+  --input-placeholder: #62656b;
+  --input-focus: #386af7;
+
+  --th-bg: #15171b;
+  --tr-bg: #15171b;
+  --tr-hover: #1b1d23;
+  --tr-alt: #1a1c21;
+
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
+  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  --shadow-card: var(--shadow);
+  --shadow-kpi: var(--shadow);
+  --shadow-md: 0 8px 20px -3px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.35), 0 4px 6px -2px rgba(0, 0, 0, 0.25);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.45), 0 10px 10px -5px rgba(0, 0, 0, 0.3);
+  --shadow-modal: 0 20px 48px rgba(0, 0, 0, 0.7);
+  --shadow-primary-glow: 0 8px 20px -4px rgba(56, 106, 247, 0.35);
+
+  /* DESIGN_DIRECTION_SPEC v4.2 §6 Soft-tint non-status chips */
+  --chip-blue-bg: rgba(59, 130, 246, 0.18);
+  --chip-blue-fg: #93C5FD;
+  --chip-gray-bg: rgba(156, 163, 175, 0.18);
+  --chip-gray-fg: #D1D5DB;
+  --chip-amber-bg: rgba(245, 158, 11, 0.18);
+  --chip-amber-fg: #FCD34D;
+
+  --danger-soft: #1a1315;
+  --scrim: rgba(0, 0, 0, 0.65);
+
+  --chart-grid: #22242a;
+  --cat-1: #3b82d6;
+  --cat-2: #b87a1e;
+  --cat-3: #249e76;
+  --cat-4: #d9613c;
+  --cat-5: #5a76c2;
+  --cat-6: #c25588;
+  --cat-7: #7a8c3e;
+  --cat-8: #5d71b0;
+}
+
 /* ---- scale: identical in both themes ---- */
 :root {
   /* radius */
-  /* §3.3 — v4.1 shape. The v3.1 open item 12->8 is RULED: this language is 8. */
+  /* v4.2 §2.4 radius map 6/8/14/999 — chip 6, btn/input 8, card 14, badge 999.
+     §6: "Radius stays 14 (--r-card); Miraz's 12/16 not adopted." The earlier
+     v3.1-era "this language is 8" note applied to buttons/inputs, which stay 8. */
   --r-btn: 8px;
-  --r-card: 8px;
+  --r-card: 14px;
   --r-input: 8px;
   --r-modal: 12px;
   --r-chip: 6px;    /* status blocks */
@@ -371,6 +404,23 @@
                     token was the nav-active pair's bg half
   */
   --hover: var(--hover-card);
+  /*
+    Two more of the same, found 1 Sep and confirmed in the running app by
+    probing a live element (both resolved to the empty string, so the probe
+    inherited body's size/colour instead of the step it asked for):
+      --t-caption  AdjustCreditLimitModal ×3, UpgradeTierModal ×2,
+                   LogMaintenanceModal ×1 — the caption step under a name the
+                   scale never defined (it has --fs-caption and --t-meta). The
+                   six labels rendered at inherited BODY size, flattening the
+                   label/value hierarchy in all three modals.
+      --text-dim   Tools.tsx ×2 — the "Presets:" labels, which lost their
+                   muted step and rendered at full text strength.
+    Re-declared in the [data-floor]/[data-wall] blocks below for the same
+    reason --t-title/--t-base are: a :root-only alias freezes at the un-stepped
+    value inside those subtrees.
+  */
+  --t-caption: var(--t-meta);
+  --text-dim: var(--muted);
   /* --bg is a REAL per-theme token in v4.1 (see the palette above), not an
      alias. --warn is likewise real now (v4.1's orange); its six legacy
      caution-text call sites moved to --ready-text first, per spec §11. */
@@ -442,12 +492,19 @@
      the band. The global prefers-reduced-motion block below kills it outright. */
   --dur-drawer: 220ms;
 
-  /* Spring physics & signature silky curves */
-  --transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  --transition-smooth: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  --transition-fast: all 0.12s cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Spring physics & signature silky curves.
+     --ease is v4.2 §5's app-wide easing token. It was READ in four places
+     (body + .card here, Page.tsx, Card.tsx) before it was ever DEFINED — an
+     undefined custom property invalidates the whole transition declaration at
+     computed-value time, so all four transitions were silently dead. Same bug
+     class as the alias registry below. */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --transition: all 0.2s var(--ease);
+  --transition-smooth: all 0.2s var(--ease);
+  --transition-fast: all 0.12s var(--ease);
+  /* No --ease-spring / --ease-bounce: both had ZERO readers, and §5 rules ONE
+     curve app-wide. A bounce curve in particular is exactly what the spec's
+     "the curve changes, the numbers do not" language forbids reintroducing. */
 
   /* The sticky header's own height, so anything that must sit UNDER it stops
      guessing.
@@ -597,6 +654,7 @@ html {
      :root declaration would hand this subtree the un-stepped h3/body. */
   --t-title: var(--t-h3);
   --t-base: var(--t-body);
+  --t-caption: var(--t-meta);
   font-size: var(--t-body);
 }
 
@@ -618,16 +676,13 @@ html {
   /* Same re-declaration as [data-floor] — see the note there. */
   --t-title: var(--t-h3);
   --t-base: var(--t-body);
+  --t-caption: var(--t-meta);
   font-size: var(--t-body);
 }
 
 body {
   margin: 0;
-  background-color: var(--app);
-  background-image: 
-    radial-gradient(at 0% 0%, rgba(56, 106, 247, 0.065) 0px, transparent 55%),
-    radial-gradient(at 100% 100%, rgba(232, 118, 45, 0.04) 0px, transparent 55%),
-    radial-gradient(at 50% 50%, rgba(30, 134, 74, 0.015) 0px, transparent 65%);
+  background: linear-gradient(160deg, var(--bg-gradient-1), var(--bg-gradient-2));
   background-attachment: fixed;
   color: var(--text);
   font-family: var(--font-body);
@@ -635,17 +690,109 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* "smooth 200ms transition" on theme switch */
-  transition: background-color var(--dur-theme) ease, color var(--dur-theme) ease;
+  /*
+    NO transition here, deliberately — measured 1 Sep, not assumed.
+
+    This line used to read `transition: background … var(--ease), color …`, and
+    it did nothing at all while `--ease` was undefined: an unresolvable var()
+    makes the shorthand invalid at computed-value time, so the longhands fell
+    back to their initial `0s`. Defining `--ease` (v4.2 §5) would have switched
+    it on for the first time, and switching it on is what exposed the mismatch:
+
+     · `background` here is a linear-gradient set through the shorthand.
+       background-image does not interpolate — measured on the theme toggle, it
+       jumps from cream to navy on the very first frame.
+     · `color` DOES interpolate, over 200ms.
+
+    So the pair guarantees a disagreement: the canvas lands instantly on the new
+    theme while the body's ink is still crossing to it. Toggling to dark, that
+    is ~200ms of near-black text arriving on an already-navy canvas. In dev the
+    same edge fires on cold load (Vite injects CSS after first paint, so the
+    style change is a real transition start) — body ink was caught frozen at
+    black over the navy canvas, which is the unreadable end of the same bug.
+
+    Surfaces keep their own transitions (.card, the sidebar, buttons), so the
+    toggle still eases where easing is actually possible. The canvas and the ink
+    on it now change together, in one frame.
+  */
 }
 
-:root[data-theme='light'] body {
-  background-color: var(--app);
-  background-image: 
-    radial-gradient(at 0% 0%, rgba(36, 86, 214, 0.045) 0px, transparent 55%),
-    radial-gradient(at 100% 100%, rgba(217, 101, 24, 0.03) 0px, transparent 55%),
-    radial-gradient(at 50% 50%, rgba(30, 134, 74, 0.012) 0px, transparent 65%);
-  background-attachment: fixed;
+/* DESIGN_DIRECTION_SPEC v4.2 §4 & §6 Card Glass & Layered Elevation */
+.card {
+  background: var(--surface-card);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .card.interactive:hover,
+  .card[data-interactive='true']:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+/* Tables stay solid per DESIGN_DIRECTION_SPEC v4.2 §4 */
+table,
+.table-container {
+  background: var(--surface);
+  backdrop-filter: none !important;
+}
+
+/* ── v4.2 §4 — glass kill-switches ───────────────────────────────────────────
+   `prefers-reduced-transparency` and `prefers-contrast: more` → fully opaque,
+   and `[data-floor]` keeps its kill-switch until card glass is measured on the
+   real warehouse tablet (200-row packing list) — the spec commits glass on
+   floor screens only after that measurement.
+
+   Two halves, because glass is two properties:
+   · the TOKENS go opaque — components paint with var(--card)/var(--surface-card)
+     inline, so repointing the tokens at the solid surface colours reaches every
+     card without touching a component. The triple selector matches the
+     specificity of `:root[data-theme='dark']` so the dark rgba values cannot
+     win the cascade over this override.
+   · the BLUR dies with `!important` on *, which also beats the inline
+     `backdropFilter` styles in Card.tsx/Page.tsx/Toast.tsx/Select.tsx. */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root,
+  :root[data-theme='light'],
+  :root[data-theme='dark'] {
+    --surface-card: var(--surface);
+    --surface-card-hover: var(--surface-2);
+    --card: var(--surface);
+    --sidebar: var(--surface);
+  }
+  * {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* CARDS only, and that is the whole scope §4 asks for: "measure a 200-row
+   packing list … before committing CARD glass on floor screens". Chrome is an
+   unconditional glass surface in §4, so it is deliberately NOT killed here.
+
+   ⚠ It could not be killed from here anyway: `data-floor` is stamped on
+   `<main>` (App.tsx), and the three readers of `--sidebar` — Header, BottomBar,
+   Sidebar — are all mounted OUTSIDE `<main>` as siblings in the shell row.
+   Custom properties only reach descendants, so a `--sidebar` override in this
+   block is dead code that reads like a guarantee. Verified in the running app:
+   `main.contains(header)` and `main.contains(aside)` are both false, while
+   cards are inside. Do not add `--sidebar` back without ALSO moving the
+   attribute — and moving it to :root would drag the [data-floor] type-scale
+   step onto the chrome too, which is a different (and unruled) change. */
+[data-floor='true'] {
+  --surface-card: var(--surface);
+  --surface-card-hover: var(--surface-2);
+  --card: var(--surface);
+}
+[data-floor='true'] * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 /* §4.3.2 — Outfit carries the brand voice, never body copy. */
@@ -919,6 +1066,16 @@ section[id] {
 
 /* ── lazy-load spinner ──────────────────────────────────────────────────── */
 @keyframes spin { to { transform: rotate(360deg) } }
+
+/* ── v4.2 §5 — the four Miraz keyframes, ported on OUR duration scale ───────
+   The frames carry no timing; call sites use --dur/--dur-fast with var(--ease)
+   (120–240ms — Miraz's 200–250ms numbers are NOT adopted, only the curve).
+   `transform`/`opacity` only, so none of them lay the page out mid-flight.
+   The global prefers-reduced-motion block kills all four. */
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(12px) } to { opacity: 1; transform: none } }
+@keyframes toastIn { from { opacity: 0; transform: translateY(12px) scale(0.96) } to { opacity: 1; transform: none } }
+@keyframes pop { 0% { transform: scale(0.96) } 60% { transform: scale(1.02) } 100% { transform: scale(1) } }
 
 /* ── loading-skeleton blocks (StateViews.tsx) ─────────────────────────────── */
 @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.5 } }

@@ -128,6 +128,19 @@ export interface CreateRentalLine {
   markupAmount?: number | null
   lineNote?: string | null
   sortOrder?: number
+  /**
+   * **D5, ruled 30 Aug 2026** (REFERENCE_SPEC v2.5 Appendix A0) — serials
+   * assigned at creation. `product_units.id` uuids, at most `qty` of them,
+   * chosen least-used among available by the caller (the 27 Jul lock;
+   * `queries/availability.ts` owns the read, `lib/availability.ts` the rule).
+   *
+   * **Optional, and absent is a legal answer** — the D5 fallback: where
+   * availability cannot be known locally (`inventory_reservations` is
+   * Booqable-mastered during the bridge — dataAccess.ts:201), the caller sends
+   * NO units rather than guessing, and Pack confirms or fills. Each unit row
+   * gets its own Law 8 key in `execute`, exactly like lines and discounts.
+   */
+  units?: readonly string[]
 }
 
 export interface CreateRentalDiscount {
@@ -275,6 +288,42 @@ export const createRentalConfig: ActionConfig<CreateRentalInput, CreateRentalRes
       if (line.bundleId != null && !UUID_RE.test(line.bundleId)) {
         throw new Error(`${label} carries a bundleId that is not a uuid (${JSON.stringify(line.bundleId)}). Nothing was sent.`)
       }
+
+      /* D5 — units are optional; when present they must be coherent with the
+         line. Refused HERE by line label rather than three layers down as a
+         constraint message. The RPC re-checks all of it (a second caller may
+         not come through this file), but this is the refusal an operator reads. */
+      const units = line.units ?? []
+      if (units.length > line.qty) {
+        throw new Error(
+          `${label} carries ${units.length} assigned units for a quantity of ${line.qty}. A line cannot name ` +
+            'more serials than items. Nothing was sent.',
+        )
+      }
+      for (const assetId of units) {
+        if (!UUID_RE.test(assetId)) {
+          throw new Error(
+            `${label} carries an assigned unit that is not a product_units.id uuid (${JSON.stringify(assetId)}). ` +
+              'Nothing was sent.',
+          )
+        }
+      }
+    }
+
+    /* One physical unit cannot be assigned twice on one booking. The schema
+       has no unique constraint saying so, which is exactly why it is said here
+       and again inside create_booking. */
+    const seen = new Set<string>()
+    for (const line of input.lines) {
+      for (const assetId of line.units ?? []) {
+        if (seen.has(assetId)) {
+          throw new Error(
+            `The same physical unit (${assetId}) is assigned to two lines of this booking. One serial covers ` +
+              'one item. Nothing was sent.',
+          )
+        }
+        seen.add(assetId)
+      }
     }
   },
 
@@ -341,6 +390,13 @@ export const createRentalConfig: ActionConfig<CreateRentalInput, CreateRentalRes
         markup_amount: line.markupAmount ?? null,
         line_note: line.lineNote ?? null,
         sort_order: line.sortOrder ?? i,
+        /* D5 — serials at creation. One Law 8 key per unit ROW
+           (`booking_line_units.client_uuid` is NOT NULL UNIQUE). An empty
+           array is the unit-less fallback and writes nothing. */
+        units: (line.units ?? []).map((assetId) => ({
+          client_uuid: newClientUuid(),
+          asset_id: assetId,
+        })),
       })),
       discounts: (input.discounts ?? []).map((d) => ({
         client_uuid: d.clientUuid ?? newClientUuid(),

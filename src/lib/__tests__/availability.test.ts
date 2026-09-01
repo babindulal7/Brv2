@@ -3,6 +3,7 @@ import {
   windowsOverlap,
   conflictingHolds,
   selectUnitsForLine,
+  rankLeastUsed,
   isRetired,
   explainShortfall,
   unitStatesForRule,
@@ -424,5 +425,36 @@ describe('settings-driven availability rules', () => {
          positive default would be inventing the one part nobody gave. */
       expect(SETTING_SPECS.evidenceRetentionDays.default).toBe(0)
     })
+  })
+})
+
+describe('rankLeastUsed — the 27 Jul lock, ruled into force by D5 (30 Aug 2026)', () => {
+  const A = unit({ unitId: 'u-a' })
+  const B = unit({ unitId: 'u-b' })
+  const C = unit({ unitId: 'u-c' })
+
+  it('orders by prior assignments, fewest first', () => {
+    const usage = new Map([
+      ['u-a', 5],
+      ['u-b', 1],
+      ['u-c', 3],
+    ])
+    expect(rankLeastUsed([A, B, C], usage).map((u) => u.unitId)).toEqual(['u-b', 'u-c', 'u-a'])
+  })
+
+  it('a unit with no usage row counts as never used', () => {
+    const usage = new Map([['u-a', 1]])
+    expect(rankLeastUsed([A, B], usage).map((u) => u.unitId)).toEqual(['u-b', 'u-a'])
+  })
+
+  it('is STABLE — equal usage keeps the caller order, so ties resolve by asset tag deterministically', () => {
+    const usage = new Map<string, number>()
+    expect(rankLeastUsed([C, A, B], usage).map((u) => u.unitId)).toEqual(['u-c', 'u-a', 'u-b'])
+  })
+
+  it('does not mutate the input array', () => {
+    const input = [A, B]
+    rankLeastUsed(input, new Map([['u-a', 9]]))
+    expect(input.map((u) => u.unitId)).toEqual(['u-a', 'u-b'])
   })
 })

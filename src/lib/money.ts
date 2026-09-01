@@ -142,31 +142,36 @@ export function price(i: PriceInput): PriceBreakdown {
 /** Alias for price calculation function */
 export const calculatePrice = price
 
-/** §2.5 — >10% needs a reason ≥10 chars and a Manager. No Owner bypass. */
-export const DISCOUNT_CAP = 25
-export const DISCOUNT_APPROVAL_THRESHOLD = 10
-
 /**
- * ⚠ **A negative percent is refused, and this used to allow it.** `-5` fell
- * straight through `percent <= DISCOUNT_APPROVAL_THRESHOLD` and returned
- * `{ ok: true }`. That reached an operator: the Discount calculator on
- * Settings ▸ Tools (`Tools.tsx:783`) renders a green tick on `gate.ok`, and its
- * input is `type="number"` with no `min`. So typing `-5` produced an approving
- * tick for a **price increase**, on the screen that quotes Foundation §2.5 in
- * its own formula block. Fixed 16 Aug 2026 (`R3-1`, PLAN.md §4.35).
+ * **The discount gate is GONE — D3, ruled 30 Aug 2026, confirmed by Babin on
+ * 31 Aug ("don't put any gate on discount").** The old Law 10 ceremony
+ * (>10% needs reason ≥10 chars + named approver; 25% hard cap; role tiers)
+ * is removed everywhere in one change set: this engine, `lib/discount.ts`,
+ * `rbac.ts:canApproveDiscount`, and — once `0074_drop_discount_gate.sql` is
+ * approved and applied — the `booking_discounts` / `invoices` CHECKs and the
+ * stacking trigger. PLAN.md Law 10 carries the amended text.
  *
- * Not a new rule — `lib/discount.ts:validateDiscount` and the database's
- * `booking_discounts_hard_cap` both rejected it already. This function and
- * `rbac.ts:canApproveDiscount` were the two implementations that disagreed, out
- * of seven that state Law 10. §4.35 records the class: duplication between
- * engines, every copy in the right architectural layer, each right in isolation.
+ * What survives is ARITHMETIC VALIDITY, not a gate:
+ *
+ *  - **A negative percent is still refused.** A negative discount is a price
+ *    increase wearing a discount's clothes — the R3-1 security fix (16 Aug,
+ *    PLAN.md §4.35: `-5` once drew an approving green tick on Settings ▸
+ *    Tools). Removing the gate does not reopen that hole.
+ *  - **Above 100% is still refused.** A >100% discount is a negative price;
+ *    `price()` would compute a refund nobody rules on. This is the ceiling a
+ *    percentage HAS, not a cap anyone chose.
+ *
+ * `DISCOUNT_CAP` therefore now reads 100 and means "the arithmetic ceiling";
+ * `DISCOUNT_APPROVAL_THRESHOLD` is deleted — there is no approval to
+ * threshold. `reason`/`approver` stay in the signature so call sites keep
+ * compiling, and because an operator may still WANT to record a reason —
+ * optional forever, required never.
  */
-export function discountGate(percent: number, reason: string, approver: string | null) {
+export const DISCOUNT_CAP = 100
+
+export function discountGate(percent: number, _reason: string, _approver: string | null) {
   if (percent < 0) return { ok: false as const, why: 'A discount cannot be negative — that is a price increase' }
-  if (percent > DISCOUNT_CAP) return { ok: false as const, why: `Discount is capped at ${DISCOUNT_CAP}%` }
-  if (percent <= DISCOUNT_APPROVAL_THRESHOLD) return { ok: true as const }
-  if (reason.trim().length < 10) return { ok: false as const, why: 'A discount above 10% needs a reason of at least 10 characters' }
-  if (!approver) return { ok: false as const, why: 'A discount above 10% needs a Manager approver' }
+  if (percent > DISCOUNT_CAP) return { ok: false as const, why: 'A discount above 100% is a negative price, not a discount' }
   return { ok: true as const }
 }
 

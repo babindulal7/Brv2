@@ -36,7 +36,9 @@ export function AuthCard({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'var(--app)',
+        /* v4.2 §3 — transparent, same as the app shell: the signed-out screens
+           sit on the same body canvas gradient as the shell they lead to. */
+        background: 'transparent',
         padding: 20,
       }}
     >
@@ -51,6 +53,29 @@ export function AuthCard({
         }}
       >
         <div style={{ textAlign: 'center' }}>
+          {/* The sidebar's gold BR mark (Sidebar.tsx §4.3.2 wordmark), so the
+              signed-out screens carry the same identity as the shell they lead
+              to. A tile rather than the bare rail glyph because the card has no
+              rail to anchor it. */}
+          <span
+            aria-hidden
+            className="title"
+            style={{
+              display: 'inline-grid',
+              placeItems: 'center',
+              width: 44,
+              height: 44,
+              marginBottom: 16,
+              borderRadius: 'var(--r-sm)',
+              border: '1px solid var(--border)',
+              color: 'var(--brand-mark)',
+              fontWeight: 700,
+              fontSize: 'var(--t-h4)',
+              lineHeight: 1,
+            }}
+          >
+            BR
+          </span>
           <h1
             style={{
               fontSize: 'clamp(20px, 2vw, 24px)',

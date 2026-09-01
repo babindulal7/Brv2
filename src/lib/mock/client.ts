@@ -288,7 +288,8 @@ function nextDocumentNumber(key: string): string {
  * must be identical, because `createRental` calls one `.rpc('create_booking')`
  * in both modes and there must not be two implementations of what a booking is.
  *
- * Kept deliberately in step with `supabase/migrations/0063_create_booking_function.sql`:
+ * Kept deliberately in step with `supabase/migrations/0063_create_booking_function.sql`
+ * as revised by 0070 (parent linkage) and 0071 (units at creation — D5):
  * same payload shape, same return shape, same Law 8 replay behaviour. If one
  * changes, both change.
  *
@@ -348,12 +349,73 @@ function createBooking(payload: Record<string, unknown>): { data: Row | null; er
 
   const lines = Array.isArray(payload['lines']) ? (payload['lines'] as Array<Record<string, unknown>>) : []
   const built: Row[] = []
+  /* D5 (0071) — creation-time unit assignments, one booking_line_units row per
+     entry. Built beside the lines and committed with them, so a refused unit
+     leaves no header behind — the local stand-in for the transaction. */
+  const builtUnits: Row[] = []
+  const seenAssets = new Set<string>()
   for (const [i, line] of lines.entries()) {
     if (!line['client_uuid']) {
       return { data: null, error: { code: '23502', message: 'create_booking: every line needs its own client_uuid (one per ROW, not per action)', details: '', hint: '' } }
     }
     if (line['days'] === undefined || line['days'] === null) {
       return { data: null, error: { code: '23502', message: `create_booking: line ${String(line['client_uuid'])} has no days; Law 9 requires it stated, not defaulted`, details: '', hint: '' } }
+    }
+    const units = Array.isArray(line['units']) ? (line['units'] as Array<Record<string, unknown>>) : []
+    const qty = Number(line['qty'] ?? 1)
+    if (units.length > qty) {
+      return {
+        data: null,
+        error: {
+          code: '23514',
+          message: `create_booking: line ${String(line['client_uuid'])} carries more units (${units.length}) than its qty (${qty}). Nothing was created.`,
+          details: '',
+          hint: '',
+        },
+      }
+    }
+    for (const unit of units) {
+      if (!unit['client_uuid']) {
+        return { data: null, error: { code: '23502', message: 'create_booking: every unit needs its own client_uuid (Law 8, one per ROW)', details: '', hint: '' } }
+      }
+      if (!unit['asset_id']) {
+        return { data: null, error: { code: '23502', message: `create_booking: a unit entry on line ${String(line['client_uuid'])} names no asset_id`, details: '', hint: '' } }
+      }
+      if (seenAssets.has(String(unit['asset_id']))) {
+        return {
+          data: null,
+          error: {
+            code: '23514',
+            message: `create_booking: the same physical unit (${String(unit['asset_id'])}) appears twice across this booking's units. Nothing was created.`,
+            details: '',
+            hint: '',
+          },
+        }
+      }
+      seenAssets.add(String(unit['asset_id']))
+      // The mis-scan check, mirrored from 0071: a serial from another product
+      // is refused whole. Only checkable when the line names a product and the
+      // local corpus holds the unit — both halves match the SQL's behaviour.
+      if (line['product_id']) {
+        const known = (store['product_units'] ?? []).find((r) => r['id'] === unit['asset_id'])
+        if (!known) {
+          return {
+            data: null,
+            error: { code: '23503', message: `create_booking: unit ${String(unit['asset_id'])} on line ${String(line['client_uuid'])} names no known product_unit`, details: '', hint: '' },
+          }
+        }
+        if (known['product_id'] !== line['product_id']) {
+          return {
+            data: null,
+            error: {
+              code: '23514',
+              message: `create_booking: unit ${String(unit['asset_id'])} belongs to a different product than line ${String(line['client_uuid'])}. Nothing was created.`,
+              details: '',
+              hint: '',
+            },
+          }
+        }
+      }
     }
     built.push({
       id: crypto.randomUUID(),
@@ -424,6 +486,30 @@ function createBooking(payload: Record<string, unknown>): { data: Row | null; er
     if (row) row['parent_line_id'] = parentId
   }
 
+  /* D5 (0071) — the unit rows, built once the line ids exist. The serial chips
+     of spec §10.2: one row per assigned unit, qty 1, removable later by
+     deleting the ROW, never by editing the line. */
+  for (const [i, line] of lines.entries()) {
+    const parentRow = built[i]
+    if (!parentRow) continue
+    const units = Array.isArray(line['units']) ? (line['units'] as Array<Record<string, unknown>>) : []
+    for (const unit of units) {
+      builtUnits.push({
+        id: crypto.randomUUID(),
+        client_uuid: unit['client_uuid'],
+        booking_line_id: parentRow['id'],
+        asset_id: unit['asset_id'],
+        qty: 1,
+        unit_state: 'Ready',
+        is_required: true,
+        packed: false,
+        damaged: false,
+        created_at: now,
+        created_by: actor,
+      })
+    }
+  }
+
   // Nothing is committed to the store until every line has validated, so a bad
   // line cannot leave a header with no lines behind it — the local stand-in for
   // the transaction the real function gets from Postgres.
@@ -433,6 +519,10 @@ function createBooking(payload: Record<string, unknown>): { data: Row | null; er
     ;(store['booking_lines'] ??= []).push(row)
     overlay.inserts.push({ table: 'booking_lines', row })
   }
+  for (const row of builtUnits) {
+    ;(store['booking_line_units'] ??= []).push(row)
+    overlay.inserts.push({ table: 'booking_line_units', row })
+  }
   saveOverlay(overlay)
 
   return {
@@ -441,6 +531,7 @@ function createBooking(payload: Record<string, unknown>): { data: Row | null; er
       booking_no: bookingNo,
       stage: 'Quote',
       line_count: built.length,
+      unit_count: builtUnits.length,
       replayed: false,
     } as Row,
     error: null,

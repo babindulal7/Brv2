@@ -1,5 +1,6 @@
 import { supabase } from '../supabase'
-import { kathmanduCivil, NPT_OFFSET_MIN } from '../bs'
+import { getSetting } from '../settingsStore'
+import { dayStartMinutesFrom, operationalDayBounds, operationalDayOf } from '../operationalDay'
 import { rupees, type Paisa } from '../money'
 import { applyListFilters, type ListFilters } from './listQuery'
 import type { ListQueryResult } from './useList'
@@ -707,7 +708,7 @@ export function operationQueue(
   return f
 }
 
-/* ── Day boundaries ───────────────────────────────────────────────────────
+/* ── Day boundaries — the OPERATIONAL day, not calendar midnight ──────────
  *
  * ⛔ These used to end in `Z`, i.e. midnight UTC. That is the wrong day.
  *
@@ -718,43 +719,38 @@ export function operationQueue(
  * Today ▸ Outgoing would have been silently short by exactly the bookings the
  * early shift cares about most.
  *
- * `src/lib/bs.ts` already made this exact correction for the same reason (see
- * `kathmanduCivil` — it "used to truncate on getUTCDate(), which is a different
- * date for 5 hours 45 minutes of every day"). This is that fix applied to the
- * query side, so the day a screen FILTERS by is the same day it LABELS.
- *
- * The strings below carry an explicit `+05:45` offset rather than `Z`.
- * Postgres accepts the offset in a `timestamptz` comparison, so the boundary is
+ * The strings carry an explicit `+05:45` offset rather than `Z`. Postgres
+ * accepts the offset in a `timestamptz` comparison, so the boundary is
  * resolved by the database with no client-side arithmetic to get wrong. Nepal
  * has no daylight saving and has not changed offset since 1986, so a fixed
  * offset is exact here in a way it would not be elsewhere.
  *
- * There are TWO ways to get a day boundary wrong and this block only ever fixed
- * one of them. Attaching the right offset to the wrong DATE is just as wrong as
- * attaching the wrong offset to the right date — see `nepalDay` below, which
- * closes the second half.
+ * ✅ **D4, ruled 30 Aug 2026** (`docs/booqable/REFERENCE_SPEC_v2.5.md`
+ * Appendix A0) — this block's old TODO(decision) asked whether "today's
+ * pickups" means midnight→midnight or 06:00→06:00. Ruled: **the operational
+ * day starts at 06:00, as a setting** (`operationalDayStart`, default
+ * `"06:00"`, changeable in Settings ▸ Organisation). The boundary arithmetic
+ * lives in `lib/operationalDay.ts` (the pure half, Law 1); this module reads
+ * the setting — per call, like every other `getSetting` consumer, so a change
+ * applies to the next query rather than the next reload — and passes it in.
  *
- * TODO(decision): the rental day runs 06:00→06:00, so "today's pickups"
- * arguably means 06:00 today to 06:00 tomorrow rather than midnight to
- * midnight — Kathmandu midnight or otherwise. That changes which bookings
- * appear on the Today screen at 5am and at 11pm, so it is a product call, not
- * an implementation detail. Calendar midnight **in Kathmandu** is used until it
- * is ruled — stated here rather than assumed silently.
+ * Every named filter set here builds on these two helpers, so the Dashboard
+ * panels, the Operations day scope and the pickups drill-down all move with
+ * the one setting and cannot disagree. `queries/finance.ts` keeps its own
+ * calendar-midnight helpers ON PURPOSE — a floor setting must not move VAT
+ * period boundaries; see `operationalDay.ts`'s header.
  */
 
 /**
- * `+05:45`, FORMATTED FROM `bs.ts`'s `NPT_OFFSET_MIN` rather than typed again.
+ * Minutes after Kathmandu midnight that the operational day begins.
  *
- * It used to be a second string literal here. `Calendar.md` §4.2 calls holding
- * more than one copy of Nepal's offset "the highest-priority correctness bug in
- * the product" — the app once held three at once and rendered the same AD day as
- * two different BS days — so the query side reads the render side's number
- * instead of agreeing with it by hand.
+ * Read fresh per call — never captured at module load — and falling back to
+ * the RULED default (06:00) on a corrupted stored value, so a hand-edited
+ * localStorage cannot silently re-rule D4. See `dayStartMinutesFrom`.
  */
-const NPT_OFFSET = `${NPT_OFFSET_MIN < 0 ? '-' : '+'}${String(Math.floor(Math.abs(NPT_OFFSET_MIN) / 60)).padStart(
-  2,
-  '0',
-)}:${String(Math.abs(NPT_OFFSET_MIN) % 60).padStart(2, '0')}`
+function operationalDayStartMinutes(): number {
+  return dayStartMinutesFrom(getSetting('operationalDayStart'))
+}
 
 /** A bare calendar date, `YYYY-MM-DD` — what a date picker emits. */
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
@@ -811,29 +807,34 @@ function nepalDay(dayAd: string): string {
   if (Number.isNaN(t)) {
     throw new Error(`Expected an AD day (YYYY-MM-DD) or a full ISO instant, got ${JSON.stringify(dayAd)}`)
   }
-  // `kathmanduCivil` returns midnight UTC of the Kathmandu civil date, so the
-  // first ten characters of its ISO form are that date exactly.
-  return new Date(kathmanduCivil(new Date(t))).toISOString().slice(0, 10)
+  // An instant resolves to the OPERATIONAL day it belongs to (D4): 05:30
+  // Kathmandu is still yesterday's day when the day starts at 06:00.
+  // `operationalDayOf` shifts by the day start and then asks the same
+  // `kathmanduCivil` the render side uses, so filter-day and label-day agree.
+  return operationalDayOf(dayAd, operationalDayStartMinutes())
 }
 
 function startOfDay(dayAd: string): string {
-  return `${nepalDay(dayAd)}T00:00:00.000${NPT_OFFSET}`
+  return operationalDayBounds(nepalDay(dayAd), operationalDayStartMinutes()).fromAd
 }
 
 /**
- * The last instant of the day, to a millisecond.
+ * The last instant of the operational day, to a millisecond.
  *
  * `applyListFilters` compares `toAd` with `lte`, so the bound has to be the last
  * value INSIDE the day rather than the first value after it. `timestamptz`
- * resolves to microseconds, so a row written at 23:59:59.9995 NPT would slip
- * past this by half a millisecond. Accepted knowingly: pickup and return times
+ * resolves to microseconds, so a row written half a millisecond inside the
+ * boundary would slip past this. Accepted knowingly: pickup and return times
  * are entered by hand at minute granularity, and closing the gap properly means
- * a half-open range (`lt` next midnight), which is a change to the shared
+ * a half-open range (`lt` next day-start), which is a change to the shared
  * `dateRange` contract — "inclusive at both ends" — and to every caller of it,
  * not something to do quietly from one query module.
+ *
+ * With the default 06:00 day start, day `D` ends at `D+1T05:59:59.999+05:45`;
+ * with `00:00` it degrades to the old same-day `T23:59:59.999` bound exactly.
  */
 function endOfDay(dayAd: string): string {
-  return `${nepalDay(dayAd)}T23:59:59.999${NPT_OFFSET}`
+  return operationalDayBounds(nepalDay(dayAd), operationalDayStartMinutes()).toAd
 }
 
 /* ── Floor lines ──────────────────────────────────────────────────────────
@@ -933,6 +934,9 @@ interface RawFloorUnit {
   is_required: boolean
   packed: boolean
   damaged: boolean
+  /** §4.39(a) — non-null means the assignment ended and the row is history.
+   *  Both schemas carry it since 0076 applied (31 Aug 2026). */
+  released_at: string | null
   product_units: RawFloorUnitJoin | null
 }
 
@@ -974,12 +978,24 @@ interface RawFloorBooking {
  * contradicts the comment at `bookingQuery.ts:918-928` claiming they are
  * revoked. Do not add `deposit_required` here either.
  */
+/*
+ * `released_at` (§4.39a) is named unconditionally.
+ *
+ * It was mock-only for the few hours between the column being written and
+ * migration 0076 being applied — PostgREST answers 42703 for a column that
+ * does not exist, which would have broken every live floor read. **0076 was
+ * applied to the live project on 31 Aug 2026** (schema_migrations
+ * 20260831213343; columns, both-or-neither CHECK, freeze trigger and partial
+ * index all verified present, and the freeze/CHECK/Law-3 behaviours exercised
+ * in a rolled-back transaction), so both schemas now carry it and the branch
+ * that existed to straddle them is gone.
+ */
 const FLOOR_COLUMNS =
   'id, booking_no, stage, project, pickup_at, return_at, actual_return_at, delivery_type, cancelled_at, closed_at, ' +
   'clients ( name ), ' +
   'booking_lines ( id, qty, line_type, description, product_id, parent_line_id, sort_order, ' +
   'products ( name, tracking_mode ), ' +
-  'booking_line_units ( id, asset_id, unit_state, is_required, packed, damaged, ' +
+  'booking_line_units ( id, asset_id, unit_state, is_required, packed, damaged, released_at, ' +
   'product_units ( serial_no, asset_tag, rack, shelf, bin ) ) )'
 
 function joinLocation(u: RawFloorUnitJoin | null): string | null {
@@ -1044,7 +1060,13 @@ export async function fetchFloorBooking(bookingRef: string): Promise<FloorBookin
           parentLineId: l.parent_line_id,
           sortOrder: l.sort_order,
           unitsPresence: l.booking_line_units == null ? 'absent' : 'present',
-          units: (l.booking_line_units ?? []).map(
+          /* §4.39(a) — a released assignment is history, not floor work: the
+             chip clears, the packing tree does not offer it, and the tallies
+             do not count it. `== null` tolerates the live select's omission of
+             the column until 0076 applies (see FLOOR_UNIT_COLUMNS). */
+          units: (l.booking_line_units ?? [])
+            .filter((u) => u.released_at == null)
+            .map(
             (u): FloorUnit => ({
               id: u.id,
               assetId: u.asset_id,

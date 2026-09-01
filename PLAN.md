@@ -595,14 +595,23 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 ## 4.39 ✅ RULED 31 Aug 2026 — option (a): released_at/released_by, append-style release
 
-**The owner ruled (a)** the same day this was filed. Migration
-`0076_booking_line_units_release.sql` (DRAFT — apply needs its own approval) adds the
-pair, the both-or-neither CHECK, a freeze trigger making a released row immutable, and a
-live-rows partial index. `unit.release` (actions/core.ts) mirrors `booking_line_units_all`
-per §4.20; `releaseBookingLineUnit.ts` is the action; the BookingDetail chip's × is live
-with §10.4's confirm-past-Packed. Until 0076 applies, the live floor select cannot name
-`released_at` (42703) — the select is mode-scoped and the apply-day step is named in
-0076's header. Original filing kept below for the reasoning trail.
+**The owner ruled (a)** the same day this was filed, and **approved applying it the same
+day**. `0076_booking_line_units_release.sql` is **APPLIED to the live project**
+(schema_migrations `20260831213343`): the `released_at`/`released_by` pair, the
+both-or-neither CHECK, a freeze trigger making a released row immutable for every role
+including Owner and `service_role`, and a live-rows partial index. Structure and
+behaviour were both verified — the freeze, the CHECK and 0044's surviving DELETE refusal
+were exercised on real rows in a rolled-back transaction (PROGRESS.md, 31 Aug).
+
+`unit.release` (actions/core.ts) mirrors `booking_line_units_all` per §4.20;
+`releaseBookingLineUnit.ts` is the action; the BookingDetail chip's × is live with
+§10.4's confirm-past-Packed. `queries/bookings.ts` names `released_at` unconditionally
+(the mock-only branch existed for hours and is gone).
+
+**Consequence to remember:** a released assignment is **irreversible by design**. There
+is no un-release — re-assigning is a new row. That was the point of the freeze, but it
+means a mis-press is corrected by assigning again, not by undo. Original filing kept
+below for the reasoning trail.
 
 ### The filing as it stood when ruled — how is a creation-time unit assignment released before Pack?
 

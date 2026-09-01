@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Badge } from '../../components/ui/Badge'
-import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, Button, KpiStrip, Rail, SideRail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ErrorBanner } from '../../components/ui/StateViews'
@@ -490,6 +490,29 @@ export default function Finance() {
   /** §9.2 — the seven chips. Law 3 keeps `Void` among them, never a Delete. */
   const [chip, setChip] = useState<InvoiceChip>('All')
 
+  /* ── the Invoices filter rail (31 Aug, pattern adoption) ─────────────────
+   * The chips above stay as the table's primary tabs (the Operations
+   * precedent); the rail carries the OTHER narrowings, every one of them
+   * server-side through `applyListFilters` — never a `.filter()` on the page.
+   *
+   * What the rail deliberately does NOT offer: a client-NAME filter.
+   * `client_name` reaches the row through the `clients ( name )` embed, and
+   * the search machinery cannot express an ilike over an embedded column
+   * without switching the embed to `clients!inner` and extending
+   * `applyListFilters` — a query-engine change with blast radius on every
+   * invoices consumer. Named as a follow-up, not half-built here.
+   *
+   * State is local, like `chip` above — this page's filters have never been
+   * URL params, and making only the new ones linkable would be the worst of
+   * both. One date scope at a time: `ListFilters.dateRange` binds a single
+   * column, so the rail offers Issue date | Due date as a toggle rather than
+   * pretending two ranges can be sent.
+   */
+  const [railSearch, setRailSearch] = useState('')
+  const [dateCol, setDateCol] = useState<'issue_date' | 'due_date'>('issue_date')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+
   /**
    * Law 13/14 — width decides, never a platform branch. `viewport` collapses
    * the dashboard grid; `tabular` swaps the ~840px Invoices table for phone
@@ -552,6 +575,52 @@ export default function Finance() {
   )
 
   const chipFilters = useMemo(() => invoiceChipFilters(chip), [chip])
+
+  /* The rail's narrowings, merged OVER the chip's set. The key spaces are
+     disjoint — chips own `chips`/`presence`/`sort`, the rail owns `search`
+     and `dateRange` — so a merge cannot silently drop either side. `search`
+     rides the module's default columns (`invoice_no`, `credit_note_no`). */
+  const railFilters = useMemo<ListFilters>(() => {
+    const f: ListFilters = {}
+    if (railSearch.trim() !== '') f.search = railSearch.trim()
+    if (dateFrom !== '' || dateTo !== '') {
+      f.dateRange = {
+        column: dateCol,
+        ...(dateFrom !== '' ? { fromAd: dateFrom } : {}),
+        ...(dateTo !== '' ? { toAd: dateTo } : {}),
+      }
+    }
+    return f
+  }, [railSearch, dateCol, dateFrom, dateTo])
+  const railIsFiltered = railSearch.trim() !== '' || dateFrom !== '' || dateTo !== ''
+  const invoiceListFilters = useMemo<ListFilters>(() => ({ ...chipFilters, ...railFilters }), [chipFilters, railFilters])
+
+  const clearInvoiceFilters = useCallback(() => {
+    setChip('All')
+    setRailSearch('')
+    setDateFrom('')
+    setDateTo('')
+    setDateCol('issue_date')
+  }, [])
+
+  /* The other half of the Overdue ↔ date-range exclusivity (see the chip's
+     onClick): picking a date while the Overdue chip holds its own dateRange
+     flips the chip to (All) rather than letting the rail's range silently
+     replace "due before today" under an Overdue heading. */
+  const setRailDateFrom = useCallback(
+    (v: string) => {
+      setDateFrom(v)
+      setChip((c) => (c === 'Overdue' ? 'All' : c))
+    },
+    [],
+  )
+  const setRailDateTo = useCallback(
+    (v: string) => {
+      setDateTo(v)
+      setChip((c) => (c === 'Overdue' ? 'All' : c))
+    },
+    [],
+  )
   /**
    * `baseline` is `LIVE_INVOICES` — the (All) chip.
    *
@@ -563,7 +632,7 @@ export default function Finance() {
    * questions rather than narrowings, but they are reached from the same row of
    * chips and clearing back to (All) is exactly the right offer for both.
    */
-  const list = useList<InvoiceListRow>(invoiceFetcher, chipFilters, { baseline: LIVE_INVOICES })
+  const list = useList<InvoiceListRow>(invoiceFetcher, invoiceListFilters, { baseline: LIVE_INVOICES })
 
   /* A KPI is never "filtered": its set is the tile's own definition and no
      operator input reaches it. */
@@ -981,6 +1050,123 @@ export default function Finance() {
     </>
   )
 
+  /* Shared input dressing for the rail's controls — the same recipe the
+     Operation column uses, so the two filter rails read as one control. */
+  const railInputStyle = {
+    minHeight: 44,
+    padding: '0 9px',
+    borderRadius: 'var(--r-input)',
+    border: '1px solid var(--input-border)',
+    background: 'var(--input-bg)',
+    color: 'var(--text)',
+    fontSize: 'var(--t-meta)',
+    fontFamily: 'inherit',
+  } as const
+
+  const dateColChip = (col: 'issue_date' | 'due_date', label: string, block: boolean) => (
+    <button
+      key={col}
+      type="button"
+      onClick={() => setDateCol(col)}
+      aria-pressed={dateCol === col}
+      className="tap"
+      style={{
+        minHeight: 28,
+        padding: '0 10px',
+        borderRadius: 'var(--r-badge)',
+        border: `1px solid ${dateCol === col ? 'transparent' : 'var(--border)'}`,
+        background: dateCol === col ? 'var(--st-primary-bg)' : 'var(--card2)',
+        color: dateCol === col ? 'var(--st-primary-fg)' : 'var(--text2)',
+        fontSize: 'var(--t-meta)',
+        fontWeight: 600,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        ...(block ? { width: '100%', textAlign: 'left' as const } : {}),
+      }}
+    >
+      {label}
+    </button>
+  )
+
+  /*
+   * The Invoices filter column (31 Aug) — `SideRail`, the same collapsible
+   * column ClientsDirectory, Operation and Documents run. Desktop only; below
+   * 1280 the SAME filters render as compact inline rows (rulings §7 —
+   * "collapse below 1280 means reflow, not hide"). The STATUS chips are not
+   * here: they stay on the table as its primary tabs, per the Operations
+   * precedent. Everything sits inside the money-gated `PageBody`, so a
+   * money-blind session never sees "Outstanding"-adjacent vocabulary or
+   * issues a filtered request (Law 6 — the fetcher short-circuits too).
+   */
+  const invoiceFiltersPanel = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
+      <Card title="Find">
+        <input
+          type="search"
+          value={railSearch}
+          onChange={(e) => setRailSearch(e.target.value)}
+          placeholder="Invoice or credit-note no…"
+          aria-label="Search invoices by invoice or credit-note number"
+          style={{ ...railInputStyle, width: '100%' }}
+        />
+      </Card>
+      <Card title="Date">
+        <div role="group" aria-label="Which date the range below binds" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {dateColChip('issue_date', 'Issue date', true)}
+          {dateColChip('due_date', 'Due date', true)}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', marginTop: 'var(--sp-sm)' }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            From
+            <input type="date" value={dateFrom} onChange={(e) => setRailDateFrom(e.target.value)} style={railInputStyle} />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            To
+            <input type="date" value={dateTo} onChange={(e) => setRailDateTo(e.target.value)} style={railInputStyle} />
+          </label>
+          <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+            {dateFrom || dateTo ? 'Kathmandu civil days; stored instants are UTC.' : 'No dates picked — showing every day.'}
+          </span>
+        </div>
+      </Card>
+      {(railIsFiltered || chip !== 'All') && (
+        <Button icon="close" onClick={clearInvoiceFilters}>
+          Clear all filters
+        </Button>
+      )}
+    </div>
+  )
+
+  const invoiceFiltersInline = (
+    <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap', alignItems: 'center' }}>
+      <input
+        type="search"
+        value={railSearch}
+        onChange={(e) => setRailSearch(e.target.value)}
+        placeholder="Invoice or credit-note no…"
+        aria-label="Search invoices by invoice or credit-note number"
+        style={{ ...railInputStyle, flex: '1 1 200px', minWidth: 160 }}
+      />
+      <div role="group" aria-label="Which date the range binds" style={{ display: 'flex', gap: 6 }}>
+        {dateColChip('issue_date', 'Issue date', false)}
+        {dateColChip('due_date', 'Due date', false)}
+      </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+        From
+        <input type="date" value={dateFrom} onChange={(e) => setRailDateFrom(e.target.value)} style={railInputStyle} />
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+        To
+        <input type="date" value={dateTo} onChange={(e) => setRailDateTo(e.target.value)} style={railInputStyle} />
+      </label>
+      {(railIsFiltered || chip !== 'All') && (
+        <Button icon="close" onClick={clearInvoiceFilters}>
+          Clear all filters
+        </Button>
+      )}
+    </div>
+  )
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       {/* The three actions are omitted for a money-blind session, not disabled:
@@ -1096,12 +1282,26 @@ export default function Finance() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: viewport === 'desktop' ? 'minmax(0,1fr) auto' : '1fr',
+              /* Three tracks only when the Invoices tab carries its filter
+                 column — the Dashboard keeps the two-track shape it had. */
+              gridTemplateColumns:
+                viewport === 'desktop'
+                  ? tab === 'Invoices'
+                    ? 'auto minmax(0,1fr) auto'
+                    : 'minmax(0,1fr) auto'
+                  : '1fr',
               gap: 'var(--sp-md)',
               alignItems: 'start',
             }}
           >
+            {viewport === 'desktop' && tab === 'Invoices' && (
+              <SideRail label="Filters" width={224}>
+                {invoiceFiltersPanel}
+              </SideRail>
+            )}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
+              {viewport !== 'desktop' && tab === 'Invoices' && invoiceFiltersInline}
               {tab === 'Dashboard' ? (
                 <>
                   {/*
@@ -1236,7 +1436,19 @@ export default function Finance() {
                           <button
                             key={c}
                             type="button"
-                            onClick={() => setChip(c)}
+                            /* Overdue and the rail's date range are MUTUALLY
+                               EXCLUSIVE — `overdueInvoices()` IS a dateRange
+                               (due_date ≤ yesterday) and `ListFilters` carries
+                               one, so holding both would silently replace the
+                               chip's meaning. Same call as Operations' ?queue
+                               vs ?quick: setting either clears the other. */
+                            onClick={() => {
+                              if (c === 'Overdue') {
+                                setDateFrom('')
+                                setDateTo('')
+                              }
+                              setChip(c)
+                            }}
                             aria-pressed={on}
                             {...(c === 'Overdue'
                               ? { title: 'Derived from the due date, never stored — 0001:1010. This asks due_date < today on unsettled invoices.' }
@@ -1281,11 +1493,15 @@ export default function Finance() {
                     hasRows={list.rows.length > 0}
                     empty={list.isEmpty}
                     emptyIsFiltered={list.isFiltered}
+                    onClearFilters={clearInvoiceFilters}
                     noun="invoices"
                     skeleton="table"
                     skeletonRows={6}
-                    emptyTitle={EMPTY_TITLE[chip]}
-                    emptyMessage={EMPTY_MESSAGE[chip]}
+                    /* The per-chip copy states a business fact ("No drafts").
+                       When the RAIL caused the emptiness that fact is not
+                       known — omit the pair and let PageBody's filtered
+                       defaults ("No invoices match these filters") speak. */
+                    {...(railIsFiltered ? {} : { emptyTitle: EMPTY_TITLE[chip], emptyMessage: EMPTY_MESSAGE[chip] })}
                     {...restriction}
                   >
                     {tabular ? (

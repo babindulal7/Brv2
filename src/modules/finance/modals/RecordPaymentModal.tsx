@@ -142,10 +142,10 @@ export function RecordPaymentModal({
     setAccountsError(null)
     listBankAccounts()
       .then((rows) => {
-        if (!cancelled) setAccounts(rows)
+        if (!cancelled && typeof window !== 'undefined') setAccounts(rows)
       })
       .catch((err: unknown) => {
-        if (!cancelled) {
+        if (!cancelled && typeof window !== 'undefined') {
           setAccounts([])
           setAccountsError(err instanceof Error ? err.message : String(err))
         }

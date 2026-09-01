@@ -1,10 +1,10 @@
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, Button, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, Button, Rail, SideRail, FooterNote, cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { STATUS } from '../../lib/status'
 import { statusToken, JOBS as JOBS_META, type JobName } from '../../lib/workflow'
-import { listBookings, type BookingListRow } from '../../lib/queries/bookings'
+import { listBookings, overdue, quotesExpiring, type BookingListRow } from '../../lib/queries/bookings'
 import { useList, type ListResult } from '../../lib/queries/useList'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import {
@@ -22,6 +22,9 @@ import {
   type JobRow,
   type Queue,
 } from '../../data/operations'
+import AlertsPanel from '../today/AlertsPanel'
+import { NOW_AD, overdueAlert, quoteLapsedAlert, periodRange } from '../../data/today'
+import { CASES, isOpenStatus } from '../../data/cases'
 import { useViewport } from '../../lib/device'
 import { kathmanduCivil, NPT_OFFSET_MIN, getBusinessToday } from '../../lib/bs'
 
@@ -133,11 +136,15 @@ const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-met
  *    cannot be time-ordered by one query, and re-introducing an in-memory
  *    merge is the exact thing this file was rewritten to remove.
  *
- * `/operations/cases` already exists (`App.tsx:364`) and is linked from the
- * header below, so nothing is unreachable. Revisit if Cases gains a due
- * instant and a booking link.
+ * The Cases page lives at `/inventory/cases` (see `CASES_ROUTE` below;
+ * `/operations/cases` replace-redirects) and is linked from the chip strip,
+ * so nothing is unreachable. Revisit if Cases gains a due instant and a
+ * booking link.
  */
-const CASES_ROUTE = '/operations/cases'
+const CASES_ROUTE = '/inventory/cases' // moved from /operations/cases 30 Aug — the chip stays here, the page filed under Inventory
+
+/* Open cases, off the same seed the Cases page lists — chip equals page. */
+const openCases = CASES.filter((c) => isOpenStatus(c.status)).length
 
 /**
  * The four verb chips. `QUEUES` still declares Cases; it is filtered out here,
@@ -168,13 +175,19 @@ function dayOffsetFromToday(days: number): string {
   return nepalDay(new Date(TODAY.getTime() + days * 86_400_000))
 }
 
-export type DayScope = 'today' | 'tomorrow' | 'custom'
+export type DayScope = 'today' | 'tomorrow' | 'week' | 'next7' | 'custom'
 
-const SCOPE_LABEL: Record<DayScope, string> = { today: 'Today', tomorrow: 'Tomorrow', custom: 'Custom' }
-const SCOPE_ORDER: DayScope[] = ['today', 'tomorrow', 'custom']
+const SCOPE_LABEL: Record<DayScope, string> = {
+  today: 'Today',
+  tomorrow: 'Tomorrow',
+  week: 'This Week',
+  next7: 'Next 7 Days',
+  custom: 'Custom',
+}
+const SCOPE_ORDER: DayScope[] = ['today', 'tomorrow', 'week', 'next7', 'custom']
 
 function scopeFromParam(param: string | null): DayScope {
-  return param === 'tomorrow' || param === 'custom' ? param : 'today'
+  return param === 'tomorrow' || param === 'week' || param === 'next7' || param === 'custom' ? param : 'today'
 }
 
 /**
@@ -193,6 +206,19 @@ function scopeRange(scope: DayScope, from: string, to: string): { fromAd: string
   if (scope === 'tomorrow') {
     const d = dayOffsetFromToday(1)
     return { fromAd: `${d}T00:00:00.000${NPT_OFFSET}`, toAd: `${d}T23:59:59.999${NPT_OFFSET}` }
+  }
+  /*
+   * The two multi-day scopes (added 30 Aug) delegate to `data/today.ts`'s
+   * `periodRange`, which already states the app's two conventions in one
+   * correctable place: This Week runs Monday→Sunday (CAL_WEEKDAYS starts on
+   * MON; Saturday is the weekend day off, not the week's start), and Next 7
+   * Days is today plus six — seven days INCLUDING today. Re-deriving either
+   * here would be a second opinion waiting to disagree.
+   */
+  if (scope === 'week' || scope === 'next7') {
+    const r = periodRange(scope === 'week' ? 'This Week' : 'Next 7 Days', dayOffsetFromToday(0))
+    if (!r) return null
+    return { fromAd: `${r.from}T00:00:00.000${NPT_OFFSET}`, toAd: `${r.to}T23:59:59.999${NPT_OFFSET}` }
   }
   if (!from && !to) return null
   return {
@@ -402,6 +428,29 @@ export default function OperationsQueues() {
     handoverCount.refetch()
     returnCount.refetch()
     resetCount.refetch()
+    /* The Alerts panel lives on this page now — the header's Refresh must not
+       leave it quoting stale exceptions beside a fresh queue list. */
+    alertsQ.refetch()
+    quotesQ.refetch()
+  }
+
+  /*
+   * The Alerts panel — moved here from the Dashboard (30 Aug), replacing the
+   * empty Crew Load card. Same two named filter sets it ran there, off the same
+   * `listBookings` (Law 2): Critical ← overdue (On Rent, due back before now),
+   * High ← quotesExpiring (still a Quote, stated date passed). Deliberately NOT
+   * bound to this page's day scope: an overdue booking is an exception on ANY
+   * day, and a queue narrowed to tomorrow must not hide today's overdue.
+   */
+  const alertsQ = useList<BookingListRow>(fetchBookings, overdue(NOW_AD), { isFilteredOverride: false })
+  const quotesQ = useList<BookingListRow>(fetchBookings, quotesExpiring(NOW_AD), { isFilteredOverride: false })
+  const alertRows = [
+    ...alertsQ.rows.map((r) => overdueAlert(r, NOW_AD)),
+    ...quotesQ.rows.map((r) => quoteLapsedAlert(r)),
+  ]
+  const retryAlerts = () => {
+    alertsQ.refetch()
+    quotesQ.refetch()
   }
 
   /* Resolved once per render, and passed in, so the row mapping stays pure. */
@@ -431,27 +480,15 @@ export default function OperationsQueues() {
   const railContent = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
       {/*
-        Rulings §8 words the remedy for an invented figure as *"each renders
-        'not tracked yet' until a real source exists"* — and §1 keeps a panel
-        no spec removes in prose. `CREW_LOAD`'s four invented people with
-        invented open/capacity figures were rightly diagnosed (see
-        `data/operations.ts`), but the card was deleted rather than emptied,
-        which is the one place this rebuild answered a fabrication by removal
-        instead of honesty. Restored as the empty state, naming what it needs,
-        so the operator learns the gap rather than losing the panel silently.
-        Finance's P&L rows and Calendar's Utilization tile carry exactly this
-        treatment.
+        The Alerts panel, moved here from the Dashboard 30 Aug — the floor's
+        exceptions belong beside the floor's queue. It replaced the "Crew Load"
+        empty-state card: rulings §8's "not tracked yet" treatment kept that
+        card honest, but a panel whose only content is an explanation of why it
+        has no content earns its slot only until something real needs the space.
+        The crew-load gap it named is now recorded where it belongs, in
+        `data/operations.ts` beside the retired `CREW_LOAD` constant.
       */}
-      <Card title="Crew Load">
-        <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
-          Not tracked yet — a per-person warehouse-job load needs an assignment this schema does not carry.
-          {' '}
-          <code style={{ fontFamily: 'inherit' }}>booking_crew_lines</code> is priced crew hired for the shoot, and
-          {' '}
-          <code style={{ fontFamily: 'inherit' }}>cleaning_queue_entries.assigned_to</code> covers cleaning only.
-          Neither says who is working a Packing, Handover, Return or Reset job.
-        </p>
-      </Card>
+      <AlertsPanel alerts={alertRows} loading={alertsQ.loading || quotesQ.loading} error={alertsQ.error ?? quotesQ.error} onRetry={retryAlerts} />
 
       <div
         style={{
@@ -471,30 +508,111 @@ export default function OperationsQueues() {
     </div>
   )
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      <PageHeader
-        icon="queues"
-        title="Operation"
-        description="One floor list for every day. Queue chips filter it; they never replace it."
-        actions={
-          <>
-            {/* §3.1 header — the day scope. */}
-            <div role="group" aria-label="Day scope" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {SCOPE_ORDER.map((s) => (
-                <button key={s} type="button" onClick={() => setScope(s)} aria-pressed={scope === s} style={chipStyle(scope === s)}>
-                  {SCOPE_LABEL[s]}
-                  {s === 'custom' && <Icon name="chevron_down" size={13} />}
-                </button>
-              ))}
-            </div>
-            <Button icon="refresh" onClick={refreshAll}>
-              Refresh
-            </Button>
-          </>
-        }
-      />
+  /*
+   * The left filter column (30 Aug, Booqable-shape rework) — `SideRail`, the
+   * same collapsible column ClientsDirectory already runs. Day scope and the
+   * two side groups moved here from the header and the body; the QUEUE chips
+   * did NOT — they are this page's primary tabs, and Booqable itself keeps
+   * status tabs on the table while filters live in the column.
+   *
+   * Everything here still writes the same URL params (?day, ?quick, from, to),
+   * so deep links and the back button behave exactly as before the move.
+   */
+  const filtersPanel = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
+      <Card title="Day">
+        <div role="group" aria-label="Day scope" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {SCOPE_ORDER.map((sc) => (
+            <button
+              key={sc}
+              type="button"
+              onClick={() => setScope(sc)}
+              aria-pressed={scope === sc}
+              style={{ ...chipStyle(scope === sc), justifyContent: 'flex-start', width: '100%' }}
+            >
+              {SCOPE_LABEL[sc]}
+            </button>
+          ))}
+        </div>
+        {scope === 'custom' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', marginTop: 'var(--sp-sm)' }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+              From
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => patch({ from: e.target.value || null })}
+                style={{ minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
+              />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+              To
+              <input
+                type="date"
+                value={customTo}
+                onChange={(e) => patch({ to: e.target.value || null })}
+                style={{ minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
+              />
+            </label>
+            <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+              {range ? 'Kathmandu civil days; stored instants are UTC.' : 'No dates picked — showing every day.'}
+            </span>
+          </div>
+        )}
+      </Card>
+      <Card title="Side">
+        {/* Pickup Today = Pack + Handover (gear out), Return Today = Return +
+            Reset (gear back). NOT a date filter despite the labels — a stage
+            union, sent to the server as one. */}
+        <div role="group" aria-label="Group queues by pickup or return side" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {(['pickup', 'return'] as const).map((q) => (
+            <button
+              key={q}
+              type="button"
+              onClick={() => setQuick(q)}
+              aria-pressed={group === q}
+              style={{ ...chipStyle(group === q), justifyContent: 'flex-start', width: '100%' }}
+            >
+              {GROUP_LABEL[q]}
+            </button>
+          ))}
+        </div>
+      </Card>
+      {isFiltered && (
+        <Button icon="close" onClick={clearAllFilters}>
+          Clear all filters
+        </Button>
+      )}
+    </div>
+  )
 
+  /*
+   * Below desktop the SAME filters render as compact horizontal rows instead of
+   * the column — ClientsDirectory's precedent, and rulings §7's rule that
+   * "collapse below 1280 means reflow, not hide": the floor tablet is THE
+   * device, and a day scope behind a 44px handle is a hidden filter.
+   */
+  const filtersInline = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
+      {/* Two labelled groups, matching the SideRail variant — the side chips
+          are a stage union, not part of the day scope, and their group label
+          must say so on the tablet too. */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div role="group" aria-label="Day scope" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {SCOPE_ORDER.map((sc) => (
+            <button key={sc} type="button" onClick={() => setScope(sc)} aria-pressed={scope === sc} style={chipStyle(scope === sc)}>
+              {SCOPE_LABEL[sc]}
+            </button>
+          ))}
+        </div>
+        <div role="group" aria-label="Group queues by pickup or return side" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {(['pickup', 'return'] as const).map((q) => (
+            <button key={q} type="button" onClick={() => setQuick(q)} aria-pressed={group === q} style={chipStyle(group === q)}>
+              {GROUP_LABEL[q]}
+            </button>
+          ))}
+        </div>
+      </div>
       {scope === 'custom' && (
         <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '10px 14px', flexWrap: 'wrap' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
@@ -516,25 +634,27 @@ export default function OperationsQueues() {
             />
           </label>
           <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-            {range ? 'Dates are Kathmandu civil days; the stored instants are UTC.' : 'No dates picked — showing every day.'}
+            {range ? 'Kathmandu civil days; stored instants are UTC.' : 'No dates picked — showing every day.'}
           </span>
         </div>
       )}
+    </div>
+  )
 
-      {/*
-        Two shortcuts across the chip row: Pickup Today groups Pack + Handover
-        (gear going out), Return Today groups Return + Reset (gear coming
-        back). Despite the labels these are NOT a date filter — that is the day
-        scope above — they are a stage union, and they are sent to the server
-        as one.
-      */}
-      <div role="group" aria-label="Group queues by pickup or return side" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {(['pickup', 'return'] as const).map((q) => (
-          <button key={q} type="button" onClick={() => setQuick(q)} aria-pressed={group === q} style={chipStyle(group === q)}>
-            {GROUP_LABEL[q]}
-          </button>
-        ))}
-      </div>
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+      <PageHeader
+        icon="queues"
+        title="Operation"
+        description="One floor list for every day. Queue chips filter it; they never replace it."
+        actions={
+          <Button icon="refresh" onClick={refreshAll}>
+            Refresh
+          </Button>
+        }
+      />
+
+      {!railBesideList && filtersInline}
 
       {/* §3.1 — the chip row. One list below it, always. */}
       <div
@@ -553,22 +673,60 @@ export default function OperationsQueues() {
             onToggle={() => setActive(selected === q.job ? null : q.job)}
           />
         ))}
-        {/* Cases is a queue with its own owner and its own route — see the CASES note above. */}
-        <Link to={CASES_ROUTE} style={{ ...chipStyle(false), textDecoration: 'none' }}>
-          <Icon name="eye" size={15} style={{ flexShrink: 0 }} />
+        {/*
+          Cases is a queue with its own owner and its own route — see the CASES
+          note above. Restyled 30 Aug to match the four verb chips: same shape,
+          same count badge, still a LINK (it navigates to /inventory/cases; it
+          never filters this list, because a case is not a booking row).
+
+          ⚠ The count is `data/cases.ts`'s seed, filtered by `isOpenStatus` —
+          the SAME array and the same predicate the Cases page itself lists, so
+          the chip cannot disagree with the page it opens. It is however a seed
+          figure beside four database figures; when Cases moves to the `cases`
+          table, this count and that page move together.
+        */}
+        <Link
+          to={CASES_ROUTE}
+          style={{ ...chipStyle(false), textDecoration: 'none' }}
+          aria-label={`Cases: ${openCases} open — opens the Cases page`}
+        >
+          <Icon name="eye" size={15} style={{ color: STATUS.danger.fg, flexShrink: 0 }} />
           Cases
-          <Icon name="external_link" size={13} />
+          <span
+            className="figure"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minWidth: 22,
+              height: 20,
+              padding: '0 6px',
+              borderRadius: 'var(--r-badge)',
+              background: STATUS.danger.bg,
+              color: STATUS.danger.fg,
+              fontSize: 'var(--t-meta)',
+              fontWeight: 700,
+            }}
+          >
+            {openCases}
+          </span>
         </Link>
       </div>
 
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: railBesideList ? 'minmax(0,1fr) auto' : '1fr',
+          gridTemplateColumns: railBesideList ? 'auto minmax(0,1fr) auto' : '1fr',
           gap: 'var(--sp-md)',
           alignItems: 'start',
         }}
       >
+        {railBesideList && (
+          <SideRail label="Filters" width={224}>
+            {filtersPanel}
+          </SideRail>
+        )}
+
         <Card
           title={`${listLabel}${countSuffix}`}
           action={isFiltered ? <Button onClick={clearAllFilters}>Clear filter</Button> : undefined}
@@ -743,7 +901,14 @@ export default function OperationsQueues() {
 
         {/* Rulings §7 — below 1280 the rail REFLOWS beneath the list; it does not
             hide behind `CollapsibleAside`'s handle. */}
-        {railBesideList ? <Rail>{railContent}</Rail> : railContent}
+        {railBesideList ? (
+          /* Named for what it now holds — collapsed, the handle's accessible
+             name is all a screen reader gets, and "Page summary" would hide
+             that the panel behind it is the Alerts list. */
+          <Rail label="Alerts">{railContent}</Rail>
+        ) : (
+          railContent
+        )}
       </div>
 
       <FooterNote extra={['Queues are stages — no page defines its own status names']} />

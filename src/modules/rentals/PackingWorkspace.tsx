@@ -16,6 +16,7 @@ import { newClientUuid } from '../../lib/supabase'
 import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/queries/bookings'
 import type { FloorLineInput } from '../../actions/rentals/floorVerb'
 import { CompactButton } from '../../components/ui/TouchTarget'
+import { deliveryTypeLabel } from '../../lib/format'
 
 /**
  * **Packing Workspace** — `Packing Workflow.md` v2.1 (Build Locked), wired live.
@@ -708,7 +709,7 @@ export default function PackingWorkspace() {
                 { l: 'Status', v: floor.stage, big: true },
                 { l: 'Pack job', v: jobState },
                 { l: 'Units', v: String(totalUnits) },
-                { l: 'Delivery', v: floor.deliveryType ?? '—' },
+                { l: 'Delivery', v: deliveryTypeLabel(floor.deliveryType) },
               ].map((f) => (
                 <div key={f.l} style={{ padding: '11px 14px', borderRight: '1px solid var(--border)', minWidth: 0, flex: '1 1 auto' }}>
                   <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{f.l}</div>

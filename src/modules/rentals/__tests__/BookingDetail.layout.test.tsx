@@ -129,6 +129,19 @@ vi.mock('../../../lib/queries/bookings', () => {
   }
 })
 
+/* The page's third query seam (31 Aug, the Notes wave) — mocked like the two
+   above so no mount reaches the real supabase client: vitest loads .env.local,
+   whose VITE_DATA_SOURCE=live would otherwise send booking_notes reads over
+   the wire mid-suite. Empty rows: these assertions are about layout, and the
+   NotesCard's own behaviour is pinned by addBookingNote.test.ts + the browser. */
+vi.mock('../../../lib/queries/bookingNotes', () => ({
+  notesForBooking: (bookingId: string) => ({
+    chips: { booking_id: [bookingId] },
+    sort: { column: 'created_at', ascending: false },
+  }),
+  listBookingNotes: async () => ({ rows: [] }),
+}))
+
 vi.mock('../../../lib/queries/finance', () => {
   const INVOICE = {
     id: 'inv-1',
@@ -418,5 +431,33 @@ describe('§4.2 header — [Operations ▾] and [⋮], with nothing deleted to g
       (i) => i.textContent?.trim() === 'Save draft',
     ) as HTMLButtonElement | undefined
     expect(save?.disabled).toBe(true)
+  })
+})
+
+/**
+ * Law 17 on the READ path — PLAN.md §6.1, "the word customer appears nowhere
+ * in the UI".
+ *
+ * The mocked booking above already carries the real stored value,
+ * `deliveryType: 'Customer Pickup'` — that is the `delivery_type` enum member
+ * (`0001_enums.sql:34`), and **all 246 live bookings carry it**. The write path
+ * mapped label → enum from the start (`createRental.ts:100`); the inverse was
+ * never written, so the raw enum rendered straight into the DOM here.
+ *
+ * This asserts the rendered text, which is the only thing Law 17 governs. The
+ * three older Law-17 tests assert over static label constants and structurally
+ * cannot catch a value that arrives from the database.
+ */
+describe('Law 17 — a stored delivery type never reaches the DOM raw', () => {
+  it('renders "Client Pickup" for the stored "Customer Pickup"', async () => {
+    await mount(1440)
+    expect(text()).toContain('Client Pickup')
+  })
+
+  it('never renders the banned word, at any width', async () => {
+    for (const width of [390, 1024, 1440]) {
+      await mount(width)
+      expect(text().toLowerCase()).not.toContain('customer')
+    }
   })
 })

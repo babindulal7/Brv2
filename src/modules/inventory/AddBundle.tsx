@@ -18,8 +18,6 @@ import { validateDiscount } from '../../lib/discount'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
-import { canApproveDiscount } from '../../lib/rbac'
-import type { SystemRole } from '../../types/database'
 import {
   INVENTORY_CATEGORIES,
   INVENTORY_MODELS,
@@ -446,7 +444,6 @@ export function AddBundle() {
   const [fChildren, setFChildren] = useState<'Any' | 'Yes' | 'No'>('Any')
   const [treeOpen, setTreeOpen] = useState<Set<string>>(new Set(['M-FX3-BODY']))
   const [childrenOpen, setChildrenOpen] = useState<Set<string>>(new Set())
-  const [discountOpen, setDiscountOpen] = useState<Set<string>>(new Set())
 
   /* §10 — crew, vehicle, boxes */
   const [crew, setCrew] = useState<CrewPick[]>(INITIAL_CREW)
@@ -535,7 +532,8 @@ export function AddBundle() {
   const totalSavingPct =
     pricing.sumOfPartsPaisa === 0 ? 0 : roundHalfUp((totalSavingPaisa / pricing.sumOfPartsPaisa) * 100)
 
-  /* Foundation §9 — a line discount above 10% needs a reason and an approver. */
+  /* Law 10 as amended 31 Aug 2026 — ungated; the only refusals left are a
+     negative percent (a price rise) and >100% (a negative price). */
   const discountProblems = lines
     .map((l) => {
       const t = totalsOf(l)
@@ -1499,11 +1497,7 @@ export function AddBundle() {
                             key={l.key}
                             line={l}
                             childrenOpen={childrenOpen.has(l.key)}
-                            discountOpen={discountOpen.has(l.key)}
-                            role={user?.role ?? null}
-                            approverName={user ? `${user.name} (${user.role})` : null}
                             onToggleChildren={() => toggleIn(childrenOpen, setChildrenOpen, l.key)}
-                            onToggleDiscount={() => toggleIn(discountOpen, setDiscountOpen, l.key)}
                             onPatch={(u) => patch(l.key, u)}
                             onRemove={() => removeLine(l.key)}
                             onToggleChild={(childId, required, on) => toggleChild(l.key, childId, required, on)}
@@ -2341,15 +2335,15 @@ function TreeRow({
   )
 }
 
-/** §6.1 — one Bundle Items line, with its discount, its children and its availability. */
+/** §6.1 — one Bundle Items line, with its discount, its children and its availability.
+ *
+ * `discountOpen` / `onToggleDiscount` / `role` / `approverName` left this
+ * signature with the discount gate (31 Aug 2026 — D3, no gate): they existed
+ * only to drive the approval panel. */
 function LineRow({
   line,
   childrenOpen,
-  discountOpen,
-  role,
-  approverName,
   onToggleChildren,
-  onToggleDiscount,
   onPatch,
   onRemove,
   onToggleChild,
@@ -2357,11 +2351,7 @@ function LineRow({
 }: {
   line: DraftLine
   childrenOpen: boolean
-  discountOpen: boolean
-  role: SystemRole | null
-  approverName: string | null
   onToggleChildren: () => void
-  onToggleDiscount: () => void
   onPatch: (u: Partial<DraftLine>) => void
   onRemove: () => void
   onToggleChild: (childId: string, required: boolean, on: boolean) => void
@@ -2372,16 +2362,12 @@ function LineRow({
 
   const t = totalsOf(line)
   const short = Math.max(0, line.qty - m.available)
-  const gate = validateDiscount(t.discountPct, line.discountReason, line.approvedBy)
-  const needsApproval = t.discountPct > 10
-  /*
-   * ⛔ This used to be a single `canApprove` computed once in the parent from a
-   * hardcoded ceiling of 25%, so an Admin (who can approve up to 15% per
-   * `lib/rbac.ts`) was told "your role cannot approve" on an 11–15% line —
-   * reproduced live by driving the app as Admin against a 12% discount.
-   * Approval capability depends on *this line's* percentage, not the 25% cap.
-   */
-  const canApprove = role ? canApproveDiscount(role, t.discountPct) : false
+  /* Law 10 as amended 31 Aug 2026 — the gate is GONE (D3, Babin: "don't put
+     any gate on discount"). The per-line approval affordance, the reason/
+     approver panel and the role check that lived here left with it; the only
+     refusal `validateDiscount` still makes is arithmetic (negative, >100%),
+     surfaced through the parent's discountProblems banner. */
+  const gate = validateDiscount(t.discountPct)
   const kids = m.children ?? []
   const cols = 9
 
@@ -2469,26 +2455,18 @@ function LineRow({
               />
             )}
           </span>
-          {needsApproval && (
-            <button
-              type="button"
-              onClick={onToggleDiscount}
-              aria-expanded={discountOpen}
+          {!gate.valid && (
+            <span
               style={{
                 display: 'block',
                 marginTop: 3,
-                border: 'none',
-                background: 'transparent',
-                padding: 0,
-                fontFamily: 'inherit',
                 fontSize: 'var(--t-th)',
                 fontWeight: 700,
-                cursor: 'pointer',
-                color: gate.valid ? 'var(--success-text)' : 'var(--danger-text)',
+                color: 'var(--danger-text)',
               }}
             >
-              {gate.valid ? 'Approved' : 'Needs approval'} ▾
-            </button>
+              {gate.error}
+            </span>
           )}
         </td>
 
@@ -2640,57 +2618,10 @@ function LineRow({
         </tr>
       )}
 
-      {/* Foundation §9 — a discount above 10% carries a reason and a named approver. */}
-      {discountOpen && needsApproval && (
-        <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
-          <td colSpan={cols} style={{ ...td, paddingLeft: 46 }}>
-            <div style={{ display: 'flex', gap: 'var(--sp-md)', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-              <Field label="Reason for this discount" required hint="At least 10 characters. Stored and audited.">
-                <input
-                  value={line.discountReason}
-                  onChange={(e) => onPatch({ discountReason: e.target.value })}
-                  placeholder="e.g. Repeat client, four-week booking"
-                  style={{ ...controlBase, width: 320 }}
-                />
-              </Field>
-              <FieldBlock label="Approver" required>
-                {canApprove && approverName ? (
-                  <button
-                    type="button"
-                    onClick={() => onPatch({ approvedBy: line.approvedBy ? null : approverName })}
-                    aria-pressed={!!line.approvedBy}
-                    style={{
-                      height: 34,
-                      padding: '0 11px',
-                      borderRadius: 'var(--r-btn)',
-                      border: `1px solid ${line.approvedBy ? 'var(--success)' : 'var(--border)'}`,
-                      background: line.approvedBy ? 'var(--st-in-bg)' : 'var(--card2)',
-                      color: line.approvedBy ? 'var(--st-in-fg)' : 'var(--text2)',
-                      fontSize: 'var(--t-meta)',
-                      fontWeight: 600,
-                      fontFamily: 'inherit',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {line.approvedBy ? `Approved by ${line.approvedBy}` : `Approve as ${approverName}`}
-                  </button>
-                ) : (
-                  <span style={{ ...subtle, color: 'var(--danger-text)', maxWidth: 300, lineHeight: 1.5 }}>
-                    Your role cannot approve a discount above 10%. Ask an Owner or an Admin, or bring this line back to
-                    10% or less.
-                  </span>
-                )}
-              </FieldBlock>
-            </div>
-            {!gate.valid && (
-              <p style={{ margin: '8px 0 0', fontSize: 'var(--t-meta)', color: 'var(--danger-text)', fontWeight: 600 }}>
-                {gate.error}
-              </p>
-            )}
-          </td>
-        </tr>
-      )}
+      {/* The reason/approver panel that lived here left with the discount
+          gate (31 Aug 2026 — D3, no gate). `discountReason`/`approvedBy`
+          survive on the draft line as OPTIONAL record-keeping fields; nothing
+          requires them any more. */}
     </>
   )
 }

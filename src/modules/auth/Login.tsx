@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { Button, Input } from '../../components/ui'
 import { AuthCard } from './AuthCard'
+import { PasswordInput } from './PasswordInput'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { useAuth } from '../../lib/auth'
@@ -77,7 +78,7 @@ export default function Login() {
 
     // Return the user to wherever the guard intercepted them, not always /today.
     const from = (location.state as { from?: string } | null)?.from
-    navigate(from && from !== '/login' ? from : '/today', { replace: true })
+    navigate(from && from !== '/login' ? from : '/dashboard', { replace: true })
   }
 
   return (
@@ -96,7 +97,11 @@ export default function Login() {
       subtitle="Sign in with your work email to continue."
       footer={<LoginFooter />}
     >
-      <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
+      {/* `noValidate` — type="email" would otherwise let the browser answer a
+          malformed address with its own transient bubble, which is exactly the
+          disappearing error §12 exists to ban. The empty-field check above and
+          Supabase's verdict both land in the persistent inline banner instead. */}
+      <form onSubmit={handleLogin} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
           <div style={{ textAlign: 'left' }}>
             <label
               htmlFor="login-email"
@@ -108,6 +113,9 @@ export default function Login() {
               id="login-email"
               type="email"
               autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
+              inputMode="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@babinrentals.com"
@@ -124,9 +132,8 @@ export default function Login() {
             >
               Password
             </label>
-            <Input
+            <PasswordInput
               id="login-password"
-              type="password"
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

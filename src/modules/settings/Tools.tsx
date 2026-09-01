@@ -11,7 +11,7 @@ import type { Slice } from '../../components/ui/Charts'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { BRAND, BRAND_ON, BRAND_TEXT, STATUS } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
-import { price, rupees, parseMoney, formatMoney, discountGate, DISCOUNT_CAP } from '../../lib/money'
+import { price, rupees, parseMoney, formatMoney, discountGate } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import {
@@ -790,30 +790,28 @@ Each step rounds half-up to the whole rupee. Nothing is recomputed here.`}</Form
   )
 }
 
-/** §2.5 / Law 10 — the discount gate, called rather than re-stated. */
+/**
+ * Law 10 as amended — THE GATE IS GONE (D3 ruled 30 Aug 2026, Babin's final
+ * word 31 Aug: "don't put any gate on discount"). The reason and approver
+ * inputs left with it: an input that influences nothing is a control that
+ * lies. What remains is `discountGate`'s arithmetic validity — negative is a
+ * price rise (R3-1 stays closed), >100% is a negative price.
+ */
 function DiscountCalculator() {
   const [percent, setPercent] = useState('12')
-  const [reason, setReason] = useState('')
-  const [approver, setApprover] = useState('')
 
   const value = num(percent) || 0
-  const gate = discountGate(value, reason, approver.trim() === '' ? null : approver.trim())
+  const gate = discountGate(value, '', null)
 
   return (
     <>
-      <Formula>{`Foundation §2.5 — lib/money.ts discountGate()
+      <Formula>{`Law 10 (amended 31 Aug 2026) — lib/money.ts discountGate()
 
-  ≤ 10%   allowed outright
-  > 10%   needs a reason of at least 10 characters AND a named Manager
-  > ${DISCOUNT_CAP}%   refused. Hard cap, no role bypass — including Owner.`}</Formula>
+  0–100%   allowed outright. No reason, no approver, no cap — ruled by the owner.
+  < 0%     refused. A negative discount is a price increase.
+  > 100%   refused. That is a negative price, not a discount.`}</Formula>
       <div style={fieldGrid}>
         <NumField label="Discount" value={percent} onChange={setPercent} suffix="%" />
-        <FieldShell label="Reason" hint={`${reason.trim().length} of 10 characters`}>
-          <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why this discount" style={controlStyle} />
-        </FieldShell>
-        <FieldShell label="Manager approving">
-          <input value={approver} onChange={(e) => setApprover(e.target.value)} placeholder="Named approver" style={controlStyle} />
-        </FieldShell>
       </div>
       <div
         role="status"

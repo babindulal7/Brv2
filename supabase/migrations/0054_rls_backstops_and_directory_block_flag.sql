@@ -157,6 +157,15 @@ create policy booking_transport_update_ops on booking_transport
 -- 1b. `portal_users` / `portal_sessions` / `portal_auth_challenges`
 --      — the genuine three, deliberately STILL left without policies
 --
+-- ✅ SUPERSEDED 31 Aug 2026 — the TODO(decision) below is RULED (D2, 30 Aug,
+-- REFERENCE_SPEC v2.5 Appendix A0): self-registration, bound ONLY by verified
+-- control of the exact email stored on the client record. The real policies
+-- live in `0072_portal_email_binding_policies.sql` (drafted, NOT applied —
+-- it needs explicit approval per CLAUDE.md). Until 0072 is applied the
+-- deny-all below remains the live state, which is still the safe direction.
+-- Everything under this line is kept as the record of why deny-all was right
+-- while the question was open.
+--
 -- These three are really RLS-enabled-with-zero-policies, which is deny-all, and
 -- that is the correct state today. The draft proposed replacing the implicit
 -- denial with three explicit `using (false)` policies, on the reasoning that an

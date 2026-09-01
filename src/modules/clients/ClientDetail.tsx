@@ -209,15 +209,12 @@ const CLIENT_FIELDS: FieldSpec[] = [
       if (v === '' || v === null || v === undefined) return null
       const pct = Number(v)
       if (!Number.isFinite(pct)) return 'Enter a number.'
-      /* TODO(decision) — PLAN.md §4.27: Law 10 wants a reason ≥10 chars AND a
-         named approver above 10%. `ClientRecord` carries neither — `discountSource` is a
-         three-value enum, not a justification, and there is no approver column.
-         Until that is ruled and the schema carries it, this screen refuses to
-         *set* a standing discount above 10% rather than write one the law
-         cannot justify. Existing records above 10% still display. */
-      if (pct > 10) {
-        return 'Above 10% needs a named approver and a written reason (Law 10). This record has no field for either yet — raise it on the booking instead.'
-      }
+      /* Law 10 as amended (D3, Babin's final word 31 Aug 2026: "don't put any
+         gate on discount") — the old >10% refusal this validator carried is
+         gone with the ceremony it enforced. `validateDiscount` now checks
+         arithmetic validity only: negative refused (a price rise), >100%
+         refused (a negative price). The live Booqable account runs standing
+         discounts of 20% with zero ceremony; this field now matches it. */
       return validateDiscount(pct).error
     },
   },
@@ -776,7 +773,7 @@ export default function ClientDetail() {
                         label: 'Standing discount',
                         value: client.standingDiscountPercent !== undefined ? `${client.standingDiscountPercent}%` : '—',
                         as: 'number',
-                        hint: 'Saves together with Discount source. Above 10% needs Law 10 approval this record cannot yet carry.',
+                        hint: 'Saves together with Discount source. Any percent 0–100 — Law 10 carries no approval ceremony.',
                       },
                       { key: 'discountSource', label: 'Discount source', value: client.discountSource ?? '—', hint: 'Type Rule · Membership · Named Client' },
                       // Open ⭐ #1 (HIS v2.1) — no per-category deposit-% table is ruled yet.

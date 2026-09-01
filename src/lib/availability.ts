@@ -389,6 +389,37 @@ export interface SelectUnitsInput {
 }
 
 /**
+ * Least-used-first ordering of candidates — **D5, ruled 30 Aug 2026**.
+ *
+ * The 27 Jul lock ("least-used unit auto-reserved at creation") stands, and
+ * this is its one implementation: candidates sorted by how many times each
+ * unit has ever been assigned (`booking_line_units` rows carrying its
+ * `asset_id`), fewest first. `selectUnitsForLine` deliberately assigns
+ * first-fit in the caller's order — its doc note says *which* free unit to
+ * prefer "is a product question nobody has answered". D5 answered it; this
+ * function is the answer, kept separate so the assignment rule and the
+ * preference rule stay individually testable.
+ *
+ * The sort is STABLE: units with equal usage keep the caller's order, which
+ * `queries/availability.ts` supplies as `asset_tag` ascending — so two
+ * never-used units are picked in tag order, deterministically.
+ *
+ * A unit absent from `usageByUnit` counts as never used. That is the honest
+ * reading of "no rows found", and it is also the D5-safe direction: an
+ * over-counted unit is merely passed over, an under-counted one merely picked
+ * — neither double-books anything, because holds are checked separately.
+ */
+export function rankLeastUsed(
+  candidates: readonly UnitCandidate[],
+  usageByUnit: ReadonlyMap<string, number>,
+): UnitCandidate[] {
+  return candidates
+    .map((unit, index) => ({ unit, index, used: usageByUnit.get(unit.unitId) ?? 0 }))
+    .sort((a, b) => a.used - b.used || a.index - b.index)
+    .map((entry) => entry.unit)
+}
+
+/**
  * First-fit assignment of physical units to one booking line.
  *
  * **Never partially lies.** A caller asking for 4 and receiving 2 gets

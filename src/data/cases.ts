@@ -992,4 +992,4 @@ export const NEW_CASE_UNAVAILABLE_REASON = 'Case creation is not built yet — o
 /** No export pipeline exists — no cases report builder or CSV writer anywhere in the build. The old button toasted "Generating cases report…" while generating nothing (the exact fabrication src/actions/core.ts §1 names). */
 export const CASES_EXPORT_UNAVAILABLE_REASON = 'Export is not built yet — no cases report or CSV generator exists in this build, so nothing can be downloaded from here.'
 /** §10 — the workspace route has no field list yet; §12 checklist item "Case Workspace route defined and reachable" stays open until it does. */
-export const CASE_WORKSPACE_ROUTE = (id: string) => `/operations/cases/${id}`
+export const CASE_WORKSPACE_ROUTE = (id: string) => `/inventory/cases/${id}` // moved from /operations/cases 30 Aug
