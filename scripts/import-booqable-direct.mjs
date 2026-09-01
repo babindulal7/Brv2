@@ -6,8 +6,15 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1N
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const BOOQABLE_SLUG = 'babin-rentals';
-const BOOQABLE_TOKEN = 'BOOQABLE_TOKEN_REDACTED';
+const BOOQABLE_SLUG = process.env.BOOQABLE_COMPANY || 'babin-rentals';
+/* Secret: environment only. Was a literal here and in three sibling scripts,
+   which put a live token in git history. Matches booqable-cost-audit.mjs.
+   PowerShell:  $env:BOOQABLE_TOKEN="<api token>" */
+const BOOQABLE_TOKEN = process.env.BOOQABLE_TOKEN;
+if (!BOOQABLE_TOKEN) {
+  console.error('Set BOOQABLE_TOKEN first (Booqable ▸ Settings ▸ Account). It is no longer stored in this file.');
+  process.exit(1);
+}
 
 const headers = {
   Authorization: `Bearer ${BOOQABLE_TOKEN}`,
