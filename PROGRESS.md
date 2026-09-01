@@ -2,6 +2,50 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-01 — BUG-003 fixed: the Client Ledger pager is gone, because there was never a page 2
+**Phase:** Phase 4/5 — honesty of controls · **Status:** fixed and driven; ⚠ repo typecheck is RED on another session's file
+
+`FUNCTIONAL_BUGS.md` BUG-003 (P1): `/reports/clients` rendered a nine-control pager
+(`« ‹ 1 2 3 4 … 209 ›`) with **no handler on any of it**, and the page-number buttons set
+`aria-current="page"`, so assistive tech was told this was a working pager.
+
+### The audit's diagnosis was close but wrong, and the fix turns on the difference
+It read the symptom as *"records beyond page 1 are unreachable"*. **There are none.**
+`data/clientReports.ts` `CLIENTS` holds **six rows**, `ClientReports.tsx:340` maps all six
+unsliced, and both figures in the footer were literals: **1,248** is the seeded *Total Clients*
+KPI (`clientReports.ts:8`), and **209** is that number divided by six. The data module says the
+rows are "seed decor" outright.
+
+So it was not a broken pager — it was **decoration advertising 1,242 records this screen has
+never held**. Wiring it would have produced a pager that pages through exactly one page.
+
+### Did
+- **Deleted the pager**, following this file's own precedent: a `PeriodPill` on nine cards with no
+  handler was already resolved here as *"gone rather than wired"*.
+- **Footer now states the truth** — `Showing all {CLIENTS.length} rows` (derived, not a literal),
+  plus *"A seeded sample, not a client-register query — the full directory is at Clients"*, linking
+  to `/clients`, which is the DB-backed, genuinely paginated list.
+- The `aria-current="page"` lie goes with the pager.
+
+### Verified (DOM assertions, not a screenshot — the pane would not frame the footer)
+Driven in `dev:mock`, logged in, at `/reports/clients`: **6** table rows · footer reads
+`Showing all 6 rows` · the seeded-sample note and the `/clients` link both present · **0** pager
+buttons · no `1,248`, no `209`. The one surviving `aria-current="page"` is the sidebar marking
+"Client Ledger" — checked, it is nav, not a pager remnant.
+`npx vitest run` **exit 0 — 99 files, 2,321 tests**.
+
+### ⚠ Gate status — honest
+`npx tsc --noEmit` is **RED**, and it is **not this change**:
+`src/actions/finance/approveDailyClosing.ts(149,11) TS2353 'clientUuid' does not exist in type
+'InsertOptions'`. That file is **untracked and new** (written 20:16, ~3h after this edit), beside
+modified `actions/core.ts`, `events/eventBus.ts` and `lib/rbac.ts` — a concurrent session mid-
+feature. No error names any file in this change. **Not fixed here: editing another session's
+in-flight work would collide.**
+
+### Still open
+Making `/reports/*` query the register is a separate job — every one of the ten report screens is
+seed-only (`LAYER-D-VERIFICATION.md`). BUG-004/005/006 remain.
+
 ## 2026-09-01 — BUG-002 fixed as far as it can be without a ruling: the fake "12 unread" is gone, both dead controls now say why
 **Phase:** Phase 4/5 — honesty of controls · **Status:** the bug is fixed; the **feature** is filed, not built
 

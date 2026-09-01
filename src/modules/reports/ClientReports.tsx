@@ -418,35 +418,40 @@ export default function ClientReports() {
               </table>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '10px 14px', flexWrap: 'wrap', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+              {/*
+                BUG-003 — a nine-control pager (`« ‹ 1 2 3 4 … 209 ›`) stood here
+                with no handler on any of it, beneath "Showing 1 to 6 of 1,248
+                clients".
+
+                It is gone rather than wired, for the same reason the `PeriodPill`
+                above it went: **there is no page 2 to reach.** `CLIENTS` holds
+                six rows, `:340` maps all six unsliced, and both figures were
+                literals — 1,248 is the seeded Total Clients KPI, and 209 is that
+                number divided by six. So the pager was not a broken pager; it was
+                decoration advertising 1,242 records this screen has never held.
+                Wiring it would page through exactly one page.
+
+                The `aria-current="page"` on the "1" button is the part that had to
+                go regardless: it told assistive tech this was a working pager, so
+                a screen-reader user was invited to look for pages that do not
+                exist. The audit read the symptom as "records beyond page 1 are
+                unreachable" — there are none; nothing is unreachable.
+
+                The real, DB-backed, genuinely paginated client list is `/clients`,
+                so the row now says where to go instead of faking it here. Making
+                this report query the register is a separate job: every
+                `/reports/*` screen is seed-only (LAYER-D-VERIFICATION).
+              */}
               <span>
-                Showing 1 to 6 of 1,248 clients
+                Showing all {CLIENTS.length} rows
                 <span style={{ display: 'block', color: 'var(--link)', fontSize: 'var(--t-meta)', marginTop: 2 }}>{BS_NOTE}</span>
               </span>
-              <span style={{ marginLeft: 'auto', display: 'flex', gap: 3 }}>
-                {['«', '‹', '1', '2', '3', '4', '…', '209', '›'].map((p, i) => {
-                  const on = p === '1'
-                  return (
-                    <button
-                      key={`${p}-${i}`}
-                      type="button"
-                      aria-current={on ? 'page' : undefined}
-                      style={{
-                        minWidth: 24,
-                        height: 24,
-                        borderRadius: 'var(--r-xs)',
-                        border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
-                        background: on ? 'var(--btn-primary-bg)' : 'transparent',
-                        color: on ? 'var(--btn-primary-fg)' : 'var(--text2)',
-                        fontSize: 'var(--t-meta)',
-                        fontWeight: on ? 700 : 500,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      {p}
-                    </button>
-                  )
-                })}
+              <span style={{ marginLeft: 'auto' }}>
+                A seeded sample, not a client-register query — the full directory is at{' '}
+                <Link to="/clients" style={link}>
+                  Clients
+                </Link>
+                .
               </span>
             </div>
           </Card>
