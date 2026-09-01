@@ -191,8 +191,18 @@ interface IconProps {
 export default function Icon({ name, fill = false, size = 20, label, className, style }: IconProps) {
   const Cmp = REGISTRY[name]
   if (!Cmp) {
-    console.error(`Icon "${name}" is undefined in REGISTRY!`);
-    return <span style={{ color: 'red', fontWeight: 'bold' }}>[Icon:{name}]</span>;
+    // BUG-001: this branch used to render `[Icon:name]` in bold red UNCONDITIONALLY,
+    // so three bad names in `lib/status.ts` put 51 pieces of developer text inside
+    // status chips on `/clients` and `/crew` — visible to a client. The marker is
+    // worth keeping for whoever is developing, so it is kept in DEV and dropped in
+    // the build. Rendering nothing is safe: Law 11 (§7.4) guarantees the label
+    // always renders beside the icon, so a missing glyph costs decoration, never
+    // meaning. `name` is typed `IconName`, so reaching here at all now takes a cast.
+    console.error(`Icon "${name}" is not in the REGISTRY — rendering nothing.`)
+    if (import.meta.env.DEV) {
+      return <span style={{ color: 'red', fontWeight: 'bold' }}>[Icon:{name}]</span>
+    }
+    return null
   }
   return (
     <Cmp

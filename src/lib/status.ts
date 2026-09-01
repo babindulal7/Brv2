@@ -32,6 +32,8 @@
  * colour. §7.4 still holds: colour is never the sole carrier — every block
  * renders its word, and STATUS_ICON below keeps the icon part of the token.
  */
+import type { IconName } from '../components/ui/Icon'
+
 export type StatusKey =
   /** Gray, solid — Quote, Draft. "Not started yet." */
   | 'neutral'
@@ -83,15 +85,41 @@ export const STATUS: Record<StatusKey, StatusTokens> = {
  * §7.4 — "Colour is never the sole carrier. Every status renders colour + icon
  * + label." The icon is part of the token, not left to each call site to
  * remember, so a bare colour chip cannot be built by accident.
+ *
+ * ## Typed `IconName`, not `string` — this map shipped three broken glyphs
+ *
+ * It was `Record<StatusKey, string>`, so nothing checked the names against the
+ * `Icon` REGISTRY and every call site had to cast with `as IconName`. Three of
+ * the eight values named glyphs that do not exist — `neutral` and `dim` both
+ * pointed at `circle_dashed`, `progress` at `progress` — and `Icon`'s miss
+ * branch rendered them as red `[Icon:…]` developer text **inside status chips
+ * on `/clients` and `/crew`**: 51 instances of debug output in front of a
+ * client (BUG-001). `RentalsList.tsx` and `CrewBooking.tsx` had each already
+ * written a paragraph warning about this exact hazard and removed their own
+ * usages; the two remaining live sites were missed.
+ *
+ * The `IconName` type is what stops it recurring: a name the REGISTRY does not
+ * carry is now a compile error here, at the one place the map is written,
+ * instead of red text at runtime on whichever screen happens to render it. The
+ * `as IconName` casts at the call sites are gone with it — a cast is exactly
+ * how the broken names reached the screen. `data/warehouse.ts` and
+ * `Maintenance.tsx` already type their equivalent maps this way.
+ *
+ * Substitutions are from the existing REGISTRY; no glyph was added. `timer` for
+ * `progress` follows the established house usage for a waiting state
+ * (`warehouse.ts` `Pending: 'timer'`, `BranchesWarehouses.tsx`
+ * `'Under Setup': 'timer'`). `neutral` and `dim` keep a **shared** glyph, as
+ * they did under `circle_dashed` — colour and word already separate them, and
+ * giving them distinct icons would be a design change, not a bug fix.
  */
-export const STATUS_ICON: Record<StatusKey, string> = {
-  neutral: 'circle_dashed',
+export const STATUS_ICON: Record<StatusKey, IconName> = {
+  neutral: 'dot',
   primary: 'check',
-  progress: 'progress',
+  progress: 'timer',
   out: 'truck',
   in: 'return_arrow',
   danger: 'alert_triangle',
-  dim: 'circle_dashed',
+  dim: 'dot',
   ext: 'external_link',
 }
 

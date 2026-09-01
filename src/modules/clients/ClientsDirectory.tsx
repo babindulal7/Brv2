@@ -249,7 +249,10 @@ function Tone({
   reason?: string
 }) {
   const c = entity || tone === undefined ? null : STATUS[tone]
-  const glyph = (icon ?? (tone ? STATUS_ICON[tone] : undefined)) as IconName | undefined
+  // No cast: `STATUS_ICON` is `Record<StatusKey, IconName>` now, so a glyph the
+  // REGISTRY does not carry fails at compile time rather than rendering red
+  // `[Icon:…]` text on this very row, which is what BUG-001 was.
+  const glyph: IconName | undefined = icon ?? (tone ? STATUS_ICON[tone] : undefined)
   return (
     <span
       {...(reason ? { title: reason, 'aria-label': `${text} — ${reason}` } : {})}

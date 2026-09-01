@@ -2,6 +2,54 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-01 — BUG-001 fixed: red `[Icon:…]` debug text is gone from client-facing UI, and the type now forbids it
+**Phase:** Phase 4/5 — design-system enforcement · **Status:** fixed, driven, gate green
+
+`FUNCTIONAL_BUGS.md` BUG-001 (P1, from the concurrent session's functional audit): **51 pieces of
+red developer text were rendering inside status chips** — 25 on `/clients`, 13 on `/crew`, 13 on
+`/operations/crew`. Every "Academy" membership chip read `[Icon:circle_dashed] Academy` in bold red.
+
+### Root cause — a `string` where an `IconName` belonged
+`lib/status.ts`'s `STATUS_ICON` was typed `Record<StatusKey, string>`, so nothing checked its values
+against the `Icon` REGISTRY and every call site had to cast `as IconName`. Three of eight values
+named glyphs that do not exist: `neutral`/`dim` → `circle_dashed`, `progress` → `progress`.
+`Icon.tsx`'s miss branch then rendered them **unconditionally** as
+`<span style="color:red;font-weight:bold">[Icon:…]</span>`.
+
+`RentalsList.tsx:101` and `CrewBooking.tsx:893` had each already written a paragraph warning about
+this exact hazard and dropped their own usages — the two remaining live sites were missed. The
+warnings were right and the type was still wrong, which is why this recurred.
+
+### Did — three layers, so it cannot come back
+1. **`STATUS_ICON` is now `Record<StatusKey, IconName>`** (`import type` from `components/ui/Icon`,
+   the same edge `lib/queries/useFilters.ts:12` already uses). A glyph the REGISTRY lacks is now a
+   **compile error at the one place the map is written**. `data/warehouse.ts` and `Maintenance.tsx`
+   already typed their equivalent maps this way; `lib/status.ts` was the outlier.
+2. **The three names now resolve**, using existing REGISTRY glyphs — **no glyph was added**.
+   `progress → timer` follows established house usage for a waiting state (`warehouse.ts`
+   `Pending: 'timer'`, `BranchesWarehouses.tsx` `'Under Setup': 'timer'`). `neutral` and `dim` keep a
+   **shared** glyph (`dot`), exactly as they shared `circle_dashed` — colour and word already
+   separate them, and giving them distinct icons would be a design change, not a bug fix.
+3. **`Icon.tsx`'s miss branch no longer leaks to production.** The red marker is kept under
+   `import.meta.env.DEV` and returns `null` in the build. Safe because Law 11 (§7.4) guarantees the
+   label always renders beside the icon, so a missing glyph costs decoration, never meaning.
+4. **All five `as IconName` casts removed** (`ClientsDirectory.tsx:252`, `CrewBooking.tsx` ×4). The
+   cast is precisely how the broken names reached the screen; deleting it is what makes (1) bite.
+
+### Verified
+- `npx tsc --noEmit` **exit 0** · `npx vitest run` **exit 0 — 99 files, 2,321 tests**.
+  (⚠ tsc segfaulted once mid-run — transient, the concurrent session was building at the same time;
+  clean on retry. Not a code fault.)
+- **Driven in `dev:mock`, logged in:** `/clients`, `/crew` and `/operations/crew` each report
+  **0** `[Icon:…]` matches in `body.innerText`, against 25/13/13 before. The Academy chips render a
+  real `tabler-icon-circle-filled` glyph. Screenshot taken.
+
+### Not touched
+The audit's own `FUNCTIONAL_BUGS.md` still lists BUG-001 as open. It is **another session's
+untracked, in-flight document**, so I did not edit it — this entry is the record. BUG-002 (dead
+Notifications/Help on all 56 routes) and BUG-003 (inert Client Reports pagination) remain open and
+need a ruling on what those controls should do.
+
 ## 2026-09-01 (cont. 2) — "finish all todos": the bare-status-ink sweep was incomplete; six more found and fixed
 **Phase:** cross-phase close-out · **Status:** done, gate green
 

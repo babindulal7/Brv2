@@ -669,7 +669,7 @@ export function CrewBooking() {
                                 {/* Law 11 — the dot is colour, so the glyph and the
                                     word carry the state as well. */}
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: tone.fg, fontWeight: 600 }}>
-                                  <Icon name={STATUS_ICON[assignmentTone(c, onShootToday(c))] as IconName} size={12} />
+                                  <Icon name={STATUS_ICON[assignmentTone(c, onShootToday(c))]} size={12} />
                                   {c.status}
                                   {c.cancelled && ' · Cancelled'}
                                 </span>
@@ -677,7 +677,7 @@ export function CrewBooking() {
                               {desktop && (
                                 <td style={{ padding: '12px 14px' }}>
                                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--t-meta)', fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--r-xs)', background: payoutTone.bg, color: payoutTone.fg }}>
-                                    <Icon name={STATUS_ICON[PAYOUT_TONE[c.payoutStatus]] as IconName} size={11} />
+                                    <Icon name={STATUS_ICON[PAYOUT_TONE[c.payoutStatus]]} size={11} />
                                     {c.payoutStatus}
                                   </span>
                                 </td>
@@ -742,7 +742,7 @@ function StateChip({ label, tone }: { label: string; tone: StatusKey }) {
         ...(c.border ? { border: `1px solid ${c.border}` } : {}),
       }}
     >
-      <Icon name={STATUS_ICON[tone] as IconName} size={11} />
+      <Icon name={STATUS_ICON[tone]} size={11} />
       {label}
     </span>
   )
@@ -1020,9 +1020,9 @@ function WeekCalendar({ assignments, conflictIds }: { assignments: CrewAssignmen
                         >
                           <Icon
                             name={
-                              (conflictIds.has(block.id)
+                              conflictIds.has(block.id)
                                 ? STATUS_ICON.danger
-                                : STATUS_ICON[assignmentTone(block, onShootToday(block))]) as IconName
+                                : STATUS_ICON[assignmentTone(block, onShootToday(block))]
                             }
                             size={10}
                           />
