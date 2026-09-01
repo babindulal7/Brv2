@@ -1452,7 +1452,15 @@ export function AddBundle() {
                     </p>
                   </div>
                 ) : (
-                  <div style={{ overflowX: 'auto' }}>
+                  /* BOTTOM corners here, not top: the Section draws its own
+                     numbered title bar above (which paints no background, so
+                     the top arc is already clean), and this scroller is the
+                     LAST child of a padding-0 body — its <tfoot> row carries an
+                     opaque --th-bg that squared off the card's 14px bottom
+                     corners once v4.2 §6 raised --r-card from 8. `overflowX:
+                     auto` already makes this a clip box, so the radius rounds
+                     the totals row with it. */
+                  <div style={{ overflowX: 'auto', borderRadius: '0 0 var(--r-card) var(--r-card)' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                       <thead>
                         <tr style={{ background: 'var(--th-bg)' }}>

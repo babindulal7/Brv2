@@ -873,7 +873,10 @@ export function Bundles() {
                 })}
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
+              /* Flush in the card's top corners with an opaque --th-bg header
+                 behind it; takes the card radius so the header does not paint
+                 square notches over the 14px arc. See Maintenance.tsx. */
+              <div style={{ overflowX: 'auto', borderRadius: 'var(--r-card) var(--r-card) 0 0' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: money ? 1100 : 960 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>

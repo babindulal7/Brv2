@@ -817,7 +817,12 @@ export function Maintenance() {
             ))}
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          /* The scroller is flush in the card's top corners (body padding is 0)
+             and the header row paints an opaque --th-bg into them, which showed
+             as square notches once --r-card went 8 -> 14 (v4.2 §6). `overflowX:
+             auto` already makes this element a clip box, so giving it the
+             card's top radius rounds the header with it. */
+          <div style={{ overflowX: 'auto', borderRadius: 'var(--r-card) var(--r-card) 0 0' }}>
             {/* §7.4 TABLET — "same, fewer columns". Technician, Vendor and
                 Booking Impact are dropped there, which takes the 1080px minimum
                 down inside the 768–1279 band instead of scrolling it sideways. */}

@@ -250,16 +250,23 @@ export default function ScreenLock({ onUnlock }: { onUnlock: () => void }) {
           />
         )}
 
-        {/* Attempts remaining, in words. Never a colour, never a shrinking bar. */}
+        {/* Attempts remaining, in words. Never a colour, never a shrinking bar.
+
+            --danger-text, not --st-danger-fg: unlike the locked-out banner
+            above, these two alerts carry NO fill of their own, and the fg half
+            of a status pair is white ink meant for a solid red block. Bare on
+            this overlay (--bg, #fafaf8 under the light default) it was white on
+            near-white — the attempt counter was announced to screen readers but
+            invisible to the operator holding the tablet. */}
         {verdict?.reason === 'incorrect' && typeof verdict.attemptsRemaining === 'number' && (
-          <p role="alert" style={{ margin: '16px 0 0', fontSize: 'var(--t-meta)', color: 'var(--st-danger-fg)', fontWeight: 600 }}>
+          <p role="alert" style={{ margin: '16px 0 0', fontSize: 'var(--t-meta)', color: 'var(--danger-text)', fontWeight: 600 }}>
             Incorrect PIN — {verdict.attemptsRemaining}{' '}
             {verdict.attemptsRemaining === 1 ? 'attempt' : 'attempts'} left
           </p>
         )}
 
         {verdict?.reason === 'inactive' && (
-          <p role="alert" style={{ margin: '16px 0 0', fontSize: 'var(--t-meta)', color: 'var(--st-danger-fg)', fontWeight: 600 }}>
+          <p role="alert" style={{ margin: '16px 0 0', fontSize: 'var(--t-meta)', color: 'var(--danger-text)', fontWeight: 600 }}>
             This staff account is no longer active. Sign out to continue.
           </p>
         )}

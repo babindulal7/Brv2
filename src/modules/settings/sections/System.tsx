@@ -54,7 +54,12 @@ export const SYSTEM_SECTIONS: Section[] = [
     title: 'Appearance',
     icon: 'sun',
     fields: [
-      { label: 'Theme', note: 'Light uses a blue primary; dark uses gold.', value: '—' },
+      /* v4.1 §2 retired gold from every action and v4.2 keeps it there: the
+         primary is blue in BOTH themes, and gold survives only on the external
+         `--ext` outline and the brand mark. The old note ("dark uses gold")
+         described a palette that has not existed since 25 Aug, and pointed a
+         reader straight at the action colour the spec bans. */
+      { label: 'Theme', note: 'Light is the default. Both themes use a blue primary.', value: '—' },
       {
         label: 'Text size',
         note: 'Scales the whole application. Additive to browser zoom, not a replacement for it.',

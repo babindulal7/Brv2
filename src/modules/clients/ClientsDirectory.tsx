@@ -1215,6 +1215,14 @@ export function ClientsDirectory({
                 padding: '9px 14px',
                 borderBottom: '1px solid var(--border)',
                 background: 'var(--card2)',
+                /* The card body has padding 0, so this strip sits flush in the
+                   card's top corners and its own square corners painted over
+                   them — visible as a notch once --r-card went 8 -> 14 (v4.2
+                   §6). It carries the card's radius rather than the card
+                   carrying `overflow: hidden`, because the row-action menu
+                   below is absolutely positioned and clipping the card would
+                   cut it off. */
+                borderRadius: 'var(--r-card) var(--r-card) 0 0',
                 flexWrap: 'wrap',
                 fontSize: 'var(--t-meta)',
                 color: 'var(--text2)',

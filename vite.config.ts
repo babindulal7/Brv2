@@ -20,8 +20,15 @@ export default defineConfig({
         display: 'standalone',
         display_override: ['window-controls-overlay', 'standalone'],
         orientation: 'any',
-        background_color: '#0F1420',
-        theme_color: '#0F1420',
+        /* DESIGN_DIRECTION_SPEC_v4.2 §2.1/§3 — the installed app opens LIGHT,
+           so the splash and window chrome are the cream canvas, matching
+           index.html's <meta name="theme-color">. These two must be changed
+           together with that meta tag: they are what the OS paints BEFORE the
+           app has run, and #0F1420 left the installed app flashing a full
+           screen of dark navy into a cream app on every cold launch. (#0F1420
+           was not even the dark canvas — that is #050B12.) */
+        background_color: '#FDEFDC',
+        theme_color: '#FDEFDC',
         lang: 'en',
         dir: 'ltr',
         categories: ['business', 'productivity'],

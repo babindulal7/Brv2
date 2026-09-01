@@ -700,12 +700,19 @@ export default function MovementList({
               </Link>
             )
 
-            /* --st-danger-fg, not --danger: measured 5.98:1 against --card,
-               --danger measures 4.40:1 — under the 4.5:1 floor for this text
-               size. The row itself stays the plain card surface; only the
+            /* --danger-text: the TEXT-SAFE red, which is what bare copy on a
+               card needs. This used to read --st-danger-fg on the strength of a
+               "measured 5.98:1 against --card" note — a measurement taken when
+               --card was the dark rgba(11,22,34,0.85). --st-danger-fg resolves
+               to --on-danger, which is #ffffff in BOTH themes because it is ink
+               for a SOLID red fill; against the light card it is white on white
+               (~1.02:1) and the overdue warning simply vanished on what is now
+               the default theme. --danger-text is gated in both themes by
+               scripts/check-contrast.cjs (6.75:1 light / 7.44:1 dark on
+               surface). The row itself stays the plain card surface; only the
                border-left and this note carry the overdue signal. */
             const lateNote = r.statusNote ? (
-              <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--st-danger-fg)' }}>
+              <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--danger-text)' }}>
                 {r.statusNote}
               </span>
             ) : null

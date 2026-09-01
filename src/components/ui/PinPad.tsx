@@ -141,8 +141,13 @@ export function PinPad({
                   : filled
                     ? 'var(--input-focus)'
                     : 'var(--input-bg)',
+                /* The invalid ring is --danger-text, not --st-danger-fg. The fg
+                   half is white in both themes — ink for the red fill, not a
+                   ring drawn against the PAGE — so on the light lock screen
+                   (--bg #fafaf8, now the default) the ring vanished into the
+                   page and only the fill half of the Law 11 pair survived. */
                 border: `2px solid ${
-                  invalid ? 'var(--st-danger-fg)' : filled ? 'var(--input-focus)' : 'var(--border)'
+                  invalid ? 'var(--danger-text)' : filled ? 'var(--input-focus)' : 'var(--border)'
                 }`,
                 transition: 'background var(--dur), border-color var(--dur)',
               }}
