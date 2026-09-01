@@ -1,7 +1,23 @@
 -- =============================================================================
 -- 0078_daily_closings.sql — the record a Daily Closing approval writes.
---        ⚠ DRAFT — NOT APPLIED. Do not run this against the live project
---        without explicit approval (CLAUDE.md).
+--        ✅ APPLIED to the live project (sxguwvgoserhdolewibb) on 1 Sep 2026
+--        with the owner's explicit approval ("apply it") — recorded in
+--        supabase_migrations.schema_migrations as 20260901114821.
+--
+--        ⚠ THIS LINE IS NOT EVIDENCE. Verify by query:
+--          select count(*) from information_schema.columns
+--           where table_name = 'daily_closings';         -- expect 23
+--
+--        Verified at apply time, not assumed: 23 columns, RLS on, 3 policies,
+--        2 triggers, 13 column grants and NO table-level SELECT for
+--        authenticated, daily_closings_v present. Behaviour then exercised on
+--        real rows inside a rolled-back transaction — insert accepted, edit
+--        refused, delete refused, a second live closing for the same
+--        branch/day refused, void accepted, a void with no reason refused, a
+--        corrected closing after the void accepted. Law 6 probed as
+--        `authenticated`: counted_cash / variance / deposits_held all 42501 on
+--        the base table, business_date / approved_by / pickups_count readable,
+--        both view reads serving. Zero rows persisted.
 --
 -- Raised by `modules/finance/DailyClosing.tsx` (1 Sep 2026), which states the
 -- day's position and lets an operator count the drawer, but renders APPROVE as

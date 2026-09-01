@@ -230,6 +230,38 @@ Rail collapse/expand · no horizontal scroll at 375/800/1440 · failure banners 
 Sandbox note: six mock bookings were moved onto today's date (browser-local overlay
 only) so the day panels are demonstrable; the mock banner already disclaims the data.
 
+## 2026-09-01 (cont. 6) — 0078_daily_closings APPLIED to the live project (owner-approved)
+**Phase:** Phase 1 schema · **Status:** applied and verified · **Approval:** Babin, explicit, in-session ("apply it")
+
+### Did
+Applied `0078_daily_closings` over the Supabase MCP route. Recorded as
+**20260901114821**; the ledger now tops out there rather than at 0077.
+
+### Verified — read back from the catalogue, then driven
+- **Structure:** 23 columns · RLS **on** · **3** policies · **2** triggers · **13** column
+  grants · `has_table_privilege(authenticated, …, SELECT)` = **false** · `daily_closings_v`
+  present. The file’s own post-condition block passed at apply time as well.
+- **Behaviour, on real rows inside a rolled-back transaction — 7 checks:** insert accepted ·
+  **edit refused** · **delete refused** (0044’s Law 3 backstop) · second live closing for the
+  same branch/day refused · void accepted · **void with no reason refused** · **corrected
+  closing after the void accepted** (the full re-open path).
+- **Law 6, probed as `authenticated` — 8 checks:** `counted_cash`, `variance` and
+  `deposits_held` each raise **42501** on the base table; `business_date`, `approved_by` and
+  `pickups_count` still read; both `daily_closings_v` reads serve. So the floor can see THAT a
+  day closed and by whom without seeing a rupee of it, which is what the view was for.
+- **Zero rows persisted** — every behaviour transaction rolled back. `daily_closings` is empty.
+
+### Still true after the apply
+- **The screen’s APPROVE is still unavailable**, and its reason text is now WRONG in one
+  respect: it says there is no closing table, and there is. The remaining blocker is the write
+  path — an action plus its `actions/core.ts` capability string — not the schema. Next session:
+  fix that reason, build the action, light the button.
+- **PLAN.md §4.40 stays OPEN.** Applying the table did not rule who may approve (INSERT is on
+  `auth_is_finance_or_admin()`, the mirrored finance-write set; `auth_can_approve_late_fee_waiver()`
+  = Owner/Manager remains the plausible narrower reading) or whether a day may be re-opened.
+  Narrowing is one `create policy … replace` and breaks no stored row — which is exactly why
+  the wider set was the reversible choice.
+
 ## 2026-09-01 (cont. 5) — 0078_daily_closings DRAFTED and proven against live, NOT applied
 **Phase:** Phase 1 schema · **Status:** draft written and pre-flighted; **needs Babin to apply**
 
