@@ -1,3 +1,14 @@
+/*
+ * TODO(decision) §4.41 — THIS FILE HAS NO IMPORTER. Nothing renders it.
+ *
+ * It came out of a 600-line split (`PROGRESS.md:10209`) that was never adopted:
+ * the live, routed `AddBundle` (`App.tsx:348`) carries its own inline tree.
+ *
+ * ⚠ `FUNCTIONAL_BUGS.md` BUG-007 files the `Collapse All` button below as a
+ * dead control, and `FUNCTIONAL_FIX_PLAN.md` item #4 scopes wiring it as an XS
+ * fix. **Do not.** This component never renders, so wiring it changes nothing a
+ * user can reach. Answer PLAN.md §4.41(b) instead.
+ */
 import React, { memo } from 'react'
 import Icon from '../../../components/ui/Icon'
 

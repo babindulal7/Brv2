@@ -29,12 +29,12 @@ that HEAD and **reproduce identically** (25 icon artifacts on `/clients`, 13 on 
 | §8, §9 | Button audit & dead-button detection | ✅ TESTED (1,693 rendered buttons) |
 | §10 | Link audit | 🟡 PARTIAL — internal hrefs enumerated; entity-ID correctness not verified |
 | §11 | Form fillability | ✅ TESTED (88 fields on 5 creation forms) |
-| §12 | Form submission → DB → refresh | ❌ NOT TESTED |
+| §12 | Form submission → DB → refresh | ⛔ **BLOCKED 2 Sep** — the prescribed `dev:local` environment cannot be built (BUG-010) |
 | §13 | Validation | ❌ NOT TESTED |
-| §14 | CRUD lifecycle | ❌ NOT TESTED |
+| §14 | CRUD lifecycle | ⛔ **BLOCKED** (BUG-010) — but 9 lifecycle actions found to be non-writing stubs (BUG-013) |
 | §15 | Data propagation across screens | ❌ NOT TESTED |
 | §16 | Rental workflow end-to-end | ❌ NOT TESTED |
-| §17 | Pricing math | ❌ NOT TESTED |
+| §17 | Pricing math | 🟡 **PARTIAL 2 Sep** — DB/app disagreement found and proved statically (BUG-011, BUG-012); end-to-end still blocked |
 | §18 | Filters | ✅ TESTED — **8/8 pass** on `/clients` |
 | §19 | Multi-filter combinations | ❌ NOT TESTED |
 | §20 | Search | ✅ TESTED — **pass** incl. no-result + clear |

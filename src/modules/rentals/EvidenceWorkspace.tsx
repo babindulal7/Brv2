@@ -50,6 +50,17 @@ const SOURCE_ICON: Record<(typeof UPLOAD_SOURCES)[number], IconName> = {
   'Upload Folder': 'folder',
 }
 
+/**
+ * Why nothing on this screen can accept a file yet.
+ *
+ * Deliberately the same fact `Expenses.tsx` states for its receipt slot: the
+ * destination exists in the schema, the *upload* does not. Keeping one wording
+ * for one cause means a reader who meets it twice learns it once.
+ */
+const UPLOAD_UNAVAILABLE =
+  'Uploading is not built yet — no storage bucket is configured and nothing in the app uploads a file, so a picker here would take your photo and store nothing. ' +
+  'Keep evidence on the device until it ships.'
+
 const TONE: Record<MatchState, { bg: string; fg: string }> = {
   Matched: { bg: 'var(--st-in-bg)', fg: 'var(--st-in-fg)' },
   Review: { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)' },
@@ -321,19 +332,42 @@ export default function EvidenceWorkspace() {
         {/* ── §5 left ─────────────────────────────────────────────────── */}
         <FloorAside collapsible={desktop} side="left" width={210} label="Categories" style={place.tree}>
           <Card title="Upload Sources">
+            {/*
+              Found by probing this rendered screen while fixing the MiniBtn
+              trio below — all four upload buttons were enabled with no handler,
+              on a screen whose entire subject is getting photos in. They are
+              the four most important controls here and they were the four most
+              dead.
+
+              Same cause as `Expenses.tsx`'s `ATTACHMENT_UNAVAILABLE`, quoted
+              here so the two stay one story: no Supabase Storage bucket is
+              configured and there is **no `storage.from(...)` call anywhere in
+              `src/`**. A picker that opened would take a warehouse operator's
+              photo and store nothing — worse than a greyed button, because the
+              operator would believe the evidence was filed.
+            */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {UPLOAD_SOURCES.map((u) => (
-                <Button key={u} icon={SOURCE_ICON[u]}>
-                  {u}
-                </Button>
+                <Unavailable key={u} reason={UPLOAD_UNAVAILABLE} style={{ display: 'block' }}>
+                  <Button icon={SOURCE_ICON[u]} disabled>
+                    {u}
+                  </Button>
+                </Unavailable>
               ))}
             </div>
-            <div
-              style={{ marginTop: 9, padding: '18px 10px', borderRadius: 'var(--r-btn)', border: '1.5px dashed var(--border)', textAlign: 'center', color: 'var(--muted)', fontSize: 'var(--t-meta)' }}
-            >
-              <Icon name="upload" size={18} />
-              <div style={{ marginTop: 5 }}>Drag &amp; drop photos or folders</div>
-            </div>
+            {/* The drop zone invited the same gesture and swallowed it the same
+                way — with no `onDrop` it silently did nothing, and a dashed
+                border is the one shape that means "drop here". It states the
+                same reason rather than inviting the drop. */}
+            <Unavailable reason={UPLOAD_UNAVAILABLE} style={{ display: 'block' }}>
+              <div
+                aria-disabled="true"
+                style={{ marginTop: 9, padding: '18px 10px', borderRadius: 'var(--r-btn)', border: '1.5px dashed var(--border)', textAlign: 'center', color: 'var(--muted)', fontSize: 'var(--t-meta)', opacity: 0.6 }}
+              >
+                <Icon name="upload" size={18} />
+                <div style={{ marginTop: 5 }}>Drag &amp; drop is not available yet</div>
+              </div>
+            </Unavailable>
             {/* §11.2 — limits stated before upload begins, not after. */}
             <p style={{ margin: '9px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
               {LIMITS.image} · {LIMITS.video} · {LIMITS.booking}
@@ -505,13 +539,13 @@ export default function EvidenceWorkspace() {
                         )}
                         {st === 'Review' && (
                           <span style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--sp-xs)' }}>
-                            <MiniBtn label="Accept" />
-                            <MiniBtn label="Change" />
+                            <MiniBtn label="Accept" reason={MATCH_EDIT_UNAVAILABLE.accept} />
+                            <MiniBtn label="Change" reason={MATCH_EDIT_UNAVAILABLE.change} />
                           </span>
                         )}
                         {st === 'Unmatched' && (
                           <span style={{ marginLeft: 'auto' }}>
-                            <MiniBtn label="Assign Product" />
+                            <MiniBtn label="Assign Product" reason={MATCH_EDIT_UNAVAILABLE.assign} />
                           </span>
                         )}
                       </div>
@@ -589,7 +623,11 @@ export default function EvidenceWorkspace() {
 
                 {/* §10 — Remove is a soft delete with a reason. There is no hard delete. */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, marginTop: 11 }}>
-                  <Button icon="refresh">Change Product</Button>
+                  {/* The full-size twin of the card-level `Change` MiniBtn, and
+                      dead for the identical reason — see MATCH_EDIT_UNAVAILABLE. */}
+                  <Unavailable reason={MATCH_EDIT_UNAVAILABLE.change} style={{ display: 'block' }}>
+                    <Button icon="refresh" disabled>Change Product</Button>
+                  </Unavailable>
                   {/*
                     The identity is the signed-in operator or there is no
                     dispatch — this file had no `useAuth` at all, so the call
@@ -715,13 +753,57 @@ export default function EvidenceWorkspace() {
   )
 }
 
-function MiniBtn({ label }: { label: string }) {
+/**
+ * BUG-007 — the three card-level match actions (`Accept`, `Change`,
+ * `Assign Product`) were dead, and the shape of the deadness was unusual
+ * enough to be worth naming: `MiniBtn`'s prop type was `{ label: string }`,
+ * so it could not accept a handler **even if one existed**. There was no
+ * missing wire to add; the component had no socket.
+ *
+ * They are dead for exactly the reason `Unmatch` is, one card over — see
+ * `UNMATCH_UNAVAILABLE_REASON`. All three are *match-editing* verbs:
+ *
+ *  · `Accept` — confirm the product this photo was matched to at N% confidence
+ *  · `Change` — swap it for a different product
+ *  · `Assign Product` — attach one to a photo that resolved to nothing
+ *
+ * `ReviewEvidenceInput.action` (`src/actions/rentals/reviewEvidence.ts`) is
+ * `'review' | 'remove'`. Neither verb edits a match: `'review'` flags a photo
+ * for a human look and `'remove'` is §10's soft delete. So all three would have
+ * to send a verb the action vocabulary does not have, and widening that input
+ * belongs to whoever owns `src/actions/` — inventing it here would be inventing
+ * the decision.
+ *
+ * Adding `onClick` to the prop type without a verb to call would move the lie
+ * rather than remove it, so the socket stays closed and `reason` is required
+ * instead: a `MiniBtn` **cannot** be built without stating why it cannot act.
+ * That is the same guarantee the `STATUS_ICON` retype bought for BUG-001 — the
+ * compiler enforces the honesty rather than a reviewer catching it.
+ */
+function MiniBtn({ label, reason }: { label: string; reason: string }) {
   return (
-    <button
-      type="button"
-      style={{ height: 20, padding: '0 6px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
-    >
-      {label}
-    </button>
+    <Unavailable reason={reason}>
+      <button
+        type="button"
+        disabled
+        style={{ height: 20, padding: '0 6px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'not-allowed', opacity: 0.6, fontFamily: 'inherit', whiteSpace: 'nowrap' }}
+      >
+        {label}
+      </button>
+    </Unavailable>
   )
 }
+
+/**
+ * The three reasons, kept beside each other so they stay one story. Each says
+ * what the control would do, why it cannot yet, and — the part a warehouse user
+ * actually needs — what happens to their photo in the meantime.
+ */
+const MATCH_EDIT_UNAVAILABLE = {
+  accept:
+    'Accepting a match is not built yet — REVIEW_EVIDENCE accepts only "review" or "remove", and neither confirms a match. Nothing is written and this photo keeps the match it was given.',
+  change:
+    'Changing a match is not built yet — REVIEW_EVIDENCE accepts only "review" or "remove", and neither swaps the matched product. Use Unmatch on the selected photo once its verb exists.',
+  assign:
+    'Assigning a product is not built yet — REVIEW_EVIDENCE has no verb that attaches one, so there is nothing to write. The photo stays Unmatched and is still stored against this booking.',
+} as const

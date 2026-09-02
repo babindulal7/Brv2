@@ -6,6 +6,7 @@ import { Card, PageHeader, Button, ReflowRail, FooterNote, cardStyle, useRailGri
 import { Donut, Legend } from '../../components/ui/Charts'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { PageBody } from '../../components/ui/PageBody'
+import { Unavailable } from '../../components/ui/Unavailable'
 import { ReportToolbar, reportDateRange, withinReportRange } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow, ReportFilters } from '../../components/ui/ReportToolbar'
 import { BRAND, BRAND_ON, STATUS } from '../../lib/status'
@@ -318,11 +319,33 @@ export default function ExpenseReports() {
           <>
             {/* The Export button that used to sit here had no handler. The
                 toolbar below owns CSV now, and it exports the rows currently
-                on screen rather than a fixed dump. */}
-            <Button icon="upload">Import</Button>
-            <Button icon="plus" variant="primary">
-              New Expense
-            </Button>
+                on screen rather than a fixed dump.
+
+                BUG-006 — and directly beneath that note, `Import` and `New
+                Expense` were still dead: enabled, one of them styled `primary`,
+                neither carrying an `onClick`. The comment recorded the lesson
+                and the two buttons under it went on telling the same lie.
+
+                Both are unbuilt one layer deeper than the handler. This screen
+                renders `data/expenseReports.ts` — a seed fixture — and
+                `src/actions/finance/` holds exactly two actions (`recordPayment`,
+                `approveDailyClosing`). **Nothing in the codebase writes an
+                expense row.** `lib/queries/finance.ts` reads `expenses` in four
+                places and never inserts. So there is no write path for either
+                button to call, and inventing one — deciding an expense's
+                required fields, its approval path, its import file format —
+                is a product decision, not a missing wire.
+
+                Disabled with the reason rather than removed: expenses are the
+                screen's subject and this is where creating one will live. */}
+            <Unavailable reason={EXPENSE_UNAVAILABLE.Import}>
+              <Button icon="upload" disabled>Import</Button>
+            </Unavailable>
+            <Unavailable reason={EXPENSE_UNAVAILABLE['New Expense']}>
+              <Button icon="plus" variant="primary" disabled>
+                New Expense
+              </Button>
+            </Unavailable>
           </>
         }
       />
@@ -640,11 +663,30 @@ export default function ExpenseReports() {
 
           <Card title="Quick Actions">
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-sm)' }}>
+              {/*
+                These two tiles are the SAME two actions as the page header's
+                `Import` / `New Expense`, and they were dead in the same way —
+                found by probing the rendered page rather than reading it, which
+                is why the audit's file-level pass caught the header pair and
+                missed this one. Fixing only the header would have left the
+                screen contradicting itself: one copy of "New Expense" greyed
+                with a reason, an identical one two rails over still inviting a
+                press.
+
+                Same reasons, from the same constant, for exactly that: the two
+                sites cannot drift into two different explanations of one gap.
+              */}
               {QUICK_ACTIONS.map((a) => (
-                <button key={a.label} type="button" className="lift" style={quickStyle}>
-                  <Icon name={a.icon as IconName} size={17} />
-                  {a.label}
-                </button>
+                <Unavailable key={a.label} reason={EXPENSE_UNAVAILABLE[a.label]} style={{ display: 'block' }}>
+                  <button
+                    type="button"
+                    disabled
+                    style={{ ...quickStyle, width: '100%', cursor: 'not-allowed', opacity: 0.6 }}
+                  >
+                    <Icon name={a.icon as IconName} size={17} />
+                    {a.label}
+                  </button>
+                </Unavailable>
               ))}
             </div>
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
@@ -873,6 +915,22 @@ function expensesCsv(rows: ExpenseRow[]): ReportCsvRow[] {
       ]
     }),
   ]
+}
+
+/**
+ * BUG-006 — why `Import` and `New Expense` cannot act, stated once and read by
+ * both places they render (the page header and the Quick Actions rail).
+ *
+ * Keyed by the label so `QUICK_ACTIONS.map` can look its own reason up: adding
+ * a third quick action without a reason for it is then a compile error, not a
+ * third dead button. That is the same trick the `STATUS_ICON` retype used for
+ * BUG-001 — make the honesty the type's job rather than a reviewer's.
+ */
+const EXPENSE_UNAVAILABLE: Record<(typeof QUICK_ACTIONS)[number]['label'], string> = {
+  Import:
+    'Importing expenses is not built yet — no file format is settled, and nothing in the app writes an expense row for an import to land in.',
+  'New Expense':
+    'Recording an expense is not built yet — this screen reads a seed fixture, and no action writes to the expenses table. Record expenses in your books until it ships.',
 }
 
 const quickStyle = {

@@ -1,3 +1,17 @@
+/*
+ * TODO(decision) §4.41 — THIS FILE HAS NO ROUTE AND NO IMPORTER. It has never
+ * had one: `git log -S"CasesReports" -- src/App.tsx` returns nothing.
+ *
+ * It is not abandoned junk — the docstring below records a deliberate rebuild
+ * in which every invented figure was replaced by one counted off `data/cases.ts`
+ * or by an explicit "Not tracked yet". It was written beside `CasesQueue`, which
+ * has since been archived; the live Cases screen is `CasesWorkspace` at
+ * `/inventory/cases`, and that is a workspace, not this report.
+ *
+ * `data/nav.ts:469` records that the report catalogue is knowingly incomplete.
+ * Whether a Cases report is wanted — and so whether this ships or moves to
+ * `src/archive/` — is a product decision. See PLAN.md §4.41(a).
+ */
 import { useMemo, useState } from 'react'
 import { Card, PageHeader, Button, ReflowRail, SummaryRows, useRailGridColumns, useBandColumns } from '../../components/ui/Page'
 import Icon from '../../components/ui/Icon'

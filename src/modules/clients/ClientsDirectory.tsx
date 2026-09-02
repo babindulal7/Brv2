@@ -179,7 +179,25 @@ function SortHeader({
   }
   const on = sort.key === sortKey
   return (
-    <th style={{ ...th, textAlign: align ?? 'left' }}>
+    /*
+      BUG-009 — the sorting itself always worked and the direction glyph below
+      is correct, but `aria-sort` was never set, so a screen reader announced
+      only "button, Client": no indication that the table was sorted by this
+      column, and none of which way. The sighted operator had the arrow; the
+      screen-reader user had nothing.
+
+      It belongs on the `<th>`, not the button — `aria-sort` is defined on the
+      column header cell, and a button is not a `columnheader`. The value is
+      derived from the same `sort` state that paints the glyph, so the two
+      cannot drift: whichever column is active reads ascending/descending, and
+      every other sortable column reads `none` (which is the ARIA way of saying
+      "sortable, not currently sorted" — omitting it would say "not sortable").
+      The non-sortable `<th>`s in the early return above stay bare, correctly.
+    */
+    <th
+      style={{ ...th, textAlign: align ?? 'left' }}
+      aria-sort={on ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
       <button
         type="button"
         onClick={() => onSort(sortKey)}

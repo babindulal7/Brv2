@@ -1,3 +1,8 @@
+/*
+ * TODO(decision) §4.41 — THIS FILE HAS NO IMPORTER. Nothing renders it.
+ * Third of the three components from the abandoned `AddBundle` split; the live,
+ * routed `AddBundle` carries its own items table. See PLAN.md §4.41(b).
+ */
 import { memo } from 'react'
 import Icon from '../../../components/ui/Icon'
 import { TouchTarget } from '../../../components/ui/TouchTarget'

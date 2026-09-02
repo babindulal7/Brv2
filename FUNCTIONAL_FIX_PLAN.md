@@ -2,9 +2,33 @@
 
 Ordered by risk-removed per unit of change. Derived from `FUNCTIONAL_BUGS.md`.
 
-**Nothing in this plan has been applied.** The audit was run read-only because a second
-agent session was writing to this working tree concurrently (see
-`FULL_FUNCTIONAL_AUDIT.md` §7).
+> ## ✅ STATUS — 2 Sep 2026: this plan is **complete**. Read this box first.
+>
+> Every item below has been applied, or closed with evidence, or filed as a decision.
+> Sequence: items 1–3 landed 1 Sep (BUG-001/002/003); items 4–8 landed 2 Sep.
+>
+> | # | Item | Outcome |
+> |---|---|---|
+> | 1 | Icon registry / `STATUS_ICON` glyphs | ✅ applied 1 Sep, re-verified at runtime |
+> | 2 | Close the type hole (`Record<StatusKey, IconName>`) | ✅ applied 1 Sep — 0 `as IconName` casts remain |
+> | 3 | Client Reports pagination | ✅ applied 1 Sep — **pager deleted**: there was never a page 2 (6 rows, "209" was a literal) |
+> | 4 | `Collapse All` | ❌ **VOID — do not action.** `InventoryTree.tsx` has **no importer**; the button can never render, and the live `AddBundle` already works. See PLAN.md §4.41(b) |
+> | 5 | Dead buttons → `disabled` + reason | ✅ applied 2 Sep, and the count was **larger than this plan knew** — 7 more found by probing the rendered page |
+> | 6 | Notifications + Help | ✅ done as far as it can go 1 Sep (fake "12" deleted, both state a reason). The **feature** still needs the ruling |
+> | 7 | `/rentals/new` money actions | ✅ applied 2 Sep — and it was **not** blocked on the ruling this plan assumed. See below |
+> | 8 | Unreachable report files | ⬅ filed as **PLAN.md §4.41(a)**; git recovered the route history |
+>
+> **Two of this plan's judgements turned out to be wrong**, both in the same direction —
+> they trusted a file-level reading of reachability:
+> - **#4 was scoped as an XS fix on a component nothing renders.**
+> - **#7 was held behind a policy ruling it does not actually depend on.** The blocker is
+>   one layer lower and ruling-independent: the screen never persists a booking, so there
+>   is no invoice to attach a payment to either way.
+>
+> ~~**Nothing in this plan has been applied.**~~ The audit was originally run read-only
+> because a second agent session was writing to this working tree concurrently (see
+> `FULL_FUNCTIONAL_AUDIT.md` §7); that session's work is committed and this one built on
+> top of it.
 
 ---
 
@@ -19,7 +43,7 @@ a product decision, and `CLAUDE.md` forbids inventing one to unblock work.
 | 1 | Icon registry / `STATUS_ICON` type hole | S | No — one glyph choice |
 | 2 | Close the type hole permanently | XS | No |
 | 3 | Client Reports pagination | M | No — local state |
-| 4 | `Collapse All` | XS | No |
+| 4 | `Collapse All` | ❌ VOID | — unreachable file |
 | 5 | Dead buttons → `disabled` + reason | M | No (adopts existing pattern) |
 | 6 | Notifications + Help | L | **Yes** |
 | 7 | `/rentals/new` money actions | L | **Yes** |
@@ -78,11 +102,22 @@ already declares the intended behaviour ("Showing 1 to 5 of 209").
 **Check `ProductReports.tsx:372` at the same time** — identical dead pager, but see #8
 first: that file may not ship at all.
 
-## 4. BUG-007 — `Collapse All`
+## 4. BUG-007 — `Collapse All` — ❌ **VOID, do not action**
 
 `InventoryTree.tsx:19`. Its sibling `Select All` at the same line already has
 `onClick={selectAllTree}`; this one has nothing. The collapse state shape is local and
 the intent is unambiguous.
+
+> **The premise was false.** `InventoryTree.tsx` has **zero importers** — it is one of
+> three components from an `AddBundle` split (`PROGRESS.md:10209`) that was never adopted.
+> The live, routed `AddBundle` (`App.tsx:348`) carries its own inline tree. Wiring this
+> button would have changed nothing any user can reach, and the "XS effort, no ruling
+> needed" framing would have made it look like progress.
+>
+> The lesson generalises: **"a sibling control works, so this one is a one-line fix" is an
+> argument about the file, not about the running app.** Check the importer first.
+>
+> Filed as PLAN.md §4.41(b) with a `TODO(decision)` header on the file.
 
 ## 5. BUG-004/006/007 — Adopt the existing "unavailable" pattern for the rest
 

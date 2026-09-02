@@ -4,6 +4,7 @@ import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { ConfirmDialog, Input, Select } from '../../components/ui'
 import { Card, PageHeader, Button, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Unavailable } from '../../components/ui/Unavailable'
 import { EmptyState } from '../../components/ui/StateViews'
 import { useToast } from '../../components/ui/Toast'
 import { useViewport } from '../../lib/device'
@@ -1333,6 +1334,22 @@ export default function NewRental() {
      * "Receive Deposit" while the rail card they scroll to now has no such
      * button. What the notice should say instead — "View Balance"? nothing? —
      * is a copy/product decision and is not invented here.
+     *
+     * ⚠ WIDENED by the BUG-004 fix (2 Sep 2026). The rail's money pair is now
+     * `disabled` + `Unavailable` for **every** role on this screen, because the
+     * draft has no booking row to attach a payment to (see the block at the
+     * Summary card). So the mismatch this TODO describes is no longer a
+     * money-permission edge — it is the ordinary path: any user who presses a
+     * notice labelled "Receive Payment" is scrolled to a button that cannot be
+     * pressed.
+     *
+     * That is deliberately left as-is rather than patched, and the reason is
+     * worth stating: the destination now *explains itself* — it names why the
+     * payment cannot be taken and what to do instead (Confirm the booking).
+     * A notice that leads to a stated reason is honest; a notice relabelled by
+     * me would be invented copy. The decision is unchanged in kind and now
+     * simply applies to everyone: does the notice keep the verb, or does it
+     * read "View Balance", or does §12's one-action rule get a third answer?
      */
     ...(canBookingMoney && depositRequiredPaisa > depositReceivedPaisa
       ? [{ text: `Deposit ${formatMoney(depositPendingPaisa)} pending`, severity: 'Warning' as const, action: 'Receive Deposit' }]
@@ -1941,8 +1958,34 @@ export default function NewRental() {
           this Summary card (the figures) stays on `canBookingMoney`. */}
       {canTakePayment && (
         <div style={{ marginTop: 11, display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-          <Button icon="dollar" variant="secondary">Receive Payment</Button>
-          <Button icon="dollar" variant="secondary">Receive Deposit</Button>
+          {/*
+            BUG-004 — both of these were enabled, styled as live secondary
+            actions, and carried no `onClick`. A money-taking affordance that
+            silently does nothing is worse than an absent one.
+
+            They are NOT blocked on the policy question the audit raised ("can
+            money be taken against an unconfirmed booking?"). They are blocked
+            one layer below it: **this screen never persists a booking.**
+            `Confirm Booking` does not dispatch `createRental` yet either — see
+            the ⛔ block at :1485 — so there is no `bookings.id`, no invoice, and
+            nothing for `RecordPaymentModal` (which resolves an `invoiceId` out
+            of an `invoices` list) to attach a payment to. That holds whichever
+            way the policy is ruled.
+
+            Disabled with the reason rather than removed: the money buttons are
+            where §1 of the redesign puts them, and hiding them here would read
+            as "this role cannot take payment", which is the Law 6 meaning and
+            not what is true — `canTakePayment` already passed to render this.
+
+            The same action, wired, lives on Booking Detail once the booking
+            exists (`canBookingMoney && canTakePayment`).
+          */}
+          <Unavailable reason="This booking does not exist yet — Confirm creates it, and a payment needs an invoice to record against. Receive payment from the booking once it is confirmed.">
+            <Button icon="dollar" variant="secondary" disabled>Receive Payment</Button>
+          </Unavailable>
+          <Unavailable reason="This booking does not exist yet — Confirm creates it, and a deposit needs a booking to be held against. Receive the deposit from the booking once it is confirmed.">
+            <Button icon="dollar" variant="secondary" disabled>Receive Deposit</Button>
+          </Unavailable>
         </div>
       )}
     </Card>
@@ -2020,24 +2063,46 @@ export default function NewRental() {
       {/* §53 / §13 — exactly three tiles. */}
       <Card title="Quick Actions">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 'var(--sp-sm)' }}>
+          {/*
+            BUG-004 — `Share` and `More` had no `onClick`, and their `title` /
+            `aria-label` actively PROMISED the behaviour ("Share this draft
+            booking", "More actions for this booking"). The tooltip was the
+            harm: a dead button is a puzzle, a dead button that describes what
+            it does is a lie, and on a screen reader the promise was the only
+            thing announced.
+
+            `Print` is real (`window.print()`) and is left alone. The other two
+            carry their reason instead of their promise, and are disabled so the
+            press does not read as "nothing happened".
+          */}
           {([
-            { label: 'Print', icon: 'file' as IconName, hint: 'Print this draft booking' },
-            { label: 'Share', icon: 'arrow_right' as IconName, hint: 'Share this draft booking' },
-            { label: 'More', icon: 'more_vert' as IconName, hint: 'More actions for this booking' },
-          ]).map((a) => (
-            <button
-              key={a.label}
-              type="button"
-              className="press"
-              title={a.hint}
-              aria-label={a.hint}
-              onClick={a.label === 'Print' ? () => window.print() : undefined}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 56, padding: '10px 4px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-            >
-              <Icon name={a.icon} size={17} style={{ color: 'var(--text2)' }} />
-              {a.label}
-            </button>
-          ))}
+            { label: 'Print', icon: 'file' as IconName, hint: 'Print this draft booking', why: null },
+            { label: 'Share', icon: 'arrow_right' as IconName, hint: null, why: 'Sharing is not built yet — no destination is settled (a client portal link, an email, or a PDF hand-off).' },
+            { label: 'More', icon: 'more_vert' as IconName, hint: null, why: 'No further actions are built for a draft booking yet — the ones that exist are Print, and Confirm at the foot of the page.' },
+          ]).map((a) => {
+            const tile = (
+              <button
+                key={a.label}
+                type="button"
+                className={a.why ? undefined : 'press'}
+                title={a.hint ?? undefined}
+                aria-label={a.hint ?? a.label}
+                disabled={a.why !== null}
+                onClick={a.label === 'Print' ? () => window.print() : undefined}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 56, padding: '10px 4px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: a.why ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: a.why ? 0.6 : 1, width: '100%' }}
+              >
+                <Icon name={a.icon} size={17} style={{ color: 'var(--text2)' }} />
+                {a.label}
+              </button>
+            )
+            return a.why ? (
+              <Unavailable key={a.label} reason={a.why} style={{ display: 'block' }}>
+                {tile}
+              </Unavailable>
+            ) : (
+              tile
+            )
+          })}
         </div>
       </Card>
 

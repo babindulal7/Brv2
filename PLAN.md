@@ -613,6 +613,162 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
+## 4.42 ⬅ OPEN ×3 — the migrations do not build a database, and the DB disagrees with the app about money
+
+**Raised 2 Sep 2026** attempting the audit's recommended next stage (§12/§14/§40 CRUD
+against `dev:local`). The stage could not be run: the environment it requires cannot be
+built. Full evidence in `FUNCTIONAL_BUGS.md` BUG-010 … BUG-013.
+
+> ⚠ This entry cost the local dev database. `npm run db:rebuild` dropped it and could not
+> rebuild it; no dump existed. The live project was not touched. **Take a dump before
+> touching a database again, local ones included** — `scripts/check-dump.mjs` already
+> exists for exactly this and was not used.
+
+### (a) How do the migrations become from-scratch appliable?
+
+Applying all 79 files in filename order into an empty `public` schema produces **five
+blockers** (BUG-010). Four are repo-side and three of those are one cause: `0047_seed_
+reference_corpus` needs `0051` (audit-trigger column safety) and `0055` (ruled identifier
+formats) to have run first, and then hits `validate_booking_gates()`, which refuses the
+repo's own seed corpus for an outstanding rental payment.
+
+This is not cosmetic. `scripts/check-dump.mjs` records that this is Supabase **Free** — no
+PITR, no automated backup — so **the migration set is the disaster-recovery plan**, and it
+does not currently run. It is also why a new machine cannot get a working database.
+
+**The options, none taken here:**
+(a) **Renumber** `0047` to sit after `0055`. Straightforward, and directly against the
+apply script's header, which says the numbering is load-bearing precisely because
+"filename order equals the order that built production" — a claim this finding disproves
+for a fresh apply, but which may still hold for the order production was actually built in;
+(b) **Split `0047`** into its schema-independent and schema-dependent halves, leaving the
+number in place;
+(c) **Make `0047` self-sufficient** — seed the retired `CL-…` format it was originally
+written for and let `0055`'s existing rewrite migrate it forward. Smallest diff, keeps
+every number, and uses a path 0055 already implements and tests;
+(d) leave the set as-is and declare `db:rebuild` unsupported, documenting that the live
+schema is not reproducible. **Honest but expensive** — it makes the backup gate the only
+recovery path.
+
+Blocker 3 needs its own answer whichever wins: **may a seed bypass a business gate?**
+Either `0047` seeds a booking that satisfies `validate_booking_gates()`, or seeds are
+allowed to suspend triggers, or the gate is wrong. That is a rule question, not a fix.
+
+Blocker 5 (`0067`, `au.email_confirmed_at`) is **environment-dependent** — the column is
+absent from this local GoTrue but may exist on the live project. Confirm against live
+before treating it as a repo defect.
+
+### (b) Which rounding is correct — the trigger's paisa, or the engine's whole rupee?
+
+`recalculate_invoice_totals()` rounds to 2 dp; `price()` (`src/lib/money.ts`) rounds to the
+whole rupee at each step, which `money.ts:118` defends as §2.4's "Half Up, applied at each
+displayed step" and as the only chain that reconciles with §2.8.
+
+They disagreed on **41 invoices** in a partial seed run (BUG-011; the seed defines 120, so
+41 is a floor), and `0047` already knows —
+it prints a NOTICE per invoice and restates the engine's figure over the trigger's. That
+fixes the seeded rows only: the trigger stays attached, so an invoice line written through
+the app re-fires it and the database's figure wins again.
+
+One of the two has to move, and which one is a **finance ruling**, not an engineering
+preference: whole-rupee totals are what the app displays and what §2.4 states, but paisa
+precision is what the column type (`numeric(14,2)`) was chosen to hold.
+
+### (c) Is `invoices.vat_rate` meant to be authoritative?
+
+`0006_finance.sql:92` declares `vat_rate numeric(5,4) not null default 0.1300`, and
+`recalculate_invoice_totals()` **never reads it** — it hardcodes `0.13` (proved: `vat_rate`
+does not occur in the function body). So the column can hold any value and change nothing.
+
+Unlike (b), this error is not sub-rupee. Either the trigger should read the column — in
+which case a zero-rated or differently-rated invoice becomes possible and every existing
+row needs checking — or the column is decoration and should be dropped so it stops looking
+authoritative. `invoice_lines.tax_rate` (`0006:450`) has the same shape and needs the same
+answer.
+
+Note the two sides are already wired to different sources: the app takes `vatPercent` as an
+argument and `bookingQuery.ts:891` states explicitly that "13 is NOT hardcoded" there.
+
+> Also filed, needing no ruling: **BUG-013** — nine `src/actions/` modules are stubs that
+> `console.log('[DB TX] …')` and return `{ success: true }` without writing. They have no
+> callers today; wiring one to a button would produce a green toast and no row.
+
+
+## 4.41 ⬅ OPEN ×2 — five unrouted source files: do they ship, or go to `src/archive`?
+
+**Raised 2 Sep 2026** finishing `FUNCTIONAL_BUGS.md` BUG-005 and BUG-007. Both bugs
+end at the same question, so they are filed here once.
+
+Five files under `src/` have **no route and no importer**. They compile, they count as
+live code, and between them they hold roughly **twenty dead buttons that can never
+render** — which is why they cost audit time repeatedly (`BUG_SWEEP_REGISTER` P2-44,
+then BUG-005, then BUG-007) without ever being a defect a user could meet.
+
+The repo already has the mechanism, and `tsconfig.json:30-34` states it: *"`src/archive`
+holds screens ruled out of the application. Law 3 keeps the files; excluding them from
+the program keeps them from being compiled, bundled or counted as live code. Restoring
+one is a move back into `src/modules` plus its route."* **Moving a file there is
+therefore not a deletion and is cheaply reversible — but it is exactly the "ruled out"
+that only Babin can say.** Hence this entry rather than a commit.
+
+### (a) The two report screens — `ProductReports.tsx` (517 lines), `CasesReports.tsx` (199)
+
+The fix plan called this unknowable from the code. **Git settles half of it.**
+
+`ProductReports` **was routed**, and was *replaced in place*: at `6fb1c62` ("Restore
+point before the 11-section wireframe restructure", 12 Aug) the route
+`/reports/inventory` stopped rendering `<ProductReports />` under the crumb *Asset
+Utilization* and started rendering `<InventoryReports />` under *Inventory Reports*.
+
+So it was not dropped by accident. But it was **not superseded either** — the two are
+different reports, and this is the part that needs the ruling:
+
+| | `ProductReports` (unrouted) | `InventoryReports` (live) |
+|---|---|---|
+| Subject | product/sales performance | asset stock and health |
+| Carries | sales trend, profit trend, turnover, fast/slow movers, dead stock, returns, top sellers, suppliers | total assets, utilization, availability, audit accuracy, top categories by value |
+
+Nothing live covers turnover, dead stock or slow movers. `/reports/equipment-performance`
+is the nearest and covers revenue and utilization per item, not stock movement.
+`data/expenseReports.ts:44` still says the period list is *"Kept for `ClientReports` and
+`ProductReports`, which import this list"* — written when it was expected to ship.
+
+`CasesReports` was **never** routed (`git log -S` on `App.tsx` returns nothing). It is not
+junk: its docstring records a deliberate rebuild in which every invented figure was
+replaced by one counted off `data/cases.ts` or by an explicit `'Not tracked yet'`. It was
+written beside `CasesQueue`, which has since been archived and replaced by the live
+`CasesWorkspace` at `/inventory/cases`. `data/nav.ts:469` notes the report catalogue is
+knowingly incomplete: *"§9.6's catalog of 45 is not built; Pulse is the report index that
+exists."*
+
+**The question:** is either report wanted?
+- **Wanted** → give it a route and wire its dead pager and buttons (`ProductReports.tsx:372`
+  has the same presentational pager BUG-003 removed from Client Ledger).
+- **Not wanted** → `git mv` both to `src/archive/reports/`; they leave the program and stop
+  being re-audited.
+
+### (b) The three bundle components — `InventoryTree`, `BundleSummaryRail`, `BundleItemsTable`
+
+`src/modules/inventory/components/`. `PROGRESS.md:10209` records them being split out of a
+600-line monolith; the live `AddBundle` (routed, `App.tsx:348`) **imports none of them** and
+carries its own inline versions instead. `BUG_SWEEP_REGISTER` P2-44 already called them
+*"three orphaned bundle components … that shadow the live AddBundle implementations"*.
+
+This is a straightforward abandoned refactor, and the practical point is that **the live
+screen is fine**: `AddBundle:1950` has a working `View all blocked items` toggle and a
+working `Duplicate`, which are precisely the controls BUG-007 filed as dead. The dead
+copies are only in the orphans.
+
+⚠ **`FUNCTIONAL_FIX_PLAN.md` item #4 is void.** It scoped `Collapse All` as an XS
+mechanical fix — *"its sibling `Select All` already has `onClick`"*. Both live in
+`InventoryTree.tsx`, which nothing renders, so wiring it would have changed nothing a
+user can reach. **Do not action that item; answer this instead.**
+
+**The question:** is any of the three coming back? If not, `git mv` all three to
+`src/archive/inventory/`. Nothing imports them, so nothing breaks either way.
+
+> Marked `TODO(decision) §4.41` at the head of all five files.
+
 ## 4.40 ⬅ OPEN ×2 — who signs a daily closing, and may a day be re-opened?
 
 **Raised 1 Sep 2026** building the Daily Closing screen and

@@ -775,13 +775,37 @@ export function SubRental() {
                         </div>
                       </td>
                       <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={c.linkedBooking ? () => navigate(`/rentals/${c.linkedBooking}`) : undefined}
-                        >
-                          View
-                        </Button>
+                        {/*
+                          BUG-006 — `View` navigates to the linked booking, and
+                          `linkedBooking` is optional (`:31`). On a contract
+                          without one the ternary passed `onClick={undefined}`,
+                          so the button rendered fully enabled and did nothing:
+                          the dead half was invisible, because the live and dead
+                          copies of the button were pixel-identical.
+
+                          A sub-rental with no linked booking is a real state,
+                          not a data fault — kit hired in against stock rather
+                          than against a specific job — so the row keeps its
+                          column and the button states the reason instead of
+                          disappearing, which would misalign the column and read
+                          as "this row has no action" rather than "this contract
+                          has nothing to open".
+                        */}
+                        {c.linkedBooking ? (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => navigate(`/rentals/${c.linkedBooking}`)}
+                          >
+                            View
+                          </Button>
+                        ) : (
+                          <Unavailable reason="This sub-rental is not linked to a booking, so there is nothing to open. Link it to a booking to view the job it was hired for.">
+                            <Button variant="secondary" size="sm" disabled>
+                              View
+                            </Button>
+                          </Unavailable>
+                        )}
                       </td>
                     </tr>
                   )

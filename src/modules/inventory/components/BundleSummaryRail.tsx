@@ -1,3 +1,15 @@
+/*
+ * TODO(decision) §4.41 — THIS FILE HAS NO IMPORTER. Nothing renders it.
+ *
+ * Same abandoned split as `InventoryTree.tsx`: the live, routed `AddBundle`
+ * carries its own summary rail.
+ *
+ * ⚠ `FUNCTIONAL_BUGS.md` BUG-007 files this file's `View all blocked items` and
+ * the `Preview` / `Duplicate` / `More` quick actions as dead controls. They are
+ * dead, and they are also unreachable — and the live screen is fine:
+ * `AddBundle:1950` has a working `View all blocked items` toggle and a working
+ * Duplicate. Answer PLAN.md §4.41(b) rather than fixing buttons here.
+ */
 import { memo } from 'react'
 import Icon from '../../../components/ui/Icon'
 import { Card } from '../../../components/ui/Card'

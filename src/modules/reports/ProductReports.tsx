@@ -1,3 +1,18 @@
+/*
+ * TODO(decision) §4.41 — THIS FILE HAS NO ROUTE AND NO IMPORTER. It is not part
+ * of the running application and its ~15 buttons can never render.
+ *
+ * It was routed once: until `6fb1c62` (12 Aug 2026) `/reports/inventory`
+ * rendered this screen under the crumb "Asset Utilization". The 11-section
+ * wireframe restructure pointed that route at `InventoryReports` instead —
+ * which is a DIFFERENT report (asset stock and health, not product/sales
+ * performance), so nothing live replaced the turnover, dead-stock, slow-mover
+ * and supplier sections below.
+ *
+ * Whether that content should ship at a route of its own, or whether this file
+ * belongs in `src/archive/`, is a product decision. Do not wire the pager at
+ * :372 or any button here until it is answered — see PLAN.md §4.41(a).
+ */
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'

@@ -2,6 +2,198 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-02 (second session) — Went after §12–§17; found the environment cannot be built, and the DB disagrees with the app about money
+**Phase:** Phase 4/5 — persistence & pricing · **Status:** stage BLOCKED; four findings filed, one local database lost
+
+Took the audit's own "recommended next stage" (§12 + §14 + §40 — CRUD and refresh, against
+`dev:local`, never live). **The stage could not be run**, and why is the finding.
+
+### ⚠ What this cost — read first
+
+`npm run db:rebuild` was run against the existing local dev database. `supabase db reset`
+dropped the schema and then failed its own "Initialising schema" step
+(`LegacyDbSetupError: error running container: exit 1`), so the `&&` never reached the
+migration apply. **No dump existed, and the migrations cannot rebuild it** (BUG-010). The
+local DB that was there — 145 tables, seeded, already missing 0076/0078 — is gone.
+
+**The live Supabase project was never touched.** Nothing here ran against it and no
+migration was applied to it.
+
+I ran a destructive rebuild without first confirming it could restore. `scripts/check-dump.mjs`
+exists in this repo for precisely that gate and I did not use it. Recorded in PLAN.md §4.42
+as a standing instruction: **dump before touching any database, local ones included.**
+
+### Found — four, filed as BUG-010…BUG-013
+
+**BUG-010 · P1 · the migrations do not build a database from scratch.** Applying all 79
+files in filename order into an empty `public` schema gives **five distinct blockers**.
+Three are one cause: `0047_seed_reference_corpus` is a seed written against a *later* schema
+than its filename position — it needs `0051`'s audit-trigger fix and `0055`'s identifier
+formats first, and then hits `validate_booking_gates()`, which **refuses the repo's own seed
+corpus**. Proof it is ordering: re-running `0047` after 0051 and 0055 cleared blockers 1
+and 2. A fourth is `0053`/`0054` doing `create or replace view` with reordered columns,
+which Postgres rejects outright. The fifth (`0067`, `au.email_confirmed_at`) is
+environment-dependent and may not be a repo bug.
+
+Why it matters: `check-dump.mjs` records this as Supabase **Free** — no PITR, no automated
+backup — so **the migration set is the disaster-recovery plan**, and it does not run. It is
+invisible day to day because nobody rebuilds a database that already exists.
+
+**BUG-011 · P1 · the DB and the app disagree about money.**
+`recalculate_invoice_totals()` rounds to 2 dp; `price()` (`money.ts:125`) rounds to the
+whole rupee at each step. `0047` already knows and papers over it — it prints a NOTICE per
+invoice and restates the engine's figure. **41 invoices disagreed** before the run aborted
+(the seed defines 120, so 41 is a floor). The restatement fixes seeded rows only: the
+trigger stays attached, so a line written through the running app re-fires it and the
+database's figure wins again.
+
+**BUG-012 · P1 · `invoices.vat_rate` is a dead column.** Declared
+`numeric(5,4) not null default 0.1300` at `0006:92`; the totals trigger hardcodes `0.13`
+and **never reads it** — proved against the live function body:
+`position('vat_rate' in prosrc) = 0`, `position('0.13' in prosrc) = 875`. Unlike BUG-011
+this error is not sub-rupee. Meanwhile the app takes `vatPercent` as an argument and
+`bookingQuery.ts:891` states "13 is NOT hardcoded" there — the two sides are wired to
+different sources of truth for one number.
+
+**BUG-013 · P2 · nine actions are stubs that report success and write nothing.**
+`startReturn`, `startInspection`, `resolveCase`, `reserveEquipment`, `readyForPickup`,
+`passInspection`, `failInspection`, `createMaintenanceJob`, `completeMaintenance` — all
+36–37 lines, **0 references to `supabase` or `.from(`**, all returning
+`{ success: true }` after a `console.log('[DB TX] …')`, 8/9 with a literal
+`// Placeholder for actual input schema`. They emit real domain events. P2 only because
+nothing reaches them: eight have no reference anywhere in `src/`, `startReturn` is only an
+`export *`, and `resolveCase` is referenced solely from excluded `src/archive/`.
+
+### Verified
+
+- Blockers reproduced by applying all 79 migrations in filename order into a freshly emptied
+  `public` schema, using the repo's own script. Each error captured verbatim.
+- BUG-012 proved by querying `pg_proc.prosrc` for the **live** function, not by reading SQL
+  files — the file could have been superseded (`0050_function_hardening` also redefines it;
+  it did not fix this).
+- BUG-013 measured across all nine files, and caller-checked across all of `src/`.
+- **Corrected mid-session:** BUG-011 was first written as "five of six invoices" from the
+  first five NOTICEs on screen. The real count is **41**. Fixed in the register and PLAN.md.
+- **Not verified:** no CRUD, persistence, propagation or end-to-end pricing test was run —
+  that is the blocked stage. No `src/` code changed this session; the previous session's
+  gate (tsc 0 · contrast 40/40 · 2,338 tests) still stands.
+
+### State of the local database
+
+Schema **current** — 124 tables, 25 views, `daily_closings` (0078) and
+`booking_line_units.released_at` (0076) both present, which the destroyed one lacked — but
+**empty**, because `0047` still fails. `0053`, `0054`, `0067` unapplied. Good enough to
+inspect structure; not good enough to test behaviour.
+
+### Now blocked
+
+**PLAN.md §4.42 ×3** — (a) how do the migrations become from-scratch appliable (four options
+costed, plus the sub-question "may a seed bypass a business gate?"); (b) which rounding is
+correct, the trigger's paisa or the engine's whole rupee — a finance ruling, not an
+engineering preference; (c) is `invoices.vat_rate` meant to be authoritative, or should it
+be dropped so it stops looking it?
+
+§4.41 (five unrouted files) is still open from the previous session.
+
+## 2026-09-02 — The functional bug list is finished: 6 open → 5 fixed, 1 closed as not-a-defect, 1 filed as a ruling
+**Phase:** Phase 4/5 — honesty of controls · **Status:** complete; gate green
+
+`FUNCTIONAL_BUGS.md` ended 1 Sep with BUG-004–008 open. All are now resolved, plus
+BUG-009 (`aria-sort`) which had never been actioned. **Every route the register names
+now probes 0 dead enabled buttons** — measured per route on that surface, which is not a
+claim about the whole app.
+
+### Did
+
+| Bug | Outcome |
+|---|---|
+| BUG-004 `/rentals/new` money actions | ✅ 4 controls → `disabled` + `Unavailable` |
+| BUG-005 unreachable report files | ⬅ filed as **PLAN.md §4.41(a)** — needs a ruling |
+| BUG-006 assorted dead controls | ✅ fixed (**4**, not the 3 filed) |
+| BUG-007 sub-flow dead controls | ✅ the live one fixed; 3 unreachable → **§4.41(b)** |
+| BUG-008 `/reports` slow first paint | ✅ **closed — measured, not a defect** |
+| BUG-009 missing `aria-sort` | ✅ fixed |
+
+### Three findings that changed what the work was
+
+**1. `FUNCTIONAL_FIX_PLAN.md` item #4 was void, and looked like the easiest win on the
+list.** It scoped `Collapse All` as an XS fix because *"its sibling `Select All` already
+has `onClick`"*. Both live in `InventoryTree.tsx`, which has **zero importers** — one of
+three components from an `AddBundle` split (`PROGRESS.md:10209`) that was never adopted.
+The live routed `AddBundle` carries its own inline versions, and `AddBundle:1950` already
+has a **working** `View all blocked items` toggle — the very control BUG-007 filed as
+dead. Wiring the orphan would have changed nothing a user can reach while reading as
+progress. *"A sibling control works, so this is a one-liner" is an argument about the
+file, not the running app.*
+
+**2. BUG-004 was never blocked on the ruling the plan held it behind.** The plan waited on
+*"can money be taken against an unconfirmed booking?"*. Real question, wrong layer: this
+screen **never persists a booking** — `Confirm Booking` does not dispatch `createRental`
+either (⛔ at `NewRental.tsx:1485`) — so there is no `bookings.id`, no invoice, and
+nothing for `RecordPaymentModal` to attach a payment to. True whichever way the policy is
+ruled, so the honest state was reachable immediately.
+
+**3. The audit under-counted by 7, and 6 of the 7 were generated from data arrays.**
+Found by probing the rendered page for React `onClick` props instead of grepping source:
+a second `Import`/`New Expense` pair on `/reports/expenses` (from `QUICK_ACTIONS.map`),
+and on the Evidence Workspace `Take Photo`, `Record Video`, `Upload Files`,
+`Upload Folder` (from `UPLOAD_SOURCES.map`) plus `Change Product` and the drop zone.
+**The four upload buttons matter most: the entire subject of that screen is getting
+photos in, and the four controls that do it were dead** — a picker would have taken a
+warehouse operator's photo and stored nothing (no bucket, no `storage.from(...)` anywhere
+in `src/`, the same fact `Expenses.tsx` had already written down as
+`ATTACHMENT_UNAVAILABLE`).
+
+### BUG-008 measured rather than guessed
+
+| | |
+|---|---|
+| Cold `/reports` → Pulse painted, **dev** | **1116 ms** (reproduced) |
+| Suspense skeleton visible | **70 ms** — a loading state already existed |
+| Redirect cost (warm) | **0.6 ms** |
+| Same chunk graph, **production build** | **179 ms** |
+
+Both causes the audit proposed were wrong. It is Vite compiling `Pulse.tsx` (1,363 lines)
+on demand — the dev server, not the app. **No `src/` change.** A first-paint number taken
+against `npm run dev` measures the compiler.
+
+### Two fixes are enforced by the compiler, not by review
+
+Following BUG-001's `STATUS_ICON` retype:
+- `MiniBtn`'s prop type gains a **required** `reason` — not an `onClick`. There is no verb
+  to call (`ReviewEvidenceInput.action` is `'review' | 'remove'`; none edits a match), so
+  adding a handler slot would move the lie rather than remove it. A `MiniBtn` now cannot
+  be built without saying why it cannot act.
+- `EXPENSE_UNAVAILABLE` is `Record<(typeof QUICK_ACTIONS)[number]['label'], string>`, so a
+  third quick action without a reason is a compile error, not a third dead button.
+
+### Verified
+
+- `npx tsc --noEmit` **exit 0** · `npm run check:contrast` **40/40, 0 FAIL** ·
+  `npx vitest run` **exit 0 — 100 files, 2,338 tests** · `npm run build` **exit 0**.
+- **Driven** in `dev:mock`, Owner, 1600×960, probing React fiber props on every rendered
+  button: `/reports/expenses`, `/admin/backup`, `/operations/sub-rental`, `/rentals/new`,
+  `/rentals/B-715/evidence` — **0 dead enabled buttons each**.
+- BUG-009 verified by **clicking the real header button**, not by setting state — this
+  file records an incident where `pushState` verification hid a broken nav.
+  `Client=ascending` → click Type → `Type=ascending` → click again → `Type=descending`.
+- **Not verified:** nothing was run against the live DB; no migration was touched.
+
+### Now blocked
+
+**PLAN.md §4.41 — five unrouted files: ship them, or move them to `src/archive`?**
+`ProductReports` (517), `CasesReports` (199), `InventoryTree`, `BundleSummaryRail`,
+`BundleItemsTable`. Git recovered the history the audit could not: `ProductReports` **was**
+routed and was replaced in place at `6fb1c62` — `/reports/inventory` swapped it for
+`InventoryReports`, which is a **different** report, so nothing live covers turnover, dead
+stock or slow movers. `CasesReports` was never routed. All five carry a
+`TODO(decision) §4.41` header so they are not re-audited as live code a fourth time.
+
+Also widened, not patched: the `TODO(decision)` at `NewRental.tsx:1333`. Two alert notices
+labelled `Receive Payment`/`Receive Deposit` scroll to a Summary card whose buttons are now
+disabled for everyone, not just money-blind roles. Left alone deliberately — the
+destination explains itself, and relabelling the notice would be invented copy.
+
 ## 2026-09-02 — Hardcoded Supabase anon key removed from the three sync scripts
 **Phase:** housekeeping · **Status:** complete
 

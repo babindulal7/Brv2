@@ -554,27 +554,51 @@ export default function BackupRestore() {
 
                 <div style={{ minWidth: 0 }}>
                   <div style={legend}>Restore From</div>
-                  <button
-                    type="button"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      width: '100%',
-                      height: 32,
-                      padding: '0 9px',
-                      borderRadius: 'var(--r-input)',
-                      border: '1px solid var(--input-border)',
-                      background: 'var(--input-bg)',
-                      color: 'var(--text2)',
-                      fontSize: 'var(--t-meta)',
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    <span style={{ flex: 1, textAlign: 'left' }}>Select backup or restore point</span>
-                    <Icon name="chevron_down" size={13} />
-                  </button>
+                  {/*
+                    BUG-006 — this picker had no handler and no disabled state:
+                    a full-width input-styled control with a chevron, which is
+                    the one shape in the design system that means "press me and
+                    a list opens". Nothing opened.
+
+                    It is parked for the same reason the restore trigger at the
+                    foot of this card is (`RESTORE_UNAVAILABLE`): there is no
+                    restore service in this build, so there is nothing to select
+                    *into*. Picking a different restore point would change a
+                    local value that no code path reads. It carries the card's
+                    own reason rather than a new one, so the picker and the
+                    button that consumes it can never disagree about why.
+
+                    The card's other inputs (Restore What?, Restore Options) are
+                    left live deliberately — they are local, they are already
+                    honest about being inert once the trigger states its reason,
+                    and freezing them would make the card unreadable rather than
+                    more truthful.
+                  */}
+                  <Unavailable reason={mayManage ? RESTORE_UNAVAILABLE : OWNER_ONLY} style={{ display: 'block', width: '100%' }}>
+                    <button
+                      type="button"
+                      disabled
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        width: '100%',
+                        height: 32,
+                        padding: '0 9px',
+                        borderRadius: 'var(--r-input)',
+                        border: '1px solid var(--input-border)',
+                        background: 'var(--input-bg)',
+                        color: 'var(--text2)',
+                        fontSize: 'var(--t-meta)',
+                        cursor: 'not-allowed',
+                        opacity: 0.6,
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      <span style={{ flex: 1, textAlign: 'left' }}>Select backup or restore point</span>
+                      <Icon name="chevron_down" size={13} />
+                    </button>
+                  </Unavailable>
 
                   <div
                     style={{
