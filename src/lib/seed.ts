@@ -1326,8 +1326,44 @@ function category(code: string): string {
   return `(select id from inventory_categories where code = ${txt(code)})`
 }
 
+/**
+ * The identifier shape that was LEGAL AT MIGRATION 0047 — not the ruled one.
+ *
+ * `0005_clients.sql:89` and `0003_operations.sql` constrain `client_code` to
+ * `^CL-[0-9]{4}-[0-9]{4}$` and `booking_no` to `^BK-[0-9]{4}-[0-9]{4}$`.
+ * `0055_ruled_identifier_formats.sql` is what replaces those with the ruled
+ * `C-<n>` / `B-<n>`, and it does so by REWRITING the existing rows:
+ *
+ *   update clients set client_code = 'C-' || … where client_code ~ '^CL-…$';
+ *
+ * 0047 sits eighteen files EARLIER, so emitting the ruled form there wrote a
+ * value its own table rejected — the first of BUG-010's blockers, and the
+ * reason `npm run db:rebuild` could not rebuild a database from scratch. The
+ * corpus now seeds the retired form and lets 0055 migrate it forward, which is
+ * both chronologically honest and a path 0055 already implements and tests.
+ *
+ * ⚠ SQL EMISSION ONLY. The in-memory corpus keeps the ruled `C-34` / `B-715`
+ * everywhere else, because that is what the app's mock mode renders and what
+ * the live rows carry. In particular the derived `client_uuid` (Law 8) stays
+ * keyed on the RULED code — re-keying it would mint different UUIDs and break
+ * the `on conflict` dedup against rows that are already live.
+ *
+ * The final state is identical either way: after 0055 runs, every row holds the
+ * ruled code again.
+ */
+function historical(code: string): string {
+  const m = /^([BC])-(\d+)$/.exec(code)
+  if (m === null) return code
+  const prefix = m[1] === 'B' ? 'BK' : 'CL'
+  const counter = m[2]!.padStart(4, '0')
+  /* The retired shape is exactly four digits; a wider counter cannot be
+     expressed and must not be silently truncated into a different record. */
+  if (counter.length !== 4) throw new Error(`seed: ${code} does not fit the retired ${prefix}-YYYY-NNNN shape`)
+  return `${prefix}-2026-${counter}`
+}
+
 function client(code: string): string {
-  return `(select id from clients where client_code = ${txt(code)})`
+  return `(select id from clients where client_code = ${txt(historical(code))})`
 }
 
 function product(assetCode: string): string {
@@ -1339,7 +1375,7 @@ function unit(assetTag: string): string {
 }
 
 function booking(bookingNo: string): string {
-  return `(select id from bookings where booking_no = ${txt(bookingNo)})`
+  return `(select id from bookings where booking_no = ${txt(historical(bookingNo))})`
 }
 
 function invoice(invoiceNo: string): string {
@@ -1402,6 +1438,34 @@ export function emitSql(corpus: SeedCorpus): string {
 -- =============================================================================
 
 begin;
+
+-- -----------------------------------------------------------------------------
+-- The handover/close gate is SUSPENDED for this load, and only for this load.
+--
+-- trg_booking_gate_check (0010:369) refuses a move into 'On Rent' or 'Closed'
+-- while the booking has a pending deposit or an outstanding invoice. 38 of the
+-- bookings below are exactly that: gear that went out against an invoice the
+-- client had not yet settled. The trigger is right about a TRANSITION a user
+-- performs; this file performs no transitions. It restates a STATE the business
+-- was already in, in bulk, in one transaction — the same distinction that lets a
+-- restore reinstate rows a workflow would have had to earn.
+--
+-- Ruled 2 Sep 2026 (PLAN.md §4.42a). Two things this deliberately does NOT do:
+-- it does not weaken the gate, which stays fully armed for every write the
+-- application makes; and it does not restate the corpus to dodge it, which would
+-- have cost the fixture the On Rent / Returned spread every operational screen is
+-- built against.
+--
+-- ⬅ TODO(decision) §4.42(a), still open and NOT answered by the above: may gear
+-- go out against an unsettled rental invoice at all? clients.payment_terms
+-- (Net 15/30) says the business already sells on terms, which the gate forbids.
+-- If that is ruled a defect in the GATE, this suspension becomes unnecessary
+-- rather than wrong.
+--
+-- The re-enable is unconditional and inside the same transaction: if anything
+-- below raises, the whole file rolls back and the trigger was never disabled.
+-- -----------------------------------------------------------------------------
+alter table bookings disable trigger trg_booking_gate_check;
 `)
 
   /* clients */
@@ -1414,7 +1478,7 @@ begin;
   segments, preferred_contact_channels, status, created_by
 ) values (
   ${uuid(seedUuid(`client:${code}`))},
-  ${txt(code)},
+  ${txt(historical(code))},
   ${txt(c.typeParent)}::client_type_parent,
   ${c.orgSubtype === null ? 'null' : `${txt(c.orgSubtype)}::client_organisation_subtype`},
   ${txt(c.name)},
@@ -1522,7 +1586,7 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   ${uuid(seedUuid(`booking:${b.bookingNo}`))},
-  ${txt(b.bookingNo)},
+  ${txt(historical(b.bookingNo))},
   ${BRANCH},
   ${client(b.clientCode)},
   ${txt(s.project)},
@@ -1963,7 +2027,7 @@ begin
   end if;
 `)
   for (const b of corpus.bookings) {
-    out.push(`  select stage into v_stage from bookings where booking_no = ${txt(b.bookingNo)};
+    out.push(`  select stage into v_stage from bookings where booking_no = ${txt(historical(b.bookingNo))};
   if v_stage is distinct from ${txt(b.spec.stage)}::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', ${txt(b.bookingNo)}, v_stage, ${txt(b.spec.stage)};
   end if;
@@ -1971,6 +2035,9 @@ begin
   }
   out.push(`  raise notice 'Seed corpus verified: % booking(s), Foundation §2.8 reconciles.', ${corpus.bookings.length};
 end $$;
+
+-- Gate back on before commit — see the note at the top of this file.
+alter table bookings enable trigger trg_booking_gate_check;
 
 commit;
 `)

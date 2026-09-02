@@ -385,7 +385,36 @@ Everything below was found while trying to stand it up.
 
 ---
 
-## BUG-010 · P1 · The migration set cannot build a database from scratch
+## BUG-010 · P1 · ✅ FIXED 2 Sep 2026 · The migration set cannot build a database from scratch
+
+> **Fixed and gated.** 79 migrations now apply into a fresh database with **0
+> failures**, proved by `npm run check:rebuild` (`scripts/check-rebuild.mjs`),
+> which builds a scratch database, applies everything in order, and drops it —
+> never touching the dev database and unable to reach a remote project.
+>
+> Four repo blockers, four fixes: `0047` now seeds the **retired** identifier
+> shapes that were legal at its position and lets `0055` migrate them forward
+> (generator change in `src/lib/seed.ts` — `0047` is generated); `0010`'s
+> `log_audit_event()` gets `0051`'s `to_jsonb(NEW)` fix backported so the seed
+> can insert at all; the seed brackets itself with
+> `disable/enable trigger trg_booking_gate_check` (ruled 2 Sep — a bulk load of
+> historical state is not a user transition, and the gate stays armed for the
+> app); and `0053` drops-and-recreates `client_directory_v` because
+> `create or replace view` cannot reorder columns. `0054` needed nothing once
+> `0053` worked.
+>
+> **Blocker 5 was never a repo defect.** `auth.users.email_confirmed_at` exists
+> on the live project; it had vanished locally because `supabase db reset`
+> dropped the `auth` schema while GoTrue was running, so it never re-ran its own
+> migrations. `docker restart supabase_auth_<project>` restored it (21 columns →
+> 35) and `0067` passed untouched. The gate now says this in its own output.
+>
+> Rebuilt schema diffed against the dev database: **124 tables, 34 functions
+> identical**; the rebuild additionally has `staff_directory_v`, which the dev
+> database lacks because `0067` failed there. Full record in PLAN.md §4.42(a).
+>
+> Still open, and deliberately not answered by the fix: **may gear go out
+> against an unsettled rental invoice?** See PLAN.md §4.42(a)'s closing note.
 
 **Where:** `supabase/migrations/` · **Reproduced:** applying all 79 files in filename order
 into an empty `public` schema, via the repo's own `scripts/apply-migrations-local.mjs`.

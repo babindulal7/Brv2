@@ -23,6 +23,7 @@
     "db:types": "supabase gen types typescript --local > src/types/database.ts",
     "check:contrast": "node scripts/check-contrast.cjs",
     "check:db": "node scripts/check-db.mjs",
+    "check:rebuild": "node scripts/check-rebuild.mjs",
     "check:dump": "node scripts/check-dump.mjs"
   },
   "dependencies": {

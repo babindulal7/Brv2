@@ -613,7 +613,7 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
-## 4.42 ⬅ OPEN ×3 — the migrations do not build a database, and the DB disagrees with the app about money
+## 4.42 ⬅ OPEN ×3 — (a) RESOLVED 2 Sep; the DB still disagrees with the app about money
 
 **Raised 2 Sep 2026** attempting the audit's recommended next stage (§12/§14/§40 CRUD
 against `dev:local`). The stage could not be run: the environment it requires cannot be
@@ -624,39 +624,70 @@ built. Full evidence in `FUNCTIONAL_BUGS.md` BUG-010 … BUG-013.
 > touching a database again, local ones included** — `scripts/check-dump.mjs` already
 > exists for exactly this and was not used.
 
-### (a) How do the migrations become from-scratch appliable?
+### (a) ✅ RESOLVED 2 Sep 2026 — the migrations build from scratch again
 
-Applying all 79 files in filename order into an empty `public` schema produces **five
-blockers** (BUG-010). Four are repo-side and three of those are one cause: `0047_seed_
-reference_corpus` needs `0051` (audit-trigger column safety) and `0055` (ruled identifier
-formats) to have run first, and then hits `validate_booking_gates()`, which refuses the
-repo's own seed corpus for an outstanding rental payment.
+**79 migrations applied into a fresh database, 0 failures**, verified by the new
+`npm run check:rebuild` (`scripts/check-rebuild.mjs`), which builds a scratch
+database in the local container, applies everything in filename order and drops
+it again. It never touches the dev database and cannot reach a remote project.
+The gate exists so this cannot rot unobserved a second time — nobody rebuilds a
+database that already exists, which is precisely why this went unnoticed.
 
-This is not cosmetic. `scripts/check-dump.mjs` records that this is Supabase **Free** — no
-PITR, no automated backup — so **the migration set is the disaster-recovery plan**, and it
-does not currently run. It is also why a new machine cannot get a working database.
+Four blockers, four different answers. **Option (c) was taken for the identifier
+clash and nothing was renumbered**, so the apply script's "filename order equals
+the order that built production" still holds:
 
-**The options, none taken here:**
-(a) **Renumber** `0047` to sit after `0055`. Straightforward, and directly against the
-apply script's header, which says the numbering is load-bearing precisely because
-"filename order equals the order that built production" — a claim this finding disproves
-for a fresh apply, but which may still hold for the order production was actually built in;
-(b) **Split `0047`** into its schema-independent and schema-dependent halves, leaving the
-number in place;
-(c) **Make `0047` self-sufficient** — seed the retired `CL-…` format it was originally
-written for and let `0055`'s existing rewrite migrate it forward. Smallest diff, keeps
-every number, and uses a path 0055 already implements and tests;
-(d) leave the set as-is and declare `db:rebuild` unsupported, documenting that the live
-schema is not reproducible. **Honest but expensive** — it makes the backup gate the only
-recovery path.
+1. **Identifier formats.** `0047` seeded the ruled `C-34` / `B-715` eighteen
+   files before `0055` legalised them, so its own CHECK constraint rejected the
+   first row. The generator (`src/lib/seed.ts`, since `0047` is generated — do
+   not hand-edit it) now emits the **retired** `CL-2026-0034` / `BK-2026-0715`
+   that were legal at that point, and `0055`'s existing `update … where
+   client_code ~ '^CL-…'` migrates them forward. Round trip verified in the
+   rebuilt database: `C-34…C-73` and `B-715…B-917`, 160 rows, none left in the
+   retired shape. The derived `client_uuid` stays keyed on the RULED code (Law 8)
+   — re-keying it would mint different UUIDs and break the dedup against rows
+   that are already live.
+2. **Audit trigger.** `log_audit_event()` (`0010`) dereferenced `NEW.created_by`
+   as a hard field reference on tables that do not define it, raising 42703 and
+   aborting the seed. `0051` had already diagnosed and fixed exactly this, but it
+   applies four files too late to help `0047`. The `to_jsonb(NEW) ->>` form is
+   backported into `0010`; `0051` still applies, harmlessly, and keeps the
+   record of the outage. Proved behaviour-preserving where the column exists.
+3. **The handover gate.** ⬅ **Ruled: the seed suspends it for its own load.**
+   38 of the 120 bookings reach 'On Rent' owing money, which
+   `validate_booking_gates()` refuses. The seed now brackets itself with
+   `alter table bookings disable/enable trigger trg_booking_gate_check`, on the
+   reasoning that a bulk restatement of historical STATE is not a transition a
+   user performs. The gate is **not weakened** — it stays armed for every write
+   the application makes — and the corpus keeps the On Rent / Returned spread
+   every operational screen is built against. `0076` needed no such thing only
+   because it seeds `Booked`/`Packed`, which are ungated.
+4. **View column order.** `0053` reorders `client_directory_v`'s columns, and
+   `create or replace view` refuses to rename or reorder; it now drops and
+   recreates. `0054` was already written to preserve `0053`'s order and only
+   failed because `0053` failed first — it needed no change once `0053` worked.
 
-Blocker 3 needs its own answer whichever wins: **may a seed bypass a business gate?**
-Either `0047` seeds a booking that satisfies `validate_booking_gates()`, or seeds are
-allowed to suspend triggers, or the gate is wrong. That is a rule question, not a fix.
+**Blocker 5 was never a repo defect.** `0067` reads
+`auth.users.email_confirmed_at`, which **exists on the live project** (checked)
+and had vanished locally because the earlier `supabase db reset` dropped the
+`auth` schema while GoTrue was running, so it never re-ran its own migrations.
+`docker restart supabase_auth_<project>` restored it — 21 columns back to 35 —
+and `0067` passed untouched. `check-rebuild.mjs` says so in its output rather
+than letting the next reader file it as a bug.
 
-Blocker 5 (`0067`, `au.email_confirmed_at`) is **environment-dependent** — the column is
-absent from this local GoTrue but may exist on the live project. Confirm against live
-before treating it as a repo defect.
+The rebuilt schema was diffed against the dev database: **124 tables and 34
+functions identical**. The only differences favour the rebuild — it has
+`staff_directory_v`, which the dev database lacks because `0067` failed there,
+and it lacks a Realtime infrastructure trigger that no migration owns.
+
+> ⬅ **STILL OPEN, and NOT answered by the above — may gear go out against an
+> unsettled rental invoice at all?** `clients.payment_terms` (Net 15/30) says the
+> business already sells on terms, which is exactly what the gate forbids; 104 of
+> the 120 seeded bookings carry an outstanding balance. The suspension above is
+> deliberately a statement about *seeding*, not about the rule. If the gate is
+> ruled too strict, the suspension becomes unnecessary rather than wrong. Note
+> the live database has **zero invoices**, so nothing has ever exercised this in
+> production.
 
 ### (b) Which rounding is correct — the trigger's paisa, or the engine's whole rupee?
 

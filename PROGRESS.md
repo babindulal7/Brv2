@@ -61,6 +61,96 @@ by driving the mock app. Nothing else touched.
   errors, not real bugs" pattern, in a new costume; recorded here so the next session
   does not debug the provider tree.
 
+## 2026-09-02 (fourth session) — the migrations build a database from scratch again, and there is now a gate that says so
+**Phase:** Phase 4/5 — persistence · **Status:** BUG-010 fixed · §4.42(a) resolved · one ruling taken
+
+`npm run check:rebuild` → **79 applied, 0 failed.** The migration set is the
+disaster-recovery plan for a Supabase **Free** project with no PITR and no
+automated backup, and as of this morning it did not run. It runs now.
+
+### The four repo blockers, and why each fix is the one it is
+
+**1 · Identifier formats (`0047`).** It seeded the ruled `C-34` / `B-715`
+eighteen files before `0055` legalised them, so its own CHECK rejected the first
+client. Took **option (c)** from §4.42(a): seed the RETIRED `CL-2026-0034` /
+`BK-2026-0715` that were legal at that point and let `0055`'s existing
+`update … where client_code ~ '^CL-…'` migrate them forward. Nothing was
+renumbered, so the apply script's "filename order equals the order that built
+production" still holds. The change is in the GENERATOR (`src/lib/seed.ts`) —
+`0047` says "do not edit by hand" and means it. **Round trip verified in the
+rebuilt database: `C-34…C-73`, `B-715…B-917`, 160 rows, none left retired.**
+The derived `client_uuid` stays keyed on the RULED code (Law 8); re-keying it
+would mint different UUIDs and break dedup against rows that are already live.
+
+**2 · Audit trigger (`0010`).** `log_audit_event()` dereferenced
+`NEW.created_by` as a hard field reference on tables that do not define it —
+42703, statement aborted, seed dead. `0051` had already diagnosed and fixed
+exactly this, four files too late to help `0047`. Backported the
+`to_jsonb(NEW) ->>` form into `0010`; `0051` still applies and keeps the record
+of the outage. Proved behaviour-preserving where the column exists.
+
+**3 · The handover gate — a RULING, not a fix.** 38 of the 120 bookings reach
+'On Rent' still owing money, which `validate_booking_gates()` refuses. Babin
+ruled: **the seed suspends the gate for its own load.** It now brackets itself
+with `disable/enable trigger trg_booking_gate_check`, on the reasoning that a
+bulk restatement of historical STATE is not a transition a user performs. The
+gate is NOT weakened — it stays armed for every application write — and the
+corpus keeps the On Rent / Returned spread every operational screen is built
+against. `0076` never needed this because it seeds only ungated Booked/Packed.
+
+**4 · View column order (`0053`).** `create or replace view` cannot rename or
+reorder columns; `0053` reorders `client_directory_v`'s. It now drops and
+recreates. `0054` was already written to preserve `0053`'s order and only failed
+because `0053` failed first — it needed no change at all once `0053` worked.
+
+### Blocker 5 was never a repo defect — proved, not assumed
+
+`0067` reads `auth.users.email_confirmed_at`. **Queried the live project: the
+column is there.** It had vanished locally because the previous session's
+`supabase db reset` dropped the `auth` schema while GoTrue was still running, so
+GoTrue never re-ran its own migrations. `docker restart supabase_auth_…`
+restored it (21 columns → 35) and `0067` passed untouched. `check-rebuild.mjs`
+prints this in its own output so the next reader does not file it as a bug.
+
+### The gate — `scripts/check-rebuild.mjs`, `npm run check:rebuild`
+
+Builds a scratch database in the local container, applies every migration in
+filename order, drops it on success and leaves it for inspection on failure. It
+never touches the dev database and, like `apply-migrations-local.mjs`, has no
+flag or env var that could aim it at a remote project. This exists because
+nobody rebuilds a database that already exists, which is exactly why BUG-010 sat
+undetected — a claim nothing checks is a claim that rots.
+
+**Its first version was wrong and said so loudly**: it restored the `auth` schema
+under `ON_ERROR_STOP`, aborted on a harmless OWNER line, and blamed the
+migrations for eight "function auth.uid() does not exist" failures. It now
+restores leniently and then ASSERTS `auth.users` and `auth.uid()` exist, failing
+with "that is this script's setup, not a migration defect" if they do not.
+
+### Verified
+
+- `npm run check:rebuild` — **79 applied, 0 failed**, exit 0.
+- Rebuilt schema diffed against the dev database: **124 tables, 34 functions
+  identical.** The only two differences favour the rebuild — it HAS
+  `staff_directory_v` (dev lacks it because `0067` failed there), and it lacks a
+  Realtime infrastructure trigger no migration owns.
+- `tsc --noEmit` clean · **101 test files pass** · `check:contrast` 40/40.
+- A dump was taken before touching anything (§4.42's standing instruction),
+  `backups/local-db-2026-09-02/public-before.sql`. The dev database was never
+  dropped this session; all work happened in a scratch database.
+
+### Still open
+
+**§4.42(a)'s residual question, which the ruling deliberately did not answer:**
+may gear go out against an unsettled rental invoice at all? `clients.payment_terms`
+(Net 15/30) says the business already sells on terms, which is what the gate
+forbids; 104 of 120 seeded bookings carry a balance. If the GATE is ruled too
+strict, the seed's suspension becomes unnecessary rather than wrong. Note the
+live database has **zero invoices**, so production has never exercised it.
+
+§4.42(b) rounding and §4.42(c) `vat_rate` are untouched and still need finance
+rulings. §4.41 (five unrouted files) still open.
+
 ## 2026-09-02 (third session) — §4.41 RULED and executed: ProductReports ships at `/reports/products`; the other four leave the program
 **Phase:** Phase 4/5 — honesty of controls · **Status:** complete; suite green; ⚠ repo typecheck RED on another session's files
 
