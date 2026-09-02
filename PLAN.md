@@ -725,6 +725,66 @@ argument and `bookingQuery.ts:891` states explicitly that "13 is NOT hardcoded" 
 > callers today; wiring one to a button would produce a green toast and no row.
 
 
+### ⬅ Architect's analysis, 2 Sep — what (b) and (c) actually cost
+
+**This is not a ruling.** (b) is a finance call and stays Babin's. This narrows what is
+being decided, removes one argument that does not hold, and names a deadline.
+
+**The divergence, measured.** The trigger's exact arithmetic run against `money.ts`'s own
+reference case (`equipment 1,32,750 · discount 7% · VAT 13%`), computed in the live database:
+
+| | discount | taxable | VAT | total |
+|---|---|---|---|---|
+| `price()` — whole rupee | 9,293 | 1,23,457 | 16,049 | **1,39,506** |
+| trigger — 2 dp | 9,292.50 | 1,23,457.50 | 16,049.48 | **1,39,506.98** |
+
+**Rs 0.98 per invoice, of which Rs 0.48 is VAT.** Sub-rupee, but it is the VAT line — the
+figure that goes on a filed return — and the invoice the client is handed would not equal
+the row the database holds.
+
+**One argument in (b) does not survive.** It says *"paisa precision is what the column type
+`numeric(14,2)` was chosen to hold."* Storage precision does not constrain computation
+precision: a whole-rupee total stores in `numeric(14,2)` exactly, as `139506.00`. The column
+type is evidence for neither side, and (b) reads as more balanced than it is until that is
+struck.
+
+**⏳ The window is open now and shuts on the first invoice.** Live holds **0 invoices, 0
+invoice_lines, 0 payments** (checked 2 Sep). No client has been shown a total, nothing has
+been filed, and there is nothing to restate — which is true *only* because BUG-013 leaves the
+write path unwired. Once the CRUD stage lands, this acquires a data-migration tail and an
+audit story ("why did this invoice change?") inside a codebase whose Law makes payments
+immutable and corrections reversal-only. **Decide (b) before the first invoice is written.**
+
+**(c) is smaller than (b) and should not wait for it.** `invoices.vat_rate` is
+`numeric(5,4) NOT NULL DEFAULT 0.1300` — no row can hold NULL, and the default is exactly the
+constant the trigger hardcodes. Replacing `0.13` with `vat_rate` is therefore
+**behaviour-preserving for every row that can exist**. (c)'s stated cost — *"every existing
+row needs checking"* — is zero rows. What remains of (c) is a real product question and
+should be put that way: **should a zero-rated or differently-rated invoice be possible at
+all?** If yes, the trigger reads the column. If no, drop `vat_rate` and
+`invoice_lines.tax_rate` so neither goes on looking authoritative.
+
+**Recommendation on (b) — move the trigger to the app's arithmetic, not the reverse.**
+§2.4 and the §2.8 reference case are the ruled statement of how this business rounds, and
+`money.ts:118` enforces it at module load. The trigger states no rule and cites nothing.
+Conforming the app instead would change the displayed figure on every money screen and
+re-open a settled spec to match an undocumented one.
+
+**⛔ Do not take the tempting third option.** Deleting the trigger and letting the app own
+totals looks like the clean single-source-of-truth answer. It is wrong here:
+`0047_seed_reference_corpus.sql` writes `invoices` and `invoice_lines` directly, and the
+Booqable bridge is built to do the same. The trigger is the only thing keeping totals correct
+for a row the application did not write. **Keep the guarantor; correct its arithmetic.**
+
+**The standing cost of keeping both** is two implementations of one rule, which drift — that
+is how this was born. Answer it the way `money.ts` already answers it for itself: a test that
+feeds the reference case through the trigger *and* through `price()` and asserts they agree,
+so the next divergence fails a gate instead of an invoice.
+
+**Sequencing.** (c) first — one token, no data risk, and it makes the trigger honest about
+its own rate. (b) after the ruling, in the same migration if the ruling is "whole rupee".
+
+
 ## 4.41 ✅ RULED 2 Sep 2026 — ProductReports ships at `/reports/products`; the other four are archived
 
 **Ruled by Babin, 2 Sep 2026**, both halves in one sitting:
