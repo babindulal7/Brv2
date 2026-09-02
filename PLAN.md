@@ -694,7 +694,28 @@ argument and `bookingQuery.ts:891` states explicitly that "13 is NOT hardcoded" 
 > callers today; wiring one to a button would produce a green toast and no row.
 
 
-## 4.41 ⬅ OPEN ×2 — five unrouted source files: do they ship, or go to `src/archive`?
+## 4.41 ✅ RULED 2 Sep 2026 — ProductReports ships at `/reports/products`; the other four are archived
+
+**Ruled by Babin, 2 Sep 2026**, both halves in one sitting:
+
+- **(a) `ProductReports` — wanted.** Routed at **`/reports/products`** (its old home
+  `/reports/inventory` belongs to `InventoryReports` and now carries a link across).
+  Routing revived ~15 dead controls, so the ClientReports remediation shipped with it:
+  header buttons / period chips / filter dropdowns → the shared `ReportToolbar` with a
+  working money-gated CSV; `PeriodPill` and the presentational pager deleted per
+  BUG-003's reasoning, with an honest "Showing all 5 rows" line. **The §9.6 register
+  was deliberately NOT given a 44th row** — its 43-count and per-group counts are
+  pinned by rulings §11.3 and asserted in `catalog.test.ts`; if a register entry is
+  wanted, that is its own small ruling.
+  **(a) `CasesReports` — not wanted.** → `src/archive/reports/`. The live Cases screen
+  is `CasesWorkspace` at `/inventory/cases`.
+- **(b) the three bundle components — not coming back.** → `src/archive/inventory/`.
+  The abandoned split leaves the program; the live `AddBundle` keeps its inline
+  versions. `FUNCTIONAL_FIX_PLAN.md` item #4 stays void.
+
+The original entry follows, kept for the reasoning trail.
+
+---
 
 **Raised 2 Sep 2026** finishing `FUNCTIONAL_BUGS.md` BUG-005 and BUG-007. Both bugs
 end at the same question, so they are filed here once.

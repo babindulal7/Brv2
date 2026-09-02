@@ -1,6 +1,12 @@
 /*
- * TODO(decision) §4.41 — THIS FILE HAS NO ROUTE AND NO IMPORTER. It has never
- * had one: `git log -S"CasesReports" -- src/App.tsx` returns nothing.
+ * ARCHIVED by the §4.41(a) ruling (2 Sep 2026): a standalone Cases report is
+ * not wanted; the live Cases screen is `CasesWorkspace` at `/inventory/cases`.
+ * Law 3 keeps the file; `tsconfig.json` excludes `src/archive` from the
+ * program. Restoring it is a move back into `src/modules/reports` plus a
+ * route.
+ *
+ * It never had a route or an importer: `git log -S"CasesReports" -- src/App.tsx`
+ * returns nothing.
  *
  * It is not abandoned junk — the docstring below records a deliberate rebuild
  * in which every invented figure was replaced by one counted off `data/cases.ts`

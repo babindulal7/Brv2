@@ -2,6 +2,54 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-02 (third session) — §4.41 RULED and executed: ProductReports ships at `/reports/products`; the other four leave the program
+**Phase:** Phase 4/5 — honesty of controls · **Status:** complete; suite green; ⚠ repo typecheck RED on another session's files
+
+### Ruled (by Babin, both halves)
+**(a) ProductReports — wanted; CasesReports — not.** **(b) The three bundle components — not coming back.**
+
+### Did
+1. **`/reports/products` is live**, crumb `Finance › Reports › Product Reports`. The screen
+   `/reports/inventory` rendered until `6fb1c62` is back in the program at its own path, and
+   `/reports/inventory` carries a one-line link across ("…moved to Product Reports").
+2. **The ClientReports remediation shipped with the route** — routing as-was would have revived
+   ~15 controls that can never act, the day after the bug list closed at 0 dead per route:
+   the four dead header buttons, the period-chip row and the eight dropdown filter buttons are
+   replaced by the shared `ReportToolbar` with a working, money-gated CSV (`productsCsv`);
+   `PeriodPill` (ten cards) and the 11-control presentational pager are gone rather than wired,
+   per BUG-003 — `PRODUCTS` holds five rows; "158 products"/16 pages were literals. The table
+   now says "Showing all 5 rows" and points at `/inventory` for the real catalogue.
+3. **The §9.6 register was deliberately not touched**: its 43-count and per-group counts are
+   pinned by rulings §11.3 and asserted in `catalog.test.ts`. If a register row for this screen
+   is wanted, that is its own ruling — recorded in §4.41(a).
+4. **Archived by ruling:** `CasesReports.tsx` → `src/archive/reports/`;
+   `InventoryTree.tsx`, `BundleSummaryRail.tsx`, `BundleItemsTable.tsx` → `src/archive/inventory/`
+   (`git mv`, headers updated from `TODO(decision)` to the ruling). `tsconfig.json` already
+   excludes `src/archive`, so all four leave compile, bundle and audit scope. Law 3: nothing
+   deleted.
+5. `data/expenseReports.ts`'s `PERIOD_CHIPS` comment corrected — it claimed ClientReports and
+   ProductReports import it; as of this session nothing does. The list stays (Law 3).
+
+### Verified
+- `npx vitest run` **exit 0 — 101 files, 2,341 tests, all passing** (the +3 files / +2,341
+  baseline movement is the concurrent session's new mock tests, also green).
+- `npx tsc --noEmit` **exit 2 — 7 errors, none in a file this session touched**: 4 × TS6133 in
+  `NewRental.tsx`, 3 × TS6133 in `MovementList.tsx` — both are another live session's
+  uncommitted WIP (same situation the 1 Sep BUG-003 entry recorded). Zero errors in
+  `ProductReports.tsx`, `InventoryReports.tsx`, `App.tsx`, `expenseReports.ts`.
+- **Driven in `dev:mock`, Owner, own server** (the folder's other dev server belongs to the
+  concurrent session): `/reports/products` renders every section; React-fiber probe over all
+  rendered controls in `<main>`: **6 controls, 0 dead**; CSV click executes `productsCsv`
+  cleanly (0 console errors); the `/reports/inventory` link navigates to `/reports/products`
+  client-side.
+- **Not verified:** the warehouse (money-blind) rendering of the new route was not driven —
+  its `useCanViewMoney` gates are the file's pre-existing pattern and the CSV mirrors them,
+  but no warehouse login saw the page this session.
+
+### Next
+- If a §9.6 register row for Product Reports is wanted, rule it (changes `catalog.test.ts`'s
+  pinned counts).
+
 ## 2026-09-02 (second session) — Went after §12–§17; found the environment cannot be built, and the DB disagrees with the app about money
 **Phase:** Phase 4/5 — persistence & pricing · **Status:** stage BLOCKED; four findings filed, one local database lost
 

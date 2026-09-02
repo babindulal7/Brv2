@@ -35,6 +35,7 @@ const Pulse             = lazy(() => import('./modules/reports/Pulse'))
 const ExpenseReports    = lazy(() => import('./modules/reports/ExpenseReports'))
 const ClientReports     = lazy(() => import('./modules/reports/ClientReports'))
 const InventoryReports  = lazy(() => import('./modules/reports/InventoryReports'))
+const ProductReports    = lazy(() => import('./modules/reports/ProductReports'))
 const EquipmentPerformance = lazy(() => import('./modules/reports/EquipmentPerformance'))
 const PromotionsReports = lazy(() => import('./modules/reports/PromotionsReports'))
 const StaffReports      = lazy(() => import('./modules/reports/StaffReports'))
@@ -527,6 +528,19 @@ export default function App() {
           element={
             <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Inventory Reports' }]}>
               <InventoryReports />
+            </Shell>
+          }
+        />
+
+        {/* §4.41(a) ruling, 2 Sep 2026: this content lived at /reports/inventory
+            until 6fb1c62 replaced it in place with a different report. Routed
+            back at its own path; /reports/inventory links across. Not in the
+            §9.6 register — its 43-count is pinned by rulings §11.3. */}
+        <Route
+          path="/reports/products"
+          element={
+            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Product Reports' }]}>
+              <ProductReports />
             </Shell>
           }
         />

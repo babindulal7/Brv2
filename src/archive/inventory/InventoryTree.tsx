@@ -1,5 +1,7 @@
 /*
- * TODO(decision) §4.41 — THIS FILE HAS NO IMPORTER. Nothing renders it.
+ * ARCHIVED by the §4.41(b) ruling (2 Sep 2026): the `AddBundle` split was
+ * abandoned and none of its three components is coming back. Law 3 keeps the
+ * file; `tsconfig.json` excludes `src/archive` from the program.
  *
  * It came out of a 600-line split (`PROGRESS.md:10209`) that was never adopted:
  * the live, routed `AddBundle` (`App.tsx:348`) carries its own inline tree.

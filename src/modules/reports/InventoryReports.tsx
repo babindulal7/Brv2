@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
@@ -57,6 +58,17 @@ export default function InventoryReports() {
         column, so there is nothing here for a range or a branch to narrow.
       */}
       <ReportToolbar title="Inventory Reports" csv={{ filename: 'inventory-reports', build: () => inventoryCsv(money) }} />
+
+      {/* §4.41(a): until 6fb1c62 this route rendered ProductReports; the
+          restructure swapped screens without rehoming the old one. Now that it
+          lives at /reports/products, this line is the way back — the register
+          cannot carry it (43-count pinned by rulings §11.3). */}
+      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+        Product sales, turnover, dead stock and supplier performance moved to{' '}
+        <Link to="/reports/products" style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }}>
+          Product Reports
+        </Link>
+      </div>
 
       {/* The shared strip — typed items, icon tile drawn, viewport clamp built
           in. The old hand-rolled `InventoryKpiCard` was `any`-typed and

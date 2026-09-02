@@ -41,8 +41,11 @@ const d = (y: number, m: number, day: number) => new Date(Date.UTC(y, m - 1, day
 export const PERIOD = { from: d(2026, 7, 1), to: d(2026, 7, 31) }
 
 /**
- * Kept for `ClientReports` and `ProductReports`, which import this list. The
- * Expenses ledger filters on a real date range instead of a chip row.
+ * No importer left (2 Sep 2026): `ClientReports` shed its chip row in the
+ * BUG-era remediation and `ProductReports` shed its on the way to
+ * `/reports/products` (§4.41(a)) — both use the shared `ReportToolbar` now.
+ * The Expenses ledger filters on a real date range instead of a chip row.
+ * Law 3 keeps the list until a ruling retires it.
  */
 export const PERIOD_CHIPS = [
   'Today',

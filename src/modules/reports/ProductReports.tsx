@@ -1,29 +1,34 @@
 /*
- * TODO(decision) §4.41 — THIS FILE HAS NO ROUTE AND NO IMPORTER. It is not part
- * of the running application and its ~15 buttons can never render.
+ * Reports → **Product Reports** — routed at `/reports/products` by the
+ * §4.41(a) ruling (2 Sep 2026): the content is wanted. Until `6fb1c62`
+ * (12 Aug 2026) this screen WAS `/reports/inventory`, under the crumb "Asset
+ * Utilization"; the 11-section restructure pointed that route at
+ * `InventoryReports` — a different report (asset stock and health) — and
+ * nothing live replaced the turnover, dead-stock, slow-mover and supplier
+ * sections here. `/reports/inventory` now links across instead.
  *
- * It was routed once: until `6fb1c62` (12 Aug 2026) `/reports/inventory`
- * rendered this screen under the crumb "Asset Utilization". The 11-section
- * wireframe restructure pointed that route at `InventoryReports` instead —
- * which is a DIFFERENT report (asset stock and health, not product/sales
- * performance), so nothing live replaced the turnover, dead-stock, slow-mover
- * and supplier sections below.
+ * Routing it would have revived ~15 controls that could never render, so the
+ * ClientReports remediation came with it: the four dead header buttons, the
+ * period-chip row and the eight dropdown-shaped filter buttons are replaced by
+ * the one shared `ReportToolbar` (working CSV export); `PeriodPill` and the
+ * presentational pager are gone rather than wired — BUG-003's reasoning: there
+ * is no page 2 to reach. `PRODUCTS` holds five rows; "158 products" and the
+ * 16-page pager were literals.
  *
- * Whether that content should ship at a route of its own, or whether this file
- * belongs in `src/archive/`, is a product decision. Do not wire the pager at
- * :372 or any button here until it is answered — see PLAN.md §4.41(a).
+ * NOT in the §9.6 register: the 43-count and the per-group counts are pinned
+ * by rulings §11.3 and asserted in `catalog.test.ts` — adding a 44th row is a
+ * register change only a ruling can make. See PLAN.md §4.41(a).
  */
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
 import { Donut, Legend, HBars, GroupedBars, catColor } from '../../components/ui/Charts'
+import { ReportToolbar } from '../../components/ui/ReportToolbar'
+import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { BRAND_TEXT } from '../../lib/status'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-import { PERIOD_CHIPS } from '../../data/expenseReports'
 import {
   KPIS,
-  FILTERS,
   SALES_TREND,
   BY_CATEGORY,
   CATEGORY_TOTAL,
@@ -67,30 +72,13 @@ const th = {
 const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
 const link = { fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' } as const
 
-function PeriodPill() {
-  return (
-    <button
-      type="button"
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 5,
-        height: 26,
-        padding: '0 8px',
-        borderRadius: 7,
-        border: '1px solid var(--border)',
-        background: 'transparent',
-        color: 'var(--text2)',
-        fontSize: 'var(--t-meta)',
-        cursor: 'pointer',
-        fontFamily: 'inherit',
-      }}
-    >
-      This Month
-      <Icon name="chevron_down" size={12} style={{ color: 'var(--muted)' }} />
-    </button>
-  )
-}
+/*
+ * `PeriodPill` used to live here — a "This Month ▾" button on ten cards, with
+ * no handler on any of them. Gone rather than wired, for ClientReports'
+ * reason: ten independent period pickers is not what this report wants, and
+ * one that claims a period the pre-aggregated fixtures do not obey is what the
+ * shared toolbar exists to stop.
+ */
 
 function TrendChart() {
   const w = 100
@@ -186,6 +174,26 @@ function MoverList({ rows, tone, unit }: { rows: Array<{ name: string; value: st
   )
 }
 
+/** Money-gated like the screen: no revenue/cost/profit/margin column reaches a CSV Law 6 would hide. */
+function productsCsv(money: boolean): ReportCsvRow[] {
+  return [
+    ['Figure', 'Value'],
+    ...(money ? SUMMARY : SUMMARY.filter((s) => s.label !== 'Product Revenue' && s.label !== 'Gross Profit' && s.label !== 'Average Margin')).map(
+      (s): ReportCsvRow => [s.label, s.value],
+    ),
+    [],
+    ['Product performance overview'],
+    money
+      ? ['Product', 'SKU', 'Category', 'Brand', 'Units Sold', 'Revenue (Rs)', 'Cost (Rs)', 'Profit (Rs)', 'Margin %', 'Stock', 'Supplier', 'Return Rate']
+      : ['Product', 'SKU', 'Category', 'Brand', 'Units Sold', 'Stock', 'Supplier', 'Return Rate'],
+    ...PRODUCTS.map((p): ReportCsvRow =>
+      money
+        ? [p.name, p.sku, p.category, p.brand, p.sold, p.revenue, p.cost, p.profit, p.margin, p.stock, p.supplier, p.returnRate]
+        : [p.name, p.sku, p.category, p.brand, p.sold, p.stock, p.supplier, p.returnRate],
+    ),
+  ]
+}
+
 /**
  * Reports → **Product Reports**, built from render `34BC280B`.
  *
@@ -195,7 +203,6 @@ function MoverList({ rows, tone, unit }: { rows: Array<{ name: string; value: st
  */
 export default function ProductReports() {
   const navigate = useNavigate()
-  const [chip, setChip] = useState('This Month')
   const money = useCanViewMoney()
   const kpis = money ? KPIS : KPIS.filter((k) => k.label !== 'Total Product Revenue' && k.label !== 'Gross Profit')
   const summary = money ? SUMMARY : SUMMARY.filter((s) => s.label !== 'Product Revenue' && s.label !== 'Gross Profit' && s.label !== 'Average Margin')
@@ -204,74 +211,21 @@ export default function ProductReports() {
       <PageHeader
         title="Product Reports"
         description="Analyze product sales, inventory, profitability, supplier performance, and stock movement."
-        actions={
-          <>
-            <Button icon="refresh">Compare</Button>
-            <Button icon="download">Export</Button>
-            <Button icon="eye">Saved Views</Button>
-            <Button icon="calendar_stats" variant="primary">
-              Schedule Report
-            </Button>
-          </>
-        }
       />
 
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {PERIOD_CHIPS.map((p) => {
-          const on = chip === p
-          return (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setChip(p)}
-              aria-pressed={on}
-              style={{
-                height: 30,
-                padding: '0 11px',
-                borderRadius: 'var(--r-sm)',
-                border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                background: on ? 'var(--nav-active-bg)' : 'var(--card)',
-                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: on ? 600 : 500,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {p}
-            </button>
-          )
-        })}
-      </div>
+      {/*
+        This replaces the same three pieces of dead chrome ClientReports shed:
+        four header buttons (Compare · Export · Saved Views · Schedule Report)
+        with no handler between them, a period-chip row that set state and
+        filtered nothing, and eight dropdown-shaped buttons that opened
+        nothing.
 
-      <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-        {FILTERS.map((f) => (
-          <button
-            key={f}
-            type="button"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 'var(--sp-sm)',
-              height: 34,
-              padding: '0 11px',
-              borderRadius: 'var(--r-input)',
-              border: '1px solid var(--input-border)',
-              background: 'var(--input-bg)',
-              color: 'var(--text2)',
-              fontSize: 'var(--t-meta)',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {f}
-            <Icon name="chevron_down" size={13} style={{ color: 'var(--muted)' }} />
-          </button>
-        ))}
-        <Button icon="queues">Filters</Button>
-      </div>
+        No date range, and deliberately: every figure on this page is a
+        pre-aggregated constant in `data/productReports` with no date dimension
+        at all. A range control here would claim to narrow figures it cannot
+        touch; it arrives when the report reads Postgres.
+      */}
+      <ReportToolbar title="Product Reports" csv={{ filename: 'product-reports', build: () => productsCsv(money) }} />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
@@ -279,23 +233,23 @@ export default function ProductReports() {
 
           <div style={{ display: 'grid', gridTemplateColumns: money ? 'repeat(4, minmax(0,1fr))' : 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
             {money && (
-              <Card title="Product Sales Trend (Rs)" action={<PeriodPill />}>
+              <Card title="Product Sales Trend (Rs)">
                 <TrendChart />
               </Card>
             )}
-            <Card title="Sales by Category" action={<PeriodPill />}>
+            <Card title="Sales by Category">
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <Donut slices={BY_CATEGORY} centreLabel="Total" centreValue={`${CATEGORY_TOTAL} Units`} size={104} />
                 <Legend slices={BY_CATEGORY} />
               </div>
             </Card>
             {money && (
-              <Card title="Product Revenue (Top 5)" action={<PeriodPill />}>
+              <Card title="Product Revenue (Top 5)">
                 <HBars rows={TOP_REVENUE.rows} axisTicks={TOP_REVENUE.axisTicks} colorIndex={2} />
               </Card>
             )}
             {money && (
-              <Card title="Gross Profit Trend (Rs)" action={<PeriodPill />}>
+              <Card title="Gross Profit Trend (Rs)">
                 <GroupedBars
                   groups={PROFIT_TREND.groups}
                   series={PROFIT_TREND.series}
@@ -308,19 +262,19 @@ export default function ProductReports() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
-            <Card title="Inventory Turnover by Category" action={<PeriodPill />}>
+            <Card title="Inventory Turnover by Category">
               <HBars rows={TURNOVER.rows} axisTicks={TURNOVER.axisTicks} colorIndex={2} />
             </Card>
-            <Card title="Fast Moving Products" action={<PeriodPill />}>
+            <Card title="Fast Moving Products">
               <MoverList rows={FAST_MOVING} tone={3} unit="Units Sold" />
             </Card>
-            <Card title="Slow Moving Products" action={<PeriodPill />}>
+            <Card title="Slow Moving Products">
               <MoverList rows={SLOW_MOVING} tone={1} unit="Units Sold" />
             </Card>
-            <Card title="Dead Stock (No Sales)" action={<PeriodPill />}>
+            <Card title="Dead Stock (No Sales)">
               <MoverList rows={DEAD_STOCK} tone={5} unit="Days in Stock" />
             </Card>
-            <Card title="Product Return Analysis" action={<PeriodPill />}>
+            <Card title="Product Return Analysis">
               <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
                 <Donut slices={RETURNS} centreLabel="Total" centreValue={`${RETURNS_TOTAL} Units`} size={86} />
                 <Legend slices={RETURNS} />
@@ -328,7 +282,7 @@ export default function ProductReports() {
             </Card>
           </div>
 
-          <Card title="Product Performance Overview" action={<PeriodPill />} bodyStyle={{ padding: 0 }}>
+          <Card title="Product Performance Overview" bodyStyle={{ padding: 0 }}>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1020 }}>
                 <thead>
@@ -379,50 +333,32 @@ export default function ProductReports() {
               </table>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '10px 14px', flexWrap: 'wrap', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-              <span>Showing 1 to 5 of 158 products</span>
-              <span style={{ marginLeft: 'auto', display: 'flex', gap: 3 }}>
-                {['«', '‹', '1', '2', '3', '4', '5', '…', '16', '›', '»'].map((p, i) => {
-                  const on = p === '1'
-                  return (
-                    <button
-                      key={`${p}-${i}`}
-                      type="button"
-                      aria-current={on ? 'page' : undefined}
-                      style={{
-                        minWidth: 24,
-                        height: 24,
-                        borderRadius: 'var(--r-xs)',
-                        border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
-                        background: on ? 'var(--btn-primary-bg)' : 'transparent',
-                        color: on ? 'var(--btn-primary-fg)' : 'var(--text2)',
-                        fontSize: 'var(--t-meta)',
-                        fontWeight: on ? 700 : 500,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      {p}
-                    </button>
-                  )
-                })}
-              </span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                Rows per page
-                <span className="figure" style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', height: 26, padding: '0 8px', borderRadius: 7, border: '1px solid var(--border)' }}>
-                  10
-                  <Icon name="chevron_down" size={11} style={{ color: 'var(--muted)' }} />
-                </span>
+              {/*
+                BUG-003's pager stood here too — eleven controls (`« ‹ 1 … 16 › »`)
+                with no handler on any of them, beneath "Showing 1 to 5 of 158
+                products". Gone rather than wired: `PRODUCTS` holds five rows,
+                the table maps all five unsliced, and both figures were
+                literals, so the pager advertised 153 records this screen has
+                never held. The `aria-current="page"` on "1" had to go
+                regardless — it told assistive tech this was a working pager.
+              */}
+              <span>Showing all {PRODUCTS.length} rows</span>
+              <span style={{ marginLeft: 'auto' }}>
+                A seeded sample, not a catalogue query — the full catalogue is at{' '}
+                <Link to="/inventory" style={link}>
+                  Inventory
+                </Link>
               </span>
             </div>
           </Card>
         </div>
 
         <Rail>
-          <Card title="Product Summary" action={<PeriodPill />}>
+          <Card title="Product Summary">
             <SummaryRows rows={summary} />
           </Card>
 
-          <Card title="Top Selling Products" action={<PeriodPill />}>
+          <Card title="Top Selling Products">
             <div
               style={{ display: 'grid', gridTemplateColumns: money ? 'minmax(0,1fr) auto auto auto' : 'minmax(0,1fr) auto', gap: 7, paddingBottom: 5, borderBottom: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}
             >
@@ -457,7 +393,7 @@ export default function ProductReports() {
             </span>
           </Card>
 
-          <Card title="Low Stock Alert" action={<PeriodPill />}>
+          <Card title="Low Stock Alert">
             <div
               style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto auto', gap: 7, paddingBottom: 5, borderBottom: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}
             >
@@ -488,7 +424,7 @@ export default function ProductReports() {
           </Card>
 
           {money && (
-            <Card title="Supplier Ranking" action={<PeriodPill />}>
+            <Card title="Supplier Ranking">
               <div
                 style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto auto', gap: 7, paddingBottom: 5, borderBottom: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}
               >
