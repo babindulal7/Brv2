@@ -23,8 +23,16 @@
 -- without explicit approval." This file has been generated and reviewed, not
 -- executed — no local Postgres instance exists in this repo.
 --
--- Re-applying is a no-op: every insert carries a derived client_uuid (Law 8)
--- and conflicts on its natural key.
+-- Re-applying is NOT a no-op any more — it fails closed. Since 2 Sep 2026 this
+-- file seeds the RETIRED CL-2026-0034 / BK-2026-0715 shapes (see the note on
+-- the format above) and every insert conflicts on its NATURAL KEY —
+-- client_code, booking_no — not on client_uuid. Against a database that has
+-- already run 0055 those keys hold C-34 / B-715, so nothing conflicts, the
+-- first client trips the ruled CHECK, and the single transaction rolls the
+-- whole file back with the gate re-enabled. Measured: 40 clients, 0 retired
+-- rows leaked, trigger back to enabled. Safe, but LOUD — and it means the
+-- only place this file may run is a from-scratch build, where 0055 has not
+-- happened yet. That is one more reason to leave it unapplied on live.
 -- =============================================================================
 
 begin;
