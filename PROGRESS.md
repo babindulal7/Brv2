@@ -2,6 +2,65 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-02 — the seven 1 Sep Dashboard findings FIXED, each driven to green
+**Phase:** cross-phase fixes (mock engine · Dashboard UI) · **Status:** complete
+
+All seven findings from the "2026-09-01 — Dashboard bug sweep" entry, fixed and verified
+by driving the mock app. Nothing else touched.
+
+### Did
+1. **Mock engine timestamps compare as instants** (`mock/engine.ts` `cmp`): ISO strings
+   with a time part go through `Date.parse`; date-only strings deliberately keep the
+   string path (uniform format, same order). New regression pin
+   `mock/__tests__/engineTimestampCmp.test.ts` (3 tests) drives the exported builder with
+   the exact failing shape — Z-form rows vs `+05:45` bounds.
+2. **Dead stage chips are disabled with the intersection reason.** New `LIST_STAGES`
+   export in `data/today.ts` — read off `todaysOutgoing`/`todaysIncoming`'s own chips, so
+   it cannot drift — and `MoreFilters` dims any stage chip outside the list's structural
+   set with "The Outgoing list means stage Booked or Packed — X never intersects it…".
+3. **Complete Pickup / Complete Return are unavailable-with-reason** in the row menu;
+   the whole dispatch plumbing (`runMovementAction`, `MovementDispatch`, the failure
+   banner state) is deleted — nothing dispatches from this page any more, and the
+   deleted-dispatch note above `HoverCard` records why and where the real verbs live.
+4. **"Edit" is unavailable-with-reason** (it navigated exactly where Open navigates; no
+   edit surface exists).
+5. **"Print Checklist" is unavailable-with-reason** (it printed nothing and duplicated
+   Packing List). The hover card's copy of it is GONE; the card now carries the row's
+   own primary verb from `primaryFor` (Pack / Handover / Return) and offers "Packing
+   List" only when the primary is not already the packing route.
+6. **Hover card is `role="group"` with a per-booking `aria-label`** — was
+   `role="tooltip"` around four interactive controls.
+7. **Period-only empty states stop blaming filters.** `filteredByChips` prop threaded
+   from Today.tsx into `MovementList` and `TimelinePanel`; period-only emptiness reads
+   "No pickups tomorrow / Nothing is scheduled in this period." with a **Back to Today**
+   button (new optional `clearLabel` on `PageBody`, default unchanged for its ~25 other
+   call sites); chips-picked emptiness keeps "match these filters" + "Clear filters".
+
+### Verified (mock app, driven end to end)
+- #1: a Booked pickup planted at **10:00 NPT** (04:15Z — the instant the old comparator
+  dropped) renders in Outgoing with KPI 1, primary verb "Pack"; a 10:30 NPT return
+  renders in Incoming; Timeline merges both. Regression suite 3/3.
+- #2: Outgoing panel — live chips exactly {Booked, Packed}×2 groups; Quote / On Rent /
+  Returned / Closed / Inspection all disabled with the intersection sentence. Incoming —
+  exactly one live chip (On Rent), and picking it still returns the row (badge 1).
+- #3/#4/#5: row menu shows Edit, Complete Pickup, Complete Return, Print Checklist as
+  `aria-disabled` with their reasons; Open / Packing List / Invoice / Copy stay live.
+- #6: card opens as `role="group"`, label "Preview of booking B-716 for …", zero
+  `role="tooltip"` anywhere; actions = Open Booking · Receive Payment · Pack (dedup
+  confirmed — no Packing List when the primary IS packing).
+- #7: Tomorrow-with-no-chips → "No pickups/returns/movements tomorrow" + "Back to
+  Today" on all three panels; picking Packed (real chip) over a Booked-only day →
+  "No pickups match these filters" + "Clear filters".
+- Tests: today module 78/78 · new engine suite 3/3. `tsc --noEmit`: zero errors in
+  files this session touched (remaining four are the parallel session's NewRental
+  unused vars, present before this session).
+- ⚠ One environment trap hit and cleared: a stale `node_modules/.vite` deps chunk made
+  `useAuth` throw "must be used within an AuthProvider" from inside `Today` AFTER the
+  MovementList HMR edits — survived reloads, fixed by stopping the dev server, deleting
+  `node_modules/.vite`, restarting. The concurrent-session memory's "transient HMR
+  errors, not real bugs" pattern, in a new costume; recorded here so the next session
+  does not debug the provider tree.
+
 ## 2026-09-02 (third session) — §4.41 RULED and executed: ProductReports ships at `/reports/products`; the other four leave the program
 **Phase:** Phase 4/5 — honesty of controls · **Status:** complete; suite green; ⚠ repo typecheck RED on another session's files
 
@@ -537,6 +596,64 @@ Rail collapse/expand · no horizontal scroll at 375/800/1440 · failure banners 
 
 Sandbox note: six mock bookings were moved onto today's date (browser-local overlay
 only) so the day panels are demonstrable; the mock banner already disclaims the data.
+
+## 2026-09-02 — Phase 2, the client half: New Rental reads live clients and dispatches CREATE_RENTAL
+**Phase:** Phase 2 — screens read the database · **Status:** client half live and green; equipment half re-scoped, NOT done
+
+`/senior-architect next` picked this: `/rentals/new` never dispatched `createRental`, so the app
+**could not create a booking** — every downstream flow (invoices, payments, the closing built
+yesterday) sits on a primary write that was not wired. Verified before starting rather than
+taken from `FUNCTIONAL_FIX_PLAN.md`, which had already been wrong twice.
+
+### Did
+1. **`ClientRecord.dbId`** — the real `clients.id` uuid, added ADDITIVELY beside `id`, which
+   stays the `C-34` CODE every screen keys on and renders. Populated only by
+   `queries/clients.ts:toClientRecord`, i.e. only by rows that came from the database, so a seed
+   row is distinguishable from a bookable one by whether it has one at all.
+2. **`clientPool` reads `listClientRecords()`** — filtered to rows carrying `dbId`, so a client
+   that cannot be booked never looks selectable.
+3. **A live product read** (`listInventory`) behind `catalogue` — 56 products in mock.
+4. **`confirmBooking` dispatches for real**: `createRental` (which returns a Quote) then
+   `confirmRental` with the id the database minted — never the old `bk-new` placeholder. Branch
+   is read from `users.branch_id`, as `approveDailyClosing` does, because this screen has no
+   branch picker and defaulting would file one branch’s booking under another.
+5. **A new booking starts EMPTY.** It used to pre-pick three items from the demo catalogue.
+   Once the screen writes for real that is not scaffolding but a trap: those rows carry product
+   NAMES for ids, so every booking would open pre-loaded with three lines that can never save.
+   `seedLine` went with them — a helper whose only job was manufacturing unsaveable rows.
+
+### Found — my own scope estimate was wrong, and a bug in my own warning
+- **The equipment half is a separate slice, not "one more data source".** I scoped this as two
+   sources and one dispatch. The add path is `NewRental` → `AddItemPanel` →
+   `booking/itemCatalogue.ts` (857 lines) → **five** seed modules (`data/inventory`,
+   `data/addBundle`, `data/bundles`, `data/addEquipment`). My `catalogue` state is not what the
+   panel serves. Stated rather than quietly half-done.
+- **My first warning banner was gated on `catalogueIsLive`** — this screen’s own read, not the
+   panel’s source. So it hid the warning exactly when it was still true. Now unconditional,
+   which is what the panel’s actual state warrants.
+- **`withMoney` would have emptied the catalogue.** `listInventory` returns `dailyRate` only
+   when asked (Law 6), and my first filter required a rate > 0 — which would have handed a
+   money-blind operator an empty catalogue, a Law 6 gate turning into a missing feature. Now
+   filtered on `isActive` alone, with `withMoney` passed from the screen’s existing gate.
+
+### Verified
+- `tsc --noEmit`: clean for every file this session touched.
+- `vitest run`: **101 files, 2341 tests, green.**
+- **Driven** (mock, Owner, `/rentals/new`): the screen opens with **0 items** (was 3 demo
+   lines), the client list loads live, and the banner reads *"56 real products are waiting on
+   this panel’s conversion"* — the live read working and the panel’s gap stated in one line.
+- ⚠ **NOT verified end to end.** A booking still cannot be completed, because the only way to
+   add an item is the seed-backed panel and the new guard refuses those lines by name. So the
+   dispatch itself has not run against a database. The guards are the thing standing between a
+   press and a booking with products that do not exist; they are inline in a 2400-line
+   component and are not unit-covered either. Both are the next slice’s job.
+
+### Blocked / next
+1. **Convert `booking/itemCatalogue.ts` to live products.** That is the remaining half of the
+   identity path and it unblocks the app’s primary write end to end.
+2. ⚠ **`src/modules/today/MovementList.tsx` is BROKEN in the working tree** — `MovementDispatch`
+   and `MovementActionFailure` are undefined, so `tsc` is red on that file. It is the parallel
+   session’s uncommitted work, was not touched here, and is deliberately not committed.
 
 ## 2026-09-01 (cont. 7) — The closing write path: APPROVE persists. Proven live, both ways
 **Phase:** Phase 6 + actions · **Status:** built, driven, gate green

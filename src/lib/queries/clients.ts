@@ -196,7 +196,11 @@ export function toClientRecord(row: DirectoryRow): ClientRecord {
   const limit = toPaisa(row.approved_credit_limit)
 
   return {
+    /* The CODE, because that is what every screen keys on and renders. The
+       uuid rides alongside as `dbId` for the actions that write — see
+       ClientRecord's own note. */
     id: row.client_code,
+    dbId: row.id,
     name: row.name,
     clientType: (row.type_parent as ClientRecord['clientType']) ?? 'Unassigned',
     // ⚠ A `null` here means the client has NO membership row — see

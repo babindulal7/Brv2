@@ -98,7 +98,26 @@ export const TIER_TONE: Record<MembershipTier, StatusKey> = {
 }
 
 export interface ClientRecord {
+  /**
+   * The client CODE — `C-34` — not a uuid. Every screen keys on this and the
+   * directory renders it, so it stays as-is.
+   *
+   * ⚠ It is NOT what a write wants. `clients.id` is a uuid and every FK points
+   * at that, which is why `dbId` exists below.
+   */
   id: string
+  /**
+   * `clients.id` — the real uuid, for actions that write.
+   *
+   * **Optional because seed rows have none.** `data/clients.ts`'s own array is
+   * demo data with codes for ids, and a screen holding one of those cannot
+   * create a booking — `createRental.validate` refuses a `C-` code by name
+   * rather than letting it fail an FK three layers down. Populated only by
+   * `queries/clients.ts:toClientRecord`, i.e. only by rows that came from the
+   * database. A caller that needs to write MUST check it and refuse when absent,
+   * rather than falling back to `id`.
+   */
+  dbId?: string
   name: string
   company?: string
   clientType: ClientType

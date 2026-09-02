@@ -18,6 +18,10 @@ import { getSetting } from '../../lib/settingsStore'
 import { price, formatMoney, rupees, roundHalfUp } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { CLIENTS_DATA } from '../../data/clients'
+import { listClientRecords } from '../../lib/queries/clients'
+import { createRental, deliveryTypeFromLabel } from '../../actions/rentals/createRental'
+import { supabase, newClientUuid } from '../../lib/supabase'
+import { listInventory } from '../../lib/queries/inventory'
 import type { ClientRecord } from '../../data/clients'
 import { PARENTS, INV_STYLE } from '../../data/inventory'
 import type { InvStatus } from '../../data/inventory'
@@ -115,7 +119,15 @@ interface CatalogueItem {
   committedTo: string
 }
 
-/** Flattened once at module load — `PARENTS` is a static import, this never changes at runtime. */
+/**
+ * The DEMO catalogue, flattened from `PARENTS` at module load.
+ *
+ * ⚠ Its ids are product NAMES and unit SERIALS, not `products.id` uuids, so a
+ * line built from it can never be booked — `createRental.validate` refuses a
+ * non-uuid `productId` by name. It survives only as the shape the picker knows
+ * and as what renders before the live read lands; `liveCatalogue` below is what
+ * a real booking is built from. PLAN.md Phase 2: screens read seed arrays.
+ */
 const EQUIPMENT_CATALOGUE: CatalogueItem[] = PARENTS.flatMap((p) => {
   const ratePaisa = p.dailyRatePaisa ?? (rupees(0) as Paisa)
   if (!p.children || p.children.length === 0) {
@@ -1123,7 +1135,76 @@ export default function NewRental() {
   // ClientsDirectory/ClientDetail read, instead of a free-text field. §18 — a
   // client created from the booking is appended here so the combobox can
   // resolve the selection immediately, with no second search.
+  /*
+   * ── Phase 2: this screen reads the DATABASE, not the seed arrays ─────────
+   *
+   * Both pools start from the seed shape so the first paint is not empty, and
+   * are replaced by the live rows as they land. That is not cosmetic: the seed
+   * rows carry `C-34` codes and product names where the writes need uuids, so
+   * a booking built before the read lands would be refused by
+   * `createRental.validate`. `clientsAreLive` / `catalogueIsLive` below say
+   * which state we are in, and the Confirm button refuses while either is
+   * still seed — surfaced-as-unavailable, not silently disabled.
+   */
   const [clientPool, setClientPool] = useState<ClientRecord[]>(() => [...CLIENTS_DATA])
+  const [clientsAreLive, setClientsAreLive] = useState(false)
+  const [catalogue, setCatalogue] = useState<CatalogueItem[]>(() => EQUIPMENT_CATALOGUE)
+  const [catalogueIsLive, setCatalogueIsLive] = useState(false)
+  /** Why the live read failed, if it did. Law 12 — stated, never swallowed. */
+  const [poolError, setPoolError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const [clients, inventory] = await Promise.all([
+          listClientRecords(),
+          /* `withMoney` decides whether `dailyRate` comes back AT ALL (Law 6),
+             so it is the gate this screen already computed — never a literal.
+             A money-blind operator still picks equipment; they just do not see
+             the rate, which is why the filter below cannot require one. */
+          listInventory({ page: { index: 0, size: 500 }, withMoney: canBookingMoney }),
+        ])
+        if (cancelled) return
+        /* Only rows carrying a real uuid are bookable. A client without `dbId`
+           came from the seed array and must not silently look selectable. */
+        const bookableClients = clients.filter((c) => !!c.dbId)
+        if (bookableClients.length > 0) {
+          setClientPool(bookableClients)
+          setClientsAreLive(true)
+        }
+        /* Active products only. NOT filtered on a rate: `dailyRate` is null for
+           every row when `withMoney` is false, so requiring one would hand a
+           money-blind operator an empty catalogue — a Law 6 gate turning into a
+           missing feature. The rate defaults to zero for display; pricing is
+           the engine's, not this screen's. */
+        const rows = inventory.rows.filter((r) => r.isActive)
+        if (rows.length > 0) {
+          setCatalogue(
+            rows.map((r) => ({
+              /* THE uuid. This is the whole point of the read. */
+              id: r.id,
+              name: r.name,
+              /* Product-level, so no single serial. A serialised unit is chosen
+                 at Pack (§4.30a) or at creation via `units[]` (D5) — not here. */
+              serial: '—',
+              category: r.category ?? 'Uncategorised',
+              ratePaisa: (r.dailyRate ?? 0) as Paisa,
+              location: r.assetCode,
+              status: 'In Stock' as InvStatus,
+              committedTo: '—',
+            })),
+          )
+          setCatalogueIsLive(true)
+        }
+      } catch (e: unknown) {
+        if (!cancelled) setPoolError(e instanceof Error ? e.message : String(e))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
   const [selectedClientId, setSelectedClientId] = useState<string | null>(CLIENTS_DATA[0]?.id ?? null)
   const client: ClientRecord | undefined = useMemo(
     () => clientPool.find((c) => c.id === selectedClientId),
@@ -1175,34 +1256,22 @@ export default function NewRental() {
    */
   const [deliveryType, setDeliveryType] = useState<'Client Pickup' | 'Babin Delivery'>('Client Pickup')
 
-  const seedLine = (item: CatalogueItem, qty: number, discountPct: number): Line => ({
-    id: item.id,
-    name: item.name,
-    serial: item.serial,
-    category: item.category,
-    ratePaisa: item.ratePaisa,
-    location: item.location,
-    status: item.status,
-    committedTo: item.committedTo,
-    qty,
-    days: 3,
-    discountPct,
-  })
-
-  // One default line per distinct SKU, not three units of the same serial —
-  // a serialized row is one physical unit, quantity only makes sense on
-  // non-serialized bulk stock (cables, batteries).
-  const [lines, setLines] = useState<Line[]>(() => {
-    const seen = new Set<string>()
-    const picks: CatalogueItem[] = []
-    for (const item of EQUIPMENT_CATALOGUE) {
-      if (seen.has(item.name) || item.status !== 'In Stock') continue
-      seen.add(item.name)
-      picks.push(item)
-      if (picks.length === 3) break
-    }
-    return picks.map((item) => seedLine(item, item.serial === '—' ? 2 : 1, 5))
-  })
+  /* `seedLine` lived here and built the three pre-picked demo rows. Both are
+     gone: it had no other caller, and a helper whose only job was to
+     manufacture unsaveable lines is not worth keeping for a future that would
+     not want it. `AddItemPanel`'s `onAdd` is the only way a line arrives now. */
+  /*
+   * A new booking starts EMPTY.
+   *
+   * It used to open with three items pre-picked from `EQUIPMENT_CATALOGUE`.
+   * That was demo scaffolding, and once this screen started writing for real it
+   * became actively wrong: those rows carry product NAMES for ids, so every
+   * booking would have opened pre-loaded with three lines that can never be
+   * saved, and an operator who did not notice would meet the refusal at the
+   * end instead of the start. Nothing is lost — the operator adds what the job
+   * actually needs, which is what the panel below is for.
+   */
+  const [lines, setLines] = useState<Line[]>(() => [])
 
   const seedCrewLine = (m: CrewMember): CrewLine => ({
     crewId: m.id,
@@ -1532,13 +1601,119 @@ export default function NewRental() {
      * `navigate('/rentals')` is deliberately not called: landing on the rentals
      * list is this app's universal "the write landed" signal, and nothing landed.
      */
-    setActionError(
-      'Not confirmed — this booking has not been saved yet, so there is nothing to confirm. Creating the row ' +
-        'is built now, but this screen still picks its client and equipment from sample data rather than from ' +
-        'the database, so it has no real client or product to save against. Nothing was written, and nothing ' +
-        'entered here has been lost.',
-    )
-  }, [confirmBlocked, dispatchContext])
+    /*
+     * ── Phase 2 landed: this dispatches CREATE_RENTAL for real ──────────────
+     *
+     * Three uuids have to be real or the write is refused by name rather than
+     * failing an FK three layers down — client, every product, and the branch.
+     * The first two now come from `lib/queries/*`; the branch is read from the
+     * signed-in user's own row, the same way `approveDailyClosing` reads it,
+     * because this screen has no branch picker and defaulting to the first
+     * branch would file one branch's booking under another.
+     *
+     * A booking is created as a **Quote** (`createRental` always returns that
+     * stage) and confirmed by a second call — `confirmRental`, which is what
+     * `BookingDetail`'s own confirm dispatches. Both are sent here so the
+     * button does what it says.
+     */
+    /* A live catalogue row's id is a `products.id` uuid; a demo row's is the
+       product NAME. This is the cheapest honest test of which one a line is. */
+    const UUID_RE_LINE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!client?.dbId) {
+      setActionError(
+        clientsAreLive
+          ? 'Not confirmed — the selected client came from sample data and has no database record, so there is nothing to book against. Pick a client from the live list.'
+          : 'Not confirmed — the client list has not loaded from the database yet, so the selected client is sample data. Wait for it to load, then re-select the client.',
+      )
+      return
+    }
+    if (lines.length === 0) {
+      setActionError('Not confirmed — a booking with no equipment on it is not a booking. Add at least one item first.')
+      return
+    }
+    const demoLine = lines.find((l) => !UUID_RE_LINE.test(l.id))
+    if (demoLine) {
+      setActionError(
+        `Not confirmed — "${demoLine.name}" is a sample row, not a product in the catalogue, so it cannot be saved. Remove it and add the item from the live catalogue.`,
+      )
+      return
+    }
+
+    setActionError(null)
+    setSaveState('saving')
+    void (async () => {
+      try {
+        const { data: userRow, error: userErr } = await supabase
+          .from('users')
+          .select('branch_id')
+          .eq('id', ctx.userId)
+          .maybeSingle()
+        if (userErr) throw new Error(`the operating branch could not be read (${userErr.message})`)
+        const branchId = (userRow as { branch_id?: string | null } | null)?.branch_id
+        if (!branchId) {
+          throw new Error(
+            'your staff record carries no branch, and a booking is filed per branch. Ask an Owner to set your branch first',
+          )
+        }
+
+        const created = await createRental(
+          {
+            /* Law 8 — one key for this press, so a double-click is one booking. */
+            clientUuid: newClientUuid(),
+            clientId: client.dbId as string,
+            branchId,
+            project: project.trim() ? project.replace(/^'|'$/g, '') : null,
+            /* Law 7 — the stored instant is AD/UTC; the pickers hold local
+               wall-clock, so they are combined and sent as a full ISO string. */
+            pickupAt: new Date(`${pickup}T${pickupTime}`).toISOString(),
+            returnAt: new Date(`${ret}T${returnTime}`).toISOString(),
+            /* The UI says "Client Pickup"; the enum stores "Customer Pickup"
+               (Law 17 lives in the label, not the column). */
+            deliveryType: deliveryTypeFromLabel(deliveryType),
+            lines: lines.map((l, i) => ({
+              clientUuid: newClientUuid(),
+              lineType: 'Equipment' as const,
+              productId: l.id,
+              qty: l.qty,
+              /* Law 9 — days is mandatory and never defaulted. */
+              days: l.days,
+              rate: Math.round(l.ratePaisa / 100),
+              sortOrder: i,
+            })),
+          },
+          ctx,
+        )
+
+        /* Created as a Quote; confirm it into Booked with the id the database
+           just minted — never the `bk-new` placeholder this screen used to send. */
+        const mod = await import('../../actions/rentals/confirmRental')
+        await mod.confirmRental({ id: created.bookingId }, ctx)
+
+        setSaveState('saved')
+        /* Landing on the rentals list is this app's universal "the write
+           landed" signal — now it has. */
+        navigate('/rentals')
+      } catch (err) {
+        setSaveState('error')
+        setActionError(
+          `Not confirmed — ${err instanceof Error ? err.message : String(err)}. Nothing was written, and nothing entered here has been lost.`,
+        )
+      }
+    })()
+  }, [
+    confirmBlocked,
+    dispatchContext,
+    client,
+    clientsAreLive,
+    lines,
+    project,
+    pickup,
+    pickupTime,
+    ret,
+    returnTime,
+    deliveryType,
+    navigate,
+  ])
 
   /**
    * `[Cancel]` — **two behaviours, never one**.
@@ -2373,6 +2548,10 @@ export default function NewRental() {
             <Field label="Client" labelId="new-rental-client-label">
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+                  {/* The client half IS live once this flips — a selected
+                      client then carries `dbId`, the uuid a booking is filed
+                      against. Until then the list is sample data and Confirm
+                      refuses by name. */}
                   <ClientCombobox
                     clients={clientPool}
                     selectedClientId={selectedClientId}
@@ -2482,6 +2661,38 @@ export default function NewRental() {
                 is the same panel, raising the same callback (§34), and it still
                 answers availability for the booking's own dates (§32). */}
             <div style={{ marginBottom: 10 }}>
+              {/*
+                * Law 12 — the truth about what this panel is serving, stated
+                * before the operator spends time on it rather than as a refusal
+                * at Confirm.
+                *
+                * `AddItemPanel` reads `booking/itemCatalogue.ts`, which is built
+                * on five seed modules (`data/inventory`, `data/addBundle`,
+                * `data/bundles`, `data/addEquipment`). Those rows have product
+                * names for ids, so a line added from them cannot be saved. The
+                * client half of this screen IS live; the equipment half is the
+                * next slice of PLAN.md Phase 2.
+                */}
+              {/* ⚠ UNCONDITIONAL, and that is the point. An earlier version of
+                  this notice was gated on `catalogueIsLive` — which is this
+                  screen's OWN catalogue read, not the panel's source. The panel
+                  reads `booking/itemCatalogue.ts` either way, so the gate hid
+                  the warning exactly when it was still true. It stays until the
+                  panel itself is converted. */}
+              <p style={{ margin: '0 0 var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--warn-text)', lineHeight: 1.5 }}>
+                This panel still lists <strong>sample equipment</strong>, not the live catalogue — items added here
+                cannot be saved yet, and Confirm will say so rather than writing a booking with products that do not
+                exist.
+                {catalogueIsLive
+                  ? ` The catalogue itself is loaded — ${catalogue.length} real products are waiting on this panel's conversion.`
+                  : ' The live catalogue has not loaded either.'}
+              </p>
+              {poolError && (
+                <p role="alert" style={{ margin: '0 0 var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--st-danger-fg)', lineHeight: 1.5 }}>
+                  The live catalogue and client list could not be read: {poolError}
+                </p>
+              )}
+
               <AddItemPanel
                 window={bookingWindow}
                 days={days || 1}
