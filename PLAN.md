@@ -720,6 +720,41 @@ answer.
 Note the two sides are already wired to different sources: the app takes `vatPercent` as an
 argument and `bookingQuery.ts:891` states explicitly that "13 is NOT hardcoded" there.
 
+#### ⬅ (c) ADDRESSED 2 Sep — `0079` drafted, and two corrections to this entry
+
+**`supabase/migrations/0079_invoice_vat_rate_is_authoritative.sql` — DRAFT, NOT APPLIED.**
+The trigger reads `vat_rate` instead of the `0.13` literal. Nothing else changes; the 2-dp
+rounding is **(b)** and stays untouched, because changing it here would smuggle an unruled
+finance decision into a bug fix.
+
+**Behaviour-preserving, provably.** `vat_rate` is `numeric(5,4) NOT NULL DEFAULT 0.1300` —
+no row can hold NULL and the default *is* the replaced constant — so (c)'s stated cost,
+"every existing row needs checking", is **zero rows** (live count checked). Post-condition (4)
+re-proves that at apply time and refuses rather than silently restating a non-default invoice.
+
+**Correction 1 — `invoice_lines.tax_rate` does not exist.** This entry cites it at
+`0006:450` as "the same shape needing the same answer". Line 450 of `0006_finance.sql` is
+inside `create table tax_ledgers` (opens at `:439`); `invoice_lines` carries no tax column at
+all, because tax is applied once at invoice level over the sum of `line_total`. Confirmed on
+the live project: the only `tax_rate` in `public` is `tax_ledgers.tax_rate`. **A future
+implementer following this line would have gone looking for a column that is not there.**
+
+**Correction 2 — `tax_ledgers.tax_rate` is a different problem.** Real, same type and
+default, but not an *ignored* column: **nothing writes `tax_ledgers` at all**, which
+`src/modules/finance/Expenses.tsx:105` already says. An unwritten table is a Phase gap, not a
+dead column, and it needs no ruling here.
+
+**What is left of (c) is one product question:** *should a zero-rated or differently-rated
+invoice be possible at all?* `0079` assumes **yes** — it makes the column mean what it looks
+like it means, at zero cost today. If the answer is **no**, the follow-up is to drop
+`vat_rate` so it stops looking authoritative, and `0079` should not be applied.
+
+⚠ **Not verified:** `0079` has not been applied and has not been through `check:rebuild` —
+the local container is down, and §4.42's own standing instruction is to dump before touching
+any database. Its five post-condition expressions were each validated read-only against the
+live function, where they correctly report the current *broken* state (hardcode present,
+`vat_rate` absent, trigger bound, search_path matched, 0 non-default rows).
+
 > Also filed, needing no ruling: **BUG-013** — nine `src/actions/` modules are stubs that
 > `console.log('[DB TX] …')` and return `{ success: true }` without writing. They have no
 > callers today; wiring one to a button would produce a green toast and no row.
