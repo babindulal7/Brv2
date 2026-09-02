@@ -120,6 +120,13 @@ export interface PageBodyProps {
   /** Empty-state overrides. Defaults are derived from `noun`. */
   emptyTitle?: string
   emptyMessage?: string
+  /**
+   * Label for the filtered empty state's action. Defaults to "Clear filters",
+   * which is only the right sentence when filters are what narrowed the list —
+   * a page whose PERIOD moved (Dashboard on "Tomorrow", chips untouched) resets
+   * the same state but should say where the button goes ("Back to Today").
+   */
+  clearLabel?: string
   /** Label for the empty state's one action, e.g. "Add client". Both this and `onEmptyAction` are needed for it to render. */
   emptyActionLabel?: string
   onEmptyAction?: () => void
@@ -142,6 +149,7 @@ export function PageBody({
   skeletonRows = 5,
   emptyTitle,
   emptyMessage,
+  clearLabel,
   emptyActionLabel,
   onEmptyAction,
   children,
@@ -216,7 +224,7 @@ export function PageBody({
       <EmptyState
         title={emptyTitle ?? `No ${noun} match these filters`}
         description={emptyMessage ?? 'Clear the filters to see everything again.'}
-        {...(onClearFilters ? { actionLabel: 'Clear filters', onAction: onClearFilters } : {})}
+        {...(onClearFilters ? { actionLabel: clearLabel ?? 'Clear filters', onAction: onClearFilters } : {})}
       />
     ) : (
       <EmptyState

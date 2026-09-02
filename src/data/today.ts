@@ -940,6 +940,23 @@ export function returnsQuery(period: LivePeriod, picked: readonly string[]): Col
 }
 
 /**
+ * Which stages each list can EVER show — read off the same named sets the
+ * queries above narrow, never re-typed, so this cannot drift from them.
+ *
+ * `MoreFilters` consumes it to keep a §11 rule this page was breaking: a stage
+ * chip whose intersection with the list's structural stages is empty is a
+ * control whose only possible outcome is the empty state — a live-looking
+ * button that can never do anything but clear the screen (found in the 1 Sep
+ * Dashboard sweep: five of Outgoing's seven live stage chips, six of
+ * Incoming's). `narrowStages` reports that emptiness honestly as `impossible`;
+ * the chip must be honest one step earlier, before the click.
+ */
+export const LIST_STAGES: Record<'Outgoing' | 'Incoming', readonly BookingStatus[]> = {
+  Outgoing: (todaysOutgoing(TODAY_DAY_AD).chips?.['stage'] ?? []) as readonly BookingStatus[],
+  Incoming: (todaysIncoming(TODAY_DAY_AD).chips?.['stage'] ?? []) as readonly BookingStatus[],
+}
+
+/**
  * The Active Rentals KPI — everything currently with a client.
  *
  * Not a named set in `queries/bookings.ts` because it is one card on one

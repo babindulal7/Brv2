@@ -187,11 +187,35 @@ function get(row: Row, col: string): unknown {
   return row[col]
 }
 
+/**
+ * An ISO instant WITH a time part. Date-only strings (`2026-09-01`) stay on the
+ * string path below on purpose: they are stored and queried in one uniform
+ * format, so lexicographic order IS chronological order for them, and pushing
+ * them through `Date.parse` would buy nothing.
+ */
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/
+
 function cmp(a: unknown, b: unknown): number {
   if (a === b) return 0
   if (a === null || a === undefined) return 1 // NULLS LAST for ASC, matching Postgres
   if (b === null || b === undefined) return -1
   if (typeof a === 'number' && typeof b === 'number') return a - b
+  /*
+   * Timestamps compare as INSTANTS, never as strings. The rows store `Z`-form
+   * ISO; `operationalDayBounds` (lib/operationalDay.ts) emits `+05:45`-offset
+   * bounds — and `'…T04:15:00Z' >= '…T06:00:00+05:45'` is false as strings even
+   * though 04:15Z is 10:00 NPT, inside the day. The string path silently
+   * dropped every row in the 00:00–06:00Z band — the whole Nepal working
+   * morning — from every mock date-ranged read (found on the Dashboard's
+   * Outgoing list, 1 Sep 2026). Postgres parses the offset; now the mock does
+   * too. Both sides must look like instants, so a timestamp column compared
+   * against a non-timestamp value keeps the old behaviour.
+   */
+  if (typeof a === 'string' && typeof b === 'string' && ISO_INSTANT.test(a) && ISO_INSTANT.test(b)) {
+    const ta = Date.parse(a)
+    const tb = Date.parse(b)
+    if (!Number.isNaN(ta) && !Number.isNaN(tb)) return ta === tb ? 0 : ta < tb ? -1 : 1
+  }
   return String(a) < String(b) ? -1 : 1
 }
 

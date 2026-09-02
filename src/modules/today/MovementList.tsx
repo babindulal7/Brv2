@@ -6,7 +6,6 @@ import type { StatusKey } from '../../lib/status'
 import { ROWS_PER_COLUMN, ROW_MENU, timeOf, statusKeyOf, has, type MovementRow } from '../../data/today'
 import { cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
-import { ErrorBanner } from '../../components/ui/StateViews'
 import type { ListResult } from '../../lib/queries/useList'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { canRecordPayment } from '../../lib/rbac'
@@ -14,7 +13,6 @@ import { shouldFlipUp } from '../../lib/menuFlip'
 import { useToast } from '../../components/ui/Toast'
 import { useAuth } from '../../lib/auth'
 import { useViewport } from '../../lib/device'
-import type { SystemRole } from '../../types/database'
 import { deliveryTypeLabel } from '../../lib/format'
 
 interface MovementListProps {
@@ -38,6 +36,14 @@ interface MovementListProps {
   viewAll: string
   /** Restores the page's default view. Reached from the empty state's one action. */
   onClearFilters: () => void
+  /**
+   * Whether the operator picked CHIPS, as opposed to only moving the period.
+   * `list.isFiltered` cannot tell the two apart — Today.tsx marks the page
+   * filtered whenever the period leaves Today, so the way back is offered —
+   * but the empty-state SENTENCE must: "No pickups match these filters" over
+   * a bare period change blames filters nobody touched (1 Sep sweep, #7).
+   */
+  filteredByChips: boolean
 }
 
 /**
@@ -96,87 +102,33 @@ function Pill({ text, status }: { text: string; status: StatusKey }) {
 }
 
 /**
- * Complete Pickup and Complete Return — the two most-used buttons on the floor,
- * reachable from both the hover card and the row menu, which is why the dispatch
- * lives here once instead of four times.
+ * ⛔ The Complete Pickup / Complete Return DISPATCH was deleted here (1 Sep
+ * Dashboard sweep), and the two entries became unavailable-with-reason.
  *
- * Two things it refuses to invent:
+ * They could not succeed FROM THIS PAGE, by construction, ever:
  *
- * 1. **The identity.** The previous `user?.id ?? 'USR-001'` / `user?.role ??
- *    'Manager'` pair stamped a made-up operator on a movement record whenever no
- *    one was signed in. There is no fallback now — no session, no dispatch.
- * 2. **The equipment.** `equipmentIds` was `['EQP-101']`, one real-looking unit
- *    asserted on every booking. A row here carries an item COUNT and no unit
- *    ids (`bookings.ts` embeds `booking_lines(id, qty)`, not units), so there is
- *    nothing true to send; the empty array is passed and the action's own
- *    `validate` rejects it. That refusal is correct — the unit selection has to
- *    come from a screen that actually knows it.
+ *  - `completePickup` is a stub (`implemented: false`) — `createAction`
+ *    refuses it before `execute`, for every input and every role.
+ *  - `completeReturn` is real, but it writes `session_line_movements`, whose
+ *    `booking_line_id` is NOT NULL — and a `MovementRow` carries an item COUNT
+ *    and no line or unit ids (`listBookings` embeds `booking_lines(id, qty)`).
+ *    This page structurally cannot supply what the write needs, so `validate`
+ *    refused every dispatch with `lines: []`.
  *
- * `completePickup` is still a stub, so `createAction` rejects it before
- * `execute`. `completeReturn` is not: it writes a Return session, its
- * `return_lines` and its movements, and refuses in `validate` when — as here —
- * it is handed no lines. Either way the success toast fires only on a resolved
- * promise, so neither can report a write it did not make.
+ * A menu entry that LOOKS live and always lands on a refusal banner is this
+ * file's own named defect one comment down: "a menu item that looks live and
+ * moves nothing is the same defect as a nav link that does not navigate." The
+ * previous shape at least surfaced the refusal inline (Law 12); this shape is
+ * honest one step earlier, before the press — the same doctrine as the PIN
+ * button on Login and the dimmed More Filters chips.
  *
- * ⛔ Both refusals used to land in `console.error` ONLY — the operator pressed
- * Complete Return, the action refused it, and the screen said nothing. Law 12:
- * a dispatch failure is inline and persistent, never a toast and never
- * console-only. Every failure now goes through `onFail`, whose banner the list
- * renders under its header; the action's own refusal sentence is the message,
- * because it names the real reason ("no lines", "not signed in") instead of a
- * generic apology.
+ * The REAL verbs live in the workspaces, which know their units: the row's
+ * primary action already routes there (`primaryFor` — Pack / Handover /
+ * Return), and the hover card now carries the same workspace link instead of
+ * a dead "Complete" button. When a floor-side one-tap completion is genuinely
+ * wanted from this list, it needs the unit list in the query first — that is
+ * a data-shape change, not a dispatch away.
  */
-
-/** Law 12 — what a failed dispatch surfaces inline: a title and the refusal's own sentence. */
-interface MovementActionFailure {
-  title: string
-  message: string
-}
-
-/** The list's dispatcher, passed into the hover card and the row menu. */
-type MovementDispatch = (kind: 'pickup' | 'return', bookingNo: string, onDone: () => void) => void
-
-function runMovementAction(
-  kind: 'pickup' | 'return',
-  bookingNo: string,
-  user: { id: string; role: SystemRole } | null,
-  onDone: () => void,
-  onFail: (failure: MovementActionFailure) => void,
-) {
-  const title = `This ${kind} was not recorded`
-
-  if (!user) {
-    onFail({
-      title,
-      message: `You are not signed in, so this ${kind} cannot be recorded against anyone. Nothing was written.`,
-    })
-    return
-  }
-
-  const ctx = { userId: user.id, role: user.role }
-
-  // The two actions no longer take the same input. `completeReturn` now writes
-  // `session_line_movements`, whose `booking_line_id` is NOT NULL, so a flat
-  // list of equipment ids with no line to hang them on is not something the
-  // schema can accept — units travel inside their booking line instead
-  // (`FloorLineInput`). The empty list and the refusal that follows are
-  // unchanged in spirit: a `Movement` row carries an item COUNT and no ids, so
-  // there is still nothing true to send from here.
-  const run =
-    kind === 'pickup'
-      ? import('../../actions/rentals/completePickup').then((mod) =>
-          mod.completePickup({ rentalId: bookingNo, equipmentIds: [] as string[] }, ctx),
-        )
-      : import('../../actions/rentals/returnRental').then((mod) =>
-          mod.completeReturn({ rentalId: bookingNo, lines: [] }, ctx),
-        )
-
-  run.then(onDone).catch((err: unknown) => {
-    // The console line is a diagnostic; the operator's copy is the inline banner.
-    console.error(`complete ${kind} failed:`, err)
-    onFail({ title, message: err instanceof Error ? err.message : String(err) })
-  })
-}
 
 /** An explicit non-value. Never an empty string, which reads as "recorded blank". */
 const NONE = '—'
@@ -206,8 +158,7 @@ const NONE = '—'
  *  - **Staff** — `crew_bookings` (0003:1126) is the assignment table; not joined.
  *  - **Notes** — no notes column is selected by `listBookings`.
  */
-function HoverCard({ m, onMovement }: { m: MovementRow; onMovement: MovementDispatch }) {
-  const { showSuccessToast } = useToast()
+function HoverCard({ m }: { m: MovementRow }) {
   const { user } = useAuth()
   const money = useCanViewMoney()
   const facts: Array<[string, string]> = [
@@ -235,23 +186,37 @@ function HoverCard({ m, onMovement }: { m: MovementRow; onMovement: MovementDisp
      * one does not replace the other anywhere else in this file.
      */
     ...(money && user && canRecordPayment(user.role) ? ([{ label: 'Receive Payment', to: '/finance' }]) : []),
-    ...(m.kind === 'Pickup' || m.kind === 'Delivery' ? [{
-      label: 'Complete Pickup',
-      onClick: () => onMovement('pickup', m.bookingNo, () =>
-        showSuccessToast('Pickup Completed', `Booking ${m.bookingNo} handed over.`),
-      )
-    }] : []),
-    ...(m.kind === 'Return' ? [{
-      label: 'Complete Return',
-      onClick: () => onMovement('return', m.bookingNo, () =>
-        showSuccessToast('Return Completed', `Booking ${m.bookingNo} received & returned.`),
-      )
-    }] : []),
-    { label: 'Print Checklist', to: `/rentals/${m.bookingNo}/packing` },
+    /*
+     * The card used to offer "Complete Pickup" / "Complete Return" here — two
+     * buttons that could never succeed from this page (see the deleted-dispatch
+     * note above `HoverCard`). The card now carries the row's own primary verb
+     * instead: the WORKSPACE that records the movement for real, from
+     * `primaryFor`, so the card and the row cannot name two different next
+     * steps for one booking.
+     *
+     * "Packing List" survives only when the primary is not already the packing
+     * route (a Booked row's primary IS "Pack") — two labels on one destination
+     * is the defect the old "Print Checklist" entry had. That label is gone
+     * for a second reason too: it navigated and never printed.
+     */
+    ...(() => {
+      const p = primaryFor(m, m.kind === 'Return' ? 'incoming' : 'outgoing')
+      const packing = `/rentals/${m.bookingNo}/packing`
+      return [
+        { label: p.label, to: p.to },
+        ...(p.to === packing ? [] : [{ label: 'Packing List', to: packing }]),
+      ]
+    })(),
   ]
   return (
     <div
-      role="tooltip"
+      /* Was role="tooltip" — wrong role for a panel with links and buttons in
+         it: ARIA tooltips are non-interactive by contract, so AT users were
+         told there was nothing here to operate. A grouped, labelled region is
+         the honest description; the row's own focus/long-press handling opens
+         and closes it, and its controls sit in the natural tab order. */
+      role="group"
+      aria-label={`Preview of booking ${m.bookingNo} for ${m.client}`}
       data-overlay
       style={{
         position: 'absolute',
@@ -339,7 +304,7 @@ const ROW_MENU_H = 460
  * `clients(name)` and nothing else; inventing a number would put a fake one
  * behind a `tel:` link.
  */
-function RowMenu({ onClose, m, up, onMovement }: { onClose: () => void; m: MovementRow; up: boolean; onMovement: MovementDispatch }) {
+function RowMenu({ onClose, m, up }: { onClose: () => void; m: MovementRow; up: boolean }) {
   const navigate = useNavigate()
   const money = useCanViewMoney()
   const { showSuccessToast } = useToast()
@@ -349,24 +314,33 @@ function RowMenu({ onClose, m, up, onMovement }: { onClose: () => void; m: Movem
 
   const actions: Partial<Record<(typeof ROW_MENU)[number], () => void>> = {
     Open: () => navigate(booking),
-    Edit: () => navigate(booking),
     'Packing List': () => navigate(`${booking}/packing`),
-    'Print Checklist': () => navigate(`${booking}/packing`),
     Invoice: () => navigate('/documents'),
     'Copy Booking Number': () => {
       void navigator.clipboard?.writeText(m.bookingNo)
       showSuccessToast('Copied', `Booking number ${m.bookingNo} copied to clipboard.`)
     },
-    'Complete Pickup': () =>
-      onMovement('pickup', m.bookingNo, () =>
-        showSuccessToast('Pickup Completed', `Booking ${m.bookingNo} handed over.`),
-      ),
-    'Complete Return': () =>
-      onMovement('return', m.bookingNo, () =>
-        showSuccessToast('Return Completed', `Booking ${m.bookingNo} received & returned.`),
-      )
   }
+  /*
+   * 1 Sep sweep — three entries moved DOWN here from `actions`, because each
+   * wore a verb it did not perform (this file's own rule, in the header above):
+   *
+   *  - **Edit** navigated to exactly where Open navigates. A second label on
+   *    the same behaviour is not an action, and there is no booking-edit
+   *    surface for it to open — the booking page's own controls (Extend,
+   *    payments, notes) are the editing that exists.
+   *  - **Print Checklist** printed nothing — it opened the Packing workspace,
+   *    which "Packing List" one row down already does under an honest name.
+   *  - **Complete Pickup / Complete Return** could never succeed from this
+   *    page (stub action; no unit list in this query) — see the
+   *    deleted-dispatch note above `HoverCard`. The workspaces the row's
+   *    primary button opens are where these movements are recorded for real.
+   */
   const why: Partial<Record<(typeof ROW_MENU)[number], string>> = {
+    Edit: 'No booking-edit surface exists — Open shows the booking, whose own controls (Extend, payments, notes) are the editing that is built',
+    'Print Checklist': 'Printing is not built anywhere — Packing List opens the workspace the checklist lives in',
+    'Complete Pickup': 'This list cannot record a pickup — the Handover workspace (the row’s own button) records it with the actual units',
+    'Complete Return': 'This list carries no unit list, and a return is written per unit — the Return workspace records it for real',
     QR: 'QR rendering lands with the Evidence matcher',
     WhatsApp: 'listBookings joins clients(name) only — no contact number',
     Call: 'listBookings joins clients(name) only — no contact number',
@@ -473,32 +447,17 @@ export default function MovementList({
   periodLabel,
   viewAll,
   onClearFilters,
+  filteredByChips,
 }: MovementListProps) {
   const navigate = useNavigate()
   /* Law 14 — width decides. Below 768 the row is a card, not a table row; the
      `.movement-row` grid in `styles/theme.css` has no phone breakpoint and this
      file may not add one, so the arrangement branches here instead. */
   const phone = useViewport() === 'phone'
-  const { user } = useAuth()
   const [hover, setHover] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ id: string; up: boolean } | null>(null)
-  /**
-   * Law 12 — a dispatch failure is inline and persistent, never a toast and
-   * never console-only. This is where a refused Complete Pickup / Complete
-   * Return lands so the operator sees it happen; a new attempt clears it, and
-   * only a resolved promise fires the success toast.
-   */
-  const [actionError, setActionError] = useState<MovementActionFailure | null>(null)
   const press = useRef<number | null>(null)
   const suppress = useRef(false)
-
-  /* One dispatcher for the hover card and the row menu, so the failure state
-     lives here — beside the rows the banner renders over — instead of in two
-     overlay components that unmount on outside-tap. */
-  const dispatchMovement: MovementDispatch = (kind, bookingNo, onDone) => {
-    setActionError(null)
-    runMovementAction(kind, bookingNo, user, onDone, setActionError)
-  }
 
   const shown = list.rows.slice(0, ROWS_PER_COLUMN)
   const rest = list.rows.length - shown.length
@@ -574,15 +533,6 @@ export default function MovementList({
         </Link>
       </div>
 
-      {/* Law 12 — the failed dispatch, inline and persistent. It sits above the
-          rows rather than replacing them: the list is still true, the write is
-          what did not happen. */}
-      {actionError && (
-        <div style={{ padding: '12px 15px 0' }}>
-          <ErrorBanner title={actionError.title} message={actionError.message} />
-        </div>
-      )}
-
       <div style={{ flex: 1, ...(stateful ? { padding: '14px 15px' } : {}) }}>
         <PageBody
           loading={list.loading}
@@ -595,12 +545,21 @@ export default function MovementList({
           noun={noun}
           skeleton="table"
           skeletonRows={ROWS_PER_COLUMN}
-          {...(list.isFiltered
-            ? {}
-            : {
-                emptyTitle: `No ${noun} ${periodLabel}`,
-                emptyMessage: 'Nothing is scheduled in this period.',
-              })}
+          {...(list.isFiltered && filteredByChips
+            ? {} // chips picked — the default "match these filters" copy is true
+            : list.isFiltered
+              ? {
+                  /* Only the PERIOD moved. "Match these filters" would blame
+                     chips nobody touched; the honest sentence is the period's
+                     own, and the way back says where it goes. */
+                  emptyTitle: `No ${noun} ${periodLabel}`,
+                  emptyMessage: 'Nothing is scheduled in this period.',
+                  clearLabel: 'Back to Today',
+                }
+              : {
+                  emptyTitle: `No ${noun} ${periodLabel}`,
+                  emptyMessage: 'Nothing is scheduled in this period.',
+                })}
         >
           {shown.map((r, i) => {
             /* Spec 02 Notes — one primary button per row. `primaryFor` picks the
@@ -667,7 +626,7 @@ export default function MovementList({
                   <Icon name="more_vert" size={15} />
                 </button>
                 {menu?.id === r.id && (
-                  <RowMenu m={r} onClose={() => setMenu(null)} up={menu.up} onMovement={dispatchMovement} />
+                  <RowMenu m={r} onClose={() => setMenu(null)} up={menu.up} />
                 )}
               </span>
             )
@@ -897,7 +856,7 @@ export default function MovementList({
                 {/* `menu` is `{ id, up } | null`, so the old `menu !== r.id` compared an
                     object to a string and was always true — the 520px hover card rendered
                     straight through the open row menu. Compare the id, not the object. */}
-                {hover === r.id && menu?.id !== r.id && <HoverCard m={r} onMovement={dispatchMovement} />}
+                {hover === r.id && menu?.id !== r.id && <HoverCard m={r} />}
               </div>
             )
           })}

@@ -8,6 +8,7 @@ import {
   TODAY_DATE,
   MORE_FILTERS,
   FILTER_SUPPORT,
+  LIST_STAGES,
   mergeByTime,
   CAL_TODAY_ISO,
   NOW_AD,
@@ -298,7 +299,25 @@ function MoreFilters({
               <div style={{ display: 'flex', flexWrap: 'wrap', columnGap: 6, rowGap: 20 }}>
                 {g.options.map((o) => {
                   const support = FILTER_SUPPORT[o]
-                  const reason = support?.kind === 'stage' ? null : (support?.reason ?? 'No column behind this filter.')
+                  /*
+                   * A stage chip is live ONLY where its stage intersects this
+                   * list's structural set (`LIST_STAGES` — read off the named
+                   * queries, so it cannot drift). `narrowStages` intersects,
+                   * never replaces, so picking `Quote` over a list that MEANS
+                   * Booked-or-Packed can only ever render the empty state — a
+                   * chip like that is not a filter, it is a clear-screen button
+                   * wearing a filter's face. It joins the disabled chips and
+                   * says why, in the same sentence shape they use.
+                   */
+                  const reachable = LIST_STAGES[list]
+                  const reason =
+                    support?.kind === 'stage'
+                      ? reachable.includes(support.stage)
+                        ? null
+                        : `The ${list} list means stage ${reachable.join(' or ')} — ${
+                            support.stage === o ? o : `${o} (stage ${support.stage})`
+                          } never intersects it, so picking it could only empty the list.`
+                      : (support?.reason ?? 'No column behind this filter.')
                   const on = picked.includes(o)
 
                   /* The 26px paint stays and `.tap` (theme.css) carries the 44px
@@ -345,7 +364,7 @@ function MoreFilters({
           ))}
           <p style={{ gridColumn: '1 / -1', margin: 0, paddingTop: 6, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5, borderTop: '1px solid var(--border)' }}>
             Status uses the canonical Foundation stages and filters in the database. A dimmed chip is unavailable, not
-            pending — hover it for the column or join it would need.
+            pending — hover it for the reason: the column or join it would need, or the stage this list can never show.
           </p>
         </div>
       )}
@@ -732,6 +751,7 @@ export default function Today() {
       periodLabel={phrase}
       viewAll="/operations"
       onClearFilters={clearOut}
+      filteredByChips={pickedOut.length > 0}
     />
   )
 
@@ -746,6 +766,7 @@ export default function Today() {
       periodLabel={phrase}
       viewAll="/operations"
       onClearFilters={clearIn}
+      filteredByChips={pickedIn.length > 0}
     />
   )
 
@@ -764,6 +785,7 @@ export default function Today() {
       loading={dayLoading}
       error={dayError}
       isFiltered={outFiltered || inFiltered}
+      filteredByChips={pickedOut.length > 0 || pickedIn.length > 0}
       onRetry={refetchAll}
       onClearFilters={clearBoth}
       periodLabel={phrase}

@@ -52,6 +52,7 @@ export default function TimelinePanel({
   loading,
   error,
   isFiltered,
+  filteredByChips,
   onRetry,
   onClearFilters,
   periodLabel,
@@ -61,6 +62,9 @@ export default function TimelinePanel({
   loading: boolean
   error: string | null
   isFiltered: boolean
+  /** Chips picked on either list, as opposed to only the period moving —
+   *  decides whether the empty state may blame "these filters" (1 Sep #7). */
+  filteredByChips: boolean
   onRetry: () => void
   onClearFilters: () => void
   periodLabel: string
@@ -98,9 +102,16 @@ export default function TimelinePanel({
           noun="movements"
           skeleton="table"
           skeletonRows={WINDOW}
-          {...(isFiltered
-            ? {}
-            : { emptyTitle: `No movements ${periodLabel}`, emptyMessage: 'Nothing is scheduled in this period.' })}
+          {...(isFiltered && filteredByChips
+            ? {} // chips narrowed a list — "match these filters" is true
+            : isFiltered
+              ? {
+                  /* Only the period moved — same honesty rule as MovementList. */
+                  emptyTitle: `No movements ${periodLabel}`,
+                  emptyMessage: 'Nothing is scheduled in this period.',
+                  clearLabel: 'Back to Today',
+                }
+              : { emptyTitle: `No movements ${periodLabel}`, emptyMessage: 'Nothing is scheduled in this period.' })}
         >
           {ROWS.length > 0 && (
             <span
