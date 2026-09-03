@@ -47,6 +47,8 @@ interface RecordPaymentModalProps {
   invoices: Array<{ id: string; client: string; amount: string; status: string; booking?: string }>
 }
 
+type PaymentMethod = 'Bank Transfer' | 'Cash' | 'eSewa' | 'Khalti' | 'Card' | 'Cheque'
+
 export function RecordPaymentModal({
   isOpen,
   onClose,
@@ -84,7 +86,7 @@ export function RecordPaymentModal({
    * either way, but the guard is what refuses it, not a silent substitution.
    */
   const [amount, setAmount] = useState<number>(initialAmount ?? 0)
-  const [method, setMethod] = useState<'Bank Transfer' | 'Cash' | 'eSewa' | 'Khalti' | 'Card' | 'Cheque'>('Bank Transfer')
+  const [method, setMethod] = useState<PaymentMethod>('Bank Transfer')
   /*
    * The ACCOUNT the money landed in — `bank_accounts.id`, the structured half
    * of "how was this paid" (`recordPayment.ts`'s METHOD block). '' means "no
@@ -351,8 +353,8 @@ export function RecordPaymentModal({
         reference: reference || 'N/A',
       })
       onClose()
-    } catch (err: any) {
-      setError(err.message || 'Failed to record payment')
+    } catch (err) {
+      setError(err instanceof Error && err.message ? err.message : 'Failed to record payment')
     } finally {
       setIsSubmitting(false)
     }
@@ -483,7 +485,7 @@ export function RecordPaymentModal({
             </label>
             <select
               value={method}
-              onChange={(e) => setMethod(e.target.value as any)}
+              onChange={(e) => setMethod(e.target.value as PaymentMethod)}
               style={{
                 height: 36,
                 padding: '0 12px',

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { syncEngine } from '../syncEngine'
+import { syncEngine, type SyncState } from '../syncEngine'
 
 describe('SyncEngine State & Subscriptions', () => {
   it('reports initial sync state correctly', () => {
@@ -9,7 +9,7 @@ describe('SyncEngine State & Subscriptions', () => {
   })
 
   it('subscribes to state updates when listeners register', () => {
-    let notifiedState = null as any
+    let notifiedState: SyncState | null = null
     const unsub = syncEngine.subscribe((s) => {
       notifiedState = s
     })

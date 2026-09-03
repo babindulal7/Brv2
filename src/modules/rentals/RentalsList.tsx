@@ -978,13 +978,21 @@ export default function RentalsList() {
   const returnsKpi = useList<BookingListRow>(countFetcher, RENTAL_KPI_FILTERS.returns, { isFilteredOverride: false })
   const overdueKpi = useList<BookingListRow>(countFetcher, RENTAL_KPI_FILTERS.overdue, { isFilteredOverride: false })
 
+  /* `useList` memoises `refetch`; naming them keeps the callback keyed on
+     the functions rather than on the whole list objects, which are fresh
+     literals every render (react-hooks/exhaustive-deps, TODO_SWEEP A13). */
+  const { refetch: refetchList } = list
+  const { refetch: refetchActive } = activeKpi
+  const { refetch: refetchPickups } = pickupsKpi
+  const { refetch: refetchReturns } = returnsKpi
+  const { refetch: refetchOverdue } = overdueKpi
   const refreshAll = useCallback(() => {
-    list.refetch()
-    activeKpi.refetch()
-    pickupsKpi.refetch()
-    returnsKpi.refetch()
-    overdueKpi.refetch()
-  }, [list.refetch, activeKpi.refetch, pickupsKpi.refetch, returnsKpi.refetch, overdueKpi.refetch])
+    refetchList()
+    refetchActive()
+    refetchPickups()
+    refetchReturns()
+    refetchOverdue()
+  }, [refetchList, refetchActive, refetchPickups, refetchReturns, refetchOverdue])
 
   /*
    * ⛔ Six hardcoded cards became four counted ones.

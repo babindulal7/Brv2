@@ -109,6 +109,7 @@ export function sanitiseSearchTerm(raw: string): string {
       // Control characters, NUL included. JavaScript's `\s` does not match NUL,
       // and a NUL reaching Postgres is a 400 rather than a result set — an
       // error the operator cannot act on, from text they cannot see.
+      // eslint-disable-next-line no-control-regex -- the control range IS the target
       .replace(/[\u0000-\u001f\u007f]/g, ' ')
       .trim()
       .replace(/\s+/g, ' ')

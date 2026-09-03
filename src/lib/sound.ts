@@ -2,6 +2,7 @@
  * POS-style synthesized sound generator using the standard Web Audio API.
  * Operates 100% offline with zero external audio assets or network requests.
  */
+import { audioContextClass } from './audioContext'
 
 class SoundEngine {
   private ctx: AudioContext | null = null
@@ -19,7 +20,7 @@ class SoundEngine {
   private initContext() {
     if (typeof window === 'undefined') return null
     if (!this.ctx) {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+      const AudioCtx = audioContextClass()
       if (AudioCtx) {
         this.ctx = new AudioCtx()
       }

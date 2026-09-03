@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
+import { PageHeader } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { EmptyState } from '../../components/ui/StateViews'
@@ -490,6 +491,13 @@ export function SubRental() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* The route's `<h1>` — this screen opened straight on its tab strip,
+          the only Operations screen without a title landmark (A7). */}
+      <PageHeader
+        title="Sub Rental"
+        description="Equipment brought in from partner suppliers to cover a booking, and the suppliers it comes from."
+      />
+
       {/* Suppliers directory — a second tab inside Sub Rental rather than a
           new top-level route; see SupplierDirectoryTable's doc comment. */}
       <div style={{ display: 'flex', gap: 'var(--sp-xs)', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>

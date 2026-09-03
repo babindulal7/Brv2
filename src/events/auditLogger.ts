@@ -9,7 +9,7 @@ export function startAuditLogging() {
     const timestamp = new Date().toISOString();
     
     // Attempt to extract useful common fields
-    const p = payload as any;
+    const p = (payload ?? {}) as Record<string, unknown>;
     const actor = p.actor ? `[User: ${p.actor}]` : '';
     const target = p.id || p.rentalId ? `[Target: ${p.id || p.rentalId}]` : '';
 

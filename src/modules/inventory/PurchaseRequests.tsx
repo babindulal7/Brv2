@@ -167,7 +167,7 @@ export default function PurchaseRequests() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [isCreatePrOpen, setIsCreatePrOpen] = useState(false)
 
-  useDomainEvent(EVENT_TYPES.PURCHASE_REQUEST_UPDATED, (payload: any) => {
+  useDomainEvent<(typeof PURCHASE_REQUESTS)[number]>(EVENT_TYPES.PURCHASE_REQUEST_UPDATED, (payload) => {
     if (payload?.id && payload?.fleetItemName) {
       setRequestsList((prev) => [payload, ...prev.filter((p) => p.id !== payload.id)])
     }

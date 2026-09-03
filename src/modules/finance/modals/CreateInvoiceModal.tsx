@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
 import { rupees, formatMoney, price } from '../../../lib/money'
@@ -86,6 +86,8 @@ interface CreateInvoiceModalProps {
  * the eventual write hands back — but the only honest number of call sites
  * today is zero. See `handleSubmit`.
  */
+type InvoiceDraftStatus = 'Sent' | 'Draft'
+
 export function CreateInvoiceModal({ isOpen, onClose }: CreateInvoiceModalProps) {
   const [client, setClient] = useState('')
   /*
@@ -107,7 +109,7 @@ export function CreateInvoiceModal({ isOpen, onClose }: CreateInvoiceModalProps)
   const [booking, setBooking] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [includeVat, setIncludeVat] = useState(true)
-  const [status, setStatus] = useState<'Sent' | 'Draft'>('Sent')
+  const [status, setStatus] = useState<InvoiceDraftStatus>('Sent')
   /*
    * ── The form opens with ONE EMPTY line, not two invented ones ─────────────
    *
@@ -191,7 +193,10 @@ export function CreateInvoiceModal({ isOpen, onClose }: CreateInvoiceModalProps)
    * Re-read whenever the modal opens, so a rate changed mid-session applies to
    * the next invoice drafted and not to one already half-typed.
    */
-  const vatRatePercent = useMemo(() => Number(getSetting('vatRatePercent')), [isOpen])
+  const [vatRatePercent, setVatRatePercent] = useState(() => Number(getSetting('vatRatePercent')))
+  useEffect(() => {
+    if (isOpen) setVatRatePercent(Number(getSetting('vatRatePercent')))
+  }, [isOpen])
 
   /*
    * ── The engine computes the totals; this page does not ────────────────────
@@ -464,7 +469,7 @@ export function CreateInvoiceModal({ isOpen, onClose }: CreateInvoiceModalProps)
             <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Initial Status</label>
             <select
               value={status}
-              onChange={(e) => setStatus(e.target.value as any)}
+              onChange={(e) => setStatus(e.target.value as InvoiceDraftStatus)}
               style={{
                 height: 36,
                 padding: '0 12px',

@@ -1536,7 +1536,7 @@ export default function Calendar() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [full, selectedId, showShortcuts, goToday, dayChoice, phone, desktop])
+  }, [full, selectedId, showShortcuts, goToday, setViewChoice, dayChoice, phone, desktop])
 
   /* ── body scroll lock while an overlay is up ────────────────────────── */
   const dayOverlayOpen = Boolean(day) && !phone

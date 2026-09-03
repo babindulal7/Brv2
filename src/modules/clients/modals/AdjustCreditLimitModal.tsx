@@ -14,6 +14,8 @@ export interface AdjustCreditLimitModalProps {
   client: ClientRecord
 }
 
+type Validity = '30 Days' | '90 Days' | 'Permanent'
+
 export function AdjustCreditLimitModal({
   isOpen,
   onClose,
@@ -24,7 +26,7 @@ export function AdjustCreditLimitModal({
   const currentLimitRs = Math.round(Number(client.creditLimitPaisa || 0) / 100)
   const [amountRupees, setAmountRupees] = useState<number>(currentLimitRs)
   const [reason, setReason] = useState('')
-  const [validity, setValidity] = useState<'30 Days' | '90 Days' | 'Permanent'>('Permanent')
+  const [validity, setValidity] = useState<Validity>('Permanent')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -146,7 +148,7 @@ export function AdjustCreditLimitModal({
             </label>
             <select
               value={validity}
-              onChange={(e) => setValidity(e.target.value as any)}
+              onChange={(e) => setValidity(e.target.value as Validity)}
               style={{
                 height: 36,
                 padding: '0 12px',

@@ -8,14 +8,20 @@ export type StartReturnInput = {
 export const startReturn = createAction<StartReturnInput, { success: boolean }>({
   name: 'START_RETURN',
   permissions: ['rental.return'],
+  /*
+   * NOT BUILT. `execute` below logs and emits a domain event; it writes no
+   * row. `createAction` already fails closed on a missing flag (core.ts §1),
+   * so this changes nothing at dispatch — it states the fact in the file, so
+   * a call site cannot mistake this for a live action. Flip to `true` only
+   * when `execute` genuinely persists. TODO_SWEEP_2026-09-02.md A3.
+   */
+  implemented: false,
   
   validate: (input) => {
     if (!input.id) throw new Error("ID is required.");
   },
 
   execute: async (input, ctx: ActionContext) => {
-    console.log(`[DB TX] Executing START_RETURN for ${input.id}`);
-
     // Prepare Domain Events to be emitted
     const events = [
       {

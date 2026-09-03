@@ -802,13 +802,18 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
     setPage(1)
   }, [])
 
+  /* `useList` memoises `refetch`; naming it keeps the callback keyed on
+     the function rather than on the whole list object, which is a fresh literal
+     every render (react-hooks/exhaustive-deps, TODO_SWEEP A13). */
+  const { refetch: refetchList } = list
+
   const move = useCallback(
     async (row: ExpenseListRow, to: ExpenseStatusDb) => {
       setMovingId(row.id)
       setBanner(null)
       try {
         await setExpenseStatus(row.id, row.status, to)
-        list.refetch()
+        refetchList()
       } catch (e) {
         setBanner({
           title: `${row.expenseNo} was not changed`,
@@ -818,7 +823,7 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
         setMovingId(null)
       }
     },
-    [list.refetch],
+    [refetchList],
   )
 
   /**
@@ -840,8 +845,8 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
   const onSaved = useCallback(() => {
     setBanner(null)
     setPage(1)
-    list.refetch()
-  }, [list.refetch])
+    refetchList()
+  }, [refetchList])
 
   const countedTitle = total === null ? 'Expenses' : `${total} ${total === 1 ? 'expense' : 'expenses'}`
 

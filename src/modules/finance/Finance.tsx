@@ -645,12 +645,19 @@ export default function Finance() {
   const overdue = useList<InvoiceListRow>(invoiceFetcher, OVERDUE_INVOICES, { isFilteredOverride: false })
   const received = useList<PaymentListRow>(paymentFetcher, RECEIVED_IN_PERIOD, { isFilteredOverride: false })
 
+  /* `useList` memoises `refetch`; naming them keeps the callback keyed on
+     the functions rather than on the whole list objects, which are fresh
+     literals every render (react-hooks/exhaustive-deps, TODO_SWEEP A13). */
+  const { refetch: refetchList } = list
+  const { refetch: refetchOutstanding } = outstanding
+  const { refetch: refetchOverdue } = overdue
+  const { refetch: refetchReceived } = received
   const refreshAll = useCallback(() => {
-    list.refetch()
-    outstanding.refetch()
-    overdue.refetch()
-    received.refetch()
-  }, [list.refetch, outstanding.refetch, overdue.refetch, received.refetch])
+    refetchList()
+    refetchOutstanding()
+    refetchOverdue()
+    refetchReceived()
+  }, [refetchList, refetchOutstanding, refetchOverdue, refetchReceived])
 
   const receivableTotal = sumOf(outstanding, (r) => r.outstandingAmount)
   const overdueTotal = sumOf(overdue, (r) => r.outstandingAmount)

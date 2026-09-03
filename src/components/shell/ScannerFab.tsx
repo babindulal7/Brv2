@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import Icon from '../ui/Icon'
-import { BrowserMultiFormatReader } from '@zxing/browser'
+import { BrowserCodeReader, BrowserMultiFormatReader } from '@zxing/browser'
+import type { IScannerControls } from '@zxing/browser'
+import { audioContextClass } from '../../lib/audioContext'
 import { useViewport } from '../../lib/device'
 import { BAR_BOX } from './BottomBar'
 
@@ -58,11 +60,19 @@ export default function ScannerFab() {
   const [continuous, setContinuous] = useState(true)
   const [feedback, setFeedback] = useState<Feedback>(null)
   const [cameraError, setCameraError] = useState<string | null>(null)
+  /*
+   * Latest-ref for the decode callback. The camera effect below re-mounts on
+   * `open` only, but `handleScan` closes over `continuous`, `context` and the
+   * feedback state of the render it was created in — a context switched while
+   * the scanner was open used to fire against the old one (A13).
+   */
+  const handleScanRef = useRef<(code: string) => void>(() => {})
   
   const panel = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const codeReader = useRef<BrowserMultiFormatReader | null>(null)
+  const controlsRef = useRef<IScannerControls | null>(null)
 
   // 1. Keyboard Wedge Shortcut & Esc/Outside Click
   useEffect(() => {
@@ -92,9 +102,22 @@ export default function ScannerFab() {
   }, [open])
 
   // 2. Camera Mount/Unmount (ZXing Web Fallback)
+  /*
+   * `@zxing/browser` 0.2 has no `reset()` on the reader. The old
+   * `(codeReader.current as any)?.reset()` was a no-op behind a cast, so the
+   * camera stayed live after the panel closed. `decodeFromVideoDevice`
+   * resolves to the scan's own controls; stopping those, then releasing the
+   * streams, is the API (A13).
+   */
   useEffect(() => {
+    const stopCamera = () => {
+      controlsRef.current?.stop()
+      controlsRef.current = null
+      BrowserCodeReader.releaseAllStreams()
+    }
+
     if (!open) {
-      (codeReader.current as any)?.reset()
+      stopCamera()
       codeReader.current = null
       setCameraError(null)
       return
@@ -109,28 +132,34 @@ export default function ScannerFab() {
 
     if (videoRef.current) {
       // Decode from default video device
-      codeReader.current.decodeFromVideoDevice(undefined, videoRef.current, (result) => {
-        if (result && isMounted) {
-          handleScan(result.getText())
-        }
-      }).catch(e => {
-        if (isMounted) {
-          console.warn('Scanner init failed', e)
-          setCameraError('Camera unavailable or permission denied. Use manual code entry below.')
-        }
-      })
+      codeReader.current
+        .decodeFromVideoDevice(undefined, videoRef.current, (result) => {
+          if (result && isMounted) {
+            handleScanRef.current(result.getText())
+          }
+        })
+        .then((controls) => {
+          if (isMounted) controlsRef.current = controls
+          else controls.stop()
+        })
+        .catch((e) => {
+          if (isMounted) {
+            console.warn('Scanner init failed', e)
+            setCameraError('Camera unavailable or permission denied. Use manual code entry below.')
+          }
+        })
     }
 
     return () => {
       isMounted = false
-      ;(codeReader.current as any)?.reset()
+      stopCamera()
     }
-  }, [open, continuous]) // re-mounts on open
+  }, [open]) // re-mounts on open; the decode callback reads through the ref
 
   // 3. Audio & Haptic Feedback Engine
   const playTone = (type: NonNullable<Feedback>['tone']) => {
     try {
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+      const AudioContextClass = audioContextClass()
       if (!AudioContextClass) return
       const ctx = new AudioContextClass()
       const osc = ctx.createOscillator()
@@ -196,6 +225,9 @@ export default function ScannerFab() {
     if (inputRef.current) inputRef.current.value = ''
     if (!continuous) setOpen(false)
   }
+  useEffect(() => {
+    handleScanRef.current = handleScan
+  })
 
   const tone = feedback?.tone
   const bannerBg = tone === 'ok' ? 'var(--st-in-bg)' : tone === 'wrong-job' ? 'var(--st-danger-bg)' : 'var(--st-progress-bg)'

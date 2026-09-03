@@ -163,6 +163,11 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
               gap: 'var(--sp-sm)',
               width: '100%',
               maxWidth: 440,
+              /* A flex item defaults to `min-width: auto`, i.e. its longest
+                 word — so in the 768–1279 band the button refused to shrink
+                 and the placeholder folded onto four lines instead (A6).
+                 With this it shrinks to icon + ellipsis + kbd. */
+              minWidth: 0,
               minHeight: 44,
               padding: '0 12px',
               borderRadius: 'var(--r-input)',
@@ -173,23 +178,37 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
             }}
           >
             <Icon name="search" size={15} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-            <span style={{ flex: 1, fontSize: 'var(--t-ui)', color: 'var(--muted)' }}>
-              {searchPlaceholder} (⌘K)
-            </span>
-            <kbd
-              className="figure"
+            <span
               style={{
-                fontSize: 'var(--t-meta)',
+                flex: 1,
+                minWidth: 0,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                fontSize: 'var(--t-ui)',
                 color: 'var(--muted)',
-                flexShrink: 0,
-                padding: '2px 6px',
-                borderRadius: 4,
-                background: 'var(--card)',
-                border: '1px solid var(--border)',
               }}
             >
-              ⌘K
-            </kbd>
+              {searchPlaceholder} (⌘K)
+            </span>
+            {/* The chip is the one part that cannot shrink, so on a tablet it
+                is the part that gets cut. The hint survives in the text. */}
+            {vp !== 'tablet' && (
+              <kbd
+                className="figure"
+                style={{
+                  fontSize: 'var(--t-meta)',
+                  color: 'var(--muted)',
+                  flexShrink: 0,
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  background: 'var(--card)',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                ⌘K
+              </kbd>
+            )}
           </button>
         )}
 
@@ -275,21 +294,27 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
               </span>
             </button>
 
-            <div
-              style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                color: 'var(--text)',
-                fontFamily: 'var(--font-mono, monospace)',
-                fontVariantNumeric: 'tabular-nums',
-                padding: '3px 8px',
-                background: 'var(--surface-2)',
-                borderRadius: 'var(--r-xs)',
-                border: '1px solid var(--border)',
-              }}
-            >
-              {now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-            </div>
+            {/* Measured at 768px: this group is 220px of a 236px strip once the
+                search has collapsed to its icon, so the least informative chip
+                folds away on a tablet — the device shows the time; the sync and
+                branch chips are the two that carry state (A6). */}
+            {vp !== 'tablet' && (
+              <div
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  color: 'var(--text)',
+                  fontFamily: 'var(--font-mono, monospace)',
+                  fontVariantNumeric: 'tabular-nums',
+                  padding: '3px 8px',
+                  background: 'var(--surface-2)',
+                  borderRadius: 'var(--r-xs)',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                {now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+              </div>
+            )}
 
             <span
               style={{
@@ -385,12 +410,21 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
           >
             {initials}
           </span>
-          <span style={{ textAlign: 'left', lineHeight: 1.25 }}>
-            <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
-              {user?.name || 'Guest'}
+          {/*
+            Name and role fold away on a tablet. Measured at 831px: the strip
+            between breadcrumb and chrome had 324px for a search bar plus the
+            sync/clock/branch group that needs 363, so the group slid under the
+            bell. This block is the ~90px that decides it, and the avatar keeps
+            the identity on its tooltip. Phone and desktop are unchanged (A6).
+          */}
+          {vp !== 'tablet' && (
+            <span style={{ textAlign: 'left', lineHeight: 1.25 }}>
+              <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+                {user?.name || 'Guest'}
+              </span>
+              <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{user?.role || ''}</span>
             </span>
-            <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{user?.role || ''}</span>
-          </span>
+          )}
           {/*
             Lock — shown only when this session actually holds a PIN.
 

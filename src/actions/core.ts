@@ -88,7 +88,7 @@ export type ActionConfig<Input, Output> = {
    */
   implemented?: boolean;
   validate: (input: Input) => void | Promise<void>;
-  execute: (input: Input, ctx: ActionContext) => Promise<{ result: Output; events: Array<{ type: string; payload: any }> }>;
+  execute: (input: Input, ctx: ActionContext) => Promise<{ result: Output; events: Array<{ type: string; payload: unknown }> }>;
 };
 
 /** Thrown when a screen calls an action whose body does not persist anything yet. */

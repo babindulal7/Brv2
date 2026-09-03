@@ -1,7 +1,9 @@
-type EventHandler<T = any> = (payload: T, eventName?: string) => void | Promise<void>;
+type EventHandler<T = unknown> = (payload: T, eventName?: string) => void | Promise<void>;
 
 class EventBus {
-  private listeners: Map<string, EventHandler[]> = new Map();
+  /* `never` so a handler declared for any payload type can be stored; the
+     erasure is paid once, at the call in `emit`, not at every subscribe. */
+  private listeners: Map<string, EventHandler<never>[]> = new Map();
 
   /**
    * Subscribe to a specific domain event.
@@ -47,7 +49,7 @@ class EventBus {
         // We will just pass `payload`. The payload from actions includes { type: EVENT_TYPES.XYZ } 
         // because we can add that in the event bus or it's implicitly known.
         // For audit logging, we really need the event name. Let's pass eventName as second param.
-        return handler(payload, eventName);
+        return (handler as EventHandler<unknown>)(payload, eventName);
       } catch (err) {
         console.error(`[EventBus] Error in handler for ${eventName}:`, err);
       }

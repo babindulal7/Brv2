@@ -117,7 +117,7 @@ export async function idempotentInsert<
     return { data: finalPayload, error: null } // Optimistic response
   }
 
-  const insert = (supabase.from(table as string) as any).insert(finalPayload)
+  const insert = supabase.from(table as string).insert(finalPayload)
   const { data, error } = returnRow
     ? await insert.select(options.returningColumns).single()
     : await insert
@@ -138,7 +138,7 @@ export async function idempotentInsert<
          would reintroduce the exact SELECT this option exists to avoid, and
          turn a satisfied idempotency guarantee back into a swallowed error. */
       if (!returnRow) return { data: null, error: null }
-      return await (supabase.from(table as string) as any)
+      return await supabase.from(table as string)
         .select(options.returningColumns)
         .eq('client_uuid', finalPayload.client_uuid)
         .single()
@@ -205,7 +205,7 @@ export async function safeUpdate<
     return { data: { ...payload, id }, error: null } // Optimistic response
   }
 
-  const update = (supabase.from(table as string) as any).update(payload).eq('id', id)
+  const update = supabase.from(table as string).update(payload).eq('id', id)
   const { data, error } = returnRow
     ? await update.select(options.returningColumns).single()
     : await update

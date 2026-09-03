@@ -308,21 +308,33 @@ export default function ClientDetail() {
   const [isUpgradeTierOpen, setIsUpgradeTierOpen] = useState(false)
   const [isVerifyKycOpen, setIsVerifyKycOpen] = useState(false)
 
-  useDomainEvent(EVENT_TYPES.CLIENT_CREDIT_ADJUSTED, (payload: any) => {
+  useDomainEvent<{ clientId?: string; newLimitPaisa?: ClientRecord['creditLimitPaisa'] }>(EVENT_TYPES.CLIENT_CREDIT_ADJUSTED, (payload) => {
     if (payload?.clientId === client?.id && payload?.newLimitPaisa !== undefined) {
-      setDraft((d) => (d ? { ...d, creditLimitPaisa: payload.newLimitPaisa } : d))
+      /* Hoisted: the `!== undefined` narrowing above does not reach into the
+         updater closure. */
+      const newLimitPaisa = payload.newLimitPaisa
+      setDraft((d) => (d ? { ...d, creditLimitPaisa: newLimitPaisa } : d))
     }
   })
 
-  useDomainEvent(EVENT_TYPES.MEMBERSHIP_TIER_CHANGED, (payload: any) => {
+  useDomainEvent<{ clientId?: string; newTier?: ClientRecord['membership']; discountPct?: number }>(EVENT_TYPES.MEMBERSHIP_TIER_CHANGED, (payload) => {
     if (payload?.clientId === client?.id && payload?.newTier) {
-      setDraft((d) => (d ? { ...d, membership: payload.newTier, standingDiscountPercent: payload.discountPct ?? d.standingDiscountPercent } : d))
+      const newTier = payload.newTier
+      const discountPct = payload.discountPct
+      setDraft((d) => {
+        if (!d) return d
+        const next: ClientRecord = { ...d, membership: newTier }
+        /* Optional means absent, never `undefined` (exactOptionalPropertyTypes). */
+        if (discountPct !== undefined) next.standingDiscountPercent = discountPct
+        return next
+      })
     }
   })
 
-  useDomainEvent(EVENT_TYPES.KYC_STATUS_UPDATED, (payload: any) => {
+  useDomainEvent<{ clientId?: string; newStatus?: ClientRecord['kycStatus'] }>(EVENT_TYPES.KYC_STATUS_UPDATED, (payload) => {
     if (payload?.clientId === client?.id && payload?.newStatus) {
-      setDraft((d) => (d ? { ...d, kycStatus: payload.newStatus } : d))
+      const newStatus = payload.newStatus
+      setDraft((d) => (d ? { ...d, kycStatus: newStatus } : d))
     }
   })
 

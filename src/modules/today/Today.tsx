@@ -622,12 +622,19 @@ export default function Today() {
    * Calendar panels are given, and a Retry that refreshes four of five panels
    * leaves the fifth quoting a count from before the failure.
    */
+  /* `useList` memoises `refetch`; naming them keeps the callback keyed on
+     the functions rather than on the whole list objects, which are fresh
+     literals every render (react-hooks/exhaustive-deps, TODO_SWEEP A13). */
+  const { refetch: refetchPickups } = pickups
+  const { refetch: refetchReturns } = returns
+  const { refetch: refetchAlerts } = alerts
+  const { refetch: refetchActive } = active
   const refetchAll = useCallback(() => {
-    pickups.refetch()
-    returns.refetch()
-    alerts.refetch()
-    active.refetch()
-  }, [pickups.refetch, returns.refetch, alerts.refetch, active.refetch])
+    refetchPickups()
+    refetchReturns()
+    refetchAlerts()
+    refetchActive()
+  }, [refetchPickups, refetchReturns, refetchAlerts, refetchActive])
 
   useDomainEvent(EVENT_TYPES.RENTAL_PICKED_UP, refetchAll)
   useDomainEvent(EVENT_TYPES.RENTAL_RETURNED, refetchAll)

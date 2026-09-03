@@ -1,6 +1,21 @@
 import { supabase } from './supabase'
 import { drainQueue, getPendingMutations } from './offlineQueue'
 import { localStore, isIndexedDbAvailable } from './localStore'
+import type { CachedClient, CachedProduct } from './localStore'
+
+/* What the two delta pulls read off `select('*')`. The client carries no
+   `Database` generic at this layer, so the shape is declared rather than
+   inferred — every field but `id` is optional because `*` promises nothing. */
+interface RemoteProduct extends Partial<Omit<CachedProduct, 'id'>> { id: string }
+interface RemoteClient extends Partial<Omit<CachedClient, 'id'>> { id: string }
+
+/* Dexie treats an absent key and an `undefined` value alike;
+   `exactOptionalPropertyTypes` does not — an optional field may be missing,
+   never `undefined`. The remote row is mapped with every column named and
+   the undefined ones dropped here, so the cached row's type stays strict. */
+function withoutUndefined<T extends object>(row: { [K in keyof T]: T[K] | undefined }): T {
+  return Object.fromEntries(Object.entries(row).filter(([, v]) => v !== undefined)) as T
+}
 
 export type SyncStatusType = 'synced' | 'syncing' | 'pending' | 'offline' | 'error'
 
@@ -143,12 +158,12 @@ class SyncEngine {
 
     try {
       // Pull products / equipment
-      const { data: products } = await (supabase.from('products') as any).select('*').limit(300)
+      const { data: products } = await supabase.from('products').select('*').limit(300)
       if (products && products.length > 0) {
         await localStore.products.bulkPut(
-          products.map((p: any) => ({
+          products.map((p: RemoteProduct) => withoutUndefined<CachedProduct>({
             id: p.id,
-            name: p.name,
+            name: p.name ?? '',
             serial_no: p.serial_no,
             asset_tag: p.asset_tag,
             category: p.category,
@@ -163,13 +178,13 @@ class SyncEngine {
       }
 
       // Pull client directory
-      const { data: clients } = await (supabase.from('clients') as any).select('*').limit(300)
+      const { data: clients } = await supabase.from('clients').select('*').limit(300)
       if (clients && clients.length > 0) {
         await localStore.clients.bulkPut(
-          clients.map((c: any) => ({
+          clients.map((c: RemoteClient) => withoutUndefined<CachedClient>({
             id: c.id,
-            name: c.name,
-            phone: c.phone,
+            name: c.name ?? '',
+            phone: c.phone ?? '',
             email: c.email,
             address: c.address,
             credit_tier: c.credit_tier,

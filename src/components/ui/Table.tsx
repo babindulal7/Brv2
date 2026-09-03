@@ -25,7 +25,7 @@ export interface TableProps<T> {
   className?: string
 }
 
-export function Table<T extends Record<string, any>>({
+export function Table<T extends Record<string, unknown>>({
   columns,
   data,
   keyField = 'id',
@@ -124,7 +124,7 @@ export function Table<T extends Record<string, any>>({
                       col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'
                     }`}
                   >
-                    {col.render ? col.render(row, idx) : row[col.key] ?? '—'}
+                    {col.render ? col.render(row, idx) : ((row[col.key] as React.ReactNode) ?? '—')}
                   </td>
                 ))}
               </tr>

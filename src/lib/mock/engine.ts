@@ -89,7 +89,6 @@ const warned = new Set<string>()
 function warnOnce(msg: string): void {
   if (warned.has(msg)) return
   warned.add(msg)
-  // eslint-disable-next-line no-console
   console.warn(`[mock] ${msg}`)
 }
 

@@ -287,16 +287,26 @@ export function useEquipmentFormState() {
    */
   const errors: Record<string, string> = submitted ? validate(submitted) : {}
 
+  /* One primitive per section, so the memo below keys on what actually
+     changed rather than on `errors`, which is (deliberately) rebuilt every
+     render and so would have re-run it every render. */
+  const identityBlocked = Boolean(errors.name || errors.category || errors.brand)
+  const stockBlocked = Boolean(errors.stock)
+  const relationshipsBlocked = Boolean(errors.relationships)
+  const locationBlocked = Boolean(errors.location)
+  const purchaseBlocked = Boolean(errors.replacementValue || errors.purchasePrice)
+  const pricingBlocked = Boolean(errors.dailyRate || errors.deposit)
+
   const sectionDefs = useMemo(() => {
     const base: Array<{ id: string; label: string; complete: boolean; blocked: boolean }> = [
-      { id: 'sec-identity', label: 'Identity', complete: identityComplete, blocked: Boolean(errors.name || errors.category || errors.brand) },
-      { id: 'sec-stock', label: 'Stock & Units', complete: stockComplete, blocked: Boolean(errors.stock) },
-      { id: 'sec-relationships', label: 'Relationships', complete: relationshipsComplete, blocked: Boolean(errors.relationships) },
-      { id: 'sec-location', label: 'Location', complete: locationComplete, blocked: Boolean(errors.location) },
+      { id: 'sec-identity', label: 'Identity', complete: identityComplete, blocked: identityBlocked },
+      { id: 'sec-stock', label: 'Stock & Units', complete: stockComplete, blocked: stockBlocked },
+      { id: 'sec-relationships', label: 'Relationships', complete: relationshipsComplete, blocked: relationshipsBlocked },
+      { id: 'sec-location', label: 'Location', complete: locationComplete, blocked: locationBlocked },
     ]
     if (money) {
-      base.push({ id: 'sec-purchase', label: 'Purchase', complete: purchaseComplete, blocked: Boolean(errors.replacementValue || errors.purchasePrice) })
-      base.push({ id: 'sec-pricing', label: 'Pricing & Rental', complete: pricingComplete, blocked: Boolean(errors.dailyRate || errors.deposit) })
+      base.push({ id: 'sec-purchase', label: 'Purchase', complete: purchaseComplete, blocked: purchaseBlocked })
+      base.push({ id: 'sec-pricing', label: 'Pricing & Rental', complete: pricingComplete, blocked: pricingBlocked })
     }
     base.push({ id: 'sec-maintenance', label: 'Maintenance & Documents', complete: maintenanceComplete, blocked: false })
     return base
@@ -309,7 +319,12 @@ export function useEquipmentFormState() {
     pricingComplete,
     maintenanceComplete,
     money,
-    errors,
+    identityBlocked,
+    stockBlocked,
+    relationshipsBlocked,
+    locationBlocked,
+    purchaseBlocked,
+    pricingBlocked,
   ])
 
   const sectionNumber = (id: string) => sectionDefs.findIndex((s) => s.id === id) + 1

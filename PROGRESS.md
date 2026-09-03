@@ -2,6 +2,139 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-03 (morning) — A13: lint burn-down to zero, one real camera bug under a cast
+**Phase:** cross-phase fixes · **Status:** complete — A13 ticked in [`TODO_SWEEP_2026-09-02.md`](TODO_SWEEP_2026-09-02.md)
+
+### Did
+- The 15 `react-hooks/exhaustive-deps` sites, each read before it was changed. Seven were
+  lint-correctness only (`useList.refetch` is memoised, so `[list.refetch]` was right; each
+  now destructures the function). Eight were real: `ScannerFab`'s decode callback ran
+  against a stale `context` (latest-ref now), `FilterDrawer` ignored `reducedMotion`
+  changes, `Calendar` missed `setViewChoice`, `Maintenance`'s filter omitted its own list,
+  `NewRental`'s load effect missed `canBookingMoney`, `CreateInvoiceModal` used a memo as
+  a cache key, `ClientsDirectory` re-sorted the directory on every render because
+  `overlays` was a fresh literal, `AddEquipmentContext` keyed a memo on a per-render object.
+- 36 explicit `any`s replaced with real types (typed event payloads at the subscriber,
+  `unknown` bus default, narrowed catches, named select unions, declared remote row shapes
+  in `syncEngine`, `lib/audioContext.ts`). The cast in `ScannerFab` was hiding that
+  `@zxing/browser` 0.2 has no `reset()` — the camera never stopped on close; it now stops
+  through `IScannerControls` and releases streams.
+- 4 stale `eslint-disable` directives removed. `npm run lint` is `eslint src
+  --max-warnings 0`; `no-explicit-any` is an error again.
+
+### Verified
+| Check | How | Result |
+|---|---|---|
+| Typecheck | `npx tsc --noEmit` | ✅ exit 0 (three `exactOptionalPropertyTypes` errors surfaced by the typed payloads, fixed by hoisting narrowed values out of updater closures and spreading optional fields only when present) |
+| Lint | `npm run lint` | ✅ exit 0 — 0 errors / 0 warnings, from 51 / 3 at the start of the night |
+| Tests | `npx vitest run` | ✅ 102 files / 2344 tests (the extra file is the other session's untracked `seedEmitters.test.ts`) |
+| Screens | drove Today, Rentals, Inventory, Stock Check, Finance, Expenses, Clients, Calendar, Cases, Purchase Requests on `:5174` | no console errors, no uncaught throws |
+
+### Found
+- Every one of the shared-tree files (`eventBus`, `auditLogger`, `dataAccess`,
+  `offlineQueue`, `syncEngine`, `PurchaseRequests`, `StockCheck`, `NewRental`) also carries
+  the other session's uncommitted `captureError` sweep. The commit for this work stages
+  HEAD + this session's hunks only, rebuilt per file and verified by diff; their hunks
+  remain in the working tree for them to commit.
+
+---
+
+## 2026-09-02 (night) — TODO sweep items A2–A10 applied, each driven
+**Phase:** cross-phase fixes · **Status:** complete — ticked in [`TODO_SWEEP_2026-09-02.md`](TODO_SWEEP_2026-09-02.md)
+
+### Did
+- **A2 lint is real.** `eslint.config.js` rewritten as an ESM flat config (`@eslint/js` +
+  `typescript-eslint` + `eslint-plugin-react-hooks` + `globals`, installed as devDependencies);
+  `npm run lint` added. Three rule adjustments, each with its reason in the file:
+  `no-fallthrough { allowEmptyCase }` (comments between grouped `case` labels in
+  `actions/core.ts`), `no-empty { allowEmptyCatch }` (two deliberate silent fallbacks),
+  `no-explicit-any: warn`. Two code fixes it demanded: an `eslint-disable` with reason on
+  the control-character strip in `queries/listQuery.ts`, and the comma-expression helper in
+  `listQuery.test.ts` rewritten as blocks.
+- **A3** 21 `createAction` stubs carry an explicit `implemented: false` + NOT BUILT block
+  (`floorVerb.ts` was miscounted — not a `createAction`).
+- **A4** `startAuditLogging()` (console mirror of the event bus) runs only under
+  `import.meta.env.DEV`; the real trail is `queries/audit.ts` → `audit_events`.
+- **A5** `/inventory/cases/:id` reads its param: queue narrowed to that case, notice card with
+  **Show all cases**, chip/search leaves for the queue, unknown id → "No case matches".
+  Also fixed: `filteredCases` had no `casesList` dep, so a case logged via the domain event
+  did not render until a chip was flicked.
+- **A6** `Header.tsx`: search button `minWidth: 0` + ellipsised placeholder; on `tablet` the
+  `⌘K` chip, the clock, and the name/role text fold away (avatar stays).
+- **A7** `PageHeader` on Cases and Sub Rental; `BookingNotLoaded` title is an `<h1>`.
+- **A8** `NewRental.tsx` fresh-draft defaults: crew `[]`, advance 0, deposits 0, discount 0.
+- **A9** eleven zero-byte stray files deleted. **A10** inner `.claude/launch.json` aligned.
+
+### Verified
+| Check | How | Result |
+|---|---|---|
+| Typecheck | `npx tsc --noEmit` | ✅ exit 0 |
+| Tests | `npx vitest run` | ✅ 101 files / 2341 tests (698 s, CPU shared with tsc + eslint) |
+| Lint | `npm run lint` | ✅ exit 0 · 0 errors / 55 warnings (36 `any` · 15 `exhaustive-deps` · 4 stale directives) |
+| A5 / A7 | drove `/inventory/cases/CASE-2026-0041` on `:5174` mock | h1 "Cases", notice present, 1 row, "Show all cases" button |
+| A6 | measured the header strip at 831 and 768 px via `resize_window` | 344/344 and 236/236, no overflow, search one line, header 65 px |
+| A8 | drove `/rentals/new` after a hard reload | "3 rental days · 0 items · 0 crew", every money row Rs 0, Discount (0%) |
+
+### Found
+- The hooks plugin the repo's own `eslint-disable` comments assumed had never been installed;
+  its first run reports **15 real missing-dependency sites** (Finance/Inventory/StockCheck/
+  RentalsList/Today `useCallback`s that read `list` and KPI values they do not list). Filed as
+  **A13** — each is a potential stale-closure KPI, not a blanket-disable job.
+- The concurrent session ran a ~30-file `captureError` sweep (23:04–23:10) into the same
+  tree and wrote the lifecycle audit entry below; `git status` carries both sets. The
+  `useAuth must be used within an AuthProvider` console errors seen mid-session were HMR
+  fallout from its `auth.tsx` edit and cleared on a hard reload.
+
+### Blocked / next
+- A13 (lint burn-down), A11–A12 unchanged. B1–B5 wait on rulings / the Cases field list.
+- Nothing is committed: both sessions' work is in the working tree together.
+
+---
+
+## 2026-09-02 (late) — whole-app TODO sweep, gates re-run, mock build driven
+**Phase:** audit · **Status:** complete — worklist in [`TODO_SWEEP_2026-09-02.md`](TODO_SWEEP_2026-09-02.md)
+
+### Did
+- Swept `src/`, `supabase/`, `scripts/` for every TODO marker and classified them: 263
+  `TODO(decision)` · 9 live `TODO(persistence)` · 5 `TODO(refactor)` · 1 `TODO(migration)` ·
+  0 `FIXME`/`HACK`. Cross-read `FUNCTIONAL_BUGS.md`, `FUNCTIONAL_FIX_PLAN.md` (complete) and
+  the 17 OPEN `PLAN.md §4` entries so the worklist points at rulings instead of restating them.
+- **One code change:** `NewRental.tsx:28` — dropped the unused `PARENTS` import that broke
+  `tsc` (left over from another session's uncommitted catalogue move; that work is otherwise
+  untouched and still uncommitted).
+- Wrote `TODO_SWEEP_2026-09-02.md`: 12 mechanical items (A1–A12), 4 blocked-on-ruling items
+  (B1–B4), and a not-findings list.
+
+### Verified
+| Check | How | Result |
+|---|---|---|
+| Typecheck | `npx tsc --noEmit` | ❌ 1 error before → ✅ exit 0 after the import fix |
+| Tests | `npx vitest run` | ✅ 101 files / 2341 tests, 387 s |
+| Contrast gate | `npm run check:contrast` | ✅ 40/40 |
+| Build | `vite build --mode mock` to scratchpad | ✅ exit 0 · 203 assets · 3,082 KB JS · 741 KB fonts |
+| Runtime | drove 63 routes on `:5174` (mock, Owner) with a stable-text wait | 0 console errors · 0 throws · 0 `[Icon:` · 404 page renders |
+| ESLint | `npx eslint src` | ❌ config file is a SyntaxError — cannot run at all (A2) |
+
+### Found
+- **22 stub actions, not 9** (BUG-013 under-counted): every `src/actions/` file without an
+  `implemented` flag has zero database references and a `console.log`; four are already
+  imported by screens (A3).
+- `/inventory/cases/:id` renders the cases list — `CasesWorkspace` never reads the param (A5).
+- Header search box wraps onto four lines in the 768–1279 tablet band; the branch chip is
+  overlapped by the bell (A6, seen at 831 px).
+- A fresh New Rental draft with no client and no items already shows Rs 1,54,482 total —
+  fixture constants in the screen (A8).
+- A first sweep pass using a fixed 450 ms wait reported the Dashboard for every route: React
+  keeps the previous screen visible through a lazy-chunk transition. Discarded; re-run with a
+  wait for `main.innerText` to stabilise.
+
+### Blocked / next
+- A2 (lint), A3 (stub flags), A5, A6, A7, A9, A10 are mechanical and unblocked.
+- A8 touches `NewRental.tsx`, which another session has open — coordinate first.
+- Everything under B waits on `PLAN.md §4` or on a database-side view/policy.
+
+---
+
 ## 2026-09-02 — the seven 1 Sep Dashboard findings FIXED, each driven to green
 **Phase:** cross-phase fixes (mock engine · Dashboard UI) · **Status:** complete
 

@@ -44,7 +44,7 @@ export interface CachedBooking {
 
 export interface CachedSetting {
   key: string
-  value: any
+  value: unknown
   updated_at?: string
 }
 

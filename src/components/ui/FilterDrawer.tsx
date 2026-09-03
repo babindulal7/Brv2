@@ -157,7 +157,7 @@ export function FilterDrawer({
       setClosing(false)
     }, ms)
     return () => window.clearTimeout(t)
-  }, [open, mounted])
+  }, [open, mounted, reducedMotion])
 
   useEffect(() => {
     if (!open) return

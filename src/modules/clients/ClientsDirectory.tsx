@@ -489,10 +489,15 @@ export function ClientsDirectory({
    * verdicts would yield zero rows and read as "nobody is on stop", the exact
    * implication §11.2.7 exists to prevent (*do NOT default to false silently*).
    */
-  const overlays: Overlays = {
-    blocked: params.get('blocked') === '1',
-    onStop: params.get('stop') === '1' && stopCheckRan,
-  }
+  const blockedParam = params.get('blocked') === '1'
+  const stopParam = params.get('stop') === '1'
+  /* Memoised on the two primitives. As a fresh literal every render it defeated
+     `filteredClients`' memo below — the directory re-filtered and re-sorted on
+     every keystroke anywhere on the page. */
+  const overlays: Overlays = useMemo(
+    () => ({ blocked: blockedParam, onStop: stopParam && stopCheckRan }),
+    [blockedParam, stopParam, stopCheckRan],
+  )
 
   const filteredClients = useMemo(() => {
     const rows = clients.filter((client) => {

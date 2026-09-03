@@ -487,6 +487,16 @@ function SeedDefectBanner({ message }: { message: string }) {
   return <ErrorBanner title="These counts do not reconcile." message={message} />
 }
 
+/* What `MAINTENANCE_STARTED` is expected to carry. Its only emitter,
+   `actions/maintenance/createMaintenanceJob`, is `implemented: false`, so
+   nothing reaches the handler yet — the shape is the record it builds. */
+type MaintenanceStartedPayload = Pick<MaintenanceRecord, 'equipmentName' | 'type' | 'priority' | 'technician' | 'vendor' | 'bookingImpact'> & {
+  id: string
+  serialNo: MaintenanceRecord['serialNumber']
+  estCompletionAd?: string
+  estCostPaisa?: MaintenanceRecord['costEstPaisa']
+}
+
 export function Maintenance() {
   const money = useCanViewMoney()
   const { user } = useAuth()
@@ -512,7 +522,7 @@ export function Maintenance() {
   const [isLogMaintenanceOpen, setIsLogMaintenanceOpen] = useState(false)
   const [recordsList, setRecordsList] = useState<MaintenanceRecord[]>(() => [...MAINTENANCE_DATA])
 
-  useDomainEvent(EVENT_TYPES.MAINTENANCE_STARTED, (payload: any) => {
+  useDomainEvent<MaintenanceStartedPayload>(EVENT_TYPES.MAINTENANCE_STARTED, (payload) => {
     if (payload?.id) {
       const estDate = payload.estCompletionAd ? new Date(payload.estCompletionAd) : new Date()
       const newRec: MaintenanceRecord = {
@@ -524,11 +534,13 @@ export function Maintenance() {
         status: 'In Progress',
         flags: [],
         conditions: ['Holding a Booking'],
-        technician: payload.technician,
-        vendor: payload.vendor,
+        /* Optional fields are spread in only when present — an explicit
+           `undefined` is not a legal value for them. */
+        ...(payload.technician !== undefined ? { technician: payload.technician } : {}),
+        ...(payload.vendor !== undefined ? { vendor: payload.vendor } : {}),
         estCompletion: estDate,
-        costEstPaisa: payload.estCostPaisa ?? 0,
-        bookingImpact: payload.bookingImpact,
+        costEstPaisa: payload.estCostPaisa ?? (0 as Paisa),
+        ...(payload.bookingImpact !== undefined ? { bookingImpact: payload.bookingImpact } : {}),
       }
       setRecordsList((prev) => [newRec, ...prev])
     }
@@ -619,7 +631,13 @@ export function Maintenance() {
       }
       return true
     })
-  }, [searchQuery, activeFilter])
+  }, [
+    /* `recordsList` was missing: a record added through the domain event
+       landed in state but not on screen until a chip was flicked. */
+    recordsList,
+    searchQuery,
+    activeFilter,
+  ])
 
   /*
    * §HIS v2.1 perf — `maintenanceGlance`/`maintenanceDetailGroups` each build

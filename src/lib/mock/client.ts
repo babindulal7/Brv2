@@ -100,7 +100,6 @@ function read(table: string): Row[] {
   if (!rows) {
     // Unknown table: empty, loudly. Never an error — an error here would make a
     // screen show "something went wrong" for a table the corpus simply lacks.
-    // eslint-disable-next-line no-console
     console.warn(`[mock] no rows for table "${table}" — returning []`)
     store[table] = []
     return store[table] as Row[]
@@ -558,7 +557,6 @@ export const mockSupabase = {
      * success-fabrication class this repo has a register for, sitting in the
      * one place a missing RPC should be loudest. An unimplemented function is
      * now an ERROR, so a caller fails visibly instead of continuing on null. */
-    // eslint-disable-next-line no-console
     console.warn(`[mock] rpc("${name}") is not implemented`)
     return Promise.resolve({
       data: null,

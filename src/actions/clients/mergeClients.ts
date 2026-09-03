@@ -9,14 +9,20 @@ export type MergeClientsInput = {
 export const mergeClients = createAction<MergeClientsInput, { success: boolean }>({
   name: 'MERGE_CLIENTS',
   permissions: ['client.merge'],
+  /*
+   * NOT BUILT. `execute` below logs and emits a domain event; it writes no
+   * row. `createAction` already fails closed on a missing flag (core.ts §1),
+   * so this changes nothing at dispatch — it states the fact in the file, so
+   * a call site cannot mistake this for a live action. Flip to `true` only
+   * when `execute` genuinely persists. TODO_SWEEP_2026-09-02.md A3.
+   */
+  implemented: false,
 
   validate: (input) => {
     if (!input.survivorId || !input.duplicateId) throw new Error('Both survivor and duplicate IDs are required.');
   },
 
   execute: async (input, ctx: ActionContext) => {
-    console.log(`[DB TX] Merged client duplicate ${input.duplicateId} into survivor ${input.survivorId}`);
-
     const events = [
       {
         type: EVENT_TYPES.CLIENT_MERGED,

@@ -1335,23 +1335,25 @@ export default function Inventory() {
   const maintenanceKpi = useList<InventoryListRow>(countFetcher, INVENTORY_KPI_FILTERS.maintenance, { isFilteredOverride: false })
   const missingKpi = useList<InventoryListRow>(countFetcher, INVENTORY_KPI_FILTERS.missing, { isFilteredOverride: false })
 
+  /* `useList` memoises `refetch`; naming them keeps the callback keyed on
+     the functions rather than on the whole list objects, which are fresh
+     literals every render (react-hooks/exhaustive-deps, TODO_SWEEP A13). */
+  const { refetch: refetchList } = list
+  const { refetch: refetchModels } = modelsKpi
+  const { refetch: refetchInStock } = inStockKpi
+  const { refetch: refetchOnRent } = onRentKpi
+  const { refetch: refetchReserved } = reservedKpi
+  const { refetch: refetchMaintenance } = maintenanceKpi
+  const { refetch: refetchMissing } = missingKpi
   const refreshAll = useCallback(() => {
-    list.refetch()
-    modelsKpi.refetch()
-    inStockKpi.refetch()
-    onRentKpi.refetch()
-    reservedKpi.refetch()
-    maintenanceKpi.refetch()
-    missingKpi.refetch()
-  }, [
-    list.refetch,
-    modelsKpi.refetch,
-    inStockKpi.refetch,
-    onRentKpi.refetch,
-    reservedKpi.refetch,
-    maintenanceKpi.refetch,
-    missingKpi.refetch,
-  ])
+    refetchList()
+    refetchModels()
+    refetchInStock()
+    refetchOnRent()
+    refetchReserved()
+    refetchMaintenance()
+    refetchMissing()
+  }, [refetchList, refetchModels, refetchInStock, refetchOnRent, refetchReserved, refetchMaintenance, refetchMissing])
 
   /*
    * ⛔ Six hand-typed figures became six counted ones — and every label and note

@@ -60,7 +60,13 @@ import { installGlobalErrorHandlers } from './lib/monitoring'
  */
 installGlobalErrorHandlers()
 
-startAuditLogging()
+/*
+ * Console mirror of the domain-event bus — a development aid, not the audit
+ * trail. The real one is `lib/queries/audit.ts` → `audit_events`. Shipping this
+ * to production printed every event, actor and target to any open devtools,
+ * which is noise at best and a disclosure at worst (TODO_SWEEP_2026-09-02.md A4).
+ */
+if (import.meta.env.DEV) startAuditLogging()
 
 const root = document.getElementById('root')
 if (!root) throw new Error('#root not found')

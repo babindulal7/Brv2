@@ -1204,7 +1204,7 @@ export default function NewRental() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [canBookingMoney])
   const [selectedClientId, setSelectedClientId] = useState<string | null>(CLIENTS_DATA[0]?.id ?? null)
   const client: ClientRecord | undefined = useMemo(
     () => clientPool.find((c) => c.id === selectedClientId),
@@ -1284,9 +1284,14 @@ export default function NewRental() {
     mealsPaisa: rupees(0) as Paisa,
   })
 
-  const [crew, setCrew] = useState<CrewLine[]>(() =>
-    CREW_ROSTER.filter((m) => ['CR-001', 'CR-005', 'CR-007'].includes(m.id)).map(seedCrewLine),
-  )
+  /*
+   * Empty. This opened with three roster members already on the booking
+   * (CR-001 / CR-005 / CR-007 — the §10.2 worked example), so a draft with no
+   * client and no equipment read Rs 1,54,482 before anyone typed a thing.
+   * Money on this screen derives from what the draft holds, and a new draft
+   * holds nothing (TODO_SWEEP_2026-09-02.md A8).
+   */
+  const [crew, setCrew] = useState<CrewLine[]>(() => [])
   /** redesign v1 §7.5 — Overtime and Meals were clipped at this table's width;
    *  they now live behind a per-row expand instead of two columns of their own. */
   const [expandedCrew, setExpandedCrew] = useState<Set<string>>(new Set())
@@ -1299,7 +1304,8 @@ export default function NewRental() {
     })
   const [deliveryChargePaisa, setDeliveryChargePaisa] = useState<Paisa>(rupees(0) as Paisa)
   const [fuelChargePaisa, setFuelChargePaisa] = useState<Paisa>(rupees(0) as Paisa)
-  const [discountPct, setDiscountPct] = useState(7)
+  /* 0, not the worked example's 7 — a discount is something someone grants. */
+  const [discountPct, setDiscountPct] = useState(0)
   /* `discountReason` / `approver` / `discountPopoverOpen` left with the
      discount gate (31 Aug 2026 — D3, Babin: "don't put any gate on discount"). */
   /**
@@ -1309,9 +1315,16 @@ export default function NewRental() {
   const [vatRatePercent] = useState<number>(readVatRatePercent)
   /** 01_NEW_RENTAL §1.1 rail — `VAT {rate}%  [on ▢]`. On is the default. */
   const [vatOn, setVatOn] = useState(true)
-  const [advancePaisa, setAdvancePaisa] = useState<Paisa>(rupees(15000) as Paisa)
-  const depositRequiredPaisa = rupees(50000) as Paisa
-  const depositReceivedPaisa = rupees(25000) as Paisa
+  /*
+   * All three were the §10.2 worked example (15,000 / 50,000 / 25,000) and
+   * rendered on a blank draft as if money had already moved. Nothing has: the
+   * advance is typed below, and how the required deposit is derived is still
+   * unruled (0002_bookings.sql, `deposit_required` — TODO(decision)), so both
+   * deposit figures are honestly zero until a ruling makes them a calculation.
+   */
+  const [advancePaisa, setAdvancePaisa] = useState<Paisa>(rupees(0) as Paisa)
+  const depositRequiredPaisa = rupees(0) as Paisa
+  const depositReceivedPaisa = rupees(0) as Paisa
 
   const days = useMemo(() => {
     const a = Date.parse(pickup)

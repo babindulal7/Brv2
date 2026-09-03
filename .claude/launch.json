@@ -2,10 +2,18 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "babin-mock",
+      "name": "babin-rentals-os",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:mock", "--", "--port", "5199"],
-      "port": 5199
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173,
+      "autoPort": true
+    },
+    {
+      "name": "babin-rentals-os-mock",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:mock"],
+      "port": 5174,
+      "autoPort": true
     }
   ]
 }

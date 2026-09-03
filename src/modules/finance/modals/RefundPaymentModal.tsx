@@ -26,6 +26,8 @@ interface RefundPaymentModalProps {
   currentPaidPaisa?: Paisa | undefined
 }
 
+type RefundMethod = 'Bank Reversal' | 'Cash Return' | 'Wallet Credit'
+
 export function RefundPaymentModal({
   isOpen,
   onClose,
@@ -50,7 +52,7 @@ export function RefundPaymentModal({
    */
   const [refundAmount, setRefundAmount] = useState<number>(0)
   const [reason, setReason] = useState('')
-  const [method, setMethod] = useState<'Bank Reversal' | 'Cash Return' | 'Wallet Credit'>('Bank Reversal')
+  const [method, setMethod] = useState<RefundMethod>('Bank Reversal')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -174,8 +176,8 @@ export function RefundPaymentModal({
         reason: reason.trim(),
       })
       onClose()
-    } catch (err: any) {
-      setError(err.message || 'Failed to process refund')
+    } catch (err) {
+      setError(err instanceof Error && err.message ? err.message : 'Failed to process refund')
     } finally {
       setIsSubmitting(false)
     }
@@ -296,7 +298,7 @@ export function RefundPaymentModal({
             <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Reversal Method</label>
             <select
               value={method}
-              onChange={(e) => setMethod(e.target.value as any)}
+              onChange={(e) => setMethod(e.target.value as RefundMethod)}
               style={{
                 height: 36,
                 padding: '0 12px',

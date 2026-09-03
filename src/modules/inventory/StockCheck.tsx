@@ -229,14 +229,23 @@ export default function StockCheck({ embedded = false }: { embedded?: boolean } 
   const unverifiedKpi = useList<StockAuditItemRow>(countFetcher, kpiFilters.unverified, { isFilteredOverride: false })
   const missingKpi = useList<StockAuditItemRow>(countFetcher, kpiFilters.missing, { isFilteredOverride: false })
 
+  /* `useList` memoises `refetch`; naming them keeps the callback keyed on
+     the functions rather than on the whole list objects, which are fresh
+     literals every render (react-hooks/exhaustive-deps, TODO_SWEEP A13). */
+  const { refetch: refetchAudits } = audits
+  const { refetch: refetchItems } = items
+  const { refetch: refetchExpected } = expectedKpi
+  const { refetch: refetchFound } = foundKpi
+  const { refetch: refetchUnverified } = unverifiedKpi
+  const { refetch: refetchMissing } = missingKpi
   const refetchAll = useCallback(() => {
-    audits.refetch()
-    items.refetch()
-    expectedKpi.refetch()
-    foundKpi.refetch()
-    unverifiedKpi.refetch()
-    missingKpi.refetch()
-  }, [audits.refetch, items.refetch, expectedKpi.refetch, foundKpi.refetch, unverifiedKpi.refetch, missingKpi.refetch])
+    refetchAudits()
+    refetchItems()
+    refetchExpected()
+    refetchFound()
+    refetchUnverified()
+    refetchMissing()
+  }, [refetchAudits, refetchItems, refetchExpected, refetchFound, refetchUnverified, refetchMissing])
 
   const progressPct =
     foundKpi.total !== null && expectedKpi.total !== null && expectedKpi.total > 0

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Modal } from './Modal'
 import { Button } from './Page'
 import Icon from './Icon'
+import { audioContextClass } from '../../lib/audioContext'
 
 export interface ScannableItem {
   id: string
@@ -48,7 +49,9 @@ const REASON_CAMERA_DECODE_NOT_WIRED =
 /** Web Audio Beep Feedback */
 function playAudioFeedback(type: 'success' | 'error') {
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const Ctor = audioContextClass()
+    if (!Ctor) return
+    const ctx = new Ctor()
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
 
@@ -229,10 +232,10 @@ export function BarcodeScannerModal({
                   // instead of leaving its indicator lit over a dead feed.
                   stream.getTracks().forEach((t) => t.stop())
                   setLastScanResult({ success: false, message: REASON_CAMERA_DECODE_NOT_WIRED })
-                } catch (err: any) {
+                } catch (err) {
                   playAudioFeedback('error')
-                  const errorName = err?.name || 'Error'
-                  const detail = errorName === 'NotAllowedError' ? 'Camera access denied by user or device policy.' : `Camera error: ${err?.message || errorName}`
+                  const errorName = err instanceof Error && err.name ? err.name : 'Error'
+                  const detail = errorName === 'NotAllowedError' ? 'Camera access denied by user or device policy.' : `Camera error: ${err instanceof Error && err.message ? err.message : errorName}`
                   setLastScanResult({ success: false, message: detail })
                 }
               }}

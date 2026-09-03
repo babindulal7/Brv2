@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
+import { PageHeader } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { EmptyState } from '../../components/ui/StateViews'
@@ -117,15 +118,24 @@ export function CasesWorkspace() {
   const money = useCanViewMoney()
 
   const [params, setParams] = useSearchParams()
+  /*
+   * `/inventory/cases/:id` — the URL names one case. The per-case workspace
+   * has no field list yet (`CASE_WORKSPACE_ROUTE` in data/cases.ts, §10), so
+   * until it does this route is the queue narrowed to that one row, and says
+   * so. It used to render the full list and ignore the id entirely — the URL
+   * lied (TODO_SWEEP_2026-09-02.md A5).
+   */
+  const { id: routeCaseId } = useParams<{ id?: string }>()
   const searchQuery = params.get('q') ?? ''
   const activeFilter = statusFromParam(params.get('status'))
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
   const [isLogCaseOpen, setIsLogCaseOpen] = useState(false)
   const [casesList, setCasesList] = useState<Case[]>(() => [...CASES])
 
-  useDomainEvent(EVENT_TYPES.DISCREPANCY_FLAGGED, (payload: any) => {
+  useDomainEvent<{ case?: Case }>(EVENT_TYPES.DISCREPANCY_FLAGGED, (payload) => {
     if (payload?.case) {
-      setCasesList((prev) => [payload.case, ...prev.filter((c) => c.id !== payload.case.id)])
+      const flagged = payload.case
+      setCasesList((prev) => [flagged, ...prev.filter((c) => c.id !== flagged.id)])
     }
   })
 
@@ -138,6 +148,13 @@ export function CasesWorkspace() {
       if (v === null) merged.delete(k)
       else merged.set(k, v)
     }
+    /* A chip flick or a keystroke while the URL names one case is a request
+       for the queue again — leave the single-case view rather than filtering
+       inside it, where every chip but one would show nothing. */
+    if (routeCaseId) {
+      navigate({ pathname: '/inventory/cases', search: merged.toString() ? `?${merged}` : '' }, { replace: true })
+      return
+    }
     setParams(merged, { replace: true })
   }
 
@@ -146,6 +163,7 @@ export function CasesWorkspace() {
 
   const filteredCases = useMemo(() => {
     return casesList.filter((c) => {
+      if (routeCaseId) return c.id === routeCaseId
       if (activeFilter !== 'All' && c.status !== activeFilter) return false
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
@@ -162,7 +180,9 @@ export function CasesWorkspace() {
       }
       return true
     })
-  }, [searchQuery, activeFilter])
+    /* `casesList` was missing here: a case logged through the domain event
+       above landed in state but not on screen until a chip was flicked. */
+  }, [casesList, routeCaseId, searchQuery, activeFilter])
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) setSelectedRowIds(new Set(filteredCases.map((c) => c.id)))
@@ -178,6 +198,33 @@ export function CasesWorkspace() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* The one `<h1>` on the route — this screen opened straight on the KPI
+          strip, the only queue in the app without a title landmark (A7). */}
+      <PageHeader
+        title="Cases"
+        description="Damage, loss and discrepancy cases across bookings — the queue, its exposure, and what has been recovered."
+      />
+
+      {routeCaseId && (
+        <Card padding="md">
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+            <Icon name="info" size={18} style={{ color: 'var(--text2)', flexShrink: 0, marginTop: 2 }} />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                Showing case <span className="identifier">{routeCaseId}</span>
+              </div>
+              <p style={{ margin: '4px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)', maxWidth: '70ch', lineHeight: 1.5 }}>
+                The per-case workspace has no field list yet, so this address shows the queue narrowed to
+                the one case it names. The other rows are hidden here, not gone.
+              </p>
+            </div>
+            <Button variant="secondary" onClick={() => navigate('/inventory/cases')}>
+              Show all cases
+            </Button>
+          </div>
+        </Card>
+      )}
+
       {/* KPIs — derived from canonical CASES array, never hand-typed (§3 / AUDIT_FINDINGS P1 #13) */}
       <div style={{ display: 'grid', gridTemplateColumns: money ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)', gap: 14 }}>
         <Card padding="md">
@@ -289,10 +336,14 @@ export function CasesWorkspace() {
       <Card padding="none" style={{ overflow: 'hidden' }}>
         {filteredCases.length === 0 ? (
           <EmptyState
-            title="No cases found"
-            description="Adjust your filters or search query to find incident cases."
-            actionLabel="Clear Filters"
-            onAction={() => patch({ status: null, q: null })}
+            title={routeCaseId ? `No case matches ${routeCaseId}` : 'No cases found'}
+            description={
+              routeCaseId
+                ? 'Nothing in the queue carries this case ID. It may have been renumbered, or the link that brought you here is stale.'
+                : 'Adjust your filters or search query to find incident cases.'
+            }
+            actionLabel={routeCaseId ? 'Show all cases' : 'Clear Filters'}
+            onAction={() => (routeCaseId ? navigate('/inventory/cases') : patch({ status: null, q: null }))}
           />
         ) : (
           <div style={{ overflowX: 'auto' }}>
