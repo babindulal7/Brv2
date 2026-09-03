@@ -153,12 +153,15 @@ export interface BookingListRow {
  * changed is that passing it from a money-blind session is now merely useless
  * rather than a Law 6 breach.
  *
- * ⚠ The column is STILL unmasked on the base table until
- * `0062_law6_column_grants_arm_the_mask.sql` is applied. This module no longer
- * names it, so this module is no longer a way to reach it — but a crafted
- * request still is. Read on for what that means.
+ * ⚠ `0062_law6_column_grants_arm_the_mask.sql` IS applied on live (ledger
+ * 20260828070623, after 0065 — read 3 Sep 2026; the earlier "until 0062 is
+ * applied" here and PLAN §4.28's "NOT APPLIED" were stale). It revokes the
+ * column from `authenticated` on the base table. This module ALSO never names
+ * it, so there are two independent layers now — keep both: the grant is the
+ * database's promise, not naming it is this module's, and neither is allowed
+ * to rely on the other.
  *
- * ── The original hazard, kept because 0062 is not applied yet ─────────────
+ * ── The original hazard, kept as the record of WHY both layers exist ────────
  *
  * ⛔⛔ `bookings.deposit_required` IS UNMASKED MONEY ON A BASE TABLE. ⛔⛔
  *

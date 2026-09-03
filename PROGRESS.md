@@ -2,6 +2,137 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-03 — cad819c audited adversarially; option (c) replaced by a better design; 0062 was live all along
+**Phase:** Phase 4/5 — persistence · **Status:** from-scratch fix REDESIGNED and re-proved both ways · one HIGH finding fixed · one defect found in another session's draft
+
+Asked "is all of it implemented well?" and answered it the only way that counts:
+six adversarial lenses over `cad819c`, every finding handed to an agent told to
+refute it, and every claim I could test run against a fully-built scratch
+database rather than read. Thirteen findings across the first five lenses, nine
+in the sixth. Three were one already-fixed defect. The rest changed the work.
+
+### The design changed: option (c) was shape-locked, and the audit proved it
+`cad819c` took PLAN §4.42(a)'s option (c) — seed the RETIRED `CL-2026-0034` /
+`BK-2026-0715` and let 0055 migrate forward. Measured, that shape-locks 0047 to
+BEFORE 0055: re-applying to any built database errors on the first row; the
+documented `--from 0047` path onto a schema-complete database (the dev DB's
+state today) dies at 0047 instead of seeding; and the second emitter I did not
+know existed — `seedCompact.ts`, the transport form that actually reached live —
+kept the ruled shape, so the two "same corpus" emitters were legal in disjoint
+schema states with nothing testing the invariant that says they must agree.
+
+**Now:** 0047 emits the ruled `C-34` / `B-715` as it always had, and a guarded
+prologue right after `begin;` pulls 0055's two CHECK swaps forward **only if the
+retired shape is still in force**. 0055's `drop if exists` / `add` is idempotent
+over it and its `update … where ~ '^CL-'` finds zero rows, so the final state is
+identical in either order. Every number stays; nothing is renumbered; the
+clients/bookings inserts skip cleanly on re-apply (the file as a whole is
+one-shot for a different reason — below); both emitters agree — and a new test,
+`src/lib/__tests__/seedEmitters.test.ts`, pins that (identical identifier sets,
+ruled shape only, every corpus id reaches both). **Proved both ways:**
+- filename order (0047 before 0055, prologue swaps): 79 applied, only 0079 failing (another session's draft — below); after 0055 the seeded rows read C-34…C-73 and B-715…B-917, 40/40 and 125/125 in the ruled shape, gate enabled.
+- production order (everything but 0047, then 0047 alone onto the built DB —
+  the `--from 0047` path): 78 applied minus 0047, CHECKs already ruled on empty tables; 0047 alone then seeds 40/120 with `Seed corpus verified: 120 booking(s), Foundation §2.8 reconciles` and no error — the path option (c) had broken.
+- re-apply onto the built DB: A second apply after the fix: every insert skipped on its arbiter — 40/125/120/89/64/93 rows before and after, no unique violation — and then FAILED CLOSED one layer further on: the invoice issuance UPDATE (Draft → Sent) ahead of each payment is unguarded, re-ran, and the file's own self-check refused (`INV-1 is Sent after a part payment, expected Partially Paid`); full rollback, gate re-enabled. So the inserts are idempotent and the file is one-shot. **The "no-op" claim is removed from 0047's header, 0055's citation and memory, and the residual is filed in §4.42(a) with the likely fix (`where status = 'Draft'`) rather than restored on faith.** Three layers were found by actually re-applying; each cost a ten-minute proof cycle and nobody had run one before.
+- constraint definitions after both orders, against 0055's text: `pg_get_constraintdef` for both CHECKs is byte-identical across the two orders and to 0055's own text.
+
+### HIGH — the gate held back a migration production has
+`check-rebuild.mjs` copied `apply-migrations-local.mjs`'s HELD_BACK list, which
+skips `0062_law6_column_grants_arm_the_mask` on the strength of PLAN §4.28's
+"WRITTEN, NOT APPLIED". **The live ledger has it** — `20260828070623`, right
+after `0065_arm_0062_prerequisites` at `20260828070501` (read directly, 3 Sep).
+A disaster-recovery rebuild from the repo would therefore have come up with Law
+6's column grants **unarmed** — quieter than live on the one law that hides
+money from the floor. Fixed: the gate holds nothing back; §4.28's cell and the
+apply script's comment now state the truth (the apply script keeps its skip as
+a documented local-dev convenience and says what that costs). Note the order:
+live ran 0065 BEFORE 0062, its stated prerequisite; filename order runs 0062
+first. Final gate on that: `npm run check:rebuild` (patched: 0062 included, `-1` per file, per-run scratch) — **80 applied, 1 failed, the failure being 0079**; `0047 ok · 0056 ok · 0062 ok`, so the ordering worry was a non-issue: 0062 applies before 0065 without complaint.
+
+### The gate itself, six fixes from lens six
+Per-run scratch name (a shared name + `drop (force)` let parallel sessions kill
+each other mid-0047 — and parallel sessions are routine here) · `-1` per file so
+each migration applies in one transaction, as `db push` built live, instead of
+autocommit-per-statement · the bootstrap assertion now runs `-tA` and splits on
+`|` (it had been sweeping an aligned table for digits and working by accident) ·
+and the header now states what a green run proves and what it does not: it
+SHARES the dev cluster and 0041 writes one cluster-wide `authenticator` setting
+(value-neutral here, since dev's 0041 wrote the same); the lenient auth restore
+leaves `postgres` owning `auth.users` because it is not a superuser in this
+container; and the live ledger differs from the directory in three known ways
+(no `0047_seed_reference_corpus`; a `0047_seed_tail…` row and one other no file
+represents; 0062 until today). Default privileges are not reproduced either.
+
+### Settled by direct measurement, no change needed
+Audit backport: every audited table's `created_by`/`updated_by` is `uuid`;
+0010 and 0051 signatures match. (One comment corrected: `payments` is the
+table with neither column, `clients` has `created_by`.) View drop: no view
+options anywhere in 0052–0054, grants re-issued; rebuilt view 31 columns, dev
+stuck at 0052's 23 because 0053/0054 failed there; the reviewer also matched
+the live view body to 0054 verbatim. Gate bracket: one transaction, enable
+before commit, a reviewer injected `select 1/0` before the enable and confirmed
+rollback restores the trigger; the lock is not ACCESS EXCLUSIVE; `bookings` is
+owned by `postgres`. Reachability: `docker exec` over the container socket is
+the only path.
+
+### Another session's draft is broken, and the gate is what found it
+`0079_invoice_vat_rate_is_authoritative.sql` (`6c978a5`, "Draft", §4.42(c))
+fails from scratch — but the fix is right. Line 100 correctly reads
+`v_vat := round(v_taxable * v_vat_rate, 2)` and carries a trailing
+`-- was: round(v_taxable * 0.13, 2)`. Postgres keeps comments in `prosrc`, so
+its own `position('0.13' in prosrc) > 0` post-condition trips on the comment,
+raises, and the single transaction rolls back — which is why the OLD body is
+what survives afterwards. One-line fix (drop the comment, or strip comments
+before searching). Not edited here: committed draft, active session. It is not
+on the live ledger.
+
+### Found while proving "re-apply is a no-op" — and it was not, before or after
+Proof C: re-applying 0047 to a seeded database died on
+`security_deposits_client_uuid_key`. Not my redesign — this predates it, and
+nobody had ever run a true re-apply (the reviewer's check was a first apply
+onto empty tables). The mechanism, measured: 0047 wrote `DEP-2026-0001`, but
+**`0056_ruled_sequences_completion.sql` rewrites deposit numbers to `DEP-<n>`**
+(its header lists DEP under "NOT RULED, OLD SHAPE" — that is the before-state its
+body then rules). So on a fresh build the seeded rows became `DEP-1…`, and a
+second apply's `on conflict (deposit_no)` arbiter missed while the derived
+`client_uuid` hit. Same bug class as the client codes, one table over —
+`seed.ts`'s SEQUENCES comment still called DEP "unruled, no registry row" (it
+has one, `numbering.ts:211`, `format: null`, which is exactly why the seed's
+spec was the only place the shape was decided). Fix: `SEQUENCES.deposit` now
+emits the ruled `DEP-<n>` (89 deposits, 64 movements as `DEP-<n>-M<k>`, zero
+retired); 0056's rewrite matches nothing seeded and its post-condition passes
+untouched (gate: `0056 … ok`). Payment, movement and invoice numbers were
+checked the same way and are stored exactly as written — only deposits were
+affected. A note now sits directly above 0056's rewrite saying why it is a
+no-op on a fresh build and why it stays. Re-apply after the fix: A second apply after the fix: every insert skipped on its arbiter — 40/125/120/89/64/93 rows before and after, no unique violation — and then FAILED CLOSED one layer further on: the invoice issuance UPDATE (Draft → Sent) ahead of each payment is unguarded, re-ran, and the file's own self-check refused (`INV-1 is Sent after a part payment, expected Partially Paid`); full rollback, gate re-enabled. So the inserts are idempotent and the file is one-shot. **The "no-op" claim is removed from 0047's header, 0055's citation and memory, and the residual is filed in §4.42(a) with the likely fix (`where status = 'Draft'`) rather than restored on faith.** Three layers were found by actually re-applying; each cost a ten-minute proof cycle and nobody had run one before.
+
+### Adversarial review verdicts
+Six review lenses, thirteen findings in five plus nine in the sixth. The workflow's
+verify pass got through ten of thirteen agents before the session limit hit; the
+three it did not verify (gate scope vs the live ledger, the cluster-wide role
+setting, auth ownership) I settled directly and folded into the gate's header.
+- **Confirmed and fixed (2):** the `--from 0047` regression (verifier read the
+  redesign in the working tree, ran it against the dev DB with rollback to
+  `Seed corpus verified`, and said "commit it", suggesting the `conrelid`
+  pin — taken); the 0062 hold-back (verifier re-read the live ledger).
+- **Refuted as already fixed (2 + 2 more that landed late):** the header claim,
+  closed by `c058cfd` and then superseded by the redesign.
+- **Found by the review and true, fixed here:** the `payments`-not-`clients`
+  comment in 0010; the emitters' invariant with no test; the accidental
+  `authCheck` parse; the fixed scratch name; autocommit-vs-transactional apply.
+- **Found by me while proving the review's claims (the review did not find
+  it):** the deposits idempotence defect below.
+
+### Verified
+`vitest`: **102 test files pass** (up two — `seedEmitters.test.ts`, and one the parallel session added) · `tsc --noEmit` clean · `check:contrast` untouched · dump taken
+before anything, dev database never dropped, every empirical check on scratch
+databases dropped afterwards.
+
+### Still open
+§4.42(a)'s residual — may gear go out against an unsettled invoice? —
+unchanged and unanswered by any of this. §4.42(b) rounding, §4.42(c) `vat_rate`
+(blocked on the 0079 comment above), §4.41 done by the other session.
+
 ## 2026-09-03 (morning) — A13: lint burn-down to zero, one real camera bug under a cast
 **Phase:** cross-phase fixes · **Status:** complete — A13 ticked in [`TODO_SWEEP_2026-09-02.md`](TODO_SWEEP_2026-09-02.md)
 

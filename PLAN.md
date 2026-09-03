@@ -178,7 +178,7 @@ The critical path. 60+ specs assume tables that have never been written down.
       It went in by a route that records no migration (`scripts/execute-generated-sql.mjs`).
       Two audits on 15 Aug read the bare word "unapplied" here and in the file header,
       concluded the database was empty, and built their central recommendation on it. Leave it
-      unapplied — re-applying is a no-op by design — and see §4.33(3).
+      unapplied — its inserts are idempotent but the file is ONE-SHOT, not a no-op: an unguarded issuance update makes a second apply fail closed (§4.42(a), filed 3 Sep) — and see §4.33(3).
 
 **Gate:** an adversarial reviewer cannot construct a legal write sequence that produces a
 wrong business outcome. Specifically: no path makes a deposit reduce Outstanding; no path
@@ -680,6 +680,17 @@ functions identical**. The only differences favour the rebuild — it has
 `staff_directory_v`, which the dev database lacks because `0067` failed there,
 and it lacks a Realtime infrastructure trigger that no migration owns.
 
+> ⬅ **ALSO OPEN (filed 3 Sep, engineering, no ruling needed): 0047 is a one-shot
+> seed, not re-appliable.** Every insert is now idempotent (measured: identical
+> row counts before and after a second apply, no unique violation), but the
+> invoice issuance `update invoices set status = 'Sent'` ahead of each payment is
+> unguarded, re-runs on a second apply while the payment insert is skipped, and
+> the file's own self-check refuses (`INV-1 is Sent after a part payment`). It
+> fails closed — full rollback, gate re-enabled. Likely fix: guard that update
+> with `where status = 'Draft'` in `src/lib/seed.ts` and re-prove with a second
+> apply onto a seeded scratch DB; expect the next layer, if any, to be another
+> unguarded UPDATE. Three layers were found this way; each cost a proof cycle.
+>
 > ⬅ **STILL OPEN, and NOT answered by the above — may gear go out against an
 > unsettled rental invoice at all?** `clients.payment_terms` (Net 15/30) says the
 > business already sells on terms, which is exactly what the gate forbids; 104 of
@@ -1688,7 +1699,7 @@ split the set.
 > |---|---|
 > | 1. `0061_bookings_deposit_masking_view.sql` — creates `bookings_deposit_v` | ✅ **APPLIED** with explicit approval. Verified live as both roles: Owner 121 rows / Rs 13,65,000, Warehouse 121 rows / `null`. |
 > | 2. Move the call sites off the base column | ✅ **DONE.** `lib/queries/bookings.ts` and `lib/bookingQuery.ts` no longer name `deposit_required` on `bookings` at all; `withDeposit` reads the view in a second id-keyed query. Closed the `TODO(persistence)` that stood in **both** files. |
-> | 3. `0062_law6_column_grants_arm_the_mask.sql` — revoke table-level SELECT, grant the non-money columns | ⬅ **WRITTEN, NOT APPLIED.** Dry-run in a rolled-back transaction confirms it makes money unreadable on the base tables while `stage`/`qty` stay readable. |
+> | 3. `0062_law6_column_grants_arm_the_mask.sql` — revoke table-level SELECT, grant the non-money columns | ⬅ **APPLIED 28 Aug 2026 (ledger 20260828070623, after 0065) — this cell said NOT APPLIED until 3 Sep and both apply scripts copied it.** Dry-run in a rolled-back transaction confirms it makes money unreadable on the base tables while `stage`/`qty` stay readable. |
 >
 > **Until step 3 is applied, Law 6 is a UI convention.** No module names the column any more,
 > so the app cannot leak it — but a crafted request still can. That is the whole remaining gap.

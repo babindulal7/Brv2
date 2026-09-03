@@ -120,10 +120,21 @@ export const SEQUENCES = {
   booking: { key: 'booking', code: 'BK', padding: 1, year: null },
   client: { key: 'client', code: 'CL', padding: 1, year: null },
   invoice: { key: 'invoice', code: 'INV', padding: 1, year: null },
-  /* Unruled — left exactly as they were. `DEP` has no registry row at all,
-     which is reported rather than papered over with an invented one. */
+  /* Payment keeps its old shape — `PAY-YYYY-NNNN` is what numbering.ts:157
+     still records and nothing has ruled it. */
   payment: { key: 'payment', code: 'PAY', padding: 4, year: 2026 },
-  deposit: { key: 'deposit', code: 'DEP', padding: 4, year: 2026 },
+  /* Deposit IS ruled: 0056_ruled_sequences_completion.sql rewrites every
+     `DEP-YYYY-NNNN` to `DEP-<n>` and then asserts none survive. This spec
+     used to emit the retired year-bearing shape, so 0056 rewrote the seeded
+     rows on a fresh build and a second apply then missed its own
+     `on conflict (deposit_no)` arbiter and died on the client_uuid unique
+     (measured 3 Sep 2026: DEP-2026-0001 written, DEP-1 stored). Emitting the
+     ruled shape makes 0056's rewrite a no-op and lets a second apply get past
+     deposits (it still fails closed later — see the file header).
+     numbering.ts:211 carries the DEP row with `format: null`, so this is the
+     one place the shape is decided. Movement numbers derive from this and
+     become `DEP-<n>-M<k>`; nothing constrains or rewrites them. */
+  deposit: { key: 'deposit', code: 'DEP', padding: 1, year: null },
   equipment: { key: 'equipment', code: 'EQ', padding: 6, year: null },
 } as const satisfies Record<string, SequenceSpec>
 
@@ -817,7 +828,7 @@ const BOOKINGS: readonly BookingSpec[] = [...REFERENCE_BOOKINGS, ...demoBookings
  * exists to prevent.
  *
  * Derived from the row's natural key instead: same corpus in, same keys out,
- * and `on conflict (client_uuid) do nothing` makes a second apply a no-op.
+ * and `on conflict (client_uuid) do nothing` makes a second apply of that ROW a no-op. (The file as a whole is one-shot — see its header and PLAN.md §4.42(a).)
  * Well-formed (version 4 nibble, RFC 4122 variant) but not random — a hash of
  * the key, which is what an idempotency key is supposed to be.
  */
@@ -1326,44 +1337,8 @@ function category(code: string): string {
   return `(select id from inventory_categories where code = ${txt(code)})`
 }
 
-/**
- * The identifier shape that was LEGAL AT MIGRATION 0047 — not the ruled one.
- *
- * `0005_clients.sql:89` and `0003_operations.sql` constrain `client_code` to
- * `^CL-[0-9]{4}-[0-9]{4}$` and `booking_no` to `^BK-[0-9]{4}-[0-9]{4}$`.
- * `0055_ruled_identifier_formats.sql` is what replaces those with the ruled
- * `C-<n>` / `B-<n>`, and it does so by REWRITING the existing rows:
- *
- *   update clients set client_code = 'C-' || … where client_code ~ '^CL-…$';
- *
- * 0047 sits eighteen files EARLIER, so emitting the ruled form there wrote a
- * value its own table rejected — the first of BUG-010's blockers, and the
- * reason `npm run db:rebuild` could not rebuild a database from scratch. The
- * corpus now seeds the retired form and lets 0055 migrate it forward, which is
- * both chronologically honest and a path 0055 already implements and tests.
- *
- * ⚠ SQL EMISSION ONLY. The in-memory corpus keeps the ruled `C-34` / `B-715`
- * everywhere else, because that is what the app's mock mode renders and what
- * the live rows carry. In particular the derived `client_uuid` (Law 8) stays
- * keyed on the RULED code — re-keying it would mint different UUIDs and break
- * the `on conflict` dedup against rows that are already live.
- *
- * The final state is identical either way: after 0055 runs, every row holds the
- * ruled code again.
- */
-function historical(code: string): string {
-  const m = /^([BC])-(\d+)$/.exec(code)
-  if (m === null) return code
-  const prefix = m[1] === 'B' ? 'BK' : 'CL'
-  const counter = m[2]!.padStart(4, '0')
-  /* The retired shape is exactly four digits; a wider counter cannot be
-     expressed and must not be silently truncated into a different record. */
-  if (counter.length !== 4) throw new Error(`seed: ${code} does not fit the retired ${prefix}-YYYY-NNNN shape`)
-  return `${prefix}-2026-${counter}`
-}
-
 function client(code: string): string {
-  return `(select id from clients where client_code = ${txt(historical(code))})`
+  return `(select id from clients where client_code = ${txt(code)})`
 }
 
 function product(assetCode: string): string {
@@ -1375,7 +1350,7 @@ function unit(assetTag: string): string {
 }
 
 function booking(bookingNo: string): string {
-  return `(select id from bookings where booking_no = ${txt(historical(bookingNo))})`
+  return `(select id from bookings where booking_no = ${txt(bookingNo)})`
 }
 
 function invoice(invoiceNo: string): string {
@@ -1433,16 +1408,19 @@ export function emitSql(corpus: SeedCorpus): string {
 -- without explicit approval." This file has been generated and reviewed, not
 -- executed — no local Postgres instance exists in this repo.
 --
--- Re-applying is NOT a no-op any more — it fails closed. Since 2 Sep 2026 this
--- file seeds the RETIRED CL-2026-0034 / BK-2026-0715 shapes (see the note on
--- the format above) and every insert conflicts on its NATURAL KEY —
--- client_code, booking_no — not on client_uuid. Against a database that has
--- already run 0055 those keys hold C-34 / B-715, so nothing conflicts, the
--- first client trips the ruled CHECK, and the single transaction rolls the
--- whole file back with the gate re-enabled. Measured: 40 clients, 0 retired
--- rows leaked, trigger back to enabled. Safe, but LOUD — and it means the
--- only place this file may run is a from-scratch build, where 0055 has not
--- happened yet. That is one more reason to leave it unapplied on live.
+-- Re-applying is NOT a no-op — it is a one-shot seed that FAILS CLOSED, and the
+-- earlier header claiming otherwise was never tested until 3 Sep 2026. What is
+-- true, measured: every INSERT is idempotent (natural-key / client_uuid
+-- arbiters all conflict on a second run — 40/125/120/89/64/93 rows before and
+-- after, nothing duplicated), and the gate prologue and 0056's deposit rewrite
+-- are both no-ops on a built database. What is not: the invoice issuance
+-- UPDATE (Draft -> Sent) ahead of each payment is unguarded, so on a re-apply
+-- it re-runs while the payment INSERT that would move the invoice on is
+-- skipped, and this file's own self-check then refuses ('INV-1 is Sent after
+-- a part payment, expected Partially Paid'). The single transaction rolls the
+-- whole file back and re-enables the gate. Apply it ONCE, into a database that
+-- has never held it; the fix is a where status = 'Draft' guard on that
+-- update — filed, not done here (PLAN.md §4.42a residual).
 -- =============================================================================
 
 begin;
@@ -1474,6 +1452,53 @@ begin;
 -- below raises, the whole file rolls back and the trigger was never disabled.
 -- -----------------------------------------------------------------------------
 alter table bookings disable trigger trg_booking_gate_check;
+
+-- -----------------------------------------------------------------------------
+-- Identifier CHECKs, pulled forward from 0055 when — and only when — needed.
+--
+-- 0005 (clients:89) and 0002 (bookings:58) constrain client_code / booking_no to the RETIRED shapes
+-- (CL-YYYY-NNNN / BK-YYYY-NNNN). 0055 is what legalises the ruled C-<n> / B-<n>
+-- this corpus has always carried, and 0055 sits eighteen files LATER. So on a
+-- from-scratch build the very first client below would fail its own CHECK.
+--
+-- The fix is NOT to seed the retired shape and let 0055 rewrite it (tried, and
+-- measured: that shape-locks this file to pre-0055, breaks --from 0047 on any
+-- built database, and makes it disagree with seedCompact.ts — the transport
+-- form that actually reached live). The fix is to swap the two CHECKs to their
+-- ruled form HERE if the retired form is still in force, exactly as 0055 will.
+--
+-- Idempotent with 0055 by construction: 0055 does drop constraint if exists
+-- then add constraint with the same names and the same regexes, and its
+-- update … where … ~ '^CL-…' rewrite finds zero rows because nothing retired
+-- was ever seeded. Final state is identical whether 0055 runs before this file
+-- (production's actual order) or after it (filename order). Nothing between
+-- 0047 and 0055 references either shape (checked). The regexes are copied from
+-- 0055:101-105 and must stay verbatim.
+-- -----------------------------------------------------------------------------
+do $$
+begin
+  if exists (
+    select 1 from pg_constraint
+    where conrelid = 'clients'::regclass
+      and conname = 'clients_client_code_format'
+      and pg_get_constraintdef(oid) like '%CL-%'
+  ) then
+    alter table clients drop constraint clients_client_code_format;
+    alter table clients add constraint clients_client_code_format
+      check (client_code ~ '^C-[0-9]+$');
+  end if;
+
+  if exists (
+    select 1 from pg_constraint
+    where conrelid = 'bookings'::regclass
+      and conname = 'bookings_booking_no_format'
+      and pg_get_constraintdef(oid) like '%BK-%'
+  ) then
+    alter table bookings drop constraint bookings_booking_no_format;
+    alter table bookings add constraint bookings_booking_no_format
+      check (booking_no ~ '^B-[0-9]+$');
+  end if;
+end $$;
 `)
 
   /* clients */
@@ -1486,7 +1511,7 @@ alter table bookings disable trigger trg_booking_gate_check;
   segments, preferred_contact_channels, status, created_by
 ) values (
   ${uuid(seedUuid(`client:${code}`))},
-  ${txt(historical(code))},
+  ${txt(code)},
   ${txt(c.typeParent)}::client_type_parent,
   ${c.orgSubtype === null ? 'null' : `${txt(c.orgSubtype)}::client_organisation_subtype`},
   ${txt(c.name)},
@@ -1594,7 +1619,7 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   ${uuid(seedUuid(`booking:${b.bookingNo}`))},
-  ${txt(historical(b.bookingNo))},
+  ${txt(b.bookingNo)},
   ${BRANCH},
   ${client(b.clientCode)},
   ${txt(s.project)},
@@ -2035,7 +2060,7 @@ begin
   end if;
 `)
   for (const b of corpus.bookings) {
-    out.push(`  select stage into v_stage from bookings where booking_no = ${txt(historical(b.bookingNo))};
+    out.push(`  select stage into v_stage from bookings where booking_no = ${txt(b.bookingNo)};
   if v_stage is distinct from ${txt(b.spec.stage)}::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', ${txt(b.bookingNo)}, v_stage, ${txt(b.spec.stage)};
   end if;

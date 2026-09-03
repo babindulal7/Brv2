@@ -89,6 +89,17 @@ where sequence_key in ('deposit', 'expense')
 -- its UPDATE is written for completeness, so a row seeded later in the old shape
 -- cannot survive the migration meant to catch it.
 
+-- ⚠ NOTE, 3 Sep 2026 — the deposit rewrite below is now a NO-OP on a fresh
+-- build, on purpose. Until 3 Sep, 0047_seed_reference_corpus.sql wrote deposits
+-- in the retired `DEP-YYYY-NNNN` shape (its SEQUENCES spec still said DEP was
+-- unruled — this file ruled it), so this rewrite renumbered the seeded rows and a
+-- SECOND apply of 0047 then missed its own `on conflict (deposit_no)` arbiter
+-- and died on `security_deposits_client_uuid_key`. Measured: DEP-2026-0001
+-- written, DEP-1 stored. The seed now emits `DEP-<n>` directly (src/lib/seed.ts,
+-- SEQUENCES.deposit), so the `where deposit_no ~ '^DEP-[0-9]{4}-[0-9]+$'` below
+-- matches nothing seeded and the post-condition passes untouched. The rewrite
+-- stays: it is still what a database seeded before 3 Sep needs.
+--
 update security_deposits
 set deposit_no = 'DEP-' || coalesce(nullif(regexp_replace(split_part(deposit_no, '-', 3), '^0+', ''), ''), '0')
 where deposit_no ~ '^DEP-[0-9]{4}-[0-9]+$';

@@ -62,7 +62,8 @@ begin
       NEW.id,
       /* Read through to_jsonb(NEW), never as a hard field reference: this
          trigger is attached to tables that do not define the column at all
-         (clients, payments), and in PL/pgSQL `NEW.created_by` on such a row
+         (payments has neither created_by nor updated_by; clients has
+         created_by but no updated_by), and in PL/pgSQL `NEW.created_by` on such a row
          raises 42703 and aborts the statement. A missing key yields NULL
          here, so the coalesce fallback that was always the intent runs.
          Backported from 0051, which diagnosed it — that file still applies

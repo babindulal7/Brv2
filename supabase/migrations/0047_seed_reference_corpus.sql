@@ -23,16 +23,19 @@
 -- without explicit approval." This file has been generated and reviewed, not
 -- executed — no local Postgres instance exists in this repo.
 --
--- Re-applying is NOT a no-op any more — it fails closed. Since 2 Sep 2026 this
--- file seeds the RETIRED CL-2026-0034 / BK-2026-0715 shapes (see the note on
--- the format above) and every insert conflicts on its NATURAL KEY —
--- client_code, booking_no — not on client_uuid. Against a database that has
--- already run 0055 those keys hold C-34 / B-715, so nothing conflicts, the
--- first client trips the ruled CHECK, and the single transaction rolls the
--- whole file back with the gate re-enabled. Measured: 40 clients, 0 retired
--- rows leaked, trigger back to enabled. Safe, but LOUD — and it means the
--- only place this file may run is a from-scratch build, where 0055 has not
--- happened yet. That is one more reason to leave it unapplied on live.
+-- Re-applying is NOT a no-op — it is a one-shot seed that FAILS CLOSED, and the
+-- earlier header claiming otherwise was never tested until 3 Sep 2026. What is
+-- true, measured: every INSERT is idempotent (natural-key / client_uuid
+-- arbiters all conflict on a second run — 40/125/120/89/64/93 rows before and
+-- after, nothing duplicated), and the gate prologue and 0056's deposit rewrite
+-- are both no-ops on a built database. What is not: the invoice issuance
+-- UPDATE (Draft -> Sent) ahead of each payment is unguarded, so on a re-apply
+-- it re-runs while the payment INSERT that would move the invoice on is
+-- skipped, and this file's own self-check then refuses ('INV-1 is Sent after
+-- a part payment, expected Partially Paid'). The single transaction rolls the
+-- whole file back and re-enables the gate. Apply it ONCE, into a database that
+-- has never held it; the fix is a where status = 'Draft' guard on that
+-- update — filed, not done here (PLAN.md §4.42a residual).
 -- =============================================================================
 
 begin;
@@ -66,6 +69,53 @@ begin;
 alter table bookings disable trigger trg_booking_gate_check;
 
 -- -----------------------------------------------------------------------------
+-- Identifier CHECKs, pulled forward from 0055 when — and only when — needed.
+--
+-- 0005 (clients:89) and 0002 (bookings:58) constrain client_code / booking_no to the RETIRED shapes
+-- (CL-YYYY-NNNN / BK-YYYY-NNNN). 0055 is what legalises the ruled C-<n> / B-<n>
+-- this corpus has always carried, and 0055 sits eighteen files LATER. So on a
+-- from-scratch build the very first client below would fail its own CHECK.
+--
+-- The fix is NOT to seed the retired shape and let 0055 rewrite it (tried, and
+-- measured: that shape-locks this file to pre-0055, breaks --from 0047 on any
+-- built database, and makes it disagree with seedCompact.ts — the transport
+-- form that actually reached live). The fix is to swap the two CHECKs to their
+-- ruled form HERE if the retired form is still in force, exactly as 0055 will.
+--
+-- Idempotent with 0055 by construction: 0055 does drop constraint if exists
+-- then add constraint with the same names and the same regexes, and its
+-- update … where … ~ '^CL-…' rewrite finds zero rows because nothing retired
+-- was ever seeded. Final state is identical whether 0055 runs before this file
+-- (production's actual order) or after it (filename order). Nothing between
+-- 0047 and 0055 references either shape (checked). The regexes are copied from
+-- 0055:101-105 and must stay verbatim.
+-- -----------------------------------------------------------------------------
+do $$
+begin
+  if exists (
+    select 1 from pg_constraint
+    where conrelid = 'clients'::regclass
+      and conname = 'clients_client_code_format'
+      and pg_get_constraintdef(oid) like '%CL-%'
+  ) then
+    alter table clients drop constraint clients_client_code_format;
+    alter table clients add constraint clients_client_code_format
+      check (client_code ~ '^C-[0-9]+$');
+  end if;
+
+  if exists (
+    select 1 from pg_constraint
+    where conrelid = 'bookings'::regclass
+      and conname = 'bookings_booking_no_format'
+      and pg_get_constraintdef(oid) like '%BK-%'
+  ) then
+    alter table bookings drop constraint bookings_booking_no_format;
+    alter table bookings add constraint bookings_booking_no_format
+      check (booking_no ~ '^B-[0-9]+$');
+  end if;
+end $$;
+
+-- -----------------------------------------------------------------------------
 -- 1 · Clients — 40
 -- -----------------------------------------------------------------------------
 insert into clients (
@@ -74,7 +124,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   'a8c85792-2135-6d5a-33b3-fb88e6a4c5f7'::uuid,
-  'CL-2026-0034',
+  'C-34',
   'Organisation'::client_type_parent,
   'Production House'::client_organisation_subtype,
   'Sagarmatha Pictures Pvt. Ltd.',
@@ -99,7 +149,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '8774a8f7-457d-8a77-52c3-37d7b3a17538'::uuid,
-  'CL-2026-0035',
+  'C-35',
   'Organisation'::client_type_parent,
   'Production House'::client_organisation_subtype,
   'Himalaya Films Pvt. Ltd.',
@@ -124,7 +174,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '0367f804-dc25-33d8-53eb-a311124786a7'::uuid,
-  'CL-2026-0036',
+  'C-36',
   'Organisation'::client_type_parent,
   'Broadcaster'::client_organisation_subtype,
   'Annapurna Media Pvt. Ltd.',
@@ -149,7 +199,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '0afe749e-0496-a6aa-4080-e08d50a6f5ee'::uuid,
-  'CL-2026-0037',
+  'C-37',
   'Organisation'::client_type_parent,
   'Production House'::client_organisation_subtype,
   'Machhapuchhre Studios Pvt. Ltd.',
@@ -174,7 +224,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   'c831621d-398f-f3f4-a1a5-1cd30a115f10'::uuid,
-  'CL-2026-0038',
+  'C-38',
   'Organisation'::client_type_parent,
   'Corporate / Agency'::client_organisation_subtype,
   'Gandaki Creatives Pvt. Ltd.',
@@ -199,7 +249,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '64db744b-59bb-ee17-fb86-9aac1883ab0a'::uuid,
-  'CL-2026-0039',
+  'C-39',
   'Organisation'::client_type_parent,
   'Rental House'::client_organisation_subtype,
   'Bagmati Rentals Pvt. Ltd.',
@@ -224,7 +274,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   'ff725629-fc8a-abe8-8340-a0b285c17245'::uuid,
-  'CL-2026-0040',
+  'C-40',
   'Organisation'::client_type_parent,
   'College / Institution'::client_organisation_subtype,
   'Langtang College of Media',
@@ -249,7 +299,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '24a16297-a13a-a470-7ea6-34f5a1a9bcdc'::uuid,
-  'CL-2026-0041',
+  'C-41',
   'Organisation'::client_type_parent,
   'Government / NGO'::client_organisation_subtype,
   'Manaslu Foundation Pvt. Ltd.',
@@ -274,7 +324,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   'cfd6736c-535b-e20d-9821-b740d568c465'::uuid,
-  'CL-2026-0042',
+  'C-42',
   'Organisation'::client_type_parent,
   'Corporate / Agency'::client_organisation_subtype,
   'Dhaulagiri Weddings Pvt. Ltd.',
@@ -299,7 +349,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   'd2314094-0462-232b-5600-803f6e694bed'::uuid,
-  'CL-2026-0043',
+  'C-43',
   'Organisation'::client_type_parent,
   'Production House'::client_organisation_subtype,
   'Rara Films Pvt. Ltd.',
@@ -324,7 +374,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '4fd9a12c-78fb-c594-fa28-4f0bb31d4daa'::uuid,
-  'CL-2026-0044',
+  'C-44',
   'Organisation'::client_type_parent,
   'Broadcaster'::client_organisation_subtype,
   'Phewa Media Pvt. Ltd.',
@@ -349,7 +399,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '4b2faa13-b575-1265-f1b2-53a07f350f65'::uuid,
-  'CL-2026-0045',
+  'C-45',
   'Organisation'::client_type_parent,
   'Production House'::client_organisation_subtype,
   'Gosaikunda Studios Pvt. Ltd.',
@@ -374,7 +424,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   'e3775ea3-7ec0-46d4-32a4-22f7b54a1608'::uuid,
-  'CL-2026-0046',
+  'C-46',
   'Organisation'::client_type_parent,
   'Corporate / Agency'::client_organisation_subtype,
   'Chitwan Creatives Pvt. Ltd.',
@@ -399,7 +449,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '693d51c2-047b-6db6-c6d2-9635066b518a'::uuid,
-  'CL-2026-0047',
+  'C-47',
   'Organisation'::client_type_parent,
   'Rental House'::client_organisation_subtype,
   'Lumbini Rentals Pvt. Ltd.',
@@ -424,7 +474,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   'a26ec082-b1b8-c0ec-44b3-76eddb9f0444'::uuid,
-  'CL-2026-0048',
+  'C-48',
   'Organisation'::client_type_parent,
   'College / Institution'::client_organisation_subtype,
   'Janaki College of Media',
@@ -449,7 +499,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '812e05c1-5a14-4aec-d7ad-feeaeab6c1a7'::uuid,
-  'CL-2026-0049',
+  'C-49',
   'Organisation'::client_type_parent,
   'Government / NGO'::client_organisation_subtype,
   'Newa Foundation Pvt. Ltd.',
@@ -474,7 +524,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   'b1947130-c604-731d-e3f4-0587f994694b'::uuid,
-  'CL-2026-0050',
+  'C-50',
   'Organisation'::client_type_parent,
   'Corporate / Agency'::client_organisation_subtype,
   'Kirat Weddings Pvt. Ltd.',
@@ -499,7 +549,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '0a4c28e1-7e66-b429-79a9-a93eb1538e95'::uuid,
-  'CL-2026-0051',
+  'C-51',
   'Organisation'::client_type_parent,
   'Production House'::client_organisation_subtype,
   'Tamang Films Pvt. Ltd.',
@@ -524,7 +574,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   'e6617978-c5d9-2bae-74fd-7d96eec16a7e'::uuid,
-  'CL-2026-0052',
+  'C-52',
   'Organisation'::client_type_parent,
   'Broadcaster'::client_organisation_subtype,
   'Sherpa Media Pvt. Ltd.',
@@ -549,7 +599,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '882c8750-2c73-18b4-1218-f6da8ec66a91'::uuid,
-  'CL-2026-0053',
+  'C-53',
   'Organisation'::client_type_parent,
   'Production House'::client_organisation_subtype,
   'Everest Studios Pvt. Ltd.',
@@ -574,7 +624,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   'c6f00890-9563-6334-a645-df593092c376'::uuid,
-  'CL-2026-0054',
+  'C-54',
   'Organisation'::client_type_parent,
   'Corporate / Agency'::client_organisation_subtype,
   'Kailash Creatives Pvt. Ltd.',
@@ -599,7 +649,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '6404b8a7-06b4-139f-27e9-5d70284d6f0d'::uuid,
-  'CL-2026-0055',
+  'C-55',
   'Organisation'::client_type_parent,
   'Rental House'::client_organisation_subtype,
   'Himalaya Rentals Pvt. Ltd.',
@@ -624,7 +674,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '2ece6a44-3631-e531-0725-072f724319aa'::uuid,
-  'CL-2026-0056',
+  'C-56',
   'Organisation'::client_type_parent,
   'College / Institution'::client_organisation_subtype,
   'Annapurna College of Media',
@@ -649,7 +699,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '88f4bb21-0775-8df9-86d0-eda07665e51a'::uuid,
-  'CL-2026-0057',
+  'C-57',
   'Organisation'::client_type_parent,
   'Government / NGO'::client_organisation_subtype,
   'Machhapuchhre Foundation Pvt. Ltd.',
@@ -674,7 +724,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '8d1eac30-dd7b-5781-66e4-f6faa59332b8'::uuid,
-  'CL-2026-0058',
+  'C-58',
   'Organisation'::client_type_parent,
   'Corporate / Agency'::client_organisation_subtype,
   'Gandaki Weddings Pvt. Ltd.',
@@ -699,7 +749,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   'c5c92f42-727f-8d5b-442e-78e6b3fa798e'::uuid,
-  'CL-2026-0059',
+  'C-59',
   'Organisation'::client_type_parent,
   'Production House'::client_organisation_subtype,
   'Bagmati Films Pvt. Ltd.',
@@ -724,7 +774,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '43054e54-30d7-a045-926f-34cd12a5afc1'::uuid,
-  'CL-2026-0060',
+  'C-60',
   'Organisation'::client_type_parent,
   'Broadcaster'::client_organisation_subtype,
   'Langtang Media Pvt. Ltd.',
@@ -749,7 +799,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '0100d7f9-fed4-ced7-00ce-c29ffdc26455'::uuid,
-  'CL-2026-0061',
+  'C-61',
   'Organisation'::client_type_parent,
   'Production House'::client_organisation_subtype,
   'Manaslu Studios Pvt. Ltd.',
@@ -774,7 +824,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '33db226a-240b-b7e5-f624-99f4f7027151'::uuid,
-  'CL-2026-0062',
+  'C-62',
   'Organisation'::client_type_parent,
   'Corporate / Agency'::client_organisation_subtype,
   'Dhaulagiri Creatives Pvt. Ltd.',
@@ -799,7 +849,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   'a0df762b-7283-2dc2-617b-0da045689bac'::uuid,
-  'CL-2026-0063',
+  'C-63',
   'Organisation'::client_type_parent,
   'Rental House'::client_organisation_subtype,
   'Rara Rentals Pvt. Ltd.',
@@ -824,7 +874,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '30881fce-ac4c-8630-b7b6-0a8ad38e1afb'::uuid,
-  'CL-2026-0064',
+  'C-64',
   'Organisation'::client_type_parent,
   'College / Institution'::client_organisation_subtype,
   'Phewa College of Media',
@@ -849,7 +899,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '047dc11e-30cb-7bcf-3553-2292be67c172'::uuid,
-  'CL-2026-0065',
+  'C-65',
   'Organisation'::client_type_parent,
   'Government / NGO'::client_organisation_subtype,
   'Gosaikunda Foundation Pvt. Ltd.',
@@ -874,7 +924,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   'c56c8845-12cc-ddab-6ba4-2e0d46ccc304'::uuid,
-  'CL-2026-0066',
+  'C-66',
   'Individual'::client_type_parent,
   null,
   'Rupesh Karki',
@@ -899,7 +949,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   'a41dd267-54fe-9802-dfb8-6816c50e8515'::uuid,
-  'CL-2026-0067',
+  'C-67',
   'Individual'::client_type_parent,
   null,
   'Sunita Gurung',
@@ -924,7 +974,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '3d383c3f-247b-61b9-7ebf-caf57f2aabdf'::uuid,
-  'CL-2026-0068',
+  'C-68',
   'Individual'::client_type_parent,
   null,
   'Bikash Shrestha',
@@ -949,7 +999,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   'a495ad57-a476-ca0b-550c-f5d49f467854'::uuid,
-  'CL-2026-0069',
+  'C-69',
   'Individual'::client_type_parent,
   null,
   'Anjali Thapa',
@@ -974,7 +1024,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '0ebaf42b-ac07-aef0-05bf-187255c4d3ce'::uuid,
-  'CL-2026-0070',
+  'C-70',
   'Individual'::client_type_parent,
   null,
   'Prakash Rai',
@@ -999,7 +1049,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '748d3f91-e66f-8dd1-c395-87697a8c278f'::uuid,
-  'CL-2026-0071',
+  'C-71',
   'Individual'::client_type_parent,
   null,
   'Nisha Maharjan',
@@ -1024,7 +1074,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   '6220984a-ba28-9cca-8e84-29410a24de53'::uuid,
-  'CL-2026-0072',
+  'C-72',
   'Individual'::client_type_parent,
   null,
   'Deepak Lama',
@@ -1049,7 +1099,7 @@ insert into clients (
   segments, preferred_contact_channels, status, created_by
 ) values (
   'b9fa4f45-db8e-b874-5028-40835a9fc59d'::uuid,
-  'CL-2026-0073',
+  'C-73',
   'Individual'::client_type_parent,
   null,
   'Sarita Bhandari',
@@ -5776,9 +5826,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'f59d797a-9bb9-52ac-233a-7052f41c960c'::uuid,
-  'BK-2026-0715',
+  'B-715',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0034'),
+  (select id from clients where client_code = 'C-34'),
   'Annapurna Circuit — documentary shoot',
   '2026-07-16T00:15:00.000Z'::timestamptz,
   '2026-07-19T00:15:00.000Z'::timestamptz,
@@ -5796,7 +5846,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '9c29ea72-0793-63df-95b9-837ba06428cf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0715'),
+  (select id from bookings where booking_no = 'B-715'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000234'),
   'Sony FX9 Cinema Camera',
@@ -5813,7 +5863,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'e15cc716-54c8-3e33-d451-622b3c9f71d6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0715'),
+  (select id from bookings where booking_no = 'B-715'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000235'),
   'Sony FX6 Cinema Camera',
@@ -5830,7 +5880,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '407b67d3-c4fb-f069-e65b-8fe8bf5e37bb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0715'),
+  (select id from bookings where booking_no = 'B-715'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000236'),
   'NISI Athena 35mm',
@@ -5847,7 +5897,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'f8a267bb-28d7-9499-1278-32307b645d91'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0715'),
+  (select id from bookings where booking_no = 'B-715'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000237'),
   'Aputure LS 600d Pro',
@@ -5864,7 +5914,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'd70052b0-85a0-c891-087a-ddf8a013cd6e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0715'),
+  (select id from bookings where booking_no = 'B-715'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000238'),
   'Matthews C-Stand 40in',
@@ -5881,7 +5931,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '4f1755b0-c86d-8940-7f0f-22fb6f601695'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0715'),
+  (select id from bookings where booking_no = 'B-715'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000239'),
   'Manfrotto 504X Tripod System',
@@ -6186,7 +6236,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'a4ca2f45-eb05-8fa2-363b-9017caa68687'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0715'),
+  (select id from bookings where booking_no = 'B-715'),
   'Suman Tamang',
   'Camera Assistant'::crew_role,
   8000.00,
@@ -6199,7 +6249,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '51209544-a695-e161-b32e-a595bb641325'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0715'),
+  (select id from bookings where booking_no = 'B-715'),
   'Prakash Gurung',
   'Gaffer'::crew_role,
   8000.00,
@@ -6212,7 +6262,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '707827db-c4d4-e02a-e686-6b6d07680144'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0715'),
+  (select id from bookings where booking_no = 'B-715'),
   'Nabin Rai',
   'Grip'::crew_role,
   8000.00,
@@ -6234,7 +6284,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0715'),
+  (select id from bookings where booking_no = 'B-715'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -6247,7 +6297,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '50976df9-3426-1556-2132-496ba943fae3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0715'),
+  (select id from bookings where booking_no = 'B-715'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   7.00,
@@ -6267,8 +6317,8 @@ insert into invoices (
 ) values (
   'c13cb819-4307-0ce6-8898-e87d89b96eb6'::uuid,
   'INV-1',
-  (select id from bookings where booking_no = 'BK-2026-0715'),
-  (select id from clients where client_code = 'CL-2026-0034'),
+  (select id from bookings where booking_no = 'B-715'),
+  (select id from clients where client_code = 'C-34'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -6443,10 +6493,10 @@ where invoice_no = 'INV-1';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'b422860f-26da-2b6d-7cfb-55f0c042e50d'::uuid,
-  'DEP-2026-0001',
-  (select id from bookings where booking_no = 'BK-2026-0715'),
-  (select id from clients where client_code = 'CL-2026-0034'),
+  'd8c75e33-1b23-6e9b-b5e6-24b9a6f73265'::uuid,
+  'DEP-1',
+  (select id from bookings where booking_no = 'B-715'),
+  (select id from clients where client_code = 'C-34'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   50000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -6457,9 +6507,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '3d70a5b7-16ff-a1fd-953d-b10c32e5fba1'::uuid,
-  'DEP-2026-0001-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0001'),
+  'ac8619c9-eb64-cc7a-4945-d4b9e8cf82cc'::uuid,
+  'DEP-1-M1',
+  (select id from security_deposits where deposit_no = 'DEP-1'),
   'Received'::deposit_movement_type,
   25000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -6473,9 +6523,9 @@ insert into payments (
 ) values (
   '0b9855ff-9886-e6a4-d8da-09bd2ce3c323'::uuid,
   'PAY-2026-0001',
-  (select id from bookings where booking_no = 'BK-2026-0715'),
+  (select id from bookings where booking_no = 'B-715'),
   (select id from invoices where invoice_no = 'INV-1'),
-  (select id from clients where client_code = 'CL-2026-0034'),
+  (select id from clients where client_code = 'C-34'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -6494,7 +6544,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'c6709788-b123-645d-24fd-b3c0424d6d11'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0715'),
+  (select id from bookings where booking_no = 'B-715'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -6509,7 +6559,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '80916058-2339-2733-dd2c-79659f392738'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0715'),
+  (select id from bookings where booking_no = 'B-715'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -6524,7 +6574,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '78103186-984d-25cd-33a9-e78c5ec16383'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0715'),
+  (select id from bookings where booking_no = 'B-715'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -6549,9 +6599,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '6f69ac46-0c27-30cf-81d0-65f4bea28fbb'::uuid,
-  'BK-2026-0716',
+  'B-716',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0034'),
+  (select id from clients where client_code = 'C-34'),
   'Kathmandu Valley — brand film',
   '2026-08-01T02:15:00.000Z'::timestamptz,
   '2026-08-03T02:15:00.000Z'::timestamptz,
@@ -6569,7 +6619,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'f73f2da5-2d2a-8d08-67f2-e2c30c6d3e09'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0716'),
+  (select id from bookings where booking_no = 'B-716'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000234'),
   'Sony FX9 Cinema Camera',
@@ -6586,7 +6636,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '2b332efc-8170-0155-048b-75127546309a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0716'),
+  (select id from bookings where booking_no = 'B-716'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000237'),
   'Aputure LS 600d Pro',
@@ -6612,7 +6662,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0716'),
+  (select id from bookings where booking_no = 'B-716'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -6625,7 +6675,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '2a7ff080-8654-baf2-3eaf-14e205b46988'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0716'),
+  (select id from bookings where booking_no = 'B-716'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   15.00,
@@ -6645,8 +6695,8 @@ insert into invoices (
 ) values (
   '055f7d6a-1122-a449-5e0d-2eef65c5b94c'::uuid,
   'INV-2',
-  (select id from bookings where booking_no = 'BK-2026-0716'),
-  (select id from clients where client_code = 'CL-2026-0034'),
+  (select id from bookings where booking_no = 'B-716'),
+  (select id from clients where client_code = 'C-34'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -6745,7 +6795,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '2de7c00b-2e20-248e-a21a-61c267438a83'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0716'),
+  (select id from bookings where booking_no = 'B-716'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -6760,7 +6810,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '49e89338-c260-2bfe-7f8b-d3b5cf13c5ae'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0716'),
+  (select id from bookings where booking_no = 'B-716'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -6785,9 +6835,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '3ee6e170-a09b-0c67-87da-105efe8ad6b2'::uuid,
-  'BK-2026-0800',
+  'B-800',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0034'),
+  (select id from clients where client_code = 'C-34'),
   'Everest Base Camp Documentary',
   '2026-08-03T00:15:00.000Z'::timestamptz,
   '2026-08-05T00:15:00.000Z'::timestamptz,
@@ -6805,7 +6855,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'd51e5b8f-80f6-5436-046b-65121f42fb9c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0800'),
+  (select id from bookings where booking_no = 'B-800'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000234'),
   'Sony FX9 Cinema Camera',
@@ -6822,7 +6872,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '604cd375-1bbb-3a5a-db87-c326058bf5c2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0800'),
+  (select id from bookings where booking_no = 'B-800'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000247'),
   'DJI Ronin 4D-6K',
@@ -6848,7 +6898,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0800'),
+  (select id from bookings where booking_no = 'B-800'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -6861,7 +6911,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '8b9e94d4-fdee-4418-43ad-9b24dce8d8cc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0800'),
+  (select id from bookings where booking_no = 'B-800'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   15.00,
@@ -6881,8 +6931,8 @@ insert into invoices (
 ) values (
   'd36d8e15-c5d9-1ab8-3f96-fb6a8a405ed3'::uuid,
   'INV-3',
-  (select id from bookings where booking_no = 'BK-2026-0800'),
-  (select id from clients where client_code = 'CL-2026-0034'),
+  (select id from bookings where booking_no = 'B-800'),
+  (select id from clients where client_code = 'C-34'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -6981,7 +7031,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'bb9bda2f-7782-2f51-7547-db4c58d32792'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0800'),
+  (select id from bookings where booking_no = 'B-800'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -7006,9 +7056,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '75dd01f0-702c-0d30-c3e3-a3e8be546e8f'::uuid,
-  'BK-2026-0801',
+  'B-801',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0045'),
+  (select id from clients where client_code = 'C-45'),
   'Nepal Tourism Board TVC',
   '2026-08-10T00:15:00.000Z'::timestamptz,
   '2026-08-13T00:15:00.000Z'::timestamptz,
@@ -7026,7 +7076,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '65e1285f-974f-7e00-eb86-7bce68c22d45'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0801'),
+  (select id from bookings where booking_no = 'B-801'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000243'),
   'Canon R5 C',
@@ -7043,7 +7093,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '81998bd5-a770-eaac-54d0-b84fc73abf45'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0801'),
+  (select id from bookings where booking_no = 'B-801'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000256'),
   'Canon CN-E 50mm',
@@ -7060,7 +7110,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '0b1e6dd5-e279-b63b-5b18-25bc2f12c125'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0801'),
+  (select id from bookings where booking_no = 'B-801'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000269'),
   'Avenger Wind-Up Stand',
@@ -7077,7 +7127,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '8b5ae0e9-6b1f-7060-6621-6d156fb3bca1'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0801'),
+  (select id from bookings where booking_no = 'B-801'),
   'Sabina Rai',
   'Focus Puller'::crew_role,
   4500.00,
@@ -7099,7 +7149,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0801'),
+  (select id from bookings where booking_no = 'B-801'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -7112,7 +7162,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'b3019aee-86cd-42e0-15b7-72e56274b877'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0801'),
+  (select id from bookings where booking_no = 'B-801'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -7132,8 +7182,8 @@ insert into invoices (
 ) values (
   'f9aa0e4d-84c9-171a-d898-239cad48574f'::uuid,
   'INV-4',
-  (select id from bookings where booking_no = 'BK-2026-0801'),
-  (select id from clients where client_code = 'CL-2026-0045'),
+  (select id from bookings where booking_no = 'B-801'),
+  (select id from clients where client_code = 'C-45'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -7263,10 +7313,10 @@ where invoice_no = 'INV-4';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '231eee49-c4b9-5283-2448-4ecaf08c686d'::uuid,
-  'DEP-2026-0002',
-  (select id from bookings where booking_no = 'BK-2026-0801'),
-  (select id from clients where client_code = 'CL-2026-0045'),
+  'fa08577c-25d4-76e6-2433-b8fb93025003'::uuid,
+  'DEP-2',
+  (select id from bookings where booking_no = 'B-801'),
+  (select id from clients where client_code = 'C-45'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -7277,9 +7327,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '9d298158-dc92-16b8-23e9-df097f0a237f'::uuid,
-  'DEP-2026-0002-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0002'),
+  '1fbd09ed-bf5b-0958-e68a-9d70e5e7fffe'::uuid,
+  'DEP-2-M1',
+  (select id from security_deposits where deposit_no = 'DEP-2'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -7293,9 +7343,9 @@ insert into payments (
 ) values (
   '2935db96-6876-ed60-0d92-81f1a4bc327f'::uuid,
   'PAY-2026-0002',
-  (select id from bookings where booking_no = 'BK-2026-0801'),
+  (select id from bookings where booking_no = 'B-801'),
   (select id from invoices where invoice_no = 'INV-4'),
-  (select id from clients where client_code = 'CL-2026-0045'),
+  (select id from clients where client_code = 'C-45'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   11738.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -7314,7 +7364,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'b73a27f1-adc9-1667-b79a-63116fe76086'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0801'),
+  (select id from bookings where booking_no = 'B-801'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -7339,9 +7389,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'f67b7be2-e690-af62-c29d-80f260f4962d'::uuid,
-  'BK-2026-0802',
+  'B-802',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0056'),
+  (select id from clients where client_code = 'C-56'),
   'Kathmandu Street Food Series',
   '2026-08-17T00:15:00.000Z'::timestamptz,
   '2026-08-21T00:15:00.000Z'::timestamptz,
@@ -7359,7 +7409,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '03fb3dab-0579-4db7-bfa0-58e9c89c81bf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0802'),
+  (select id from bookings where booking_no = 'B-802'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000252'),
   'NISI Athena 85mm',
@@ -7376,7 +7426,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'e0339154-4257-bd23-b5c7-817aef756418'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0802'),
+  (select id from bookings where booking_no = 'B-802'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000265'),
   'Astera Titan Tube 8-Pack',
@@ -7393,7 +7443,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '9de42a5b-e9ee-9269-be3b-a6f52519f372'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0802'),
+  (select id from bookings where booking_no = 'B-802'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000278'),
   'Easyrig Vario 5',
@@ -7410,7 +7460,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '102e3790-1930-824d-f3e9-9c3f95b74564'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0802'),
+  (select id from bookings where booking_no = 'B-802'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000235'),
   'Sony FX6 Cinema Camera',
@@ -7427,7 +7477,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '332fff05-ae51-cbb1-9647-7cc93da4b717'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0802'),
+  (select id from bookings where booking_no = 'B-802'),
   'Kiran Magar',
   'Gaffer'::crew_role,
   5000.00,
@@ -7440,7 +7490,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '1a466ae7-7911-3758-6a41-5f29ac03e5d2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0802'),
+  (select id from bookings where booking_no = 'B-802'),
   'Prabin Shrestha',
   'Grip'::crew_role,
   3500.00,
@@ -7462,7 +7512,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0802'),
+  (select id from bookings where booking_no = 'B-802'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -7475,7 +7525,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '7e352767-5b01-5ba8-18fa-dbfa5793d4cb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0802'),
+  (select id from bookings where booking_no = 'B-802'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -7495,8 +7545,8 @@ insert into invoices (
 ) values (
   'bc68d634-0524-b840-8915-be991b3328d3'::uuid,
   'INV-5',
-  (select id from bookings where booking_no = 'BK-2026-0802'),
-  (select id from clients where client_code = 'CL-2026-0056'),
+  (select id from bookings where booking_no = 'B-802'),
+  (select id from clients where client_code = 'C-56'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -7641,10 +7691,10 @@ where invoice_no = 'INV-5';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'cb49b246-55b9-45f5-c09b-8369e9ad917a'::uuid,
-  'DEP-2026-0003',
-  (select id from bookings where booking_no = 'BK-2026-0802'),
-  (select id from clients where client_code = 'CL-2026-0056'),
+  'b9ce90f0-f0da-8846-991f-395c007df8d5'::uuid,
+  'DEP-3',
+  (select id from bookings where booking_no = 'B-802'),
+  (select id from clients where client_code = 'C-56'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -7655,9 +7705,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'a7f3990d-d2c9-ecd8-dc91-6084a2b30209'::uuid,
-  'DEP-2026-0003-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0003'),
+  '277526fc-a7ca-d72e-d853-aac3451c6619'::uuid,
+  'DEP-3-M1',
+  (select id from security_deposits where deposit_no = 'DEP-3'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -7671,9 +7721,9 @@ insert into payments (
 ) values (
   '6f3c9397-433d-2343-058c-a4148a54f961'::uuid,
   'PAY-2026-0003',
-  (select id from bookings where booking_no = 'BK-2026-0802'),
+  (select id from bookings where booking_no = 'B-802'),
   (select id from invoices where invoice_no = 'INV-5'),
-  (select id from clients where client_code = 'CL-2026-0056'),
+  (select id from clients where client_code = 'C-56'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   48364.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -7692,7 +7742,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '9549eda6-3173-fe5e-8765-d3aff6940a79'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0802'),
+  (select id from bookings where booking_no = 'B-802'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -7717,9 +7767,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '719490c7-cb05-f3ed-ff9a-15538f0036e1'::uuid,
-  'BK-2026-0803',
+  'B-803',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0067'),
+  (select id from clients where client_code = 'C-67'),
   'Himalayan Airlines Safety Film',
   '2026-08-24T00:15:00.000Z'::timestamptz,
   '2026-08-29T00:15:00.000Z'::timestamptz,
@@ -7737,7 +7787,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a3a9dc59-0b89-d08f-6167-0c6e2f4b5ab2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0803'),
+  (select id from bookings where booking_no = 'B-803'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000261'),
   'Aputure Nova P300c',
@@ -7754,7 +7804,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '2b600c86-3c61-a23a-e5d1-3368473ea7be'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0803'),
+  (select id from bookings where booking_no = 'B-803'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000274'),
   'Butterfly Frame 6x6',
@@ -7771,7 +7821,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '4abd094f-1888-ad0f-34fb-dbe983652c7a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0803'),
+  (select id from bookings where booking_no = 'B-803'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000287'),
   'Sennheiser EW 112P G4',
@@ -7788,7 +7838,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '18c9c72f-d076-245d-0b82-2df786cad974'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0803'),
+  (select id from bookings where booking_no = 'B-803'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000244'),
   'Blackmagic URSA Mini Pro 12K',
@@ -7805,7 +7855,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '198806dc-43b9-dc8f-9c3d-ebd9c6522bca'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0803'),
+  (select id from bookings where booking_no = 'B-803'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000257'),
   'Sony 70-200mm GM II',
@@ -7831,7 +7881,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0803'),
+  (select id from bookings where booking_no = 'B-803'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -7844,7 +7894,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '429493dc-58c0-739d-ee31-d1c31014bce3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0803'),
+  (select id from bookings where booking_no = 'B-803'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -7864,8 +7914,8 @@ insert into invoices (
 ) values (
   'f5a406e8-f6e8-1057-edfb-b4bbc634c33d'::uuid,
   'INV-6',
-  (select id from bookings where booking_no = 'BK-2026-0803'),
-  (select id from clients where client_code = 'CL-2026-0067'),
+  (select id from bookings where booking_no = 'B-803'),
+  (select id from clients where client_code = 'C-67'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -8010,10 +8060,10 @@ where invoice_no = 'INV-6';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'ea530be4-6e52-4c0a-6b22-dc2c2c0c73d0'::uuid,
-  'DEP-2026-0004',
-  (select id from bookings where booking_no = 'BK-2026-0803'),
-  (select id from clients where client_code = 'CL-2026-0067'),
+  'baa92195-dd0b-0ac7-de3f-2548f020cc6b'::uuid,
+  'DEP-4',
+  (select id from bookings where booking_no = 'B-803'),
+  (select id from clients where client_code = 'C-67'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -8027,9 +8077,9 @@ insert into payments (
 ) values (
   '0abdcfd0-f461-d897-1efa-361e3d7fcb99'::uuid,
   'PAY-2026-0004',
-  (select id from bookings where booking_no = 'BK-2026-0803'),
+  (select id from bookings where booking_no = 'B-803'),
   (select id from invoices where invoice_no = 'INV-6'),
-  (select id from clients where client_code = 'CL-2026-0067'),
+  (select id from clients where client_code = 'C-67'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   28447.60,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -8048,7 +8098,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '3b1550f0-e8fb-127f-8af6-a6614ed4f6c6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0803'),
+  (select id from bookings where booking_no = 'B-803'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -8073,9 +8123,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'd43238c5-0a3e-0255-eca4-ceac0d118203'::uuid,
-  'BK-2026-0804',
+  'B-804',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0038'),
+  (select id from clients where client_code = 'C-38'),
   'Ncell Brand Campaign',
   '2026-08-03T00:15:00.000Z'::timestamptz,
   '2026-08-09T00:15:00.000Z'::timestamptz,
@@ -8093,7 +8143,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '9b0621aa-5c4f-83c9-429a-2eba3ea966b7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0804'),
+  (select id from bookings where booking_no = 'B-804'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000270'),
   'Matthews Floppy Flag 24x36',
@@ -8110,7 +8160,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '3267b028-eebe-f4e2-7f20-aaab1a93c1b3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0804'),
+  (select id from bookings where booking_no = 'B-804'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000283'),
   'Rode NTG5 Kit',
@@ -8127,7 +8177,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '72bb04fb-1727-b0df-f326-bcf24d0e0bb7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0804'),
+  (select id from bookings where booking_no = 'B-804'),
   'Melina Thapa',
   'Sound Recordist'::crew_role,
   5500.00,
@@ -8149,7 +8199,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0804'),
+  (select id from bookings where booking_no = 'B-804'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -8162,7 +8212,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '821f7f3a-d95f-7243-847c-2c1746a85ddd'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0804'),
+  (select id from bookings where booking_no = 'B-804'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -8182,8 +8232,8 @@ insert into invoices (
 ) values (
   'd38c7e7a-e611-f09e-4f62-3256ddc9f44a'::uuid,
   'INV-7',
-  (select id from bookings where booking_no = 'BK-2026-0804'),
-  (select id from clients where client_code = 'CL-2026-0038'),
+  (select id from bookings where booking_no = 'B-804'),
+  (select id from clients where client_code = 'C-38'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -8297,7 +8347,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '85fa29bc-48a1-5130-afae-7eac22c2216c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0804'),
+  (select id from bookings where booking_no = 'B-804'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -8322,9 +8372,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '38a16db4-a3ce-7491-f7b1-4d60cf6ff9cd'::uuid,
-  'BK-2026-0805',
+  'B-805',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0049'),
+  (select id from clients where client_code = 'C-49'),
   'Chitwan Wildlife Feature',
   '2026-08-10T00:15:00.000Z'::timestamptz,
   '2026-08-17T00:15:00.000Z'::timestamptz,
@@ -8342,7 +8392,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'ebe50896-8515-e753-6c0d-7a7fd05c7433'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0805'),
+  (select id from bookings where booking_no = 'B-805'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000279'),
   'Tilta Shoulder Rig',
@@ -8359,7 +8409,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '54295fa2-5405-cf1f-ef33-02ef35836b9e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0805'),
+  (select id from bookings where booking_no = 'B-805'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000236'),
   'NISI Athena 35mm',
@@ -8376,7 +8426,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '10fbdcbb-dc83-b963-6f8f-9f5cfc28ddcb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0805'),
+  (select id from bookings where booking_no = 'B-805'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000249'),
   'Sony FX30',
@@ -8393,7 +8443,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '1a74b11b-9af9-74f3-d9e4-c0a5413ab347'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0805'),
+  (select id from bookings where booking_no = 'B-805'),
   'Roshan Karki',
   'Drone Pilot'::crew_role,
   7000.00,
@@ -8406,7 +8456,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'b00d8693-0475-b144-b415-b8f59927cce1'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0805'),
+  (select id from bookings where booking_no = 'B-805'),
   'Dipesh Gurung',
   'Camera Assistant'::crew_role,
   3000.00,
@@ -8428,7 +8478,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0805'),
+  (select id from bookings where booking_no = 'B-805'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -8441,7 +8491,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'f5eeae4a-108c-3c5c-4882-e9707e1c7b8d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0805'),
+  (select id from bookings where booking_no = 'B-805'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -8461,8 +8511,8 @@ insert into invoices (
 ) values (
   'a4f47d28-b907-63f7-eef6-f162cd812970'::uuid,
   'INV-8',
-  (select id from bookings where booking_no = 'BK-2026-0805'),
-  (select id from clients where client_code = 'CL-2026-0049'),
+  (select id from bookings where booking_no = 'B-805'),
+  (select id from clients where client_code = 'C-49'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -8592,10 +8642,10 @@ where invoice_no = 'INV-8';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'ca32d41e-130c-78f5-356a-8226aa0aae95'::uuid,
-  'DEP-2026-0005',
-  (select id from bookings where booking_no = 'BK-2026-0805'),
-  (select id from clients where client_code = 'CL-2026-0049'),
+  'ba038070-56cb-705a-e847-b9a3cc05da35'::uuid,
+  'DEP-5',
+  (select id from bookings where booking_no = 'B-805'),
+  (select id from clients where client_code = 'C-49'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -8606,9 +8656,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'cb1e275a-5f5a-f84c-9365-97cf9903b018'::uuid,
-  'DEP-2026-0005-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0005'),
+  'd9d97f81-153b-f55c-aa19-f612f035b0db'::uuid,
+  'DEP-5-M1',
+  (select id from security_deposits where deposit_no = 'DEP-5'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -8622,9 +8672,9 @@ insert into payments (
 ) values (
   '37fa5752-107a-d187-4d0f-a6d8c4602367'::uuid,
   'PAY-2026-0005',
-  (select id from bookings where booking_no = 'BK-2026-0805'),
+  (select id from bookings where booking_no = 'B-805'),
   (select id from invoices where invoice_no = 'INV-8'),
-  (select id from clients where client_code = 'CL-2026-0049'),
+  (select id from clients where client_code = 'C-49'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   29366.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -8643,7 +8693,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '3060ff44-fb3f-5cfb-1255-3960f7cc35fb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0805'),
+  (select id from bookings where booking_no = 'B-805'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -8668,9 +8718,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '386b2982-f7c1-f805-0d7d-7ce07feefc85'::uuid,
-  'BK-2026-0806',
+  'B-806',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0060'),
+  (select id from clients where client_code = 'C-60'),
   'Wedding — Shrestha / Rai',
   '2026-08-17T00:15:00.000Z'::timestamptz,
   '2026-08-19T00:15:00.000Z'::timestamptz,
@@ -8688,7 +8738,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '7db1f1f3-992e-0d9f-4fe8-b8cb89c2cc78'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0806'),
+  (select id from bookings where booking_no = 'B-806'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000288'),
   'Boom Pole Carbon 3m',
@@ -8705,7 +8755,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'd8d79fa2-2cd6-3898-2e80-1fafd31fdffa'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0806'),
+  (select id from bookings where booking_no = 'B-806'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000245'),
   'Blackmagic Pocket 6K Pro',
@@ -8722,7 +8772,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '36f0fed4-1eb3-d92e-9f09-39d3ce9c2f30'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0806'),
+  (select id from bookings where booking_no = 'B-806'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000258'),
   'Laowa 12mm Zero-D',
@@ -8739,7 +8789,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '1df142c8-403b-6b0c-7de1-93bf9b4662c5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0806'),
+  (select id from bookings where booking_no = 'B-806'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000271'),
   'Sandbag 15lb',
@@ -8765,7 +8815,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0806'),
+  (select id from bookings where booking_no = 'B-806'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -8778,7 +8828,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '1039a417-e254-936c-8775-7e4a9cd040aa'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0806'),
+  (select id from bookings where booking_no = 'B-806'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -8798,8 +8848,8 @@ insert into invoices (
 ) values (
   '12d91142-09dd-dc77-3ae4-092cdf6ff334'::uuid,
   'INV-9',
-  (select id from bookings where booking_no = 'BK-2026-0806'),
-  (select id from clients where client_code = 'CL-2026-0060'),
+  (select id from bookings where booking_no = 'B-806'),
+  (select id from clients where client_code = 'C-60'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -8929,10 +8979,10 @@ where invoice_no = 'INV-9';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'bb9c620d-0473-89b6-7d1e-453c244159a0'::uuid,
-  'DEP-2026-0006',
-  (select id from bookings where booking_no = 'BK-2026-0806'),
-  (select id from clients where client_code = 'CL-2026-0060'),
+  'cfd640f8-90bc-ba0a-1677-4cac7ac78634'::uuid,
+  'DEP-6',
+  (select id from bookings where booking_no = 'B-806'),
+  (select id from clients where client_code = 'C-60'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -8946,9 +8996,9 @@ insert into payments (
 ) values (
   'e4709f17-01ae-a0d5-4af9-c7ba8c484ecf'::uuid,
   'PAY-2026-0006',
-  (select id from bookings where booking_no = 'BK-2026-0806'),
+  (select id from bookings where booking_no = 'B-806'),
   (select id from invoices where invoice_no = 'INV-9'),
-  (select id from clients where client_code = 'CL-2026-0060'),
+  (select id from clients where client_code = 'C-60'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   5528.50,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -8967,7 +9017,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '5f804b6f-3478-3f05-ade3-9f229d60243e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0806'),
+  (select id from bookings where booking_no = 'B-806'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -8992,9 +9042,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'ec5f24a2-4113-7c2d-96a3-0d61596cdf82'::uuid,
-  'BK-2026-0807',
+  'B-807',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0071'),
+  (select id from clients where client_code = 'C-71'),
   'Pathao Nepal Launch Spot',
   '2026-08-24T00:15:00.000Z'::timestamptz,
   '2026-08-27T00:15:00.000Z'::timestamptz,
@@ -9012,7 +9062,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'cdc3f4ac-249e-d086-229f-c1b689e11d0e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0807'),
+  (select id from bookings where booking_no = 'B-807'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000241'),
   'Sony A7S III',
@@ -9029,7 +9079,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '9ba1d6b2-c53c-46f3-7e29-fd8f1aa19116'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0807'),
+  (select id from bookings where booking_no = 'B-807'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000254'),
   'Sigma 24-70mm Art',
@@ -9046,7 +9096,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '111ecde9-6487-0f9e-0620-7c3616a20764'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0807'),
+  (select id from bookings where booking_no = 'B-807'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000267'),
   'Aputure Amaran 200x',
@@ -9063,7 +9113,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '8dba08b8-a9c9-09e9-f1fe-bd93ae78c83e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0807'),
+  (select id from bookings where booking_no = 'B-807'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000280'),
   'Slider 120cm Motorised',
@@ -9080,7 +9130,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '17a5dbcd-4b84-91c6-2af3-4e1f5a7df30f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0807'),
+  (select id from bookings where booking_no = 'B-807'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000237'),
   'Aputure LS 600d Pro',
@@ -9097,7 +9147,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '4a201d56-1597-70f5-6a60-58799ad06ce9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0807'),
+  (select id from bookings where booking_no = 'B-807'),
   'Sujata Basnet',
   'Rental Coordinator'::crew_role,
   3200.00,
@@ -9119,7 +9169,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0807'),
+  (select id from bookings where booking_no = 'B-807'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -9132,7 +9182,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'b8c1e897-53a4-410d-4522-35b7658aceb9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0807'),
+  (select id from bookings where booking_no = 'B-807'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -9152,8 +9202,8 @@ insert into invoices (
 ) values (
   '9dee9adf-5aec-7603-5721-481d19df5f25'::uuid,
   'INV-10',
-  (select id from bookings where booking_no = 'BK-2026-0807'),
-  (select id from clients where client_code = 'CL-2026-0071'),
+  (select id from bookings where booking_no = 'B-807'),
+  (select id from clients where client_code = 'C-71'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -9313,10 +9363,10 @@ where invoice_no = 'INV-10';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '1808fa48-3826-c524-5335-6100c44b03dd'::uuid,
-  'DEP-2026-0007',
-  (select id from bookings where booking_no = 'BK-2026-0807'),
-  (select id from clients where client_code = 'CL-2026-0071'),
+  '644275ed-5e3c-f22a-f0f9-7dabddb08b5b'::uuid,
+  'DEP-7',
+  (select id from bookings where booking_no = 'B-807'),
+  (select id from clients where client_code = 'C-71'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -9327,9 +9377,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '6c399b4c-70a2-fe64-42e6-6659767cbe0e'::uuid,
-  'DEP-2026-0007-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0007'),
+  'a38cc979-0179-cadb-3961-106c5ce313a2'::uuid,
+  'DEP-7-M1',
+  (select id from security_deposits where deposit_no = 'DEP-7'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -9343,9 +9393,9 @@ insert into payments (
 ) values (
   '04360604-87f1-a694-12c5-23a49e69b668'::uuid,
   'PAY-2026-0007',
-  (select id from bookings where booking_no = 'BK-2026-0807'),
+  (select id from bookings where booking_no = 'B-807'),
   (select id from invoices where invoice_no = 'INV-10'),
-  (select id from clients where client_code = 'CL-2026-0071'),
+  (select id from clients where client_code = 'C-71'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   19594.40,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -9364,7 +9414,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '29cc67b3-f16a-dbd6-f301-76f68b3ea597'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0807'),
+  (select id from bookings where booking_no = 'B-807'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -9389,9 +9439,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'e6555600-0e29-dc29-8571-38ddfcc344b7'::uuid,
-  'BK-2026-0808',
+  'B-808',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0042'),
+  (select id from clients where client_code = 'C-42'),
   'Sagarmatha Music Video',
   '2026-08-03T00:15:00.000Z'::timestamptz,
   '2026-08-07T00:15:00.000Z'::timestamptz,
@@ -9409,7 +9459,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'cabc6725-a91c-e1c5-05ce-9316456e2e1b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0808'),
+  (select id from bookings where booking_no = 'B-808'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000250'),
   'NISI Athena 25mm',
@@ -9426,7 +9476,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '87f7eea1-0d93-ca77-84a8-1965697414bd'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0808'),
+  (select id from bookings where booking_no = 'B-808'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000263'),
   'Nanlite Forza 500B II',
@@ -9443,7 +9493,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '30cb5ebe-ad36-7029-ab14-60e36b031274'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0808'),
+  (select id from bookings where booking_no = 'B-808'),
   'Anish Tamang',
   'DoP'::crew_role,
   8000.00,
@@ -9456,7 +9506,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'b8a93333-34bd-ccf0-7837-2fe7451b6ff4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0808'),
+  (select id from bookings where booking_no = 'B-808'),
   'Sabina Rai',
   'Focus Puller'::crew_role,
   4500.00,
@@ -9478,7 +9528,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0808'),
+  (select id from bookings where booking_no = 'B-808'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -9491,7 +9541,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '08e42fcc-78d8-863f-0637-b161cf307d78'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0808'),
+  (select id from bookings where booking_no = 'B-808'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -9511,8 +9561,8 @@ insert into invoices (
 ) values (
   '9d787593-ece7-16be-8ef7-849c063839dc'::uuid,
   'INV-11',
-  (select id from bookings where booking_no = 'BK-2026-0808'),
-  (select id from clients where client_code = 'CL-2026-0042'),
+  (select id from bookings where booking_no = 'B-808'),
+  (select id from clients where client_code = 'C-42'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -9626,7 +9676,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'c8f89bff-5467-0116-a489-68918b5aabe4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0808'),
+  (select id from bookings where booking_no = 'B-808'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -9651,9 +9701,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '53e431bb-2687-3d0d-763a-3eafc59f524e'::uuid,
-  'BK-2026-0809',
+  'B-809',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0053'),
+  (select id from clients where client_code = 'C-53'),
   'Lumbini Heritage Short',
   '2026-08-10T00:15:00.000Z'::timestamptz,
   '2026-08-15T00:15:00.000Z'::timestamptz,
@@ -9671,7 +9721,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '8cba01fd-b625-4dbf-8fd2-ab08dc231230'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0809'),
+  (select id from bookings where booking_no = 'B-809'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000259'),
   'DZOFilm Vespid 35mm',
@@ -9688,7 +9738,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '2afd9409-4f15-57bd-a659-970fe2f5e203'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0809'),
+  (select id from bookings where booking_no = 'B-809'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000272'),
   'Dana Dolly Kit',
@@ -9705,7 +9755,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '56fe35cd-0472-183e-af06-311ea8c0c738'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0809'),
+  (select id from bookings where booking_no = 'B-809'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000285'),
   'Zoom F6 Field Recorder',
@@ -9731,7 +9781,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0809'),
+  (select id from bookings where booking_no = 'B-809'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -9744,7 +9794,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '7cf1809c-1d38-e6fd-0ae0-e47b57381fcf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0809'),
+  (select id from bookings where booking_no = 'B-809'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -9764,8 +9814,8 @@ insert into invoices (
 ) values (
   '1c7a0723-41a7-e9fd-e74d-7f9941eba5d5'::uuid,
   'INV-12',
-  (select id from bookings where booking_no = 'BK-2026-0809'),
-  (select id from clients where client_code = 'CL-2026-0053'),
+  (select id from bookings where booking_no = 'B-809'),
+  (select id from clients where client_code = 'C-53'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -9880,10 +9930,10 @@ where invoice_no = 'INV-12';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '27057511-9c84-ebb3-a7e6-5403291a26c4'::uuid,
-  'DEP-2026-0008',
-  (select id from bookings where booking_no = 'BK-2026-0809'),
-  (select id from clients where client_code = 'CL-2026-0053'),
+  'f43c54fa-4ef9-8798-5916-1cb3aa52e99a'::uuid,
+  'DEP-8',
+  (select id from bookings where booking_no = 'B-809'),
+  (select id from clients where client_code = 'C-53'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -9897,9 +9947,9 @@ insert into payments (
 ) values (
   '3335b7b7-e4dd-85c2-ae34-30a1bc12f0da'::uuid,
   'PAY-2026-0008',
-  (select id from bookings where booking_no = 'BK-2026-0809'),
+  (select id from bookings where booking_no = 'B-809'),
   (select id from invoices where invoice_no = 'INV-12'),
-  (select id from clients where client_code = 'CL-2026-0053'),
+  (select id from clients where client_code = 'C-53'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   5300.25,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -9918,7 +9968,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '091d27ae-1a2f-37ee-2195-c1b3604d276a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0809'),
+  (select id from bookings where booking_no = 'B-809'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -9943,9 +9993,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '92fc2eee-0798-1e55-d457-dda998423dc6'::uuid,
-  'BK-2026-0810',
+  'B-810',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0064'),
+  (select id from clients where client_code = 'C-64'),
   'Nepal Investment Bank AGM',
   '2026-08-17T00:15:00.000Z'::timestamptz,
   '2026-08-23T00:15:00.000Z'::timestamptz,
@@ -9963,7 +10013,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '37b2a135-5da2-9a83-428c-92ae55a0063f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0810'),
+  (select id from bookings where booking_no = 'B-810'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000268'),
   'Manfrotto Super Clamp',
@@ -9980,7 +10030,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '603540f4-47dd-8943-35e4-de8360793880'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0810'),
+  (select id from bookings where booking_no = 'B-810'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000281'),
   'Jib Arm 3m',
@@ -9997,7 +10047,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a0961a95-d6c6-d059-f1d4-4bc9d83b48c9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0810'),
+  (select id from bookings where booking_no = 'B-810'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000238'),
   'Matthews C-Stand 40in',
@@ -10014,7 +10064,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '84ccf399-04e5-6b55-0068-142332970a39'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0810'),
+  (select id from bookings where booking_no = 'B-810'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000251'),
   'NISI Athena 50mm',
@@ -10031,7 +10081,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '169731ee-3a4e-4188-b306-7a8ab19c2676'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0810'),
+  (select id from bookings where booking_no = 'B-810'),
   'Kiran Magar',
   'Gaffer'::crew_role,
   5000.00,
@@ -10053,7 +10103,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0810'),
+  (select id from bookings where booking_no = 'B-810'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -10066,7 +10116,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '3f116ca5-9ccd-6ac7-4402-e3fd5f2a70ce'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0810'),
+  (select id from bookings where booking_no = 'B-810'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -10086,8 +10136,8 @@ insert into invoices (
 ) values (
   '73042a15-88a9-cffe-bc1a-51a781127d51'::uuid,
   'INV-13',
-  (select id from bookings where booking_no = 'BK-2026-0810'),
-  (select id from clients where client_code = 'CL-2026-0064'),
+  (select id from bookings where booking_no = 'B-810'),
+  (select id from clients where client_code = 'C-64'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -10232,10 +10282,10 @@ where invoice_no = 'INV-13';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '3c38a744-0010-43f6-0384-d3affc046938'::uuid,
-  'DEP-2026-0009',
-  (select id from bookings where booking_no = 'BK-2026-0810'),
-  (select id from clients where client_code = 'CL-2026-0064'),
+  '4b4dd59c-97e2-ae85-2c84-2ad0a8a334a7'::uuid,
+  'DEP-9',
+  (select id from bookings where booking_no = 'B-810'),
+  (select id from clients where client_code = 'C-64'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -10246,9 +10296,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '99c58758-7988-4299-2864-947e2d32d33a'::uuid,
-  'DEP-2026-0009-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0009'),
+  '4ee64dcd-e27f-8edf-ef6d-a94afe428862'::uuid,
+  'DEP-9-M1',
+  (select id from security_deposits where deposit_no = 'DEP-9'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -10262,9 +10312,9 @@ insert into payments (
 ) values (
   '3be0c4d2-b216-bb24-569d-2d0859094224'::uuid,
   'PAY-2026-0009',
-  (select id from bookings where booking_no = 'BK-2026-0810'),
+  (select id from bookings where booking_no = 'B-810'),
   (select id from invoices where invoice_no = 'INV-13'),
-  (select id from clients where client_code = 'CL-2026-0064'),
+  (select id from clients where client_code = 'C-64'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   27672.50,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -10283,7 +10333,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '74d215fb-cc4d-3533-758e-0cb711aaf21d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0810'),
+  (select id from bookings where booking_no = 'B-810'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -10308,9 +10358,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'ee4e56e1-44e3-2bf3-8643-5d5e39508d67'::uuid,
-  'BK-2026-0811',
+  'B-811',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0035'),
+  (select id from clients where client_code = 'C-35'),
   'Pokhara Paragliding Promo',
   '2026-08-24T00:15:00.000Z'::timestamptz,
   '2026-08-31T00:15:00.000Z'::timestamptz,
@@ -10328,7 +10378,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'cd3f02f1-2ea2-41b6-e3cb-33bf3a7d016e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0811'),
+  (select id from bookings where booking_no = 'B-811'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000277'),
   'DJI RS 4 Gimbal',
@@ -10345,7 +10395,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '340380e8-4823-8948-5207-19b8d1736c26'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0811'),
+  (select id from bookings where booking_no = 'B-811'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000234'),
   'Sony FX9 Cinema Camera',
@@ -10362,7 +10412,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '1c0dc6f1-1c25-87d2-b2b2-23eb4d74cfa3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0811'),
+  (select id from bookings where booking_no = 'B-811'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000247'),
   'DJI Ronin 4D-6K',
@@ -10379,7 +10429,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '38f39920-69cb-ad7d-2f4b-25bb6048745c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0811'),
+  (select id from bookings where booking_no = 'B-811'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000260'),
   'Aputure LS 300x',
@@ -10396,7 +10446,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '7dbbf2fe-9f9b-0ebb-280b-e99d54afa6b7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0811'),
+  (select id from bookings where booking_no = 'B-811'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000273'),
   'Kupo Grip Head 4in',
@@ -10413,7 +10463,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '175f33ae-05da-73fa-def0-2586b0ed2963'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0811'),
+  (select id from bookings where booking_no = 'B-811'),
   'Prabin Shrestha',
   'Grip'::crew_role,
   3500.00,
@@ -10426,7 +10476,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '92eecfdf-60d0-3de6-8172-7b78023792b0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0811'),
+  (select id from bookings where booking_no = 'B-811'),
   'Melina Thapa',
   'Sound Recordist'::crew_role,
   5500.00,
@@ -10448,7 +10498,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0811'),
+  (select id from bookings where booking_no = 'B-811'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -10461,7 +10511,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '80938470-d199-0041-8de5-9bbaf4cad098'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0811'),
+  (select id from bookings where booking_no = 'B-811'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -10481,8 +10531,8 @@ insert into invoices (
 ) values (
   'f78b5eed-dcaa-a41f-b5da-fc8ca594182e'::uuid,
   'INV-14',
-  (select id from bookings where booking_no = 'BK-2026-0811'),
-  (select id from clients where client_code = 'CL-2026-0035'),
+  (select id from bookings where booking_no = 'B-811'),
+  (select id from clients where client_code = 'C-35'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -10642,10 +10692,10 @@ where invoice_no = 'INV-14';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '896e8504-2890-0744-166e-403e0e21cc69'::uuid,
-  'DEP-2026-0010',
-  (select id from bookings where booking_no = 'BK-2026-0811'),
-  (select id from clients where client_code = 'CL-2026-0035'),
+  '42ba31f8-f170-c1d3-355d-5b043692b9f4'::uuid,
+  'DEP-10',
+  (select id from bookings where booking_no = 'B-811'),
+  (select id from clients where client_code = 'C-35'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -10656,9 +10706,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'ea30c718-c0f0-ab72-1535-a3ad718da40c'::uuid,
-  'DEP-2026-0010-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0010'),
+  'ffe9feee-9da6-5b3b-9441-32997295c881'::uuid,
+  'DEP-10-M1',
+  (select id from security_deposits where deposit_no = 'DEP-10'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -10672,9 +10722,9 @@ insert into payments (
 ) values (
   '7eb4e5de-ec99-34a2-fdce-69bfdc465a25'::uuid,
   'PAY-2026-0010',
-  (select id from bookings where booking_no = 'BK-2026-0811'),
+  (select id from bookings where booking_no = 'B-811'),
   (select id from invoices where invoice_no = 'INV-14'),
-  (select id from clients where client_code = 'CL-2026-0035'),
+  (select id from clients where client_code = 'C-35'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   86915.20,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -10693,7 +10743,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e723fe55-57f0-c2d1-8a99-cc2e88ab11a5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0811'),
+  (select id from bookings where booking_no = 'B-811'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -10718,9 +10768,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'afe90222-72b0-b138-9144-f081f2509595'::uuid,
-  'BK-2026-0812',
+  'B-812',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0046'),
+  (select id from clients where client_code = 'C-46'),
   'Dashain Family Campaign',
   '2026-08-03T00:15:00.000Z'::timestamptz,
   '2026-08-05T00:15:00.000Z'::timestamptz,
@@ -10738,7 +10788,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '1dc40d0a-a43d-3e1c-cbf6-0e5176ec5b76'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0812'),
+  (select id from bookings where booking_no = 'B-812'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000286'),
   'Rode Wireless PRO Kit',
@@ -10755,7 +10805,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '68d74fb5-85bf-2cda-b88c-46f9aac3567b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0812'),
+  (select id from bookings where booking_no = 'B-812'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000243'),
   'Canon R5 C',
@@ -10781,7 +10831,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0812'),
+  (select id from bookings where booking_no = 'B-812'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -10794,7 +10844,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'c9a3c76b-c81c-7a58-8c7d-243e773cfd9b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0812'),
+  (select id from bookings where booking_no = 'B-812'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -10814,8 +10864,8 @@ insert into invoices (
 ) values (
   '39a4acde-d515-732d-21b5-06132165e7c5'::uuid,
   'INV-15',
-  (select id from bookings where booking_no = 'BK-2026-0812'),
-  (select id from clients where client_code = 'CL-2026-0046'),
+  (select id from bookings where booking_no = 'B-812'),
+  (select id from clients where client_code = 'C-46'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -10914,7 +10964,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '694c4ff3-9b22-e37a-648e-68595c7a84d7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0812'),
+  (select id from bookings where booking_no = 'B-812'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -10939,9 +10989,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '7c5ac2f8-4999-bde2-9f0a-3e994460329a'::uuid,
-  'BK-2026-0813',
+  'B-813',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0057'),
+  (select id from clients where client_code = 'C-57'),
   'Annapurna Trek Series',
   '2026-08-10T00:15:00.000Z'::timestamptz,
   '2026-08-13T00:15:00.000Z'::timestamptz,
@@ -10959,7 +11009,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'f1c26275-da0b-f6a9-5bd9-62e7884f4050'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0813'),
+  (select id from bookings where booking_no = 'B-813'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000239'),
   'Manfrotto 504X Tripod System',
@@ -10976,7 +11026,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '1bf4c8cf-0cd7-5336-8508-5d10768790d3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0813'),
+  (select id from bookings where booking_no = 'B-813'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000252'),
   'NISI Athena 85mm',
@@ -10993,7 +11043,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '2225d06b-b597-d250-18f5-769c5293249f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0813'),
+  (select id from bookings where booking_no = 'B-813'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000265'),
   'Astera Titan Tube 8-Pack',
@@ -11010,7 +11060,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'd0b24401-e1e3-32fc-4a0e-cc84910145ab'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0813'),
+  (select id from bookings where booking_no = 'B-813'),
   'Roshan Karki',
   'Drone Pilot'::crew_role,
   7000.00,
@@ -11032,7 +11082,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0813'),
+  (select id from bookings where booking_no = 'B-813'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -11045,7 +11095,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'cf510ce5-ba63-d5d6-67d1-57ea7c446f3a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0813'),
+  (select id from bookings where booking_no = 'B-813'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -11065,8 +11115,8 @@ insert into invoices (
 ) values (
   '1362f203-f5e5-1496-17ef-af85d911807d'::uuid,
   'INV-16',
-  (select id from bookings where booking_no = 'BK-2026-0813'),
-  (select id from clients where client_code = 'CL-2026-0057'),
+  (select id from bookings where booking_no = 'B-813'),
+  (select id from clients where client_code = 'C-57'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -11196,10 +11246,10 @@ where invoice_no = 'INV-16';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '62f993a6-d8e2-5324-b974-74295fa42a65'::uuid,
-  'DEP-2026-0011',
-  (select id from bookings where booking_no = 'BK-2026-0813'),
-  (select id from clients where client_code = 'CL-2026-0057'),
+  '985fc041-7077-19b7-ba32-821d4bda17b6'::uuid,
+  'DEP-11',
+  (select id from bookings where booking_no = 'B-813'),
+  (select id from clients where client_code = 'C-57'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -11210,9 +11260,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'b1ca5957-96ac-aab5-9371-fe798d7f64ba'::uuid,
-  'DEP-2026-0011-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0011'),
+  '982659fb-736f-f71e-2153-35b3e5cb1542'::uuid,
+  'DEP-11-M1',
+  (select id from security_deposits where deposit_no = 'DEP-11'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -11226,9 +11276,9 @@ insert into payments (
 ) values (
   'baa6e2f3-4000-1c7e-698c-fd228762bf63'::uuid,
   'PAY-2026-0011',
-  (select id from bookings where booking_no = 'BK-2026-0813'),
+  (select id from bookings where booking_no = 'B-813'),
   (select id from invoices where invoice_no = 'INV-16'),
-  (select id from clients where client_code = 'CL-2026-0057'),
+  (select id from clients where client_code = 'C-57'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   12500.75,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -11247,7 +11297,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '5116abd2-7cc7-ba44-1e4a-4b78dc546a54'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0813'),
+  (select id from bookings where booking_no = 'B-813'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -11272,9 +11322,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '94558d31-fb64-5691-2161-72ce15857b38'::uuid,
-  'BK-2026-0814',
+  'B-814',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0068'),
+  (select id from clients where client_code = 'C-68'),
   'Kathmandu Jazz Festival',
   '2026-08-17T00:15:00.000Z'::timestamptz,
   '2026-08-21T00:15:00.000Z'::timestamptz,
@@ -11292,7 +11342,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '1fe046ba-a373-230c-8794-72e92e89f1df'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0814'),
+  (select id from bookings where booking_no = 'B-814'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000248'),
   'Panasonic Lumix S5 II',
@@ -11309,7 +11359,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '9515c7f0-f2c5-dc90-07c4-18277d97c97e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0814'),
+  (select id from bookings where booking_no = 'B-814'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000261'),
   'Aputure Nova P300c',
@@ -11326,7 +11376,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '5e4f4b4d-0d32-691b-bd87-d5809b506af2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0814'),
+  (select id from bookings where booking_no = 'B-814'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000274'),
   'Butterfly Frame 6x6',
@@ -11343,7 +11393,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '07e7b501-25ee-ce51-90f9-d0f9e03fa587'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0814'),
+  (select id from bookings where booking_no = 'B-814'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000287'),
   'Sennheiser EW 112P G4',
@@ -11360,7 +11410,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '415f4fae-1e4b-d36e-1e92-3b3ae01e686c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0814'),
+  (select id from bookings where booking_no = 'B-814'),
   'Dipesh Gurung',
   'Camera Assistant'::crew_role,
   3000.00,
@@ -11373,7 +11423,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '6c71c051-5064-eeb4-7b0b-7e45cafe5e57'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0814'),
+  (select id from bookings where booking_no = 'B-814'),
   'Sujata Basnet',
   'Rental Coordinator'::crew_role,
   3200.00,
@@ -11395,7 +11445,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0814'),
+  (select id from bookings where booking_no = 'B-814'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -11408,7 +11458,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '03fa04f4-bff1-cea3-27f5-a01e60b1a496'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0814'),
+  (select id from bookings where booking_no = 'B-814'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -11428,8 +11478,8 @@ insert into invoices (
 ) values (
   '02af547a-7ce9-7f71-924e-0d70d5ef5960'::uuid,
   'INV-17',
-  (select id from bookings where booking_no = 'BK-2026-0814'),
-  (select id from clients where client_code = 'CL-2026-0068'),
+  (select id from bookings where booking_no = 'B-814'),
+  (select id from clients where client_code = 'C-68'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -11574,10 +11624,10 @@ where invoice_no = 'INV-17';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '7c31530e-04bb-cad6-ce0d-91431bc844f8'::uuid,
-  'DEP-2026-0012',
-  (select id from bookings where booking_no = 'BK-2026-0814'),
-  (select id from clients where client_code = 'CL-2026-0068'),
+  '5aec9a9e-45de-c987-c902-58a5cad8626b'::uuid,
+  'DEP-12',
+  (select id from bookings where booking_no = 'B-814'),
+  (select id from clients where client_code = 'C-68'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -11588,9 +11638,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'a78c1586-4da3-6ffe-7075-79b7e24fad57'::uuid,
-  'DEP-2026-0012-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0012'),
+  '64b391ee-0fda-8348-6b29-33ff067dc716'::uuid,
+  'DEP-12-M1',
+  (select id from security_deposits where deposit_no = 'DEP-12'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -11604,9 +11654,9 @@ insert into payments (
 ) values (
   '86f91d7d-dcb2-800c-a3ee-cb3687a5c1d2'::uuid,
   'PAY-2026-0012',
-  (select id from bookings where booking_no = 'BK-2026-0814'),
+  (select id from bookings where booking_no = 'B-814'),
   (select id from invoices where invoice_no = 'INV-17'),
-  (select id from clients where client_code = 'CL-2026-0068'),
+  (select id from clients where client_code = 'C-68'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   39663.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -11625,7 +11675,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '346be646-3af3-0235-d056-97a2761b66b8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0814'),
+  (select id from bookings where booking_no = 'B-814'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -11650,9 +11700,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '32b69d04-c2c5-0c05-f7ee-1e2b2439e82f'::uuid,
-  'BK-2026-0815',
+  'B-815',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0039'),
+  (select id from clients where client_code = 'C-39'),
   'Daraz 11.11 Campaign',
   '2026-08-24T00:15:00.000Z'::timestamptz,
   '2026-08-29T00:15:00.000Z'::timestamptz,
@@ -11670,7 +11720,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '5b118079-beb1-27e5-cdd5-cb55b9592560'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0815'),
+  (select id from bookings where booking_no = 'B-815'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000257'),
   'Sony 70-200mm GM II',
@@ -11687,7 +11737,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'e2fe3f81-62bd-5b77-61a6-4e22966c5dc3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0815'),
+  (select id from bookings where booking_no = 'B-815'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000270'),
   'Matthews Floppy Flag 24x36',
@@ -11704,7 +11754,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '8b5e2d91-7e05-e0ba-a3c3-f450b53c3d95'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0815'),
+  (select id from bookings where booking_no = 'B-815'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000283'),
   'Rode NTG5 Kit',
@@ -11721,7 +11771,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '78efb965-790b-c69a-a4f8-0b057af2e337'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0815'),
+  (select id from bookings where booking_no = 'B-815'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000240'),
   'Sony FX3 Full-Frame Camera',
@@ -11738,7 +11788,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'ca0bf304-e47c-6266-8030-fc4669699ab8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0815'),
+  (select id from bookings where booking_no = 'B-815'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000253'),
   'Sigma 18-35mm Art',
@@ -11764,7 +11814,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0815'),
+  (select id from bookings where booking_no = 'B-815'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -11777,7 +11827,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '59e7a18b-20ae-42a9-2ff4-40a516a823de'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0815'),
+  (select id from bookings where booking_no = 'B-815'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -11797,8 +11847,8 @@ insert into invoices (
 ) values (
   '5771baf9-65e2-c00c-d5ee-87a180c6c989'::uuid,
   'INV-18',
-  (select id from bookings where booking_no = 'BK-2026-0815'),
-  (select id from clients where client_code = 'CL-2026-0039'),
+  (select id from bookings where booking_no = 'B-815'),
+  (select id from clients where client_code = 'C-39'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -11943,10 +11993,10 @@ where invoice_no = 'INV-18';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '6c26d156-8e5a-8601-9780-7b421ef635ea'::uuid,
-  'DEP-2026-0013',
-  (select id from bookings where booking_no = 'BK-2026-0815'),
-  (select id from clients where client_code = 'CL-2026-0039'),
+  '2227d749-2e4c-6a07-bfea-27ec34a3933b'::uuid,
+  'DEP-13',
+  (select id from bookings where booking_no = 'B-815'),
+  (select id from clients where client_code = 'C-39'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -11960,9 +12010,9 @@ insert into payments (
 ) values (
   '6c759669-199d-3603-2ebf-89e6389b11a8'::uuid,
   'PAY-2026-0013',
-  (select id from bookings where booking_no = 'BK-2026-0815'),
+  (select id from bookings where booking_no = 'B-815'),
   (select id from invoices where invoice_no = 'INV-18'),
-  (select id from clients where client_code = 'CL-2026-0039'),
+  (select id from clients where client_code = 'C-39'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15560.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -11981,7 +12031,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '4d4fd75d-f0a6-f081-67ee-aae0aafde4fc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0815'),
+  (select id from bookings where booking_no = 'B-815'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -12006,9 +12056,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '89897c7c-0ec9-e31f-6319-d698968a69a6'::uuid,
-  'BK-2026-0816',
+  'B-816',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0050'),
+  (select id from clients where client_code = 'C-50'),
   'Nepal Cricket Highlights',
   '2026-08-03T00:15:00.000Z'::timestamptz,
   '2026-08-09T00:15:00.000Z'::timestamptz,
@@ -12026,7 +12076,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '27580728-4a4d-dfc5-0572-cc2c0f406eb0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0816'),
+  (select id from bookings where booking_no = 'B-816'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000266'),
   'Godox SL200 III',
@@ -12043,7 +12093,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '6dc1beaf-8bdd-c05c-6598-6b0d2cbb4979'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0816'),
+  (select id from bookings where booking_no = 'B-816'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000279'),
   'Tilta Shoulder Rig',
@@ -12060,7 +12110,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'b28f116a-af33-a8fb-3555-6da7c0150597'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0816'),
+  (select id from bookings where booking_no = 'B-816'),
   'Anish Tamang',
   'DoP'::crew_role,
   8000.00,
@@ -12082,7 +12132,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0816'),
+  (select id from bookings where booking_no = 'B-816'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -12095,7 +12145,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'a283335d-8341-6d7b-4dac-13822c496961'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0816'),
+  (select id from bookings where booking_no = 'B-816'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -12115,8 +12165,8 @@ insert into invoices (
 ) values (
   '2e247efa-514c-4f23-5bb4-a71354158128'::uuid,
   'INV-19',
-  (select id from bookings where booking_no = 'BK-2026-0816'),
-  (select id from clients where client_code = 'CL-2026-0050'),
+  (select id from bookings where booking_no = 'B-816'),
+  (select id from clients where client_code = 'C-50'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -12230,7 +12280,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '544ca8c0-170c-5d31-2772-66ef2090227e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0816'),
+  (select id from bookings where booking_no = 'B-816'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -12255,9 +12305,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '94e84299-ca37-c23e-a940-445b187d3e6d'::uuid,
-  'BK-2026-0817',
+  'B-817',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0061'),
+  (select id from clients where client_code = 'C-61'),
   'Rara Lake Travel Film',
   '2026-08-10T00:15:00.000Z'::timestamptz,
   '2026-08-17T00:15:00.000Z'::timestamptz,
@@ -12275,7 +12325,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'ca97572e-4c8d-a7f5-eaa9-22af42c05e4e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0817'),
+  (select id from bookings where booking_no = 'B-817'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000275'),
   'Sachtler Flowtech 75',
@@ -12292,7 +12342,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '5c3ad805-ce70-705f-b0a1-292204d9aebd'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0817'),
+  (select id from bookings where booking_no = 'B-817'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000288'),
   'Boom Pole Carbon 3m',
@@ -12309,7 +12359,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '5467a6ca-a9eb-be7e-9f04-ed80a7297626'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0817'),
+  (select id from bookings where booking_no = 'B-817'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000245'),
   'Blackmagic Pocket 6K Pro',
@@ -12326,7 +12376,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '6def3a4a-f680-3dcd-43ba-7c7680161b67'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0817'),
+  (select id from bookings where booking_no = 'B-817'),
   'Sabina Rai',
   'Focus Puller'::crew_role,
   4500.00,
@@ -12339,7 +12389,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '99a253eb-7b60-e9e8-75cb-160d505c07ae'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0817'),
+  (select id from bookings where booking_no = 'B-817'),
   'Kiran Magar',
   'Gaffer'::crew_role,
   5000.00,
@@ -12361,7 +12411,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0817'),
+  (select id from bookings where booking_no = 'B-817'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -12374,7 +12424,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '298fef71-69da-084f-a9ba-0b13b4f19565'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0817'),
+  (select id from bookings where booking_no = 'B-817'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   15.00,
@@ -12394,8 +12444,8 @@ insert into invoices (
 ) values (
   'f63a019d-63ec-4129-b15a-481c4b233449'::uuid,
   'INV-20',
-  (select id from bookings where booking_no = 'BK-2026-0817'),
-  (select id from clients where client_code = 'CL-2026-0061'),
+  (select id from bookings where booking_no = 'B-817'),
+  (select id from clients where client_code = 'C-61'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -12525,10 +12575,10 @@ where invoice_no = 'INV-20';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'f268ea01-ec92-7a7a-f36f-293630359ad5'::uuid,
-  'DEP-2026-0014',
-  (select id from bookings where booking_no = 'BK-2026-0817'),
-  (select id from clients where client_code = 'CL-2026-0061'),
+  '893d1827-965b-c6a0-7a42-a469d5b6311d'::uuid,
+  'DEP-14',
+  (select id from bookings where booking_no = 'B-817'),
+  (select id from clients where client_code = 'C-61'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -12539,9 +12589,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'b5c42d4f-001a-605d-1265-b1491f002212'::uuid,
-  'DEP-2026-0014-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0014'),
+  '97bc72ba-ff19-1afd-dc13-2e147eabfcf1'::uuid,
+  'DEP-14-M1',
+  (select id from security_deposits where deposit_no = 'DEP-14'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -12555,9 +12605,9 @@ insert into payments (
 ) values (
   '3b31408f-ab06-9378-9e9a-e614617d6dc8'::uuid,
   'PAY-2026-0014',
-  (select id from bookings where booking_no = 'BK-2026-0817'),
+  (select id from bookings where booking_no = 'B-817'),
   (select id from invoices where invoice_no = 'INV-20'),
-  (select id from clients where client_code = 'CL-2026-0061'),
+  (select id from clients where client_code = 'C-61'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   28154.50,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -12576,7 +12626,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'aeb45e70-c9fe-26aa-a7e0-d638d890d431'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0817'),
+  (select id from bookings where booking_no = 'B-817'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -12601,9 +12651,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '18ba2ee0-b752-aa52-94fe-ce8969fd8ff0'::uuid,
-  'BK-2026-0818',
+  'B-818',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0072'),
+  (select id from clients where client_code = 'C-72'),
   'F1Soft Corporate Profile',
   '2026-08-01T00:15:00.000Z'::timestamptz,
   '2026-08-03T00:15:00.000Z'::timestamptz,
@@ -12621,7 +12671,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '5d086be1-489d-52b9-daac-980ef408b2d0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0818'),
+  (select id from bookings where booking_no = 'B-818'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000284'),
   'Sound Devices MixPre-6 II',
@@ -12638,7 +12688,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '748b2acd-3ee8-a8cc-141d-e805627008ec'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0818'),
+  (select id from bookings where booking_no = 'B-818'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000241'),
   'Sony A7S III',
@@ -12655,7 +12705,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'f46c23dc-c817-4703-849e-372c3d97ac3e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0818'),
+  (select id from bookings where booking_no = 'B-818'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000254'),
   'Sigma 24-70mm Art',
@@ -12672,7 +12722,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'b6c6abe0-ed4a-f24d-2107-c0dab77271ac'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0818'),
+  (select id from bookings where booking_no = 'B-818'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000267'),
   'Aputure Amaran 200x',
@@ -12698,7 +12748,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0818'),
+  (select id from bookings where booking_no = 'B-818'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -12711,7 +12761,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'dd907853-4fb5-8f34-0339-a3ca23c6e641'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0818'),
+  (select id from bookings where booking_no = 'B-818'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -12731,8 +12781,8 @@ insert into invoices (
 ) values (
   'd6723dd9-7734-71f5-da71-810a7d2df14a'::uuid,
   'INV-21',
-  (select id from bookings where booking_no = 'BK-2026-0818'),
-  (select id from clients where client_code = 'CL-2026-0072'),
+  (select id from bookings where booking_no = 'B-818'),
+  (select id from clients where client_code = 'C-72'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -12862,10 +12912,10 @@ where invoice_no = 'INV-21';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'f823f122-7b05-777b-1c01-6d3d4c3fbdad'::uuid,
-  'DEP-2026-0015',
-  (select id from bookings where booking_no = 'BK-2026-0818'),
-  (select id from clients where client_code = 'CL-2026-0072'),
+  '1dbc97f9-6e5f-178b-745a-8e7f49e719e4'::uuid,
+  'DEP-15',
+  (select id from bookings where booking_no = 'B-818'),
+  (select id from clients where client_code = 'C-72'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -12879,9 +12929,9 @@ insert into payments (
 ) values (
   '80047f57-b841-f7c2-6035-6a3421169993'::uuid,
   'PAY-2026-0015',
-  (select id from bookings where booking_no = 'BK-2026-0818'),
+  (select id from bookings where booking_no = 'B-818'),
   (select id from invoices where invoice_no = 'INV-21'),
-  (select id from clients where client_code = 'CL-2026-0072'),
+  (select id from clients where client_code = 'C-72'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10037.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -12900,7 +12950,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '88cab3dc-95c0-c8fd-798b-fc1cf6eaac94'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0818'),
+  (select id from bookings where booking_no = 'B-818'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -12915,7 +12965,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e5a43607-2bba-af71-54b4-ecade3629ae9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0818'),
+  (select id from bookings where booking_no = 'B-818'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -12940,9 +12990,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '59f93d85-f33c-6a3e-c5af-40e69e277664'::uuid,
-  'BK-2026-0819',
+  'B-819',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0043'),
+  (select id from clients where client_code = 'C-43'),
   'Thamel After Dark',
   '2026-08-08T00:15:00.000Z'::timestamptz,
   '2026-08-11T00:15:00.000Z'::timestamptz,
@@ -12960,7 +13010,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '08eda5b2-15db-241f-0ad7-5c5cde327f7f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0819'),
+  (select id from bookings where booking_no = 'B-819'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000237'),
   'Aputure LS 600d Pro',
@@ -12977,7 +13027,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'ed86f05f-2ff6-5a1b-487a-c05e6bd98b73'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0819'),
+  (select id from bookings where booking_no = 'B-819'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000250'),
   'NISI Athena 25mm',
@@ -12994,7 +13044,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'fa20aebf-7d42-388f-3af8-f1de4501b6ad'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0819'),
+  (select id from bookings where booking_no = 'B-819'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000263'),
   'Nanlite Forza 500B II',
@@ -13011,7 +13061,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '12e333dd-3f8b-b6f7-a64f-091c0acf5983'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0819'),
+  (select id from bookings where booking_no = 'B-819'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000276'),
   'DJI RS 3 Pro Gimbal',
@@ -13028,7 +13078,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '7ae5abd4-b438-f7e4-863e-01a21f74ba1c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0819'),
+  (select id from bookings where booking_no = 'B-819'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000289'),
   'Sony MDR-7506 Headphones',
@@ -13045,7 +13095,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'c87c20d0-2ceb-93bf-5031-2bfdcd788059'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0819'),
+  (select id from bookings where booking_no = 'B-819'),
   'Prabin Shrestha',
   'Grip'::crew_role,
   3500.00,
@@ -13067,7 +13117,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0819'),
+  (select id from bookings where booking_no = 'B-819'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -13080,7 +13130,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '5a8797c1-c123-10c9-7b4b-1ff37597dee9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0819'),
+  (select id from bookings where booking_no = 'B-819'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -13100,8 +13150,8 @@ insert into invoices (
 ) values (
   '734f7ff6-1e62-6fd5-d04a-5797e3eda881'::uuid,
   'INV-22',
-  (select id from bookings where booking_no = 'BK-2026-0819'),
-  (select id from clients where client_code = 'CL-2026-0043'),
+  (select id from bookings where booking_no = 'B-819'),
+  (select id from clients where client_code = 'C-43'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -13261,10 +13311,10 @@ where invoice_no = 'INV-22';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '1c41c582-69bb-a24b-9c04-6adc114e2942'::uuid,
-  'DEP-2026-0016',
-  (select id from bookings where booking_no = 'BK-2026-0819'),
-  (select id from clients where client_code = 'CL-2026-0043'),
+  '94f56d6d-cfee-6aed-d869-1de4365845b9'::uuid,
+  'DEP-16',
+  (select id from bookings where booking_no = 'B-819'),
+  (select id from clients where client_code = 'C-43'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -13275,9 +13325,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'b9465d32-86a4-5553-d4ef-6bcac60e5fa2'::uuid,
-  'DEP-2026-0016-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0016'),
+  'e616be30-7a4c-1661-5a11-77ce3d143391'::uuid,
+  'DEP-16-M1',
+  (select id from security_deposits where deposit_no = 'DEP-16'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -13291,9 +13341,9 @@ insert into payments (
 ) values (
   'fd314717-78f9-dcdd-82b3-d7261fcb0374'::uuid,
   'PAY-2026-0016',
-  (select id from bookings where booking_no = 'BK-2026-0819'),
+  (select id from bookings where booking_no = 'B-819'),
   (select id from invoices where invoice_no = 'INV-22'),
-  (select id from clients where client_code = 'CL-2026-0043'),
+  (select id from clients where client_code = 'C-43'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   19255.20,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -13312,7 +13362,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '7c46178a-6115-e24f-f2d6-4fb813cdee5f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0819'),
+  (select id from bookings where booking_no = 'B-819'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -13327,7 +13377,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '05caac4d-2314-4cab-2427-89e74f1e7e16'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0819'),
+  (select id from bookings where booking_no = 'B-819'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -13352,9 +13402,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '32f15e68-522d-90ab-6921-26f892ea445d'::uuid,
-  'BK-2026-0820',
+  'B-820',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0054'),
+  (select id from clients where client_code = 'C-54'),
   'Everest Base Camp Documentary',
   '2026-08-15T00:15:00.000Z'::timestamptz,
   '2026-08-19T00:15:00.000Z'::timestamptz,
@@ -13372,7 +13422,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a5ae3391-4c34-d3ae-a0d7-e39b709eb600'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0820'),
+  (select id from bookings where booking_no = 'B-820'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000246'),
   'RED Komodo 6K',
@@ -13389,7 +13439,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'b4b93c17-37e6-1970-f386-4ca5294aa6fe'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0820'),
+  (select id from bookings where booking_no = 'B-820'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000259'),
   'DZOFilm Vespid 35mm',
@@ -13406,7 +13456,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'c0d10ace-1861-cb46-1f9e-0e6b4b9980d7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0820'),
+  (select id from bookings where booking_no = 'B-820'),
   'Melina Thapa',
   'Sound Recordist'::crew_role,
   5500.00,
@@ -13419,7 +13469,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '8126b188-4089-33f8-e643-45201c69ced9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0820'),
+  (select id from bookings where booking_no = 'B-820'),
   'Roshan Karki',
   'Drone Pilot'::crew_role,
   7000.00,
@@ -13441,7 +13491,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0820'),
+  (select id from bookings where booking_no = 'B-820'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -13454,7 +13504,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'ae505f9b-a819-1ea5-32c3-0079792ec6d1'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0820'),
+  (select id from bookings where booking_no = 'B-820'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -13474,8 +13524,8 @@ insert into invoices (
 ) values (
   '830a029c-7b98-f9a7-8cfe-fcc83656dd70'::uuid,
   'INV-23',
-  (select id from bookings where booking_no = 'BK-2026-0820'),
-  (select id from clients where client_code = 'CL-2026-0054'),
+  (select id from bookings where booking_no = 'B-820'),
+  (select id from clients where client_code = 'C-54'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -13589,7 +13639,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'b1f32f33-b07f-457b-7a7f-337e99115ef3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0820'),
+  (select id from bookings where booking_no = 'B-820'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -13604,7 +13654,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '6139977e-91cb-f4ec-fd2c-f7816a77beb0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0820'),
+  (select id from bookings where booking_no = 'B-820'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -13629,9 +13679,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'c9b8f912-93de-9d79-ef55-1b8400486ec6'::uuid,
-  'BK-2026-0821',
+  'B-821',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0065'),
+  (select id from clients where client_code = 'C-65'),
   'Nepal Tourism Board TVC',
   '2026-08-22T00:15:00.000Z'::timestamptz,
   '2026-08-27T00:15:00.000Z'::timestamptz,
@@ -13649,7 +13699,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '7aefca8d-3d1a-c5a5-c76c-eb9beb104d5c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0821'),
+  (select id from bookings where booking_no = 'B-821'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000255'),
   'Canon CN-E 24mm',
@@ -13666,7 +13716,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'd7830d52-940c-aa04-96a7-b77dde5ecbe0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0821'),
+  (select id from bookings where booking_no = 'B-821'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000268'),
   'Manfrotto Super Clamp',
@@ -13683,7 +13733,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '9da9913a-ba08-29a8-aca0-3b4ed43743e1'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0821'),
+  (select id from bookings where booking_no = 'B-821'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000281'),
   'Jib Arm 3m',
@@ -13709,7 +13759,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0821'),
+  (select id from bookings where booking_no = 'B-821'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -13722,7 +13772,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'f27d4d24-c544-3add-e85c-d8265dca8d2d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0821'),
+  (select id from bookings where booking_no = 'B-821'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -13742,8 +13792,8 @@ insert into invoices (
 ) values (
   'be3c908b-aaf2-3d22-fc90-113f84824da2'::uuid,
   'INV-24',
-  (select id from bookings where booking_no = 'BK-2026-0821'),
-  (select id from clients where client_code = 'CL-2026-0065'),
+  (select id from bookings where booking_no = 'B-821'),
+  (select id from clients where client_code = 'C-65'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -13858,10 +13908,10 @@ where invoice_no = 'INV-24';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '03c50d1e-a902-a02d-a038-6fe15d57b1c4'::uuid,
-  'DEP-2026-0017',
-  (select id from bookings where booking_no = 'BK-2026-0821'),
-  (select id from clients where client_code = 'CL-2026-0065'),
+  'd65409c4-96de-63be-a2ec-b8aaaf4c754b'::uuid,
+  'DEP-17',
+  (select id from bookings where booking_no = 'B-821'),
+  (select id from clients where client_code = 'C-65'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -13875,9 +13925,9 @@ insert into payments (
 ) values (
   '02ec686f-4c2e-38a3-5661-9df08c57779c'::uuid,
   'PAY-2026-0017',
-  (select id from bookings where booking_no = 'BK-2026-0821'),
+  (select id from bookings where booking_no = 'B-821'),
   (select id from invoices where invoice_no = 'INV-24'),
-  (select id from clients where client_code = 'CL-2026-0065'),
+  (select id from clients where client_code = 'C-65'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   6333.75,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -13896,7 +13946,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'ec281bfa-0a6f-660e-2374-b69c65b56f99'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0821'),
+  (select id from bookings where booking_no = 'B-821'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -13911,7 +13961,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '0d9c9427-e779-f072-0252-7f44f1f8f7bc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0821'),
+  (select id from bookings where booking_no = 'B-821'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -13936,9 +13986,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '38f1ee65-7c17-0fac-a4d2-33828176b494'::uuid,
-  'BK-2026-0822',
+  'B-822',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0036'),
+  (select id from clients where client_code = 'C-36'),
   'Kathmandu Street Food Series',
   '2026-08-05T00:15:00.000Z'::timestamptz,
   '2026-08-11T00:15:00.000Z'::timestamptz,
@@ -13956,7 +14006,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '5cde7e96-aac4-1582-8531-627d73a6bb31'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0822'),
+  (select id from bookings where booking_no = 'B-822'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000264'),
   'Nanlux Evoke 1200B',
@@ -13973,7 +14023,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'aee79ec8-2717-391d-916a-6cffed714017'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0822'),
+  (select id from bookings where booking_no = 'B-822'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000277'),
   'DJI RS 4 Gimbal',
@@ -13990,7 +14040,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '4673b855-9698-1ed0-cd1d-f91c3f8cc05d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0822'),
+  (select id from bookings where booking_no = 'B-822'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000234'),
   'Sony FX9 Cinema Camera',
@@ -14007,7 +14057,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '4a0ac00d-8ad1-e2a7-6110-d8a8cf846705'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0822'),
+  (select id from bookings where booking_no = 'B-822'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000247'),
   'DJI Ronin 4D-6K',
@@ -14024,7 +14074,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '6fad7d33-c621-f3e7-07e2-ceeabaefc8a1'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0822'),
+  (select id from bookings where booking_no = 'B-822'),
   'Dipesh Gurung',
   'Camera Assistant'::crew_role,
   3000.00,
@@ -14046,7 +14096,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0822'),
+  (select id from bookings where booking_no = 'B-822'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -14059,7 +14109,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '19a95d98-d025-6d7b-88b9-091333ed699c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0822'),
+  (select id from bookings where booking_no = 'B-822'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -14079,8 +14129,8 @@ insert into invoices (
 ) values (
   '66b294bb-8fbb-7129-ef4c-420c4228dc30'::uuid,
   'INV-25',
-  (select id from bookings where booking_no = 'BK-2026-0822'),
-  (select id from clients where client_code = 'CL-2026-0036'),
+  (select id from bookings where booking_no = 'B-822'),
+  (select id from clients where client_code = 'C-36'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -14225,10 +14275,10 @@ where invoice_no = 'INV-25';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'dd93abcc-fb98-6a69-1a1b-c6307b3b442f'::uuid,
-  'DEP-2026-0018',
-  (select id from bookings where booking_no = 'BK-2026-0822'),
-  (select id from clients where client_code = 'CL-2026-0036'),
+  '8c7e8e58-7829-147a-90b6-3b450ff16327'::uuid,
+  'DEP-18',
+  (select id from bookings where booking_no = 'B-822'),
+  (select id from clients where client_code = 'C-36'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -14239,9 +14289,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '43fca25e-3cff-b476-2dd5-7d6ee4016669'::uuid,
-  'DEP-2026-0018-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0018'),
+  'e4fef758-4bcb-b762-80ca-52063f7292e4'::uuid,
+  'DEP-18-M1',
+  (select id from security_deposits where deposit_no = 'DEP-18'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -14255,9 +14305,9 @@ insert into payments (
 ) values (
   'e7a2c550-d626-7f7e-4348-0e9f64dee0b9'::uuid,
   'PAY-2026-0018',
-  (select id from bookings where booking_no = 'BK-2026-0822'),
+  (select id from bookings where booking_no = 'B-822'),
   (select id from invoices where invoice_no = 'INV-25'),
-  (select id from clients where client_code = 'CL-2026-0036'),
+  (select id from clients where client_code = 'C-36'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   71529.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -14276,7 +14326,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'cd4deefb-fc40-764f-2632-2044ab494ace'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0822'),
+  (select id from bookings where booking_no = 'B-822'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -14291,7 +14341,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'b464d69e-e2c0-1016-aa71-4b39d0aaa74e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0822'),
+  (select id from bookings where booking_no = 'B-822'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -14316,9 +14366,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '6f2ab2b3-8a21-5917-3606-92b742ec9172'::uuid,
-  'BK-2026-0823',
+  'B-823',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0047'),
+  (select id from clients where client_code = 'C-47'),
   'Himalayan Airlines Safety Film',
   '2026-08-12T00:15:00.000Z'::timestamptz,
   '2026-08-19T00:15:00.000Z'::timestamptz,
@@ -14336,7 +14386,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '81d27780-6313-e81a-1daa-b6fc2b4c6b6b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0823'),
+  (select id from bookings where booking_no = 'B-823'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000273'),
   'Kupo Grip Head 4in',
@@ -14353,7 +14403,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '116e7c84-9239-aabe-808f-43324990463a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0823'),
+  (select id from bookings where booking_no = 'B-823'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000286'),
   'Rode Wireless PRO Kit',
@@ -14370,7 +14420,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '3ef97894-eab5-ca15-ef74-329ca4860bbf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0823'),
+  (select id from bookings where booking_no = 'B-823'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000243'),
   'Canon R5 C',
@@ -14387,7 +14437,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a447182e-e2ec-5923-fd86-0a80fead50f5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0823'),
+  (select id from bookings where booking_no = 'B-823'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000256'),
   'Canon CN-E 50mm',
@@ -14404,7 +14454,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '65497cda-d97d-d890-e1ad-7439975318eb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0823'),
+  (select id from bookings where booking_no = 'B-823'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000269'),
   'Avenger Wind-Up Stand',
@@ -14421,7 +14471,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '9f7224c5-1af7-6658-c8f3-c1ecdce01b75'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0823'),
+  (select id from bookings where booking_no = 'B-823'),
   'Sujata Basnet',
   'Rental Coordinator'::crew_role,
   3200.00,
@@ -14434,7 +14484,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '6407700d-d48a-43ba-71b9-3f5d38cec851'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0823'),
+  (select id from bookings where booking_no = 'B-823'),
   'Anish Tamang',
   'DoP'::crew_role,
   8000.00,
@@ -14456,7 +14506,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0823'),
+  (select id from bookings where booking_no = 'B-823'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -14469,7 +14519,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'a345e641-f089-f554-60ea-d3ee9688028d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0823'),
+  (select id from bookings where booking_no = 'B-823'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -14489,8 +14539,8 @@ insert into invoices (
 ) values (
   '91f795e9-9657-fee5-1076-b426d0e4e4ee'::uuid,
   'INV-26',
-  (select id from bookings where booking_no = 'BK-2026-0823'),
-  (select id from clients where client_code = 'CL-2026-0047'),
+  (select id from bookings where booking_no = 'B-823'),
+  (select id from clients where client_code = 'C-47'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -14650,10 +14700,10 @@ where invoice_no = 'INV-26';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '17d2f63d-0c06-bdea-f515-873c802710d2'::uuid,
-  'DEP-2026-0019',
-  (select id from bookings where booking_no = 'BK-2026-0823'),
-  (select id from clients where client_code = 'CL-2026-0047'),
+  '4c9302ac-0fd9-ea51-f7a3-923c1b6952f5'::uuid,
+  'DEP-19',
+  (select id from bookings where booking_no = 'B-823'),
+  (select id from clients where client_code = 'C-47'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -14664,9 +14714,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'ef73443b-e4c7-8eea-73bc-7e0e88af2216'::uuid,
-  'DEP-2026-0019-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0019'),
+  'f604978d-b65b-114f-d2f2-0a0a3ead9e1b'::uuid,
+  'DEP-19-M1',
+  (select id from security_deposits where deposit_no = 'DEP-19'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -14680,9 +14730,9 @@ insert into payments (
 ) values (
   'ee5a70ad-8d89-b411-f624-e9970390f857'::uuid,
   'PAY-2026-0019',
-  (select id from bookings where booking_no = 'BK-2026-0823'),
+  (select id from bookings where booking_no = 'B-823'),
   (select id from invoices where invoice_no = 'INV-26'),
-  (select id from clients where client_code = 'CL-2026-0047'),
+  (select id from clients where client_code = 'C-47'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   67583.20,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -14701,7 +14751,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '3716db65-1157-20d8-b000-644c681e6a65'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0823'),
+  (select id from bookings where booking_no = 'B-823'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -14716,7 +14766,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'a5679c7a-7bc5-07fd-83d0-a8ceef974f29'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0823'),
+  (select id from bookings where booking_no = 'B-823'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -14741,9 +14791,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'fc411b4e-8514-57b7-6159-cc4a849e9342'::uuid,
-  'BK-2026-0824',
+  'B-824',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0058'),
+  (select id from clients where client_code = 'C-58'),
   'Ncell Brand Campaign',
   '2026-08-19T00:15:00.000Z'::timestamptz,
   '2026-08-21T00:15:00.000Z'::timestamptz,
@@ -14761,7 +14811,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '8ee06f1f-1eec-29d0-f421-6cb409b0599f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0824'),
+  (select id from bookings where booking_no = 'B-824'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000282'),
   'Sennheiser MKH 416',
@@ -14778,7 +14828,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'b047d00f-57fb-ffe9-b01e-60b4fc4c711f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0824'),
+  (select id from bookings where booking_no = 'B-824'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000239'),
   'Manfrotto 504X Tripod System',
@@ -14804,7 +14854,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0824'),
+  (select id from bookings where booking_no = 'B-824'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -14817,7 +14867,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '7c7b5b9a-b495-81a0-ccf8-c0bbad31a8f5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0824'),
+  (select id from bookings where booking_no = 'B-824'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -14837,8 +14887,8 @@ insert into invoices (
 ) values (
   '1ec8008e-7334-8114-cd36-31ba89826bdf'::uuid,
   'INV-27',
-  (select id from bookings where booking_no = 'BK-2026-0824'),
-  (select id from clients where client_code = 'CL-2026-0058'),
+  (select id from bookings where booking_no = 'B-824'),
+  (select id from clients where client_code = 'C-58'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -14937,7 +14987,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '5b1896d5-48d0-00cf-8995-768c1fa3cb8a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0824'),
+  (select id from bookings where booking_no = 'B-824'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -14952,7 +15002,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'dccb1c91-9b0e-aff6-282c-0835f808f5bb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0824'),
+  (select id from bookings where booking_no = 'B-824'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -14977,9 +15027,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '9694d436-af81-4928-656d-10feed355ea5'::uuid,
-  'BK-2026-0825',
+  'B-825',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0069'),
+  (select id from clients where client_code = 'C-69'),
   'Chitwan Wildlife Feature',
   '2026-08-02T00:15:00.000Z'::timestamptz,
   '2026-08-05T00:15:00.000Z'::timestamptz,
@@ -14997,7 +15047,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'd02e83bf-ed29-8207-1968-2d860dfd55db'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0825'),
+  (select id from bookings where booking_no = 'B-825'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000235'),
   'Sony FX6 Cinema Camera',
@@ -15014,7 +15064,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '6940dd19-e322-8bbd-8779-e85ab2015b1f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0825'),
+  (select id from bookings where booking_no = 'B-825'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000248'),
   'Panasonic Lumix S5 II',
@@ -15031,7 +15081,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '0149cd74-e7ea-824e-2a94-71e4f50d615a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0825'),
+  (select id from bookings where booking_no = 'B-825'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000261'),
   'Aputure Nova P300c',
@@ -15048,7 +15098,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'c5783e46-5d6e-2c7c-df78-bc12f3122535'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0825'),
+  (select id from bookings where booking_no = 'B-825'),
   'Sabina Rai',
   'Focus Puller'::crew_role,
   4500.00,
@@ -15070,7 +15120,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0825'),
+  (select id from bookings where booking_no = 'B-825'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -15083,7 +15133,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '0e8294b6-f913-6212-8224-a9db8e6140c4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0825'),
+  (select id from bookings where booking_no = 'B-825'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -15103,8 +15153,8 @@ insert into invoices (
 ) values (
   'a65bb856-33e7-1c7d-b0d1-778a6d82985d'::uuid,
   'INV-28',
-  (select id from bookings where booking_no = 'BK-2026-0825'),
-  (select id from clients where client_code = 'CL-2026-0069'),
+  (select id from bookings where booking_no = 'B-825'),
+  (select id from clients where client_code = 'C-69'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -15234,10 +15284,10 @@ where invoice_no = 'INV-28';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'ec25c421-20ae-c90e-5246-4670432925a7'::uuid,
-  'DEP-2026-0020',
-  (select id from bookings where booking_no = 'BK-2026-0825'),
-  (select id from clients where client_code = 'CL-2026-0069'),
+  '867058a3-2a9f-10a3-06ac-e5ed9763589b'::uuid,
+  'DEP-20',
+  (select id from bookings where booking_no = 'B-825'),
+  (select id from clients where client_code = 'C-69'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -15248,9 +15298,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '6e6a1679-8252-1cbc-6de9-346f68b123b6'::uuid,
-  'DEP-2026-0020-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0020'),
+  'e373c69f-f296-a8ae-bb60-b1754f5bcedc'::uuid,
+  'DEP-20-M1',
+  (select id from security_deposits where deposit_no = 'DEP-20'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -15264,9 +15314,9 @@ insert into payments (
 ) values (
   'cce66414-2913-4587-d822-b452e70778ee'::uuid,
   'PAY-2026-0020',
-  (select id from bookings where booking_no = 'BK-2026-0825'),
+  (select id from bookings where booking_no = 'B-825'),
   (select id from invoices where invoice_no = 'INV-28'),
-  (select id from clients where client_code = 'CL-2026-0069'),
+  (select id from clients where client_code = 'C-69'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   13424.50,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -15285,7 +15335,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'b7064ae4-e4dc-619f-86a3-3c2ea605325d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0825'),
+  (select id from bookings where booking_no = 'B-825'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -15300,7 +15350,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '5ff9ed86-9de9-9a35-f69e-668a7e8d1ab8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0825'),
+  (select id from bookings where booking_no = 'B-825'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -15325,9 +15375,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '60f3f807-7b5e-c953-0195-a94531080f73'::uuid,
-  'BK-2026-0826',
+  'B-826',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0040'),
+  (select id from clients where client_code = 'C-40'),
   'Wedding — Shrestha / Rai',
   '2026-08-09T00:15:00.000Z'::timestamptz,
   '2026-08-13T00:15:00.000Z'::timestamptz,
@@ -15345,7 +15395,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'd41428d5-f2ec-e98b-a736-d4c91abd9137'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0826'),
+  (select id from bookings where booking_no = 'B-826'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000244'),
   'Blackmagic URSA Mini Pro 12K',
@@ -15362,7 +15412,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '0fa174a5-a0f0-30c8-c29d-9c9fe14b62ee'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0826'),
+  (select id from bookings where booking_no = 'B-826'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000257'),
   'Sony 70-200mm GM II',
@@ -15379,7 +15429,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '05f93dd9-65d1-0557-8c75-73bc7127943a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0826'),
+  (select id from bookings where booking_no = 'B-826'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000270'),
   'Matthews Floppy Flag 24x36',
@@ -15396,7 +15446,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '0bc0215d-9a60-2471-2ad2-43d63afe9552'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0826'),
+  (select id from bookings where booking_no = 'B-826'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000283'),
   'Rode NTG5 Kit',
@@ -15413,7 +15463,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '9338b368-8d61-ca51-6d5b-5f5bc07368f6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0826'),
+  (select id from bookings where booking_no = 'B-826'),
   'Kiran Magar',
   'Gaffer'::crew_role,
   5000.00,
@@ -15426,7 +15476,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '01082f1a-4b38-e538-e108-dc1d260768cd'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0826'),
+  (select id from bookings where booking_no = 'B-826'),
   'Prabin Shrestha',
   'Grip'::crew_role,
   3500.00,
@@ -15448,7 +15498,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0826'),
+  (select id from bookings where booking_no = 'B-826'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -15461,7 +15511,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'b7deac0b-22a9-0e3b-e59b-bc635bfd5e87'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0826'),
+  (select id from bookings where booking_no = 'B-826'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -15481,8 +15531,8 @@ insert into invoices (
 ) values (
   'e013fe5b-7062-e121-fb84-0044c0680e24'::uuid,
   'INV-29',
-  (select id from bookings where booking_no = 'BK-2026-0826'),
-  (select id from clients where client_code = 'CL-2026-0040'),
+  (select id from bookings where booking_no = 'B-826'),
+  (select id from clients where client_code = 'C-40'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -15627,10 +15677,10 @@ where invoice_no = 'INV-29';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '3d92a67d-c5ea-9e79-aaae-e986ce6c17d0'::uuid,
-  'DEP-2026-0021',
-  (select id from bookings where booking_no = 'BK-2026-0826'),
-  (select id from clients where client_code = 'CL-2026-0040'),
+  'ce652757-db59-32e9-ec06-597e4ead0b54'::uuid,
+  'DEP-21',
+  (select id from bookings where booking_no = 'B-826'),
+  (select id from clients where client_code = 'C-40'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -15641,9 +15691,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '71be5bce-880d-819e-a929-4eff3ccbb86c'::uuid,
-  'DEP-2026-0021-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0021'),
+  'c86625f1-2bcc-87f4-88bd-968d7ed71ff4'::uuid,
+  'DEP-21-M1',
+  (select id from security_deposits where deposit_no = 'DEP-21'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -15657,9 +15707,9 @@ insert into payments (
 ) values (
   '19cd9d86-c88c-751d-87a5-f97627e389d1'::uuid,
   'PAY-2026-0021',
-  (select id from bookings where booking_no = 'BK-2026-0826'),
+  (select id from bookings where booking_no = 'B-826'),
   (select id from invoices where invoice_no = 'INV-29'),
-  (select id from clients where client_code = 'CL-2026-0040'),
+  (select id from clients where client_code = 'C-40'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   38307.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -15678,7 +15728,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '1c33223e-93a2-65e7-7106-0697718f1720'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0826'),
+  (select id from bookings where booking_no = 'B-826'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -15693,7 +15743,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '78ecc517-50b3-7696-c279-e648b0ec4edb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0826'),
+  (select id from bookings where booking_no = 'B-826'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -15718,9 +15768,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '160c9b69-91e7-12c1-ff53-e5c71d12659b'::uuid,
-  'BK-2026-0827',
+  'B-827',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0051'),
+  (select id from clients where client_code = 'C-51'),
   'Pathao Nepal Launch Spot',
   '2026-08-16T00:15:00.000Z'::timestamptz,
   '2026-08-21T00:15:00.000Z'::timestamptz,
@@ -15738,7 +15788,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '164ea458-721d-98e5-ceb3-d424aebb32e6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0827'),
+  (select id from bookings where booking_no = 'B-827'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000253'),
   'Sigma 18-35mm Art',
@@ -15755,7 +15805,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'f94b20b6-2072-6da9-a6bf-99f4849a9197'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0827'),
+  (select id from bookings where booking_no = 'B-827'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000266'),
   'Godox SL200 III',
@@ -15772,7 +15822,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '40dbc4e1-bbdd-18f0-f4f3-149d4dab695b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0827'),
+  (select id from bookings where booking_no = 'B-827'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000279'),
   'Tilta Shoulder Rig',
@@ -15789,7 +15839,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '85fc4af9-8a0b-06c2-a278-205fcac1f92f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0827'),
+  (select id from bookings where booking_no = 'B-827'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000236'),
   'NISI Athena 35mm',
@@ -15806,7 +15856,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a613ce7e-8e66-1170-8025-6e8f904be07d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0827'),
+  (select id from bookings where booking_no = 'B-827'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000249'),
   'Sony FX30',
@@ -15832,7 +15882,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0827'),
+  (select id from bookings where booking_no = 'B-827'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -15845,7 +15895,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '7fd264ae-c72e-3efb-9ece-83a7f8efe1ff'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0827'),
+  (select id from bookings where booking_no = 'B-827'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -15865,8 +15915,8 @@ insert into invoices (
 ) values (
   '56035274-485e-3db6-fb8c-9dd4ff235dc7'::uuid,
   'INV-30',
-  (select id from bookings where booking_no = 'BK-2026-0827'),
-  (select id from clients where client_code = 'CL-2026-0051'),
+  (select id from bookings where booking_no = 'B-827'),
+  (select id from clients where client_code = 'C-51'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -16011,10 +16061,10 @@ where invoice_no = 'INV-30';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '89a18820-0659-d265-e699-8928c5b849c1'::uuid,
-  'DEP-2026-0022',
-  (select id from bookings where booking_no = 'BK-2026-0827'),
-  (select id from clients where client_code = 'CL-2026-0051'),
+  'a40ccef3-5867-76af-f5c5-ef7c01742237'::uuid,
+  'DEP-22',
+  (select id from bookings where booking_no = 'B-827'),
+  (select id from clients where client_code = 'C-51'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -16028,9 +16078,9 @@ insert into payments (
 ) values (
   '23b482f7-af28-73b3-f4c6-53869a633795'::uuid,
   'PAY-2026-0022',
-  (select id from bookings where booking_no = 'BK-2026-0827'),
+  (select id from bookings where booking_no = 'B-827'),
   (select id from invoices where invoice_no = 'INV-30'),
-  (select id from clients where client_code = 'CL-2026-0051'),
+  (select id from clients where client_code = 'C-51'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   17390.80,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -16049,7 +16099,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '1f0cfa4e-51d3-15a3-17ba-2abc8294a893'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0827'),
+  (select id from bookings where booking_no = 'B-827'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -16064,7 +16114,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'd5473c5d-366e-98b4-984b-8dd23e3b6e4e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0827'),
+  (select id from bookings where booking_no = 'B-827'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -16089,9 +16139,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'e506e34c-744e-60f2-2d12-f562308e43f0'::uuid,
-  'BK-2026-0828',
+  'B-828',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0062'),
+  (select id from clients where client_code = 'C-62'),
   'Sagarmatha Music Video',
   '2026-08-23T00:15:00.000Z'::timestamptz,
   '2026-08-29T00:15:00.000Z'::timestamptz,
@@ -16109,7 +16159,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '6d348e99-0ebd-1ecd-f7af-1e3121be4b87'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0828'),
+  (select id from bookings where booking_no = 'B-828'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000262'),
   'Aputure MC Pro 4-Light Kit',
@@ -16126,7 +16176,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '1fe5f914-eb77-0fe1-7129-e1e4e9b30ebe'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0828'),
+  (select id from bookings where booking_no = 'B-828'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000275'),
   'Sachtler Flowtech 75',
@@ -16143,7 +16193,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'ede1048e-09be-786e-b5d3-307d2d344472'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0828'),
+  (select id from bookings where booking_no = 'B-828'),
   'Melina Thapa',
   'Sound Recordist'::crew_role,
   5500.00,
@@ -16165,7 +16215,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0828'),
+  (select id from bookings where booking_no = 'B-828'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -16178,7 +16228,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'add674a3-ef65-8dc8-8633-ce9466d67aaa'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0828'),
+  (select id from bookings where booking_no = 'B-828'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -16198,8 +16248,8 @@ insert into invoices (
 ) values (
   '24295d2d-6902-75b0-5362-faa985478524'::uuid,
   'INV-31',
-  (select id from bookings where booking_no = 'BK-2026-0828'),
-  (select id from clients where client_code = 'CL-2026-0062'),
+  (select id from bookings where booking_no = 'B-828'),
+  (select id from clients where client_code = 'C-62'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -16313,7 +16363,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '5819ffa8-ec42-578f-0059-e312dca9f3a1'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0828'),
+  (select id from bookings where booking_no = 'B-828'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -16328,7 +16378,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '14acd28f-9109-761f-a6a4-207a70d074fc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0828'),
+  (select id from bookings where booking_no = 'B-828'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -16353,9 +16403,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'b0ee9be1-4c16-1681-7fe2-e486c38f548d'::uuid,
-  'BK-2026-0829',
+  'B-829',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0073'),
+  (select id from clients where client_code = 'C-73'),
   'Lumbini Heritage Short',
   '2026-08-06T00:15:00.000Z'::timestamptz,
   '2026-08-13T00:15:00.000Z'::timestamptz,
@@ -16373,7 +16423,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'ed940aa6-b2fc-506a-f8a5-ce10d39841fc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0829'),
+  (select id from bookings where booking_no = 'B-829'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000271'),
   'Sandbag 15lb',
@@ -16390,7 +16440,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '5708034c-bdb8-930f-256c-c307c7f6238b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0829'),
+  (select id from bookings where booking_no = 'B-829'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000284'),
   'Sound Devices MixPre-6 II',
@@ -16407,7 +16457,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'cedcae02-b4cd-d113-fd72-a7a6bb475593'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0829'),
+  (select id from bookings where booking_no = 'B-829'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000241'),
   'Sony A7S III',
@@ -16424,7 +16474,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'fc71fcea-a231-e1c4-9cd8-b7ba5533e115'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0829'),
+  (select id from bookings where booking_no = 'B-829'),
   'Roshan Karki',
   'Drone Pilot'::crew_role,
   7000.00,
@@ -16437,7 +16487,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '4742940e-bf1d-c4d5-e29f-0a8759fd74fa'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0829'),
+  (select id from bookings where booking_no = 'B-829'),
   'Dipesh Gurung',
   'Camera Assistant'::crew_role,
   3000.00,
@@ -16459,7 +16509,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0829'),
+  (select id from bookings where booking_no = 'B-829'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -16472,7 +16522,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'dff0220f-5daf-6ca7-0748-a4294586c955'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0829'),
+  (select id from bookings where booking_no = 'B-829'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -16492,8 +16542,8 @@ insert into invoices (
 ) values (
   '2cf90a48-c2c7-2b64-fa6b-8b0943b0694f'::uuid,
   'INV-32',
-  (select id from bookings where booking_no = 'BK-2026-0829'),
-  (select id from clients where client_code = 'CL-2026-0073'),
+  (select id from bookings where booking_no = 'B-829'),
+  (select id from clients where client_code = 'C-73'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -16623,10 +16673,10 @@ where invoice_no = 'INV-32';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'e2206cb7-7fd2-0a4e-3fa7-9d09d2eef5c6'::uuid,
-  'DEP-2026-0023',
-  (select id from bookings where booking_no = 'BK-2026-0829'),
-  (select id from clients where client_code = 'CL-2026-0073'),
+  '53b4251d-fdac-1661-20ff-a2a09f81a9ce'::uuid,
+  'DEP-23',
+  (select id from bookings where booking_no = 'B-829'),
+  (select id from clients where client_code = 'C-73'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -16637,9 +16687,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'ff1482b8-6f40-f333-ecee-bf1df8f66b1e'::uuid,
-  'DEP-2026-0023-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0023'),
+  '8089450c-4113-c1bc-f585-76034e6bf7d6'::uuid,
+  'DEP-23-M1',
+  (select id from security_deposits where deposit_no = 'DEP-23'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -16653,9 +16703,9 @@ insert into payments (
 ) values (
   'e92320e4-cb2c-151c-1b8c-759ac0467431'::uuid,
   'PAY-2026-0023',
-  (select id from bookings where booking_no = 'BK-2026-0829'),
+  (select id from bookings where booking_no = 'B-829'),
   (select id from invoices where invoice_no = 'INV-32'),
-  (select id from clients where client_code = 'CL-2026-0073'),
+  (select id from clients where client_code = 'C-73'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   33518.75,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -16674,7 +16724,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '2b7f7058-27c3-25b7-b49f-bda4215ffeed'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0829'),
+  (select id from bookings where booking_no = 'B-829'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -16689,7 +16739,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '4fd410cf-78bb-f32e-ad65-5cdc2c330e27'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0829'),
+  (select id from bookings where booking_no = 'B-829'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -16714,9 +16764,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'd23b4368-de32-dddf-ae70-ecde3c152d88'::uuid,
-  'BK-2026-0830',
+  'B-830',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0044'),
+  (select id from clients where client_code = 'C-44'),
   'Nepal Investment Bank AGM',
   '2026-08-13T00:15:00.000Z'::timestamptz,
   '2026-08-15T00:15:00.000Z'::timestamptz,
@@ -16734,7 +16784,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '3f5319fe-d9dc-cc32-c5f3-f696d84a36fe'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0830'),
+  (select id from bookings where booking_no = 'B-830'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000280'),
   'Slider 120cm Motorised',
@@ -16751,7 +16801,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'ba0a4a07-276a-db74-743b-d2fdb4da54e3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0830'),
+  (select id from bookings where booking_no = 'B-830'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000237'),
   'Aputure LS 600d Pro',
@@ -16768,7 +16818,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'bde9bb32-e761-cfd3-9492-c362ff1cfe70'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0830'),
+  (select id from bookings where booking_no = 'B-830'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000250'),
   'NISI Athena 25mm',
@@ -16785,7 +16835,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '98c07a66-506a-8eef-94f2-208d18a5f0b7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0830'),
+  (select id from bookings where booking_no = 'B-830'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000263'),
   'Nanlite Forza 500B II',
@@ -16811,7 +16861,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0830'),
+  (select id from bookings where booking_no = 'B-830'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -16824,7 +16874,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '64f365c5-6100-bb8f-2544-9e10d0081325'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0830'),
+  (select id from bookings where booking_no = 'B-830'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -16844,8 +16894,8 @@ insert into invoices (
 ) values (
   'c8f737ef-28bd-5e1f-efd3-c71d44171eda'::uuid,
   'INV-33',
-  (select id from bookings where booking_no = 'BK-2026-0830'),
-  (select id from clients where client_code = 'CL-2026-0044'),
+  (select id from bookings where booking_no = 'B-830'),
+  (select id from clients where client_code = 'C-44'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -16975,10 +17025,10 @@ where invoice_no = 'INV-33';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '69e5ebd0-bb3a-134a-8550-b681f422001b'::uuid,
-  'DEP-2026-0024',
-  (select id from bookings where booking_no = 'BK-2026-0830'),
-  (select id from clients where client_code = 'CL-2026-0044'),
+  'c400a7d1-f193-7bf2-a5f3-05cf90cee356'::uuid,
+  'DEP-24',
+  (select id from bookings where booking_no = 'B-830'),
+  (select id from clients where client_code = 'C-44'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -16992,9 +17042,9 @@ insert into payments (
 ) values (
   'c8cf09c4-c3cd-2752-a01f-a6c0acba586f'::uuid,
   'PAY-2026-0024',
-  (select id from bookings where booking_no = 'BK-2026-0830'),
+  (select id from bookings where booking_no = 'B-830'),
   (select id from invoices where invoice_no = 'INV-33'),
-  (select id from clients where client_code = 'CL-2026-0044'),
+  (select id from clients where client_code = 'C-44'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   8848.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -17013,7 +17063,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '0b052c9a-9d97-1c00-c6c1-2b48d743b081'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0830'),
+  (select id from bookings where booking_no = 'B-830'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -17028,7 +17078,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'b982fb7e-ae1d-f28a-3bd6-7bc5f00c65d3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0830'),
+  (select id from bookings where booking_no = 'B-830'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -17053,9 +17103,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '06103767-5385-02a7-2382-e9b24035a494'::uuid,
-  'BK-2026-0831',
+  'B-831',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0055'),
+  (select id from clients where client_code = 'C-55'),
   'Pokhara Paragliding Promo',
   '2026-08-20T00:15:00.000Z'::timestamptz,
   '2026-08-23T00:15:00.000Z'::timestamptz,
@@ -17073,7 +17123,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '0b34bb76-9b8e-908c-fb84-85cb3b0b3453'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0831'),
+  (select id from bookings where booking_no = 'B-831'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000289'),
   'Sony MDR-7506 Headphones',
@@ -17090,7 +17140,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '630b7a52-45bb-c7b2-fc08-966ce8aa3b1b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0831'),
+  (select id from bookings where booking_no = 'B-831'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000246'),
   'RED Komodo 6K',
@@ -17107,7 +17157,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '06873408-184a-b5ec-ce12-fb179be134b6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0831'),
+  (select id from bookings where booking_no = 'B-831'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000259'),
   'DZOFilm Vespid 35mm',
@@ -17124,7 +17174,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '3f14dfc8-a542-4268-578c-f03e10fbaf91'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0831'),
+  (select id from bookings where booking_no = 'B-831'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000272'),
   'Dana Dolly Kit',
@@ -17141,7 +17191,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'fc3ecd88-e437-9cc4-e81f-2cea2dee7350'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0831'),
+  (select id from bookings where booking_no = 'B-831'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000285'),
   'Zoom F6 Field Recorder',
@@ -17158,7 +17208,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '7d27b99a-48be-e896-2966-d657a90a6a49'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0831'),
+  (select id from bookings where booking_no = 'B-831'),
   'Sujata Basnet',
   'Rental Coordinator'::crew_role,
   3200.00,
@@ -17180,7 +17230,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0831'),
+  (select id from bookings where booking_no = 'B-831'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -17193,7 +17243,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '12c8f24b-7197-680b-1bbb-83d28d07561e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0831'),
+  (select id from bookings where booking_no = 'B-831'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -17213,8 +17263,8 @@ insert into invoices (
 ) values (
   '359bd182-d326-8045-449e-b75d70b823c7'::uuid,
   'INV-34',
-  (select id from bookings where booking_no = 'BK-2026-0831'),
-  (select id from clients where client_code = 'CL-2026-0055'),
+  (select id from bookings where booking_no = 'B-831'),
+  (select id from clients where client_code = 'C-55'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -17374,10 +17424,10 @@ where invoice_no = 'INV-34';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'b8994f0d-bb04-39bd-7540-643b394c5d22'::uuid,
-  'DEP-2026-0025',
-  (select id from bookings where booking_no = 'BK-2026-0831'),
-  (select id from clients where client_code = 'CL-2026-0055'),
+  '23844eea-c75e-d25c-b86e-cc6746adb075'::uuid,
+  'DEP-25',
+  (select id from bookings where booking_no = 'B-831'),
+  (select id from clients where client_code = 'C-55'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -17388,9 +17438,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'd7d553b7-a6df-d070-fd4d-36e3106bc601'::uuid,
-  'DEP-2026-0025-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0025'),
+  'e862837a-1ff0-7db8-83c9-e7b142c49d98'::uuid,
+  'DEP-25-M1',
+  (select id from security_deposits where deposit_no = 'DEP-25'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -17404,9 +17454,9 @@ insert into payments (
 ) values (
   'd81ca770-0c7e-7e08-299d-6722382c4a42'::uuid,
   'PAY-2026-0025',
-  (select id from bookings where booking_no = 'BK-2026-0831'),
+  (select id from bookings where booking_no = 'B-831'),
   (select id from invoices where invoice_no = 'INV-34'),
-  (select id from clients where client_code = 'CL-2026-0055'),
+  (select id from clients where client_code = 'C-55'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   18102.80,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -17425,7 +17475,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'c3d0aed5-c05a-b41b-1b41-0751bf845c08'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0831'),
+  (select id from bookings where booking_no = 'B-831'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -17440,7 +17490,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '0e2f5d78-9d93-1b46-b39f-417e2afd8c3d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0831'),
+  (select id from bookings where booking_no = 'B-831'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -17465,9 +17515,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '85018638-e580-113e-1448-dd89000c4d9c'::uuid,
-  'BK-2026-0832',
+  'B-832',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0066'),
+  (select id from clients where client_code = 'C-66'),
   'Dashain Family Campaign',
   '2026-08-03T00:15:00.000Z'::timestamptz,
   '2026-08-07T00:15:00.000Z'::timestamptz,
@@ -17485,7 +17535,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '0b0afe83-a658-1a21-87d2-a4ae118bc7f8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0832'),
+  (select id from bookings where booking_no = 'B-832'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000242'),
   'Canon C70 Cinema Camera',
@@ -17502,7 +17552,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '814e8e59-a3cf-9f2b-69e0-00f52d241621'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0832'),
+  (select id from bookings where booking_no = 'B-832'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000255'),
   'Canon CN-E 24mm',
@@ -17519,7 +17569,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '6052c6ff-9b34-287e-88c8-0ba7ec6c5e8c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0832'),
+  (select id from bookings where booking_no = 'B-832'),
   'Anish Tamang',
   'DoP'::crew_role,
   8000.00,
@@ -17532,7 +17582,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'd21156fa-5b54-682b-c26e-e0728c825be0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0832'),
+  (select id from bookings where booking_no = 'B-832'),
   'Sabina Rai',
   'Focus Puller'::crew_role,
   4500.00,
@@ -17554,7 +17604,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0832'),
+  (select id from bookings where booking_no = 'B-832'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -17567,7 +17617,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'eec7feb9-d489-35ef-ab7c-f3b4c172d2b4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0832'),
+  (select id from bookings where booking_no = 'B-832'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -17587,8 +17637,8 @@ insert into invoices (
 ) values (
   'a5f82bca-9233-a370-8e71-3c3c91fa0ab0'::uuid,
   'INV-35',
-  (select id from bookings where booking_no = 'BK-2026-0832'),
-  (select id from clients where client_code = 'CL-2026-0066'),
+  (select id from bookings where booking_no = 'B-832'),
+  (select id from clients where client_code = 'C-66'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -17702,7 +17752,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '3192160c-b743-c7ed-6ddd-2aadfffb0739'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0832'),
+  (select id from bookings where booking_no = 'B-832'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -17717,7 +17767,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '9f22d8be-6b1e-fc83-4bc3-5f6e60c533b4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0832'),
+  (select id from bookings where booking_no = 'B-832'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -17742,9 +17792,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '4cbb86c8-500d-0f01-7562-206fa4d36ef9'::uuid,
-  'BK-2026-0833',
+  'B-833',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0037'),
+  (select id from clients where client_code = 'C-37'),
   'Annapurna Trek Series',
   '2026-08-10T00:15:00.000Z'::timestamptz,
   '2026-08-15T00:15:00.000Z'::timestamptz,
@@ -17762,7 +17812,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '1f4a3cdf-efea-5789-1e45-b520ff0524ab'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0833'),
+  (select id from bookings where booking_no = 'B-833'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000251'),
   'NISI Athena 50mm',
@@ -17779,7 +17829,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a2e833cd-f228-6325-1cc8-c672a0975c99'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0833'),
+  (select id from bookings where booking_no = 'B-833'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000264'),
   'Nanlux Evoke 1200B',
@@ -17796,7 +17846,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a3fa9f33-cc1f-3e59-ab58-0c23a337b5d2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0833'),
+  (select id from bookings where booking_no = 'B-833'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000277'),
   'DJI RS 4 Gimbal',
@@ -17822,7 +17872,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0833'),
+  (select id from bookings where booking_no = 'B-833'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -17835,7 +17885,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'a3ba9fe8-4448-8722-3113-714720751c88'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0833'),
+  (select id from bookings where booking_no = 'B-833'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -17855,8 +17905,8 @@ insert into invoices (
 ) values (
   'ca657bba-047d-b2ec-bc74-1e41c44402dd'::uuid,
   'INV-36',
-  (select id from bookings where booking_no = 'BK-2026-0833'),
-  (select id from clients where client_code = 'CL-2026-0037'),
+  (select id from bookings where booking_no = 'B-833'),
+  (select id from clients where client_code = 'C-37'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -17971,10 +18021,10 @@ where invoice_no = 'INV-36';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'cf00ee58-47bb-e7c9-49cc-b4d113a63760'::uuid,
-  'DEP-2026-0026',
-  (select id from bookings where booking_no = 'BK-2026-0833'),
-  (select id from clients where client_code = 'CL-2026-0037'),
+  '42ea49a6-0532-74f1-32d3-661ec7fa228e'::uuid,
+  'DEP-26',
+  (select id from bookings where booking_no = 'B-833'),
+  (select id from clients where client_code = 'C-37'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -17988,9 +18038,9 @@ insert into payments (
 ) values (
   '4bd1cab6-61cd-4ae7-bd13-dbda265db5b9'::uuid,
   'PAY-2026-0026',
-  (select id from bookings where booking_no = 'BK-2026-0833'),
+  (select id from bookings where booking_no = 'B-833'),
   (select id from invoices where invoice_no = 'INV-36'),
-  (select id from clients where client_code = 'CL-2026-0037'),
+  (select id from clients where client_code = 'C-37'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   7514.50,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -18009,7 +18059,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '617fed64-26de-8fb4-dee9-08d8a61b0094'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0833'),
+  (select id from bookings where booking_no = 'B-833'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -18024,7 +18074,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '0c39d397-01b9-3fb7-110c-cb57e1412c50'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0833'),
+  (select id from bookings where booking_no = 'B-833'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -18049,9 +18099,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '9315ba92-000f-bdfa-1e29-61b42a31ad07'::uuid,
-  'BK-2026-0834',
+  'B-834',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0048'),
+  (select id from clients where client_code = 'C-48'),
   'Kathmandu Jazz Festival',
   '2026-08-17T00:15:00.000Z'::timestamptz,
   '2026-08-23T00:15:00.000Z'::timestamptz,
@@ -18069,7 +18119,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'da07f77d-3e70-41fb-bddd-276cd7f4abec'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0834'),
+  (select id from bookings where booking_no = 'B-834'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000260'),
   'Aputure LS 300x',
@@ -18086,7 +18136,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '75ebce21-9b6b-1acc-d775-d60f966fb73f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0834'),
+  (select id from bookings where booking_no = 'B-834'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000273'),
   'Kupo Grip Head 4in',
@@ -18103,7 +18153,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '70fa899d-7433-3c6a-f432-70690aaf758e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0834'),
+  (select id from bookings where booking_no = 'B-834'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000286'),
   'Rode Wireless PRO Kit',
@@ -18120,7 +18170,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '5e7a9291-faaa-86de-e61d-ed219c428fd0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0834'),
+  (select id from bookings where booking_no = 'B-834'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000243'),
   'Canon R5 C',
@@ -18137,7 +18187,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '10a5fb30-2ecf-56c5-7efa-9cfeb1a91d4a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0834'),
+  (select id from bookings where booking_no = 'B-834'),
   'Kiran Magar',
   'Gaffer'::crew_role,
   5000.00,
@@ -18159,7 +18209,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0834'),
+  (select id from bookings where booking_no = 'B-834'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -18172,7 +18222,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '0ee5e17f-9edc-94ec-2166-e7136437207b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0834'),
+  (select id from bookings where booking_no = 'B-834'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   15.00,
@@ -18192,8 +18242,8 @@ insert into invoices (
 ) values (
   'a61250c2-84b7-eb17-190d-b395c7deb3af'::uuid,
   'INV-37',
-  (select id from bookings where booking_no = 'BK-2026-0834'),
-  (select id from clients where client_code = 'CL-2026-0048'),
+  (select id from bookings where booking_no = 'B-834'),
+  (select id from clients where client_code = 'C-48'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -18338,10 +18388,10 @@ where invoice_no = 'INV-37';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'ac2b2cb7-eb7f-138b-f3c5-7d67ed3e1b18'::uuid,
-  'DEP-2026-0027',
-  (select id from bookings where booking_no = 'BK-2026-0834'),
-  (select id from clients where client_code = 'CL-2026-0048'),
+  'f66adf2e-a9d9-b253-c7ef-953afd793462'::uuid,
+  'DEP-27',
+  (select id from bookings where booking_no = 'B-834'),
+  (select id from clients where client_code = 'C-48'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -18352,9 +18402,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'b42191ad-c693-3cb3-3ae0-e57f658e423e'::uuid,
-  'DEP-2026-0027-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0027'),
+  'd918741d-4191-f094-1163-d50caa7222e4'::uuid,
+  'DEP-27-M1',
+  (select id from security_deposits where deposit_no = 'DEP-27'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -18368,9 +18418,9 @@ insert into payments (
 ) values (
   '7258295b-e285-48d7-9220-990227251059'::uuid,
   'PAY-2026-0027',
-  (select id from bookings where booking_no = 'BK-2026-0834'),
+  (select id from bookings where booking_no = 'B-834'),
   (select id from invoices where invoice_no = 'INV-37'),
-  (select id from clients where client_code = 'CL-2026-0048'),
+  (select id from clients where client_code = 'C-48'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   43827.50,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -18389,7 +18439,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'b90584fe-0089-e247-573c-2a52b71c43a8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0834'),
+  (select id from bookings where booking_no = 'B-834'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -18404,7 +18454,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '402dc6ad-1d1d-dbdf-d1b2-5073469817fc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0834'),
+  (select id from bookings where booking_no = 'B-834'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -18429,9 +18479,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '3d08dd25-e620-5813-64d3-7bb890e95d36'::uuid,
-  'BK-2026-0835',
+  'B-835',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0059'),
+  (select id from clients where client_code = 'C-59'),
   'Daraz 11.11 Campaign',
   '2026-08-24T00:15:00.000Z'::timestamptz,
   '2026-08-31T00:15:00.000Z'::timestamptz,
@@ -18449,7 +18499,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '59bf8780-0f00-4572-de18-2410b40bbadc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0835'),
+  (select id from bookings where booking_no = 'B-835'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000269'),
   'Avenger Wind-Up Stand',
@@ -18466,7 +18516,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'f52c07bb-35db-2c74-35c8-263494e32da7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0835'),
+  (select id from bookings where booking_no = 'B-835'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000282'),
   'Sennheiser MKH 416',
@@ -18483,7 +18533,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '6beb1c41-5a1c-8c02-eff8-ce7833904b0b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0835'),
+  (select id from bookings where booking_no = 'B-835'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000239'),
   'Manfrotto 504X Tripod System',
@@ -18500,7 +18550,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'f68ec207-cd2c-fc35-4348-23fd0dd04def'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0835'),
+  (select id from bookings where booking_no = 'B-835'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000252'),
   'NISI Athena 85mm',
@@ -18517,7 +18567,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '4cfb7ebd-04dd-3e99-a250-b52f88270d0f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0835'),
+  (select id from bookings where booking_no = 'B-835'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000265'),
   'Astera Titan Tube 8-Pack',
@@ -18534,7 +18584,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '5d5357e5-e445-7fc2-c64d-24b61fcc36dc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0835'),
+  (select id from bookings where booking_no = 'B-835'),
   'Prabin Shrestha',
   'Grip'::crew_role,
   3500.00,
@@ -18547,7 +18597,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '33dacb7b-65e0-585e-4071-e59ecfafecf5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0835'),
+  (select id from bookings where booking_no = 'B-835'),
   'Melina Thapa',
   'Sound Recordist'::crew_role,
   5500.00,
@@ -18569,7 +18619,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0835'),
+  (select id from bookings where booking_no = 'B-835'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -18582,7 +18632,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'a1a1eec3-6eb2-0b8e-fc57-7345531c811b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0835'),
+  (select id from bookings where booking_no = 'B-835'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -18602,8 +18652,8 @@ insert into invoices (
 ) values (
   '39864118-3e88-e94f-dc3e-a8fd6ac4134e'::uuid,
   'INV-38',
-  (select id from bookings where booking_no = 'BK-2026-0835'),
-  (select id from clients where client_code = 'CL-2026-0059'),
+  (select id from bookings where booking_no = 'B-835'),
+  (select id from clients where client_code = 'C-59'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -18763,10 +18813,10 @@ where invoice_no = 'INV-38';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'dfb4ec81-7b6d-4243-9fca-429bd2601723'::uuid,
-  'DEP-2026-0028',
-  (select id from bookings where booking_no = 'BK-2026-0835'),
-  (select id from clients where client_code = 'CL-2026-0059'),
+  '052f5dc4-a537-c4f1-69d8-6f3195cfa256'::uuid,
+  'DEP-28',
+  (select id from bookings where booking_no = 'B-835'),
+  (select id from clients where client_code = 'C-59'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -18777,9 +18827,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '4afd5917-087a-9f5c-e2bd-79aefbf61ea5'::uuid,
-  'DEP-2026-0028-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0028'),
+  '258da23d-ad66-1dd8-215d-d6ea183bebe1'::uuid,
+  'DEP-28-M1',
+  (select id from security_deposits where deposit_no = 'DEP-28'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -18793,9 +18843,9 @@ insert into payments (
 ) values (
   'db591d7f-f2d2-ba5e-052c-c9a90daf2ac1'::uuid,
   'PAY-2026-0028',
-  (select id from bookings where booking_no = 'BK-2026-0835'),
+  (select id from bookings where booking_no = 'B-835'),
   (select id from invoices where invoice_no = 'INV-38'),
-  (select id from clients where client_code = 'CL-2026-0059'),
+  (select id from clients where client_code = 'C-59'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   52680.80,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -18814,7 +18864,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '968fe33d-8e29-20f6-db9c-e2266a84c842'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0835'),
+  (select id from bookings where booking_no = 'B-835'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -18829,7 +18879,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'bd1413e6-e6a3-18db-76c1-0e5f9d232caf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0835'),
+  (select id from bookings where booking_no = 'B-835'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -18854,9 +18904,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'ca76add3-18a9-a30f-b4ab-746607538526'::uuid,
-  'BK-2026-0836',
+  'B-836',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0070'),
+  (select id from clients where client_code = 'C-70'),
   'Nepal Cricket Highlights',
   '2026-08-07T00:15:00.000Z'::timestamptz,
   '2026-08-09T00:15:00.000Z'::timestamptz,
@@ -18874,7 +18924,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '2091b44b-75c0-6690-65c8-1028159c1cbd'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0836'),
+  (select id from bookings where booking_no = 'B-836'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000278'),
   'Easyrig Vario 5',
@@ -18891,7 +18941,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '811658d4-6054-bdd5-5bd9-db0be1f37ae5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0836'),
+  (select id from bookings where booking_no = 'B-836'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000235'),
   'Sony FX6 Cinema Camera',
@@ -18917,7 +18967,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0836'),
+  (select id from bookings where booking_no = 'B-836'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -18930,7 +18980,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '0105b43f-6957-8d52-99fd-cd3b95b3c078'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0836'),
+  (select id from bookings where booking_no = 'B-836'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -18950,8 +19000,8 @@ insert into invoices (
 ) values (
   '20a09f4f-17f6-4bc8-8281-720ebc0c81a5'::uuid,
   'INV-39',
-  (select id from bookings where booking_no = 'BK-2026-0836'),
-  (select id from clients where client_code = 'CL-2026-0070'),
+  (select id from bookings where booking_no = 'B-836'),
+  (select id from clients where client_code = 'C-70'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -19050,7 +19100,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'c45293fc-f3e5-2ef0-5301-dd2ce35b3f15'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0836'),
+  (select id from bookings where booking_no = 'B-836'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -19065,7 +19115,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '72d13fb6-6381-5e84-cb6d-c066377da514'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0836'),
+  (select id from bookings where booking_no = 'B-836'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -19090,9 +19140,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '3b4f7af9-2a9d-b574-5dae-4cba445dd19c'::uuid,
-  'BK-2026-0837',
+  'B-837',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0041'),
+  (select id from clients where client_code = 'C-41'),
   'Rara Lake Travel Film',
   '2026-08-14T00:15:00.000Z'::timestamptz,
   '2026-08-17T00:15:00.000Z'::timestamptz,
@@ -19110,7 +19160,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '7cba21b9-1d04-fdfc-0647-ccc2f4608226'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0837'),
+  (select id from bookings where booking_no = 'B-837'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000287'),
   'Sennheiser EW 112P G4',
@@ -19127,7 +19177,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '8e5c4b9a-52da-8386-c34c-91dc9df0d9f7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0837'),
+  (select id from bookings where booking_no = 'B-837'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000244'),
   'Blackmagic URSA Mini Pro 12K',
@@ -19144,7 +19194,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '2f67947a-fa66-dd99-3f17-073ea1d0f3df'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0837'),
+  (select id from bookings where booking_no = 'B-837'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000257'),
   'Sony 70-200mm GM II',
@@ -19161,7 +19211,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'bce563e1-fc67-5260-7cbc-92330d1db7e7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0837'),
+  (select id from bookings where booking_no = 'B-837'),
   'Roshan Karki',
   'Drone Pilot'::crew_role,
   7000.00,
@@ -19183,7 +19233,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0837'),
+  (select id from bookings where booking_no = 'B-837'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -19196,7 +19246,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'f275b108-1bbb-93ae-b215-f317d04d420a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0837'),
+  (select id from bookings where booking_no = 'B-837'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -19216,8 +19266,8 @@ insert into invoices (
 ) values (
   'ed5d40f9-b54b-79f4-65ae-3347f5ff79fb'::uuid,
   'INV-40',
-  (select id from bookings where booking_no = 'BK-2026-0837'),
-  (select id from clients where client_code = 'CL-2026-0041'),
+  (select id from bookings where booking_no = 'B-837'),
+  (select id from clients where client_code = 'C-41'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -19347,10 +19397,10 @@ where invoice_no = 'INV-40';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '61f5d901-c172-adcb-d440-8e070dac726f'::uuid,
-  'DEP-2026-0029',
-  (select id from bookings where booking_no = 'BK-2026-0837'),
-  (select id from clients where client_code = 'CL-2026-0041'),
+  'f8e35159-ca18-7d66-e3c0-1f43139a5aa1'::uuid,
+  'DEP-29',
+  (select id from bookings where booking_no = 'B-837'),
+  (select id from clients where client_code = 'C-41'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -19361,9 +19411,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'a510fddd-e232-c11b-0ee3-56f19e09ac65'::uuid,
-  'DEP-2026-0029-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0029'),
+  '7d21b9d1-0987-bafd-cd33-a95c13a527be'::uuid,
+  'DEP-29-M1',
+  (select id from security_deposits where deposit_no = 'DEP-29'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -19377,9 +19427,9 @@ insert into payments (
 ) values (
   '545364e6-a437-1550-8295-892f300d904d'::uuid,
   'PAY-2026-0029',
-  (select id from bookings where booking_no = 'BK-2026-0837'),
+  (select id from bookings where booking_no = 'B-837'),
   (select id from invoices where invoice_no = 'INV-40'),
-  (select id from clients where client_code = 'CL-2026-0041'),
+  (select id from clients where client_code = 'C-41'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   12458.25,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -19398,7 +19448,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'a705bd2d-9c6b-6e4b-f752-bf7a9f03da84'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0837'),
+  (select id from bookings where booking_no = 'B-837'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -19413,7 +19463,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '2eb60c12-64df-271f-90d4-95fc664de473'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0837'),
+  (select id from bookings where booking_no = 'B-837'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -19438,9 +19488,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '719da115-ae07-08bb-871f-bf2a58b6913a'::uuid,
-  'BK-2026-0838',
+  'B-838',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0052'),
+  (select id from clients where client_code = 'C-52'),
   'F1Soft Corporate Profile',
   '2026-08-21T00:15:00.000Z'::timestamptz,
   '2026-08-25T00:15:00.000Z'::timestamptz,
@@ -19458,7 +19508,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'c517d18c-a0be-9921-a8d2-70c19d3833b9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0838'),
+  (select id from bookings where booking_no = 'B-838'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000240'),
   'Sony FX3 Full-Frame Camera',
@@ -19475,7 +19525,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '0c3d799a-d2f2-8a48-baeb-ad25d8575a72'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0838'),
+  (select id from bookings where booking_no = 'B-838'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000253'),
   'Sigma 18-35mm Art',
@@ -19492,7 +19542,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '4a140e3d-14b5-8e53-bf3a-1fd04f5fe5df'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0838'),
+  (select id from bookings where booking_no = 'B-838'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000266'),
   'Godox SL200 III',
@@ -19509,7 +19559,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '876a7e48-b470-9c5d-46b2-f75ff92e6e75'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0838'),
+  (select id from bookings where booking_no = 'B-838'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000279'),
   'Tilta Shoulder Rig',
@@ -19526,7 +19576,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'e7077f8a-7012-b974-cc41-b9e2070bccd1'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0838'),
+  (select id from bookings where booking_no = 'B-838'),
   'Dipesh Gurung',
   'Camera Assistant'::crew_role,
   3000.00,
@@ -19539,7 +19589,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'b7c132d7-6e95-178c-117d-e6adf9bfb554'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0838'),
+  (select id from bookings where booking_no = 'B-838'),
   'Sujata Basnet',
   'Rental Coordinator'::crew_role,
   3200.00,
@@ -19561,7 +19611,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0838'),
+  (select id from bookings where booking_no = 'B-838'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -19574,7 +19624,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'e39a20f8-f0bd-a814-f8b4-f1137dc55cdf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0838'),
+  (select id from bookings where booking_no = 'B-838'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -19594,8 +19644,8 @@ insert into invoices (
 ) values (
   '1d81633e-ba02-05c8-d4c6-22ab567d5b37'::uuid,
   'INV-41',
-  (select id from bookings where booking_no = 'BK-2026-0838'),
-  (select id from clients where client_code = 'CL-2026-0052'),
+  (select id from bookings where booking_no = 'B-838'),
+  (select id from clients where client_code = 'C-52'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -19740,10 +19790,10 @@ where invoice_no = 'INV-41';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'e916f3db-3741-0e0c-43fa-a0cc7af4d44f'::uuid,
-  'DEP-2026-0030',
-  (select id from bookings where booking_no = 'BK-2026-0838'),
-  (select id from clients where client_code = 'CL-2026-0052'),
+  'ebe74615-3173-ca6f-1230-c69d82db0ad6'::uuid,
+  'DEP-30',
+  (select id from bookings where booking_no = 'B-838'),
+  (select id from clients where client_code = 'C-52'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -19754,9 +19804,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '710fa8a1-fcb1-86fe-54c4-b2330724b701'::uuid,
-  'DEP-2026-0030-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0030'),
+  'd41a3bc1-eacb-dc63-bcca-f74f7c44bab9'::uuid,
+  'DEP-30-M1',
+  (select id from security_deposits where deposit_no = 'DEP-30'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -19770,9 +19820,9 @@ insert into payments (
 ) values (
   '8783bf55-0ee7-6b9c-7a65-dfa79d4d6036'::uuid,
   'PAY-2026-0030',
-  (select id from bookings where booking_no = 'BK-2026-0838'),
+  (select id from bookings where booking_no = 'B-838'),
   (select id from invoices where invoice_no = 'INV-41'),
-  (select id from clients where client_code = 'CL-2026-0052'),
+  (select id from clients where client_code = 'C-52'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   44748.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -19791,7 +19841,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '302d7c18-bad9-83ff-cf2a-e166a8b038db'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0838'),
+  (select id from bookings where booking_no = 'B-838'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -19806,7 +19856,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'a6215475-1e19-b1a2-a039-66ddadb4b7e5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0838'),
+  (select id from bookings where booking_no = 'B-838'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -19831,9 +19881,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '984abe1f-874e-8eb5-7b1f-a6ae80b99fdc'::uuid,
-  'BK-2026-0839',
+  'B-839',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0063'),
+  (select id from clients where client_code = 'C-63'),
   'Thamel After Dark',
   '2026-08-04T00:15:00.000Z'::timestamptz,
   '2026-08-09T00:15:00.000Z'::timestamptz,
@@ -19851,7 +19901,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'e53659dd-82fc-048f-0fcc-aca6cddbd35c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0839'),
+  (select id from bookings where booking_no = 'B-839'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000249'),
   'Sony FX30',
@@ -19868,7 +19918,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'e2fa0282-39ad-2171-a844-6faf5d7982ce'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0839'),
+  (select id from bookings where booking_no = 'B-839'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000262'),
   'Aputure MC Pro 4-Light Kit',
@@ -19885,7 +19935,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'd6d65943-ef3d-74c9-a25c-59cb1d43f502'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0839'),
+  (select id from bookings where booking_no = 'B-839'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000275'),
   'Sachtler Flowtech 75',
@@ -19902,7 +19952,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '8e744c5f-74d4-5927-c5f8-8e4839095209'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0839'),
+  (select id from bookings where booking_no = 'B-839'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000288'),
   'Boom Pole Carbon 3m',
@@ -19919,7 +19969,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '5f809496-8f15-0cd8-baa7-fb78cd5dee94'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0839'),
+  (select id from bookings where booking_no = 'B-839'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000245'),
   'Blackmagic Pocket 6K Pro',
@@ -19945,7 +19995,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0839'),
+  (select id from bookings where booking_no = 'B-839'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -19958,7 +20008,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'f201deeb-71fa-e1ae-88b7-e430f8979352'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0839'),
+  (select id from bookings where booking_no = 'B-839'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -19978,8 +20028,8 @@ insert into invoices (
 ) values (
   '6015365a-aa8d-faae-a4be-48def00052cb'::uuid,
   'INV-42',
-  (select id from bookings where booking_no = 'BK-2026-0839'),
-  (select id from clients where client_code = 'CL-2026-0063'),
+  (select id from bookings where booking_no = 'B-839'),
+  (select id from clients where client_code = 'C-63'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -20124,10 +20174,10 @@ where invoice_no = 'INV-42';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '07eeeeda-2088-4299-ae6f-3c8a75cd54a8'::uuid,
-  'DEP-2026-0031',
-  (select id from bookings where booking_no = 'BK-2026-0839'),
-  (select id from clients where client_code = 'CL-2026-0063'),
+  'c6c61e98-d46f-6dfd-2cc8-39b9ba11fd58'::uuid,
+  'DEP-31',
+  (select id from bookings where booking_no = 'B-839'),
+  (select id from clients where client_code = 'C-63'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -20141,9 +20191,9 @@ insert into payments (
 ) values (
   '19341e02-1ff4-3e75-c0b0-4aa3786aeba4'::uuid,
   'PAY-2026-0031',
-  (select id from bookings where booking_no = 'BK-2026-0839'),
+  (select id from bookings where booking_no = 'B-839'),
   (select id from invoices where invoice_no = 'INV-42'),
-  (select id from clients where client_code = 'CL-2026-0063'),
+  (select id from clients where client_code = 'C-63'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   21577.20,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -20162,7 +20212,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '8718936f-e835-364b-4101-b6b80f7ff6ed'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0839'),
+  (select id from bookings where booking_no = 'B-839'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -20177,7 +20227,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '285a6477-a0ac-0bfe-9ee2-006bc1320667'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0839'),
+  (select id from bookings where booking_no = 'B-839'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -20202,9 +20252,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '7c7643ff-c5c3-a69b-70a9-a3fe82fca5d2'::uuid,
-  'BK-2026-0840',
+  'B-840',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0034'),
+  (select id from clients where client_code = 'C-34'),
   'Everest Base Camp Documentary',
   '2026-08-11T00:15:00.000Z'::timestamptz,
   '2026-08-17T00:15:00.000Z'::timestamptz,
@@ -20222,7 +20272,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '9a065be0-71f1-27a9-e219-794c43322abf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0840'),
+  (select id from bookings where booking_no = 'B-840'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000258'),
   'Laowa 12mm Zero-D',
@@ -20239,7 +20289,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a51c8d38-cda1-3744-9388-60ad66e20ce3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0840'),
+  (select id from bookings where booking_no = 'B-840'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000271'),
   'Sandbag 15lb',
@@ -20256,7 +20306,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'e5fbe125-ba97-db52-6242-dcaa2402c516'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0840'),
+  (select id from bookings where booking_no = 'B-840'),
   'Anish Tamang',
   'DoP'::crew_role,
   8000.00,
@@ -20278,7 +20328,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0840'),
+  (select id from bookings where booking_no = 'B-840'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -20291,7 +20341,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'cc596d24-d8b5-5ed1-7e29-5f34e2483f65'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0840'),
+  (select id from bookings where booking_no = 'B-840'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -20311,8 +20361,8 @@ insert into invoices (
 ) values (
   'd08f5b82-6a21-92ea-3795-b4a6e0ffa95d'::uuid,
   'INV-43',
-  (select id from bookings where booking_no = 'BK-2026-0840'),
-  (select id from clients where client_code = 'CL-2026-0034'),
+  (select id from bookings where booking_no = 'B-840'),
+  (select id from clients where client_code = 'C-34'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -20426,7 +20476,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'd9d1dbc8-bdac-4a03-d45b-e17c9584568e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0840'),
+  (select id from bookings where booking_no = 'B-840'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -20441,7 +20491,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '9c64e3f7-60fc-1226-c0a5-2ca20b8a2ee4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0840'),
+  (select id from bookings where booking_no = 'B-840'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -20466,9 +20516,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'a8f9a820-3ad1-bc7f-1fc5-9cff68b74a31'::uuid,
-  'BK-2026-0841',
+  'B-841',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0045'),
+  (select id from clients where client_code = 'C-45'),
   'Nepal Tourism Board TVC',
   '2026-08-18T00:15:00.000Z'::timestamptz,
   '2026-08-25T00:15:00.000Z'::timestamptz,
@@ -20486,7 +20536,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '03edc2da-b7c8-a792-63e4-21de5e9360c0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0841'),
+  (select id from bookings where booking_no = 'B-841'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000267'),
   'Aputure Amaran 200x',
@@ -20503,7 +20553,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'd0004ad6-0262-7786-5f39-434a53325123'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0841'),
+  (select id from bookings where booking_no = 'B-841'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000280'),
   'Slider 120cm Motorised',
@@ -20520,7 +20570,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'e4ce3390-1fb4-cc95-9131-43b26b5e49b2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0841'),
+  (select id from bookings where booking_no = 'B-841'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000237'),
   'Aputure LS 600d Pro',
@@ -20537,7 +20587,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'ebff92dd-8a31-682b-361f-c4a7204299cb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0841'),
+  (select id from bookings where booking_no = 'B-841'),
   'Sabina Rai',
   'Focus Puller'::crew_role,
   4500.00,
@@ -20550,7 +20600,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '5532bc5f-fb02-5b83-6a94-9dbb75007487'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0841'),
+  (select id from bookings where booking_no = 'B-841'),
   'Kiran Magar',
   'Gaffer'::crew_role,
   5000.00,
@@ -20572,7 +20622,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0841'),
+  (select id from bookings where booking_no = 'B-841'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -20585,7 +20635,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '2b452b7b-a767-f5a2-992c-b3f3df12e013'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0841'),
+  (select id from bookings where booking_no = 'B-841'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -20605,8 +20655,8 @@ insert into invoices (
 ) values (
   '392bea7e-a478-8210-b44b-92cf1ab64abb'::uuid,
   'INV-44',
-  (select id from bookings where booking_no = 'BK-2026-0841'),
-  (select id from clients where client_code = 'CL-2026-0045'),
+  (select id from bookings where booking_no = 'B-841'),
+  (select id from clients where client_code = 'C-45'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -20736,10 +20786,10 @@ where invoice_no = 'INV-44';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '14c14501-07ee-34eb-6926-91d9aea8a67e'::uuid,
-  'DEP-2026-0032',
-  (select id from bookings where booking_no = 'BK-2026-0841'),
-  (select id from clients where client_code = 'CL-2026-0045'),
+  'a83e5294-5282-4b5a-f14d-a780f1ff9b1a'::uuid,
+  'DEP-32',
+  (select id from bookings where booking_no = 'B-841'),
+  (select id from clients where client_code = 'C-45'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -20750,9 +20800,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'd1287e72-81d3-0585-e816-bceafa7c7dee'::uuid,
-  'DEP-2026-0032-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0032'),
+  'd9f27f4c-3105-d88c-f73c-dc30a2e0a383'::uuid,
+  'DEP-32-M1',
+  (select id from security_deposits where deposit_no = 'DEP-32'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -20766,9 +20816,9 @@ insert into payments (
 ) values (
   '6361d41c-af07-9512-1098-d5d97351138e'::uuid,
   'PAY-2026-0032',
-  (select id from bookings where booking_no = 'BK-2026-0841'),
+  (select id from bookings where booking_no = 'B-841'),
   (select id from invoices where invoice_no = 'INV-44'),
-  (select id from clients where client_code = 'CL-2026-0045'),
+  (select id from clients where client_code = 'C-45'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   27586.25,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -20787,7 +20837,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e5123250-7ea5-2f36-287c-fa37347f2de5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0841'),
+  (select id from bookings where booking_no = 'B-841'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -20802,7 +20852,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '23b0e245-ac59-8fb9-4f99-e253d94e25f9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0841'),
+  (select id from bookings where booking_no = 'B-841'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -20827,9 +20877,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '42487d5e-247e-0376-efb2-139c58ad8cbb'::uuid,
-  'BK-2026-0842',
+  'B-842',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0056'),
+  (select id from clients where client_code = 'C-56'),
   'Kathmandu Street Food Series',
   '2026-08-01T00:15:00.000Z'::timestamptz,
   '2026-08-03T00:15:00.000Z'::timestamptz,
@@ -20847,7 +20897,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '2106a123-b36e-849c-2aeb-faa49f296b41'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0842'),
+  (select id from bookings where booking_no = 'B-842'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000276'),
   'DJI RS 3 Pro Gimbal',
@@ -20864,7 +20914,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'db539292-f34f-c09c-3b97-c6a3ea11b55a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0842'),
+  (select id from bookings where booking_no = 'B-842'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000289'),
   'Sony MDR-7506 Headphones',
@@ -20881,7 +20931,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '72728af8-d88e-f54e-f87a-e46e79e50b29'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0842'),
+  (select id from bookings where booking_no = 'B-842'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000246'),
   'RED Komodo 6K',
@@ -20898,7 +20948,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '3b10f07e-84c6-8661-287a-8504e3f39593'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0842'),
+  (select id from bookings where booking_no = 'B-842'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000259'),
   'DZOFilm Vespid 35mm',
@@ -20924,7 +20974,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0842'),
+  (select id from bookings where booking_no = 'B-842'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -20937,7 +20987,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'be026a06-0aff-95bb-18b1-7e77ab31e748'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0842'),
+  (select id from bookings where booking_no = 'B-842'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -20957,8 +21007,8 @@ insert into invoices (
 ) values (
   'be77ba94-8409-2ec7-47d4-485d923bce36'::uuid,
   'INV-45',
-  (select id from bookings where booking_no = 'BK-2026-0842'),
-  (select id from clients where client_code = 'CL-2026-0056'),
+  (select id from bookings where booking_no = 'B-842'),
+  (select id from clients where client_code = 'C-56'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -21088,10 +21138,10 @@ where invoice_no = 'INV-45';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '085a9e55-811c-4695-a947-3e8fa8dba104'::uuid,
-  'DEP-2026-0033',
-  (select id from bookings where booking_no = 'BK-2026-0842'),
-  (select id from clients where client_code = 'CL-2026-0056'),
+  '15d4f945-27a4-e165-5a2a-57a8f85e39e2'::uuid,
+  'DEP-33',
+  (select id from bookings where booking_no = 'B-842'),
+  (select id from clients where client_code = 'C-56'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -21105,9 +21155,9 @@ insert into payments (
 ) values (
   '6a514d1b-7ddb-8dc8-d0ee-8b08061e77c4'::uuid,
   'PAY-2026-0033',
-  (select id from bookings where booking_no = 'BK-2026-0842'),
+  (select id from bookings where booking_no = 'B-842'),
   (select id from invoices where invoice_no = 'INV-45'),
-  (select id from clients where client_code = 'CL-2026-0056'),
+  (select id from clients where client_code = 'C-56'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   8856.50,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -21126,7 +21176,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '6f16115c-cae4-6888-18fd-d62f244e1c71'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0842'),
+  (select id from bookings where booking_no = 'B-842'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -21141,7 +21191,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '93986e40-078a-43e5-01c4-5dba4683dd73'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0842'),
+  (select id from bookings where booking_no = 'B-842'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -21166,9 +21216,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'b73c3b36-bf98-4c17-a0f6-62ec8ed9ec30'::uuid,
-  'BK-2026-0843',
+  'B-843',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0067'),
+  (select id from clients where client_code = 'C-67'),
   'Himalayan Airlines Safety Film',
   '2026-08-08T00:15:00.000Z'::timestamptz,
   '2026-08-11T00:15:00.000Z'::timestamptz,
@@ -21186,7 +21236,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'da66c927-78aa-c0f1-7cd9-70a627b5467d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0843'),
+  (select id from bookings where booking_no = 'B-843'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000285'),
   'Zoom F6 Field Recorder',
@@ -21203,7 +21253,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '2a74e13c-8152-5725-b671-3584a083b53c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0843'),
+  (select id from bookings where booking_no = 'B-843'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000242'),
   'Canon C70 Cinema Camera',
@@ -21220,7 +21270,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'bdef83ef-d05a-5ec7-3e61-868a645f28a0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0843'),
+  (select id from bookings where booking_no = 'B-843'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000255'),
   'Canon CN-E 24mm',
@@ -21237,7 +21287,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'd0198e1f-4324-c4cf-d737-5b79ddb01493'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0843'),
+  (select id from bookings where booking_no = 'B-843'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000268'),
   'Manfrotto Super Clamp',
@@ -21254,7 +21304,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'ac6a90b8-6dda-81c2-1554-8c3bec658bd6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0843'),
+  (select id from bookings where booking_no = 'B-843'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000281'),
   'Jib Arm 3m',
@@ -21271,7 +21321,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '1558548a-005d-cd51-245f-fc62038ae1ee'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0843'),
+  (select id from bookings where booking_no = 'B-843'),
   'Prabin Shrestha',
   'Grip'::crew_role,
   3500.00,
@@ -21293,7 +21343,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0843'),
+  (select id from bookings where booking_no = 'B-843'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -21306,7 +21356,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '6e16b159-6068-cd3a-d5ed-611f69a0924b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0843'),
+  (select id from bookings where booking_no = 'B-843'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -21326,8 +21376,8 @@ insert into invoices (
 ) values (
   '731a54d4-5ffe-cab4-ad33-fed40cf116f8'::uuid,
   'INV-46',
-  (select id from bookings where booking_no = 'BK-2026-0843'),
-  (select id from clients where client_code = 'CL-2026-0067'),
+  (select id from bookings where booking_no = 'B-843'),
+  (select id from clients where client_code = 'C-67'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -21487,10 +21537,10 @@ where invoice_no = 'INV-46';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'ae74a774-eac6-b18e-94a7-42f461050178'::uuid,
-  'DEP-2026-0034',
-  (select id from bookings where booking_no = 'BK-2026-0843'),
-  (select id from clients where client_code = 'CL-2026-0067'),
+  '5097ac58-c5a4-11ed-c47b-498a79aae240'::uuid,
+  'DEP-34',
+  (select id from bookings where booking_no = 'B-843'),
+  (select id from clients where client_code = 'C-67'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -21501,9 +21551,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '24b07a7b-a5c2-1cf8-90c8-19a3f1dd74f7'::uuid,
-  'DEP-2026-0034-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0034'),
+  '0a069bb9-b7cc-87ee-1620-d89633b0e153'::uuid,
+  'DEP-34-M1',
+  (select id from security_deposits where deposit_no = 'DEP-34'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -21517,9 +21567,9 @@ insert into payments (
 ) values (
   'd0479e64-c635-bb39-96a0-d0352bf05048'::uuid,
   'PAY-2026-0034',
-  (select id from bookings where booking_no = 'BK-2026-0843'),
+  (select id from bookings where booking_no = 'B-843'),
   (select id from invoices where invoice_no = 'INV-46'),
-  (select id from clients where client_code = 'CL-2026-0067'),
+  (select id from clients where client_code = 'C-67'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   18740.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -21538,7 +21588,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '33782b9f-1829-e8d8-823d-aa582178fcc9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0843'),
+  (select id from bookings where booking_no = 'B-843'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -21553,7 +21603,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '6ccd6eaa-8b5b-22a6-59e7-0447f98ff2f2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0843'),
+  (select id from bookings where booking_no = 'B-843'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -21578,9 +21628,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '82ce7bd2-6375-a9d3-6b7f-f6baceaf4aad'::uuid,
-  'BK-2026-0844',
+  'B-844',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0038'),
+  (select id from clients where client_code = 'C-38'),
   'Ncell Brand Campaign',
   '2026-08-15T00:15:00.000Z'::timestamptz,
   '2026-08-19T00:15:00.000Z'::timestamptz,
@@ -21598,7 +21648,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '04cf6683-c6e4-74bc-6ba1-9f22968b2009'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0844'),
+  (select id from bookings where booking_no = 'B-844'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000238'),
   'Matthews C-Stand 40in',
@@ -21615,7 +21665,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '9c5d7a4b-3f12-a9e6-02e5-64f40dc77372'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0844'),
+  (select id from bookings where booking_no = 'B-844'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000251'),
   'NISI Athena 50mm',
@@ -21632,7 +21682,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'd0715145-d018-87d0-b142-cb84867f0000'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0844'),
+  (select id from bookings where booking_no = 'B-844'),
   'Melina Thapa',
   'Sound Recordist'::crew_role,
   5500.00,
@@ -21645,7 +21695,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '2f8653e6-131c-069b-0e4b-f88966585402'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0844'),
+  (select id from bookings where booking_no = 'B-844'),
   'Roshan Karki',
   'Drone Pilot'::crew_role,
   7000.00,
@@ -21667,7 +21717,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0844'),
+  (select id from bookings where booking_no = 'B-844'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -21680,7 +21730,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '2d45c5af-3427-1169-cd6c-23641428073c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0844'),
+  (select id from bookings where booking_no = 'B-844'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -21700,8 +21750,8 @@ insert into invoices (
 ) values (
   '45491ac7-61c4-b78e-0a0e-7cae2526dc07'::uuid,
   'INV-47',
-  (select id from bookings where booking_no = 'BK-2026-0844'),
-  (select id from clients where client_code = 'CL-2026-0038'),
+  (select id from bookings where booking_no = 'B-844'),
+  (select id from clients where client_code = 'C-38'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -21815,7 +21865,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '9fd2b719-1b74-6891-d028-8734ef54f313'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0844'),
+  (select id from bookings where booking_no = 'B-844'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -21830,7 +21880,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '8d5024b3-7a09-ac73-6841-bd5c8c62e6ca'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0844'),
+  (select id from bookings where booking_no = 'B-844'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -21855,9 +21905,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'b940a2c0-4b70-0610-fd57-7668e79f2d4d'::uuid,
-  'BK-2026-0845',
+  'B-845',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0049'),
+  (select id from clients where client_code = 'C-49'),
   'Chitwan Wildlife Feature',
   '2026-08-22T00:15:00.000Z'::timestamptz,
   '2026-08-27T00:15:00.000Z'::timestamptz,
@@ -21875,7 +21925,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'da54ff9b-0517-0914-8c83-002690b659b5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0845'),
+  (select id from bookings where booking_no = 'B-845'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000247'),
   'DJI Ronin 4D-6K',
@@ -21892,7 +21942,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '43d2aa89-97ef-5acb-5cf8-be6ffd2d5ba8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0845'),
+  (select id from bookings where booking_no = 'B-845'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000260'),
   'Aputure LS 300x',
@@ -21909,7 +21959,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '0e5596e6-596b-c1ef-6768-55c825445b63'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0845'),
+  (select id from bookings where booking_no = 'B-845'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000273'),
   'Kupo Grip Head 4in',
@@ -21935,7 +21985,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0845'),
+  (select id from bookings where booking_no = 'B-845'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -21948,7 +21998,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '62749c9c-0afd-83bb-542b-0432b7b39fba'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0845'),
+  (select id from bookings where booking_no = 'B-845'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -21968,8 +22018,8 @@ insert into invoices (
 ) values (
   '8ac85307-506e-2ed0-38ad-1885555db352'::uuid,
   'INV-48',
-  (select id from bookings where booking_no = 'BK-2026-0845'),
-  (select id from clients where client_code = 'CL-2026-0049'),
+  (select id from bookings where booking_no = 'B-845'),
+  (select id from clients where client_code = 'C-49'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -22084,10 +22134,10 @@ where invoice_no = 'INV-48';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '6c30948c-7da5-847b-45eb-c93f77d3ca62'::uuid,
-  'DEP-2026-0035',
-  (select id from bookings where booking_no = 'BK-2026-0845'),
-  (select id from clients where client_code = 'CL-2026-0049'),
+  '08710584-6921-f4d0-1ab4-ae0d21506fea'::uuid,
+  'DEP-35',
+  (select id from bookings where booking_no = 'B-845'),
+  (select id from clients where client_code = 'C-49'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -22101,9 +22151,9 @@ insert into payments (
 ) values (
   'ee1ea510-487c-50cb-8474-b135d527e5fb'::uuid,
   'PAY-2026-0035',
-  (select id from bookings where booking_no = 'BK-2026-0845'),
+  (select id from bookings where booking_no = 'B-845'),
   (select id from invoices where invoice_no = 'INV-48'),
-  (select id from clients where client_code = 'CL-2026-0049'),
+  (select id from clients where client_code = 'C-49'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   11454.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -22122,7 +22172,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e3defa8f-083a-de83-9a80-d8ffcf3dada0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0845'),
+  (select id from bookings where booking_no = 'B-845'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -22137,7 +22187,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e471b639-aae5-72d0-6a87-3ab0a390a2f0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0845'),
+  (select id from bookings where booking_no = 'B-845'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -22162,9 +22212,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'ef189e04-8c46-f2ee-8549-e5ac4ff91dba'::uuid,
-  'BK-2026-0846',
+  'B-846',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0060'),
+  (select id from clients where client_code = 'C-60'),
   'Wedding — Shrestha / Rai',
   '2026-08-05T00:15:00.000Z'::timestamptz,
   '2026-08-11T00:15:00.000Z'::timestamptz,
@@ -22182,7 +22232,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '3871d2b7-00ce-d78c-f371-31f49516766f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0846'),
+  (select id from bookings where booking_no = 'B-846'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000256'),
   'Canon CN-E 50mm',
@@ -22199,7 +22249,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '53f429c9-15e3-925b-ad35-c8e1bfcad0e8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0846'),
+  (select id from bookings where booking_no = 'B-846'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000269'),
   'Avenger Wind-Up Stand',
@@ -22216,7 +22266,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'd0c7a66c-aa5a-03bb-c057-7e34bf27bfaf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0846'),
+  (select id from bookings where booking_no = 'B-846'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000282'),
   'Sennheiser MKH 416',
@@ -22233,7 +22283,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '220596e7-138d-c628-859d-41fbda8e2a69'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0846'),
+  (select id from bookings where booking_no = 'B-846'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000239'),
   'Manfrotto 504X Tripod System',
@@ -22250,7 +22300,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'adb2205a-204a-7abb-64d9-4ae2f8afaecb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0846'),
+  (select id from bookings where booking_no = 'B-846'),
   'Dipesh Gurung',
   'Camera Assistant'::crew_role,
   3000.00,
@@ -22272,7 +22322,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0846'),
+  (select id from bookings where booking_no = 'B-846'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -22285,7 +22335,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'd1a83698-5b80-1188-0816-a3d6d0ff4b76'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0846'),
+  (select id from bookings where booking_no = 'B-846'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -22305,8 +22355,8 @@ insert into invoices (
 ) values (
   '7e8f8cc6-7bcb-ddc4-97b3-0875edb95f78'::uuid,
   'INV-49',
-  (select id from bookings where booking_no = 'BK-2026-0846'),
-  (select id from clients where client_code = 'CL-2026-0060'),
+  (select id from bookings where booking_no = 'B-846'),
+  (select id from clients where client_code = 'C-60'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -22451,10 +22501,10 @@ where invoice_no = 'INV-49';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'aab03f21-b9ba-7bf3-fa92-a5587162cf79'::uuid,
-  'DEP-2026-0036',
-  (select id from bookings where booking_no = 'BK-2026-0846'),
-  (select id from clients where client_code = 'CL-2026-0060'),
+  'fd143b06-f687-611e-a3e9-a08820205d79'::uuid,
+  'DEP-36',
+  (select id from bookings where booking_no = 'B-846'),
+  (select id from clients where client_code = 'C-60'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -22465,9 +22515,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'af130591-ee9d-ecdc-6a6b-8d2f492795d3'::uuid,
-  'DEP-2026-0036-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0036'),
+  'fdb17cb3-f798-b990-a1eb-8bfd18ad1673'::uuid,
+  'DEP-36-M1',
+  (select id from security_deposits where deposit_no = 'DEP-36'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -22481,9 +22531,9 @@ insert into payments (
 ) values (
   '38169f90-7705-c51b-f74a-b51d53322051'::uuid,
   'PAY-2026-0036',
-  (select id from bookings where booking_no = 'BK-2026-0846'),
+  (select id from bookings where booking_no = 'B-846'),
   (select id from invoices where invoice_no = 'INV-49'),
-  (select id from clients where client_code = 'CL-2026-0060'),
+  (select id from clients where client_code = 'C-60'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   23391.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -22502,7 +22552,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '9540f8cf-cf63-b8c8-9033-1ba3b999a636'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0846'),
+  (select id from bookings where booking_no = 'B-846'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -22517,7 +22567,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '0ab144cf-d863-0a11-32cf-51deac6548c9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0846'),
+  (select id from bookings where booking_no = 'B-846'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -22542,9 +22592,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '9e439e8f-326b-8b56-07af-e747395bde82'::uuid,
-  'BK-2026-0847',
+  'B-847',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0071'),
+  (select id from clients where client_code = 'C-71'),
   'Pathao Nepal Launch Spot',
   '2026-08-12T00:15:00.000Z'::timestamptz,
   '2026-08-19T00:15:00.000Z'::timestamptz,
@@ -22562,7 +22612,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'ee6bf820-0594-534b-0349-bb860fa388f7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0847'),
+  (select id from bookings where booking_no = 'B-847'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000265'),
   'Astera Titan Tube 8-Pack',
@@ -22579,7 +22629,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '885bff45-e81a-6d35-4575-5ddb9960245f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0847'),
+  (select id from bookings where booking_no = 'B-847'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000278'),
   'Easyrig Vario 5',
@@ -22596,7 +22646,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '59a713c8-1554-a0f5-f5d7-699462c5b616'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0847'),
+  (select id from bookings where booking_no = 'B-847'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000235'),
   'Sony FX6 Cinema Camera',
@@ -22613,7 +22663,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '946c06f9-35b0-fab3-ca15-bd2fa1aef131'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0847'),
+  (select id from bookings where booking_no = 'B-847'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000248'),
   'Panasonic Lumix S5 II',
@@ -22630,7 +22680,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '453c6df4-5530-1c90-b1a3-272747ec6dce'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0847'),
+  (select id from bookings where booking_no = 'B-847'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000261'),
   'Aputure Nova P300c',
@@ -22647,7 +22697,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '4b235429-5dab-75f9-9f8e-95a8ab2313dd'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0847'),
+  (select id from bookings where booking_no = 'B-847'),
   'Sujata Basnet',
   'Rental Coordinator'::crew_role,
   3200.00,
@@ -22660,7 +22710,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '4b8c1ffe-cb24-64fe-d872-963ec1eaca0e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0847'),
+  (select id from bookings where booking_no = 'B-847'),
   'Anish Tamang',
   'DoP'::crew_role,
   8000.00,
@@ -22682,7 +22732,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0847'),
+  (select id from bookings where booking_no = 'B-847'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -22695,7 +22745,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'f4bc33da-e59f-eb3b-0d8c-33882648ac57'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0847'),
+  (select id from bookings where booking_no = 'B-847'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -22715,8 +22765,8 @@ insert into invoices (
 ) values (
   'd4fea92c-7152-d8f8-e272-c17ecd0e83c4'::uuid,
   'INV-50',
-  (select id from bookings where booking_no = 'BK-2026-0847'),
-  (select id from clients where client_code = 'CL-2026-0071'),
+  (select id from bookings where booking_no = 'B-847'),
+  (select id from clients where client_code = 'C-71'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -22876,10 +22926,10 @@ where invoice_no = 'INV-50';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'b5f7a814-3cb5-6a9b-c71d-e6d9f774c4cb'::uuid,
-  'DEP-2026-0037',
-  (select id from bookings where booking_no = 'BK-2026-0847'),
-  (select id from clients where client_code = 'CL-2026-0071'),
+  'ed4c13c9-1e2b-ff8a-d03c-70d19d26b3f6'::uuid,
+  'DEP-37',
+  (select id from bookings where booking_no = 'B-847'),
+  (select id from clients where client_code = 'C-71'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -22890,9 +22940,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '531e7d0d-2a55-93d2-43c4-93ae7b8b704a'::uuid,
-  'DEP-2026-0037-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0037'),
+  '4bf83916-5aa5-f417-e8a8-329625a4dc50'::uuid,
+  'DEP-37-M1',
+  (select id from security_deposits where deposit_no = 'DEP-37'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -22906,9 +22956,9 @@ insert into payments (
 ) values (
   '23e83ca4-7f24-a311-6854-6050239334d9'::uuid,
   'PAY-2026-0037',
-  (select id from bookings where booking_no = 'BK-2026-0847'),
+  (select id from bookings where booking_no = 'B-847'),
   (select id from invoices where invoice_no = 'INV-50'),
-  (select id from clients where client_code = 'CL-2026-0071'),
+  (select id from clients where client_code = 'C-71'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   93970.80,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -22927,7 +22977,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '26f18bf7-66ef-d163-0fa2-1e311a5f1c8d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0847'),
+  (select id from bookings where booking_no = 'B-847'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -22942,7 +22992,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'fdd3a519-7244-16b6-8e8f-c84790d49325'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0847'),
+  (select id from bookings where booking_no = 'B-847'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -22967,9 +23017,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'fefc60a3-fc21-8dbc-f261-4b6236786a3e'::uuid,
-  'BK-2026-0848',
+  'B-848',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0042'),
+  (select id from clients where client_code = 'C-42'),
   'Sagarmatha Music Video',
   '2026-07-31T00:15:00.000Z'::timestamptz,
   '2026-08-02T00:15:00.000Z'::timestamptz,
@@ -22987,7 +23037,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '3052ddf3-b316-59aa-63e8-9e6a9e1ca138'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0848'),
+  (select id from bookings where booking_no = 'B-848'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000274'),
   'Butterfly Frame 6x6',
@@ -23004,7 +23054,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '2d130475-77a4-ead9-e203-a8b45054ab75'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0848'),
+  (select id from bookings where booking_no = 'B-848'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000287'),
   'Sennheiser EW 112P G4',
@@ -23030,7 +23080,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0848'),
+  (select id from bookings where booking_no = 'B-848'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -23043,7 +23093,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '12b176f9-f70c-4b68-5513-b32533bd2f0f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0848'),
+  (select id from bookings where booking_no = 'B-848'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -23063,8 +23113,8 @@ insert into invoices (
 ) values (
   '5a4605ef-631a-c04f-9624-e2af389cde4b'::uuid,
   'INV-51',
-  (select id from bookings where booking_no = 'BK-2026-0848'),
-  (select id from clients where client_code = 'CL-2026-0042'),
+  (select id from bookings where booking_no = 'B-848'),
+  (select id from clients where client_code = 'C-42'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -23163,7 +23213,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'd2496554-b161-7922-809a-a45f363bc76c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0848'),
+  (select id from bookings where booking_no = 'B-848'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -23178,7 +23228,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'b9ac9cfe-4f6d-79d3-8d72-89163a65d599'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0848'),
+  (select id from bookings where booking_no = 'B-848'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -23193,7 +23243,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'da625453-9564-bc9d-08c5-5e60b54d27bd'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0848'),
+  (select id from bookings where booking_no = 'B-848'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -23218,9 +23268,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '81b85765-1309-bdd7-d619-eed0a0a3e107'::uuid,
-  'BK-2026-0849',
+  'B-849',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0053'),
+  (select id from clients where client_code = 'C-53'),
   'Lumbini Heritage Short',
   '2026-08-01T00:15:00.000Z'::timestamptz,
   '2026-08-04T00:15:00.000Z'::timestamptz,
@@ -23238,7 +23288,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '97ff7d65-2cbd-1850-a934-dcd4c0f75d5d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0849'),
+  (select id from bookings where booking_no = 'B-849'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000283'),
   'Rode NTG5 Kit',
@@ -23255,7 +23305,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '6d333a39-0d48-c0c4-7812-e8d01624918e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0849'),
+  (select id from bookings where booking_no = 'B-849'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000240'),
   'Sony FX3 Full-Frame Camera',
@@ -23272,7 +23322,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'c0df5be6-1143-1af6-81de-5b10b8e2aba7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0849'),
+  (select id from bookings where booking_no = 'B-849'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000253'),
   'Sigma 18-35mm Art',
@@ -23289,7 +23339,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'fe3ab237-1462-e352-515d-c934b58c7c67'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0849'),
+  (select id from bookings where booking_no = 'B-849'),
   'Sabina Rai',
   'Focus Puller'::crew_role,
   4500.00,
@@ -23311,7 +23361,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0849'),
+  (select id from bookings where booking_no = 'B-849'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -23324,7 +23374,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '0e38398f-0581-76a2-e90f-31f0d7169da9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0849'),
+  (select id from bookings where booking_no = 'B-849'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -23344,8 +23394,8 @@ insert into invoices (
 ) values (
   '7181bd5b-848e-ca18-6dcb-09bc3ab962e8'::uuid,
   'INV-52',
-  (select id from bookings where booking_no = 'BK-2026-0849'),
-  (select id from clients where client_code = 'CL-2026-0053'),
+  (select id from bookings where booking_no = 'B-849'),
+  (select id from clients where client_code = 'C-53'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -23475,10 +23525,10 @@ where invoice_no = 'INV-52';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'f7b8b08c-a3b5-4a89-7032-1c4ef3928237'::uuid,
-  'DEP-2026-0038',
-  (select id from bookings where booking_no = 'BK-2026-0849'),
-  (select id from clients where client_code = 'CL-2026-0053'),
+  '4e1bcd1f-1f78-ef0e-9f5e-fc36a800b74b'::uuid,
+  'DEP-38',
+  (select id from bookings where booking_no = 'B-849'),
+  (select id from clients where client_code = 'C-53'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -23489,9 +23539,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '0c011b4c-7a71-db07-cd2d-42d5905c61f4'::uuid,
-  'DEP-2026-0038-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0038'),
+  'bfd35246-4c12-abf8-302e-b910c1f549ef'::uuid,
+  'DEP-38-M1',
+  (select id from security_deposits where deposit_no = 'DEP-38'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -23505,9 +23555,9 @@ insert into payments (
 ) values (
   'f46a8b91-69ed-72f7-061a-8a5f916d1ba1'::uuid,
   'PAY-2026-0038',
-  (select id from bookings where booking_no = 'BK-2026-0849'),
+  (select id from bookings where booking_no = 'B-849'),
   (select id from invoices where invoice_no = 'INV-52'),
-  (select id from clients where client_code = 'CL-2026-0053'),
+  (select id from clients where client_code = 'C-53'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   14153.25,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -23526,7 +23576,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '8471afab-8fb9-325b-c39b-fb2145c8bb75'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0849'),
+  (select id from bookings where booking_no = 'B-849'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -23541,7 +23591,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '8acbb390-1a03-df99-6043-110dd4b642ad'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0849'),
+  (select id from bookings where booking_no = 'B-849'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -23556,7 +23606,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '95ec3689-1d01-b016-1df3-3023cec5a756'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0849'),
+  (select id from bookings where booking_no = 'B-849'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -23581,9 +23631,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '8c46b141-25cc-ce52-d376-e9a954597c18'::uuid,
-  'BK-2026-0850',
+  'B-850',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0064'),
+  (select id from clients where client_code = 'C-64'),
   'Nepal Investment Bank AGM',
   '2026-08-02T00:15:00.000Z'::timestamptz,
   '2026-08-06T00:15:00.000Z'::timestamptz,
@@ -23601,7 +23651,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a7cfdaec-1781-d0cd-764a-7b60a5d7e68e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0850'),
+  (select id from bookings where booking_no = 'B-850'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000236'),
   'NISI Athena 35mm',
@@ -23618,7 +23668,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '4ae227bf-d975-9db8-69a8-5e8aa2c2e148'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0850'),
+  (select id from bookings where booking_no = 'B-850'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000249'),
   'Sony FX30',
@@ -23635,7 +23685,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '9233b7d0-8d37-1510-ae1b-36b69410ba58'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0850'),
+  (select id from bookings where booking_no = 'B-850'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000262'),
   'Aputure MC Pro 4-Light Kit',
@@ -23652,7 +23702,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '62adde01-b0f6-ba8e-3974-2103304874d2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0850'),
+  (select id from bookings where booking_no = 'B-850'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000275'),
   'Sachtler Flowtech 75',
@@ -23669,7 +23719,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'bb501453-86c7-41b8-3540-a36a2a1a88b5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0850'),
+  (select id from bookings where booking_no = 'B-850'),
   'Kiran Magar',
   'Gaffer'::crew_role,
   5000.00,
@@ -23682,7 +23732,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'c7813796-2dfb-70f1-6cfa-2f4559571055'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0850'),
+  (select id from bookings where booking_no = 'B-850'),
   'Prabin Shrestha',
   'Grip'::crew_role,
   3500.00,
@@ -23704,7 +23754,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0850'),
+  (select id from bookings where booking_no = 'B-850'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -23717,7 +23767,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'dd376c3f-acf8-46db-0f1f-dda34c17fe89'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0850'),
+  (select id from bookings where booking_no = 'B-850'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -23737,8 +23787,8 @@ insert into invoices (
 ) values (
   '66a1d120-35d1-ded7-7cba-0bc0e24b84cb'::uuid,
   'INV-53',
-  (select id from bookings where booking_no = 'BK-2026-0850'),
-  (select id from clients where client_code = 'CL-2026-0064'),
+  (select id from bookings where booking_no = 'B-850'),
+  (select id from clients where client_code = 'C-64'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -23883,10 +23933,10 @@ where invoice_no = 'INV-53';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '1e67de98-4a3d-3d14-c15d-b836578b8e59'::uuid,
-  'DEP-2026-0039',
-  (select id from bookings where booking_no = 'BK-2026-0850'),
-  (select id from clients where client_code = 'CL-2026-0064'),
+  '4888dc12-b268-efe3-f9d8-b40b78bbc60e'::uuid,
+  'DEP-39',
+  (select id from bookings where booking_no = 'B-850'),
+  (select id from clients where client_code = 'C-64'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -23897,9 +23947,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'b232bbbb-8049-30e0-a43d-503c6a24cbd8'::uuid,
-  'DEP-2026-0039-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0039'),
+  '61740dcf-bf7e-5bb8-f429-e35e7ecd0f6a'::uuid,
+  'DEP-39-M1',
+  (select id from security_deposits where deposit_no = 'DEP-39'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -23913,9 +23963,9 @@ insert into payments (
 ) values (
   '5b265e36-2227-2639-d1e7-ed1df8e1e8b3'::uuid,
   'PAY-2026-0039',
-  (select id from bookings where booking_no = 'BK-2026-0850'),
+  (select id from bookings where booking_no = 'B-850'),
   (select id from invoices where invoice_no = 'INV-53'),
-  (select id from clients where client_code = 'CL-2026-0064'),
+  (select id from clients where client_code = 'C-64'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   34578.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -23934,7 +23984,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '8cc9f7d1-2a35-8112-3b48-0d8e501683c3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0850'),
+  (select id from bookings where booking_no = 'B-850'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -23949,7 +23999,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '2c839e88-fd32-8cb9-f942-8974bc11c4a4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0850'),
+  (select id from bookings where booking_no = 'B-850'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -23964,7 +24014,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'f12f750c-3064-4724-cfcc-f440ea294a0f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0850'),
+  (select id from bookings where booking_no = 'B-850'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -23989,9 +24039,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '77936e84-3687-18c2-793d-34c671b79382'::uuid,
-  'BK-2026-0851',
+  'B-851',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0035'),
+  (select id from clients where client_code = 'C-35'),
   'Pokhara Paragliding Promo',
   '2026-07-31T00:15:00.000Z'::timestamptz,
   '2026-08-05T00:15:00.000Z'::timestamptz,
@@ -24009,7 +24059,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '0eeaa802-fa39-3d0c-088c-12440cf7270b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0851'),
+  (select id from bookings where booking_no = 'B-851'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000245'),
   'Blackmagic Pocket 6K Pro',
@@ -24026,7 +24076,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'ceb60ce0-7fd5-56f1-4459-34381141a15a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0851'),
+  (select id from bookings where booking_no = 'B-851'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000258'),
   'Laowa 12mm Zero-D',
@@ -24043,7 +24093,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '20e5030c-4739-d052-5387-f11488c57ccf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0851'),
+  (select id from bookings where booking_no = 'B-851'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000271'),
   'Sandbag 15lb',
@@ -24060,7 +24110,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'f4d33899-22fc-44d0-9832-080f5bee614e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0851'),
+  (select id from bookings where booking_no = 'B-851'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000284'),
   'Sound Devices MixPre-6 II',
@@ -24077,7 +24127,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a8c6e1dc-5af0-a152-72fa-92edb394ea55'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0851'),
+  (select id from bookings where booking_no = 'B-851'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000241'),
   'Sony A7S III',
@@ -24103,7 +24153,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0851'),
+  (select id from bookings where booking_no = 'B-851'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -24116,7 +24166,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '2a0b1ae5-d0dd-a328-6b64-45ffc9718501'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0851'),
+  (select id from bookings where booking_no = 'B-851'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   15.00,
@@ -24136,8 +24186,8 @@ insert into invoices (
 ) values (
   'e3381270-784d-c0a2-f84b-fe2e1531180e'::uuid,
   'INV-54',
-  (select id from bookings where booking_no = 'BK-2026-0851'),
-  (select id from clients where client_code = 'CL-2026-0035'),
+  (select id from bookings where booking_no = 'B-851'),
+  (select id from clients where client_code = 'C-35'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -24282,10 +24332,10 @@ where invoice_no = 'INV-54';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '69db49d8-ee89-dc85-f1b2-31ee439e124a'::uuid,
-  'DEP-2026-0040',
-  (select id from bookings where booking_no = 'BK-2026-0851'),
-  (select id from clients where client_code = 'CL-2026-0035'),
+  '150b4bdf-54b7-52b8-5758-9c0c302f696a'::uuid,
+  'DEP-40',
+  (select id from bookings where booking_no = 'B-851'),
+  (select id from clients where client_code = 'C-35'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -24299,9 +24349,9 @@ insert into payments (
 ) values (
   '7dfed4ec-22a3-e736-358a-d84684d338c6'::uuid,
   'PAY-2026-0040',
-  (select id from bookings where booking_no = 'BK-2026-0851'),
+  (select id from bookings where booking_no = 'B-851'),
   (select id from invoices where invoice_no = 'INV-54'),
-  (select id from clients where client_code = 'CL-2026-0035'),
+  (select id from clients where client_code = 'C-35'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   18633.60,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -24320,7 +24370,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'fb3b91eb-a098-2519-2cc0-2fcba9e7d393'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0851'),
+  (select id from bookings where booking_no = 'B-851'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -24335,7 +24385,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '7b03831c-6ba8-54fa-a73b-9790dbb437a7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0851'),
+  (select id from bookings where booking_no = 'B-851'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -24350,7 +24400,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'bd3880b4-d013-80ef-9636-57d33a303f96'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0851'),
+  (select id from bookings where booking_no = 'B-851'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -24375,9 +24425,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '13e60351-39f3-213d-9e9a-75b6d0e5a2c8'::uuid,
-  'BK-2026-0852',
+  'B-852',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0046'),
+  (select id from clients where client_code = 'C-46'),
   'Dashain Family Campaign',
   '2026-08-01T00:15:00.000Z'::timestamptz,
   '2026-08-07T00:15:00.000Z'::timestamptz,
@@ -24395,7 +24445,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'e4884949-ee92-2491-20d8-d00b1405a005'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0852'),
+  (select id from bookings where booking_no = 'B-852'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000254'),
   'Sigma 24-70mm Art',
@@ -24412,7 +24462,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '5748e4e4-19d0-55c7-0ebe-fc826bbe8534'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0852'),
+  (select id from bookings where booking_no = 'B-852'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000267'),
   'Aputure Amaran 200x',
@@ -24429,7 +24479,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'c586f659-243d-e8fe-b428-b76e1d252916'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0852'),
+  (select id from bookings where booking_no = 'B-852'),
   'Melina Thapa',
   'Sound Recordist'::crew_role,
   5500.00,
@@ -24451,7 +24501,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0852'),
+  (select id from bookings where booking_no = 'B-852'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -24464,7 +24514,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '201dcedd-e266-5f0f-d27b-51eb1fcfe141'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0852'),
+  (select id from bookings where booking_no = 'B-852'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -24484,8 +24534,8 @@ insert into invoices (
 ) values (
   'c63f6644-8f70-5f5b-174b-01b7153afb82'::uuid,
   'INV-55',
-  (select id from bookings where booking_no = 'BK-2026-0852'),
-  (select id from clients where client_code = 'CL-2026-0046'),
+  (select id from bookings where booking_no = 'B-852'),
+  (select id from clients where client_code = 'C-46'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -24599,7 +24649,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'f6b3e137-a140-78f4-1837-2dda1ba3b6fc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0852'),
+  (select id from bookings where booking_no = 'B-852'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -24614,7 +24664,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '0e8edc4d-b8f8-3bb8-49b4-bc3235ee4728'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0852'),
+  (select id from bookings where booking_no = 'B-852'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -24629,7 +24679,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'a23240d6-42c0-c57d-dd74-e923b4d411a5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0852'),
+  (select id from bookings where booking_no = 'B-852'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -24654,9 +24704,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '722d7c7d-22d6-bd69-23df-22e06844b02b'::uuid,
-  'BK-2026-0853',
+  'B-853',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0057'),
+  (select id from clients where client_code = 'C-57'),
   'Annapurna Trek Series',
   '2026-08-02T00:15:00.000Z'::timestamptz,
   '2026-08-09T00:15:00.000Z'::timestamptz,
@@ -24674,7 +24724,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'e0b3e1ff-34d3-1edb-2e72-3c1b4d82d4e3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0853'),
+  (select id from bookings where booking_no = 'B-853'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000263'),
   'Nanlite Forza 500B II',
@@ -24691,7 +24741,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '42d8d1cf-7f8c-e742-6e13-56d46ff9919d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0853'),
+  (select id from bookings where booking_no = 'B-853'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000276'),
   'DJI RS 3 Pro Gimbal',
@@ -24708,7 +24758,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '61bae80d-83fc-a8cb-dcd2-918d094e4f2a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0853'),
+  (select id from bookings where booking_no = 'B-853'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000289'),
   'Sony MDR-7506 Headphones',
@@ -24725,7 +24775,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'aac8575d-8909-d833-e15c-f81147f51d0a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0853'),
+  (select id from bookings where booking_no = 'B-853'),
   'Roshan Karki',
   'Drone Pilot'::crew_role,
   7000.00,
@@ -24738,7 +24788,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'acbedbe2-1f4e-948c-19a5-576eff2a6130'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0853'),
+  (select id from bookings where booking_no = 'B-853'),
   'Dipesh Gurung',
   'Camera Assistant'::crew_role,
   3000.00,
@@ -24760,7 +24810,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0853'),
+  (select id from bookings where booking_no = 'B-853'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -24773,7 +24823,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '754d749f-2577-3548-8a16-78535c1fddb7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0853'),
+  (select id from bookings where booking_no = 'B-853'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -24793,8 +24843,8 @@ insert into invoices (
 ) values (
   '62b51ee9-0a6f-b007-8991-7237e8479bc5'::uuid,
   'INV-56',
-  (select id from bookings where booking_no = 'BK-2026-0853'),
-  (select id from clients where client_code = 'CL-2026-0057'),
+  (select id from bookings where booking_no = 'B-853'),
+  (select id from clients where client_code = 'C-57'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -24924,10 +24974,10 @@ where invoice_no = 'INV-56';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'd93b7999-7447-f04b-1860-f5e4264b00f8'::uuid,
-  'DEP-2026-0041',
-  (select id from bookings where booking_no = 'BK-2026-0853'),
-  (select id from clients where client_code = 'CL-2026-0057'),
+  '0f160ac0-6e52-1be0-d8f5-419415293aec'::uuid,
+  'DEP-41',
+  (select id from bookings where booking_no = 'B-853'),
+  (select id from clients where client_code = 'C-57'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -24938,9 +24988,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '28cbbe44-4738-fc2a-75a9-2d8eeec8f7b4'::uuid,
-  'DEP-2026-0041-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0041'),
+  '8b3c26a5-953d-411d-2867-ddc2d428ab67'::uuid,
+  'DEP-41-M1',
+  (select id from security_deposits where deposit_no = 'DEP-41'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -24954,9 +25004,9 @@ insert into payments (
 ) values (
   'c089741f-6d85-bf15-e20f-1aac74e2eaea'::uuid,
   'PAY-2026-0041',
-  (select id from bookings where booking_no = 'BK-2026-0853'),
+  (select id from bookings where booking_no = 'B-853'),
   (select id from invoices where invoice_no = 'INV-56'),
-  (select id from clients where client_code = 'CL-2026-0057'),
+  (select id from clients where client_code = 'C-57'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   27685.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -24975,7 +25025,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'd5288356-786d-7900-de09-33a36d87857a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0853'),
+  (select id from bookings where booking_no = 'B-853'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -24990,7 +25040,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '3168a663-faff-d0a0-ea81-9b855ef5e3c3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0853'),
+  (select id from bookings where booking_no = 'B-853'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -25005,7 +25055,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e80ac87d-7519-9f9d-088f-51555d166e91'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0853'),
+  (select id from bookings where booking_no = 'B-853'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -25030,9 +25080,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '653f0de5-4a53-8fe9-aa05-3e5030045d4d'::uuid,
-  'BK-2026-0854',
+  'B-854',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0068'),
+  (select id from clients where client_code = 'C-68'),
   'Kathmandu Jazz Festival',
   '2026-07-31T00:15:00.000Z'::timestamptz,
   '2026-08-02T00:15:00.000Z'::timestamptz,
@@ -25050,7 +25100,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '0f59d44c-311f-b04a-8751-56b2672a6a4a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0854'),
+  (select id from bookings where booking_no = 'B-854'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000272'),
   'Dana Dolly Kit',
@@ -25067,7 +25117,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '695c471b-e094-64d1-c49e-84014ae575d5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0854'),
+  (select id from bookings where booking_no = 'B-854'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000285'),
   'Zoom F6 Field Recorder',
@@ -25084,7 +25134,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '9ef3dab3-bf88-098b-6771-e60b48bcb6db'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0854'),
+  (select id from bookings where booking_no = 'B-854'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000242'),
   'Canon C70 Cinema Camera',
@@ -25101,7 +25151,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '20b37309-6629-8687-5b8c-f2cec5cb4b72'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0854'),
+  (select id from bookings where booking_no = 'B-854'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000255'),
   'Canon CN-E 24mm',
@@ -25127,7 +25177,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0854'),
+  (select id from bookings where booking_no = 'B-854'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -25140,7 +25190,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'da3b3b7a-574c-f561-dd7a-2762b63a9012'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0854'),
+  (select id from bookings where booking_no = 'B-854'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -25160,8 +25210,8 @@ insert into invoices (
 ) values (
   '518228e9-b35c-5b6d-7998-680f239e66e7'::uuid,
   'INV-57',
-  (select id from bookings where booking_no = 'BK-2026-0854'),
-  (select id from clients where client_code = 'CL-2026-0068'),
+  (select id from bookings where booking_no = 'B-854'),
+  (select id from clients where client_code = 'C-68'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -25291,10 +25341,10 @@ where invoice_no = 'INV-57';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'dfc8e349-f512-bda7-9037-d234cf7cfb1b'::uuid,
-  'DEP-2026-0042',
-  (select id from bookings where booking_no = 'BK-2026-0854'),
-  (select id from clients where client_code = 'CL-2026-0068'),
+  'd16d40d8-9d92-c6c7-8800-c29aec7c0b36'::uuid,
+  'DEP-42',
+  (select id from bookings where booking_no = 'B-854'),
+  (select id from clients where client_code = 'C-68'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -25308,9 +25358,9 @@ insert into payments (
 ) values (
   '4358a237-bb4d-7303-8b98-09deaffbcb9a'::uuid,
   'PAY-2026-0042',
-  (select id from bookings where booking_no = 'BK-2026-0854'),
+  (select id from bookings where booking_no = 'B-854'),
   (select id from invoices where invoice_no = 'INV-57'),
-  (select id from clients where client_code = 'CL-2026-0068'),
+  (select id from clients where client_code = 'C-68'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10627.50,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -25329,7 +25379,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '47594920-285c-1525-c843-868373581ba8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0854'),
+  (select id from bookings where booking_no = 'B-854'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -25344,7 +25394,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'f3581bb3-b67f-1887-fe40-587954c7a17d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0854'),
+  (select id from bookings where booking_no = 'B-854'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -25359,7 +25409,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '33ec5d79-c5d8-0afa-021b-e1be53ea99a7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0854'),
+  (select id from bookings where booking_no = 'B-854'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -25384,9 +25434,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'e3ff6f59-da61-e095-bf05-0f186043c40d'::uuid,
-  'BK-2026-0855',
+  'B-855',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0039'),
+  (select id from clients where client_code = 'C-39'),
   'Daraz 11.11 Campaign',
   '2026-08-01T00:15:00.000Z'::timestamptz,
   '2026-08-04T00:15:00.000Z'::timestamptz,
@@ -25404,7 +25454,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '98a04d74-3d9a-b000-bda6-05a59e0fed0a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0855'),
+  (select id from bookings where booking_no = 'B-855'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000281'),
   'Jib Arm 3m',
@@ -25421,7 +25471,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'bf6dcee8-7456-d03c-286a-e2656fc175dc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0855'),
+  (select id from bookings where booking_no = 'B-855'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000238'),
   'Matthews C-Stand 40in',
@@ -25438,7 +25488,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'bb68a835-ea72-2e6a-bfac-75be39601a01'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0855'),
+  (select id from bookings where booking_no = 'B-855'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000251'),
   'NISI Athena 50mm',
@@ -25455,7 +25505,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '1db1b169-9f88-6a12-0328-3a790c122d54'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0855'),
+  (select id from bookings where booking_no = 'B-855'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000264'),
   'Nanlux Evoke 1200B',
@@ -25472,7 +25522,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'c4087ba1-c6cf-6893-f0ab-440ae2babad5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0855'),
+  (select id from bookings where booking_no = 'B-855'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000277'),
   'DJI RS 4 Gimbal',
@@ -25489,7 +25539,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'cf735b7a-9f63-b072-4795-93bf40a5ce12'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0855'),
+  (select id from bookings where booking_no = 'B-855'),
   'Sujata Basnet',
   'Rental Coordinator'::crew_role,
   3200.00,
@@ -25511,7 +25561,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0855'),
+  (select id from bookings where booking_no = 'B-855'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -25524,7 +25574,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '2187e1c9-504d-c9e2-37c8-8d1560bdbda0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0855'),
+  (select id from bookings where booking_no = 'B-855'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -25544,8 +25594,8 @@ insert into invoices (
 ) values (
   '481b1340-0ede-1d15-cfa2-3088037ac97d'::uuid,
   'INV-58',
-  (select id from bookings where booking_no = 'BK-2026-0855'),
-  (select id from clients where client_code = 'CL-2026-0039'),
+  (select id from bookings where booking_no = 'B-855'),
+  (select id from clients where client_code = 'C-39'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -25705,10 +25755,10 @@ where invoice_no = 'INV-58';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '68a1c285-eba8-c241-4d0d-6081e9b284a0'::uuid,
-  'DEP-2026-0043',
-  (select id from bookings where booking_no = 'BK-2026-0855'),
-  (select id from clients where client_code = 'CL-2026-0039'),
+  '31e4b5ac-ca4b-22d8-7876-42c92de9f1c7'::uuid,
+  'DEP-43',
+  (select id from bookings where booking_no = 'B-855'),
+  (select id from clients where client_code = 'C-39'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -25719,9 +25769,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'e9f4860c-9082-c304-708f-6806bacddb62'::uuid,
-  'DEP-2026-0043-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0043'),
+  '28cf4c0f-99b0-f194-4c6b-8db5f52e06b2'::uuid,
+  'DEP-43-M1',
+  (select id from security_deposits where deposit_no = 'DEP-43'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -25735,9 +25785,9 @@ insert into payments (
 ) values (
   'a7070a92-4b1d-d89e-24f8-539dfd9215d7'::uuid,
   'PAY-2026-0043',
-  (select id from bookings where booking_no = 'BK-2026-0855'),
+  (select id from bookings where booking_no = 'B-855'),
   (select id from invoices where invoice_no = 'INV-58'),
-  (select id from clients where client_code = 'CL-2026-0039'),
+  (select id from clients where client_code = 'C-39'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   13485.60,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -25756,7 +25806,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '3fb81c70-cfab-c4f4-11ba-9296a19e9ccb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0855'),
+  (select id from bookings where booking_no = 'B-855'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -25771,7 +25821,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '9996da23-f86e-41ad-1009-52d773bb07c3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0855'),
+  (select id from bookings where booking_no = 'B-855'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -25786,7 +25836,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'ae364f17-2ef0-15d7-d327-3c088b998420'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0855'),
+  (select id from bookings where booking_no = 'B-855'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -25811,9 +25861,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '4409c643-f517-450f-c110-d89f4bad09b1'::uuid,
-  'BK-2026-0856',
+  'B-856',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0050'),
+  (select id from clients where client_code = 'C-50'),
   'Nepal Cricket Highlights',
   '2026-08-02T00:15:00.000Z'::timestamptz,
   '2026-08-06T00:15:00.000Z'::timestamptz,
@@ -25831,7 +25881,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a4565da8-117b-9426-0a52-1b5cb49e1ee4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0856'),
+  (select id from bookings where booking_no = 'B-856'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000234'),
   'Sony FX9 Cinema Camera',
@@ -25848,7 +25898,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '9092ecd7-b391-a726-eb2d-cc53c7a92a8e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0856'),
+  (select id from bookings where booking_no = 'B-856'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000247'),
   'DJI Ronin 4D-6K',
@@ -25865,7 +25915,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'c3111619-45c1-4397-aedf-417523adab33'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0856'),
+  (select id from bookings where booking_no = 'B-856'),
   'Anish Tamang',
   'DoP'::crew_role,
   8000.00,
@@ -25878,7 +25928,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '5b68d49f-dda4-b6fd-bab3-a2f8488f9931'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0856'),
+  (select id from bookings where booking_no = 'B-856'),
   'Sabina Rai',
   'Focus Puller'::crew_role,
   4500.00,
@@ -25900,7 +25950,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0856'),
+  (select id from bookings where booking_no = 'B-856'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -25913,7 +25963,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'f13376e8-d1aa-eb88-629b-c6d3d3caa7f7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0856'),
+  (select id from bookings where booking_no = 'B-856'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -25933,8 +25983,8 @@ insert into invoices (
 ) values (
   'c38ecdb8-8bd2-1a89-5a3b-f1aa8bf64744'::uuid,
   'INV-59',
-  (select id from bookings where booking_no = 'BK-2026-0856'),
-  (select id from clients where client_code = 'CL-2026-0050'),
+  (select id from bookings where booking_no = 'B-856'),
+  (select id from clients where client_code = 'C-50'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -26048,7 +26098,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '7739f6f4-567b-a93d-592a-0f4fdaf45a9d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0856'),
+  (select id from bookings where booking_no = 'B-856'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -26063,7 +26113,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '1197c3ff-a0d8-5745-21ef-3fd2962435bb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0856'),
+  (select id from bookings where booking_no = 'B-856'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -26078,7 +26128,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '686f7c25-bc99-5ac1-5858-ffa66dbe1dc0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0856'),
+  (select id from bookings where booking_no = 'B-856'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -26103,9 +26153,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '6c0c74de-d1f2-ded9-e778-c01d30254b2c'::uuid,
-  'BK-2026-0857',
+  'B-857',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0061'),
+  (select id from clients where client_code = 'C-61'),
   'Rara Lake Travel Film',
   '2026-07-31T00:15:00.000Z'::timestamptz,
   '2026-08-05T00:15:00.000Z'::timestamptz,
@@ -26123,7 +26173,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'fb021b92-7f0f-aa61-e739-ffc6e0ad6219'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0857'),
+  (select id from bookings where booking_no = 'B-857'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000243'),
   'Canon R5 C',
@@ -26140,7 +26190,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '1ceb73ee-2b79-9abe-0d18-1b3dfeffc763'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0857'),
+  (select id from bookings where booking_no = 'B-857'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000256'),
   'Canon CN-E 50mm',
@@ -26157,7 +26207,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a43e31d7-6516-96e3-03e5-7f3f1e931b72'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0857'),
+  (select id from bookings where booking_no = 'B-857'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000269'),
   'Avenger Wind-Up Stand',
@@ -26183,7 +26233,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0857'),
+  (select id from bookings where booking_no = 'B-857'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -26196,7 +26246,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '97c690d1-9db6-2ad8-5fcd-2b36b6a73d9d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0857'),
+  (select id from bookings where booking_no = 'B-857'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -26216,8 +26266,8 @@ insert into invoices (
 ) values (
   '77295e75-debb-573b-d104-872eef1a255c'::uuid,
   'INV-60',
-  (select id from bookings where booking_no = 'BK-2026-0857'),
-  (select id from clients where client_code = 'CL-2026-0061'),
+  (select id from bookings where booking_no = 'B-857'),
+  (select id from clients where client_code = 'C-61'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -26332,10 +26382,10 @@ where invoice_no = 'INV-60';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'f896461d-3dc3-d454-4929-18f2eebbe2a6'::uuid,
-  'DEP-2026-0044',
-  (select id from bookings where booking_no = 'BK-2026-0857'),
-  (select id from clients where client_code = 'CL-2026-0061'),
+  'bacd3142-6d20-1818-419d-6aa34be9468b'::uuid,
+  'DEP-44',
+  (select id from bookings where booking_no = 'B-857'),
+  (select id from clients where client_code = 'C-61'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -26349,9 +26399,9 @@ insert into payments (
 ) values (
   '4b2d57f9-8882-76c7-8aa3-3908779286bf'::uuid,
   'PAY-2026-0044',
-  (select id from bookings where booking_no = 'BK-2026-0857'),
+  (select id from bookings where booking_no = 'B-857'),
   (select id from invoices where invoice_no = 'INV-60'),
-  (select id from clients where client_code = 'CL-2026-0061'),
+  (select id from clients where client_code = 'C-61'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   13485.75,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -26370,7 +26420,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'ea68e222-5c97-ba87-c42e-bed6cd329220'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0857'),
+  (select id from bookings where booking_no = 'B-857'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -26385,7 +26435,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'ab09724e-8025-359b-207a-9aab09b3dbe5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0857'),
+  (select id from bookings where booking_no = 'B-857'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -26400,7 +26450,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '6f0dcb15-06f7-9c18-2d74-ee1b83940066'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0857'),
+  (select id from bookings where booking_no = 'B-857'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -26425,9 +26475,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'f2f21a0c-bc3a-edf9-2df8-88dff6a0b6fa'::uuid,
-  'BK-2026-0858',
+  'B-858',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0072'),
+  (select id from clients where client_code = 'C-72'),
   'F1Soft Corporate Profile',
   '2026-08-01T00:15:00.000Z'::timestamptz,
   '2026-08-07T00:15:00.000Z'::timestamptz,
@@ -26445,7 +26495,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '2598d708-2363-b6bc-3b3d-881bbd263fce'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0858'),
+  (select id from bookings where booking_no = 'B-858'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000252'),
   'NISI Athena 85mm',
@@ -26462,7 +26512,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '1370005b-f37a-1628-a68c-5932381af6bb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0858'),
+  (select id from bookings where booking_no = 'B-858'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000265'),
   'Astera Titan Tube 8-Pack',
@@ -26479,7 +26529,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '395a401a-32bc-3497-1b41-ecf1f70c6a3e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0858'),
+  (select id from bookings where booking_no = 'B-858'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000278'),
   'Easyrig Vario 5',
@@ -26496,7 +26546,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'f565bec8-9050-f665-fac5-7e0a26eb6b47'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0858'),
+  (select id from bookings where booking_no = 'B-858'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000235'),
   'Sony FX6 Cinema Camera',
@@ -26513,7 +26563,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '69636875-338a-cd24-1eee-a663a2e104fa'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0858'),
+  (select id from bookings where booking_no = 'B-858'),
   'Kiran Magar',
   'Gaffer'::crew_role,
   5000.00,
@@ -26535,7 +26585,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0858'),
+  (select id from bookings where booking_no = 'B-858'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -26548,7 +26598,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'de183833-53cb-8f24-af07-b73d8add0a2c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0858'),
+  (select id from bookings where booking_no = 'B-858'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -26568,8 +26618,8 @@ insert into invoices (
 ) values (
   'da2d4f17-4c00-aa53-560b-3bfbc3c754ce'::uuid,
   'INV-61',
-  (select id from bookings where booking_no = 'BK-2026-0858'),
-  (select id from clients where client_code = 'CL-2026-0072'),
+  (select id from bookings where booking_no = 'B-858'),
+  (select id from clients where client_code = 'C-72'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -26714,10 +26764,10 @@ where invoice_no = 'INV-61';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '8f7ac6da-a6b6-622b-1b3d-26ad4abf881e'::uuid,
-  'DEP-2026-0045',
-  (select id from bookings where booking_no = 'BK-2026-0858'),
-  (select id from clients where client_code = 'CL-2026-0072'),
+  '46c3d81d-74d6-76ce-8b09-5267d68465be'::uuid,
+  'DEP-45',
+  (select id from bookings where booking_no = 'B-858'),
+  (select id from clients where client_code = 'C-72'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -26728,9 +26778,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '7bccf98d-45d4-1a4c-6e21-fd5f4009696f'::uuid,
-  'DEP-2026-0045-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0045'),
+  '415344b9-0b50-4d96-1453-1d3d7f4bccac'::uuid,
+  'DEP-45-M1',
+  (select id from security_deposits where deposit_no = 'DEP-45'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -26744,9 +26794,9 @@ insert into payments (
 ) values (
   'd5a9ce22-0818-c706-fe25-93a9115fbde0'::uuid,
   'PAY-2026-0045',
-  (select id from bookings where booking_no = 'BK-2026-0858'),
+  (select id from bookings where booking_no = 'B-858'),
   (select id from invoices where invoice_no = 'INV-61'),
-  (select id from clients where client_code = 'CL-2026-0072'),
+  (select id from clients where client_code = 'C-72'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   57291.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -26765,7 +26815,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '20ac7287-3698-ccaa-07bd-b8d89869f7a6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0858'),
+  (select id from bookings where booking_no = 'B-858'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -26780,7 +26830,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '91a57764-5c8a-7714-b6f1-ccb09222eec9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0858'),
+  (select id from bookings where booking_no = 'B-858'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -26795,7 +26845,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '7622a943-dc9c-f9e4-6b34-a35d83f50490'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0858'),
+  (select id from bookings where booking_no = 'B-858'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -26820,9 +26870,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '4e020f15-85a5-c1e7-3592-b4d140501d76'::uuid,
-  'BK-2026-0859',
+  'B-859',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0043'),
+  (select id from clients where client_code = 'C-43'),
   'Thamel After Dark',
   '2026-08-02T00:15:00.000Z'::timestamptz,
   '2026-08-09T00:15:00.000Z'::timestamptz,
@@ -26840,7 +26890,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '2180100d-a6b6-dd38-e485-48ce480a0df6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0859'),
+  (select id from bookings where booking_no = 'B-859'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000261'),
   'Aputure Nova P300c',
@@ -26857,7 +26907,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'e192887b-bd6d-aa7e-36e2-a8e1413d5f69'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0859'),
+  (select id from bookings where booking_no = 'B-859'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000274'),
   'Butterfly Frame 6x6',
@@ -26874,7 +26924,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '7dd55402-8ef7-eeab-d836-ab36c45ff4aa'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0859'),
+  (select id from bookings where booking_no = 'B-859'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000287'),
   'Sennheiser EW 112P G4',
@@ -26891,7 +26941,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '56ba0ae4-2827-c35e-ea84-f3aa8c0ae29f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0859'),
+  (select id from bookings where booking_no = 'B-859'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000244'),
   'Blackmagic URSA Mini Pro 12K',
@@ -26908,7 +26958,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '8a02dfce-ad0d-3dde-4f0b-bead60a1c94c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0859'),
+  (select id from bookings where booking_no = 'B-859'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000257'),
   'Sony 70-200mm GM II',
@@ -26925,7 +26975,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '30881e66-49a4-339a-27a6-3fae2d7ad1d8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0859'),
+  (select id from bookings where booking_no = 'B-859'),
   'Prabin Shrestha',
   'Grip'::crew_role,
   3500.00,
@@ -26938,7 +26988,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '10151f99-a0e8-9332-205c-ea9a19812c56'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0859'),
+  (select id from bookings where booking_no = 'B-859'),
   'Melina Thapa',
   'Sound Recordist'::crew_role,
   5500.00,
@@ -26960,7 +27010,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0859'),
+  (select id from bookings where booking_no = 'B-859'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -26973,7 +27023,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '697ac3e8-58ad-aee1-e510-8c97c6aa65a5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0859'),
+  (select id from bookings where booking_no = 'B-859'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -26993,8 +27043,8 @@ insert into invoices (
 ) values (
   '990de220-3847-9f2e-7718-106c4535500a'::uuid,
   'INV-62',
-  (select id from bookings where booking_no = 'BK-2026-0859'),
-  (select id from clients where client_code = 'CL-2026-0043'),
+  (select id from bookings where booking_no = 'B-859'),
+  (select id from clients where client_code = 'C-43'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -27154,10 +27204,10 @@ where invoice_no = 'INV-62';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'b3c95a61-be84-44dd-63ce-c8c3a7420567'::uuid,
-  'DEP-2026-0046',
-  (select id from bookings where booking_no = 'BK-2026-0859'),
-  (select id from clients where client_code = 'CL-2026-0043'),
+  '69b463d2-822e-00f7-388c-9b42580413c1'::uuid,
+  'DEP-46',
+  (select id from bookings where booking_no = 'B-859'),
+  (select id from clients where client_code = 'C-43'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -27168,9 +27218,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '6b563438-7e5e-1da0-6901-649948887320'::uuid,
-  'DEP-2026-0046-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0046'),
+  'fcd2ba93-4594-e3d6-6f35-ba8ec6771e69'::uuid,
+  'DEP-46-M1',
+  (select id from security_deposits where deposit_no = 'DEP-46'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -27184,9 +27234,9 @@ insert into payments (
 ) values (
   'c97e5a0f-7036-45fb-cf59-ebf771c8a745'::uuid,
   'PAY-2026-0046',
-  (select id from bookings where booking_no = 'BK-2026-0859'),
+  (select id from bookings where booking_no = 'B-859'),
   (select id from invoices where invoice_no = 'INV-62'),
-  (select id from clients where client_code = 'CL-2026-0043'),
+  (select id from clients where client_code = 'C-43'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   65494.80,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -27205,7 +27255,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'a6bbca70-1641-4860-0e94-1b5f0f018845'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0859'),
+  (select id from bookings where booking_no = 'B-859'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -27220,7 +27270,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '65c242e1-0f5d-543f-a402-0d055f0aa018'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0859'),
+  (select id from bookings where booking_no = 'B-859'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -27235,7 +27285,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '96baa250-1f8b-eeca-0bf5-a649e6676a01'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0859'),
+  (select id from bookings where booking_no = 'B-859'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -27260,9 +27310,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'b04d8a84-4ae5-45d2-b80a-b627ca1eb988'::uuid,
-  'BK-2026-0860',
+  'B-860',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0054'),
+  (select id from clients where client_code = 'C-54'),
   'Everest Base Camp Documentary',
   '2026-07-31T00:15:00.000Z'::timestamptz,
   '2026-08-02T00:15:00.000Z'::timestamptz,
@@ -27280,7 +27330,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'e55466c4-95d7-4cd7-7b76-73b7692b797c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0860'),
+  (select id from bookings where booking_no = 'B-860'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000270'),
   'Matthews Floppy Flag 24x36',
@@ -27297,7 +27347,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '89924d48-02d4-d53f-7e79-75862d1e7a75'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0860'),
+  (select id from bookings where booking_no = 'B-860'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000283'),
   'Rode NTG5 Kit',
@@ -27323,7 +27373,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0860'),
+  (select id from bookings where booking_no = 'B-860'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -27336,7 +27386,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '4b09f548-9e45-f888-8f60-7241c65341b5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0860'),
+  (select id from bookings where booking_no = 'B-860'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -27356,8 +27406,8 @@ insert into invoices (
 ) values (
   'e0a7608f-678f-096e-fc63-f8f4f0e33261'::uuid,
   'INV-63',
-  (select id from bookings where booking_no = 'BK-2026-0860'),
-  (select id from clients where client_code = 'CL-2026-0054'),
+  (select id from bookings where booking_no = 'B-860'),
+  (select id from clients where client_code = 'C-54'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -27456,7 +27506,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'ae70a8ac-354f-5659-6251-7a0c9734b272'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0860'),
+  (select id from bookings where booking_no = 'B-860'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -27471,7 +27521,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e493cf2e-64c3-5e09-81ad-cf12c6120339'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0860'),
+  (select id from bookings where booking_no = 'B-860'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -27486,7 +27536,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '6f214288-5ac2-767c-954c-d0ecdde87cfe'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0860'),
+  (select id from bookings where booking_no = 'B-860'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -27511,9 +27561,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '9d6c8d11-9d8c-acd2-2215-9fc876897ad8'::uuid,
-  'BK-2026-0861',
+  'B-861',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0065'),
+  (select id from clients where client_code = 'C-65'),
   'Nepal Tourism Board TVC',
   '2026-08-01T00:15:00.000Z'::timestamptz,
   '2026-08-04T00:15:00.000Z'::timestamptz,
@@ -27531,7 +27581,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '289fd4e5-e75a-d90c-d768-9bf15c620bca'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0861'),
+  (select id from bookings where booking_no = 'B-861'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000279'),
   'Tilta Shoulder Rig',
@@ -27548,7 +27598,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '4750f405-3517-53c9-c0dc-4c1fca767532'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0861'),
+  (select id from bookings where booking_no = 'B-861'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000236'),
   'NISI Athena 35mm',
@@ -27565,7 +27615,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '15f93963-1d0b-78a3-0471-fa92367c2916'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0861'),
+  (select id from bookings where booking_no = 'B-861'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000249'),
   'Sony FX30',
@@ -27582,7 +27632,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '844c8508-c726-2818-4444-3aa0870eba20'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0861'),
+  (select id from bookings where booking_no = 'B-861'),
   'Roshan Karki',
   'Drone Pilot'::crew_role,
   7000.00,
@@ -27604,7 +27654,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0861'),
+  (select id from bookings where booking_no = 'B-861'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -27617,7 +27667,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'a34786fd-0e65-a827-98f9-4ebd17fb3762'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0861'),
+  (select id from bookings where booking_no = 'B-861'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -27637,8 +27687,8 @@ insert into invoices (
 ) values (
   '8422c41e-5ff4-e062-0703-80a1e6b98318'::uuid,
   'INV-64',
-  (select id from bookings where booking_no = 'BK-2026-0861'),
-  (select id from clients where client_code = 'CL-2026-0065'),
+  (select id from bookings where booking_no = 'B-861'),
+  (select id from clients where client_code = 'C-65'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -27768,10 +27818,10 @@ where invoice_no = 'INV-64';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '64016c4b-22a0-30e3-d952-cd11787aeccb'::uuid,
-  'DEP-2026-0047',
-  (select id from bookings where booking_no = 'BK-2026-0861'),
-  (select id from clients where client_code = 'CL-2026-0065'),
+  '98d93a6e-f8a6-8929-27a4-b3bbee514ac6'::uuid,
+  'DEP-47',
+  (select id from bookings where booking_no = 'B-861'),
+  (select id from clients where client_code = 'C-65'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -27782,9 +27832,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '5ba38c83-872b-22d0-f684-dd51e11de91b'::uuid,
-  'DEP-2026-0047-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0047'),
+  '25380b2c-221a-c376-7c38-451f09f4048f'::uuid,
+  'DEP-47-M1',
+  (select id from security_deposits where deposit_no = 'DEP-47'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -27798,9 +27848,9 @@ insert into payments (
 ) values (
   '006f84c1-a965-e87b-d228-f13493326f94'::uuid,
   'PAY-2026-0047',
-  (select id from bookings where booking_no = 'BK-2026-0861'),
+  (select id from bookings where booking_no = 'B-861'),
   (select id from invoices where invoice_no = 'INV-64'),
-  (select id from clients where client_code = 'CL-2026-0065'),
+  (select id from clients where client_code = 'C-65'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   11017.50,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -27819,7 +27869,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '616ccf56-9420-e3b7-84f3-68c896692616'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0861'),
+  (select id from bookings where booking_no = 'B-861'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -27834,7 +27884,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'ec3320e3-1168-8d32-40c0-9f78ce85e864'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0861'),
+  (select id from bookings where booking_no = 'B-861'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -27849,7 +27899,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'b6536d73-b3e0-eeac-1aec-37f8e3c58663'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0861'),
+  (select id from bookings where booking_no = 'B-861'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -27874,9 +27924,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '1ba41a00-2162-1bba-1d64-d075bd64ce1d'::uuid,
-  'BK-2026-0862',
+  'B-862',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0036'),
+  (select id from clients where client_code = 'C-36'),
   'Kathmandu Street Food Series',
   '2026-08-02T00:15:00.000Z'::timestamptz,
   '2026-08-06T00:15:00.000Z'::timestamptz,
@@ -27894,7 +27944,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'ab4fc35c-71d0-7289-f3ff-e71dde2a8b53'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0862'),
+  (select id from bookings where booking_no = 'B-862'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000288'),
   'Boom Pole Carbon 3m',
@@ -27911,7 +27961,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '8291d69c-0383-e701-39d0-0db995b1be5c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0862'),
+  (select id from bookings where booking_no = 'B-862'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000245'),
   'Blackmagic Pocket 6K Pro',
@@ -27928,7 +27978,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '66eab117-22d6-4165-e57b-dc502886b7ba'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0862'),
+  (select id from bookings where booking_no = 'B-862'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000258'),
   'Laowa 12mm Zero-D',
@@ -27945,7 +27995,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'b9580124-bed3-865c-0ce1-e5fc4c9a5607'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0862'),
+  (select id from bookings where booking_no = 'B-862'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000271'),
   'Sandbag 15lb',
@@ -27962,7 +28012,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'bbb988a5-10a3-39b5-55ae-598a5550408b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0862'),
+  (select id from bookings where booking_no = 'B-862'),
   'Dipesh Gurung',
   'Camera Assistant'::crew_role,
   3000.00,
@@ -27975,7 +28025,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '45fcdeea-c052-938a-a47f-0be02b55a62a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0862'),
+  (select id from bookings where booking_no = 'B-862'),
   'Sujata Basnet',
   'Rental Coordinator'::crew_role,
   3200.00,
@@ -27997,7 +28047,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0862'),
+  (select id from bookings where booking_no = 'B-862'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -28010,7 +28060,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'a953d7a7-c481-b5bd-e520-cf86b24554c4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0862'),
+  (select id from bookings where booking_no = 'B-862'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -28030,8 +28080,8 @@ insert into invoices (
 ) values (
   '2cfc5a47-4100-d062-3253-ba976ac9b7c9'::uuid,
   'INV-65',
-  (select id from bookings where booking_no = 'BK-2026-0862'),
-  (select id from clients where client_code = 'CL-2026-0036'),
+  (select id from bookings where booking_no = 'B-862'),
+  (select id from clients where client_code = 'C-36'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -28176,10 +28226,10 @@ where invoice_no = 'INV-65';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '90efc2d4-d8ba-067a-d212-28982b656d1d'::uuid,
-  'DEP-2026-0048',
-  (select id from bookings where booking_no = 'BK-2026-0862'),
-  (select id from clients where client_code = 'CL-2026-0036'),
+  '1ee4e8a4-10b0-36f8-24d5-6f6ab4aad039'::uuid,
+  'DEP-48',
+  (select id from bookings where booking_no = 'B-862'),
+  (select id from clients where client_code = 'C-36'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -28190,9 +28240,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '08eb1d20-4137-3e6a-afb4-bb7f024b8cc1'::uuid,
-  'DEP-2026-0048-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0048'),
+  '9478678b-64cc-76a5-4306-2a686f2107aa'::uuid,
+  'DEP-48-M1',
+  (select id from security_deposits where deposit_no = 'DEP-48'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -28206,9 +28256,9 @@ insert into payments (
 ) values (
   'd4a31fb2-2c0f-ed87-e640-4b46d64aa5be'::uuid,
   'PAY-2026-0048',
-  (select id from bookings where booking_no = 'BK-2026-0862'),
+  (select id from bookings where booking_no = 'B-862'),
   (select id from invoices where invoice_no = 'INV-65'),
-  (select id from clients where client_code = 'CL-2026-0036'),
+  (select id from clients where client_code = 'C-36'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   21583.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -28227,7 +28277,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '0a100ab0-ec4a-8363-a4a5-681cd226b653'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0862'),
+  (select id from bookings where booking_no = 'B-862'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -28242,7 +28292,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'f2abb28a-f7f1-4ace-1c96-e9a0cf697d92'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0862'),
+  (select id from bookings where booking_no = 'B-862'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -28257,7 +28307,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '56c9ce9d-1bdd-1ab9-b4f1-174da5940f5c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0862'),
+  (select id from bookings where booking_no = 'B-862'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -28282,9 +28332,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '416c4aa0-9859-b31d-5e81-908c4ba11697'::uuid,
-  'BK-2026-0863',
+  'B-863',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0047'),
+  (select id from clients where client_code = 'C-47'),
   'Himalayan Airlines Safety Film',
   '2026-07-31T00:15:00.000Z'::timestamptz,
   '2026-08-05T00:15:00.000Z'::timestamptz,
@@ -28302,7 +28352,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'b380546d-3513-0203-2e8d-2829ebe67f3b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0863'),
+  (select id from bookings where booking_no = 'B-863'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000241'),
   'Sony A7S III',
@@ -28319,7 +28369,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '97f62841-b741-12e0-625a-a2fd535b1691'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0863'),
+  (select id from bookings where booking_no = 'B-863'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000254'),
   'Sigma 24-70mm Art',
@@ -28336,7 +28386,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'b4808db8-77b5-e5fd-5555-5331099f4fb4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0863'),
+  (select id from bookings where booking_no = 'B-863'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000267'),
   'Aputure Amaran 200x',
@@ -28353,7 +28403,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '2d0c109b-8493-d305-08d3-2a6f9a7fe01f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0863'),
+  (select id from bookings where booking_no = 'B-863'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000280'),
   'Slider 120cm Motorised',
@@ -28370,7 +28420,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '5292eb13-581d-c415-3af5-65f011036e6b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0863'),
+  (select id from bookings where booking_no = 'B-863'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000237'),
   'Aputure LS 600d Pro',
@@ -28396,7 +28446,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0863'),
+  (select id from bookings where booking_no = 'B-863'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -28409,7 +28459,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'a711844f-5024-c4fa-0ffb-d190e82e16d5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0863'),
+  (select id from bookings where booking_no = 'B-863'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -28429,8 +28479,8 @@ insert into invoices (
 ) values (
   '4af19b8e-c499-477b-e81f-251b5fa8a502'::uuid,
   'INV-66',
-  (select id from bookings where booking_no = 'BK-2026-0863'),
-  (select id from clients where client_code = 'CL-2026-0047'),
+  (select id from bookings where booking_no = 'B-863'),
+  (select id from clients where client_code = 'C-47'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -28575,10 +28625,10 @@ where invoice_no = 'INV-66';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '9e206900-3b08-baab-ac89-6d65d13e2275'::uuid,
-  'DEP-2026-0049',
-  (select id from bookings where booking_no = 'BK-2026-0863'),
-  (select id from clients where client_code = 'CL-2026-0047'),
+  '4795be9d-4a4c-348b-794a-c884baa40781'::uuid,
+  'DEP-49',
+  (select id from bookings where booking_no = 'B-863'),
+  (select id from clients where client_code = 'C-47'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -28592,9 +28642,9 @@ insert into payments (
 ) values (
   '3edd0599-29eb-c911-8698-9bd4ba092655'::uuid,
   'PAY-2026-0049',
-  (select id from bookings where booking_no = 'BK-2026-0863'),
+  (select id from bookings where booking_no = 'B-863'),
   (select id from invoices where invoice_no = 'INV-66'),
-  (select id from clients where client_code = 'CL-2026-0047'),
+  (select id from clients where client_code = 'C-47'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   18571.20,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -28613,7 +28663,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '9a7da1a8-bd2c-edc4-3215-aa307054c20d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0863'),
+  (select id from bookings where booking_no = 'B-863'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -28628,7 +28678,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'c53101ec-ffeb-d6a4-ce48-096fef05ec6b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0863'),
+  (select id from bookings where booking_no = 'B-863'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -28643,7 +28693,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'cc483ce3-372a-e200-abb6-3f1f76c4dad7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0863'),
+  (select id from bookings where booking_no = 'B-863'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -28668,9 +28718,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '6916f9cc-aea3-1f50-b4c6-f49c3fc445a4'::uuid,
-  'BK-2026-0864',
+  'B-864',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0058'),
+  (select id from clients where client_code = 'C-58'),
   'Ncell Brand Campaign',
   '2026-07-19T00:15:00.000Z'::timestamptz,
   '2026-07-21T00:15:00.000Z'::timestamptz,
@@ -28688,7 +28738,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'b96c553c-f915-04ef-1b81-d9755a8549bc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0864'),
+  (select id from bookings where booking_no = 'B-864'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000250'),
   'NISI Athena 25mm',
@@ -28705,7 +28755,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '08f15413-4008-886f-3ff0-8127ee2349ff'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0864'),
+  (select id from bookings where booking_no = 'B-864'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000263'),
   'Nanlite Forza 500B II',
@@ -28722,7 +28772,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'f5b2824c-5cd3-307f-8f51-4e5859fa87d0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0864'),
+  (select id from bookings where booking_no = 'B-864'),
   'Anish Tamang',
   'DoP'::crew_role,
   8000.00,
@@ -28744,7 +28794,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0864'),
+  (select id from bookings where booking_no = 'B-864'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -28757,7 +28807,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'bc862174-4486-43b1-fde2-40d112997412'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0864'),
+  (select id from bookings where booking_no = 'B-864'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -28777,8 +28827,8 @@ insert into invoices (
 ) values (
   'ff91a844-ed58-0df3-7cdc-a2a281889230'::uuid,
   'INV-67',
-  (select id from bookings where booking_no = 'BK-2026-0864'),
-  (select id from clients where client_code = 'CL-2026-0058'),
+  (select id from bookings where booking_no = 'B-864'),
+  (select id from clients where client_code = 'C-58'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -28892,7 +28942,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '6497a80a-a05e-03c5-ddc3-480d4ecd8bd9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0864'),
+  (select id from bookings where booking_no = 'B-864'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -28907,7 +28957,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '4b9af546-35bd-f7b5-092b-994c46fba54b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0864'),
+  (select id from bookings where booking_no = 'B-864'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -28922,7 +28972,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'db71ae99-6f69-9486-fb93-1eb86c16f2a6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0864'),
+  (select id from bookings where booking_no = 'B-864'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -28937,7 +28987,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '640b32a1-1432-89e9-7c8c-bad8a8390b40'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0864'),
+  (select id from bookings where booking_no = 'B-864'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -28962,9 +29012,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '52852745-ea8c-b5e7-75d0-d55405ce603a'::uuid,
-  'BK-2026-0865',
+  'B-865',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0069'),
+  (select id from clients where client_code = 'C-69'),
   'Chitwan Wildlife Feature',
   '2026-07-26T00:15:00.000Z'::timestamptz,
   '2026-07-29T00:15:00.000Z'::timestamptz,
@@ -28982,7 +29032,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'dcb12eeb-863d-b96e-6fe2-698de7767f94'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0865'),
+  (select id from bookings where booking_no = 'B-865'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000259'),
   'DZOFilm Vespid 35mm',
@@ -28999,7 +29049,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '1bde7f40-b659-65f5-14df-be3ffb29d753'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0865'),
+  (select id from bookings where booking_no = 'B-865'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000272'),
   'Dana Dolly Kit',
@@ -29016,7 +29066,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a99bf66e-90c2-8335-0389-f798b63a74dc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0865'),
+  (select id from bookings where booking_no = 'B-865'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000285'),
   'Zoom F6 Field Recorder',
@@ -29033,7 +29083,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '8aa5aa4e-a0b5-3ab8-2713-ffa2a0322578'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0865'),
+  (select id from bookings where booking_no = 'B-865'),
   'Sabina Rai',
   'Focus Puller'::crew_role,
   4500.00,
@@ -29046,7 +29096,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '88de465b-8590-80c4-dc61-02612f7c234c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0865'),
+  (select id from bookings where booking_no = 'B-865'),
   'Kiran Magar',
   'Gaffer'::crew_role,
   5000.00,
@@ -29068,7 +29118,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0865'),
+  (select id from bookings where booking_no = 'B-865'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -29081,7 +29131,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'fb98d824-738c-d465-10f2-3c6ae17cfebe'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0865'),
+  (select id from bookings where booking_no = 'B-865'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -29101,8 +29151,8 @@ insert into invoices (
 ) values (
   '3162f038-18de-13b9-d2ee-2c931774fbb2'::uuid,
   'INV-68',
-  (select id from bookings where booking_no = 'BK-2026-0865'),
-  (select id from clients where client_code = 'CL-2026-0069'),
+  (select id from bookings where booking_no = 'B-865'),
+  (select id from clients where client_code = 'C-69'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -29232,10 +29282,10 @@ where invoice_no = 'INV-68';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'abf87e69-a8aa-1997-f163-0aa677c42a53'::uuid,
-  'DEP-2026-0050',
-  (select id from bookings where booking_no = 'BK-2026-0865'),
-  (select id from clients where client_code = 'CL-2026-0069'),
+  'afe31d26-6c1c-4225-161c-c2e42365cda9'::uuid,
+  'DEP-50',
+  (select id from bookings where booking_no = 'B-865'),
+  (select id from clients where client_code = 'C-69'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -29246,9 +29296,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'de3f555b-a1ef-b182-6c6d-da41b3dce59c'::uuid,
-  'DEP-2026-0050-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0050'),
+  '403d0bf5-0bd3-4803-d8e9-d3e65189796d'::uuid,
+  'DEP-50-M1',
+  (select id from security_deposits where deposit_no = 'DEP-50'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -29262,9 +29312,9 @@ insert into payments (
 ) values (
   '1d551c9d-5b9d-c14c-5584-bd8be5daba9e'::uuid,
   'PAY-2026-0050',
-  (select id from bookings where booking_no = 'BK-2026-0865'),
+  (select id from bookings where booking_no = 'B-865'),
   (select id from invoices where invoice_no = 'INV-68'),
-  (select id from clients where client_code = 'CL-2026-0069'),
+  (select id from clients where client_code = 'C-69'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   11555.75,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -29283,7 +29333,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'cf9b6bcf-7a1c-f8a7-b12d-c1419b05b142'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0865'),
+  (select id from bookings where booking_no = 'B-865'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -29298,7 +29348,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'c8671d70-2e68-303f-32b6-f1d8d6944b8b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0865'),
+  (select id from bookings where booking_no = 'B-865'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -29313,7 +29363,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '74887cc7-92df-c194-e222-9ee2bba9f70d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0865'),
+  (select id from bookings where booking_no = 'B-865'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -29328,7 +29378,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'cb83be13-aa7a-375b-ba37-8f4a0a135c4a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0865'),
+  (select id from bookings where booking_no = 'B-865'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -29353,9 +29403,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '9930aa34-53ee-0b8a-bb87-08a1af8836a3'::uuid,
-  'BK-2026-0866',
+  'B-866',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0040'),
+  (select id from clients where client_code = 'C-40'),
   'Wedding — Shrestha / Rai',
   '2026-07-21T00:15:00.000Z'::timestamptz,
   '2026-07-25T00:15:00.000Z'::timestamptz,
@@ -29373,7 +29423,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '606d630f-435a-e7a5-e6eb-c1461f747a9d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0866'),
+  (select id from bookings where booking_no = 'B-866'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000268'),
   'Manfrotto Super Clamp',
@@ -29390,7 +29440,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '220da3c1-e40b-5b85-321a-bf049051b26a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0866'),
+  (select id from bookings where booking_no = 'B-866'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000281'),
   'Jib Arm 3m',
@@ -29407,7 +29457,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'cdf08039-18bd-238e-1384-7e943f230c23'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0866'),
+  (select id from bookings where booking_no = 'B-866'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000238'),
   'Matthews C-Stand 40in',
@@ -29424,7 +29474,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '3573e3fd-e661-289b-efa0-a289ba74db8b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0866'),
+  (select id from bookings where booking_no = 'B-866'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000251'),
   'NISI Athena 50mm',
@@ -29450,7 +29500,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0866'),
+  (select id from bookings where booking_no = 'B-866'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -29463,7 +29513,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'fec6b939-162f-38f1-4e41-efdc42621054'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0866'),
+  (select id from bookings where booking_no = 'B-866'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -29483,8 +29533,8 @@ insert into invoices (
 ) values (
   '2474d0c0-2bb2-a350-bd4b-54e0ade831b5'::uuid,
   'INV-69',
-  (select id from bookings where booking_no = 'BK-2026-0866'),
-  (select id from clients where client_code = 'CL-2026-0040'),
+  (select id from bookings where booking_no = 'B-866'),
+  (select id from clients where client_code = 'C-40'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -29614,10 +29664,10 @@ where invoice_no = 'INV-69';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'cbb10471-782a-8dc4-c402-60ddd9a250bf'::uuid,
-  'DEP-2026-0051',
-  (select id from bookings where booking_no = 'BK-2026-0866'),
-  (select id from clients where client_code = 'CL-2026-0040'),
+  '7bb45a4d-80f5-6946-d92e-f00c09aab97d'::uuid,
+  'DEP-51',
+  (select id from bookings where booking_no = 'B-866'),
+  (select id from clients where client_code = 'C-40'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -29631,9 +29681,9 @@ insert into payments (
 ) values (
   'ab110ed8-fa96-ce9d-c0e1-e036693e0dff'::uuid,
   'PAY-2026-0051',
-  (select id from bookings where booking_no = 'BK-2026-0866'),
+  (select id from bookings where booking_no = 'B-866'),
   (select id from invoices where invoice_no = 'INV-69'),
-  (select id from clients where client_code = 'CL-2026-0040'),
+  (select id from clients where client_code = 'C-40'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   7106.50,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -29652,7 +29702,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '368c38bd-5da2-92d5-a888-0d5b354cda6a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0866'),
+  (select id from bookings where booking_no = 'B-866'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -29667,7 +29717,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '5514c0a1-3283-28a9-3000-0b12c4e119d6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0866'),
+  (select id from bookings where booking_no = 'B-866'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -29682,7 +29732,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '52f17cfa-ef25-5960-d5d7-a6fa9ab33db1'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0866'),
+  (select id from bookings where booking_no = 'B-866'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -29697,7 +29747,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e3c16d6e-132d-3280-c8bc-abd90ec47ce1'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0866'),
+  (select id from bookings where booking_no = 'B-866'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -29722,9 +29772,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '6b7f79e6-a9df-518b-9a00-feb2dff6a8dc'::uuid,
-  'BK-2026-0867',
+  'B-867',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0051'),
+  (select id from clients where client_code = 'C-51'),
   'Pathao Nepal Launch Spot',
   '2026-07-28T00:15:00.000Z'::timestamptz,
   '2026-08-02T00:15:00.000Z'::timestamptz,
@@ -29742,7 +29792,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '66346b7c-41a5-002f-4a23-cb91edbae539'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0867'),
+  (select id from bookings where booking_no = 'B-867'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000277'),
   'DJI RS 4 Gimbal',
@@ -29759,7 +29809,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'b4f21450-2c50-f654-c46a-30d3e5549110'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0867'),
+  (select id from bookings where booking_no = 'B-867'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000234'),
   'Sony FX9 Cinema Camera',
@@ -29776,7 +29826,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'ad2d3338-0b27-d5f2-2944-266925989cbf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0867'),
+  (select id from bookings where booking_no = 'B-867'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000247'),
   'DJI Ronin 4D-6K',
@@ -29793,7 +29843,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a33bfbad-e637-6a0c-417c-9d70290c130a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0867'),
+  (select id from bookings where booking_no = 'B-867'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000260'),
   'Aputure LS 300x',
@@ -29810,7 +29860,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '8b0dff38-4f64-e7ed-6d43-c15cd21b1623'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0867'),
+  (select id from bookings where booking_no = 'B-867'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000273'),
   'Kupo Grip Head 4in',
@@ -29827,7 +29877,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'a86e77fc-1b76-9195-b7fd-3c88f18bc30c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0867'),
+  (select id from bookings where booking_no = 'B-867'),
   'Prabin Shrestha',
   'Grip'::crew_role,
   3500.00,
@@ -29849,7 +29899,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0867'),
+  (select id from bookings where booking_no = 'B-867'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -29862,7 +29912,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '0401cf52-b3cd-77a2-30fc-b5457aa041bc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0867'),
+  (select id from bookings where booking_no = 'B-867'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -29882,8 +29932,8 @@ insert into invoices (
 ) values (
   '5f1dd81c-033f-85fe-5b32-4ce06d855b81'::uuid,
   'INV-70',
-  (select id from bookings where booking_no = 'BK-2026-0867'),
-  (select id from clients where client_code = 'CL-2026-0051'),
+  (select id from bookings where booking_no = 'B-867'),
+  (select id from clients where client_code = 'C-51'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -30043,10 +30093,10 @@ where invoice_no = 'INV-70';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'd51b5188-e4c5-7fdf-32c1-45418d6b5ea5'::uuid,
-  'DEP-2026-0052',
-  (select id from bookings where booking_no = 'BK-2026-0867'),
-  (select id from clients where client_code = 'CL-2026-0051'),
+  '75f04a75-ab51-da51-c78f-1b597523b60e'::uuid,
+  'DEP-52',
+  (select id from bookings where booking_no = 'B-867'),
+  (select id from clients where client_code = 'C-51'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -30057,9 +30107,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'f68a5491-2121-4bf4-dd3e-2e2e257dc10b'::uuid,
-  'DEP-2026-0052-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0052'),
+  'e49b76fe-4d96-e317-d890-3041e249b989'::uuid,
+  'DEP-52-M1',
+  (select id from security_deposits where deposit_no = 'DEP-52'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -30073,9 +30123,9 @@ insert into payments (
 ) values (
   '55cd0052-1b73-baa7-a4be-1ae4912b632c'::uuid,
   'PAY-2026-0052',
-  (select id from bookings where booking_no = 'BK-2026-0867'),
+  (select id from bookings where booking_no = 'B-867'),
   (select id from invoices where invoice_no = 'INV-70'),
-  (select id from clients where client_code = 'CL-2026-0051'),
+  (select id from clients where client_code = 'C-51'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   47934.80,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -30094,7 +30144,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e170b301-4354-3982-d254-e45823f4cafe'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0867'),
+  (select id from bookings where booking_no = 'B-867'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -30109,7 +30159,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '36043749-7a4e-cbef-8d0c-a297c8fb43bc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0867'),
+  (select id from bookings where booking_no = 'B-867'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -30124,7 +30174,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'dc52cc37-9207-ca6c-de55-8074a6d6fb07'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0867'),
+  (select id from bookings where booking_no = 'B-867'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -30139,7 +30189,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '1ed8485e-2293-139c-27d3-6b292ad846fa'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0867'),
+  (select id from bookings where booking_no = 'B-867'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -30164,9 +30214,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '6e23c393-602e-91f6-a4e9-9cc0bd6082cc'::uuid,
-  'BK-2026-0868',
+  'B-868',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0062'),
+  (select id from clients where client_code = 'C-62'),
   'Sagarmatha Music Video',
   '2026-07-23T00:15:00.000Z'::timestamptz,
   '2026-07-29T00:15:00.000Z'::timestamptz,
@@ -30184,7 +30234,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '0e4bb670-ddff-7ff6-9555-d40a6ae736c7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0868'),
+  (select id from bookings where booking_no = 'B-868'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000286'),
   'Rode Wireless PRO Kit',
@@ -30201,7 +30251,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '89e2d1de-c6e6-d953-bd09-3f3604edafdb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0868'),
+  (select id from bookings where booking_no = 'B-868'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000243'),
   'Canon R5 C',
@@ -30218,7 +30268,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '1850873e-9105-33be-d4dc-877f0e83497e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0868'),
+  (select id from bookings where booking_no = 'B-868'),
   'Melina Thapa',
   'Sound Recordist'::crew_role,
   5500.00,
@@ -30231,7 +30281,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '2bfed66b-144e-82b6-199f-15ccb752edff'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0868'),
+  (select id from bookings where booking_no = 'B-868'),
   'Roshan Karki',
   'Drone Pilot'::crew_role,
   7000.00,
@@ -30253,7 +30303,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0868'),
+  (select id from bookings where booking_no = 'B-868'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -30266,7 +30316,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '5dd537c4-ad7c-8887-8cd9-3c9d9250f2c3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0868'),
+  (select id from bookings where booking_no = 'B-868'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   15.00,
@@ -30286,8 +30336,8 @@ insert into invoices (
 ) values (
   '8d7f1275-efad-e2e6-a6ab-ae36208849d4'::uuid,
   'INV-71',
-  (select id from bookings where booking_no = 'BK-2026-0868'),
-  (select id from clients where client_code = 'CL-2026-0062'),
+  (select id from bookings where booking_no = 'B-868'),
+  (select id from clients where client_code = 'C-62'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -30401,7 +30451,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '32595a22-7662-4741-9385-af6903d193fb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0868'),
+  (select id from bookings where booking_no = 'B-868'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -30416,7 +30466,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '0392b6f2-3d6b-5bc7-b2c0-8192075e84f2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0868'),
+  (select id from bookings where booking_no = 'B-868'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -30431,7 +30481,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '357ff559-76f6-1714-66da-63c222ff0e32'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0868'),
+  (select id from bookings where booking_no = 'B-868'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -30446,7 +30496,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '28ff0eee-4e9f-ba2e-8eb4-d55bfdce64e2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0868'),
+  (select id from bookings where booking_no = 'B-868'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -30471,9 +30521,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'c7d8d777-ce62-a156-d4dd-4a9e20c53218'::uuid,
-  'BK-2026-0869',
+  'B-869',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0073'),
+  (select id from clients where client_code = 'C-73'),
   'Lumbini Heritage Short',
   '2026-07-30T00:15:00.000Z'::timestamptz,
   '2026-08-06T00:15:00.000Z'::timestamptz,
@@ -30491,7 +30541,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'fac0cd5a-6ca8-0831-08fe-3abcf9f8ff6c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0869'),
+  (select id from bookings where booking_no = 'B-869'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000239'),
   'Manfrotto 504X Tripod System',
@@ -30508,7 +30558,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '51b7fa3b-b21d-ae0a-a56d-dd7291bcde67'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0869'),
+  (select id from bookings where booking_no = 'B-869'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000252'),
   'NISI Athena 85mm',
@@ -30525,7 +30575,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'fab59993-13ce-fc19-d763-62874d33520d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0869'),
+  (select id from bookings where booking_no = 'B-869'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000265'),
   'Astera Titan Tube 8-Pack',
@@ -30551,7 +30601,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0869'),
+  (select id from bookings where booking_no = 'B-869'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -30564,7 +30614,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '4fbecd69-5d7f-6d18-9a83-e69f924e9fbb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0869'),
+  (select id from bookings where booking_no = 'B-869'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -30584,8 +30634,8 @@ insert into invoices (
 ) values (
   '3bedb8f8-2d4e-b8e4-fbc3-c6ec6a67d114'::uuid,
   'INV-72',
-  (select id from bookings where booking_no = 'BK-2026-0869'),
-  (select id from clients where client_code = 'CL-2026-0073'),
+  (select id from bookings where booking_no = 'B-869'),
+  (select id from clients where client_code = 'C-73'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -30700,10 +30750,10 @@ where invoice_no = 'INV-72';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '4296c216-ff05-3f37-1b1e-69d7508d4933'::uuid,
-  'DEP-2026-0053',
-  (select id from bookings where booking_no = 'BK-2026-0869'),
-  (select id from clients where client_code = 'CL-2026-0073'),
+  'f20cf923-8ac1-d324-cfde-6b8528d029dc'::uuid,
+  'DEP-53',
+  (select id from bookings where booking_no = 'B-869'),
+  (select id from clients where client_code = 'C-73'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -30717,9 +30767,9 @@ insert into payments (
 ) values (
   'e66c7b5d-2cdd-eb5e-914a-0a0fba1c17ce'::uuid,
   'PAY-2026-0053',
-  (select id from bookings where booking_no = 'BK-2026-0869'),
+  (select id from bookings where booking_no = 'B-869'),
   (select id from invoices where invoice_no = 'INV-72'),
-  (select id from clients where client_code = 'CL-2026-0073'),
+  (select id from clients where client_code = 'C-73'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   11976.25,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -30738,7 +30788,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '5413dac5-a35f-22c1-df70-dbbaea2de54f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0869'),
+  (select id from bookings where booking_no = 'B-869'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -30753,7 +30803,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e3a35918-7394-11f4-eb21-a721cfae95ba'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0869'),
+  (select id from bookings where booking_no = 'B-869'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -30768,7 +30818,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '44ceae8e-5e16-125f-3111-8656e4ba1359'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0869'),
+  (select id from bookings where booking_no = 'B-869'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -30783,7 +30833,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '2187c4ae-0768-476b-9d4d-ae41d9fdc5b0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0869'),
+  (select id from bookings where booking_no = 'B-869'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -30808,9 +30858,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '2fae106a-7c94-2635-3d34-74f3f7365049'::uuid,
-  'BK-2026-0870',
+  'B-870',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0044'),
+  (select id from clients where client_code = 'C-44'),
   'Nepal Investment Bank AGM',
   '2026-07-25T00:15:00.000Z'::timestamptz,
   '2026-07-27T00:15:00.000Z'::timestamptz,
@@ -30828,7 +30878,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'f827bd43-a04f-f0df-ab7e-591f36de9384'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0870'),
+  (select id from bookings where booking_no = 'B-870'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000248'),
   'Panasonic Lumix S5 II',
@@ -30845,7 +30895,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '51025b01-2733-00af-c188-cc367f0e037d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0870'),
+  (select id from bookings where booking_no = 'B-870'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000261'),
   'Aputure Nova P300c',
@@ -30862,7 +30912,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'cb9f89d0-a42a-d2ec-6c22-599d14292020'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0870'),
+  (select id from bookings where booking_no = 'B-870'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000274'),
   'Butterfly Frame 6x6',
@@ -30879,7 +30929,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '14e57151-5567-b350-56b6-26b99df7b21a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0870'),
+  (select id from bookings where booking_no = 'B-870'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000287'),
   'Sennheiser EW 112P G4',
@@ -30896,7 +30946,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '6b59b08c-4edf-6b13-db74-4ac96939b555'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0870'),
+  (select id from bookings where booking_no = 'B-870'),
   'Dipesh Gurung',
   'Camera Assistant'::crew_role,
   3000.00,
@@ -30918,7 +30968,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0870'),
+  (select id from bookings where booking_no = 'B-870'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -30931,7 +30981,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'a6e06c4e-34ac-8a74-edd5-444c893a67a3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0870'),
+  (select id from bookings where booking_no = 'B-870'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -30951,8 +31001,8 @@ insert into invoices (
 ) values (
   '457c778b-6cc8-0b8c-5c9c-e36b708b7202'::uuid,
   'INV-73',
-  (select id from bookings where booking_no = 'BK-2026-0870'),
-  (select id from clients where client_code = 'CL-2026-0044'),
+  (select id from bookings where booking_no = 'B-870'),
+  (select id from clients where client_code = 'C-44'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -31097,10 +31147,10 @@ where invoice_no = 'INV-73';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '26589c9b-6b96-5a8e-e4ca-0dd4eb1ae33a'::uuid,
-  'DEP-2026-0054',
-  (select id from bookings where booking_no = 'BK-2026-0870'),
-  (select id from clients where client_code = 'CL-2026-0044'),
+  '6c2fbee4-d2f2-4016-6b3f-552256983ff8'::uuid,
+  'DEP-54',
+  (select id from bookings where booking_no = 'B-870'),
+  (select id from clients where client_code = 'C-44'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -31111,9 +31161,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'dc2bcea8-2013-072d-cfb8-53bdf9a1d8e5'::uuid,
-  'DEP-2026-0054-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0054'),
+  '35ee24c1-8dad-4fd9-0423-bd8d937e8126'::uuid,
+  'DEP-54-M1',
+  (select id from security_deposits where deposit_no = 'DEP-54'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -31127,9 +31177,9 @@ insert into payments (
 ) values (
   '5424210f-ef67-ccc7-eebf-b3450636d13b'::uuid,
   'PAY-2026-0054',
-  (select id from bookings where booking_no = 'BK-2026-0870'),
+  (select id from bookings where booking_no = 'B-870'),
   (select id from invoices where invoice_no = 'INV-73'),
-  (select id from clients where client_code = 'CL-2026-0044'),
+  (select id from clients where client_code = 'C-44'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   12102.50,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -31148,7 +31198,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '42580b2d-00d9-f0d6-8f33-b6f768d64b5e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0870'),
+  (select id from bookings where booking_no = 'B-870'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -31163,7 +31213,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '3257edaa-76f4-4c58-aa27-95677079cd38'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0870'),
+  (select id from bookings where booking_no = 'B-870'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -31178,7 +31228,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '546cb699-6b16-f00b-b104-0b51748cc6b4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0870'),
+  (select id from bookings where booking_no = 'B-870'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -31193,7 +31243,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '8dc70335-39df-7982-393d-11a7c7d7890c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0870'),
+  (select id from bookings where booking_no = 'B-870'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -31218,9 +31268,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'c09d7c35-0c21-4322-d244-06606c4074e4'::uuid,
-  'BK-2026-0871',
+  'B-871',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0055'),
+  (select id from clients where client_code = 'C-55'),
   'Pokhara Paragliding Promo',
   '2026-07-20T00:15:00.000Z'::timestamptz,
   '2026-07-23T00:15:00.000Z'::timestamptz,
@@ -31238,7 +31288,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '6e655a41-64b9-5be9-1229-a3721d561d81'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0871'),
+  (select id from bookings where booking_no = 'B-871'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000257'),
   'Sony 70-200mm GM II',
@@ -31255,7 +31305,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'd2ce1e9b-5b2a-15c3-8ccd-48d453b4de54'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0871'),
+  (select id from bookings where booking_no = 'B-871'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000270'),
   'Matthews Floppy Flag 24x36',
@@ -31272,7 +31322,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '5b49467a-00d7-9b83-9c7d-b4dc401930d3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0871'),
+  (select id from bookings where booking_no = 'B-871'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000283'),
   'Rode NTG5 Kit',
@@ -31289,7 +31339,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'fbd9808e-4f20-a98a-d131-61f5b89a8d61'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0871'),
+  (select id from bookings where booking_no = 'B-871'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000240'),
   'Sony FX3 Full-Frame Camera',
@@ -31306,7 +31356,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '5103c982-9811-7e1c-4139-37053e92664c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0871'),
+  (select id from bookings where booking_no = 'B-871'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000253'),
   'Sigma 18-35mm Art',
@@ -31323,7 +31373,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '7cbafe5c-fd2b-a6e3-1571-919542b651fc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0871'),
+  (select id from bookings where booking_no = 'B-871'),
   'Sujata Basnet',
   'Rental Coordinator'::crew_role,
   3200.00,
@@ -31336,7 +31386,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '2e40e538-661b-d8c3-8578-3e366e47449a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0871'),
+  (select id from bookings where booking_no = 'B-871'),
   'Anish Tamang',
   'DoP'::crew_role,
   8000.00,
@@ -31358,7 +31408,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0871'),
+  (select id from bookings where booking_no = 'B-871'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -31371,7 +31421,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'a1b02626-8377-536f-4a35-2d7f0beb29c7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0871'),
+  (select id from bookings where booking_no = 'B-871'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -31391,8 +31441,8 @@ insert into invoices (
 ) values (
   '7bb63e78-e296-4cff-e88b-85c78bc31ef4'::uuid,
   'INV-74',
-  (select id from bookings where booking_no = 'BK-2026-0871'),
-  (select id from clients where client_code = 'CL-2026-0055'),
+  (select id from bookings where booking_no = 'B-871'),
+  (select id from clients where client_code = 'C-55'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -31552,10 +31602,10 @@ where invoice_no = 'INV-74';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '1e9210e7-0afc-286b-434c-acf5589f1ba2'::uuid,
-  'DEP-2026-0055',
-  (select id from bookings where booking_no = 'BK-2026-0871'),
-  (select id from clients where client_code = 'CL-2026-0055'),
+  '294e2876-6569-b270-cc6d-8b849308dc45'::uuid,
+  'DEP-55',
+  (select id from bookings where booking_no = 'B-871'),
+  (select id from clients where client_code = 'C-55'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -31566,9 +31616,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '7db33c4e-ea5e-67e5-6309-acfe084e63fb'::uuid,
-  'DEP-2026-0055-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0055'),
+  '4f5e9986-dd07-af33-fe4a-ae4bdbe35561'::uuid,
+  'DEP-55-M1',
+  (select id from security_deposits where deposit_no = 'DEP-55'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -31582,9 +31632,9 @@ insert into payments (
 ) values (
   '520a3f50-c41c-0c13-e9f1-42ef4ddccbe8'::uuid,
   'PAY-2026-0055',
-  (select id from bookings where booking_no = 'BK-2026-0871'),
+  (select id from bookings where booking_no = 'B-871'),
   (select id from invoices where invoice_no = 'INV-74'),
-  (select id from clients where client_code = 'CL-2026-0055'),
+  (select id from clients where client_code = 'C-55'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   35662.80,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -31603,7 +31653,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'da96d00a-472d-10fe-41e8-7f055606c58c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0871'),
+  (select id from bookings where booking_no = 'B-871'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -31618,7 +31668,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '49b60820-e6fd-23eb-fe5f-cf41fab1ef9c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0871'),
+  (select id from bookings where booking_no = 'B-871'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -31633,7 +31683,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'a26e3bda-edd2-9fdb-deef-f5750045efae'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0871'),
+  (select id from bookings where booking_no = 'B-871'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -31648,7 +31698,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'f119e5cc-171e-fc8e-6f0c-d563c487ad6d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0871'),
+  (select id from bookings where booking_no = 'B-871'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -31673,9 +31723,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'b4a93e46-6df6-1517-84a3-8cd39cd4318f'::uuid,
-  'BK-2026-0872',
+  'B-872',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0066'),
+  (select id from clients where client_code = 'C-66'),
   'Dashain Family Campaign',
   '2026-07-27T00:15:00.000Z'::timestamptz,
   '2026-07-31T00:15:00.000Z'::timestamptz,
@@ -31693,7 +31743,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '7140d653-6b76-0535-582e-6075924aea3f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0872'),
+  (select id from bookings where booking_no = 'B-872'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000266'),
   'Godox SL200 III',
@@ -31710,7 +31760,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '1613e084-0217-3ef0-e2cf-6f7e84c4d3df'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0872'),
+  (select id from bookings where booking_no = 'B-872'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000279'),
   'Tilta Shoulder Rig',
@@ -31736,7 +31786,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0872'),
+  (select id from bookings where booking_no = 'B-872'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -31749,7 +31799,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '6c28fbe7-f0be-baee-9b43-53c7b8784caa'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0872'),
+  (select id from bookings where booking_no = 'B-872'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -31769,8 +31819,8 @@ insert into invoices (
 ) values (
   '5e76821f-184c-1c97-0401-01b995707bbb'::uuid,
   'INV-75',
-  (select id from bookings where booking_no = 'BK-2026-0872'),
-  (select id from clients where client_code = 'CL-2026-0066'),
+  (select id from bookings where booking_no = 'B-872'),
+  (select id from clients where client_code = 'C-66'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -31869,7 +31919,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'd4b21434-b70e-3d4f-29e6-d58ca922d05e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0872'),
+  (select id from bookings where booking_no = 'B-872'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -31884,7 +31934,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e00dd740-7545-91e0-1c23-1d5cef1692b5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0872'),
+  (select id from bookings where booking_no = 'B-872'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -31899,7 +31949,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '4bc78ec7-3b08-bd8a-5d48-13e98db4dd98'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0872'),
+  (select id from bookings where booking_no = 'B-872'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -31914,7 +31964,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'a2e9887e-a047-618a-8867-d874802f870b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0872'),
+  (select id from bookings where booking_no = 'B-872'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -31939,9 +31989,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '390bbfef-8bbe-7de2-8f93-c7a629050137'::uuid,
-  'BK-2026-0873',
+  'B-873',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0037'),
+  (select id from clients where client_code = 'C-37'),
   'Annapurna Trek Series',
   '2026-07-22T00:15:00.000Z'::timestamptz,
   '2026-07-27T00:15:00.000Z'::timestamptz,
@@ -31959,7 +32009,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '057c11e7-32ea-1715-ba82-9c4034bd2079'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0873'),
+  (select id from bookings where booking_no = 'B-873'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000275'),
   'Sachtler Flowtech 75',
@@ -31976,7 +32026,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '4f24801c-a629-cb91-d8af-2e9433899198'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0873'),
+  (select id from bookings where booking_no = 'B-873'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000288'),
   'Boom Pole Carbon 3m',
@@ -31993,7 +32043,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '4f13e4e6-272d-ae98-3991-f57390bdbbd4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0873'),
+  (select id from bookings where booking_no = 'B-873'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000245'),
   'Blackmagic Pocket 6K Pro',
@@ -32010,7 +32060,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '6b663861-c8c7-db73-517a-fc8bd9e06b0a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0873'),
+  (select id from bookings where booking_no = 'B-873'),
   'Sabina Rai',
   'Focus Puller'::crew_role,
   4500.00,
@@ -32032,7 +32082,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0873'),
+  (select id from bookings where booking_no = 'B-873'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -32045,7 +32095,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '281e2876-c218-a353-8aca-3cf156b988be'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0873'),
+  (select id from bookings where booking_no = 'B-873'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -32065,8 +32115,8 @@ insert into invoices (
 ) values (
   'd5d5c2ff-8098-8b4c-c5dd-8a5c02c5d0aa'::uuid,
   'INV-76',
-  (select id from bookings where booking_no = 'BK-2026-0873'),
-  (select id from clients where client_code = 'CL-2026-0037'),
+  (select id from bookings where booking_no = 'B-873'),
+  (select id from clients where client_code = 'C-37'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -32196,10 +32246,10 @@ where invoice_no = 'INV-76';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '117bf2bf-412d-df6f-af5a-5f89cb4e38b9'::uuid,
-  'DEP-2026-0056',
-  (select id from bookings where booking_no = 'BK-2026-0873'),
-  (select id from clients where client_code = 'CL-2026-0037'),
+  '950a2c1a-ef5f-503e-8cde-0d07b0119c0c'::uuid,
+  'DEP-56',
+  (select id from bookings where booking_no = 'B-873'),
+  (select id from clients where client_code = 'C-37'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -32210,9 +32260,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '8ef34d00-8529-5f50-406b-498a0a5e4fe8'::uuid,
-  'DEP-2026-0056-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0056'),
+  '9caa60c4-451e-30ef-435e-835c8f23a18d'::uuid,
+  'DEP-56-M1',
+  (select id from security_deposits where deposit_no = 'DEP-56'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -32226,9 +32276,9 @@ insert into payments (
 ) values (
   '938adade-91ef-44bc-47b0-119c94cb989a'::uuid,
   'PAY-2026-0056',
-  (select id from bookings where booking_no = 'BK-2026-0873'),
+  (select id from bookings where booking_no = 'B-873'),
   (select id from invoices where invoice_no = 'INV-76'),
-  (select id from clients where client_code = 'CL-2026-0037'),
+  (select id from clients where client_code = 'C-37'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   12642.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -32247,7 +32297,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '21d55762-59b0-6727-6a02-ad0ef8d939f3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0873'),
+  (select id from bookings where booking_no = 'B-873'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -32262,7 +32312,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'df0bd5d2-a2ce-674b-6cbf-37addf2fb405'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0873'),
+  (select id from bookings where booking_no = 'B-873'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -32277,7 +32327,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '9965571e-c5c4-4c10-04ca-73ce2e73b62c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0873'),
+  (select id from bookings where booking_no = 'B-873'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -32292,7 +32342,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '5e364ff2-a2af-2ce2-80f6-6f1ad2b8d6e9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0873'),
+  (select id from bookings where booking_no = 'B-873'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -32317,9 +32367,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'd612a91e-1a67-e854-33fc-892a044b5973'::uuid,
-  'BK-2026-0874',
+  'B-874',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0048'),
+  (select id from clients where client_code = 'C-48'),
   'Kathmandu Jazz Festival',
   '2026-07-29T00:15:00.000Z'::timestamptz,
   '2026-08-04T00:15:00.000Z'::timestamptz,
@@ -32337,7 +32387,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '4c2db70c-8b04-01d1-9e45-c2208700d8ba'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0874'),
+  (select id from bookings where booking_no = 'B-874'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000284'),
   'Sound Devices MixPre-6 II',
@@ -32354,7 +32404,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'd94a0094-24b1-75d7-7522-aca237936fc4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0874'),
+  (select id from bookings where booking_no = 'B-874'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000241'),
   'Sony A7S III',
@@ -32371,7 +32421,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'b545ae5a-8f89-44a0-2f31-7e1c4ac61675'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0874'),
+  (select id from bookings where booking_no = 'B-874'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000254'),
   'Sigma 24-70mm Art',
@@ -32388,7 +32438,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '30a1145f-c344-76ca-a933-33bcc3fba4a8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0874'),
+  (select id from bookings where booking_no = 'B-874'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000267'),
   'Aputure Amaran 200x',
@@ -32405,7 +32455,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'b43bc608-1b77-43fa-00e8-a1a095d60338'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0874'),
+  (select id from bookings where booking_no = 'B-874'),
   'Kiran Magar',
   'Gaffer'::crew_role,
   5000.00,
@@ -32418,7 +32468,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '0414d37b-2eec-49ac-3d27-9639e9e75ddd'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0874'),
+  (select id from bookings where booking_no = 'B-874'),
   'Prabin Shrestha',
   'Grip'::crew_role,
   3500.00,
@@ -32440,7 +32490,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0874'),
+  (select id from bookings where booking_no = 'B-874'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -32453,7 +32503,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '4ed84ace-6cd9-bd47-42d2-ffebcad2a3c5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0874'),
+  (select id from bookings where booking_no = 'B-874'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -32473,8 +32523,8 @@ insert into invoices (
 ) values (
   '4735c1f1-65f6-2435-e86b-3f84c5eae17d'::uuid,
   'INV-77',
-  (select id from bookings where booking_no = 'BK-2026-0874'),
-  (select id from clients where client_code = 'CL-2026-0048'),
+  (select id from bookings where booking_no = 'B-874'),
+  (select id from clients where client_code = 'C-48'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -32619,10 +32669,10 @@ where invoice_no = 'INV-77';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '0c9451af-680d-92ac-574c-4f23701b1b86'::uuid,
-  'DEP-2026-0057',
-  (select id from bookings where booking_no = 'BK-2026-0874'),
-  (select id from clients where client_code = 'CL-2026-0048'),
+  '0fa66317-1771-ea00-40ca-a56edbfeb3d0'::uuid,
+  'DEP-57',
+  (select id from bookings where booking_no = 'B-874'),
+  (select id from clients where client_code = 'C-48'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -32633,9 +32683,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '8ccead42-9fca-eb13-01c1-562aef3a2a83'::uuid,
-  'DEP-2026-0057-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0057'),
+  'fa0d3917-0cb6-619a-e159-63be228015a6'::uuid,
+  'DEP-57-M1',
+  (select id from security_deposits where deposit_no = 'DEP-57'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -32649,9 +32699,9 @@ insert into payments (
 ) values (
   'ca4d11b8-d2e5-e7b8-8589-6fcaa342d9e2'::uuid,
   'PAY-2026-0057',
-  (select id from bookings where booking_no = 'BK-2026-0874'),
+  (select id from bookings where booking_no = 'B-874'),
   (select id from invoices where invoice_no = 'INV-77'),
-  (select id from clients where client_code = 'CL-2026-0048'),
+  (select id from clients where client_code = 'C-48'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   51697.50,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -32670,7 +32720,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'f88d025b-d3e9-9e1c-076a-3cd49dab3899'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0874'),
+  (select id from bookings where booking_no = 'B-874'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -32685,7 +32735,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '4b9910dc-1dcf-feb9-4292-d617b4f46f63'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0874'),
+  (select id from bookings where booking_no = 'B-874'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -32700,7 +32750,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '135220ac-ab55-2b05-93ad-bd19daec7eb2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0874'),
+  (select id from bookings where booking_no = 'B-874'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -32715,7 +32765,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '1abbe78d-58b7-31d7-580e-c202cfd20924'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0874'),
+  (select id from bookings where booking_no = 'B-874'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -32740,9 +32790,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '39095d4b-ed24-efb4-84b8-653e15e02900'::uuid,
-  'BK-2026-0875',
+  'B-875',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0059'),
+  (select id from clients where client_code = 'C-59'),
   'Daraz 11.11 Campaign',
   '2026-07-24T00:15:00.000Z'::timestamptz,
   '2026-07-31T00:15:00.000Z'::timestamptz,
@@ -32760,7 +32810,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'd75e62d9-8e1c-cf71-0656-812904954aed'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0875'),
+  (select id from bookings where booking_no = 'B-875'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000237'),
   'Aputure LS 600d Pro',
@@ -32777,7 +32827,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'c3478bd7-be43-6676-3d14-fdc275a0fd3a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0875'),
+  (select id from bookings where booking_no = 'B-875'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000250'),
   'NISI Athena 25mm',
@@ -32794,7 +32844,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '06cdf4e7-360e-ce72-4ee6-640c20705a33'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0875'),
+  (select id from bookings where booking_no = 'B-875'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000263'),
   'Nanlite Forza 500B II',
@@ -32811,7 +32861,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '1f66ccc3-cc47-21f0-3ec8-dfa91f43f0dc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0875'),
+  (select id from bookings where booking_no = 'B-875'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000276'),
   'DJI RS 3 Pro Gimbal',
@@ -32828,7 +32878,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '7db3720a-0e76-b869-9606-526ef5946743'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0875'),
+  (select id from bookings where booking_no = 'B-875'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000289'),
   'Sony MDR-7506 Headphones',
@@ -32854,7 +32904,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0875'),
+  (select id from bookings where booking_no = 'B-875'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -32867,7 +32917,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'a463ea13-8244-a0c8-d3a4-8f4d14fc18ea'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0875'),
+  (select id from bookings where booking_no = 'B-875'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -32887,8 +32937,8 @@ insert into invoices (
 ) values (
   'c9db03a0-d43b-3ef2-33ee-6a86e92c93a5'::uuid,
   'INV-78',
-  (select id from bookings where booking_no = 'BK-2026-0875'),
-  (select id from clients where client_code = 'CL-2026-0059'),
+  (select id from bookings where booking_no = 'B-875'),
+  (select id from clients where client_code = 'C-59'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -33033,10 +33083,10 @@ where invoice_no = 'INV-78';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '37709f44-739f-7520-18b6-9a09308cb8d5'::uuid,
-  'DEP-2026-0058',
-  (select id from bookings where booking_no = 'BK-2026-0875'),
-  (select id from clients where client_code = 'CL-2026-0059'),
+  'f5d17763-1556-fb33-88be-5c24c139460b'::uuid,
+  'DEP-58',
+  (select id from bookings where booking_no = 'B-875'),
+  (select id from clients where client_code = 'C-59'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -33050,9 +33100,9 @@ insert into payments (
 ) values (
   'dcbfb522-5309-6c9e-96a8-8e67455fefbb'::uuid,
   'PAY-2026-0058',
-  (select id from bookings where booking_no = 'BK-2026-0875'),
+  (select id from bookings where booking_no = 'B-875'),
   (select id from invoices where invoice_no = 'INV-78'),
-  (select id from clients where client_code = 'CL-2026-0059'),
+  (select id from clients where client_code = 'C-59'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   23920.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -33071,7 +33121,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '2fe02383-eb8c-ae35-0b7f-ed1ab8d7f276'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0875'),
+  (select id from bookings where booking_no = 'B-875'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -33086,7 +33136,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '2be367e7-13bb-3a09-a3a8-b7bec3c19380'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0875'),
+  (select id from bookings where booking_no = 'B-875'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -33101,7 +33151,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '2cce3fe0-29d6-660a-f914-a96d64ab375f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0875'),
+  (select id from bookings where booking_no = 'B-875'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -33116,7 +33166,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '8db2ba43-c159-4719-47e6-bcd7a1461038'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0875'),
+  (select id from bookings where booking_no = 'B-875'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -33141,9 +33191,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '57a49cf8-dd5a-a67d-ee4f-794f3d817561'::uuid,
-  'BK-2026-0876',
+  'B-876',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0070'),
+  (select id from clients where client_code = 'C-70'),
   'Nepal Cricket Highlights',
   '2026-07-19T00:15:00.000Z'::timestamptz,
   '2026-07-21T00:15:00.000Z'::timestamptz,
@@ -33161,7 +33211,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'aab9070a-a7f7-f7d1-bc99-6c8955510f54'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0876'),
+  (select id from bookings where booking_no = 'B-876'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000246'),
   'RED Komodo 6K',
@@ -33178,7 +33228,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'deb10530-4730-542e-2e8e-422889c345f4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0876'),
+  (select id from bookings where booking_no = 'B-876'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000259'),
   'DZOFilm Vespid 35mm',
@@ -33195,7 +33245,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'e1cec6c9-eef4-8d68-a3ce-6e6cee7944c2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0876'),
+  (select id from bookings where booking_no = 'B-876'),
   'Melina Thapa',
   'Sound Recordist'::crew_role,
   5500.00,
@@ -33217,7 +33267,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0876'),
+  (select id from bookings where booking_no = 'B-876'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -33230,7 +33280,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '7b919234-cfb0-281f-1d8d-70c091b94ed4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0876'),
+  (select id from bookings where booking_no = 'B-876'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -33250,8 +33300,8 @@ insert into invoices (
 ) values (
   'f0c695ad-2a88-102c-f5de-389db9c63213'::uuid,
   'INV-79',
-  (select id from bookings where booking_no = 'BK-2026-0876'),
-  (select id from clients where client_code = 'CL-2026-0070'),
+  (select id from bookings where booking_no = 'B-876'),
+  (select id from clients where client_code = 'C-70'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -33365,7 +33415,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '7d009dd4-fccf-6d5b-5a09-3c817006a9fd'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0876'),
+  (select id from bookings where booking_no = 'B-876'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -33380,7 +33430,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '6280e5fe-6137-90db-9b97-b91b152920f2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0876'),
+  (select id from bookings where booking_no = 'B-876'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -33395,7 +33445,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '05bd5f92-a01e-065e-c414-770ed3465c33'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0876'),
+  (select id from bookings where booking_no = 'B-876'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -33410,7 +33460,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'a0e37ca0-8b33-8490-5c31-b003a6f064d6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0876'),
+  (select id from bookings where booking_no = 'B-876'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -33435,9 +33485,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '2821ec6b-f5b6-5d4b-4f7e-4508a48eab05'::uuid,
-  'BK-2026-0877',
+  'B-877',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0041'),
+  (select id from clients where client_code = 'C-41'),
   'Rara Lake Travel Film',
   '2026-07-26T00:15:00.000Z'::timestamptz,
   '2026-07-29T00:15:00.000Z'::timestamptz,
@@ -33455,7 +33505,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'ab49062d-44cf-16c1-4daf-ca4ed81109c9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0877'),
+  (select id from bookings where booking_no = 'B-877'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000255'),
   'Canon CN-E 24mm',
@@ -33472,7 +33522,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'fba00e03-e6b2-e552-84bf-52b359094399'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0877'),
+  (select id from bookings where booking_no = 'B-877'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000268'),
   'Manfrotto Super Clamp',
@@ -33489,7 +33539,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '5ef4bfe6-96f3-778c-3cae-d877fdadfc6d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0877'),
+  (select id from bookings where booking_no = 'B-877'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000281'),
   'Jib Arm 3m',
@@ -33506,7 +33556,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '7a0f34ad-1585-dc52-90f1-048a3d107231'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0877'),
+  (select id from bookings where booking_no = 'B-877'),
   'Roshan Karki',
   'Drone Pilot'::crew_role,
   7000.00,
@@ -33519,7 +33569,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '2a77608c-24b7-c047-da8e-a3a94cf6b516'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0877'),
+  (select id from bookings where booking_no = 'B-877'),
   'Dipesh Gurung',
   'Camera Assistant'::crew_role,
   3000.00,
@@ -33541,7 +33591,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0877'),
+  (select id from bookings where booking_no = 'B-877'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -33554,7 +33604,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '09c1852c-d0b3-40e9-db2d-4a200432f3b3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0877'),
+  (select id from bookings where booking_no = 'B-877'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -33574,8 +33624,8 @@ insert into invoices (
 ) values (
   'a4317cb3-ef6b-65fc-a3b7-0f434ac5068c'::uuid,
   'INV-80',
-  (select id from bookings where booking_no = 'BK-2026-0877'),
-  (select id from clients where client_code = 'CL-2026-0041'),
+  (select id from bookings where booking_no = 'B-877'),
+  (select id from clients where client_code = 'C-41'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -33705,10 +33755,10 @@ where invoice_no = 'INV-80';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'd361694c-82b5-26f9-1138-84edd45dc4aa'::uuid,
-  'DEP-2026-0059',
-  (select id from bookings where booking_no = 'BK-2026-0877'),
-  (select id from clients where client_code = 'CL-2026-0041'),
+  '8532d333-497f-5923-a81a-13ac86f8537d'::uuid,
+  'DEP-59',
+  (select id from bookings where booking_no = 'B-877'),
+  (select id from clients where client_code = 'C-41'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -33719,9 +33769,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '11045bf9-aaae-3e33-c09d-9f164a687e80'::uuid,
-  'DEP-2026-0059-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0059'),
+  '622bb126-48a9-668a-dc92-8345201db4a7'::uuid,
+  'DEP-59-M1',
+  (select id from security_deposits where deposit_no = 'DEP-59'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -33735,9 +33785,9 @@ insert into payments (
 ) values (
   '8c406cfd-6a9f-dd84-4962-1b7d61710a7e'::uuid,
   'PAY-2026-0059',
-  (select id from bookings where booking_no = 'BK-2026-0877'),
+  (select id from bookings where booking_no = 'B-877'),
   (select id from invoices where invoice_no = 'INV-80'),
-  (select id from clients where client_code = 'CL-2026-0041'),
+  (select id from clients where client_code = 'C-41'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   12424.25,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -33756,7 +33806,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '37d52682-e764-5e66-0339-20c11aa63a8b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0877'),
+  (select id from bookings where booking_no = 'B-877'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -33771,7 +33821,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'ba29a04e-e497-9226-7973-3b07935b7226'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0877'),
+  (select id from bookings where booking_no = 'B-877'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -33786,7 +33836,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '3ce3d2ba-ad80-d400-718d-36b815a6516e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0877'),
+  (select id from bookings where booking_no = 'B-877'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -33801,7 +33851,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '7e24c292-1208-a3b3-04e9-de5b8abbcbef'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0877'),
+  (select id from bookings where booking_no = 'B-877'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -33826,9 +33876,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'cd17b8b8-60e6-6e17-090e-b76706bdb504'::uuid,
-  'BK-2026-0878',
+  'B-878',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0052'),
+  (select id from clients where client_code = 'C-52'),
   'F1Soft Corporate Profile',
   '2026-07-21T00:15:00.000Z'::timestamptz,
   '2026-07-25T00:15:00.000Z'::timestamptz,
@@ -33846,7 +33896,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'ccf71f14-250e-f12e-505a-05c104e5fe67'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0878'),
+  (select id from bookings where booking_no = 'B-878'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000264'),
   'Nanlux Evoke 1200B',
@@ -33863,7 +33913,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '3e62c430-ce7d-4d07-ce69-f88148adf5f2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0878'),
+  (select id from bookings where booking_no = 'B-878'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000277'),
   'DJI RS 4 Gimbal',
@@ -33880,7 +33930,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '6f2ae8ab-29fd-a299-9329-b2d4f8ed04f9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0878'),
+  (select id from bookings where booking_no = 'B-878'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000234'),
   'Sony FX9 Cinema Camera',
@@ -33897,7 +33947,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '4a1d9845-fcde-3015-d397-7a3c50011217'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0878'),
+  (select id from bookings where booking_no = 'B-878'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000247'),
   'DJI Ronin 4D-6K',
@@ -33923,7 +33973,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0878'),
+  (select id from bookings where booking_no = 'B-878'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -33936,7 +33986,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'eb440390-2567-39ea-d76e-c4e1ae6c558d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0878'),
+  (select id from bookings where booking_no = 'B-878'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -33956,8 +34006,8 @@ insert into invoices (
 ) values (
   '79f0c815-79c5-4660-42e5-1eedc5372f22'::uuid,
   'INV-81',
-  (select id from bookings where booking_no = 'BK-2026-0878'),
-  (select id from clients where client_code = 'CL-2026-0052'),
+  (select id from bookings where booking_no = 'B-878'),
+  (select id from clients where client_code = 'C-52'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -34087,10 +34137,10 @@ where invoice_no = 'INV-81';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '648447e8-7b16-f538-db70-562dd10fd59d'::uuid,
-  'DEP-2026-0060',
-  (select id from bookings where booking_no = 'BK-2026-0878'),
-  (select id from clients where client_code = 'CL-2026-0052'),
+  'f3a41336-910b-6edd-58bb-eeb1f125fd2d'::uuid,
+  'DEP-60',
+  (select id from bookings where booking_no = 'B-878'),
+  (select id from clients where client_code = 'C-52'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -34104,9 +34154,9 @@ insert into payments (
 ) values (
   'ee2357a7-a86a-43fa-7e7e-90e77234bf54'::uuid,
   'PAY-2026-0060',
-  (select id from bookings where booking_no = 'BK-2026-0878'),
+  (select id from bookings where booking_no = 'B-878'),
   (select id from invoices where invoice_no = 'INV-81'),
-  (select id from clients where client_code = 'CL-2026-0052'),
+  (select id from clients where client_code = 'C-52'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   38860.50,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -34125,7 +34175,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'ec0f9263-de15-1e36-5ec6-8d8f808e8432'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0878'),
+  (select id from bookings where booking_no = 'B-878'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -34140,7 +34190,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '66c73bde-6d69-3c83-1621-db8272bafda8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0878'),
+  (select id from bookings where booking_no = 'B-878'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -34155,7 +34205,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'cff5c772-58c1-723a-a46d-255802a06cd8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0878'),
+  (select id from bookings where booking_no = 'B-878'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -34170,7 +34220,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e9e50465-7650-63d4-4511-fa750d58cec2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0878'),
+  (select id from bookings where booking_no = 'B-878'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -34195,9 +34245,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'b7a0b81a-e509-cf8e-f6bf-eb4479e10049'::uuid,
-  'BK-2026-0879',
+  'B-879',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0063'),
+  (select id from clients where client_code = 'C-63'),
   'Thamel After Dark',
   '2026-07-28T00:15:00.000Z'::timestamptz,
   '2026-08-02T00:15:00.000Z'::timestamptz,
@@ -34215,7 +34265,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '8f73ccfc-da22-57b5-5bac-663fe6c93e5f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0879'),
+  (select id from bookings where booking_no = 'B-879'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000273'),
   'Kupo Grip Head 4in',
@@ -34232,7 +34282,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '35eb7223-ea9e-dac3-4e49-14344b62dec4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0879'),
+  (select id from bookings where booking_no = 'B-879'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000286'),
   'Rode Wireless PRO Kit',
@@ -34249,7 +34299,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '206615dd-fc14-0177-776a-d8e5740c1178'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0879'),
+  (select id from bookings where booking_no = 'B-879'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000243'),
   'Canon R5 C',
@@ -34266,7 +34316,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '8fcd77ef-864f-b7a7-0d29-12a431cea2ad'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0879'),
+  (select id from bookings where booking_no = 'B-879'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000256'),
   'Canon CN-E 50mm',
@@ -34283,7 +34333,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'abe7c5cf-0922-8d10-b837-44b0ffc206fb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0879'),
+  (select id from bookings where booking_no = 'B-879'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000269'),
   'Avenger Wind-Up Stand',
@@ -34300,7 +34350,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'b22944f9-d597-a8c3-9714-a77d0db17ae8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0879'),
+  (select id from bookings where booking_no = 'B-879'),
   'Sujata Basnet',
   'Rental Coordinator'::crew_role,
   3200.00,
@@ -34322,7 +34372,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0879'),
+  (select id from bookings where booking_no = 'B-879'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -34335,7 +34385,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'b9e0430b-41ba-47da-0c20-a340dd0b3175'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0879'),
+  (select id from bookings where booking_no = 'B-879'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -34355,8 +34405,8 @@ insert into invoices (
 ) values (
   '3aa8f57c-7903-4f2b-b5d5-28851d7060c2'::uuid,
   'INV-82',
-  (select id from bookings where booking_no = 'BK-2026-0879'),
-  (select id from clients where client_code = 'CL-2026-0063'),
+  (select id from bookings where booking_no = 'B-879'),
+  (select id from clients where client_code = 'C-63'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -34516,10 +34566,10 @@ where invoice_no = 'INV-82';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '5569424a-5e8d-5f2c-aab1-6bd4f2bfdfdd'::uuid,
-  'DEP-2026-0061',
-  (select id from bookings where booking_no = 'BK-2026-0879'),
-  (select id from clients where client_code = 'CL-2026-0063'),
+  'aa5a989c-cc44-adc2-89af-98444e6041d3'::uuid,
+  'DEP-61',
+  (select id from bookings where booking_no = 'B-879'),
+  (select id from clients where client_code = 'C-63'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -34530,9 +34580,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '08d2ebcf-46f3-421a-bbe2-281eb3722d8e'::uuid,
-  'DEP-2026-0061-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0061'),
+  'c20f9b80-7e9f-3a71-1de5-a2c7721b4b3a'::uuid,
+  'DEP-61-M1',
+  (select id from security_deposits where deposit_no = 'DEP-61'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -34546,9 +34596,9 @@ insert into payments (
 ) values (
   '482e7fad-1380-af69-0bd0-33522012c77a'::uuid,
   'PAY-2026-0061',
-  (select id from bookings where booking_no = 'BK-2026-0879'),
+  (select id from bookings where booking_no = 'B-879'),
   (select id from invoices where invoice_no = 'INV-82'),
-  (select id from clients where client_code = 'CL-2026-0063'),
+  (select id from clients where client_code = 'C-63'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   34329.60,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -34567,7 +34617,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'a74adb17-7f14-91b9-c0c4-4a3d741f859c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0879'),
+  (select id from bookings where booking_no = 'B-879'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -34582,7 +34632,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '694ae89d-446b-ff59-f09f-399a92e384df'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0879'),
+  (select id from bookings where booking_no = 'B-879'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -34597,7 +34647,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '98f2a5f6-7a41-c0b2-0fbf-697db5aa9ab3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0879'),
+  (select id from bookings where booking_no = 'B-879'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -34612,7 +34662,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '9622fce2-8247-5c0b-3bc6-a9eb85b47e09'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0879'),
+  (select id from bookings where booking_no = 'B-879'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -34637,9 +34687,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '28b0c32c-8be2-4070-6a57-0a224fc8937d'::uuid,
-  'BK-2026-0880',
+  'B-880',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0034'),
+  (select id from clients where client_code = 'C-34'),
   'Everest Base Camp Documentary',
   '2026-07-23T00:15:00.000Z'::timestamptz,
   '2026-07-29T00:15:00.000Z'::timestamptz,
@@ -34657,7 +34707,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '2cb08479-5f16-301e-d5d0-21a8af6a1fd4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0880'),
+  (select id from bookings where booking_no = 'B-880'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000282'),
   'Sennheiser MKH 416',
@@ -34674,7 +34724,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'b9aacd08-1210-87ac-0083-8cc5e8bb0e8d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0880'),
+  (select id from bookings where booking_no = 'B-880'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000239'),
   'Manfrotto 504X Tripod System',
@@ -34691,7 +34741,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '98d772bc-e2ab-0dff-aaa9-229310855287'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0880'),
+  (select id from bookings where booking_no = 'B-880'),
   'Anish Tamang',
   'DoP'::crew_role,
   8000.00,
@@ -34704,7 +34754,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '1f860809-b972-3bec-c74e-edd8e4376959'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0880'),
+  (select id from bookings where booking_no = 'B-880'),
   'Sabina Rai',
   'Focus Puller'::crew_role,
   4500.00,
@@ -34726,7 +34776,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0880'),
+  (select id from bookings where booking_no = 'B-880'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -34739,7 +34789,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '7ae03f57-4a49-5429-3e59-56d018c6525a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0880'),
+  (select id from bookings where booking_no = 'B-880'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -34759,8 +34809,8 @@ insert into invoices (
 ) values (
   '048cd8e1-3dab-07fb-784f-8de554d3aeec'::uuid,
   'INV-83',
-  (select id from bookings where booking_no = 'BK-2026-0880'),
-  (select id from clients where client_code = 'CL-2026-0034'),
+  (select id from bookings where booking_no = 'B-880'),
+  (select id from clients where client_code = 'C-34'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -34874,7 +34924,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '02620ff2-1fe8-b918-89e0-8c928f57ab5d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0880'),
+  (select id from bookings where booking_no = 'B-880'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -34889,7 +34939,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'f19bd02a-8a75-4232-583b-3e6afb259677'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0880'),
+  (select id from bookings where booking_no = 'B-880'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -34904,7 +34954,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'ca352bcd-6d4f-3f78-6821-bdb25e86ab91'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0880'),
+  (select id from bookings where booking_no = 'B-880'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -34919,7 +34969,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'a61159da-1435-7f6b-06fa-f0cb5c58d98b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0880'),
+  (select id from bookings where booking_no = 'B-880'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -34944,9 +34994,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '4fe5356f-c101-c626-c5c2-f09a630e15dc'::uuid,
-  'BK-2026-0881',
+  'B-881',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0045'),
+  (select id from clients where client_code = 'C-45'),
   'Nepal Tourism Board TVC',
   '2026-07-30T00:15:00.000Z'::timestamptz,
   '2026-08-06T00:15:00.000Z'::timestamptz,
@@ -34964,7 +35014,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '03e1572c-1360-648d-77d3-4a9bff493658'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0881'),
+  (select id from bookings where booking_no = 'B-881'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000235'),
   'Sony FX6 Cinema Camera',
@@ -34981,7 +35031,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'fa571073-df94-8ffc-880d-1669b3928f81'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0881'),
+  (select id from bookings where booking_no = 'B-881'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000248'),
   'Panasonic Lumix S5 II',
@@ -34998,7 +35048,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'f90db511-2a18-68b2-d2e4-9119baab12e7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0881'),
+  (select id from bookings where booking_no = 'B-881'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000261'),
   'Aputure Nova P300c',
@@ -35024,7 +35074,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0881'),
+  (select id from bookings where booking_no = 'B-881'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -35037,7 +35087,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '1111add3-8e3a-ecb3-78a8-e5dc5a15ee42'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0881'),
+  (select id from bookings where booking_no = 'B-881'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -35057,8 +35107,8 @@ insert into invoices (
 ) values (
   'd3feb958-a39e-fd71-1c1e-8e09ddfb6b12'::uuid,
   'INV-84',
-  (select id from bookings where booking_no = 'BK-2026-0881'),
-  (select id from clients where client_code = 'CL-2026-0045'),
+  (select id from bookings where booking_no = 'B-881'),
+  (select id from clients where client_code = 'C-45'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -35173,10 +35223,10 @@ where invoice_no = 'INV-84';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'd02bec8d-5712-38ae-8ae7-0946b0947ff5'::uuid,
-  'DEP-2026-0062',
-  (select id from bookings where booking_no = 'BK-2026-0881'),
-  (select id from clients where client_code = 'CL-2026-0045'),
+  'c4a67b5a-2b60-a1df-9c52-170ad5889d16'::uuid,
+  'DEP-62',
+  (select id from bookings where booking_no = 'B-881'),
+  (select id from clients where client_code = 'C-45'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -35190,9 +35240,9 @@ insert into payments (
 ) values (
   '0dfb030a-d151-3a28-615b-f0bcbf9ae659'::uuid,
   'PAY-2026-0062',
-  (select id from bookings where booking_no = 'BK-2026-0881'),
+  (select id from bookings where booking_no = 'B-881'),
   (select id from invoices where invoice_no = 'INV-84'),
-  (select id from clients where client_code = 'CL-2026-0045'),
+  (select id from clients where client_code = 'C-45'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   21228.50,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -35211,7 +35261,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'ec5a93d9-0703-b10e-1009-04b71a294180'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0881'),
+  (select id from bookings where booking_no = 'B-881'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -35226,7 +35276,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '12539575-96e1-2d96-3dc1-f7a732cbc37d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0881'),
+  (select id from bookings where booking_no = 'B-881'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -35241,7 +35291,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '21c7256e-63ae-5b01-8368-2dc25033671f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0881'),
+  (select id from bookings where booking_no = 'B-881'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -35256,7 +35306,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'b37dd1e6-48d1-0b86-8608-b78f7637480b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0881'),
+  (select id from bookings where booking_no = 'B-881'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -35281,9 +35331,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'a9b9033c-8b63-313f-1d92-3e5e1d09b5e4'::uuid,
-  'BK-2026-0882',
+  'B-882',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0056'),
+  (select id from clients where client_code = 'C-56'),
   'Kathmandu Street Food Series',
   '2026-07-25T00:15:00.000Z'::timestamptz,
   '2026-07-27T00:15:00.000Z'::timestamptz,
@@ -35301,7 +35351,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'aa1bb7aa-1925-4fe6-7d81-325f8c50acf8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0882'),
+  (select id from bookings where booking_no = 'B-882'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000244'),
   'Blackmagic URSA Mini Pro 12K',
@@ -35318,7 +35368,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '618110ef-7895-9ea8-9381-6a4a52d60f82'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0882'),
+  (select id from bookings where booking_no = 'B-882'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000257'),
   'Sony 70-200mm GM II',
@@ -35335,7 +35385,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'aa5bf575-eb90-2abe-fe07-2459af3cdcaa'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0882'),
+  (select id from bookings where booking_no = 'B-882'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000270'),
   'Matthews Floppy Flag 24x36',
@@ -35352,7 +35402,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'f8fc9dce-e383-68f4-36d0-9e9aa8cdf141'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0882'),
+  (select id from bookings where booking_no = 'B-882'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000283'),
   'Rode NTG5 Kit',
@@ -35369,7 +35419,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '9d1be0cd-666a-cca6-4c3a-02de3a57e784'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0882'),
+  (select id from bookings where booking_no = 'B-882'),
   'Kiran Magar',
   'Gaffer'::crew_role,
   5000.00,
@@ -35391,7 +35441,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0882'),
+  (select id from bookings where booking_no = 'B-882'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -35404,7 +35454,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '0e55af62-87de-7631-bf28-354d049ba610'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0882'),
+  (select id from bookings where booking_no = 'B-882'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -35424,8 +35474,8 @@ insert into invoices (
 ) values (
   'd136abc2-21ce-ec24-975f-7f00720c42b7'::uuid,
   'INV-85',
-  (select id from bookings where booking_no = 'BK-2026-0882'),
-  (select id from clients where client_code = 'CL-2026-0056'),
+  (select id from bookings where booking_no = 'B-882'),
+  (select id from clients where client_code = 'C-56'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -35570,10 +35620,10 @@ where invoice_no = 'INV-85';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'a93ddd70-9395-26fd-7ee6-bb979589ea08'::uuid,
-  'DEP-2026-0063',
-  (select id from bookings where booking_no = 'BK-2026-0882'),
-  (select id from clients where client_code = 'CL-2026-0056'),
+  'b53e4e93-be1f-118f-233a-41e67f8df2ad'::uuid,
+  'DEP-63',
+  (select id from bookings where booking_no = 'B-882'),
+  (select id from clients where client_code = 'C-56'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -35584,9 +35634,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '51131c5f-fc45-c8b1-25b4-833317ec23bc'::uuid,
-  'DEP-2026-0063-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0063'),
+  '0e13485d-25ea-45d6-c5e8-9a177812ee1a'::uuid,
+  'DEP-63-M1',
+  (select id from security_deposits where deposit_no = 'DEP-63'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -35600,9 +35650,9 @@ insert into payments (
 ) values (
   '285755ba-78e8-f7e8-608b-4727c65f5a65'::uuid,
   'PAY-2026-0063',
-  (select id from bookings where booking_no = 'BK-2026-0882'),
+  (select id from bookings where booking_no = 'B-882'),
   (select id from invoices where invoice_no = 'INV-85'),
-  (select id from clients where client_code = 'CL-2026-0056'),
+  (select id from clients where client_code = 'C-56'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   16385.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -35621,7 +35671,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '938dd21a-133d-bcfb-e5ff-e3830a7f2870'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0882'),
+  (select id from bookings where booking_no = 'B-882'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -35636,7 +35686,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'ad9b8ac2-ec6a-97eb-628b-acf1ed0877f0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0882'),
+  (select id from bookings where booking_no = 'B-882'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -35651,7 +35701,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '04cac3c1-6f9b-2c1f-3b4d-0cb5a666112e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0882'),
+  (select id from bookings where booking_no = 'B-882'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -35666,7 +35716,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '19b72b50-892e-9e2e-413f-5089797b703a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0882'),
+  (select id from bookings where booking_no = 'B-882'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -35691,9 +35741,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '9f4cd7b6-2880-1c9b-8afc-f3dff8d63c5c'::uuid,
-  'BK-2026-0883',
+  'B-883',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0067'),
+  (select id from clients where client_code = 'C-67'),
   'Himalayan Airlines Safety Film',
   '2026-07-20T00:15:00.000Z'::timestamptz,
   '2026-07-23T00:15:00.000Z'::timestamptz,
@@ -35711,7 +35761,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'c905c149-f9eb-0885-f9f4-33d08c5f320f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0883'),
+  (select id from bookings where booking_no = 'B-883'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000253'),
   'Sigma 18-35mm Art',
@@ -35728,7 +35778,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '2270ed4f-3f72-ad5c-8dbd-9d4d5684ff89'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0883'),
+  (select id from bookings where booking_no = 'B-883'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000266'),
   'Godox SL200 III',
@@ -35745,7 +35795,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '3cb96ee2-7de7-9fa8-5c45-8e176bdee959'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0883'),
+  (select id from bookings where booking_no = 'B-883'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000279'),
   'Tilta Shoulder Rig',
@@ -35762,7 +35812,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '1c2a3310-e443-ac96-6b66-f19484f937f9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0883'),
+  (select id from bookings where booking_no = 'B-883'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000236'),
   'NISI Athena 35mm',
@@ -35779,7 +35829,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'f2e26d4f-8e02-0043-3736-3a53af7d0758'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0883'),
+  (select id from bookings where booking_no = 'B-883'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000249'),
   'Sony FX30',
@@ -35796,7 +35846,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '24659fcb-7fca-83cc-6e53-dc46093926ce'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0883'),
+  (select id from bookings where booking_no = 'B-883'),
   'Prabin Shrestha',
   'Grip'::crew_role,
   3500.00,
@@ -35809,7 +35859,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'b2023981-4241-bf20-0878-c275a9bd0b5e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0883'),
+  (select id from bookings where booking_no = 'B-883'),
   'Melina Thapa',
   'Sound Recordist'::crew_role,
   5500.00,
@@ -35831,7 +35881,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0883'),
+  (select id from bookings where booking_no = 'B-883'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -35844,7 +35894,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '413f3293-09a1-6838-bb15-0957035f91e0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0883'),
+  (select id from bookings where booking_no = 'B-883'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -35864,8 +35914,8 @@ insert into invoices (
 ) values (
   'aa9018d4-ab85-1561-30aa-84c657a782c6'::uuid,
   'INV-86',
-  (select id from bookings where booking_no = 'BK-2026-0883'),
-  (select id from clients where client_code = 'CL-2026-0067'),
+  (select id from bookings where booking_no = 'B-883'),
+  (select id from clients where client_code = 'C-67'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -36025,10 +36075,10 @@ where invoice_no = 'INV-86';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '5db5e6ef-17ba-903c-a08f-91fbfebfbfac'::uuid,
-  'DEP-2026-0064',
-  (select id from bookings where booking_no = 'BK-2026-0883'),
-  (select id from clients where client_code = 'CL-2026-0067'),
+  '72605158-8576-490a-63f2-ed95c25c94b1'::uuid,
+  'DEP-64',
+  (select id from bookings where booking_no = 'B-883'),
+  (select id from clients where client_code = 'C-67'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -36039,9 +36089,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '17a22f73-87de-d12d-13ed-dabf3020a82b'::uuid,
-  'DEP-2026-0064-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0064'),
+  'd1143749-e75a-4bba-b2ca-c50b26c57cfd'::uuid,
+  'DEP-64-M1',
+  (select id from security_deposits where deposit_no = 'DEP-64'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -36055,9 +36105,9 @@ insert into payments (
 ) values (
   '86380f4c-2399-470d-7805-228d3b9ec9fe'::uuid,
   'PAY-2026-0064',
-  (select id from bookings where booking_no = 'BK-2026-0883'),
+  (select id from bookings where booking_no = 'B-883'),
   (select id from invoices where invoice_no = 'INV-86'),
-  (select id from clients where client_code = 'CL-2026-0067'),
+  (select id from clients where client_code = 'C-67'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   23458.80,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -36076,7 +36126,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '142529e3-898a-1a24-8971-0df26d951766'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0883'),
+  (select id from bookings where booking_no = 'B-883'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -36091,7 +36141,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'b9fa41b0-b95f-08a6-ea64-e2b5aa8a0efa'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0883'),
+  (select id from bookings where booking_no = 'B-883'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -36106,7 +36156,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '6b67b68a-6720-c886-3e1f-827e44aba2e3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0883'),
+  (select id from bookings where booking_no = 'B-883'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -36121,7 +36171,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'f8fb29b1-0a0c-6440-3359-70903ad28069'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0883'),
+  (select id from bookings where booking_no = 'B-883'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -36146,9 +36196,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '22438ae4-4857-a143-99ed-5b6e42fac5a9'::uuid,
-  'BK-2026-0884',
+  'B-884',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0038'),
+  (select id from clients where client_code = 'C-38'),
   'Ncell Brand Campaign',
   '2026-07-27T00:15:00.000Z'::timestamptz,
   '2026-07-31T00:15:00.000Z'::timestamptz,
@@ -36166,7 +36216,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '3373bdef-0b06-9449-005f-73b49cad106a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0884'),
+  (select id from bookings where booking_no = 'B-884'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000262'),
   'Aputure MC Pro 4-Light Kit',
@@ -36183,7 +36233,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '00c1607b-9591-06d1-3812-f66a85b09e8d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0884'),
+  (select id from bookings where booking_no = 'B-884'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000275'),
   'Sachtler Flowtech 75',
@@ -36209,7 +36259,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0884'),
+  (select id from bookings where booking_no = 'B-884'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -36222,7 +36272,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '372b9db4-588a-6063-ecaf-4cac97c2f28c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0884'),
+  (select id from bookings where booking_no = 'B-884'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -36242,8 +36292,8 @@ insert into invoices (
 ) values (
   '59e3b117-4131-7e33-805b-aea9998dcbd2'::uuid,
   'INV-87',
-  (select id from bookings where booking_no = 'BK-2026-0884'),
-  (select id from clients where client_code = 'CL-2026-0038'),
+  (select id from bookings where booking_no = 'B-884'),
+  (select id from clients where client_code = 'C-38'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -36342,7 +36392,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'a11d922b-5725-4108-905b-9f5b00d3f9cf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0884'),
+  (select id from bookings where booking_no = 'B-884'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -36357,7 +36407,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '4371e218-e443-c091-b75c-eee2d7cb7dd2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0884'),
+  (select id from bookings where booking_no = 'B-884'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -36372,7 +36422,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '2f85491d-c3c3-e71e-c0c8-77cdba0842b6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0884'),
+  (select id from bookings where booking_no = 'B-884'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -36387,7 +36437,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '621205ea-bd8e-3880-ba57-cad384d01f9e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0884'),
+  (select id from bookings where booking_no = 'B-884'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -36412,9 +36462,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'da29b5ed-0a8e-a80b-855a-ec95b920b62c'::uuid,
-  'BK-2026-0885',
+  'B-885',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0049'),
+  (select id from clients where client_code = 'C-49'),
   'Chitwan Wildlife Feature',
   '2026-07-22T00:15:00.000Z'::timestamptz,
   '2026-07-27T00:15:00.000Z'::timestamptz,
@@ -36432,7 +36482,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '760e456c-f47a-4ca4-7b67-5db423cccae5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0885'),
+  (select id from bookings where booking_no = 'B-885'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000271'),
   'Sandbag 15lb',
@@ -36449,7 +36499,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'c3346251-d7d1-49c5-6d0b-3a15c40bbe7e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0885'),
+  (select id from bookings where booking_no = 'B-885'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000284'),
   'Sound Devices MixPre-6 II',
@@ -36466,7 +36516,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '314e23f4-89c5-f9e9-cfed-904153a769ca'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0885'),
+  (select id from bookings where booking_no = 'B-885'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000241'),
   'Sony A7S III',
@@ -36483,7 +36533,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'c6dbf7c7-8690-65c4-6d9e-cf4c074d9cc5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0885'),
+  (select id from bookings where booking_no = 'B-885'),
   'Roshan Karki',
   'Drone Pilot'::crew_role,
   7000.00,
@@ -36505,7 +36555,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0885'),
+  (select id from bookings where booking_no = 'B-885'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -36518,7 +36568,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'a023faf8-89be-84c3-e668-0f39e1241c7e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0885'),
+  (select id from bookings where booking_no = 'B-885'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   15.00,
@@ -36538,8 +36588,8 @@ insert into invoices (
 ) values (
   'b678ae36-a278-39d9-a7e4-cb959c3b9b2a'::uuid,
   'INV-88',
-  (select id from bookings where booking_no = 'BK-2026-0885'),
-  (select id from clients where client_code = 'CL-2026-0049'),
+  (select id from bookings where booking_no = 'B-885'),
+  (select id from clients where client_code = 'C-49'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -36669,10 +36719,10 @@ where invoice_no = 'INV-88';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '396f639f-564f-5534-9c45-c6c90c149896'::uuid,
-  'DEP-2026-0065',
-  (select id from bookings where booking_no = 'BK-2026-0885'),
-  (select id from clients where client_code = 'CL-2026-0049'),
+  'a9887c46-210f-d176-4195-595e8606fffe'::uuid,
+  'DEP-65',
+  (select id from bookings where booking_no = 'B-885'),
+  (select id from clients where client_code = 'C-49'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -36683,9 +36733,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '0360f21e-ed39-7c29-9cb8-c670ec665f3c'::uuid,
-  'DEP-2026-0065-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0065'),
+  'c53fe701-bac6-fa7f-3d18-05d371b1f812'::uuid,
+  'DEP-65-M1',
+  (select id from security_deposits where deposit_no = 'DEP-65'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -36699,9 +36749,9 @@ insert into payments (
 ) values (
   '83d571e3-5a68-c0b0-2662-3c0d98d2553f'::uuid,
   'PAY-2026-0065',
-  (select id from bookings where booking_no = 'BK-2026-0885'),
+  (select id from bookings where booking_no = 'B-885'),
   (select id from invoices where invoice_no = 'INV-88'),
-  (select id from clients where client_code = 'CL-2026-0049'),
+  (select id from clients where client_code = 'C-49'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   13327.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -36720,7 +36770,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'dc7ce3a0-39f9-d268-85e8-675ce5206fcf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0885'),
+  (select id from bookings where booking_no = 'B-885'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -36735,7 +36785,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '26495d51-2515-4f03-620e-4b91f0804a5d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0885'),
+  (select id from bookings where booking_no = 'B-885'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -36750,7 +36800,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '2951fe9c-daf5-d1e4-3baf-c4f47ae044ec'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0885'),
+  (select id from bookings where booking_no = 'B-885'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -36765,7 +36815,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '57d1b4a3-65de-f808-1e35-dd82b15c9b73'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0885'),
+  (select id from bookings where booking_no = 'B-885'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -36790,9 +36840,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'a5032b77-05a4-c55a-e243-89f7e9caf7fd'::uuid,
-  'BK-2026-0886',
+  'B-886',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0060'),
+  (select id from clients where client_code = 'C-60'),
   'Wedding — Shrestha / Rai',
   '2026-07-29T00:15:00.000Z'::timestamptz,
   '2026-08-04T00:15:00.000Z'::timestamptz,
@@ -36810,7 +36860,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '3a329a34-a3c6-aa6c-c4c6-fba3099c3813'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0886'),
+  (select id from bookings where booking_no = 'B-886'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000280'),
   'Slider 120cm Motorised',
@@ -36827,7 +36877,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '555d2661-3d95-4c5e-c9d5-3b0deddde540'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0886'),
+  (select id from bookings where booking_no = 'B-886'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000237'),
   'Aputure LS 600d Pro',
@@ -36844,7 +36894,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '6eeeb1d4-7c23-dbee-f009-b8c970f67897'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0886'),
+  (select id from bookings where booking_no = 'B-886'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000250'),
   'NISI Athena 25mm',
@@ -36861,7 +36911,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '3e8b71c0-a81b-4575-5de3-cfcbb1cadb64'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0886'),
+  (select id from bookings where booking_no = 'B-886'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000263'),
   'Nanlite Forza 500B II',
@@ -36878,7 +36928,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '9bd669f5-27bb-143c-2c09-75669163afb2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0886'),
+  (select id from bookings where booking_no = 'B-886'),
   'Dipesh Gurung',
   'Camera Assistant'::crew_role,
   3000.00,
@@ -36891,7 +36941,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '927429db-9583-4202-43d0-085f63963bea'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0886'),
+  (select id from bookings where booking_no = 'B-886'),
   'Sujata Basnet',
   'Rental Coordinator'::crew_role,
   3200.00,
@@ -36913,7 +36963,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0886'),
+  (select id from bookings where booking_no = 'B-886'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -36926,7 +36976,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '2f7ffe6f-d369-ae48-29c9-6fe18cab0f1c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0886'),
+  (select id from bookings where booking_no = 'B-886'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -36946,8 +36996,8 @@ insert into invoices (
 ) values (
   '43e6227a-edb3-16fa-52bc-3dc2191d9df4'::uuid,
   'INV-89',
-  (select id from bookings where booking_no = 'BK-2026-0886'),
-  (select id from clients where client_code = 'CL-2026-0060'),
+  (select id from bookings where booking_no = 'B-886'),
+  (select id from clients where client_code = 'C-60'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -37092,10 +37142,10 @@ where invoice_no = 'INV-89';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '15ebd101-bb8c-edc6-3b5e-5f01727e88fe'::uuid,
-  'DEP-2026-0066',
-  (select id from bookings where booking_no = 'BK-2026-0886'),
-  (select id from clients where client_code = 'CL-2026-0060'),
+  '4b21f22b-a0ef-b257-349b-bbf397b67c77'::uuid,
+  'DEP-66',
+  (select id from bookings where booking_no = 'B-886'),
+  (select id from clients where client_code = 'C-60'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -37106,9 +37156,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'a76d4602-104e-0721-bfdd-214aeb879719'::uuid,
-  'DEP-2026-0066-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0066'),
+  '4c64d71b-e5fd-06ab-f5ee-6a57248306d7'::uuid,
+  'DEP-66-M1',
+  (select id from security_deposits where deposit_no = 'DEP-66'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -37122,9 +37172,9 @@ insert into payments (
 ) values (
   'ba16a826-c62a-6d15-b17d-8708af1e8737'::uuid,
   'PAY-2026-0066',
-  (select id from bookings where booking_no = 'BK-2026-0886'),
+  (select id from bookings where booking_no = 'B-886'),
   (select id from invoices where invoice_no = 'INV-89'),
-  (select id from clients where client_code = 'CL-2026-0060'),
+  (select id from clients where client_code = 'C-60'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   47121.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -37143,7 +37193,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '3c396049-f27c-7b4e-6c48-88e466b7b5c0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0886'),
+  (select id from bookings where booking_no = 'B-886'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -37158,7 +37208,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'c5beaeeb-7063-8f9d-df36-b34d9575fadc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0886'),
+  (select id from bookings where booking_no = 'B-886'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -37173,7 +37223,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'fef3ef97-e470-7cb9-8903-3cffb35de5e8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0886'),
+  (select id from bookings where booking_no = 'B-886'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -37188,7 +37238,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '20342fff-acf0-355a-19e7-1231d54f0f0e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0886'),
+  (select id from bookings where booking_no = 'B-886'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -37213,9 +37263,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '280c5b8b-e797-e086-ba3d-0f0ae128a19b'::uuid,
-  'BK-2026-0887',
+  'B-887',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0071'),
+  (select id from clients where client_code = 'C-71'),
   'Pathao Nepal Launch Spot',
   '2026-07-24T00:15:00.000Z'::timestamptz,
   '2026-07-31T00:15:00.000Z'::timestamptz,
@@ -37233,7 +37283,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '9ee167b8-ce17-7f00-1aec-3ee66095d775'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0887'),
+  (select id from bookings where booking_no = 'B-887'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000289'),
   'Sony MDR-7506 Headphones',
@@ -37250,7 +37300,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'b52d0cba-6c02-e935-f235-b9efcfd96667'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0887'),
+  (select id from bookings where booking_no = 'B-887'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000246'),
   'RED Komodo 6K',
@@ -37267,7 +37317,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '63f35c10-e9fb-deba-1503-9fc1c44de67b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0887'),
+  (select id from bookings where booking_no = 'B-887'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000259'),
   'DZOFilm Vespid 35mm',
@@ -37284,7 +37334,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'b8dd4ce3-16ac-64e1-1cd7-b8a1eeddaec8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0887'),
+  (select id from bookings where booking_no = 'B-887'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000272'),
   'Dana Dolly Kit',
@@ -37301,7 +37351,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '8e71f8db-0e35-52c7-e804-4f93bf41d11e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0887'),
+  (select id from bookings where booking_no = 'B-887'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000285'),
   'Zoom F6 Field Recorder',
@@ -37327,7 +37377,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0887'),
+  (select id from bookings where booking_no = 'B-887'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -37340,7 +37390,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '0cc18df5-445f-a08d-6324-e61be9e1b7d4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0887'),
+  (select id from bookings where booking_no = 'B-887'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -37360,8 +37410,8 @@ insert into invoices (
 ) values (
   'e21a0986-da3b-48db-f927-ec8f16f207b1'::uuid,
   'INV-90',
-  (select id from bookings where booking_no = 'BK-2026-0887'),
-  (select id from clients where client_code = 'CL-2026-0071'),
+  (select id from bookings where booking_no = 'B-887'),
+  (select id from clients where client_code = 'C-71'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -37506,10 +37556,10 @@ where invoice_no = 'INV-90';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'ce60c620-4c14-f9bc-7829-7621f352810f'::uuid,
-  'DEP-2026-0067',
-  (select id from bookings where booking_no = 'BK-2026-0887'),
-  (select id from clients where client_code = 'CL-2026-0071'),
+  '6c9e65e8-1227-bc5d-f3dd-5c7c0315a19c'::uuid,
+  'DEP-67',
+  (select id from bookings where booking_no = 'B-887'),
+  (select id from clients where client_code = 'C-71'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -37523,9 +37573,9 @@ insert into payments (
 ) values (
   'fb939fe9-eacd-c5b3-18e3-c10d3e969d7e'::uuid,
   'PAY-2026-0067',
-  (select id from bookings where booking_no = 'BK-2026-0887'),
+  (select id from bookings where booking_no = 'B-887'),
   (select id from invoices where invoice_no = 'INV-90'),
-  (select id from clients where client_code = 'CL-2026-0071'),
+  (select id from clients where client_code = 'C-71'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   35318.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -37544,7 +37594,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '706ec2b0-4f39-337c-5066-c51e9c85f82b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0887'),
+  (select id from bookings where booking_no = 'B-887'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -37559,7 +37609,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '67d244b2-604b-5fdc-2cea-2f1c9bab89c1'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0887'),
+  (select id from bookings where booking_no = 'B-887'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -37574,7 +37624,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '91f824d6-2a00-b6e0-575c-ed040103713e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0887'),
+  (select id from bookings where booking_no = 'B-887'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -37589,7 +37639,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '8a25f747-8d5b-ba83-604e-6eaf17a960e3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0887'),
+  (select id from bookings where booking_no = 'B-887'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -37614,9 +37664,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'f3b8739c-aff8-9ad3-8b9a-a3668508f64a'::uuid,
-  'BK-2026-0888',
+  'B-888',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0042'),
+  (select id from clients where client_code = 'C-42'),
   'Sagarmatha Music Video',
   '2026-07-01T00:15:00.000Z'::timestamptz,
   '2026-07-03T00:15:00.000Z'::timestamptz,
@@ -37634,7 +37684,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'e7b68aa1-2efe-dd43-3165-c499e200e995'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0888'),
+  (select id from bookings where booking_no = 'B-888'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000242'),
   'Canon C70 Cinema Camera',
@@ -37651,7 +37701,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '6f81576c-e13c-932f-e09c-d9837b9563db'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0888'),
+  (select id from bookings where booking_no = 'B-888'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000255'),
   'Canon CN-E 24mm',
@@ -37668,7 +37718,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '2d14132d-6494-d9d7-7899-d69be62b0fce'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0888'),
+  (select id from bookings where booking_no = 'B-888'),
   'Anish Tamang',
   'DoP'::crew_role,
   8000.00,
@@ -37690,7 +37740,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0888'),
+  (select id from bookings where booking_no = 'B-888'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -37703,7 +37753,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '84e443fe-830a-17b0-753f-edde423e5c76'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0888'),
+  (select id from bookings where booking_no = 'B-888'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -37723,8 +37773,8 @@ insert into invoices (
 ) values (
   '93217a90-7507-5fd4-b37c-86eab6b93d6e'::uuid,
   'INV-91',
-  (select id from bookings where booking_no = 'BK-2026-0888'),
-  (select id from clients where client_code = 'CL-2026-0042'),
+  (select id from bookings where booking_no = 'B-888'),
+  (select id from clients where client_code = 'C-42'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -37838,7 +37888,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'edd73406-4b11-5478-4e0d-fa4d94e3426a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0888'),
+  (select id from bookings where booking_no = 'B-888'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -37853,7 +37903,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '60ff1b99-9e08-830e-f467-f3d8f580cf08'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0888'),
+  (select id from bookings where booking_no = 'B-888'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -37868,7 +37918,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '1522c196-edff-5148-78b7-880cb0c5bbf9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0888'),
+  (select id from bookings where booking_no = 'B-888'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -37883,7 +37933,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '0fcf5103-185c-55e2-ae36-6883bbfe54b2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0888'),
+  (select id from bookings where booking_no = 'B-888'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -37898,7 +37948,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '5454727e-c4a6-aca0-608e-e50631487abf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0888'),
+  (select id from bookings where booking_no = 'B-888'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -37923,9 +37973,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '4b60d8c2-e4cc-6dd1-8425-a119fe4f73c2'::uuid,
-  'BK-2026-0889',
+  'B-889',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0053'),
+  (select id from clients where client_code = 'C-53'),
   'Lumbini Heritage Short',
   '2026-07-08T00:15:00.000Z'::timestamptz,
   '2026-07-11T00:15:00.000Z'::timestamptz,
@@ -37943,7 +37993,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '10caaec1-eceb-d4f3-2568-f8a592e7e605'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0889'),
+  (select id from bookings where booking_no = 'B-889'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000251'),
   'NISI Athena 50mm',
@@ -37960,7 +38010,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '9419c1b3-a1a3-6703-aca0-9ee5900484ed'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0889'),
+  (select id from bookings where booking_no = 'B-889'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000264'),
   'Nanlux Evoke 1200B',
@@ -37977,7 +38027,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '280f84f6-6e4f-ecb1-237e-cf9f9619960d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0889'),
+  (select id from bookings where booking_no = 'B-889'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000277'),
   'DJI RS 4 Gimbal',
@@ -37994,7 +38044,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'e3d29435-931d-51a4-4edc-b37fd0306ffa'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0889'),
+  (select id from bookings where booking_no = 'B-889'),
   'Sabina Rai',
   'Focus Puller'::crew_role,
   4500.00,
@@ -38007,7 +38057,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '0efc9b1d-2fb0-b7f8-048b-6da4692ffb86'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0889'),
+  (select id from bookings where booking_no = 'B-889'),
   'Kiran Magar',
   'Gaffer'::crew_role,
   5000.00,
@@ -38029,7 +38079,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0889'),
+  (select id from bookings where booking_no = 'B-889'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -38042,7 +38092,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '739bf6df-faae-b289-d035-65d0ec12bac4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0889'),
+  (select id from bookings where booking_no = 'B-889'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -38062,8 +38112,8 @@ insert into invoices (
 ) values (
   'e9604f72-727d-0de9-a791-49ad5c55bd56'::uuid,
   'INV-92',
-  (select id from bookings where booking_no = 'BK-2026-0889'),
-  (select id from clients where client_code = 'CL-2026-0053'),
+  (select id from bookings where booking_no = 'B-889'),
+  (select id from clients where client_code = 'C-53'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -38193,10 +38243,10 @@ where invoice_no = 'INV-92';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '892207ff-bac3-a1ee-1dae-d2a6b1f3c1c8'::uuid,
-  'DEP-2026-0068',
-  (select id from bookings where booking_no = 'BK-2026-0889'),
-  (select id from clients where client_code = 'CL-2026-0053'),
+  'b1862334-a67d-0d66-ee65-3b2903ccba80'::uuid,
+  'DEP-68',
+  (select id from bookings where booking_no = 'B-889'),
+  (select id from clients where client_code = 'C-53'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -38207,9 +38257,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '1972ab0c-94d5-11bd-9f93-34fd8573399e'::uuid,
-  'DEP-2026-0068-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0068'),
+  'ed804b42-b7f4-27b6-2014-e7e162a2ad3c'::uuid,
+  'DEP-68-M1',
+  (select id from security_deposits where deposit_no = 'DEP-68'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -38223,9 +38273,9 @@ insert into payments (
 ) values (
   'ab4b1ed8-bdc8-d847-d164-749378c3bbfa'::uuid,
   'PAY-2026-0068',
-  (select id from bookings where booking_no = 'BK-2026-0889'),
+  (select id from bookings where booking_no = 'B-889'),
   (select id from invoices where invoice_no = 'INV-92'),
-  (select id from clients where client_code = 'CL-2026-0053'),
+  (select id from clients where client_code = 'C-53'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   14492.25,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -38244,7 +38294,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'c1c908f3-a665-422c-3ccc-ee0ba30442cc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0889'),
+  (select id from bookings where booking_no = 'B-889'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -38259,7 +38309,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '77f93072-6745-6675-bdf2-7190ea82db6e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0889'),
+  (select id from bookings where booking_no = 'B-889'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -38274,7 +38324,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'f22e9998-61fc-4c3a-7645-f55371dc6482'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0889'),
+  (select id from bookings where booking_no = 'B-889'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -38289,7 +38339,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '7a6a2144-a0ea-a8db-25f2-cd85a01cd5bf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0889'),
+  (select id from bookings where booking_no = 'B-889'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -38304,7 +38354,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '4a4b3918-6180-5aa8-ce6f-6c3fdc81e60d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0889'),
+  (select id from bookings where booking_no = 'B-889'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -38329,9 +38379,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'ca10f8ab-6868-6aa8-6eee-d68cf1ead848'::uuid,
-  'BK-2026-0890',
+  'B-890',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0064'),
+  (select id from clients where client_code = 'C-64'),
   'Nepal Investment Bank AGM',
   '2026-07-15T00:15:00.000Z'::timestamptz,
   '2026-07-19T00:15:00.000Z'::timestamptz,
@@ -38349,7 +38399,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '0cb17a0c-bae1-4c52-425b-29732cbb06dc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0890'),
+  (select id from bookings where booking_no = 'B-890'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000260'),
   'Aputure LS 300x',
@@ -38366,7 +38416,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'f950225f-a4ce-befb-610d-dcc2a78e2d9e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0890'),
+  (select id from bookings where booking_no = 'B-890'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000273'),
   'Kupo Grip Head 4in',
@@ -38383,7 +38433,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a3e2d58c-39fa-3a63-c149-393c279ec80a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0890'),
+  (select id from bookings where booking_no = 'B-890'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000286'),
   'Rode Wireless PRO Kit',
@@ -38400,7 +38450,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'c33c0c49-cae9-e290-abb3-991dbb0dde35'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0890'),
+  (select id from bookings where booking_no = 'B-890'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000243'),
   'Canon R5 C',
@@ -38426,7 +38476,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0890'),
+  (select id from bookings where booking_no = 'B-890'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -38439,7 +38489,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '94786496-055b-2905-5c85-66f3f3ecf578'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0890'),
+  (select id from bookings where booking_no = 'B-890'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -38459,8 +38509,8 @@ insert into invoices (
 ) values (
   '717e0919-1ff4-3517-480b-044d5111bf0f'::uuid,
   'INV-93',
-  (select id from bookings where booking_no = 'BK-2026-0890'),
-  (select id from clients where client_code = 'CL-2026-0064'),
+  (select id from bookings where booking_no = 'B-890'),
+  (select id from clients where client_code = 'C-64'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -38590,10 +38640,10 @@ where invoice_no = 'INV-93';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'b5d03379-193d-84ad-3f2c-8fc0f8b1bf41'::uuid,
-  'DEP-2026-0069',
-  (select id from bookings where booking_no = 'BK-2026-0890'),
-  (select id from clients where client_code = 'CL-2026-0064'),
+  '4e93f8fc-ff2c-05aa-7bff-7c5b086af2b4'::uuid,
+  'DEP-69',
+  (select id from bookings where booking_no = 'B-890'),
+  (select id from clients where client_code = 'C-64'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -38607,9 +38657,9 @@ insert into payments (
 ) values (
   '9bb9c3f3-0911-dda5-5629-c33a331d8bf9'::uuid,
   'PAY-2026-0069',
-  (select id from bookings where booking_no = 'BK-2026-0890'),
+  (select id from bookings where booking_no = 'B-890'),
   (select id from invoices where invoice_no = 'INV-93'),
-  (select id from clients where client_code = 'CL-2026-0064'),
+  (select id from clients where client_code = 'C-64'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   21235.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -38628,7 +38678,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '07a07bcf-0015-c1c2-d758-a3211b59a16a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0890'),
+  (select id from bookings where booking_no = 'B-890'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -38643,7 +38693,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'aad7cf5a-c36d-8aea-1281-85d95768d4df'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0890'),
+  (select id from bookings where booking_no = 'B-890'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -38658,7 +38708,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e8416f83-5f88-9da1-e71b-f00a8322e8ed'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0890'),
+  (select id from bookings where booking_no = 'B-890'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -38673,7 +38723,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '3fc7713d-b2bf-95f8-d3de-74dbb32a7360'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0890'),
+  (select id from bookings where booking_no = 'B-890'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -38688,7 +38738,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '559e6c68-ef8d-572c-94e6-84ef4adfb639'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0890'),
+  (select id from bookings where booking_no = 'B-890'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -38713,9 +38763,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '027ac02f-b2d3-3ffe-c191-65749d4ce17e'::uuid,
-  'BK-2026-0891',
+  'B-891',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0035'),
+  (select id from clients where client_code = 'C-35'),
   'Pokhara Paragliding Promo',
   '2026-07-22T00:15:00.000Z'::timestamptz,
   '2026-07-27T00:15:00.000Z'::timestamptz,
@@ -38733,7 +38783,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'cee5ab25-81b8-9850-7be7-6a3c8440fdaf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0891'),
+  (select id from bookings where booking_no = 'B-891'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000269'),
   'Avenger Wind-Up Stand',
@@ -38750,7 +38800,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'ec82cf32-bcf9-62b4-cbe4-440399294a18'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0891'),
+  (select id from bookings where booking_no = 'B-891'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000282'),
   'Sennheiser MKH 416',
@@ -38767,7 +38817,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '2a7195d2-de4b-7d5a-84f7-dce974863240'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0891'),
+  (select id from bookings where booking_no = 'B-891'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000239'),
   'Manfrotto 504X Tripod System',
@@ -38784,7 +38834,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '7bd175fe-2aaf-0d2b-3438-dd0d94e835c9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0891'),
+  (select id from bookings where booking_no = 'B-891'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000252'),
   'NISI Athena 85mm',
@@ -38801,7 +38851,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'dc1b02b9-25b3-abdd-fda9-591dbfd42173'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0891'),
+  (select id from bookings where booking_no = 'B-891'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000265'),
   'Astera Titan Tube 8-Pack',
@@ -38818,7 +38868,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '8fba375c-eefc-885b-d15c-04c47f070504'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0891'),
+  (select id from bookings where booking_no = 'B-891'),
   'Prabin Shrestha',
   'Grip'::crew_role,
   3500.00,
@@ -38840,7 +38890,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0891'),
+  (select id from bookings where booking_no = 'B-891'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -38853,7 +38903,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'f07ad6b1-36a6-90ba-c1c9-c64a1d83d05d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0891'),
+  (select id from bookings where booking_no = 'B-891'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -38873,8 +38923,8 @@ insert into invoices (
 ) values (
   'fba9c419-cb78-0313-bf24-90e9b7a24abf'::uuid,
   'INV-94',
-  (select id from bookings where booking_no = 'BK-2026-0891'),
-  (select id from clients where client_code = 'CL-2026-0035'),
+  (select id from bookings where booking_no = 'B-891'),
+  (select id from clients where client_code = 'C-35'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -39034,10 +39084,10 @@ where invoice_no = 'INV-94';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '876cccb4-70ce-de2c-4969-44fc2872f4aa'::uuid,
-  'DEP-2026-0070',
-  (select id from bookings where booking_no = 'BK-2026-0891'),
-  (select id from clients where client_code = 'CL-2026-0035'),
+  '2c55d90a-4f03-746c-cc8e-eb1a7b4edf69'::uuid,
+  'DEP-70',
+  (select id from bookings where booking_no = 'B-891'),
+  (select id from clients where client_code = 'C-35'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -39048,9 +39098,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '078b3683-8cda-8576-44e3-c12bff35ee40'::uuid,
-  'DEP-2026-0070-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0070'),
+  'e9d252a3-82a2-6d30-025e-eaa055ea7182'::uuid,
+  'DEP-70-M1',
+  (select id from security_deposits where deposit_no = 'DEP-70'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -39064,9 +39114,9 @@ insert into payments (
 ) values (
   '302106db-cc80-ae2a-43c4-8914986484d1'::uuid,
   'PAY-2026-0070',
-  (select id from bookings where booking_no = 'BK-2026-0891'),
+  (select id from bookings where booking_no = 'B-891'),
   (select id from invoices where invoice_no = 'INV-94'),
-  (select id from clients where client_code = 'CL-2026-0035'),
+  (select id from clients where client_code = 'C-35'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   28645.60,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -39085,7 +39135,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'aeab6a82-2f97-a283-0fe9-3b652dd65abf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0891'),
+  (select id from bookings where booking_no = 'B-891'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -39100,7 +39150,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '45a651ac-e575-aee8-8da4-91fc6de1f99b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0891'),
+  (select id from bookings where booking_no = 'B-891'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -39115,7 +39165,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '78f0d2d8-c783-dfa1-10a0-e6c94b65e936'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0891'),
+  (select id from bookings where booking_no = 'B-891'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -39130,7 +39180,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '02790317-bdbb-d009-1c06-f3c07f17baea'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0891'),
+  (select id from bookings where booking_no = 'B-891'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -39145,7 +39195,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'a823c6d0-bc9f-e60c-6c3d-a2b80dbabbca'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0891'),
+  (select id from bookings where booking_no = 'B-891'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -39170,9 +39220,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'ed846458-7527-f451-5f8f-27622aae1947'::uuid,
-  'BK-2026-0892',
+  'B-892',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0046'),
+  (select id from clients where client_code = 'C-46'),
   'Dashain Family Campaign',
   '2026-07-06T00:15:00.000Z'::timestamptz,
   '2026-07-12T00:15:00.000Z'::timestamptz,
@@ -39190,7 +39240,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '078b1e17-8cd3-deff-dcc3-8720b9243170'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0892'),
+  (select id from bookings where booking_no = 'B-892'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000278'),
   'Easyrig Vario 5',
@@ -39207,7 +39257,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '049c63d4-2f2e-72af-e620-e59c7a495c50'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0892'),
+  (select id from bookings where booking_no = 'B-892'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000235'),
   'Sony FX6 Cinema Camera',
@@ -39224,7 +39274,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '17dda929-8ff6-64a2-63fe-7c4a6284c614'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0892'),
+  (select id from bookings where booking_no = 'B-892'),
   'Melina Thapa',
   'Sound Recordist'::crew_role,
   5500.00,
@@ -39237,7 +39287,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'd3b372d4-3d3e-012f-fe63-8babe580571d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0892'),
+  (select id from bookings where booking_no = 'B-892'),
   'Roshan Karki',
   'Drone Pilot'::crew_role,
   7000.00,
@@ -39259,7 +39309,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0892'),
+  (select id from bookings where booking_no = 'B-892'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -39272,7 +39322,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '9dfacde8-a5b1-4018-f176-ae0870a60b4d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0892'),
+  (select id from bookings where booking_no = 'B-892'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -39292,8 +39342,8 @@ insert into invoices (
 ) values (
   '150f698a-6cca-cf38-86df-dc0fef8fc26d'::uuid,
   'INV-95',
-  (select id from bookings where booking_no = 'BK-2026-0892'),
-  (select id from clients where client_code = 'CL-2026-0046'),
+  (select id from bookings where booking_no = 'B-892'),
+  (select id from clients where client_code = 'C-46'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -39407,7 +39457,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'bb521cc6-d218-9acd-d478-a6e6c69a5da5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0892'),
+  (select id from bookings where booking_no = 'B-892'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -39422,7 +39472,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'db0e8a06-0d0b-30c8-c2c5-d5155806bce0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0892'),
+  (select id from bookings where booking_no = 'B-892'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -39437,7 +39487,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '4e786faf-5aac-9898-0d25-d654a284f743'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0892'),
+  (select id from bookings where booking_no = 'B-892'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -39452,7 +39502,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'ebf52226-9689-4475-6df7-2fe79ddb9605'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0892'),
+  (select id from bookings where booking_no = 'B-892'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -39467,7 +39517,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '9cd700d9-857e-33b8-e4bb-901e6fbc397a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0892'),
+  (select id from bookings where booking_no = 'B-892'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -39492,9 +39542,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '5e8d87cb-4ccf-7d45-acfa-a283cfb43941'::uuid,
-  'BK-2026-0893',
+  'B-893',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0057'),
+  (select id from clients where client_code = 'C-57'),
   'Annapurna Trek Series',
   '2026-07-13T00:15:00.000Z'::timestamptz,
   '2026-07-20T00:15:00.000Z'::timestamptz,
@@ -39512,7 +39562,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '6fdb8708-dc58-9577-e9ee-6ae455e2c42d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0893'),
+  (select id from bookings where booking_no = 'B-893'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000287'),
   'Sennheiser EW 112P G4',
@@ -39529,7 +39579,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a30b6f77-e456-8e4b-2dce-ccb7466af6e7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0893'),
+  (select id from bookings where booking_no = 'B-893'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000244'),
   'Blackmagic URSA Mini Pro 12K',
@@ -39546,7 +39596,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '1d9b5cc0-e4c7-678a-910d-e85f4491b2c6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0893'),
+  (select id from bookings where booking_no = 'B-893'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000257'),
   'Sony 70-200mm GM II',
@@ -39572,7 +39622,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0893'),
+  (select id from bookings where booking_no = 'B-893'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -39585,7 +39635,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '61cc3144-3c4e-1016-c828-567cc8ca651e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0893'),
+  (select id from bookings where booking_no = 'B-893'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -39605,8 +39655,8 @@ insert into invoices (
 ) values (
   '7956028f-1f9a-8ced-ff40-6bf8e9f57b16'::uuid,
   'INV-96',
-  (select id from bookings where booking_no = 'BK-2026-0893'),
-  (select id from clients where client_code = 'CL-2026-0057'),
+  (select id from bookings where booking_no = 'B-893'),
+  (select id from clients where client_code = 'C-57'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -39721,10 +39771,10 @@ where invoice_no = 'INV-96';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '68aa0ac5-f2e2-66e1-0b14-16e561659674'::uuid,
-  'DEP-2026-0071',
-  (select id from bookings where booking_no = 'BK-2026-0893'),
-  (select id from clients where client_code = 'CL-2026-0057'),
+  '6f491270-6b0d-0e44-4f6a-563ce460468c'::uuid,
+  'DEP-71',
+  (select id from bookings where booking_no = 'B-893'),
+  (select id from clients where client_code = 'C-57'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -39738,9 +39788,9 @@ insert into payments (
 ) values (
   'abf3b02c-4d85-9114-8847-7eecf8500d1f'::uuid,
   'PAY-2026-0071',
-  (select id from bookings where booking_no = 'BK-2026-0893'),
+  (select id from bookings where booking_no = 'B-893'),
   (select id from invoices where invoice_no = 'INV-96'),
-  (select id from clients where client_code = 'CL-2026-0057'),
+  (select id from clients where client_code = 'C-57'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   16625.75,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -39759,7 +39809,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'ce7caaff-c503-d5f7-3124-db3c77d8d579'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0893'),
+  (select id from bookings where booking_no = 'B-893'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -39774,7 +39824,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '71c110a1-1a51-3f58-357e-fc5ef4706fcf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0893'),
+  (select id from bookings where booking_no = 'B-893'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -39789,7 +39839,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '5e369e8d-d034-db9b-5270-d37dde27a6d9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0893'),
+  (select id from bookings where booking_no = 'B-893'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -39804,7 +39854,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'cf7017a5-48f6-bba1-4737-6c13e94c728a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0893'),
+  (select id from bookings where booking_no = 'B-893'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -39819,7 +39869,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '5de4f08a-056e-d358-bc9e-7bad0d1114f3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0893'),
+  (select id from bookings where booking_no = 'B-893'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -39844,9 +39894,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '7044afe0-fe74-7c3f-79e8-a3a541164328'::uuid,
-  'BK-2026-0894',
+  'B-894',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0068'),
+  (select id from clients where client_code = 'C-68'),
   'Kathmandu Jazz Festival',
   '2026-07-20T00:15:00.000Z'::timestamptz,
   '2026-07-22T00:15:00.000Z'::timestamptz,
@@ -39864,7 +39914,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '73157adf-31a2-eadd-2bbf-5c9d80e1445e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0894'),
+  (select id from bookings where booking_no = 'B-894'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000240'),
   'Sony FX3 Full-Frame Camera',
@@ -39881,7 +39931,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '0f0847a2-3dff-3ed1-2cc8-e6e53072a4a6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0894'),
+  (select id from bookings where booking_no = 'B-894'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000253'),
   'Sigma 18-35mm Art',
@@ -39898,7 +39948,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '38620d80-5207-db36-db3c-af9217a46098'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0894'),
+  (select id from bookings where booking_no = 'B-894'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000266'),
   'Godox SL200 III',
@@ -39915,7 +39965,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '108e3933-2ed5-4adb-80e9-5daf232e4206'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0894'),
+  (select id from bookings where booking_no = 'B-894'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000279'),
   'Tilta Shoulder Rig',
@@ -39932,7 +39982,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '6662c47d-a0b5-aae6-c06d-2d5982168788'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0894'),
+  (select id from bookings where booking_no = 'B-894'),
   'Dipesh Gurung',
   'Camera Assistant'::crew_role,
   3000.00,
@@ -39954,7 +40004,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0894'),
+  (select id from bookings where booking_no = 'B-894'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -39967,7 +40017,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'ed6a533c-c41f-c998-8b00-723744bbb2cb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0894'),
+  (select id from bookings where booking_no = 'B-894'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -39987,8 +40037,8 @@ insert into invoices (
 ) values (
   'f1a1e352-91d7-bb38-b723-fe26e9946fa9'::uuid,
   'INV-97',
-  (select id from bookings where booking_no = 'BK-2026-0894'),
-  (select id from clients where client_code = 'CL-2026-0068'),
+  (select id from bookings where booking_no = 'B-894'),
+  (select id from clients where client_code = 'C-68'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -40133,10 +40183,10 @@ where invoice_no = 'INV-97';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'edb395e0-930a-3911-a97d-586cb8ad108a'::uuid,
-  'DEP-2026-0072',
-  (select id from bookings where booking_no = 'BK-2026-0894'),
-  (select id from clients where client_code = 'CL-2026-0068'),
+  '2d936bda-bdf5-27ff-58c9-dd75b9f75eea'::uuid,
+  'DEP-72',
+  (select id from bookings where booking_no = 'B-894'),
+  (select id from clients where client_code = 'C-68'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -40147,9 +40197,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '6faba880-f9e4-5bab-68c6-99055c9f1f76'::uuid,
-  'DEP-2026-0072-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0072'),
+  '798562a7-ca3d-600b-58ff-feaaf9d1030b'::uuid,
+  'DEP-72-M1',
+  (select id from security_deposits where deposit_no = 'DEP-72'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -40163,9 +40213,9 @@ insert into payments (
 ) values (
   '982d5dc1-c32e-013e-f22e-aac310272810'::uuid,
   'PAY-2026-0072',
-  (select id from bookings where booking_no = 'BK-2026-0894'),
+  (select id from bookings where booking_no = 'B-894'),
   (select id from invoices where invoice_no = 'INV-97'),
-  (select id from clients where client_code = 'CL-2026-0068'),
+  (select id from clients where client_code = 'C-68'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15029.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -40184,7 +40234,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'f965050e-a7d0-61c2-a306-f39dc1661c33'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0894'),
+  (select id from bookings where booking_no = 'B-894'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -40199,7 +40249,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e1fa2e43-c292-8a32-7b21-df36239ae81a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0894'),
+  (select id from bookings where booking_no = 'B-894'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -40214,7 +40264,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'c8cdcd95-f050-0b76-fc06-34551146061d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0894'),
+  (select id from bookings where booking_no = 'B-894'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -40229,7 +40279,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '20548185-0718-e4c7-7706-22bf24cead77'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0894'),
+  (select id from bookings where booking_no = 'B-894'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -40244,7 +40294,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'd8fb5fae-460b-a1ee-e65f-0193bf8106f4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0894'),
+  (select id from bookings where booking_no = 'B-894'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -40269,9 +40319,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '4bae22a1-53b5-23c4-dbd5-74872a992857'::uuid,
-  'BK-2026-0895',
+  'B-895',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0039'),
+  (select id from clients where client_code = 'C-39'),
   'Daraz 11.11 Campaign',
   '2026-07-04T00:15:00.000Z'::timestamptz,
   '2026-07-07T00:15:00.000Z'::timestamptz,
@@ -40289,7 +40339,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'b7ad236f-24ef-0e19-0596-59115687b520'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0895'),
+  (select id from bookings where booking_no = 'B-895'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000249'),
   'Sony FX30',
@@ -40306,7 +40356,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '45eff8bb-7e84-d6b9-7069-452c23318fe8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0895'),
+  (select id from bookings where booking_no = 'B-895'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000262'),
   'Aputure MC Pro 4-Light Kit',
@@ -40323,7 +40373,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '2eaa7ad4-9390-acd8-3fc0-83005196d3b0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0895'),
+  (select id from bookings where booking_no = 'B-895'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000275'),
   'Sachtler Flowtech 75',
@@ -40340,7 +40390,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '6307ee3b-301e-2037-2cbd-a3a66e39f1b1'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0895'),
+  (select id from bookings where booking_no = 'B-895'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000288'),
   'Boom Pole Carbon 3m',
@@ -40357,7 +40407,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'fc5266e0-aaf3-9aa3-1b95-aea9fe969554'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0895'),
+  (select id from bookings where booking_no = 'B-895'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000245'),
   'Blackmagic Pocket 6K Pro',
@@ -40374,7 +40424,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '4588e16e-8698-4321-a2d6-d3f13e8630d3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0895'),
+  (select id from bookings where booking_no = 'B-895'),
   'Sujata Basnet',
   'Rental Coordinator'::crew_role,
   3200.00,
@@ -40387,7 +40437,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '24b7b121-9660-9c1a-18a9-4600fe607482'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0895'),
+  (select id from bookings where booking_no = 'B-895'),
   'Anish Tamang',
   'DoP'::crew_role,
   8000.00,
@@ -40409,7 +40459,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0895'),
+  (select id from bookings where booking_no = 'B-895'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -40422,7 +40472,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'de14e665-d5d2-8b82-79ba-1d4de5e01d4a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0895'),
+  (select id from bookings where booking_no = 'B-895'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -40442,8 +40492,8 @@ insert into invoices (
 ) values (
   'be28bf87-9644-a797-a855-754e889ed306'::uuid,
   'INV-98',
-  (select id from bookings where booking_no = 'BK-2026-0895'),
-  (select id from clients where client_code = 'CL-2026-0039'),
+  (select id from bookings where booking_no = 'B-895'),
+  (select id from clients where client_code = 'C-39'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -40603,10 +40653,10 @@ where invoice_no = 'INV-98';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'a68129b3-cbfe-e09b-cf4e-94a6c35c0ea3'::uuid,
-  'DEP-2026-0073',
-  (select id from bookings where booking_no = 'BK-2026-0895'),
-  (select id from clients where client_code = 'CL-2026-0039'),
+  '3647aa48-c9dc-7396-3ce7-ebe60dbb06d7'::uuid,
+  'DEP-73',
+  (select id from bookings where booking_no = 'B-895'),
+  (select id from clients where client_code = 'C-39'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -40617,9 +40667,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '89f3c33b-4666-1504-9af6-c33f085a6d3d'::uuid,
-  'DEP-2026-0073-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0073'),
+  'f6ce537f-0c74-5ae8-80bd-1c50b1f24c04'::uuid,
+  'DEP-73-M1',
+  (select id from security_deposits where deposit_no = 'DEP-73'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -40633,9 +40683,9 @@ insert into payments (
 ) values (
   '79c49857-1a52-ace6-fa2b-309aa638cb43'::uuid,
   'PAY-2026-0073',
-  (select id from bookings where booking_no = 'BK-2026-0895'),
+  (select id from bookings where booking_no = 'B-895'),
   (select id from invoices where invoice_no = 'INV-98'),
-  (select id from clients where client_code = 'CL-2026-0039'),
+  (select id from clients where client_code = 'C-39'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   26910.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -40654,7 +40704,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '7062f057-137d-408e-1a37-4fb013b57327'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0895'),
+  (select id from bookings where booking_no = 'B-895'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -40669,7 +40719,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '2edf5c50-81ba-2671-60de-5d9736bd3315'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0895'),
+  (select id from bookings where booking_no = 'B-895'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -40684,7 +40734,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '93b7a0c9-2c1f-7314-3765-779644fa54ab'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0895'),
+  (select id from bookings where booking_no = 'B-895'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -40699,7 +40749,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '87456f70-ef0d-017f-95ae-28df8d3bf936'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0895'),
+  (select id from bookings where booking_no = 'B-895'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -40714,7 +40764,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '2daf3bda-d2d0-2a17-7982-aa39ed33b4d6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0895'),
+  (select id from bookings where booking_no = 'B-895'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -40739,9 +40789,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'f141429d-5d17-9b8c-3f23-39914a052f70'::uuid,
-  'BK-2026-0896',
+  'B-896',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0050'),
+  (select id from clients where client_code = 'C-50'),
   'Nepal Cricket Highlights',
   '2026-07-11T00:15:00.000Z'::timestamptz,
   '2026-07-15T00:15:00.000Z'::timestamptz,
@@ -40759,7 +40809,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '42e1eba2-7b53-a16f-9031-fe38fa660984'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0896'),
+  (select id from bookings where booking_no = 'B-896'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000258'),
   'Laowa 12mm Zero-D',
@@ -40776,7 +40826,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'fc645aea-0906-98ea-2b23-63bae075ebb5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0896'),
+  (select id from bookings where booking_no = 'B-896'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000271'),
   'Sandbag 15lb',
@@ -40802,7 +40852,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0896'),
+  (select id from bookings where booking_no = 'B-896'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -40815,7 +40865,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '4104bf8d-3f19-2281-4257-bfe53072cc3a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0896'),
+  (select id from bookings where booking_no = 'B-896'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -40835,8 +40885,8 @@ insert into invoices (
 ) values (
   '290a72ab-171d-e75f-a55c-7f59a4848acd'::uuid,
   'INV-99',
-  (select id from bookings where booking_no = 'BK-2026-0896'),
-  (select id from clients where client_code = 'CL-2026-0050'),
+  (select id from bookings where booking_no = 'B-896'),
+  (select id from clients where client_code = 'C-50'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -40935,7 +40985,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'ed3500e1-e463-8e74-ec50-9773abfc1e62'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0896'),
+  (select id from bookings where booking_no = 'B-896'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -40950,7 +41000,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e09ab89a-e223-b999-08d7-1a232b16c92d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0896'),
+  (select id from bookings where booking_no = 'B-896'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -40965,7 +41015,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'dc979b5f-d17b-4a77-e6dd-09a1bb46e56a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0896'),
+  (select id from bookings where booking_no = 'B-896'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -40980,7 +41030,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '3d9b3b62-a368-ff76-6408-5511fd616d68'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0896'),
+  (select id from bookings where booking_no = 'B-896'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -40995,7 +41045,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '4717e7da-692a-38da-cc24-aaed991f6fb5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0896'),
+  (select id from bookings where booking_no = 'B-896'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -41020,9 +41070,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '193d306b-ecf8-1c20-2079-8a2032837d23'::uuid,
-  'BK-2026-0897',
+  'B-897',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0061'),
+  (select id from clients where client_code = 'C-61'),
   'Rara Lake Travel Film',
   '2026-07-18T00:15:00.000Z'::timestamptz,
   '2026-07-23T00:15:00.000Z'::timestamptz,
@@ -41040,7 +41090,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '480dcabe-3fed-3651-e620-a6d6ad076132'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0897'),
+  (select id from bookings where booking_no = 'B-897'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000267'),
   'Aputure Amaran 200x',
@@ -41057,7 +41107,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '1bb23344-dc7d-02b0-c6ab-a2c8c67cbc39'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0897'),
+  (select id from bookings where booking_no = 'B-897'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000280'),
   'Slider 120cm Motorised',
@@ -41074,7 +41124,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a800fe7d-eb23-2792-84e6-8bc455300720'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0897'),
+  (select id from bookings where booking_no = 'B-897'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000237'),
   'Aputure LS 600d Pro',
@@ -41091,7 +41141,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '6429c1e0-fe8a-32ca-de18-5c5aeccd65d7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0897'),
+  (select id from bookings where booking_no = 'B-897'),
   'Sabina Rai',
   'Focus Puller'::crew_role,
   4500.00,
@@ -41113,7 +41163,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0897'),
+  (select id from bookings where booking_no = 'B-897'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -41126,7 +41176,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'f1c2dbdc-0104-0862-27ff-f41fac6dcf2f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0897'),
+  (select id from bookings where booking_no = 'B-897'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -41146,8 +41196,8 @@ insert into invoices (
 ) values (
   '679eb51b-48a9-9ae7-0e0e-44ea90379776'::uuid,
   'INV-100',
-  (select id from bookings where booking_no = 'BK-2026-0897'),
-  (select id from clients where client_code = 'CL-2026-0061'),
+  (select id from bookings where booking_no = 'B-897'),
+  (select id from clients where client_code = 'C-61'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -41277,10 +41327,10 @@ where invoice_no = 'INV-100';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '93b4f84c-15da-fd04-dff1-eb85040feb59'::uuid,
-  'DEP-2026-0074',
-  (select id from bookings where booking_no = 'BK-2026-0897'),
-  (select id from clients where client_code = 'CL-2026-0061'),
+  '6dff5e3d-170d-0042-96b8-d9cb50de0c04'::uuid,
+  'DEP-74',
+  (select id from bookings where booking_no = 'B-897'),
+  (select id from clients where client_code = 'C-61'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -41291,9 +41341,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '48fee663-9e68-f22a-6e0d-3993d895c139'::uuid,
-  'DEP-2026-0074-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0074'),
+  'ac4693df-1837-0d2f-2fdc-538d6e99419d'::uuid,
+  'DEP-74-M1',
+  (select id from security_deposits where deposit_no = 'DEP-74'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -41307,9 +41357,9 @@ insert into payments (
 ) values (
   'dc90f1b1-d392-9689-0a80-3945fff8ba87'::uuid,
   'PAY-2026-0074',
-  (select id from bookings where booking_no = 'BK-2026-0897'),
+  (select id from bookings where booking_no = 'B-897'),
   (select id from invoices where invoice_no = 'INV-100'),
-  (select id from clients where client_code = 'CL-2026-0061'),
+  (select id from clients where client_code = 'C-61'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   12006.25,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -41328,7 +41378,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '877c06a7-c43b-17ae-be4c-141c076c7ccb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0897'),
+  (select id from bookings where booking_no = 'B-897'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -41343,7 +41393,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '6212a375-6860-ea3b-3576-80e23ae0cdb8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0897'),
+  (select id from bookings where booking_no = 'B-897'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -41358,7 +41408,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '714c36c5-a01c-e6b9-7b4d-acbc66fc0e80'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0897'),
+  (select id from bookings where booking_no = 'B-897'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -41373,7 +41423,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '35a161f1-62cc-c1b2-6b44-7d94e14d7f46'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0897'),
+  (select id from bookings where booking_no = 'B-897'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -41388,7 +41438,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'fa5f8680-5e9b-b212-1b88-49cb0796bbd4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0897'),
+  (select id from bookings where booking_no = 'B-897'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -41413,9 +41463,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '74693737-be06-4580-4e05-fb2a557a7104'::uuid,
-  'BK-2026-0898',
+  'B-898',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0072'),
+  (select id from clients where client_code = 'C-72'),
   'F1Soft Corporate Profile',
   '2026-07-02T00:15:00.000Z'::timestamptz,
   '2026-07-08T00:15:00.000Z'::timestamptz,
@@ -41433,7 +41483,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '756799ca-7b30-5c9d-56d8-2bc65e4f11e3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0898'),
+  (select id from bookings where booking_no = 'B-898'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000276'),
   'DJI RS 3 Pro Gimbal',
@@ -41450,7 +41500,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '98aa7d3a-b3a5-892c-7c31-e71e8fd15a6b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0898'),
+  (select id from bookings where booking_no = 'B-898'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000289'),
   'Sony MDR-7506 Headphones',
@@ -41467,7 +41517,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '32005ba6-d99a-6ecf-fb75-7b39f6d6f209'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0898'),
+  (select id from bookings where booking_no = 'B-898'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000246'),
   'RED Komodo 6K',
@@ -41484,7 +41534,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a896fc64-a1ec-147f-9029-1eec731099b6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0898'),
+  (select id from bookings where booking_no = 'B-898'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000259'),
   'DZOFilm Vespid 35mm',
@@ -41501,7 +41551,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '828b3a66-5e96-983c-3c7d-a70633dde17e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0898'),
+  (select id from bookings where booking_no = 'B-898'),
   'Kiran Magar',
   'Gaffer'::crew_role,
   5000.00,
@@ -41514,7 +41564,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '288366fc-3b8b-2360-25b6-6c14b86d8512'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0898'),
+  (select id from bookings where booking_no = 'B-898'),
   'Prabin Shrestha',
   'Grip'::crew_role,
   3500.00,
@@ -41536,7 +41586,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0898'),
+  (select id from bookings where booking_no = 'B-898'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -41549,7 +41599,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '7e3b1273-65a3-4a20-6eaf-8230d0e24ab3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0898'),
+  (select id from bookings where booking_no = 'B-898'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -41569,8 +41619,8 @@ insert into invoices (
 ) values (
   '29bb03ad-d049-bf96-b93b-da6a57264ac5'::uuid,
   'INV-101',
-  (select id from bookings where booking_no = 'BK-2026-0898'),
-  (select id from clients where client_code = 'CL-2026-0072'),
+  (select id from bookings where booking_no = 'B-898'),
+  (select id from clients where client_code = 'C-72'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -41715,10 +41765,10 @@ where invoice_no = 'INV-101';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '60434ac5-8037-8ead-bffc-a95c96373b11'::uuid,
-  'DEP-2026-0075',
-  (select id from bookings where booking_no = 'BK-2026-0898'),
-  (select id from clients where client_code = 'CL-2026-0072'),
+  '39ff4f15-2fb9-a1ab-df98-404dfc731d32'::uuid,
+  'DEP-75',
+  (select id from bookings where booking_no = 'B-898'),
+  (select id from clients where client_code = 'C-72'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -41729,9 +41779,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'd184e5e2-5d9e-a453-19a2-73b6f8691101'::uuid,
-  'DEP-2026-0075-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0075'),
+  '59c257d3-8d5f-3b4e-1d98-ca52f47c8890'::uuid,
+  'DEP-75-M1',
+  (select id from security_deposits where deposit_no = 'DEP-75'),
   'Received'::deposit_movement_type,
   7500.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -41745,9 +41795,9 @@ insert into payments (
 ) values (
   'dbf9faf2-b04c-1a49-4968-db4b2f156b23'::uuid,
   'PAY-2026-0075',
-  (select id from bookings where booking_no = 'BK-2026-0898'),
+  (select id from bookings where booking_no = 'B-898'),
   (select id from invoices where invoice_no = 'INV-101'),
-  (select id from clients where client_code = 'CL-2026-0072'),
+  (select id from clients where client_code = 'C-72'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   70342.50,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -41766,7 +41816,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'bb4c5a10-8f36-2387-d27a-61587428556b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0898'),
+  (select id from bookings where booking_no = 'B-898'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -41781,7 +41831,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'b8c25643-13ac-bdb6-eab7-28b1ac0fbd28'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0898'),
+  (select id from bookings where booking_no = 'B-898'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -41796,7 +41846,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '07e697b8-87ea-b1e5-979b-e17a0b40b673'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0898'),
+  (select id from bookings where booking_no = 'B-898'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -41811,7 +41861,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '4177b9b8-6d69-bf23-e3d3-94bb68b250da'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0898'),
+  (select id from bookings where booking_no = 'B-898'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -41826,7 +41876,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '3d101f1c-5561-663d-01ed-9628a5b1a206'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0898'),
+  (select id from bookings where booking_no = 'B-898'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -41851,9 +41901,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'd8b6fc4b-f122-1c66-92a1-d073bc6040e0'::uuid,
-  'BK-2026-0899',
+  'B-899',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0043'),
+  (select id from clients where client_code = 'C-43'),
   'Thamel After Dark',
   '2026-07-09T00:15:00.000Z'::timestamptz,
   '2026-07-16T00:15:00.000Z'::timestamptz,
@@ -41871,7 +41921,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'c6c15680-a8f7-3cba-c5b3-652f80a19e61'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0899'),
+  (select id from bookings where booking_no = 'B-899'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000285'),
   'Zoom F6 Field Recorder',
@@ -41888,7 +41938,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '4de6000c-5550-1b36-edcc-eeb8d6c051a7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0899'),
+  (select id from bookings where booking_no = 'B-899'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000242'),
   'Canon C70 Cinema Camera',
@@ -41905,7 +41955,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '40a71449-424b-a2c6-f39c-4830e2dea20c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0899'),
+  (select id from bookings where booking_no = 'B-899'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000255'),
   'Canon CN-E 24mm',
@@ -41922,7 +41972,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '748bb66a-848b-a103-36b8-e9cf8b0f72dd'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0899'),
+  (select id from bookings where booking_no = 'B-899'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000268'),
   'Manfrotto Super Clamp',
@@ -41939,7 +41989,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '54c0654e-176c-6cb7-17ad-2ae378e68a48'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0899'),
+  (select id from bookings where booking_no = 'B-899'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000281'),
   'Jib Arm 3m',
@@ -41965,7 +42015,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0899'),
+  (select id from bookings where booking_no = 'B-899'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -41978,7 +42028,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'c39445b1-b23e-dcb1-544c-fb990f5e37be'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0899'),
+  (select id from bookings where booking_no = 'B-899'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -41998,8 +42048,8 @@ insert into invoices (
 ) values (
   '6d3310b7-6da8-4a89-647d-b941721da2f6'::uuid,
   'INV-102',
-  (select id from bookings where booking_no = 'BK-2026-0899'),
-  (select id from clients where client_code = 'CL-2026-0043'),
+  (select id from bookings where booking_no = 'B-899'),
+  (select id from clients where client_code = 'C-43'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -42144,10 +42194,10 @@ where invoice_no = 'INV-102';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'd89d174e-a77a-fa41-2da4-d857fcb5e530'::uuid,
-  'DEP-2026-0076',
-  (select id from bookings where booking_no = 'BK-2026-0899'),
-  (select id from clients where client_code = 'CL-2026-0043'),
+  'dda5154b-7c58-d8d7-acd7-74f4600807a0'::uuid,
+  'DEP-76',
+  (select id from bookings where booking_no = 'B-899'),
+  (select id from clients where client_code = 'C-43'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -42161,9 +42211,9 @@ insert into payments (
 ) values (
   'ad93b40f-6624-391c-5f9c-eda609c4c136'::uuid,
   'PAY-2026-0076',
-  (select id from bookings where booking_no = 'BK-2026-0899'),
+  (select id from bookings where booking_no = 'B-899'),
   (select id from invoices where invoice_no = 'INV-102'),
-  (select id from clients where client_code = 'CL-2026-0043'),
+  (select id from clients where client_code = 'C-43'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   30839.60,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -42182,7 +42232,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '24d0b250-48e5-15b2-1160-f9b4f00c62e1'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0899'),
+  (select id from bookings where booking_no = 'B-899'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -42197,7 +42247,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'ff2adae1-875a-1913-db01-5559f1e9ee11'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0899'),
+  (select id from bookings where booking_no = 'B-899'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -42212,7 +42262,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '06cb3042-7c15-a12e-eade-d1043a743248'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0899'),
+  (select id from bookings where booking_no = 'B-899'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -42227,7 +42277,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'cc306bc7-1192-415c-f667-c5a846f4c2a5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0899'),
+  (select id from bookings where booking_no = 'B-899'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -42242,7 +42292,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '1e21592e-99b6-ebd5-e552-47452b5017d4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0899'),
+  (select id from bookings where booking_no = 'B-899'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -42267,9 +42317,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'ba1e1dc7-ea62-c218-9051-beb38ba305c5'::uuid,
-  'BK-2026-0900',
+  'B-900',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0054'),
+  (select id from clients where client_code = 'C-54'),
   'Everest Base Camp Documentary',
   '2026-07-16T00:15:00.000Z'::timestamptz,
   '2026-07-18T00:15:00.000Z'::timestamptz,
@@ -42287,7 +42337,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'ca9003fd-e75b-02ba-78c3-36ab9722f1f1'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0900'),
+  (select id from bookings where booking_no = 'B-900'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000238'),
   'Matthews C-Stand 40in',
@@ -42304,7 +42354,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '402a8425-ca58-67de-c065-db0fa701c6b8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0900'),
+  (select id from bookings where booking_no = 'B-900'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000251'),
   'NISI Athena 50mm',
@@ -42321,7 +42371,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '44554c72-fcaa-272d-0a36-c18f050e5828'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0900'),
+  (select id from bookings where booking_no = 'B-900'),
   'Melina Thapa',
   'Sound Recordist'::crew_role,
   5500.00,
@@ -42343,7 +42393,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0900'),
+  (select id from bookings where booking_no = 'B-900'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -42356,7 +42406,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '2bc0aa8d-2415-b00e-17e4-6fbda2ea3362'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0900'),
+  (select id from bookings where booking_no = 'B-900'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -42376,8 +42426,8 @@ insert into invoices (
 ) values (
   'cc6af285-567c-8904-c9d1-006a81f41c8c'::uuid,
   'INV-103',
-  (select id from bookings where booking_no = 'BK-2026-0900'),
-  (select id from clients where client_code = 'CL-2026-0054'),
+  (select id from bookings where booking_no = 'B-900'),
+  (select id from clients where client_code = 'C-54'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -42491,7 +42541,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '690217af-ea3f-9e69-cc50-26727b2590fc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0900'),
+  (select id from bookings where booking_no = 'B-900'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -42506,7 +42556,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '22e4bbc0-0659-6e1a-dacf-1911476a9c9e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0900'),
+  (select id from bookings where booking_no = 'B-900'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -42521,7 +42571,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'c2ebe61e-e771-80ea-69b7-ac2f27878adf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0900'),
+  (select id from bookings where booking_no = 'B-900'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -42536,7 +42586,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'cb369524-dbf0-dc6f-5468-95bfe32a47df'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0900'),
+  (select id from bookings where booking_no = 'B-900'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -42551,7 +42601,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'da33ad4f-5636-1f97-73c5-8a2c76ac3e1c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0900'),
+  (select id from bookings where booking_no = 'B-900'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -42576,9 +42626,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'f81d8317-5360-3ac2-dd45-640c6aed05d2'::uuid,
-  'BK-2026-0901',
+  'B-901',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0065'),
+  (select id from clients where client_code = 'C-65'),
   'Nepal Tourism Board TVC',
   '2026-07-23T00:15:00.000Z'::timestamptz,
   '2026-07-26T00:15:00.000Z'::timestamptz,
@@ -42596,7 +42646,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '492391e6-5c0a-dca2-28ca-2a9370fcfe27'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0901'),
+  (select id from bookings where booking_no = 'B-901'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000247'),
   'DJI Ronin 4D-6K',
@@ -42613,7 +42663,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '745042bf-2419-3ba2-e675-0bdba7d5d7f7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0901'),
+  (select id from bookings where booking_no = 'B-901'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000260'),
   'Aputure LS 300x',
@@ -42630,7 +42680,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'c51becd1-70bb-312d-dcb5-0f5ec104497a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0901'),
+  (select id from bookings where booking_no = 'B-901'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000273'),
   'Kupo Grip Head 4in',
@@ -42647,7 +42697,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '227583af-6422-4bb2-5ee1-dbc7520fd8a7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0901'),
+  (select id from bookings where booking_no = 'B-901'),
   'Roshan Karki',
   'Drone Pilot'::crew_role,
   7000.00,
@@ -42660,7 +42710,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '5a799ed9-b1e3-dd51-5d9f-66ca6c0136bc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0901'),
+  (select id from bookings where booking_no = 'B-901'),
   'Dipesh Gurung',
   'Camera Assistant'::crew_role,
   3000.00,
@@ -42682,7 +42732,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0901'),
+  (select id from bookings where booking_no = 'B-901'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -42695,7 +42745,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'a5d6c8c6-7aca-73e7-2333-da9bb3fafe46'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0901'),
+  (select id from bookings where booking_no = 'B-901'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -42715,8 +42765,8 @@ insert into invoices (
 ) values (
   '0e49466f-d2b5-c9de-200c-37c20208b79a'::uuid,
   'INV-104',
-  (select id from bookings where booking_no = 'BK-2026-0901'),
-  (select id from clients where client_code = 'CL-2026-0065'),
+  (select id from bookings where booking_no = 'B-901'),
+  (select id from clients where client_code = 'C-65'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -42846,10 +42896,10 @@ where invoice_no = 'INV-104';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '16f6b28a-8396-a703-0f30-1a6dd7a493f6'::uuid,
-  'DEP-2026-0077',
-  (select id from bookings where booking_no = 'BK-2026-0901'),
-  (select id from clients where client_code = 'CL-2026-0065'),
+  '3e11bb07-ea1b-a5e2-a12d-1c8f2c840bbe'::uuid,
+  'DEP-77',
+  (select id from bookings where booking_no = 'B-901'),
+  (select id from clients where client_code = 'C-65'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -42860,9 +42910,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'ef3c5577-b66a-9c1f-d28a-c6bb3e2fadb5'::uuid,
-  'DEP-2026-0077-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0077'),
+  '39a98b24-78f4-cb93-5fbc-c7b84a77182a'::uuid,
+  'DEP-77-M1',
+  (select id from security_deposits where deposit_no = 'DEP-77'),
   'Received'::deposit_movement_type,
   5000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -42876,9 +42926,9 @@ insert into payments (
 ) values (
   'a2e2fb84-b4e7-8c52-da77-82b3957fb153'::uuid,
   'PAY-2026-0077',
-  (select id from bookings where booking_no = 'BK-2026-0901'),
+  (select id from bookings where booking_no = 'B-901'),
   (select id from invoices where invoice_no = 'INV-104'),
-  (select id from clients where client_code = 'CL-2026-0065'),
+  (select id from clients where client_code = 'C-65'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15289.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -42897,7 +42947,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'c7f002d5-0671-e741-0f57-25b6d6921125'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0901'),
+  (select id from bookings where booking_no = 'B-901'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -42912,7 +42962,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '4761aee3-2569-d3ad-9741-2abae90018e4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0901'),
+  (select id from bookings where booking_no = 'B-901'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -42927,7 +42977,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '940e67a9-e7fb-374d-fe5c-4bf6ef29cf2a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0901'),
+  (select id from bookings where booking_no = 'B-901'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -42942,7 +42992,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '05bbf680-1b88-48c8-341e-40207f4932e2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0901'),
+  (select id from bookings where booking_no = 'B-901'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -42957,7 +43007,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '57b3a24e-0f85-1dc0-41d4-868aa1338963'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0901'),
+  (select id from bookings where booking_no = 'B-901'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -42982,9 +43032,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'a9067b61-babe-081a-fba2-c3e57acb66bb'::uuid,
-  'BK-2026-0902',
+  'B-902',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0036'),
+  (select id from clients where client_code = 'C-36'),
   'Kathmandu Street Food Series',
   '2026-06-01T00:15:00.000Z'::timestamptz,
   '2026-06-03T00:15:00.000Z'::timestamptz,
@@ -43002,7 +43052,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '351de15f-180f-463a-e41f-4a5842cdec04'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0902'),
+  (select id from bookings where booking_no = 'B-902'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000256'),
   'Canon CN-E 50mm',
@@ -43019,7 +43069,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '5eb0a112-7429-9fdf-0c4d-04ed89cb2771'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0902'),
+  (select id from bookings where booking_no = 'B-902'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000269'),
   'Avenger Wind-Up Stand',
@@ -43036,7 +43086,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'c687c24a-453f-01e2-d15b-8ccbe24a0624'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0902'),
+  (select id from bookings where booking_no = 'B-902'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000282'),
   'Sennheiser MKH 416',
@@ -43053,7 +43103,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '850edfeb-5416-8332-830a-59dfc8152375'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0902'),
+  (select id from bookings where booking_no = 'B-902'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000239'),
   'Manfrotto 504X Tripod System',
@@ -43079,7 +43129,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0902'),
+  (select id from bookings where booking_no = 'B-902'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -43092,7 +43142,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'd2615aa2-a365-aeaa-1bfc-380bd7bc7bbc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0902'),
+  (select id from bookings where booking_no = 'B-902'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   15.00,
@@ -43112,8 +43162,8 @@ insert into invoices (
 ) values (
   '95b03199-7eee-351d-c843-1df3b6599ab9'::uuid,
   'INV-105',
-  (select id from bookings where booking_no = 'BK-2026-0902'),
-  (select id from clients where client_code = 'CL-2026-0036'),
+  (select id from bookings where booking_no = 'B-902'),
+  (select id from clients where client_code = 'C-36'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -43243,10 +43293,10 @@ where invoice_no = 'INV-105';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'e1a5641b-d3ec-36f8-4c3a-83e60f5a530f'::uuid,
-  'DEP-2026-0078',
-  (select id from bookings where booking_no = 'BK-2026-0902'),
-  (select id from clients where client_code = 'CL-2026-0036'),
+  '51b0feec-c9e8-f641-2e10-30352e145963'::uuid,
+  'DEP-78',
+  (select id from bookings where booking_no = 'B-902'),
+  (select id from clients where client_code = 'C-36'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -43257,9 +43307,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'f06bacfe-afba-d5e2-68aa-14d8e7a6f17d'::uuid,
-  'DEP-2026-0078-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0078'),
+  '95c4e773-fa6d-95c9-fb05-4a3bb5bfd899'::uuid,
+  'DEP-78-M1',
+  (select id from security_deposits where deposit_no = 'DEP-78'),
   'Received'::deposit_movement_type,
   15000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -43273,9 +43323,9 @@ insert into payments (
 ) values (
   '6351d0d8-aec9-213c-d650-79395d1f6323'::uuid,
   'PAY-2026-0078',
-  (select id from bookings where booking_no = 'BK-2026-0902'),
+  (select id from bookings where booking_no = 'B-902'),
   (select id from invoices where invoice_no = 'INV-105'),
-  (select id from clients where client_code = 'CL-2026-0036'),
+  (select id from clients where client_code = 'C-36'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   8788.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -43294,7 +43344,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '561741ba-0b7a-9add-4d90-098b2fffe8d5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0902'),
+  (select id from bookings where booking_no = 'B-902'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -43309,7 +43359,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '07811c32-a871-a194-0cc6-3c35bb6bcc56'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0902'),
+  (select id from bookings where booking_no = 'B-902'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -43324,7 +43374,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '338ad663-0691-7b03-9e1a-a4a3fd788226'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0902'),
+  (select id from bookings where booking_no = 'B-902'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -43339,7 +43389,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '2bb2d76d-05a9-4e13-8943-bea3a90248d2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0902'),
+  (select id from bookings where booking_no = 'B-902'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -43354,7 +43404,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '47adf4bf-18d0-6521-f6c0-ad03c69e7f01'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0902'),
+  (select id from bookings where booking_no = 'B-902'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -43369,7 +43419,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'dea610dd-756b-0722-45a8-c8f43404cbfc'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0902'),
+  (select id from bookings where booking_no = 'B-902'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Returned'::booking_stage,
   'Closed'::booking_stage,
@@ -43394,9 +43444,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '954d7f57-1a05-f589-fcde-ee4f5b9fee02'::uuid,
-  'BK-2026-0903',
+  'B-903',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0047'),
+  (select id from clients where client_code = 'C-47'),
   'Himalayan Airlines Safety Film',
   '2026-06-08T00:15:00.000Z'::timestamptz,
   '2026-06-11T00:15:00.000Z'::timestamptz,
@@ -43414,7 +43464,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '88070218-3ead-5603-cbc6-14a3c735d6d2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0903'),
+  (select id from bookings where booking_no = 'B-903'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000265'),
   'Astera Titan Tube 8-Pack',
@@ -43431,7 +43481,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'fa017069-e800-8229-6a76-aadaf721622b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0903'),
+  (select id from bookings where booking_no = 'B-903'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000278'),
   'Easyrig Vario 5',
@@ -43448,7 +43498,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '179b6c46-2de4-6a2b-9535-b8b6f7c2f9e8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0903'),
+  (select id from bookings where booking_no = 'B-903'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000235'),
   'Sony FX6 Cinema Camera',
@@ -43465,7 +43515,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'bc56322f-285b-6e0e-840d-14164671645f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0903'),
+  (select id from bookings where booking_no = 'B-903'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000248'),
   'Panasonic Lumix S5 II',
@@ -43482,7 +43532,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '502aa56c-9937-c6e2-866e-caff4c8eefba'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0903'),
+  (select id from bookings where booking_no = 'B-903'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000261'),
   'Aputure Nova P300c',
@@ -43499,7 +43549,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'a2aa638d-6e45-cce2-cceb-eb9944ef3941'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0903'),
+  (select id from bookings where booking_no = 'B-903'),
   'Sujata Basnet',
   'Rental Coordinator'::crew_role,
   3200.00,
@@ -43521,7 +43571,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0903'),
+  (select id from bookings where booking_no = 'B-903'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -43534,7 +43584,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '65d94ab8-f7b6-f75e-a2a6-08cc9bfc5364'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0903'),
+  (select id from bookings where booking_no = 'B-903'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -43554,8 +43604,8 @@ insert into invoices (
 ) values (
   '597d816c-9314-b387-744c-41d79d5e8d0d'::uuid,
   'INV-106',
-  (select id from bookings where booking_no = 'BK-2026-0903'),
-  (select id from clients where client_code = 'CL-2026-0047'),
+  (select id from bookings where booking_no = 'B-903'),
+  (select id from clients where client_code = 'C-47'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -43715,10 +43765,10 @@ where invoice_no = 'INV-106';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '7afd13f1-a32d-9699-f56e-e30d9dc17f23'::uuid,
-  'DEP-2026-0079',
-  (select id from bookings where booking_no = 'BK-2026-0903'),
-  (select id from clients where client_code = 'CL-2026-0047'),
+  'dcb76b5f-abd0-6cd3-cd8b-5ddcf00a9f21'::uuid,
+  'DEP-79',
+  (select id from bookings where booking_no = 'B-903'),
+  (select id from clients where client_code = 'C-47'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -43729,9 +43779,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '4ad8d873-a77f-7809-c8b1-373228cd1ce2'::uuid,
-  'DEP-2026-0079-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0079'),
+  '6f705b0a-edfb-0f16-a93e-46d673dc0d5f'::uuid,
+  'DEP-79-M1',
+  (select id from security_deposits where deposit_no = 'DEP-79'),
   'Received'::deposit_movement_type,
   20000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -43745,9 +43795,9 @@ insert into payments (
 ) values (
   '011d0bd1-254c-22ac-20f4-1208d163e634'::uuid,
   'PAY-2026-0079',
-  (select id from bookings where booking_no = 'BK-2026-0903'),
+  (select id from bookings where booking_no = 'B-903'),
   (select id from invoices where invoice_no = 'INV-106'),
-  (select id from clients where client_code = 'CL-2026-0047'),
+  (select id from clients where client_code = 'C-47'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   67461.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -43766,7 +43816,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '83a1c142-6834-35ad-ea9f-a230e3090419'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0903'),
+  (select id from bookings where booking_no = 'B-903'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -43781,7 +43831,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'c8d6fbb9-a75f-2b42-ce47-b5686b9bda3b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0903'),
+  (select id from bookings where booking_no = 'B-903'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -43796,7 +43846,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'df3b77d8-eea7-30be-082a-ab241fa82b28'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0903'),
+  (select id from bookings where booking_no = 'B-903'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -43811,7 +43861,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '579b81a5-dcfc-4d12-a46a-62a808e18934'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0903'),
+  (select id from bookings where booking_no = 'B-903'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -43826,7 +43876,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '71c5c147-ac87-dd9d-1a21-045b2b4fa3df'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0903'),
+  (select id from bookings where booking_no = 'B-903'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -43841,7 +43891,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'cfbac468-ba5d-4c49-ffd1-3ffc63b17704'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0903'),
+  (select id from bookings where booking_no = 'B-903'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Returned'::booking_stage,
   'Closed'::booking_stage,
@@ -43866,9 +43916,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'dffeffaf-398b-a724-9726-d5f0ca870d03'::uuid,
-  'BK-2026-0904',
+  'B-904',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0058'),
+  (select id from clients where client_code = 'C-58'),
   'Ncell Brand Campaign',
   '2026-06-15T00:15:00.000Z'::timestamptz,
   '2026-06-19T00:15:00.000Z'::timestamptz,
@@ -43886,7 +43936,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'b6aab6af-1011-3456-3fb2-92b1748d76ff'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0904'),
+  (select id from bookings where booking_no = 'B-904'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000274'),
   'Butterfly Frame 6x6',
@@ -43903,7 +43953,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '21991e9a-2296-990c-8e87-0923d148d89f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0904'),
+  (select id from bookings where booking_no = 'B-904'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000287'),
   'Sennheiser EW 112P G4',
@@ -43920,7 +43970,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'da46db35-88a8-1019-4055-09f76b7049f3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0904'),
+  (select id from bookings where booking_no = 'B-904'),
   'Anish Tamang',
   'DoP'::crew_role,
   8000.00,
@@ -43933,7 +43983,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '5b13d128-9bf1-6776-1aab-306da2775c0e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0904'),
+  (select id from bookings where booking_no = 'B-904'),
   'Sabina Rai',
   'Focus Puller'::crew_role,
   4500.00,
@@ -43955,7 +44005,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0904'),
+  (select id from bookings where booking_no = 'B-904'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -43968,7 +44018,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'ddd79a19-77cb-542f-db13-76b8d202557f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0904'),
+  (select id from bookings where booking_no = 'B-904'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -43988,8 +44038,8 @@ insert into invoices (
 ) values (
   '1ecbd13d-bff6-973f-e5a4-e284f698085c'::uuid,
   'INV-107',
-  (select id from bookings where booking_no = 'BK-2026-0904'),
-  (select id from clients where client_code = 'CL-2026-0058'),
+  (select id from bookings where booking_no = 'B-904'),
+  (select id from clients where client_code = 'C-58'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -44104,9 +44154,9 @@ insert into payments (
 ) values (
   'dbfa0909-71c7-6470-86bf-3ee3c59b5b9d'::uuid,
   'PAY-2026-0080',
-  (select id from bookings where booking_no = 'BK-2026-0904'),
+  (select id from bookings where booking_no = 'B-904'),
   (select id from invoices where invoice_no = 'INV-107'),
-  (select id from clients where client_code = 'CL-2026-0058'),
+  (select id from clients where client_code = 'C-58'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   63054.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -44125,7 +44175,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'a0e4fc57-85d2-d61c-6a9d-8a5be30db0c1'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0904'),
+  (select id from bookings where booking_no = 'B-904'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -44140,7 +44190,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '564da3f6-7f42-7785-3ce1-9c093458b110'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0904'),
+  (select id from bookings where booking_no = 'B-904'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -44155,7 +44205,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'ff83e008-96d9-301a-33e8-aed61dca6655'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0904'),
+  (select id from bookings where booking_no = 'B-904'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -44170,7 +44220,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '58344b63-e22b-1994-7f36-1d431ba16032'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0904'),
+  (select id from bookings where booking_no = 'B-904'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -44185,7 +44235,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'a7ede56f-1832-278c-ea1a-a1e1baa0a33e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0904'),
+  (select id from bookings where booking_no = 'B-904'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -44200,7 +44250,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'bf3f1a72-26c7-bff8-a34d-827774ecba34'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0904'),
+  (select id from bookings where booking_no = 'B-904'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Returned'::booking_stage,
   'Closed'::booking_stage,
@@ -44225,9 +44275,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'aa762747-a06b-4d01-280c-4e5eb831e8cc'::uuid,
-  'BK-2026-0905',
+  'B-905',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0069'),
+  (select id from clients where client_code = 'C-69'),
   'Chitwan Wildlife Feature',
   '2026-06-22T00:15:00.000Z'::timestamptz,
   '2026-06-27T00:15:00.000Z'::timestamptz,
@@ -44245,7 +44295,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '4b6b8377-4c5e-cabc-3b72-228ed3c6b58b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0905'),
+  (select id from bookings where booking_no = 'B-905'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000283'),
   'Rode NTG5 Kit',
@@ -44262,7 +44312,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '49859bae-76f3-1d4c-a9a8-8eb8e6dfa511'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0905'),
+  (select id from bookings where booking_no = 'B-905'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000240'),
   'Sony FX3 Full-Frame Camera',
@@ -44279,7 +44329,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '74cfd401-59f2-e091-b59c-82014512d485'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0905'),
+  (select id from bookings where booking_no = 'B-905'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000253'),
   'Sigma 18-35mm Art',
@@ -44305,7 +44355,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0905'),
+  (select id from bookings where booking_no = 'B-905'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -44318,7 +44368,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '612c91de-7c97-d387-2a8d-17ff27f4e32d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0905'),
+  (select id from bookings where booking_no = 'B-905'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -44338,8 +44388,8 @@ insert into invoices (
 ) values (
   '8eb3b0d3-e0b7-170e-399e-73b129b8ad3c'::uuid,
   'INV-108',
-  (select id from bookings where booking_no = 'BK-2026-0905'),
-  (select id from clients where client_code = 'CL-2026-0069'),
+  (select id from bookings where booking_no = 'B-905'),
+  (select id from clients where client_code = 'C-69'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -44454,10 +44504,10 @@ where invoice_no = 'INV-108';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '4c83411f-fab3-2f53-52ab-720745f37b6b'::uuid,
-  'DEP-2026-0080',
-  (select id from bookings where booking_no = 'BK-2026-0905'),
-  (select id from clients where client_code = 'CL-2026-0069'),
+  'ecb1aa83-b852-57a5-7a68-dee771ecfa02'::uuid,
+  'DEP-80',
+  (select id from bookings where booking_no = 'B-905'),
+  (select id from clients where client_code = 'C-69'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -44468,9 +44518,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '163b6dd1-9685-b040-b8a3-e71791b0a644'::uuid,
-  'DEP-2026-0080-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0080'),
+  'ae73c531-24f8-0bd6-c287-90ef41fc54c1'::uuid,
+  'DEP-80-M1',
+  (select id from security_deposits where deposit_no = 'DEP-80'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -44484,9 +44534,9 @@ insert into payments (
 ) values (
   '65fca551-c07a-98f9-bce6-f9e2fae752fb'::uuid,
   'PAY-2026-0081',
-  (select id from bookings where booking_no = 'BK-2026-0905'),
+  (select id from bookings where booking_no = 'B-905'),
   (select id from invoices where invoice_no = 'INV-108'),
-  (select id from clients where client_code = 'CL-2026-0069'),
+  (select id from clients where client_code = 'C-69'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   47545.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -44505,7 +44555,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '2c1dc63d-c4a3-49b9-80a5-478c0c1d64c7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0905'),
+  (select id from bookings where booking_no = 'B-905'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -44520,7 +44570,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '51e162c4-d009-cbc7-b03c-c95615bef970'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0905'),
+  (select id from bookings where booking_no = 'B-905'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -44535,7 +44585,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '94632bd3-d09a-8687-79be-4533f3a16ac6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0905'),
+  (select id from bookings where booking_no = 'B-905'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -44550,7 +44600,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'a7ba5c4a-a0b1-726b-6102-4a88c2b55ed7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0905'),
+  (select id from bookings where booking_no = 'B-905'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -44565,7 +44615,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '3d07996f-74bf-496d-9ffc-93818f2ff12d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0905'),
+  (select id from bookings where booking_no = 'B-905'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -44580,7 +44630,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '026b4bfb-3343-e08a-8d34-21e1ae5e1a5a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0905'),
+  (select id from bookings where booking_no = 'B-905'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Returned'::booking_stage,
   'Closed'::booking_stage,
@@ -44605,9 +44655,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'd3a0e05c-b3c1-1bfb-e16a-c72ecd38c5ba'::uuid,
-  'BK-2026-0906',
+  'B-906',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0040'),
+  (select id from clients where client_code = 'C-40'),
   'Wedding — Shrestha / Rai',
   '2026-06-29T00:15:00.000Z'::timestamptz,
   '2026-07-05T00:15:00.000Z'::timestamptz,
@@ -44625,7 +44675,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '7a7ea33e-2ca1-fc56-52e5-d9f9c1d5f87f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0906'),
+  (select id from bookings where booking_no = 'B-906'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000236'),
   'NISI Athena 35mm',
@@ -44642,7 +44692,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '4a818825-364c-b3f9-c7a5-bd41cd5fc73c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0906'),
+  (select id from bookings where booking_no = 'B-906'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000249'),
   'Sony FX30',
@@ -44659,7 +44709,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '8f7d14cd-eb07-d19d-f68e-0cc367f961c8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0906'),
+  (select id from bookings where booking_no = 'B-906'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000262'),
   'Aputure MC Pro 4-Light Kit',
@@ -44676,7 +44726,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '16346444-84f2-2a02-7438-aa08c271bbe3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0906'),
+  (select id from bookings where booking_no = 'B-906'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000275'),
   'Sachtler Flowtech 75',
@@ -44693,7 +44743,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '5cc8e79e-622c-576b-4e4f-d0bcf144fab7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0906'),
+  (select id from bookings where booking_no = 'B-906'),
   'Kiran Magar',
   'Gaffer'::crew_role,
   5000.00,
@@ -44715,7 +44765,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0906'),
+  (select id from bookings where booking_no = 'B-906'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -44728,7 +44778,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '33a02472-a06e-bd3b-e236-9f82ec14118a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0906'),
+  (select id from bookings where booking_no = 'B-906'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -44748,8 +44798,8 @@ insert into invoices (
 ) values (
   'c9ab9997-cb44-9e46-ce96-b6f541e9a297'::uuid,
   'INV-109',
-  (select id from bookings where booking_no = 'BK-2026-0906'),
-  (select id from clients where client_code = 'CL-2026-0040'),
+  (select id from bookings where booking_no = 'B-906'),
+  (select id from clients where client_code = 'C-40'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -44894,10 +44944,10 @@ where invoice_no = 'INV-109';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '4b634c75-755c-c4ad-f1e1-455b14272794'::uuid,
-  'DEP-2026-0081',
-  (select id from bookings where booking_no = 'BK-2026-0906'),
-  (select id from clients where client_code = 'CL-2026-0040'),
+  '85a15539-8247-b778-0ff3-234f0cae4435'::uuid,
+  'DEP-81',
+  (select id from bookings where booking_no = 'B-906'),
+  (select id from clients where client_code = 'C-40'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -44908,9 +44958,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'b7ce5ec8-4c76-554c-6a3d-713362703146'::uuid,
-  'DEP-2026-0081-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0081'),
+  'bc6a6aef-00c4-70d0-35ee-82d27681113b'::uuid,
+  'DEP-81-M1',
+  (select id from security_deposits where deposit_no = 'DEP-81'),
   'Received'::deposit_movement_type,
   15000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -44924,9 +44974,9 @@ insert into payments (
 ) values (
   'ff90f2ac-91c0-1ba3-fbd0-336d937266ba'::uuid,
   'PAY-2026-0082',
-  (select id from bookings where booking_no = 'BK-2026-0906'),
+  (select id from bookings where booking_no = 'B-906'),
   (select id from invoices where invoice_no = 'INV-109'),
-  (select id from clients where client_code = 'CL-2026-0040'),
+  (select id from clients where client_code = 'C-40'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   103056.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -44945,7 +44995,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'db476e11-4cb5-645e-d9be-babfa234e0e5'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0906'),
+  (select id from bookings where booking_no = 'B-906'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -44960,7 +45010,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'b9b0d99b-0500-a377-b52a-d77afcb47a8b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0906'),
+  (select id from bookings where booking_no = 'B-906'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -44975,7 +45025,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'cc58608c-288b-0360-800b-004162a877af'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0906'),
+  (select id from bookings where booking_no = 'B-906'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -44990,7 +45040,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e64e6798-411c-5f9d-6e81-5e789b41fb76'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0906'),
+  (select id from bookings where booking_no = 'B-906'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -45005,7 +45055,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '0423f21b-50b8-54d9-6cf2-d0eb4ff58393'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0906'),
+  (select id from bookings where booking_no = 'B-906'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -45020,7 +45070,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'f2ce4c93-165f-2310-f3ab-662c0284f209'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0906'),
+  (select id from bookings where booking_no = 'B-906'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Returned'::booking_stage,
   'Closed'::booking_stage,
@@ -45045,9 +45095,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '0328c6fd-c89d-d5cb-0db2-0b68371b51c4'::uuid,
-  'BK-2026-0907',
+  'B-907',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0051'),
+  (select id from clients where client_code = 'C-51'),
   'Pathao Nepal Launch Spot',
   '2026-07-06T00:15:00.000Z'::timestamptz,
   '2026-07-13T00:15:00.000Z'::timestamptz,
@@ -45065,7 +45115,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '7abca147-bbaa-4b18-127b-87b16ec7fa71'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0907'),
+  (select id from bookings where booking_no = 'B-907'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000245'),
   'Blackmagic Pocket 6K Pro',
@@ -45082,7 +45132,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '504e88f6-fb92-ea06-a748-9900a3388753'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0907'),
+  (select id from bookings where booking_no = 'B-907'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000258'),
   'Laowa 12mm Zero-D',
@@ -45099,7 +45149,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '20547db7-1761-b82c-6fee-0c807cb63c51'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0907'),
+  (select id from bookings where booking_no = 'B-907'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000271'),
   'Sandbag 15lb',
@@ -45116,7 +45166,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'c6ab1c4a-49dd-797a-1a78-d68ed8b9bf73'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0907'),
+  (select id from bookings where booking_no = 'B-907'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000284'),
   'Sound Devices MixPre-6 II',
@@ -45133,7 +45183,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'cc848783-b885-73a7-8301-ebf17427901b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0907'),
+  (select id from bookings where booking_no = 'B-907'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000241'),
   'Sony A7S III',
@@ -45150,7 +45200,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '211b0ee4-9a98-6622-6d1a-312eea2e79ce'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0907'),
+  (select id from bookings where booking_no = 'B-907'),
   'Prabin Shrestha',
   'Grip'::crew_role,
   3500.00,
@@ -45163,7 +45213,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'b813a5dd-ed9d-34cc-ba0d-34581f01a379'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0907'),
+  (select id from bookings where booking_no = 'B-907'),
   'Melina Thapa',
   'Sound Recordist'::crew_role,
   5500.00,
@@ -45185,7 +45235,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0907'),
+  (select id from bookings where booking_no = 'B-907'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -45198,7 +45248,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '3a47f406-0734-fbb6-c235-94400d148722'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0907'),
+  (select id from bookings where booking_no = 'B-907'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -45218,8 +45268,8 @@ insert into invoices (
 ) values (
   'f58e8714-9c38-bfc5-8ff8-9f483035e8e5'::uuid,
   'INV-110',
-  (select id from bookings where booking_no = 'BK-2026-0907'),
-  (select id from clients where client_code = 'CL-2026-0051'),
+  (select id from bookings where booking_no = 'B-907'),
+  (select id from clients where client_code = 'C-51'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -45379,10 +45429,10 @@ where invoice_no = 'INV-110';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '52341409-9477-3024-8a05-d4fbdf1a0be6'::uuid,
-  'DEP-2026-0082',
-  (select id from bookings where booking_no = 'BK-2026-0907'),
-  (select id from clients where client_code = 'CL-2026-0051'),
+  '477f5b1b-e87a-5735-862b-9553b2b4064f'::uuid,
+  'DEP-82',
+  (select id from bookings where booking_no = 'B-907'),
+  (select id from clients where client_code = 'C-51'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -45393,9 +45443,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'e4741404-378c-3427-615c-92b93de452ca'::uuid,
-  'DEP-2026-0082-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0082'),
+  '9a1107fa-410c-6144-6de7-fc07eefc2a56'::uuid,
+  'DEP-82-M1',
+  (select id from security_deposits where deposit_no = 'DEP-82'),
   'Received'::deposit_movement_type,
   20000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -45409,9 +45459,9 @@ insert into payments (
 ) values (
   '490b611e-52e6-01b4-398d-a7b88c695674'::uuid,
   'PAY-2026-0083',
-  (select id from bookings where booking_no = 'BK-2026-0907'),
+  (select id from bookings where booking_no = 'B-907'),
   (select id from invoices where invoice_no = 'INV-110'),
-  (select id from clients where client_code = 'CL-2026-0051'),
+  (select id from clients where client_code = 'C-51'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   160178.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -45430,7 +45480,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'a1053678-c8a4-7420-69f3-c36a9613dd15'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0907'),
+  (select id from bookings where booking_no = 'B-907'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -45445,7 +45495,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '7ef84509-6f5a-997c-78fa-d8949c881b7e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0907'),
+  (select id from bookings where booking_no = 'B-907'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -45460,7 +45510,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '894e07fa-1944-9d73-402e-e452d36f6a6b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0907'),
+  (select id from bookings where booking_no = 'B-907'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -45475,7 +45525,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '9a6ebb6f-711c-121d-3a5f-0d398b0751bb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0907'),
+  (select id from bookings where booking_no = 'B-907'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -45490,7 +45540,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '3f203249-3b72-b711-8e88-b5404c5909a3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0907'),
+  (select id from bookings where booking_no = 'B-907'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -45505,7 +45555,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '69c61b8e-7516-ed40-4bfb-4c1f3767e3df'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0907'),
+  (select id from bookings where booking_no = 'B-907'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Returned'::booking_stage,
   'Closed'::booking_stage,
@@ -45530,9 +45580,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '8b7841a1-4fc0-387f-8ca2-d335642a6c84'::uuid,
-  'BK-2026-0908',
+  'B-908',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0062'),
+  (select id from clients where client_code = 'C-62'),
   'Sagarmatha Music Video',
   '2026-06-02T00:15:00.000Z'::timestamptz,
   '2026-06-04T00:15:00.000Z'::timestamptz,
@@ -45550,7 +45600,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '3042451a-845e-8f96-c423-fb360c02f9b6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0908'),
+  (select id from bookings where booking_no = 'B-908'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000254'),
   'Sigma 24-70mm Art',
@@ -45567,7 +45617,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '707968d3-5166-91b9-5bf5-e52a7a6cff2a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0908'),
+  (select id from bookings where booking_no = 'B-908'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000267'),
   'Aputure Amaran 200x',
@@ -45593,7 +45643,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0908'),
+  (select id from bookings where booking_no = 'B-908'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -45606,7 +45656,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '3b0811cc-a522-e466-c041-d621b96f1def'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0908'),
+  (select id from bookings where booking_no = 'B-908'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -45626,8 +45676,8 @@ insert into invoices (
 ) values (
   'b1ff9ca4-b7db-2274-e3fb-dab34e09aaaa'::uuid,
   'INV-111',
-  (select id from bookings where booking_no = 'BK-2026-0908'),
-  (select id from clients where client_code = 'CL-2026-0062'),
+  (select id from bookings where booking_no = 'B-908'),
+  (select id from clients where client_code = 'C-62'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -45727,9 +45777,9 @@ insert into payments (
 ) values (
   'af8734c2-75a0-acba-9bd1-9bb70ead6334'::uuid,
   'PAY-2026-0084',
-  (select id from bookings where booking_no = 'BK-2026-0908'),
+  (select id from bookings where booking_no = 'B-908'),
   (select id from invoices where invoice_no = 'INV-111'),
-  (select id from clients where client_code = 'CL-2026-0062'),
+  (select id from clients where client_code = 'C-62'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   3435.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -45748,7 +45798,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'ae9a444e-7b87-3b29-165b-461e7c20d6ab'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0908'),
+  (select id from bookings where booking_no = 'B-908'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -45763,7 +45813,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '4469f108-43ea-35a5-8cdd-f7505adcd41a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0908'),
+  (select id from bookings where booking_no = 'B-908'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -45778,7 +45828,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'd88b0adb-715d-2c47-a7e6-c25062184674'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0908'),
+  (select id from bookings where booking_no = 'B-908'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -45793,7 +45843,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'b6ecb1e5-6f8d-370a-6ed5-e01a49be9c28'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0908'),
+  (select id from bookings where booking_no = 'B-908'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -45808,7 +45858,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'f1e93efd-7d56-fd63-efd5-76ada87c2d71'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0908'),
+  (select id from bookings where booking_no = 'B-908'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -45823,7 +45873,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '3c175e40-bba7-0945-37ab-94350b2d6f3c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0908'),
+  (select id from bookings where booking_no = 'B-908'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Returned'::booking_stage,
   'Closed'::booking_stage,
@@ -45848,9 +45898,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'cfc93a77-f886-d188-595b-cf9751f40db8'::uuid,
-  'BK-2026-0909',
+  'B-909',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0073'),
+  (select id from clients where client_code = 'C-73'),
   'Lumbini Heritage Short',
   '2026-06-09T00:15:00.000Z'::timestamptz,
   '2026-06-12T00:15:00.000Z'::timestamptz,
@@ -45868,7 +45918,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '7100848e-90ee-5d40-f002-cf61c4fdba9f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0909'),
+  (select id from bookings where booking_no = 'B-909'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000263'),
   'Nanlite Forza 500B II',
@@ -45885,7 +45935,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'c4e6d243-2877-f8ae-6965-b24d19ccf724'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0909'),
+  (select id from bookings where booking_no = 'B-909'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000276'),
   'DJI RS 3 Pro Gimbal',
@@ -45902,7 +45952,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '302caf23-97a7-389b-540c-12b845638ad3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0909'),
+  (select id from bookings where booking_no = 'B-909'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000289'),
   'Sony MDR-7506 Headphones',
@@ -45919,7 +45969,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '84bfef91-59db-a14f-f590-e8917905e460'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0909'),
+  (select id from bookings where booking_no = 'B-909'),
   'Roshan Karki',
   'Drone Pilot'::crew_role,
   7000.00,
@@ -45941,7 +45991,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0909'),
+  (select id from bookings where booking_no = 'B-909'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -45954,7 +46004,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '7088502e-baf3-4565-732e-ee31ee90fc33'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0909'),
+  (select id from bookings where booking_no = 'B-909'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -45974,8 +46024,8 @@ insert into invoices (
 ) values (
   '0607c1cb-b06c-5ce6-2185-8aa21e3cfa4d'::uuid,
   'INV-112',
-  (select id from bookings where booking_no = 'BK-2026-0909'),
-  (select id from clients where client_code = 'CL-2026-0073'),
+  (select id from bookings where booking_no = 'B-909'),
+  (select id from clients where client_code = 'C-73'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -46105,10 +46155,10 @@ where invoice_no = 'INV-112';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'aff122c8-d83f-c6cf-d20f-12fc3fd1a74e'::uuid,
-  'DEP-2026-0083',
-  (select id from bookings where booking_no = 'BK-2026-0909'),
-  (select id from clients where client_code = 'CL-2026-0073'),
+  '2f5c9152-f9b9-1cfd-6e9a-16238f95e135'::uuid,
+  'DEP-83',
+  (select id from bookings where booking_no = 'B-909'),
+  (select id from clients where client_code = 'C-73'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -46119,9 +46169,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'fb1f7bba-9b32-8e8e-5e01-a2aa38506355'::uuid,
-  'DEP-2026-0083-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0083'),
+  'aa617f90-ad7a-5cf0-9933-e6c97c4f5b66'::uuid,
+  'DEP-83-M1',
+  (select id from security_deposits where deposit_no = 'DEP-83'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -46135,9 +46185,9 @@ insert into payments (
 ) values (
   '5ca21eb9-d67a-9543-3528-a911ba8007c6'::uuid,
   'PAY-2026-0085',
-  (select id from bookings where booking_no = 'BK-2026-0909'),
+  (select id from bookings where booking_no = 'B-909'),
   (select id from invoices where invoice_no = 'INV-112'),
-  (select id from clients where client_code = 'CL-2026-0073'),
+  (select id from clients where client_code = 'C-73'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   45087.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -46156,7 +46206,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e4c0de13-2efb-5722-4690-e93983b49226'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0909'),
+  (select id from bookings where booking_no = 'B-909'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -46171,7 +46221,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '77ab2c7e-9eba-ed01-5cb4-bd547740c78a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0909'),
+  (select id from bookings where booking_no = 'B-909'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -46186,7 +46236,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '31918d9f-f63c-865f-6a05-003c5157a2de'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0909'),
+  (select id from bookings where booking_no = 'B-909'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -46201,7 +46251,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'fff84e84-3620-6237-cfd4-a15d53268e20'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0909'),
+  (select id from bookings where booking_no = 'B-909'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -46216,7 +46266,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'b52d874a-7be5-7815-f5b6-71df6d632b06'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0909'),
+  (select id from bookings where booking_no = 'B-909'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -46231,7 +46281,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '60ca0f03-5c2e-a17c-9b98-67d0f35b8d50'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0909'),
+  (select id from bookings where booking_no = 'B-909'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Returned'::booking_stage,
   'Closed'::booking_stage,
@@ -46256,9 +46306,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '1c30e6a5-7800-b3bf-0130-77835dcd631c'::uuid,
-  'BK-2026-0910',
+  'B-910',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0044'),
+  (select id from clients where client_code = 'C-44'),
   'Nepal Investment Bank AGM',
   '2026-06-16T00:15:00.000Z'::timestamptz,
   '2026-06-20T00:15:00.000Z'::timestamptz,
@@ -46276,7 +46326,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '1096194a-c2a9-30c3-581d-c86759ed3156'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0910'),
+  (select id from bookings where booking_no = 'B-910'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000272'),
   'Dana Dolly Kit',
@@ -46293,7 +46343,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '4e69ac08-3685-719b-231a-8915da52029d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0910'),
+  (select id from bookings where booking_no = 'B-910'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000285'),
   'Zoom F6 Field Recorder',
@@ -46310,7 +46360,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'e935c67b-2dfd-21ce-872d-8404f98f6c1f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0910'),
+  (select id from bookings where booking_no = 'B-910'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000242'),
   'Canon C70 Cinema Camera',
@@ -46327,7 +46377,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '46ba1cf1-c2ef-3a8e-b8d6-5ce4f5f10fd2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0910'),
+  (select id from bookings where booking_no = 'B-910'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000255'),
   'Canon CN-E 24mm',
@@ -46344,7 +46394,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '8b93a904-ea6f-be95-e955-d65c42ca7b09'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0910'),
+  (select id from bookings where booking_no = 'B-910'),
   'Dipesh Gurung',
   'Camera Assistant'::crew_role,
   3000.00,
@@ -46357,7 +46407,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'e5b70614-7d56-f955-cbd2-570d603e174c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0910'),
+  (select id from bookings where booking_no = 'B-910'),
   'Sujata Basnet',
   'Rental Coordinator'::crew_role,
   3200.00,
@@ -46379,7 +46429,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0910'),
+  (select id from bookings where booking_no = 'B-910'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -46392,7 +46442,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '81e30eba-e892-81d1-aad4-2fc15df43530'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0910'),
+  (select id from bookings where booking_no = 'B-910'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -46412,8 +46462,8 @@ insert into invoices (
 ) values (
   '33804b5d-0505-c5cc-1ce7-2f1a3f6133e3'::uuid,
   'INV-113',
-  (select id from bookings where booking_no = 'BK-2026-0910'),
-  (select id from clients where client_code = 'CL-2026-0044'),
+  (select id from bookings where booking_no = 'B-910'),
+  (select id from clients where client_code = 'C-44'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -46558,10 +46608,10 @@ where invoice_no = 'INV-113';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'b37c2410-66d0-9925-e0d1-433a6b11e45a'::uuid,
-  'DEP-2026-0084',
-  (select id from bookings where booking_no = 'BK-2026-0910'),
-  (select id from clients where client_code = 'CL-2026-0044'),
+  'c306a6ef-1caf-1e5b-2490-75567f0f8582'::uuid,
+  'DEP-84',
+  (select id from bookings where booking_no = 'B-910'),
+  (select id from clients where client_code = 'C-44'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -46572,9 +46622,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '4abcd227-c2b6-aca1-2b41-01292d685e6b'::uuid,
-  'DEP-2026-0084-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0084'),
+  '6a10aa2f-5ff2-45ad-8b85-2dc7aa57eb04'::uuid,
+  'DEP-84-M1',
+  (select id from security_deposits where deposit_no = 'DEP-84'),
   'Received'::deposit_movement_type,
   15000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -46588,9 +46638,9 @@ insert into payments (
 ) values (
   'f09982b5-5732-2c41-7144-fcbaf94c6efe'::uuid,
   'PAY-2026-0086',
-  (select id from bookings where booking_no = 'BK-2026-0910'),
+  (select id from bookings where booking_no = 'B-910'),
   (select id from invoices where invoice_no = 'INV-113'),
-  (select id from clients where client_code = 'CL-2026-0044'),
+  (select id from clients where client_code = 'C-44'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   65495.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -46609,7 +46659,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '34e723f0-93cb-c385-8ba7-163fdf16ba98'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0910'),
+  (select id from bookings where booking_no = 'B-910'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -46624,7 +46674,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'cbefecda-d36e-adb4-14c3-7c056f348bc6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0910'),
+  (select id from bookings where booking_no = 'B-910'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -46639,7 +46689,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '12ed5c13-6d41-9ae3-1025-f08f81811774'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0910'),
+  (select id from bookings where booking_no = 'B-910'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -46654,7 +46704,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '31f56aa0-8442-21aa-cfc4-dd5593de64b6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0910'),
+  (select id from bookings where booking_no = 'B-910'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -46669,7 +46719,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'f3df011b-442c-ab04-b31e-b9be7225f840'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0910'),
+  (select id from bookings where booking_no = 'B-910'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -46684,7 +46734,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '8e99c62c-928f-6187-bc94-ed6b593d2135'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0910'),
+  (select id from bookings where booking_no = 'B-910'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Returned'::booking_stage,
   'Closed'::booking_stage,
@@ -46709,9 +46759,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'e1fd1f62-bd7c-a0ab-f755-b6a1e996f3a0'::uuid,
-  'BK-2026-0911',
+  'B-911',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0055'),
+  (select id from clients where client_code = 'C-55'),
   'Pokhara Paragliding Promo',
   '2026-06-23T00:15:00.000Z'::timestamptz,
   '2026-06-28T00:15:00.000Z'::timestamptz,
@@ -46729,7 +46779,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'b4e8a177-6536-5122-3b2e-6400d89d4912'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0911'),
+  (select id from bookings where booking_no = 'B-911'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000281'),
   'Jib Arm 3m',
@@ -46746,7 +46796,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '98523990-8a72-509f-fbf5-0ac3b7581ebe'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0911'),
+  (select id from bookings where booking_no = 'B-911'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000238'),
   'Matthews C-Stand 40in',
@@ -46763,7 +46813,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'd7cbb843-c3bd-bb7d-d242-e548f8b54881'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0911'),
+  (select id from bookings where booking_no = 'B-911'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000251'),
   'NISI Athena 50mm',
@@ -46780,7 +46830,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '3d7ba54a-4812-fbb6-2453-8959f6036e75'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0911'),
+  (select id from bookings where booking_no = 'B-911'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000264'),
   'Nanlux Evoke 1200B',
@@ -46797,7 +46847,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'f18a78a8-390d-90c5-1a8c-6db6d60f9d99'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0911'),
+  (select id from bookings where booking_no = 'B-911'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000277'),
   'DJI RS 4 Gimbal',
@@ -46823,7 +46873,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0911'),
+  (select id from bookings where booking_no = 'B-911'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -46836,7 +46886,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '8959d8bc-6114-5c1e-7a2a-f72d55188fa6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0911'),
+  (select id from bookings where booking_no = 'B-911'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -46856,8 +46906,8 @@ insert into invoices (
 ) values (
   '7ad75387-1e14-69f1-790d-e2262f143161'::uuid,
   'INV-114',
-  (select id from bookings where booking_no = 'BK-2026-0911'),
-  (select id from clients where client_code = 'CL-2026-0055'),
+  (select id from bookings where booking_no = 'B-911'),
+  (select id from clients where client_code = 'C-55'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -47002,10 +47052,10 @@ where invoice_no = 'INV-114';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '56ac72ef-2728-2506-cba8-1add5c114319'::uuid,
-  'DEP-2026-0085',
-  (select id from bookings where booking_no = 'BK-2026-0911'),
-  (select id from clients where client_code = 'CL-2026-0055'),
+  'de4bb3f9-bb52-94bd-ceff-0508bf89eba6'::uuid,
+  'DEP-85',
+  (select id from bookings where booking_no = 'B-911'),
+  (select id from clients where client_code = 'C-55'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -47016,9 +47066,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '452bc4d5-48aa-bf18-82e3-187fd6186f5b'::uuid,
-  'DEP-2026-0085-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0085'),
+  '39866c38-58c4-2d6a-0d1f-26cfe9516e06'::uuid,
+  'DEP-85-M1',
+  (select id from security_deposits where deposit_no = 'DEP-85'),
   'Received'::deposit_movement_type,
   20000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -47032,9 +47082,9 @@ insert into payments (
 ) values (
   '88fc574e-756c-043f-2570-4992b501b4d3'::uuid,
   'PAY-2026-0087',
-  (select id from bookings where booking_no = 'BK-2026-0911'),
+  (select id from bookings where booking_no = 'B-911'),
   (select id from invoices where invoice_no = 'INV-114'),
-  (select id from clients where client_code = 'CL-2026-0055'),
+  (select id from clients where client_code = 'C-55'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   52065.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -47053,7 +47103,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '2f58be06-751b-a3db-5952-e03ce4291ae9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0911'),
+  (select id from bookings where booking_no = 'B-911'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -47068,7 +47118,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'cc7ec2ff-231e-ac0f-49d8-009592ffafca'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0911'),
+  (select id from bookings where booking_no = 'B-911'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -47083,7 +47133,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '882fc510-174d-bf8e-0008-6d7c3c08ae12'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0911'),
+  (select id from bookings where booking_no = 'B-911'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -47098,7 +47148,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '824a2bd8-6a44-8a7e-57a8-ccd2b90338b3'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0911'),
+  (select id from bookings where booking_no = 'B-911'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -47113,7 +47163,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e43c8345-4cc6-9a70-d55d-f89c75d2e9ea'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0911'),
+  (select id from bookings where booking_no = 'B-911'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -47128,7 +47178,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'f5cb4285-060a-e399-daab-803298b89a9f'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0911'),
+  (select id from bookings where booking_no = 'B-911'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Returned'::booking_stage,
   'Closed'::booking_stage,
@@ -47153,9 +47203,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '6922d3b1-ec4a-d013-11f1-bc2bbc74b0d2'::uuid,
-  'BK-2026-0912',
+  'B-912',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0066'),
+  (select id from clients where client_code = 'C-66'),
   'Dashain Family Campaign',
   '2026-06-30T00:15:00.000Z'::timestamptz,
   '2026-07-06T00:15:00.000Z'::timestamptz,
@@ -47173,7 +47223,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'a4265da4-a31d-f8da-2623-5b6057b71cc8'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0912'),
+  (select id from bookings where booking_no = 'B-912'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000234'),
   'Sony FX9 Cinema Camera',
@@ -47190,7 +47240,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '93081c2a-1bcf-76c4-7a27-a91a2255f9cf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0912'),
+  (select id from bookings where booking_no = 'B-912'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000247'),
   'DJI Ronin 4D-6K',
@@ -47207,7 +47257,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '1dcbadab-0951-a4ae-b135-da4fda8c7873'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0912'),
+  (select id from bookings where booking_no = 'B-912'),
   'Anish Tamang',
   'DoP'::crew_role,
   8000.00,
@@ -47229,7 +47279,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0912'),
+  (select id from bookings where booking_no = 'B-912'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -47242,7 +47292,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '2bc47584-f678-5360-d8c4-b48ee6a361c7'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0912'),
+  (select id from bookings where booking_no = 'B-912'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -47262,8 +47312,8 @@ insert into invoices (
 ) values (
   'be500ea6-274b-f539-6cb1-44808a6269c4'::uuid,
   'INV-115',
-  (select id from bookings where booking_no = 'BK-2026-0912'),
-  (select id from clients where client_code = 'CL-2026-0066'),
+  (select id from bookings where booking_no = 'B-912'),
+  (select id from clients where client_code = 'C-66'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -47378,9 +47428,9 @@ insert into payments (
 ) values (
   '36c26e4f-3971-a0d3-1cf6-544a2841d536'::uuid,
   'PAY-2026-0088',
-  (select id from bookings where booking_no = 'BK-2026-0912'),
+  (select id from bookings where booking_no = 'B-912'),
   (select id from invoices where invoice_no = 'INV-115'),
-  (select id from clients where client_code = 'CL-2026-0066'),
+  (select id from clients where client_code = 'C-66'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   145770.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -47399,7 +47449,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '2ce81880-7fda-281d-bbf8-794deb748ef4'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0912'),
+  (select id from bookings where booking_no = 'B-912'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -47414,7 +47464,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '99cf7916-8e78-00e5-6e21-c1735e7bf98b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0912'),
+  (select id from bookings where booking_no = 'B-912'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -47429,7 +47479,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '3fbf720a-4877-c526-2c6a-054b10bf4142'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0912'),
+  (select id from bookings where booking_no = 'B-912'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -47444,7 +47494,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '42a823ba-6d26-e787-a8dd-7ede3762ca29'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0912'),
+  (select id from bookings where booking_no = 'B-912'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -47459,7 +47509,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'a9e52239-72be-8f45-b226-63dea403f1ab'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0912'),
+  (select id from bookings where booking_no = 'B-912'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -47474,7 +47524,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'baf0653d-6406-14f8-cb62-699dc18df48c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0912'),
+  (select id from bookings where booking_no = 'B-912'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Returned'::booking_stage,
   'Closed'::booking_stage,
@@ -47499,9 +47549,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'aae04d37-e27e-fa03-55c1-800e398179b6'::uuid,
-  'BK-2026-0913',
+  'B-913',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0037'),
+  (select id from clients where client_code = 'C-37'),
   'Annapurna Trek Series',
   '2026-07-07T00:15:00.000Z'::timestamptz,
   '2026-07-14T00:15:00.000Z'::timestamptz,
@@ -47519,7 +47569,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '91ec6c71-07ed-2b26-b0b2-134d0c70a871'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0913'),
+  (select id from bookings where booking_no = 'B-913'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000243'),
   'Canon R5 C',
@@ -47536,7 +47586,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '5168037f-6e26-9fe0-f09e-f0ec50ca4724'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0913'),
+  (select id from bookings where booking_no = 'B-913'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000256'),
   'Canon CN-E 50mm',
@@ -47553,7 +47603,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'd6004bdf-54eb-c060-8746-afcc393e1318'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0913'),
+  (select id from bookings where booking_no = 'B-913'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000269'),
   'Avenger Wind-Up Stand',
@@ -47570,7 +47620,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '0bd00d4e-8947-c6dd-26b5-3a279435ef69'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0913'),
+  (select id from bookings where booking_no = 'B-913'),
   'Sabina Rai',
   'Focus Puller'::crew_role,
   4500.00,
@@ -47583,7 +47633,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '50426292-facd-236c-90bd-2e9d0700e9e1'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0913'),
+  (select id from bookings where booking_no = 'B-913'),
   'Kiran Magar',
   'Gaffer'::crew_role,
   5000.00,
@@ -47605,7 +47655,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0913'),
+  (select id from bookings where booking_no = 'B-913'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -47618,7 +47668,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'd89b218d-41fe-56b9-5ec2-8daadc47570d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0913'),
+  (select id from bookings where booking_no = 'B-913'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -47638,8 +47688,8 @@ insert into invoices (
 ) values (
   'c01290e0-546d-a22b-06c0-8d1eb4bc1b01'::uuid,
   'INV-116',
-  (select id from bookings where booking_no = 'BK-2026-0913'),
-  (select id from clients where client_code = 'CL-2026-0037'),
+  (select id from bookings where booking_no = 'B-913'),
+  (select id from clients where client_code = 'C-37'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -47769,10 +47819,10 @@ where invoice_no = 'INV-116';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '7898a88c-3658-c422-6b69-9fe4e88ab380'::uuid,
-  'DEP-2026-0086',
-  (select id from bookings where booking_no = 'BK-2026-0913'),
-  (select id from clients where client_code = 'CL-2026-0037'),
+  'a3265700-ced9-bf76-04c3-b7275b6c9be7'::uuid,
+  'DEP-86',
+  (select id from bookings where booking_no = 'B-913'),
+  (select id from clients where client_code = 'C-37'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -47783,9 +47833,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'c60016c6-238a-523c-a027-74cb1b501f6d'::uuid,
-  'DEP-2026-0086-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0086'),
+  'e0f732b6-5503-3b08-3fcf-e9c6da2e02bd'::uuid,
+  'DEP-86-M1',
+  (select id from security_deposits where deposit_no = 'DEP-86'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -47799,9 +47849,9 @@ insert into payments (
 ) values (
   '6858aa1a-f597-0875-1b18-1678255868a7'::uuid,
   'PAY-2026-0089',
-  (select id from bookings where booking_no = 'BK-2026-0913'),
+  (select id from bookings where booking_no = 'B-913'),
   (select id from invoices where invoice_no = 'INV-116'),
-  (select id from clients where client_code = 'CL-2026-0037'),
+  (select id from clients where client_code = 'C-37'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   151872.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -47820,7 +47870,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '5601f491-388b-7243-019e-57750cfc749b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0913'),
+  (select id from bookings where booking_no = 'B-913'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -47835,7 +47885,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'c4b57e22-e83f-2aef-f562-70abd99a8e1e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0913'),
+  (select id from bookings where booking_no = 'B-913'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -47850,7 +47900,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '26d8b8e0-01a8-7bf5-6369-57a924db34c9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0913'),
+  (select id from bookings where booking_no = 'B-913'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -47865,7 +47915,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '375f97ef-d447-6434-23f1-1f95dab4aba0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0913'),
+  (select id from bookings where booking_no = 'B-913'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -47880,7 +47930,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '14f89776-08b9-d653-e9d6-cf107434c0d9'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0913'),
+  (select id from bookings where booking_no = 'B-913'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -47895,7 +47945,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '070a823a-be3a-dfd5-984a-5015fb8f3c4a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0913'),
+  (select id from bookings where booking_no = 'B-913'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Returned'::booking_stage,
   'Closed'::booking_stage,
@@ -47920,9 +47970,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '49d1f7a6-a8ba-b0ac-d72f-bab4302888e8'::uuid,
-  'BK-2026-0914',
+  'B-914',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0048'),
+  (select id from clients where client_code = 'C-48'),
   'Kathmandu Jazz Festival',
   '2026-06-03T00:15:00.000Z'::timestamptz,
   '2026-06-05T00:15:00.000Z'::timestamptz,
@@ -47940,7 +47990,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '5171e192-f0bf-92a0-2090-8a163d79485e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0914'),
+  (select id from bookings where booking_no = 'B-914'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000252'),
   'NISI Athena 85mm',
@@ -47957,7 +48007,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '91eef2f4-a673-2d65-8ca2-538083d53a64'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0914'),
+  (select id from bookings where booking_no = 'B-914'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000265'),
   'Astera Titan Tube 8-Pack',
@@ -47974,7 +48024,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '2e324658-e1a4-bdd6-3397-24d56d9ae73c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0914'),
+  (select id from bookings where booking_no = 'B-914'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000278'),
   'Easyrig Vario 5',
@@ -47991,7 +48041,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '29df02ab-d5a4-9240-b032-4dc50f676407'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0914'),
+  (select id from bookings where booking_no = 'B-914'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000235'),
   'Sony FX6 Cinema Camera',
@@ -48017,7 +48067,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0914'),
+  (select id from bookings where booking_no = 'B-914'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -48030,7 +48080,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'eb2cd806-ae20-f2e8-710c-17eef95169f0'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0914'),
+  (select id from bookings where booking_no = 'B-914'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -48050,8 +48100,8 @@ insert into invoices (
 ) values (
   'c5b1d723-5b30-4d91-5989-d79835753edd'::uuid,
   'INV-117',
-  (select id from bookings where booking_no = 'BK-2026-0914'),
-  (select id from clients where client_code = 'CL-2026-0048'),
+  (select id from bookings where booking_no = 'B-914'),
+  (select id from clients where client_code = 'C-48'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -48181,10 +48231,10 @@ where invoice_no = 'INV-117';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '5ee82afb-284a-d967-1462-0b1b87deaa44'::uuid,
-  'DEP-2026-0087',
-  (select id from bookings where booking_no = 'BK-2026-0914'),
-  (select id from clients where client_code = 'CL-2026-0048'),
+  '90acda93-5c13-1c74-4f5e-d73192e4a2dd'::uuid,
+  'DEP-87',
+  (select id from bookings where booking_no = 'B-914'),
+  (select id from clients where client_code = 'C-48'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   15000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -48195,9 +48245,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '22bfd143-9d7e-bb05-a157-cfc7e84cb251'::uuid,
-  'DEP-2026-0087-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0087'),
+  '2b16e313-842d-8425-a268-f26ae39785ec'::uuid,
+  'DEP-87-M1',
+  (select id from security_deposits where deposit_no = 'DEP-87'),
   'Received'::deposit_movement_type,
   15000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -48211,9 +48261,9 @@ insert into payments (
 ) values (
   '4b39d538-40a4-84d8-aec5-c17a8798b86e'::uuid,
   'PAY-2026-0090',
-  (select id from bookings where booking_no = 'BK-2026-0914'),
+  (select id from bookings where booking_no = 'B-914'),
   (select id from invoices where invoice_no = 'INV-117'),
-  (select id from clients where client_code = 'CL-2026-0048'),
+  (select id from clients where client_code = 'C-48'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   23402.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -48232,7 +48282,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '6bef9284-687f-efb4-30bb-85319f603d94'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0914'),
+  (select id from bookings where booking_no = 'B-914'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -48247,7 +48297,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '940934da-def7-a8c9-0108-aab8dbca7b78'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0914'),
+  (select id from bookings where booking_no = 'B-914'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -48262,7 +48312,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '6bec55d5-edfd-16b9-f65f-302a03d1c643'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0914'),
+  (select id from bookings where booking_no = 'B-914'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -48277,7 +48327,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '489d2de1-5928-3667-2b9d-bb314638a87d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0914'),
+  (select id from bookings where booking_no = 'B-914'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -48292,7 +48342,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '07e2d4f3-c3bb-2ea2-d51c-87e655a4511e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0914'),
+  (select id from bookings where booking_no = 'B-914'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -48307,7 +48357,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '9b78f44e-7272-1cdc-67e3-dbdfc69821e2'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0914'),
+  (select id from bookings where booking_no = 'B-914'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Returned'::booking_stage,
   'Closed'::booking_stage,
@@ -48332,9 +48382,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '46ff8484-edfc-1058-36fa-b4537921839e'::uuid,
-  'BK-2026-0915',
+  'B-915',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0059'),
+  (select id from clients where client_code = 'C-59'),
   'Daraz 11.11 Campaign',
   '2026-06-10T00:15:00.000Z'::timestamptz,
   '2026-06-13T00:15:00.000Z'::timestamptz,
@@ -48352,7 +48402,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '9bc4a903-5858-cd90-3f7c-bcd283c0f996'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0915'),
+  (select id from bookings where booking_no = 'B-915'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000261'),
   'Aputure Nova P300c',
@@ -48369,7 +48419,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'b53b3a08-0d0e-4564-e4b0-8c7c79337877'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0915'),
+  (select id from bookings where booking_no = 'B-915'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000274'),
   'Butterfly Frame 6x6',
@@ -48386,7 +48436,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '56e44ba6-eb98-9c60-5ca6-6da0b3f17b0a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0915'),
+  (select id from bookings where booking_no = 'B-915'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000287'),
   'Sennheiser EW 112P G4',
@@ -48403,7 +48453,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '6a518717-1d32-4367-bd1f-96919f298b28'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0915'),
+  (select id from bookings where booking_no = 'B-915'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000244'),
   'Blackmagic URSA Mini Pro 12K',
@@ -48420,7 +48470,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '3e52b59c-189a-b615-75c4-92a9af3fab1e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0915'),
+  (select id from bookings where booking_no = 'B-915'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000257'),
   'Sony 70-200mm GM II',
@@ -48437,7 +48487,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '790fe9ed-94c1-5c71-455e-07123e87cadb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0915'),
+  (select id from bookings where booking_no = 'B-915'),
   'Prabin Shrestha',
   'Grip'::crew_role,
   3500.00,
@@ -48459,7 +48509,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0915'),
+  (select id from bookings where booking_no = 'B-915'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -48472,7 +48522,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '9cf71cf8-2736-0954-42cb-15b60e9228fd'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0915'),
+  (select id from bookings where booking_no = 'B-915'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   10.00,
@@ -48492,8 +48542,8 @@ insert into invoices (
 ) values (
   '3bf67525-f223-3ff8-8299-00da97348d2c'::uuid,
   'INV-118',
-  (select id from bookings where booking_no = 'BK-2026-0915'),
-  (select id from clients where client_code = 'CL-2026-0059'),
+  (select id from bookings where booking_no = 'B-915'),
+  (select id from clients where client_code = 'C-59'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -48653,10 +48703,10 @@ where invoice_no = 'INV-118';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  '51fb86d1-1d7c-5691-2720-3cba544cd5b1'::uuid,
-  'DEP-2026-0088',
-  (select id from bookings where booking_no = 'BK-2026-0915'),
-  (select id from clients where client_code = 'CL-2026-0059'),
+  '0f5d5dee-0b85-7153-78eb-2ffb4d3b68d5'::uuid,
+  'DEP-88',
+  (select id from bookings where booking_no = 'B-915'),
+  (select id from clients where client_code = 'C-59'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   20000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -48667,9 +48717,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  '75d46e96-5614-a60d-7f6b-2f5483318e03'::uuid,
-  'DEP-2026-0088-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0088'),
+  '3cf1c0e5-fc47-6b16-ff56-c382eb7225f6'::uuid,
+  'DEP-88-M1',
+  (select id from security_deposits where deposit_no = 'DEP-88'),
   'Received'::deposit_movement_type,
   20000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -48683,9 +48733,9 @@ insert into payments (
 ) values (
   '21364e44-2189-4145-3675-df8dcf76b83b'::uuid,
   'PAY-2026-0091',
-  (select id from bookings where booking_no = 'BK-2026-0915'),
+  (select id from bookings where booking_no = 'B-915'),
   (select id from invoices where invoice_no = 'INV-118'),
-  (select id from clients where client_code = 'CL-2026-0059'),
+  (select id from clients where client_code = 'C-59'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   49884.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -48704,7 +48754,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'ac036d2e-6b8c-c960-90c8-37bfc0c9af4d'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0915'),
+  (select id from bookings where booking_no = 'B-915'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -48719,7 +48769,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '3bc586aa-2203-3839-b67b-2e7b68cbb360'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0915'),
+  (select id from bookings where booking_no = 'B-915'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -48734,7 +48784,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '7858da22-5c29-5ba1-ec61-fa57c3b38f22'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0915'),
+  (select id from bookings where booking_no = 'B-915'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -48749,7 +48799,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'a3869141-de63-a920-d0aa-7945a81b3cfe'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0915'),
+  (select id from bookings where booking_no = 'B-915'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -48764,7 +48814,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '74b9e68a-f1b8-9dcc-e56b-048584c282cf'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0915'),
+  (select id from bookings where booking_no = 'B-915'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -48779,7 +48829,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '368cb2ba-2528-03ce-5179-bd46f559ea7c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0915'),
+  (select id from bookings where booking_no = 'B-915'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Returned'::booking_stage,
   'Closed'::booking_stage,
@@ -48804,9 +48854,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   'a4d4f9d0-4766-245b-2e84-c40529a4f7ca'::uuid,
-  'BK-2026-0916',
+  'B-916',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0070'),
+  (select id from clients where client_code = 'C-70'),
   'Nepal Cricket Highlights',
   '2026-06-17T00:15:00.000Z'::timestamptz,
   '2026-06-21T00:15:00.000Z'::timestamptz,
@@ -48824,7 +48874,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'f2123db3-0bbd-7806-8b6b-48927fa79add'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0916'),
+  (select id from bookings where booking_no = 'B-916'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000270'),
   'Matthews Floppy Flag 24x36',
@@ -48841,7 +48891,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '8334817f-e890-f97e-8581-f83e545ec5d6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0916'),
+  (select id from bookings where booking_no = 'B-916'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000283'),
   'Rode NTG5 Kit',
@@ -48858,7 +48908,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   'da38d0fc-31fc-e9c3-f6af-0861067ea459'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0916'),
+  (select id from bookings where booking_no = 'B-916'),
   'Melina Thapa',
   'Sound Recordist'::crew_role,
   5500.00,
@@ -48871,7 +48921,7 @@ insert into booking_crew_lines (
   client_uuid, booking_id, name, crew_role, day_rate, days, created_by
 ) values (
   '658c7a36-47dd-51b5-5bcc-45585f90ab0c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0916'),
+  (select id from bookings where booking_no = 'B-916'),
   'Roshan Karki',
   'Drone Pilot'::crew_role,
   7000.00,
@@ -48893,7 +48943,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0916'),
+  (select id from bookings where booking_no = 'B-916'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -48906,7 +48956,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   '24774c26-0816-04d4-29da-fd2a25d84e82'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0916'),
+  (select id from bookings where booking_no = 'B-916'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   0.00,
@@ -48926,8 +48976,8 @@ insert into invoices (
 ) values (
   'ebf1f142-4c0f-8681-b1a7-b8cf0d66ce29'::uuid,
   'INV-119',
-  (select id from bookings where booking_no = 'BK-2026-0916'),
-  (select id from clients where client_code = 'CL-2026-0070'),
+  (select id from bookings where booking_no = 'B-916'),
+  (select id from clients where client_code = 'C-70'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -49042,9 +49092,9 @@ insert into payments (
 ) values (
   '97001996-9535-79f8-7c80-6d3b8e0909ed'::uuid,
   'PAY-2026-0092',
-  (select id from bookings where booking_no = 'BK-2026-0916'),
+  (select id from bookings where booking_no = 'B-916'),
   (select id from invoices where invoice_no = 'INV-119'),
-  (select id from clients where client_code = 'CL-2026-0070'),
+  (select id from clients where client_code = 'C-70'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   61698.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -49063,7 +49113,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '9b8d26d7-8b6c-8382-7253-2dfe91d33c9e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0916'),
+  (select id from bookings where booking_no = 'B-916'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -49078,7 +49128,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'c219b596-bf39-f322-74f3-0d7b5f8937ef'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0916'),
+  (select id from bookings where booking_no = 'B-916'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -49093,7 +49143,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '51152eeb-6532-e566-cbc9-67b69fc92aaa'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0916'),
+  (select id from bookings where booking_no = 'B-916'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -49108,7 +49158,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'e132dd56-5e4d-011b-c387-5ffebc40a199'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0916'),
+  (select id from bookings where booking_no = 'B-916'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -49123,7 +49173,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '2fc44085-e1f2-9c78-e380-ef89fee7da73'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0916'),
+  (select id from bookings where booking_no = 'B-916'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -49138,7 +49188,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '0a934813-0c5c-22db-a7bc-49db4060cb1b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0916'),
+  (select id from bookings where booking_no = 'B-916'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Returned'::booking_stage,
   'Closed'::booking_stage,
@@ -49163,9 +49213,9 @@ insert into bookings (
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by
 ) values (
   '0b1a262d-0087-a4c2-4489-f15e2e04218b'::uuid,
-  'BK-2026-0917',
+  'B-917',
   (select id from branches where branch_code = 'BR-KTM-01'),
-  (select id from clients where client_code = 'CL-2026-0041'),
+  (select id from clients where client_code = 'C-41'),
   'Rara Lake Travel Film',
   '2026-06-24T00:15:00.000Z'::timestamptz,
   '2026-06-29T00:15:00.000Z'::timestamptz,
@@ -49183,7 +49233,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '7c5ebb43-ed98-cde9-64e7-0d372d227feb'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0917'),
+  (select id from bookings where booking_no = 'B-917'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000279'),
   'Tilta Shoulder Rig',
@@ -49200,7 +49250,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   '7354a11a-2836-d0f4-5b44-29448fee107a'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0917'),
+  (select id from bookings where booking_no = 'B-917'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000236'),
   'NISI Athena 35mm',
@@ -49217,7 +49267,7 @@ insert into booking_lines (
   client_uuid, booking_id, line_type, product_id, description, qty, days, rate, sort_order, created_by
 ) values (
   'b6369a1c-50a6-6591-dc97-b1109998d49c'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0917'),
+  (select id from bookings where booking_no = 'B-917'),
   'Equipment'::booking_line_type,
   (select id from products where asset_code = 'EQ000249'),
   'Sony FX30',
@@ -49243,7 +49293,7 @@ insert into audit_events (
   'Informational'::audit_severity,
   'Success'::audit_status,
   'booking_discounts',
-  (select id from bookings where booking_no = 'BK-2026-0917'),
+  (select id from bookings where booking_no = 'B-917'),
   (select id from users where email = 'billing@babinrentals.com'),
   'Coordinator'::system_role,
   (select id from branches where branch_code = 'BR-KTM-01'),
@@ -49256,7 +49306,7 @@ insert into booking_discounts (
   applied_by, applied_at, audit_event_id
 ) values (
   'c3b7a3ca-72e4-c809-9898-982f51552811'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0917'),
+  (select id from bookings where booking_no = 'B-917'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Manual'::discount_source,
   5.00,
@@ -49276,8 +49326,8 @@ insert into invoices (
 ) values (
   'dca9fb2e-ac97-af79-f5bb-cf4e1a15f5b7'::uuid,
   'INV-120',
-  (select id from bookings where booking_no = 'BK-2026-0917'),
-  (select id from clients where client_code = 'CL-2026-0041'),
+  (select id from bookings where booking_no = 'B-917'),
+  (select id from clients where client_code = 'C-41'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   -- Draft, deliberately. The lines below cannot be added to an issued invoice;
   -- the issuing UPDATE comes after them and after the restate.
@@ -49392,10 +49442,10 @@ where invoice_no = 'INV-120';
 insert into security_deposits (
   client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount, created_by, updated_by
 ) values (
-  'fa7b4b14-af53-3eac-c85a-92d296898ec6'::uuid,
-  'DEP-2026-0089',
-  (select id from bookings where booking_no = 'BK-2026-0917'),
-  (select id from clients where client_code = 'CL-2026-0041'),
+  'e0790bd2-a8d5-e74f-91fa-28c6a0899431'::uuid,
+  'DEP-89',
+  (select id from bookings where booking_no = 'B-917'),
+  (select id from clients where client_code = 'C-41'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   10000.00,
   (select id from users where email = 'billing@babinrentals.com'),
@@ -49406,9 +49456,9 @@ on conflict (deposit_no) do nothing;
 insert into deposit_movements (
   client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
 ) values (
-  'a33cd86c-9425-a910-77ef-3ddcae80b677'::uuid,
-  'DEP-2026-0089-M1',
-  (select id from security_deposits where deposit_no = 'DEP-2026-0089'),
+  'd64c4e5f-a124-efaa-5772-64c39c3de49c'::uuid,
+  'DEP-89-M1',
+  (select id from security_deposits where deposit_no = 'DEP-89'),
   'Received'::deposit_movement_type,
   10000.00,
   (select id from bank_accounts where account_number = '01201017500001'),
@@ -49422,9 +49472,9 @@ insert into payments (
 ) values (
   '401c547a-5b78-b683-2067-50520a08cc72'::uuid,
   'PAY-2026-0093',
-  (select id from bookings where booking_no = 'BK-2026-0917'),
+  (select id from bookings where booking_no = 'B-917'),
   (select id from invoices where invoice_no = 'INV-120'),
-  (select id from clients where client_code = 'CL-2026-0041'),
+  (select id from clients where client_code = 'C-41'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   45624.00,
   -- Law 5 again: a deposit is never a payment_type here; the schema forbids it.
@@ -49443,7 +49493,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '33c2da03-3672-e2de-5d8b-bd29d3c2063b'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0917'),
+  (select id from bookings where booking_no = 'B-917'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   null,
   'Quote'::booking_stage,
@@ -49458,7 +49508,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'f916ea6a-bd7e-d307-5f76-52d976418597'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0917'),
+  (select id from bookings where booking_no = 'B-917'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Quote'::booking_stage,
   'Booked'::booking_stage,
@@ -49473,7 +49523,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'c4a25447-917c-d260-1158-cb2bd5ac95b1'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0917'),
+  (select id from bookings where booking_no = 'B-917'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Booked'::booking_stage,
   'Packed'::booking_stage,
@@ -49488,7 +49538,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '744e1628-0266-c920-2e42-d4a40fd79f0e'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0917'),
+  (select id from bookings where booking_no = 'B-917'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Packed'::booking_stage,
   'On Rent'::booking_stage,
@@ -49503,7 +49553,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   'b7853191-dd1b-ece9-f104-61f6ecc59108'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0917'),
+  (select id from bookings where booking_no = 'B-917'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'On Rent'::booking_stage,
   'Returned'::booking_stage,
@@ -49518,7 +49568,7 @@ insert into booking_stage_transitions (
   client_uuid, booking_id, branch_id, from_stage, to_stage, occurred_at, actor_id, actor_role, source
 ) values (
   '564068ef-7d31-2e85-8d1b-37cd9f67abe6'::uuid,
-  (select id from bookings where booking_no = 'BK-2026-0917'),
+  (select id from bookings where booking_no = 'B-917'),
   (select id from branches where branch_code = 'BR-KTM-01'),
   'Returned'::booking_stage,
   'Closed'::booking_stage,
@@ -49602,7 +49652,7 @@ begin
   -- Law 5. Rs 25000.00 of deposit has been received against this booking;
   -- outstanding must be untouched by it.
   select pending_amount into v_pending
-    from security_deposits where booking_id = (select id from bookings where booking_no = 'BK-2026-0715');
+    from security_deposits where booking_id = (select id from bookings where booking_no = 'B-715');
   if v_pending is distinct from 25000.00 then
     raise exception 'Law 5: deposit pending on % is %, expected %.', 'B-715', v_pending, 25000.00;
   end if;
@@ -49611,612 +49661,612 @@ begin
   end if;
 
   -- The "21 items on an 18-item booking" defect, made detectable.
-  select coalesce(sum(qty), 0) into v_items from booking_lines where booking_id = (select id from bookings where booking_no = 'BK-2026-0715');
+  select coalesce(sum(qty), 0) into v_items from booking_lines where booking_id = (select id from bookings where booking_no = 'B-715');
   select count(*) into v_units
     from booking_line_units blu
     join booking_lines bl on bl.id = blu.booking_line_id
-   where bl.booking_id = (select id from bookings where booking_no = 'BK-2026-0715');
+   where bl.booking_id = (select id from bookings where booking_no = 'B-715');
   if v_items is distinct from 18 or v_units is distinct from 18 then
     raise exception 'Item invariant violated on %: % line items but % assigned units, expected % of each.',
       'B-715', v_items, v_units, 18;
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0715';
+  select stage into v_stage from bookings where booking_no = 'B-715';
   if v_stage is distinct from 'Packed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-715', v_stage, 'Packed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0716';
+  select stage into v_stage from bookings where booking_no = 'B-716';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-716', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0800';
+  select stage into v_stage from bookings where booking_no = 'B-800';
   if v_stage is distinct from 'Quote'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-800', v_stage, 'Quote';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0801';
+  select stage into v_stage from bookings where booking_no = 'B-801';
   if v_stage is distinct from 'Quote'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-801', v_stage, 'Quote';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0802';
+  select stage into v_stage from bookings where booking_no = 'B-802';
   if v_stage is distinct from 'Quote'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-802', v_stage, 'Quote';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0803';
+  select stage into v_stage from bookings where booking_no = 'B-803';
   if v_stage is distinct from 'Quote'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-803', v_stage, 'Quote';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0804';
+  select stage into v_stage from bookings where booking_no = 'B-804';
   if v_stage is distinct from 'Quote'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-804', v_stage, 'Quote';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0805';
+  select stage into v_stage from bookings where booking_no = 'B-805';
   if v_stage is distinct from 'Quote'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-805', v_stage, 'Quote';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0806';
+  select stage into v_stage from bookings where booking_no = 'B-806';
   if v_stage is distinct from 'Quote'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-806', v_stage, 'Quote';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0807';
+  select stage into v_stage from bookings where booking_no = 'B-807';
   if v_stage is distinct from 'Quote'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-807', v_stage, 'Quote';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0808';
+  select stage into v_stage from bookings where booking_no = 'B-808';
   if v_stage is distinct from 'Quote'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-808', v_stage, 'Quote';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0809';
+  select stage into v_stage from bookings where booking_no = 'B-809';
   if v_stage is distinct from 'Quote'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-809', v_stage, 'Quote';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0810';
+  select stage into v_stage from bookings where booking_no = 'B-810';
   if v_stage is distinct from 'Quote'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-810', v_stage, 'Quote';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0811';
+  select stage into v_stage from bookings where booking_no = 'B-811';
   if v_stage is distinct from 'Quote'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-811', v_stage, 'Quote';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0812';
+  select stage into v_stage from bookings where booking_no = 'B-812';
   if v_stage is distinct from 'Quote'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-812', v_stage, 'Quote';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0813';
+  select stage into v_stage from bookings where booking_no = 'B-813';
   if v_stage is distinct from 'Quote'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-813', v_stage, 'Quote';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0814';
+  select stage into v_stage from bookings where booking_no = 'B-814';
   if v_stage is distinct from 'Quote'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-814', v_stage, 'Quote';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0815';
+  select stage into v_stage from bookings where booking_no = 'B-815';
   if v_stage is distinct from 'Quote'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-815', v_stage, 'Quote';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0816';
+  select stage into v_stage from bookings where booking_no = 'B-816';
   if v_stage is distinct from 'Quote'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-816', v_stage, 'Quote';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0817';
+  select stage into v_stage from bookings where booking_no = 'B-817';
   if v_stage is distinct from 'Quote'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-817', v_stage, 'Quote';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0818';
+  select stage into v_stage from bookings where booking_no = 'B-818';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-818', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0819';
+  select stage into v_stage from bookings where booking_no = 'B-819';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-819', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0820';
+  select stage into v_stage from bookings where booking_no = 'B-820';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-820', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0821';
+  select stage into v_stage from bookings where booking_no = 'B-821';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-821', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0822';
+  select stage into v_stage from bookings where booking_no = 'B-822';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-822', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0823';
+  select stage into v_stage from bookings where booking_no = 'B-823';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-823', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0824';
+  select stage into v_stage from bookings where booking_no = 'B-824';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-824', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0825';
+  select stage into v_stage from bookings where booking_no = 'B-825';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-825', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0826';
+  select stage into v_stage from bookings where booking_no = 'B-826';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-826', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0827';
+  select stage into v_stage from bookings where booking_no = 'B-827';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-827', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0828';
+  select stage into v_stage from bookings where booking_no = 'B-828';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-828', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0829';
+  select stage into v_stage from bookings where booking_no = 'B-829';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-829', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0830';
+  select stage into v_stage from bookings where booking_no = 'B-830';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-830', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0831';
+  select stage into v_stage from bookings where booking_no = 'B-831';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-831', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0832';
+  select stage into v_stage from bookings where booking_no = 'B-832';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-832', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0833';
+  select stage into v_stage from bookings where booking_no = 'B-833';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-833', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0834';
+  select stage into v_stage from bookings where booking_no = 'B-834';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-834', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0835';
+  select stage into v_stage from bookings where booking_no = 'B-835';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-835', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0836';
+  select stage into v_stage from bookings where booking_no = 'B-836';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-836', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0837';
+  select stage into v_stage from bookings where booking_no = 'B-837';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-837', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0838';
+  select stage into v_stage from bookings where booking_no = 'B-838';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-838', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0839';
+  select stage into v_stage from bookings where booking_no = 'B-839';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-839', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0840';
+  select stage into v_stage from bookings where booking_no = 'B-840';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-840', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0841';
+  select stage into v_stage from bookings where booking_no = 'B-841';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-841', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0842';
+  select stage into v_stage from bookings where booking_no = 'B-842';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-842', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0843';
+  select stage into v_stage from bookings where booking_no = 'B-843';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-843', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0844';
+  select stage into v_stage from bookings where booking_no = 'B-844';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-844', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0845';
+  select stage into v_stage from bookings where booking_no = 'B-845';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-845', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0846';
+  select stage into v_stage from bookings where booking_no = 'B-846';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-846', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0847';
+  select stage into v_stage from bookings where booking_no = 'B-847';
   if v_stage is distinct from 'Booked'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-847', v_stage, 'Booked';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0848';
+  select stage into v_stage from bookings where booking_no = 'B-848';
   if v_stage is distinct from 'Packed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-848', v_stage, 'Packed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0849';
+  select stage into v_stage from bookings where booking_no = 'B-849';
   if v_stage is distinct from 'Packed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-849', v_stage, 'Packed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0850';
+  select stage into v_stage from bookings where booking_no = 'B-850';
   if v_stage is distinct from 'Packed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-850', v_stage, 'Packed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0851';
+  select stage into v_stage from bookings where booking_no = 'B-851';
   if v_stage is distinct from 'Packed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-851', v_stage, 'Packed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0852';
+  select stage into v_stage from bookings where booking_no = 'B-852';
   if v_stage is distinct from 'Packed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-852', v_stage, 'Packed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0853';
+  select stage into v_stage from bookings where booking_no = 'B-853';
   if v_stage is distinct from 'Packed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-853', v_stage, 'Packed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0854';
+  select stage into v_stage from bookings where booking_no = 'B-854';
   if v_stage is distinct from 'Packed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-854', v_stage, 'Packed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0855';
+  select stage into v_stage from bookings where booking_no = 'B-855';
   if v_stage is distinct from 'Packed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-855', v_stage, 'Packed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0856';
+  select stage into v_stage from bookings where booking_no = 'B-856';
   if v_stage is distinct from 'Packed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-856', v_stage, 'Packed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0857';
+  select stage into v_stage from bookings where booking_no = 'B-857';
   if v_stage is distinct from 'Packed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-857', v_stage, 'Packed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0858';
+  select stage into v_stage from bookings where booking_no = 'B-858';
   if v_stage is distinct from 'Packed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-858', v_stage, 'Packed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0859';
+  select stage into v_stage from bookings where booking_no = 'B-859';
   if v_stage is distinct from 'Packed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-859', v_stage, 'Packed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0860';
+  select stage into v_stage from bookings where booking_no = 'B-860';
   if v_stage is distinct from 'Packed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-860', v_stage, 'Packed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0861';
+  select stage into v_stage from bookings where booking_no = 'B-861';
   if v_stage is distinct from 'Packed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-861', v_stage, 'Packed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0862';
+  select stage into v_stage from bookings where booking_no = 'B-862';
   if v_stage is distinct from 'Packed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-862', v_stage, 'Packed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0863';
+  select stage into v_stage from bookings where booking_no = 'B-863';
   if v_stage is distinct from 'Packed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-863', v_stage, 'Packed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0864';
+  select stage into v_stage from bookings where booking_no = 'B-864';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-864', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0865';
+  select stage into v_stage from bookings where booking_no = 'B-865';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-865', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0866';
+  select stage into v_stage from bookings where booking_no = 'B-866';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-866', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0867';
+  select stage into v_stage from bookings where booking_no = 'B-867';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-867', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0868';
+  select stage into v_stage from bookings where booking_no = 'B-868';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-868', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0869';
+  select stage into v_stage from bookings where booking_no = 'B-869';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-869', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0870';
+  select stage into v_stage from bookings where booking_no = 'B-870';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-870', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0871';
+  select stage into v_stage from bookings where booking_no = 'B-871';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-871', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0872';
+  select stage into v_stage from bookings where booking_no = 'B-872';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-872', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0873';
+  select stage into v_stage from bookings where booking_no = 'B-873';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-873', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0874';
+  select stage into v_stage from bookings where booking_no = 'B-874';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-874', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0875';
+  select stage into v_stage from bookings where booking_no = 'B-875';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-875', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0876';
+  select stage into v_stage from bookings where booking_no = 'B-876';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-876', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0877';
+  select stage into v_stage from bookings where booking_no = 'B-877';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-877', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0878';
+  select stage into v_stage from bookings where booking_no = 'B-878';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-878', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0879';
+  select stage into v_stage from bookings where booking_no = 'B-879';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-879', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0880';
+  select stage into v_stage from bookings where booking_no = 'B-880';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-880', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0881';
+  select stage into v_stage from bookings where booking_no = 'B-881';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-881', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0882';
+  select stage into v_stage from bookings where booking_no = 'B-882';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-882', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0883';
+  select stage into v_stage from bookings where booking_no = 'B-883';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-883', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0884';
+  select stage into v_stage from bookings where booking_no = 'B-884';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-884', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0885';
+  select stage into v_stage from bookings where booking_no = 'B-885';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-885', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0886';
+  select stage into v_stage from bookings where booking_no = 'B-886';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-886', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0887';
+  select stage into v_stage from bookings where booking_no = 'B-887';
   if v_stage is distinct from 'On Rent'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-887', v_stage, 'On Rent';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0888';
+  select stage into v_stage from bookings where booking_no = 'B-888';
   if v_stage is distinct from 'Returned'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-888', v_stage, 'Returned';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0889';
+  select stage into v_stage from bookings where booking_no = 'B-889';
   if v_stage is distinct from 'Returned'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-889', v_stage, 'Returned';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0890';
+  select stage into v_stage from bookings where booking_no = 'B-890';
   if v_stage is distinct from 'Returned'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-890', v_stage, 'Returned';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0891';
+  select stage into v_stage from bookings where booking_no = 'B-891';
   if v_stage is distinct from 'Returned'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-891', v_stage, 'Returned';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0892';
+  select stage into v_stage from bookings where booking_no = 'B-892';
   if v_stage is distinct from 'Returned'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-892', v_stage, 'Returned';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0893';
+  select stage into v_stage from bookings where booking_no = 'B-893';
   if v_stage is distinct from 'Returned'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-893', v_stage, 'Returned';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0894';
+  select stage into v_stage from bookings where booking_no = 'B-894';
   if v_stage is distinct from 'Returned'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-894', v_stage, 'Returned';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0895';
+  select stage into v_stage from bookings where booking_no = 'B-895';
   if v_stage is distinct from 'Returned'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-895', v_stage, 'Returned';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0896';
+  select stage into v_stage from bookings where booking_no = 'B-896';
   if v_stage is distinct from 'Returned'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-896', v_stage, 'Returned';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0897';
+  select stage into v_stage from bookings where booking_no = 'B-897';
   if v_stage is distinct from 'Returned'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-897', v_stage, 'Returned';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0898';
+  select stage into v_stage from bookings where booking_no = 'B-898';
   if v_stage is distinct from 'Returned'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-898', v_stage, 'Returned';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0899';
+  select stage into v_stage from bookings where booking_no = 'B-899';
   if v_stage is distinct from 'Returned'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-899', v_stage, 'Returned';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0900';
+  select stage into v_stage from bookings where booking_no = 'B-900';
   if v_stage is distinct from 'Returned'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-900', v_stage, 'Returned';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0901';
+  select stage into v_stage from bookings where booking_no = 'B-901';
   if v_stage is distinct from 'Returned'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-901', v_stage, 'Returned';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0902';
+  select stage into v_stage from bookings where booking_no = 'B-902';
   if v_stage is distinct from 'Closed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-902', v_stage, 'Closed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0903';
+  select stage into v_stage from bookings where booking_no = 'B-903';
   if v_stage is distinct from 'Closed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-903', v_stage, 'Closed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0904';
+  select stage into v_stage from bookings where booking_no = 'B-904';
   if v_stage is distinct from 'Closed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-904', v_stage, 'Closed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0905';
+  select stage into v_stage from bookings where booking_no = 'B-905';
   if v_stage is distinct from 'Closed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-905', v_stage, 'Closed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0906';
+  select stage into v_stage from bookings where booking_no = 'B-906';
   if v_stage is distinct from 'Closed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-906', v_stage, 'Closed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0907';
+  select stage into v_stage from bookings where booking_no = 'B-907';
   if v_stage is distinct from 'Closed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-907', v_stage, 'Closed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0908';
+  select stage into v_stage from bookings where booking_no = 'B-908';
   if v_stage is distinct from 'Closed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-908', v_stage, 'Closed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0909';
+  select stage into v_stage from bookings where booking_no = 'B-909';
   if v_stage is distinct from 'Closed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-909', v_stage, 'Closed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0910';
+  select stage into v_stage from bookings where booking_no = 'B-910';
   if v_stage is distinct from 'Closed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-910', v_stage, 'Closed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0911';
+  select stage into v_stage from bookings where booking_no = 'B-911';
   if v_stage is distinct from 'Closed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-911', v_stage, 'Closed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0912';
+  select stage into v_stage from bookings where booking_no = 'B-912';
   if v_stage is distinct from 'Closed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-912', v_stage, 'Closed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0913';
+  select stage into v_stage from bookings where booking_no = 'B-913';
   if v_stage is distinct from 'Closed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-913', v_stage, 'Closed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0914';
+  select stage into v_stage from bookings where booking_no = 'B-914';
   if v_stage is distinct from 'Closed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-914', v_stage, 'Closed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0915';
+  select stage into v_stage from bookings where booking_no = 'B-915';
   if v_stage is distinct from 'Closed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-915', v_stage, 'Closed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0916';
+  select stage into v_stage from bookings where booking_no = 'B-916';
   if v_stage is distinct from 'Closed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-916', v_stage, 'Closed';
   end if;
 
-  select stage into v_stage from bookings where booking_no = 'BK-2026-0917';
+  select stage into v_stage from bookings where booking_no = 'B-917';
   if v_stage is distinct from 'Closed'::booking_stage then
     raise exception 'Stage machine: % is at %, the corpus put it at %.', 'B-917', v_stage, 'Closed';
   end if;

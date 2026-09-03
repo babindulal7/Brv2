@@ -41,10 +41,16 @@ const fromIdx = args.indexOf('--from')
 const from = fromIdx === -1 ? null : args[fromIdx + 1]
 
 /**
- * `0062` is written and deliberately unapplied — see PLAN.md §4.28. It revokes
- * table-level SELECT, which breaks every base-table money read until the call
- * sites have moved. Locally that is usually what you WANT to test, so it is
- * skipped by default and applied only on request.
+ * `0062` IS applied on live — supabase_migrations.schema_migrations carries it
+ * at 20260828070623, right after 0065 (read 3 Sep 2026); PLAN.md §4.28's
+ * "WRITTEN, NOT APPLIED" was stale. It is still skipped here BY DEFAULT, for
+ * a different reason than the old comment gave: it revokes table-level SELECT,
+ * which breaks every base-table money read until the call sites have moved,
+ * and locally that is usually what you want to test around. Be clear about what
+ * that buys you: a local database built this way is QUIETER than live on Law 6.
+ * `scripts/check-rebuild.mjs` — the disaster-recovery gate — applies it, because
+ * a rebuild that leaves the money mask unarmed is not a rebuild of production.
+ * Pass --include-held-back to match live here too.
  */
 const HELD_BACK = new Set(['0062_law6_column_grants_arm_the_mask.sql'])
 const withHeldBack = args.includes('--include-held-back')

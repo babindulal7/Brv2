@@ -17,18 +17,53 @@
  *
  * ## What it does NOT do
  *
- * It never touches the dev database and it cannot touch anything remote. It
- * builds a scratch database (`rebuild_check`) inside the local stack's own
- * Postgres container, applies every migration into it, and drops it again. The
- * connection is the container, exactly as `apply-migrations-local.mjs` does it —
- * there is no flag, env var or argument that can aim this at a project.
+ * It cannot touch anything remote: the only connection is `docker exec` into the
+ * running `supabase_db_*` container over its unix socket — no DB URL, no env var,
+ * no Supabase CLI call. (The one indirection is Docker's own DOCKER_HOST /
+ * DOCKER_CONTEXT, which could point `docker ps` at another daemon's stack; both
+ * are unset here.) It builds a per-run scratch database inside that container,
+ * applies every migration into it, and drops it again.
+ *
+ * It SHARES the dev database's cluster, and one migration writes cluster-wide:
+ * 0041 runs `alter role authenticator set pgrst.db_pre_request = …` with no
+ * `in database` clause, so pg_db_role_setting changes for every database in the
+ * container. In this stack that is value-neutral — dev ran 0041 too and holds
+ * the identical value — but in a cluster that has NOT run 0041, a scratch build
+ * would introduce it. That is the honest scope of "does not touch dev".
+ *
+ * WHAT A GREEN RUN PROVES, AND WHAT IT DOES NOT. It proves the repo's migration
+ * files apply, in filename order, in one transaction each (`-1`, as `db push`
+ * did on live). It does not prove production is reproducible byte-for-byte: the
+ * live ledger and this directory differ in three known ways — the ledger lacks
+ * 0047_seed_reference_corpus (its rows reached live by another route and its own
+ * header says leave it unapplied), it carries 0047_seed_tail_b917_equipment_line
+ * and one other live-only row that no file here represents, and until 3 Sep this
+ * script wrongly skipped 0062, which the ledger has. Query the ledger, never a
+ * header, for what live actually ran.
  *
  * ## Fidelity
  *
  * A real Supabase project hands the migrations more than an empty database: the
  * `auth` schema, the `extensions` schema, pgcrypto and btree_gist. Those are
  * copied from the running stack rather than hand-stubbed, so what is tested is
- * the shape migrations actually meet.
+ * the shape migrations actually meet — with one limit: the restore is lenient,
+ * and in this container `postgres` is not a superuser and not a member of
+ * supabase_auth_admin, so every `OWNER TO supabase_auth_admin` line fails
+ * quietly and `postgres` ends up owning auth.users and its siblings. Auth-schema
+ * DDL can therefore pass here and fail on live, where those objects are owned
+ * by supabase_auth_admin. The assertion below guarantees only that the two
+ * things the migrations read — auth.users and auth.uid() — exist.
+ *
+ * ⚠ Default privileges are NOT reproduced. `create database` clones template1,
+ * which locally has no pg_default_acl rows, whereas a real Supabase project
+ * grants anon / authenticated / service_role ALL on every new public relation
+ * by default. So every relation this gate builds carries only the grants a
+ * migration states explicitly (client_directory_v: live = {postgres, anon,
+ * authenticated, service_role}; here = {postgres, authenticated}). That cannot
+ * turn a red run green, but it means a migration that silently RELIES on the
+ * platform default grant would pass here and fail on live. If a privilege
+ * assertion ever needs the platform defaults, seed pg_default_acl in the
+ * bootstrap rather than weakening the assertion.
  *
  * ⚠ If the local `auth` schema is stale, this reports a failure that is NOT a
  * repo defect — `0067` reads `auth.users.email_confirmed_at`, which exists on
@@ -43,10 +78,26 @@ import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const MIGRATIONS = join(HERE, '..', 'supabase', 'migrations')
-const SCRATCH = 'rebuild_check'
+/* Per-run, not fixed: parallel sessions are routine in this workspace, and a
+   shared name plus `drop … (force)` let one run terminate another's backend
+   mid-0047 and then report every later file as FAILED. The pid makes the name
+   this run's alone; the drop at the end only ever drops its own. */
+const SCRATCH = `rebuild_check_${process.pid}`
 
-/** Held back by PLAN.md §4.28 — same list, and the same reason, as the apply script. */
-const HELD_BACK = new Set(['0062_law6_column_grants_arm_the_mask.sql'])
+/**
+ * Nothing is held back. This gate proves the set that built PRODUCTION, and the
+ * live ledger (supabase_migrations.schema_migrations, read 3 Sep 2026) carries
+ * 0062_law6_column_grants_arm_the_mask at 20260828070623 — applied, right after
+ * 0065_arm_0062_prerequisites at 20260828070501. PLAN.md §4.28's "WRITTEN, NOT
+ * APPLIED" was stale, and copying the apply script's HELD_BACK list here would
+ * have made a disaster-recovery rebuild come up with Law 6's column grants
+ * UNARMED — quieter than live, on the one law that hides money from the floor.
+ *
+ * Note the order: live applied 0065 BEFORE 0062, its stated prerequisite, but
+ * filename order runs 0062 first. If that pair cannot apply in filename order,
+ * this gate will say so — that is a finding, not a reason to skip the file.
+ */
+const HELD_BACK = new Set()
 
 function containerName() {
   const out = execSync('docker ps --format "{{.Names}}"', { encoding: 'utf8' })
@@ -111,16 +162,20 @@ psqlLenient(SCRATCH, authSchema)
 
 /* Assert the bootstrap actually landed. Without this the script cheerfully
    reports the migrations as broken when the real fault is its own setup. */
-const authCheck = psql(
-  SCRATCH,
-  `select
+const authCheck = execFileSync(
+  'docker',
+  ['exec', '-i', container, 'psql', '-tA', '-v', 'ON_ERROR_STOP=1', '-q', '-U', 'postgres', '-d', SCRATCH],
+  { input: `select
      (select count(*) from information_schema.tables where table_schema='auth' and table_name='users') as users_table,
      (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
        where n.nspname='auth' and p.proname='uid') as uid_fn,
      (select count(*) from information_schema.columns
-       where table_schema='auth' and table_name='users' and column_name='email_confirmed_at') as email_confirmed_at;`,
+       where table_schema='auth' and table_name='users' and column_name='email_confirmed_at') as email_confirmed_at;`, stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8' },
 )
-const [usersTable, uidFn, emailConfirmedAt] = (authCheck.match(/\d+/g) ?? []).map(Number)
+/* -tA prints exactly one line, `1|1|1`; split on the column separator rather
+   than sweeping for digits, which would also match a header, a `(1 row)`
+   footer, or a NOTICE that happened to contain a number. */
+const [usersTable, uidFn, emailConfirmedAt] = authCheck.trim().split('|').map(Number)
 if (!usersTable || !uidFn) {
   console.error(
     `
@@ -154,7 +209,16 @@ for (const f of files) {
   }
   process.stdout.write(`  ${f} … `)
   try {
-    psql(SCRATCH, readFileSync(join(MIGRATIONS, f), 'utf8'))
+    /* `-1`: the whole file in one transaction, which is how `supabase db push`
+       and the Management-API migration endpoint applied 0001–0078 to live.
+       Autocommit-per-statement (the apply script's mode) would let a file
+       that cannot run inside a transaction block pass here and fail there.
+       0047 carries its own begin/commit; under -1 those only WARN. */
+    execFileSync('docker', ['exec', '-i', container, 'psql', '-1', '-v', 'ON_ERROR_STOP=1', '-q', '-U', 'postgres', '-d', SCRATCH], {
+      input: readFileSync(join(MIGRATIONS, f), 'utf8'),
+      stdio: ['pipe', 'pipe', 'pipe'],
+      encoding: 'utf8',
+    })
     applied += 1
     console.log('ok')
   } catch (err) {

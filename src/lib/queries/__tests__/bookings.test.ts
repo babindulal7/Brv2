@@ -209,10 +209,11 @@ describe('BASE_COLUMNS — the select string', () => {
    * worth pinning is now the stronger one — **this module never names the column
    * on the base table, whatever the caller asks for.**
    *
-   * That matters because until `0062` is applied the base column is still
-   * readable by any staff session, Warehouse included (`bookings_select` is
-   * `auth_is_staff()`). "No module names it" is the live protection, and a test
-   * is the only thing that keeps it true.
+   * `0062` IS applied on live now (28 Aug 2026), so the grant hides the column
+   * at the database. This test stays anyway: "no module names it" is the second,
+   * independent layer, and a test is the only thing that keeps it true — a
+   * future migration that widened the grant would otherwise silently make the
+   * query the leak again.
    */
   it('never names deposit_required on the base table — not even with withDeposit', async () => {
     await listBookings()

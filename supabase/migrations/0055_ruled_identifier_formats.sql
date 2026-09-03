@@ -18,6 +18,37 @@
 -- numbers and `C-34`. Applying migrations in order fails at 0047's first client
 -- insert. This migration is what makes 0047 runnable.
 --
+-- ⚠ UPDATED 3 Sep 2026 — the dependency described below is now SYMMETRIC.
+--
+-- 0047 no longer needs this migration to have run first, and this migration no
+-- longer needs 0047's rows to be in the retired shape. 0047 carries a guarded
+-- prologue (right after its `begin;`) that performs exactly the two CHECK swaps
+-- below — same constraint names, same regexes, copied verbatim — but ONLY if the
+-- retired CL-/BK- shape is still in force. So:
+--
+--   · filename order (0047, then this file): 0047 swaps the CHECKs, seeds the
+--     ruled C-<n> / B-<n>; this file's `drop if exists` / `add` re-issues the
+--     same constraints and its `update … where ~ '^CL-'` rewrite finds no rows.
+--   · production order (this file, then 0047 — what actually happened on
+--     12 Aug): the CHECKs are already ruled, 0047's prologue is a no-op, the
+--     seed inserts as-is.
+--
+-- Both orders were built and compared on 3 Sep: filename order (0047 then 0055) and production order (everything but 0047,
+-- then 0047 alone onto the built database) both seed 40 clients / 120 bookings
+-- in the ruled shape, and pg_get_constraintdef for both CHECKs is byte-identical
+-- to this file's text afterwards; a second apply of 0047 skips every insert on
+-- its arbiter and then fails closed on its own issuance self-check — one-shot by
+-- design, see 0047's header (PROGRESS.md 3 Sep). The
+-- `drop if exists` on lines 75-76 is what makes this file idempotent over the
+-- prologue; keep it. The regexes on lines 101-105 are the source of truth —
+-- 0047's copies must stay byte-identical to them.
+--
+-- (The paragraph that follows is the 12 Aug account and is kept as history. Its
+-- "this migration is what makes 0047 runnable" was true until 2 Sep, when an
+-- audit found that the reverse dependency — seeding the retired shape so this
+-- file could rewrite it — shape-locked 0047 to pre-0055 and broke `--from 0047`
+-- on every built database. PLAN.md §4.42(a) has the measurement.)
+--
 -- ⚠ APPLIED 12 Aug 2026, with approval, BEFORE 0047 — the application order is
 -- deliberately not the file order. Everything above this line describes the
 -- state that made this migration necessary; it is history, not the live rule.
