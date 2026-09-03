@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, useCallback, Re
 import { supabase, IS_MOCK } from './supabase'
 import { getSetting } from './settingsStore'
 import { captureError } from './monitoring'
+import { purgeDeviceReadCaches } from './devicePurge'
 
 /**
  * The session role IS the system role. They were separate unions until 8 Aug 2026,
@@ -542,6 +543,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPasswordRecovery(false)
     setHasPin(false)
     void supabase.auth.signOut()
+    /*
+     * Law 6 — the identity is leaving the device, so its rows must leave with
+     * it. Workbox keys its two PostgREST caches on URL alone, so without this an
+     * Owner's cached booking bodies (deposit_paisa, total_paisa) are served by
+     * NetworkFirst to the money-blind user who signs in next on the same
+     * warehouse tablet, where RLS can no longer reach them. The outbox is
+     * deliberately spared — see `devicePurge.ts`.
+     *
+     * Fire-and-forget for the same reason `signOut()` is: this function is
+     * called and then navigated away from in the same tick, and a sign-out must
+     * never be blocked by a cache API.
+     */
+    void purgeDeviceReadCaches()
   }, [])
 
   /*

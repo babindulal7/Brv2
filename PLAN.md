@@ -613,6 +613,74 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
+## 4.43 ⬅ OPEN ×3 — the three rulings the on-device database cannot be built without
+
+**Raised 3 Sep 2026.** Babin ruled the direction: *"instead of supabase make local db then
+sync to supabase, both for mobile and desktop and tablet"*, and confirmed the driver is a
+**dead zone — no signal in the warehouse**. So the target is a database on each device, not
+a LAN-served Postgres. Full evidence in [`LOCAL_FIRST_MAP_2026-09-03.md`](LOCAL_FIRST_MAP_2026-09-03.md).
+
+Everything else in that build is engineering. These three are product decisions, and
+`CLAUDE.md` forbids inventing them. Each blocks a specific, named piece of work.
+
+### ⬅ (a) OPEN — what number does an offline booking carry?
+
+`next_document_number` (`0055_ruled_identifier_formats.sql:171`) is a server-side **mutation**
+— it UPDATEs `number_sequences` — and five implemented actions call it directly before their
+insert. A device in a dead zone cannot reach it, so it cannot mint a final `B-918`,
+`CL-2026-NNNN` or `INV-…`.
+
+Three shapes, with different operator-visible consequences:
+
+| Option | What the operator sees | Cost |
+|---|---|---|
+| **Provisional id, renumbered at sync** | A booking is created as `LOCAL-7f3a…` and *becomes* `B-918` hours later | The number a client was quoted on the floor changes afterwards. Anything printed, messaged or written on a case is then wrong. |
+| **Per-device number blocks** | Real `B-9xx` immediately, allocated from a block reserved for that tablet | Numbers are no longer contiguous or chronological; a block can be exhausted mid-shift; blocks must be issued and reclaimed. |
+| **No number until sync** | The booking exists with no number until it lands | Simple and honest, but the floor cannot reference the job by number all day — which is how the warehouse actually talks. |
+
+**This cannot be deferred past the write path.** Note also that the live booking counter is
+already parked at 917 inside the seeded `B-900…B-945` block (see the standing note on the
+seed corpus), so `create_booking` mints `B-918`, collides, and rolls back — the numbering
+question has a live bug sitting on top of it.
+
+### ⬅ (b) OPEN — what may a money-blind device hold on disk?
+
+Law 6 says money is hidden from Warehouse, Technician, Driver and Client, **enforced by RLS,
+not the UI**. A local database bypasses RLS by construction: once rows are on the device, the
+server is no longer in the loop.
+
+The question is not "should we mask" — it is what the device is allowed to *store*:
+
+1. **Project money out at write time** — a money-blind device never receives the columns.
+   Safest; means the local store's shape depends on role, and a role change forces a full
+   re-pull.
+2. **Store everything, mask on read** — one shape for every device. Anyone with the tablet
+   and a devtools window reads the money, which is precisely what Law 6 exists to prevent.
+3. **Per-role encrypted partition** — strongest, and the most machinery.
+
+Related and now closed on the *cache* side: sign-out did not purge anything, so an Owner's
+cached rows were served to the next signed-in user. Fixed 3 Sep (`src/lib/devicePurge.ts`);
+it does not answer this ruling, it only stops the leak that existed without one.
+
+### ⬅ (c) OPEN — whose write is a queued mutation, and may it replay under another operator?
+
+`QueuedMutation` (`src/lib/offlineQueue.ts:5`) records `{clientUuid, table, action, payload,
+timestamp, status}` and **no user id**. So a write made by the Owner replays under whichever
+session is signed in when the network returns, and the server attributes it to that user —
+in an app whose `audit_events` trail is meant to say who did what.
+
+On a shared warehouse tablet this is routine, not exotic: pack at 4 pm, hand the tablet to
+the next shift, sync at 6 pm under a different login.
+
+The engineering is small (a `userId` column plus a drain filter). The ruling is not:
+- May a mutation replay under a *different* operator at all, or must it wait for its author
+  to sign in again — which on a shared device could be days?
+- If it must wait, and the author never returns, who discharges it?
+- Does the audit trail record the author, the replayer, or both?
+
+**Until this is ruled, `devicePurge` deliberately does not clear the outbox** — spared work
+is recoverable, deleted work is not.
+
 ## 4.42 ⬅ OPEN ×3 — (a) RESOLVED 2 Sep; the DB still disagrees with the app about money
 
 **Raised 2 Sep 2026** attempting the audit's recommended next stage (§12/§14/§40 CRUD
