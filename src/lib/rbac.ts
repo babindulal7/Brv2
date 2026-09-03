@@ -315,6 +315,69 @@ export function canVoidInvoice(role: SystemRole, isOnline: boolean = true): bool
   return role === 'Owner' || role === 'Accounts'
 }
 
+/**
+ * Create, issue or close against an invoice — **R-05, R-08 and SPEC-P0-1 §3.1.**
+ *
+ * Owner · Admin · Manager · Accounts.
+ *
+ * ⚠ This one is **ruled, not mirrored**, and that is a deliberate departure
+ * from §4.20's usual method. `RULINGS-2026-09-04.md` is binding and outranks
+ * PLAN.md (R-00), and R-05 names this set outright. The live policy on 4 Sep
+ * said something different:
+ *
+ *   R-05 / SPEC-P0-1 §3.1   Owner, Admin, Manager, Accounts     (ruled)
+ *   invoices_insert         Owner, Admin, Manager, Coordinator  (live, 4 Sep)
+ *   invoices_update         Owner, Admin, Manager, Coordinator  (live, 4 Sep)
+ *
+ * Accounts — the role the ruling names — was absent from the database, and
+ * Coordinator, which the ruling does not name, was present. §4.20 is explicit
+ * about the order when the two disagree: **change the POLICY first, then the
+ * predicate.** `0086_invoice_write_rights_and_draft_without_number.sql` is that
+ * change, and this function is written to match it. The migration is drafted and
+ * NOT applied, so until it lands an Accounts user is offered a control Postgres
+ * still refuses — which is why the two must ship together.
+ *
+ * ⚠ **Not `canVoidInvoice`**, which `Finance.tsx:492` was borrowing to gate the
+ * Issue control. No 4 Sep ruling restates who may void, so per R-00 (silence is
+ * not supersession) `canVoidInvoice` keeps its older Owner/Accounts position and
+ * is left alone here. Its disagreement with the policy set is the remaining half
+ * of AUTHSEC-01 and needs a ruling, not a refactor.
+ *
+ * Offline: refused, like every other money action in this file. An invoice
+ * number comes from `next_document_number('invoice')` at issue (R-15), which is
+ * a server round trip by definition — there is nothing to queue.
+ */
+export function canIssueInvoice(role: SystemRole, isOnline: boolean = true): boolean {
+  if (!isOnline) return false // Money action blocked offline
+  return role === 'Owner' || role === 'Admin' || role === 'Manager' || role === 'Accounts'
+}
+
+/**
+ * Confirm a Close — **R-08**, which names the same set as R-05:
+ * Owner · Admin · Manager · Accounts.
+ *
+ * Ruled rather than mirrored, and the distinction matters here. `closeRental`
+ * writes a `booking_stage_transitions` row, whose live INSERT policy is the desk
+ * five (Owner, Admin, Manager, Coordinator, **Warehouse**) — so the §4.20 mirror
+ * would hand Close to Warehouse. R-08 does not, and R-07 explains why: the close
+ * gate is a hard block on money (outstanding 0, deposit resolved), so closing is
+ * a finance act that happens to be recorded as a stage move.
+ *
+ * The gates themselves are not enforced here. `lib/workflow.closeGates` refuses
+ * a booking with anything outstanding whoever asks, and this only decides who
+ * may confirm once they pass.
+ *
+ * ⚠ The policy is wider than this predicate, which is the safe direction (the UI
+ * grants less than the database, never more) but still a divergence: Warehouse
+ * can insert a Closed transition by direct PostgREST call. That is compounded by
+ * P1-11 — `bookings.stage` and `closed_at` are directly writable because 0021's
+ * column revoke never took. Narrowing the policy to R-08 belongs with that fix.
+ */
+export function canCloseRental(role: SystemRole, isOnline: boolean = true): boolean {
+  if (!isOnline) return false // Reads live money to evaluate the gates
+  return role === 'Owner' || role === 'Admin' || role === 'Manager' || role === 'Accounts'
+}
+
 /** Check if role can manage operations sessions (pack, handover, return, reset) */
 export function canPerformOperations(role: SystemRole): boolean {
   return role === 'Owner' || role === 'Admin' || role === 'Manager' || role === 'Warehouse' || role === 'Technician'

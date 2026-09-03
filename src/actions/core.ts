@@ -211,6 +211,41 @@ async function checkCapability(capability: string, ctx: ActionContext): Promise<
     case 'closing.approve':
       return rbac.canApproveDailyClosing(ctx.role);
 
+    /*
+     * ── Ruled 4 Sep 2026 by `RULINGS-2026-09-04.md`, which is BINDING ────────
+     *
+     * These two are the exception to the mirror method above, and the exception
+     * is itself a rule: R-00 puts the rulings file above PLAN.md, so where it
+     * names a role set outright that set wins over the live policy. §4.20 then
+     * says which way to reconcile them — **change the POLICY first, then the
+     * predicate** — and that is what
+     * `0086_invoice_write_rights_and_draft_without_number.sql` does.
+     *
+     * `invoice.create` — R-05 and SPEC-P0-1 §3.1: Owner, Admin, Manager,
+     * Accounts. Live said Owner/Admin/Manager/**Coordinator** on 4 Sep, so the
+     * migration realigns `invoices_insert`/`invoices_update` and gives
+     * `invoice_lines` the write policy it never had. Until 0086 applies, this
+     * capability grants what Postgres still refuses — which is exactly why the
+     * migration and this line ship together.
+     */
+    case 'invoice.create':
+      return rbac.canIssueInvoice(ctx.role, online);
+
+    /*
+     * `rental.close` — R-08, the same four as R-05. Deliberately NOT the §4.20
+     * mirror: `closeRental` writes a `booking_stage_transitions` row whose
+     * policy is the desk five including Warehouse, and R-08 does not admit
+     * Warehouse. R-07 explains why — the close gate is a hard block on money
+     * (outstanding 0, deposit resolved), so closing is a finance act that
+     * happens to be recorded as a stage move.
+     *
+     * This grants LESS than the database allows, which is the safe direction.
+     * The reverse divergence is real and filed: Warehouse can still insert a
+     * Closed transition by direct PostgREST call, compounded by P1-11.
+     */
+    case 'rental.close':
+      return rbac.canCloseRental(ctx.role, online);
+
     case 'rental.pickup':
     case 'rental.return':
     case 'inventory.pack':

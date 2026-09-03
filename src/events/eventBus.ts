@@ -73,6 +73,8 @@ export const EVENT_TYPES = {
   RENTAL_PICKED_UP: 'rental.picked_up',
   RENTAL_RETURN_STARTED: 'rental.return_started',
   RENTAL_RETURNED: 'rental.returned',
+  /** §1.7 — the sixth stage, and the only terminal one. Emitted by CLOSE_RENTAL. */
+  RENTAL_CLOSED: 'rental.closed',
   RENTAL_EXTENDED: 'rental.extended',
   NOTE_ADDED: 'booking.note_added',
   UNIT_RELEASED: 'booking.unit_released',

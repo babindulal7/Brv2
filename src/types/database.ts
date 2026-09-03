@@ -78,6 +78,12 @@ export type InspectionState = 'Pending' | 'Inspected'
 export type ItemCondition = 'Excellent' | 'Good' | 'Fair' | 'Damaged' | 'Lost'
 /** `0001_enums.sql:96-101`. Mandatory alongside a Not Returned reason. */
 export type NotReturnedDecision = 'Still expected' | 'Charge replacement' | 'Insurance claim' | 'Write off'
+/** `0001_enums.sql:117-120`. Return inspection is before the client signs off; Cleaning is after, and raises a case. */
+export type DamageSource = 'Return inspection' | 'Cleaning'
+/** `0001_enums.sql:111-114`. Pending charges do not enter Total Deductions. */
+export type DamageApprovalState = 'Pending Approval' | 'Approved'
+/** `0001_enums.sql:104-108`. Absorb and Defer to Insurance satisfy the gate without a charge. */
+export type DamageDisposition = 'Charge Client' | 'Absorb' | 'Defer to Insurance'
 /** `0001_enums.sql:221-226`. The four are mutually exclusive and sum to the queue total. */
 export type CleaningQueueState = 'Waiting' | 'Cleaning' | 'QC' | 'Ready'
 /** `0001_enums.sql:229-234`. Set per item, never per batch. */
@@ -143,7 +149,24 @@ export type PaymentType = 'Advance Payment' | 'Security Deposit' | 'Refund'
 export type DepositMovementType = 'Received' | 'Released' | 'Applied'
 export type DepositChargeType = 'Damage' | 'Missing' | 'Late'
 export type ExpenseStatus = 'Draft' | 'Pending Approval' | 'Approved' | 'Paid' | 'Rejected' | 'Cancelled'
-export type LineKind = 'Equipment Rental' | 'Sub-Rental' | 'Services' | 'Crew Charges' | 'Transport'
+/**
+ * Live `line_kind` enum, re-read from `pg_enum` on 4 Sep 2026. `'Late Fee'` was
+ * added by `0016` and was missing here.
+ *
+ * ⚠ There is still **no `'Damage'` and no `'Missing'`**, though
+ * `charges.invoice_line_id`'s own comment promises `line_kind = 'Damage'`. A
+ * damage or missing-item charge therefore cannot become an invoice line at all
+ * (audit P1-12), which blocks `addInvoiceLine` (SPEC-P0-1 §3.2). Widening the
+ * enum is a ruling — it settles deposit-versus-invoice precedence too — so this
+ * type states what the database accepts today, not what the comment claims.
+ */
+export type LineKind =
+  | 'Equipment Rental'
+  | 'Sub-Rental'
+  | 'Services'
+  | 'Crew Charges'
+  | 'Transport'
+  | 'Late Fee'
 export type ChannelCode = 'WhatsApp' | 'Email' | 'SMS' | 'In-App'
 export type VehicleType = 'Pickup Van' | 'Mini Truck' | 'SUV' | 'Generator Vehicle'
 export type DocumentLifecycleStatus = 'Draft' | 'Pending Approval' | 'Pending Signature' | 'Signed' | 'Issued' | 'Void' | 'Expired'
@@ -834,12 +857,14 @@ export interface Database {
         Row: {
           id: string
           client_uuid: string
-          invoice_no: string
+          /** R-15 — NULL while Draft; minted at issue. */
+          invoice_no: string | null
           booking_id: string
           client_id: string
           branch_id: string
           status: InvoiceStatus
-          issue_date: string
+          /** R-15 — NULL until issued. */
+          issue_date: string | null
           due_date: string
           currency: string
           subtotal: number
@@ -865,12 +890,12 @@ export interface Database {
         Insert: {
           id?: string
           client_uuid: string
-          invoice_no: string
+          invoice_no?: string | null
           booking_id: string
           client_id: string
           branch_id: string
           status?: InvoiceStatus
-          issue_date?: string
+          issue_date?: string | null
           due_date: string
           currency?: string
           subtotal?: number
@@ -894,6 +919,58 @@ export interface Database {
           updated_by?: string | null
         }
         Update: Partial<Database['public']['Tables']['invoices']['Insert']>
+      }
+
+      /**
+       * Added 4 Sep 2026. This table was **absent from this file entirely**,
+       * so `idempotentInsert('invoice_lines', …)` did not typecheck and
+       * SPEC-P0-1 §3.1's "one `invoice_lines` row per `booking_lines` row" had
+       * no typed route. Columns read from the live `information_schema` on
+       * 4 Sep, not from a migration file.
+       *
+       * ⚠ Note for whoever regenerates types: the `booking_lines` block above
+       * describes THIS table's shape (`line_kind`, `quantity`, `unit_rate`,
+       * `discount_percent`, `line_total`), not `booking_lines`'s. Live
+       * `booking_lines` carries `line_type`, `qty`, `rate`, `discount_amount`,
+       * `is_included`, `bundle_id`, `supplier_*` and `voided_at`, and has no
+       * `unit_id`, `line_kind` or `item_state` at all. The two were swapped.
+       * Left alone here because correcting it would change the type of a table
+       * other code already writes through, which is a separate, testable change.
+       */
+      invoice_lines: {
+        Row: {
+          id: string
+          client_uuid: string
+          invoice_id: string
+          line_kind: LineKind
+          description: string
+          quantity: number
+          days: number
+          unit_rate: number
+          discount_percent: number
+          discount_reason: string | null
+          discount_approved_by: string | null
+          line_total: number
+          sort_order: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          invoice_id: string
+          line_kind?: LineKind
+          description: string
+          quantity?: number
+          days?: number
+          unit_rate?: number
+          discount_percent?: number
+          discount_reason?: string | null
+          discount_approved_by?: string | null
+          line_total?: number
+          sort_order?: number
+          created_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['invoice_lines']['Insert']>
       }
 
       payments: {
@@ -1314,6 +1391,60 @@ export interface Database {
           created_by: string
         }
         Update: Partial<Omit<Database['public']['Tables']['booking_line_units']['Insert'], 'client_uuid' | 'created_by'>>
+      }
+
+      /**
+       * `0003_operations.sql:449-481`. Declared the day the Return verb started
+       * WRITING it (BUG_AUDIT_LIFECYCLE RT-02). `estimated_cost` is typed but
+       * never written from the OS: `0034` revokes SELECT on it from
+       * `authenticated` and `0003:488` reserves it for the approver.
+       */
+      damage_findings: {
+        Row: {
+          id: string
+          client_uuid: string
+          source: DamageSource
+          return_line_id: string | null
+          cleaning_queue_entry_id: string | null
+          unit_id: string
+          damage_type: string
+          description: string
+          severity: string
+          estimated_cost: number | null
+          approval_state: DamageApprovalState
+          approved_by: string | null
+          approved_at: string | null
+          disposition: DamageDisposition | null
+          case_id: string | null
+          charge_id: string | null
+          voided_at: string | null
+          created_at: string
+          created_by: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          source: DamageSource
+          return_line_id?: string | null
+          cleaning_queue_entry_id?: string | null
+          unit_id: string
+          damage_type: string
+          description: string
+          severity: string
+          estimated_cost?: number | null
+          approval_state?: DamageApprovalState
+          approved_by?: string | null
+          approved_at?: string | null
+          disposition?: DamageDisposition | null
+          case_id?: string | null
+          charge_id?: string | null
+          voided_at?: string | null
+          created_at?: string
+          created_by: string
+          updated_at?: string
+        }
+        Update: Partial<Omit<Database['public']['Tables']['damage_findings']['Insert'], 'client_uuid' | 'created_by'>>
       }
 
       handover_lines: {
