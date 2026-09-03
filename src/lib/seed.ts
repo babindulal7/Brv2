@@ -120,8 +120,16 @@ export const SEQUENCES = {
   booking: { key: 'booking', code: 'BK', padding: 1, year: null },
   client: { key: 'client', code: 'CL', padding: 1, year: null },
   invoice: { key: 'invoice', code: 'INV', padding: 1, year: null },
-  /* Payment keeps its old shape — `PAY-YYYY-NNNN` is what numbering.ts:157
-     still records and nothing has ruled it. */
+  /* Payment keeps the year-bearing `PAY-YYYY-NNNN` here, but the claim this
+     comment used to make — "nothing has ruled it" — was overtaken on 4 Sep.
+     R-18 (RULINGS-2026-09-04.md) rules that `number_sequences.payment` must
+     stop resetting yearly: `include_year = false`, a direct breach of the
+     15 Aug never-reset ruling. That is a change to the SEQUENCE, made by
+     migration, and R-18 is explicit that numbers already issued are not
+     rewritten. The corpus below is historical payments — already issued — so
+     the shape stays put and this spec does NOT move until a migration lands.
+     Do not "fix" it here: changing the emitted shape without the sequence
+     change would make the seed disagree with what the database mints. */
   payment: { key: 'payment', code: 'PAY', padding: 4, year: 2026 },
   /* Deposit IS ruled: 0056_ruled_sequences_completion.sql rewrites every
      `DEP-YYYY-NNNN` to `DEP-<n>` and then asserts none survive. This spec
