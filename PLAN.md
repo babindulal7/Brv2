@@ -623,6 +623,29 @@ a LAN-served Postgres. Full evidence in [`LOCAL_FIRST_MAP_2026-09-03.md`](LOCAL_
 Everything else in that build is engineering. These three are product decisions, and
 `CLAUDE.md` forbids inventing them. Each blocks a specific, named piece of work.
 
+> ## ✅ Measured 4 Sep 2026 — (a) and (b) do NOT block the warehouse floor
+>
+> The dead-zone requirement is **pack · handover · return · reset**. Those four verbs need
+> neither ruling, which was checked rather than assumed:
+>
+> | Claim | Evidence |
+> |---|---|
+> | The floor verbs allocate no document number | `next_document_number` appears **0 times** in `src/actions/rentals/floorVerb.ts`. All ~20 call sites across `src/` are *creation* flows — clients, invoices, payments, bundles, equipment, transfers, expenses — plus the Booqable bridge. |
+> | `session_no` needs no server | `floorVerb.ts:504-516` reads the latest session `.order('session_no', desc).limit(1)` and writes `(latest?.session_no ?? 0) + 1`. A local computation over rows the device already holds. |
+> | The floor carries no money | `FLOOR_COLUMNS` (`src/lib/queries/bookings.ts:996`) names **zero** money columns across `bookings`, `booking_lines`, `products` and `product_units`. |
+>
+> So **(a) gates booking/client/invoice *creation*, and (b) gates any device that holds money
+> — neither is on the floor path.** The offline floor can be built while these stay open.
+>
+> Also measured the same day, because a design pass asserted the opposite: the app's read
+> path **is** 0062-compliant. All 41 columns `BASE_COLUMNS` and `FLOOR_COLUMNS` name across
+> the four revoked tables appear in 0062's grant lists (bookings 15/27, booking_lines 7/19,
+> products 2/35, product_units 5/29), and money reaches the app only through
+> `bookings_deposit_v`. The one `select('*')` on a revoked table is `syncEngine.ts:162` — the
+> pull that has been silently 42501-ing since 0062 applied. A faithful local schema would
+> therefore **not** break the app, which removes the standing objection to a real-Postgres
+> local store.
+
 ### ⬅ (a) OPEN — what number does an offline booking carry?
 
 `next_document_number` (`0055_ruled_identifier_formats.sql:171`) is a server-side **mutation**
@@ -634,7 +657,7 @@ Three shapes, with different operator-visible consequences:
 
 | Option | What the operator sees | Cost |
 |---|---|---|
-| **Provisional id, renumbered at sync** | A booking is created as `LOCAL-7f3a…` and *becomes* `B-918` hours later | The number a client was quoted on the floor changes afterwards. Anything printed, messaged or written on a case is then wrong. |
+| ~~Provisional id, renumbered at sync~~ | — | ❌ **IMPOSSIBLE, measured 4 Sep.** `bookings_booking_no_format` is `check (booking_no ~ '^BK-[0-9]{4}-[0-9]{4}$')` (`0002_bookings.sql:58`) — digits only. A `LOCAL-7f3a` or `TMP-7` cannot be stored at all. Fortunate: it was also the option that changes a number after it has been written on a case and told to a client. |
 | **Per-device number blocks** | Real `B-9xx` immediately, allocated from a block reserved for that tablet | Numbers are no longer contiguous or chronological; a block can be exhausted mid-shift; blocks must be issued and reclaimed. |
 | **No number until sync** | The booking exists with no number until it lands | Simple and honest, but the floor cannot reference the job by number all day — which is how the warehouse actually talks. |
 
@@ -661,6 +684,31 @@ The question is not "should we mask" — it is what the device is allowed to *st
 Related and now closed on the *cache* side: sign-out did not purge anything, so an Owner's
 cached rows were served to the next signed-in user. Fixed 3 Sep (`src/lib/devicePurge.ts`);
 it does not answer this ruling, it only stops the leak that existed without one.
+
+### ⬅ (d) OPEN ×3 — three schema defects every sync design silently assumes are solved
+
+Raised 4 Sep by two independent design judges, then **verified against the migrations**. None
+of the three is a product ruling — they are engineering, listed here because every local-first
+design in the panel was built on top of them without noticing they do not hold.
+
+1. **`updated_at` is written by the device, and no trigger overrides it.** Zero trigger
+   functions in 79 migrations touch `updated_at`; `floorVerb.ts:771, 779, 855, 901` sets it
+   from the client clock (`occurredAt`). Every cursor-based pull in every design orders and
+   filters on it. **A tablet with a skewed clock silently and permanently skips rows for the
+   whole fleet.** Needs a `before update … set new.updated_at = now()` trigger on every table
+   in the sync set — and `booking_lines`, `booking_line_units`, `booking_discounts` and
+   `booking_stage_transitions` need the column added first.
+2. **`bookings.version` is a dead optimistic lock.** `not null default 1` with
+   `check (version >= 1)` (`0002_bookings.sql:45, 68`), and **nothing increments it** —
+   0 migrations, 0 source files. Every design treats it as a working CAS, so every compare
+   matches and every conflict resolves as silent last-write-wins. Either add
+   `new.version := old.version + 1` or delete the column; leaving it is worse than both,
+   because it reads as protection that is not there.
+3. **`operation_sessions.id` is minted per device.** Two devices working the same booking
+   offline create two sessions for one operation; on sync the loser's entire shift references
+   a session the unique constraint will never allow to exist. Needs a deterministic id derived
+   from `(booking_id, operation, operational_day)` so both devices mint the same one and the
+   child rows merge.
 
 ### ⬅ (c) OPEN — whose write is a queued mutation, and may it replay under another operator?
 
