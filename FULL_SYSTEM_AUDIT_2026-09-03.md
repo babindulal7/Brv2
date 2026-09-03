@@ -20,10 +20,10 @@ Two more findings block launch on their own. **The lifecycle cannot finish**: no
 
 | | |
 |---|---|
-| **Overall score** | **56 / 100** |
+| **Overall score** | **52 / 100** (56 before Addenda A–B) |
 | **Production readiness** | NOT READY |
-| **P0 blockers** | 3 (invoicing/payments missing · lifecycle cannot close · corpus numbering collision) |
-| **P1 issues** | 7 |
+| **P0 blockers** | 3 (invoicing/payments missing · lifecycle cannot close · corpus numbering) |
+| **P1 issues** | 7 direct + 9 from agent clusters (pending refutation) |
 | **P2 issues** | 9 |
 | **P3/P4** | 6 |
 
@@ -48,7 +48,7 @@ Two more findings block launch on their own. **The lifecycle cannot finish**: no
 | Deployment | **50** | Build passes and a PWA is generated; but lint fails its own zero-warning gate, Supabase Free means no PITR (the migration set *is* the DR plan), the local stack is down, and CI was not evidenced in this run. |
 | UX | **74** | Gates explain themselves, refusals name their reason, nothing fakes a number; docked for `alert()` used as a success channel and label collisions. |
 | Mobile | **60** *(provisional — not measured this run; see 1 Sep FORM/INTERACTION audits)* | 44 px targets and BottomBar/MoreSheet are built; iPad/phone behaviour was not re-driven here. |
-| **Overall** | **56** | Weighted toward business logic, payments and deployment, because §65 asks whether the business can run. |
+| **Overall** | **52** (56 before Addenda) | Weighted toward business logic, payments and deployment, because §65 asks whether the business can run. Revisions from agent clusters: Testing 58, Deployment **35**, Security **55** — see Addendum B. |
 
 ---
 
@@ -128,7 +128,7 @@ Reading: master data and audit trail exist; **the operation has never run once o
 |---|---|---|---|---|
 | **P0-1** | P0 | Finance | `Finance.tsx:539`, `CreateInvoiceModal.tsx`, no `actions/finance/*Invoice*` | **No invoice can be created.** → No payment can be recorded; live 0/0/0; Finance, receipts, VAT all inert. → Build `createInvoice` action (number via `next_document_number`, lines from booking, trigger recalculates) + rbac rule (the file's own `TODO(decision)` at :474) + wire the modal. |
 | **P0-2** | P0 | Rentals | `lib/workflow.ts` JOBS (4 verbs), `Reset.sets = null`, `ResetWorkspace.tsx:1276` | **No Close verb; Returned is terminal.** → No rental ever completes; reports on closed rentals impossible; `closeGates` only reachable from seed. → Rule Returned→Closed (who, when, gates: invoice settled? deposit released?) and add the verb + action. |
-| **P0-3** | P0 | Data | `bookings_booking_no_key` UNIQUE; `0076_seed_operational_stage_corpus`; Law 3 `trg_bookings_reject_delete` | **Seed rows B-900…B-945 squat on real Booqable order numbers #900+.** → Importing the remaining ~450 orders fails row by row; cancellation does not free a number. → Ruling: renumber the seed via a new migration (rows can be UPDATEd), or offset imports. Detail: `docs/booqable/BRIDGE-AND-CORPUS-STATE.md` §4. |
+| **P0-3** | P0 | Data | `bookings_booking_no_key` UNIQUE; `0076_seed_operational_stage_corpus`; Law 3 `trg_bookings_reject_delete`; `lib/booqable/map/orders.ts:264` | **Two incompatible numbering conventions, and a seed squatting on one of them.** The 200 imported rows and the ad-hoc SQL use `B-<Booqable number>`; the typed bridge mints `booking_no` via `next_document_number('BK')` and *never* reads the Booqable number (DEL-18, correcting `BRIDGE-AND-CORPUS-STATE.md` §4). So a `runFullPull` re-import **duplicates** all 200 under fresh BK numbers, while the SQL path **collides** on B-900…B-945, which Law 3 will not let anyone delete. → Rule one convention (PLAN §4), back-fill `orders` refs for B-700…B-899 keyed on the Booqable UUID, and either honour Booqable numbers with a collision check or renumber the seed. |
 | P1-1 | P1 | Today/Ops | `data/today.ts:24,756` (OPS-01, agent-traced) | `NOW_AD` = Kathmandu civil midnight resolved **once at module load**, used as an instant in `overdue()`, Critical alerts, Overdue chip, timeline ring. → Overdue lags up to ~18 h; page loaded at 09:00 never flags a 10:00 return until tomorrow. → Per-render `now` (hook), keep `TODAY_DAY_AD` as the day. |
 | P1-2 | P1 | Floor | `PackingWorkspace.tsx:1241`, `HandoverWorkspace.tsx:648`, `ReturnWorkspace.tsx:603` | Ruled-mandatory evidence photo and both signatures are satisfied by **local counters / name+timestamp**; no `evidence_files` or `signatures` row is ever written. → Gate is enforced in name only; dispute evidence does not exist. → Wire capture to storage + `evidence_files`; write `signatures`. |
 | P1-3 | P1 | Return | no writer of `damage_findings` / `late_fee_findings` in `floorVerb.ts`, `returnRental.ts`, `ReturnWorkspace.tsx` | Damage condition persists on the line but **no finding, no charge, no approval row** (`trg_damage_approver_is_actor` is armed on an empty table). → Damage can never be billed. → Emit `damage_findings` from the return session for Damaged/Lost lines. |
@@ -242,7 +242,7 @@ Schema can represent the full rental lifecycle including inspection (`return_lin
 
 \* per delivery type. Cells reflect `rbac.ts` and policy names; per-cell live probing was done for money on 1 Sep (I5) and not repeated here.
 
-- **Secrets:** scrub **held** — 0 JWT-shaped and 0 64-hex strings in tracked files; `.env.local` ignored; `.env.example` present; only `.env.example`/`.env.mock` tracked. The 13 Aug token exposure was local-only (repo has never had a remote).
+- **Secrets:** the scrub held **inside the tracked repo** — 0 JWT-shaped and 0 64-hex strings in tracked files; `.env.local` ignored; `.env.example` present. **But the Booqable token persists in five pre-scrub archives on this machine** (`backups/babin-rentals-os-pre-miraz-uiux-backup-2026-08-31/.git` and its `.zip`, `backups/git-history-2026-09-01-pre-scrub/all-refs.bundle`, `QA-BACKUP-2026-09-01-4696af8/full-history.bundle`, and the 147 MB `babin-rentals-os.rar`) — values not read out; **rotation status unknown** (DEL-16). Exposure remains local-only (no remote has ever existed), but any hand-off built from those archives carries it. Rotate, then re-scrub or delete the archives.
 - **Unverified:** `booqable-proxy` edge-function auth (what stops `anon`), storage bucket policies for evidence, CORS/rate limits.
 - **Dependencies:** 3 high / 1 moderate advisories, all dev-side (P2-9).
 
@@ -324,4 +324,30 @@ The architecture does not need changing; it needs completing. Keep: engines-own-
 
 Contradictions the cluster settled against older docs (code wins): PLAN.md Phase 9's "the Dexie queue has no producer / nothing drains it" — `dataAccess` is imported by 17 files and `drainQueue` runs on boot, on `online`, and every 25 s; OFFLINE_SPEC_v1_VERIFICATION §5–6's "floor screens dispatch empty payloads / supply no action key" — all four workspaces now mint a completion key once and dispatch real lines.
 
-*Remaining clusters (architecture, frontend-design, data-connection, database, rental-lifecycle, inventory-availability, money, auth-security, delivery, forms-interactions) append here as they complete; P0/P1s enter §6 only after refutation.*
+## Addendum B — agent cluster: delivery (score 50) · *P1s pending adversarial refutation*
+
+27 findings, 8 verified by running, 7 inferred; **6 P1**. Its own re-run of the suite: **104 files / 2,363 tests passing** (3 Sep). **Score revisions:** Testing 60 → **58**; Deployment 45 → **35** (no host chosen, CI has never executed, no live backup); Security 62 → **55** (token in archives, no storage policies, cache bypass). Overall → **52**.
+
+| ID | Sev | Where | Problem → impact → fix |
+|---|---|---|---|
+| DEL-13 | P1 (operational blocker) | `scripts/check-dump.mjs:10` | **No verified dump of the LIVE database exists anywhere on disk**; Supabase Free has no PITR or automated backup; the only dump is an 805 KB local-stack file. → A bad migration, a mistaken MCP write, or a project auto-pause loses 366 clients / 246 bookings with no recovery except migrations that do not reproduce production. → `pg_dump` live now, run `check:dump`, restore once into the local stack, schedule a weekly off-machine dump. **Do this before anything else in Phase 0.** |
+| DEL-10 | P1 | `.github/workflows/ci.yml:8` | **CI has never run** — the workflow triggers on push/PR and the repo has no remote. → The typecheck/test/build gate is enforced by session discipline only. → Push to a private remote; add `npm run lint` to the job (DEL-11). |
+| DEL-12 | P1 | `README.md:129`, `vercel.json`, `Dockerfile`+`nginx.conf`, `public/_redirects` | **No hosting target chosen or deployed**; three deploy configs coexist and already disagree on cache rules. → Nothing is live for the business; a Vercel deploy could pin devices to a stale `index.html`/manifest. → Rule the host (PLAN §4), delete the other two, add html/manifest no-cache to the survivor. |
+| DEL-16 | P1 | `../backups/**`, `../QA-BACKUP-*/full-history.bundle`, `../babin-rentals-os.rar` | Token scrub held in the repo, but a live-shaped 64-char Booqable token remains in **five pre-scrub archives** on this machine. → If not rotated, it is valid and readable from plaintext copies. → Rotate in Booqable, store only as the `booqable-proxy` function secret, delete or re-scrub the archives. |
+| DEL-01 | P1 | `vitest.config.ts:35` | No E2E/browser tests; the 12 critical workflows are covered only by unit suites that replace `../supabase` with an in-file recording builder. → A wrong column, RLS refusal, trigger rejection or numbering collision on live passes every green run. → Playwright against `dev:local` (now buildable) for the 12 workflows, Owner + Warehouse identities. |
+| DEL-02 | P1 | `scripts/check-rebuild.mjs:34` | Nothing asserts database behaviour — no pgTAP, no test exercises `validate_booking_gates`, `recalculate_invoice_totals`, `trg_bookings_reject_delete` or the 0021 trigger; the mock emulates only 0021. → Trigger-level money, gate and immutability rules are unverified by any automated run. → pgTAP inside `check:rebuild`'s scratch DB, starting with the §2.8 reference case through the trigger. |
+| DEL-22 | P2 | `EvidenceWorkspace.tsx:345`, migrations | **No Supabase Storage bucket exists in any migration and no `storage.from()` call exists in `src`**, yet damage reports require a photo. → Evidence, damage and receipt photos cannot be stored anywhere — deepens P1-2. → Migration creating `evidence`/`receipts` buckets with role-scoped policies; one upload helper. |
+| DEL-17 | P2 | `supabase/functions/booqable-webhook/index.ts:121` | Only `booqable-proxy` is deployed (ACTIVE v1, `verify_jwt=true`); the webhook is not, and nothing imports the bridge. → No inbound sync path exists; orders after #899 never arrive. |
+| DEL-18 | P2 | `lib/booqable/map/orders.ts:264` | Bridge mints `BK` numbers; imported rows use `B-<Booqable no.>` — two conventions. → Folded into P0-3 above. |
+| DEL-05 | P3 | `src/lib/supabase.ts:2` | The mock backend and the whole seed corpus (96 KB source) are compiled into the **live** main chunk. → Dead weight plus fabricated names/emails shipped to every production visitor. → Split entries by build mode. |
+| DEL-03 | P2 | `actions/clients/updateClient.ts:24` | `UPDATE_CLIENT` still has no `implemented: true`; the dispatcher refuses it, so ClientDetail inline edit cannot persist (honestly). |
+| DEL-20 | P2 | `ImportCenter.tsx:63` | Client CSV import parses, maps and de-duplicates but its Import button is permanently disabled — "no client-import action exists". |
+| DEL-07 / DEL-14 | P2 | `vite.config.ts:47`; `monitoring.ts:303` | Same findings as RES-15 (cache bypass of Law 6 on shared tablets) and RES-09 (DSN unset → error tracking a no-op). |
+| DEL-24 | P3 | live project | A schema `bakery_archive` (22 unindexed-FK lints on `cake_orders`) exists in production that no migration creates. → Untracked objects; a from-scratch rebuild would not reproduce them. → Identify owner; drop via approved migration or document as external. |
+| DEL-04 / DEL-08 / DEL-06 | P2–P3 | `ScannerFab.tsx:3`, `dist/sw.js`, `src/data/*` | The 453 KB scanner chunk is modulepreloaded on every page; the SW precaches all 143 entries (3.38 MB) on first visit; 1.1 MB of fixture arrays ride the route chunks. |
+| DEL-09 | P3 | advisors (ran) | 319 unindexed FKs, 403 multiple-permissive-policy warnings, 11 `auth_rls_initplan` warnings, 86 unused indexes — negligible at 246 bookings, visible later. |
+| DEL-15 / DEL-19 / DEL-21 / DEL-23 / DEL-25 / DEL-26 / DEL-27 | P3–P4 | various | Health checks only on the Docker path; the two SQL importers confirmed as armed hazards; three phone normalisers with different rules; auth email on shared Free-tier SMTP; CLI migration tracking disabled (manual apply by design — add a ledger-vs-directory diff in CI); `count: 'exact'` on every list; coverage limited to `src/lib` with no threshold. |
+
+Contradictions the cluster settled: BUG-013's stub list (every `[DB TX]` in `src/actions` is inside a JSDoc history note); `BRIDGE-AND-CORPUS-STATE.md` §4's one-to-one numbering claim (the typed bridge never reads Booqable's number) and §6's "hard-coded in four scripts" (superseded — all four read `process.env` at HEAD; the exposure moved to the archives); `FULL_FUNCTIONAL_AUDIT.md` §12/§14's "environment cannot be built" (it can, 79/0 — those rows are untested, not blocked); README's "two deploy configs" (there are three); this report's own "100 files / 2,338 tests" (104 / 2,363 on re-run).
+
+*Remaining clusters (architecture, frontend-design, data-connection, database, rental-lifecycle, inventory-availability, money, auth-security, forms-interactions) append here as they complete; P0/P1s enter §6 only after refutation.*
