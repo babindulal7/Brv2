@@ -15,6 +15,7 @@ import { captureError } from '../../lib/monitoring'
 import { formatBsOrAd, formatAd } from '../../lib/bs'
 import { newClientUuid } from '../../lib/supabase'
 import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/queries/bookings'
+import type { ResetEntryInput } from '../../actions/rentals/floorVerb'
 import { SHARED_CLEAN_TASKS, DAMAGE_TYPES, SEVERITIES, PROBLEM_ROUTE, QUEUE_FILTERS } from '../../data/reset'
 import type { QueueState, ProblemState } from '../../data/reset'
 import { CompactButton, TouchTarget } from '../../components/ui/TouchTarget'
@@ -587,6 +588,37 @@ export default function ResetWorkspace() {
     setDispatching(true)
 
     /*
+     * RS-01 — the record the floor made, not just the ids. `cleaned_by` and
+     * `qc_by` are `users.id` uuids and this screen stores NAMES, so the only
+     * identity it can send truthfully is the signed-in operator's own: a stored
+     * name equal to the actor's maps to `user.id`; any other name is OMITTED,
+     * never guessed at. TODO(decision): a `users.id`-backed staff picker is
+     * needed before a second person's cleaning or QC can be attributed — until
+     * then a typed QC-by name is a screen fact only (the input says so).
+     * Exception rows stay out of the dispatch as before; routing their
+     * `problemState` through the engine is RS-03, not this change.
+     */
+    const selfIdOf = (name: string | undefined): string | undefined =>
+      name !== undefined && actor !== null && name === actor ? user.id : undefined
+    const resetEntries: ResetEntryInput[] = readyRows
+      .filter((r) => r.assetId !== null)
+      .map((r) => {
+        const rec = recOf(r.key)
+        const cleanedBy = selfIdOf(rec.cleanedBy)
+        const qcBy = selfIdOf(rec.qcBy)
+        const skipReason = rec.qcSkipReason?.trim() ?? ''
+        const failReason = rec.qcFailReason?.trim() ?? ''
+        return {
+          unitId: r.assetId as string,
+          ...(cleanedBy === undefined ? {} : { cleanedBy }),
+          ...(qcBy === undefined ? {} : { qcBy }),
+          ...(skipReason === '' ? {} : { qcSkipped: true, qcSkipReason: skipReason }),
+          ...(failReason === '' ? {} : { qcFailReason: failReason }),
+          ...(rec.problem === 'No Problems' ? {} : { problemState: rec.problem }),
+        }
+      })
+
+    /*
      * ⚠ Success is reported only on the resolved promise — `navigate` is
      * INSIDE `.then`. The action's own guards (unit not queued, reset not
      * required, already reset, wrong stage) surface here as the inline
@@ -600,6 +632,7 @@ export default function ResetWorkspace() {
           {
             id: floor.id,
             unitIds: readyAssetIds,
+            resetEntries,
             clientUuid: completionKey,
           },
           { userId: user.id, role: user.role },
@@ -1376,6 +1409,12 @@ function QcRowControls({
         aria-label="QC performed by"
         style={{ height: 24, padding: '0 6px', borderRadius: 'var(--r-xs)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
       />
+      {/* RS-01 / RS-12 — `qc_by` is a users.id; there is no staff picker yet, so
+          only the signed-in operator can be recorded. Said here, not discovered
+          after dispatch. */}
+      <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.3 }}>
+        Only the signed-in operator is recorded as QC. A different name typed here stays on this screen and is not stored.
+      </span>
       {selfCheck && (
         <input
           value={reason}

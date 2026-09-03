@@ -157,6 +157,14 @@ export interface AddItemPanelProps {
   /** §64's threshold, shared with the client combobox. */
   minQueryChars?: number
   disabled?: boolean
+  /**
+   * The equipment pool to search, from `equipmentResultsFrom(liveRows)`.
+   *
+   * Omitted, this panel searches the SEED catalogue, whose ids are product
+   * names — browsable, but a line built from one cannot be saved. A page that
+   * creates bookings must pass this.
+   */
+  equipment?: readonly EquipmentResult[]
   /** Crew and vehicle lines ride along with a bundle. Off — both are priced in Section 3. */
   includeCrewAndVehicle?: boolean
   /** Stamp the bundle's saving on each component line. Off — pricing is the page's (§67). */
@@ -178,6 +186,7 @@ export function AddItemPanel({
   window: bookingWindow,
   days,
   existingLineIds,
+  equipment,
   onAdd,
   showPrices = true,
   inputStyle,
@@ -220,8 +229,9 @@ export function AddItemPanel({
         sort,
         minQueryChars,
         existingLineIds: existing,
+        ...(equipment ? { equipment } : {}),
       }),
-    [bookingWindow, query, tab, category, availability, sort, minQueryChars, existing],
+    [bookingWindow, query, tab, category, availability, sort, minQueryChars, existing, equipment],
   )
 
   const options = useMemo(() => flatten(outcome.groups), [outcome.groups])

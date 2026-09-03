@@ -199,6 +199,47 @@ const NEW_SUB_RENTAL_REASON =
 const EXPORT_REASON =
   'Export is not built — there is no sub-rental report generator in this release, so nothing would be produced.'
 
+/*
+ * ── The KPI strip states what it cannot count ──────────────────────────────
+ *
+ * "30 active · Borrowing (18) · Lending (12)", "Rs 1,20,000", "Rs 80,000" and
+ * "33.3%" were string literals over a four-row seed, and the chip row beneath
+ * them ("All 48", "Overdue 4", …) was a second set of literals that disagreed
+ * with the table it filtered. WIREFRAME_RULINGS §8: a number with no source
+ * renders "Not tracked yet".
+ *
+ *  - The record count and the chip counts are derived from `SUB_RENTAL_DATA`,
+ *    the same rows the table renders, so they cannot disagree with it.
+ *  - The ₨ totals and the margin have no source: there is no sub-rental
+ *    ledger, and summing four seed rows' `revenuePaisa` would print a demo
+ *    figure as revenue. They say so instead.
+ *
+ * TODO(decision) — "Active Records" has no ruled definition (which statuses
+ * count as active?). The tile counts every record and says so; rename it
+ * once the rule exists.
+ */
+const NOT_TRACKED = 'Not tracked yet'
+const NOT_TRACKED_NOTE = 'No sub-rental ledger is wired yet — there is nothing to total.'
+
+const RECORD_COUNT = SUB_RENTAL_DATA.length
+const DIRECTION_COUNT: Record<SubRentalDirection, number> = {
+  Borrowing: SUB_RENTAL_DATA.filter((r) => r.direction === 'Borrowing').length,
+  Lending: SUB_RENTAL_DATA.filter((r) => r.direction === 'Lending').length,
+}
+
+/** The filter chips, each counting exactly the rows its filter selects. */
+const FILTER_CHIPS: ReadonlyArray<{ label: FilterKey; count: number }> = (
+  ['All', 'Overdue', 'Reserved', 'Picked Up', 'On Rent', 'Returned', 'Checked In'] as const
+).map((label) => ({
+  label,
+  count:
+    label === 'All'
+      ? RECORD_COUNT
+      : label === 'Overdue'
+        ? SUB_RENTAL_DATA.filter((r) => r.isOverdue).length
+        : SUB_RENTAL_DATA.filter((r) => r.status === label).length,
+}))
+
 /**
  * **Suppliers directory** — promotes `SUPPLIER_GROUPS` (already grouped by
  * counterparty for the hover card) into a real one-row-per-supplier screen,
@@ -544,13 +585,13 @@ export function SubRental() {
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${canSeeFinance ? 4 : 1}, 1fr)`, gap: 14 }}>
         <Card padding="md">
           <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
-            Active Records
+            Records
           </span>
           <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--text)', marginTop: 'var(--sp-xs)' }}>
-            30
+            {RECORD_COUNT}
           </div>
-          <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-            Borrowing (18) · Lending (12)
+          <span className="figure" style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
+            Borrowing ({DIRECTION_COUNT.Borrowing}) · Lending ({DIRECTION_COUNT.Lending}) · every record in the table
           </span>
         </Card>
         {canSeeFinance && (
@@ -559,33 +600,33 @@ export function SubRental() {
               <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
                 Total Revenue
               </span>
-              <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--good)', marginTop: 'var(--sp-xs)' }}>
-                Rs 1,20,000
+              <div style={{ fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--muted)', marginTop: 'var(--sp-xs)' }}>
+                {NOT_TRACKED}
               </div>
               <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-                Gross generated value
+                {NOT_TRACKED_NOTE}
               </span>
             </Card>
             <Card padding="md">
               <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
                 Total Cost
               </span>
-              <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--bad)', marginTop: 'var(--sp-xs)' }}>
-                Rs 80,000
+              <div style={{ fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--muted)', marginTop: 'var(--sp-xs)' }}>
+                {NOT_TRACKED}
               </div>
               <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-                Partner payments & fees
+                {NOT_TRACKED_NOTE}
               </span>
             </Card>
             <Card padding="md">
               <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
                 Blended Margin
               </span>
-              <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--info)', marginTop: 'var(--sp-xs)' }}>
-                33.3%
+              <div style={{ fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--muted)', marginTop: 'var(--sp-xs)' }}>
+                {NOT_TRACKED}
               </div>
               <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-                Across all active sub-rentals
+                {NOT_TRACKED_NOTE}
               </span>
             </Card>
           </>
@@ -595,18 +636,10 @@ export function SubRental() {
       {/* Toolbar & Chips */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-lg)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-          {[
-            { label: 'All', count: 48 },
-            { label: 'Overdue', count: 4 }, // Explicit flag
-            { label: 'Reserved', count: 6 },
-            { label: 'Picked Up', count: 8 },
-            { label: 'On Rent', count: 16 },
-            { label: 'Returned', count: 9 },
-            { label: 'Checked In', count: 5 },
-          ].map((chip) => (
+          {FILTER_CHIPS.map((chip) => (
             <button
               key={chip.label}
-              onClick={() => setActiveFilter(chip.label as FilterKey)}
+              onClick={() => setActiveFilter(chip.label)}
               style={{
                 padding: '6px 14px',
                 borderRadius: 'var(--r-modal)',

@@ -757,6 +757,22 @@ describe('Return', () => {
     expect(insertsOn('return_lines')[0]?.payload['state']).toBe('Outstanding')
     expect(result.stage).toBeNull()
     expect(result.stageHeldBy).toEqual([LINE_A])
+    // RT-01 — the gear is still out, so no actual-return instant is stamped.
+    expect(opsOn('bookings')).toHaveLength(0)
+  })
+
+  it('stamps bookings.actual_return_at once, at the session that moves the booking to Returned (RT-01)', async () => {
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
+    db.state.responses['return_lines'] = [[], [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Returned' }]]
+
+    const result = await completeReturn(
+      { rentalId: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }], occurredAt: '2026-08-12T05:00:00.000Z', clientUuid: 'act-1' },
+      OWNER,
+    )
+    expect(result.stage).toEqual({ from: 'On Rent', to: 'Returned' })
+    const stamps = opsOn('bookings')
+    expect(stamps).toHaveLength(1)
+    expect(stamps[0]).toMatchObject({ kind: 'update', payload: { actual_return_at: '2026-08-12T05:00:00.000Z' }, clientUuid: 'act-1' })
   })
 })
 

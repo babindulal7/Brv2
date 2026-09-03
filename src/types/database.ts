@@ -39,6 +39,20 @@ export type DeliveryMethod = 'Customer Pickup' | 'Babin Delivery' | 'Courier' | 
  * a Phase 1 schema call. Left as-is deliberately. See PLAN.md §4.16.
  */
 export type ItemQuantityState = 'Ready' | 'Picked Up' | 'Returned' | 'Missing' | 'Damaged'
+/** `crew_role` (0001_enums.sql:313-325) — the twelve, verbatim. The seed roster's own vocabulary is NOT this list. */
+export type CrewRoleDb =
+  | 'Rental Coordinator'
+  | 'Warehouse Staff'
+  | 'Driver'
+  | 'Camera Assistant'
+  | 'Delivery Staff'
+  | 'Director'
+  | 'DoP'
+  | 'Focus Puller'
+  | 'Gaffer'
+  | 'Grip'
+  | 'Drone Pilot'
+  | 'Sound Recordist'
 export type PackingLineState = 'Pending' | 'Packed' | 'Partial' | 'Missing' | 'Not Required' | 'Replaced'
 export type PhysicalCondition = 'Excellent' | 'Good' | 'Fair' | 'Damaged' | 'Not Inspected'
 
@@ -607,6 +621,8 @@ export interface Database {
           warehouse_id: string
           stage: BookingStage
           stage_number: number
+          /** 0002:33,86 — "Set by the Return workspace"; stamped by the Return verb since 3 Sep 2026 (RT-01). */
+          actual_return_at: string | null
           pickup_datetime: string
           return_datetime: string
           days: number
@@ -630,6 +646,7 @@ export interface Database {
           warehouse_id: string
           stage?: BookingStage
           stage_number?: number
+          actual_return_at?: string | null
           pickup_datetime: string
           return_datetime: string
           days?: number
@@ -735,6 +752,82 @@ export interface Database {
           created_at?: string
         }
         Update: Partial<Database['public']['Tables']['booking_lines']['Insert']>
+      }
+
+      /** `0002_bookings.sql:314-340` — priced crew on a booking. Declared the day New Rental started writing it (BUG_AUDIT_LIFECYCLE NR-02). */
+      booking_crew_lines: {
+        Row: {
+          id: string
+          client_uuid: string
+          booking_id: string
+          crew_member_id: string | null
+          name: string
+          crew_role: CrewRoleDb
+          phone: string | null
+          day_rate: number
+          days: number
+          overtime: number
+          accommodation: number
+          meals: number
+          voided_at: string | null
+          created_at: string
+          created_by: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          booking_id: string
+          crew_member_id?: string | null
+          name: string
+          crew_role: CrewRoleDb
+          phone?: string | null
+          day_rate?: number
+          days?: number
+          overtime?: number
+          accommodation?: number
+          meals?: number
+          voided_at?: string | null
+          created_at?: string
+          created_by: string
+        }
+        Update: Partial<Database['public']['Tables']['booking_crew_lines']['Insert']>
+      }
+
+      /** `0002_bookings.sql:373-395` — one transport row per booking (`booking_id` unique). */
+      booking_transport: {
+        Row: {
+          id: string
+          client_uuid: string
+          booking_id: string
+          vehicle: string | null
+          number_plate: string | null
+          driver_id: string | null
+          driver_contact: string | null
+          delivery_charge: number
+          fuel_charge: number
+          zero_charge_override_by: string | null
+          zero_charge_override_reason: string | null
+          special_instructions: string | null
+          created_at: string
+          created_by: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          booking_id: string
+          vehicle?: string | null
+          number_plate?: string | null
+          driver_id?: string | null
+          driver_contact?: string | null
+          delivery_charge?: number
+          fuel_charge?: number
+          zero_charge_override_by?: string | null
+          zero_charge_override_reason?: string | null
+          special_instructions?: string | null
+          created_at?: string
+          created_by: string
+        }
+        Update: Partial<Database['public']['Tables']['booking_transport']['Insert']>
       }
 
       invoices: {
@@ -1162,6 +1255,67 @@ export interface Database {
        * a line outlives any one session, so the session is recorded as
        * `first_session_id` / `completed_session_id` instead.
        */
+      /**
+       * `0002_bookings.sql:225-262` — one row per physical unit committed to a
+       * line, carrying the per-item quantity state. Declared here the day the
+       * floor verbs started WRITING it (BUG_AUDIT_LIFECYCLE X-03); until then
+       * nothing in `src/` updated the table, so it had no Update shape to need.
+       * Only the columns the floor writes are typed; `released_at` /
+       * `released_by` (0076) are read-only from here — the freeze trigger makes
+       * a released row immutable, so they are never in a patch.
+       */
+      booking_line_units: {
+        Row: {
+          id: string
+          client_uuid: string
+          booking_line_id: string
+          asset_id: string | null
+          qty: number
+          unit_state: ItemQuantityState
+          is_required: boolean
+          packed: boolean
+          packed_at: string | null
+          packed_by: string | null
+          packing_session_id: string | null
+          handover_session_id: string | null
+          return_session_id: string | null
+          returned_at: string | null
+          condition: string | null
+          missing_reason: string | null
+          damaged: boolean
+          reset_done_at: string | null
+          cleaning_done_at: string | null
+          released_at: string | null
+          released_by: string | null
+          created_at: string
+          created_by: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          booking_line_id: string
+          asset_id?: string | null
+          qty?: number
+          unit_state?: ItemQuantityState
+          is_required?: boolean
+          packed?: boolean
+          packed_at?: string | null
+          packed_by?: string | null
+          packing_session_id?: string | null
+          handover_session_id?: string | null
+          return_session_id?: string | null
+          returned_at?: string | null
+          condition?: string | null
+          missing_reason?: string | null
+          damaged?: boolean
+          reset_done_at?: string | null
+          cleaning_done_at?: string | null
+          created_at?: string
+          created_by: string
+        }
+        Update: Partial<Omit<Database['public']['Tables']['booking_line_units']['Insert'], 'client_uuid' | 'created_by'>>
+      }
+
       handover_lines: {
         Row: {
           id: string

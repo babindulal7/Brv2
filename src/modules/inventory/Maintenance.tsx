@@ -28,6 +28,15 @@ import { gateContext } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
 import { maintenanceGlance, maintenanceDetailGroups } from '../../data/maintenanceIntel'
 import { LogMaintenanceModal, type MaintenanceJobPayload } from './modals/LogMaintenanceModal'
+
+/**
+ * RS-08 — `LogMaintenanceModal` mints `MJ-2026-${random}` (the registered
+ * sequence is `MT-`), emits MAINTENANCE_STARTED directly and reports success
+ * with no write; `createMaintenanceJob` in src/actions/maintenance is still
+ * `implemented: false`. Unbuilt renders as Unavailable, never as a fake success.
+ */
+const MAINTENANCE_JOB_CREATE_UNAVAILABLE_REASON =
+  'Maintenance job creation is not built yet — the modal would report a job that was never written.'
 import { useDomainEvent } from '../../events/useDomainEvent'
 import { EVENT_TYPES } from '../../events/eventBus'
 
@@ -811,9 +820,11 @@ export function Maintenance() {
           <Button icon="download" onClick={() => exportCsv(filteredRecords, money)}>
             Export
           </Button>
-          <Button icon="plus" variant="primary" onClick={() => setIsLogMaintenanceOpen(true)}>
-            Log Maintenance
-          </Button>
+          <Unavailable reason={MAINTENANCE_JOB_CREATE_UNAVAILABLE_REASON}>
+            <Button icon="plus" variant="primary" disabled onClick={() => setIsLogMaintenanceOpen(true)}>
+              Log Maintenance
+            </Button>
+          </Unavailable>
         </span>
       </div>
 

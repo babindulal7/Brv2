@@ -93,11 +93,16 @@ type CleaningQueueUpdate = Database['public']['Tables']['cleaning_queue_entries'
  *   money-blind verb may not read. They belong in the triggers `0003` marks
  *   `TRIGGER REQUIRED` and has never had. `TODO(decision)` — until those exist,
  *   this writes what the caller states happened and nothing more.
- * - **It does not set `bookings.actual_return_at`** (`0002:33`). `bookings` is
- *   Booqable-mastered (`dataAccess.ts:216`), so the generic write path refuses
- *   it by design, and the bridge's `pushOrderStop` takes a sign-off boolean this
- *   module cannot derive. Reaching past that with a raw `safeUpdate` would dodge
- *   an ownership rule the codebase states twice. `TODO(decision)`.
+ * - ~~It does not set `bookings.actual_return_at`~~ — **it does, since 3 Sep
+ *   2026** (BUG_AUDIT_LIFECYCLE RT-01), once, at the session that moves the
+ *   booking to Returned. The earlier refusal read `dataAccess.ts`'s table-level
+ *   switch as "bookings is Booqable's"; the integration spec masters at FIELD
+ *   level ("every mapped field has exactly one master"), `booqable/map` maps no
+ *   actual-return instant (only `planned_stops_at`), and the column's own
+ *   comment names its writer: "Set by the Return workspace" (`0002:86`). So the
+ *   stamp is an OS-native write to an OS-native field on a shared table, done
+ *   with the action key like every other write here. `pushOrderStop` (the
+ *   Booqable status write-back) stays unruled — PLAN §4.16 — and is not called.
  * - **It does not write a `Partial Pickup` flag.** `0003:340` wants one when a
  *   handover leaves lines Remaining; `0015:52-59` records that flag storage does
  *   not exist in this schema — `booking_flags`' CHECK admits four values and
@@ -195,6 +200,16 @@ export interface FloorVerbInput {
   lines?: readonly FloorLineInput[]
   /** Reset only: `cleaning_queue_entries.unit_id` for each item that was reset. */
   unitIds?: readonly string[]
+  /**
+   * Handover only — gate 1's two facts, checked against the receiver's physical
+   * ID at the counter. They ride `operation_sessions.government_id_verified` /
+   * `booking_authorization_verified` (0003:66-67). Both columns are NOT NULL
+   * DEFAULT false, and until this field existed every session recorded both as
+   * false while the screen said they "ride the session as gate 1"
+   * (BUG_AUDIT_LIFECYCLE HO-02).
+   */
+  governmentIdVerified?: boolean
+  bookingAuthorizationVerified?: boolean
   /**
    * Reset only, and the fuller form of `unitIds`: the same items with the
    * record the floor actually made. When both are given this one wins; a caller
@@ -331,6 +346,21 @@ const MIN_REASON = 10
 function resetEntriesOf(input: FloorVerbInput): readonly ResetEntryInput[] {
   if (input.resetEntries !== undefined) return input.resetEntries
   return (input.unitIds ?? []).map((unitId) => ({ unitId }))
+}
+
+/**
+ * Gate 1's two facts as `operation_sessions` columns — only the ones the
+ * caller actually stated. An omitted field is left to the column default
+ * (false) on insert and untouched on a resumed session; `undefined` is never
+ * written as a value.
+ */
+function gateOneFacts(input: FloorVerbInput): { government_id_verified?: boolean; booking_authorization_verified?: boolean } {
+  return {
+    ...(input.governmentIdVerified === undefined ? {} : { government_id_verified: input.governmentIdVerified }),
+    ...(input.bookingAuthorizationVerified === undefined
+      ? {}
+      : { booking_authorization_verified: input.bookingAuthorizationVerified }),
+  }
 }
 
 type SessionJob = keyof typeof LINE_TABLE
@@ -660,9 +690,18 @@ export async function runFloorVerb(
       // CHECK :91 is an equivalence — non-null on Handover, null on everything else.
       delivery_method: operation === 'Handover' ? booking.delivery_type : null,
       ...(input.notes === undefined ? {} : { notes: input.notes }),
+      ...(operation === 'Handover' ? gateOneFacts(input) : {}),
       created_by: ctx.userId,
     })
-  } else if (input.notes !== undefined) {
+  } else {
+    // A resumed Handover session re-checks the receiver: the facts from THIS
+    // pass are the current ones, so they are written over the earlier pass.
+    const facts = operation === 'Handover' ? gateOneFacts(input) : {}
+    if (Object.keys(facts).length > 0) {
+      await safeUpdate('operation_sessions', sessionId, { ...facts, updated_at: occurredAt }, actionUuid)
+    }
+  }
+  if (resumed !== null && input.notes !== undefined) {
     // The resumed session already exists, so a note typed on THIS pass has no
     // insert to ride in on and would otherwise be dropped on the floor. Appended
     // rather than written over: both passes' words are the operator's own.
@@ -677,6 +716,9 @@ export async function runFloorVerb(
   )
   let movements = 0
   const queueCandidates: ResetQueueCandidate[] = []
+  /* Law 8 — a resumed session must not append a second movement for a unit
+     the earlier pass already moved. Read once, consult per line. */
+  const priorMovements = await readSessionMovements(sessionId, lines.map((l) => l.bookingLineId))
 
   for (const line of lines) {
     const required = requiredByLine.get(line.bookingLineId) ?? 0
@@ -703,8 +745,13 @@ export async function runFloorVerb(
     // Absence is never converted into a state (0003:630): a line marked missing,
     // or one nothing moved on, produces no movement row.
     if ((line.outcome ?? 'done') === 'done' && moved > 0) {
-      movements += await writeMovements(job, sessionId, line, moved, ctx, occurredAt)
+      movements += await writeMovements(job, sessionId, line, moved, ctx, occurredAt, priorMovements.get(line.bookingLineId))
     }
+
+    /* The per-unit state (0002:225-262) — the row Booking Detail's Packed /
+       Missing / Returned counters and Handover's "recorded by an earlier
+       session" read from. Nothing wrote it before this call; see writeUnitStates. */
+    await writeUnitStates(job, sessionId, line, required, moved, ctx, occurredAt, actionUuid)
   }
 
   /* 5b — the reset queue, which nothing in this codebase used to fill.
@@ -772,6 +819,15 @@ export async function runFloorVerb(
 
   /* 8 — the stage, through the transition trigger and nothing else. */
   const stage = complete ? await advanceStage(job, booking, ctx, actionUuid, occurredAt) : null
+
+  /* 9 — `bookings.actual_return_at` (0002:33,86): set once, by the session
+     that moved the booking to Returned, to the instant that session recorded.
+     Never on a partial session (the gear is still out), never overwritten
+     (`0002:86` compares it to `return_at` once, at the return session). See the
+     header for why this is the OS's field to write. */
+  if (job === 'Return' && stage !== null && stage.to === 'Returned') {
+    await safeUpdate('bookings', booking.id, { actual_return_at: occurredAt, updated_at: occurredAt }, actionUuid)
+  }
 
   return {
     success: true,
@@ -950,11 +1006,25 @@ async function writeMovements(
   moved: number,
   ctx: ActionContext,
   at: string,
+  prior: PriorMovements | undefined,
 ): Promise<number> {
   const resulting = job === 'Return' ? returnMovementState(line) : MOVEMENT_STATE[job]
   const scans = scannedUnits(line)
 
   if (scans.length === 0) {
+    /* One quantity movement per (session, line). A resumed session that states
+       a new count corrects the row it already wrote rather than adding a second
+       one — the counters sum this table (0003:291), so a second row would
+       double the packed quantity (BUG_AUDIT_LIFECYCLE PK-04). */
+    if (prior?.qtyRow) {
+      /* `session_line_movements` is append-only (its Update type is `never`),
+         so a resumed pass that states a DIFFERENT count cannot correct the row
+         it already wrote. The line row (`qty_packed_entered` / the line state)
+         carries the corrected count; the movement stays at what first moved.
+         Not appending a second row is the fix here — TODO(decision): whether a
+         within-session correction should append a delta movement instead. */
+      return 0
+    }
     await idempotentInsert('session_line_movements', {
       client_uuid: generateClientUuid(),
       session_id: sessionId,
@@ -967,7 +1037,11 @@ async function writeMovements(
     return 1
   }
 
+  let written = 0
   for (const scan of scans) {
+    // A unit the earlier pass of this session already moved is not moved again.
+    if (scan.unitId !== null && prior?.unitIds.has(scan.unitId)) continue
+    if (scan.unitId === null && scan.serial !== null && prior?.serials.has(scan.serial)) continue
     await idempotentInsert('session_line_movements', {
       client_uuid: generateClientUuid(),
       session_id: sessionId,
@@ -979,8 +1053,124 @@ async function writeMovements(
       moved_at: at,
       created_by: ctx.userId,
     })
+    written += 1
   }
-  return scans.length
+  return written
+}
+
+/** What an earlier pass of the SAME session already moved on a line. */
+interface PriorMovements {
+  unitIds: Set<string>
+  serials: Set<string>
+  qtyRow: { id: string; qty: number } | null
+}
+
+async function readSessionMovements(sessionId: string, lineIds: readonly string[]): Promise<Map<string, PriorMovements>> {
+  const out = new Map<string, PriorMovements>()
+  if (lineIds.length === 0) return out
+  const { data, error } = await supabase
+    .from('session_line_movements')
+    .select('id, booking_line_id, unit_id, serial, qty')
+    .eq('session_id', sessionId)
+    .in('booking_line_id', [...lineIds])
+  if (error) throw new Error(`Could not read the movements already recorded on session ${sessionId}: ${error.message}`)
+  for (const r of (data ?? []) as Array<{ id: string; booking_line_id: string; unit_id: string | null; serial: string | null; qty: number }>) {
+    let p = out.get(r.booking_line_id)
+    if (!p) {
+      p = { unitIds: new Set(), serials: new Set(), qtyRow: null }
+      out.set(r.booking_line_id, p)
+    }
+    if (r.unit_id !== null) p.unitIds.add(r.unit_id)
+    else if (r.serial !== null) p.serials.add(r.serial)
+    else p.qtyRow = { id: r.id, qty: r.qty }
+  }
+  return out
+}
+
+/**
+ * **The per-unit state — `booking_line_units` (0002:225-262).**
+ *
+ * The table's own comment: "Ready / Picked Up / Returned / Missing / Damaged
+ * lives here, per item." Before this function nothing in `src/` and no
+ * migration trigger wrote `unit_state`, `packed`, `packed_at` or the three
+ * `*_session_id` columns — only the 0047 seed. So Booking Detail's Packed /
+ * Missing / Returned counters never moved after real floor work, and
+ * HandoverWorkspace read "recorded by an earlier session" off a column that
+ * was always 'Ready' (BUG_AUDIT_LIFECYCLE X-03, HO-01, driven 2 Sep 2026).
+ *
+ * What is written is exactly what the column comments define, nothing ruled
+ * elsewhere:
+ *   Pack     done    → packed / packed_at / packed_by / packing_session_id
+ *            missing → unit_state 'Missing' + missing_reason (CHECK :258)
+ *   Handover done    → unit_state 'Picked Up' + handover_session_id
+ *   Return   done    → unit_state per `returnMovementState` + returned_at +
+ *                      return_session_id (+ condition, damaged when Damaged)
+ *            missing → unit_state 'Missing' + missing_reason
+ *
+ * Which rows: the scanned units (`asset_id` ∈ unitIds) when the line was
+ * scanned; every not-yet-terminal unit of the line when a quantity line was
+ * resolved in full. A short quantity line touches no unit — which physical
+ * units moved is not a fact this call has. Idempotent by construction: the
+ * same patch on the same rows lands the same state, so a resumed session or a
+ * replayed action changes nothing a first pass did not.
+ *
+ * Authorization: `booking_line_units_all` (0024:40) admits Owner, Admin,
+ * Manager, Coordinator and Warehouse — the floor set — so the write is not a
+ * Law 6 question; the table carries no money column.
+ */
+async function writeUnitStates(
+  job: SessionJob,
+  sessionId: string,
+  line: FloorLineInput,
+  required: number,
+  moved: number,
+  ctx: ActionContext,
+  at: string,
+  actionUuid: string,
+): Promise<void> {
+  const outcome = line.outcome ?? 'done'
+  const unitIds = scannedUnits(line).map((u) => u.unitId).filter((u): u is string => u !== null)
+  const scoped = unitIds.length > 0 ? unitIds : null
+  // A short quantity line names no unit — nothing per-unit can honestly be said.
+  if (scoped === null && outcome === 'done' && moved < required) return
+
+  let patch: Record<string, unknown>
+  if (outcome === 'missing') {
+    patch = { unit_state: 'Missing', missing_reason: line.reason ?? null }
+  } else if (job === 'Pack') {
+    patch = { packed: true, packed_at: at, packed_by: ctx.userId, packing_session_id: sessionId }
+  } else if (job === 'Handover') {
+    patch = { unit_state: 'Picked Up', handover_session_id: sessionId }
+  } else {
+    const state = returnMovementState(line)
+    patch = {
+      unit_state: state,
+      returned_at: at,
+      return_session_id: sessionId,
+      ...(line.condition === undefined ? {} : { condition: line.condition }),
+      ...(state === 'Damaged' ? { damaged: true } : {}),
+    }
+  }
+
+  /* Read the live unit rows of the line, then write each by id through
+     `safeUpdate` — the one update path every other floor write takes, so the
+     action key rides along (Law 8) and the offline queue sees it. A released
+     row (§4.39a) is history and is never touched. */
+  const { data, error } = await supabase
+    .from('booking_line_units')
+    .select('id, asset_id, unit_state')
+    .eq('booking_line_id', line.bookingLineId)
+    .is('released_at', null)
+  if (error) throw new Error(`Could not read the units of booking line ${line.bookingLineId}: ${error.message}`)
+  const units = (data ?? []) as Array<{ id: string; asset_id: string | null; unit_state: string }>
+  const targets = units.filter((u) => {
+    if (scoped !== null) return u.asset_id !== null && scoped.includes(u.asset_id)
+    if (outcome === 'missing') return u.unit_state !== 'Returned'
+    return true
+  })
+  for (const u of targets) {
+    await safeUpdate('booking_line_units', u.id, patch, actionUuid)
+  }
 }
 
 /* ── The reset queue: raised at Return, completed at Reset ──────────────── */

@@ -113,10 +113,18 @@ describe('DamageTab — the money half', () => {
     expect(approve.disabled).toBe(false)
   })
 
-  it('approving moves the unit to Maintenance and out of booking', async () => {
+  /* RS-05 (BUG_AUDIT_LIFECYCLE) — this test used to pin the sentence "moved to
+     Maintenance and is no longer available for booking". Nothing writes a
+     damage finding, a maintenance job or a unit status from this tab, so the
+     notice may not claim it; it now states that the approval lives on this
+     screen only. When an approveDamageFinding action exists, this assertion
+     flips back to the move. */
+  it('approving says the decision is recorded on this screen only — no write is claimed', async () => {
     await mount()
     await click(buttons(/Approve as/)[0])
-    expect(text()).toContain('moved to Maintenance and is no longer available for booking')
+    expect(text()).toContain('recorded on this screen only')
+    expect(text()).toContain('nothing has been written')
+    expect(text()).not.toContain('is no longer available for booking')
   })
 })
 

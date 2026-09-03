@@ -138,7 +138,23 @@ const MIN_REASON = 10
  * closest true fact is used: children of a bundle parent (`parent_line_id`)
  * group under the parent line's name, everything else under its own product.
  * Derived from real rows, never invented.
+ *
+ * Which lines are packable (PK-02) — `booking_line_type` is Equipment, Bundle,
+ * Accessory, Service, Sub-rental or Manual item. Nothing physical travels for
+ * a Service, a Sub-rental is another company's gear and a Manual item is a
+ * free-text charge: none can be ticked into a case, and a row for one either
+ * made Packed unreachable or wrote a fabricated pack row for a service. A
+ * Bundle parent whose children are on the booking is a heading, not gear —
+ * its children are the packable rows. Equipment, Accessory and a childless
+ * Bundle line become rows; `buildPackLines` dispatches only lines that did.
  */
+const NON_PACKABLE_LINE_TYPES: ReadonlySet<string> = new Set(['Service', 'Sub-rental', 'Manual item'])
+
+function packableLines(lines: readonly FloorLine[]): FloorLine[] {
+  const parentIds = new Set(lines.map((l) => l.parentLineId).filter((p): p is string => p !== null))
+  return lines.filter((l) => !NON_PACKABLE_LINE_TYPES.has(l.lineType) && !(l.lineType === 'Bundle' && parentIds.has(l.id)))
+}
+
 function buildRows(floor: FloorBooking): PackRow[] {
   const lineById = new Map(floor.lines.map((l) => [l.id, l]))
   const groupOf = (line: FloorLine): string => {
@@ -148,7 +164,7 @@ function buildRows(floor: FloorBooking): PackRow[] {
   }
 
   const rows: PackRow[] = []
-  for (const line of floor.lines) {
+  for (const line of packableLines(floor.lines)) {
     const name = line.productName ?? line.description ?? `${line.lineType} line`
     if (line.unitsPresence === 'present' && line.units.length > 0) {
       line.units.forEach((u, i) => {
@@ -221,6 +237,9 @@ function buildPackLines(
 
   for (const line of lines) {
     const lineRows = byLine.get(line.id) ?? []
+    // PK-02 — a line that produced no rows (Service, Sub-rental, Manual item,
+    // a Bundle heading) is never dispatched, whatever the marks hold.
+    if (lineRows.length === 0) continue
     const packed = lineRows.filter((r) => marks[r.key]?.state === 'Packed')
     const missing = lineRows.filter((r) => marks[r.key]?.state === 'Missing')
     if (packed.length === 0 && missing.length === 0) continue
@@ -341,6 +360,13 @@ export default function PackingWorkspace() {
   const [dispatchError, setDispatchError] = useState<string | null>(null)
   const [dispatching, setDispatching] = useState(false)
   /**
+   * PK-01 — the session landed but the stage did not move. `runFloorVerb`
+   * reports that as `stage: null` with `stageHeldBy` naming the lines short
+   * of a terminal state. It is neither a failure nor a success to leave on, so
+   * it stays on screen (Law 12) until the operator goes back to the booking.
+   */
+  const [stageHeld, setStageHeld] = useState<{ lines: number; movements: number; heldBy: readonly string[] } | null>(null)
+  /**
    * Law 8 — the idempotency key for THIS packing session, minted when the
    * booking loads (the point the user starts acting), not at send time. A
    * double-press replays the same key and resolves to the first write.
@@ -356,6 +382,7 @@ export default function PackingWorkspace() {
     setSessionNotes('')
     setDispatchError(null)
     setDispatching(false)
+    setStageHeld(null)
     setCompletionKey(newClientUuid())
   }, [floorId])
 
@@ -383,7 +410,6 @@ export default function PackingWorkspace() {
   /* ── the completion gate — a checklist, every condition named ────────────
    * The same conditions `runFloorVerb` and the 0003 close gates enforce,
    * evaluated here first so the refusal is readable before it is a rejection. */
-  const unresolvedRequired = rows.filter((r) => r.required && stateOf(r.key) === 'Pending')
   const shortReasons = missingRows.filter((r) => (marks[r.key]?.reason ?? '').trim().length < MIN_REASON)
   const anythingResolved = packedRows.length > 0 || missingRows.length > 0
   const needsPhoto = packedRows.length > 0 && photoCount === 0
@@ -395,12 +421,19 @@ export default function PackingWorkspace() {
       detail: anythingResolved ? null : 'Nothing has been ticked or scanned yet — a session claiming work on nothing is refused.',
     },
     {
-      label: 'Every required item packed or marked missing',
-      pass: unresolvedRequired.length === 0,
+      /*
+       * PK-03 — EVERY unit row, not only `is_required` ones. The engine sends
+       * `qty: <packed units>` against `required = booking_lines.qty`, so a
+       * non-required unit left Pending leaves the line 'Partial' and holds the
+       * stage; a gate that let it through promised a Packed the write could not
+       * deliver. `required` stays on the row as information only.
+       */
+      label: 'Every item packed or marked missing',
+      pass: pendingRows.length === 0,
       detail:
-        unresolvedRequired.length === 0
+        pendingRows.length === 0
           ? null
-          : `${unresolvedRequired.length} required item${unresolvedRequired.length > 1 ? 's' : ''} not yet packed`,
+          : `${pendingRows.length} item${pendingRows.length > 1 ? 's' : ''} not yet packed or marked missing — a unit left pending holds the booking at Booked`,
     },
     {
       label: `Missing items carry a reason (≥ ${MIN_REASON} characters)`,
@@ -417,7 +450,10 @@ export default function PackingWorkspace() {
     },
   ]
   const firstBlockedGate = gates.find((g) => !g.pass) ?? null
-  const canComplete = firstBlockedGate === null && !dispatching
+  // PK-01 — once a session is recorded but held, this screen writes nothing
+  // more: re-sending the same marks resumes the In Progress session and
+  // re-inserts their movements. The way on is the booking.
+  const canComplete = firstBlockedGate === null && !dispatching && stageHeld === null
 
   const visible = useMemo(
     () =>
@@ -499,9 +535,11 @@ export default function PackingWorkspace() {
     const notes = [sessionNotes.trim(), ...mixedNotes].filter((n) => n !== '').join('\n')
 
     /*
-     * ⚠ `navigate` is INSIDE `.then`. It used to run synchronously after a
-     * dispatch that always failed, closing the workspace as though the session
-     * had been recorded. Leaving on success only is the whole point.
+     * ⚠ `navigate` is INSIDE `.then`, and only when the STAGE MOVED. It used
+     * to run synchronously after a dispatch that always failed, closing the
+     * workspace as though the session had been recorded; then it ran on any
+     * resolved promise, landing the operator on a still-Booked booking with no
+     * word of why (PK-01). A held stage now stays here and says so.
      */
     import('../../actions/rentals/index')
       .then((m) =>
@@ -515,7 +553,14 @@ export default function PackingWorkspace() {
           { userId: user.id, role: user.role },
         ),
       )
-      .then(() => navigate(`/rentals/${id}`))
+      .then((result) => {
+        if (result.stage !== null) {
+          navigate(`/rentals/${id}`)
+          return
+        }
+        setStageHeld({ lines: result.lines, movements: result.movements, heldBy: result.stageHeldBy })
+        setDispatching(false)
+      })
       .catch((err) => {
         captureError(err, { where: 'PackingWorkspace.pack', bookingId: id })
         setDispatchError(err instanceof Error ? err.message : String(err))
@@ -581,7 +626,7 @@ export default function PackingWorkspace() {
         {floor !== null && stageBlock === null && floor.linesPresence === 'present' && rows.length === 0 && (
           <EmptyState
             title={`${floor.bookingNo} has no live lines`}
-            description="Every line on this booking is voided or none were added, so there is nothing to pack."
+            description="Every line on this booking is voided, none were added, or every line is a service, sub-rental or manual item — nothing physical to pack."
             actionLabel={`Open booking ${floor.bookingNo}`}
             onAction={() => navigate(`/rentals/${id}`)}
           />
@@ -1098,6 +1143,36 @@ export default function PackingWorkspace() {
                     the operator sees instead of being navigated away from a
                     session that was never recorded. */}
                 {dispatchError && <ErrorBanner title="Packing was not recorded" message={dispatchError} />}
+
+                {/* PK-01 — recorded but held. Inline and persistent (Law 12): the
+                    operator is not navigated to a Booked booking as if it were Packed. */}
+                {stageHeld && (
+                  <div role="status" style={{ ...cardStyle, padding: 12, border: '1px solid var(--st-progress-fg)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                      Session recorded — {floor.bookingNo} is still {floor.stage}
+                    </div>
+                    <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.45 }}>
+                      {stageHeld.lines} line{stageHeld.lines === 1 ? '' : 's'} and {stageHeld.movements} unit movement{stageHeld.movements === 1 ? '' : 's'} were written,
+                      but the booking did not advance to Packed — these lines are short of a terminal state (every unit packed, or missing with a reason):
+                    </p>
+                    <ul style={{ margin: 0, paddingLeft: 18, fontSize: 'var(--t-meta)', color: 'var(--text)', lineHeight: 1.45 }}>
+                      {stageHeld.heldBy.map((lineId) => {
+                        const l = floor.lines.find((x) => x.id === lineId)
+                        return <li key={lineId}>{l ? (l.productName ?? l.description ?? l.lineType) : lineId}</li>
+                      })}
+                    </ul>
+                    <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
+                      Nothing more is written from this screen. The packing session stays In Progress and is resumed when this workspace is reopened.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/rentals/${id}`)}
+                      style={{ alignSelf: 'flex-start', minHeight: 44, padding: '0 14px', borderRadius: 'var(--r-btn)', border: '1px solid var(--btn-secondary-border)', background: 'var(--btn-secondary-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+                    >
+                      Back to booking
+                    </button>
+                  </div>
+                )}
 
                 <Card title="3 · Packing Summary">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>

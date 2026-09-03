@@ -33,6 +33,29 @@ import {
   type CreditStopVerdict,
 } from '../../data/clients'
 
+/* ── last-rental sort key ──────────────────────────────────────────────── */
+
+const AD_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+
+/** Sort sentinel for a client with no rental yet — see the comparator below. */
+const NO_RENTAL = Number.NEGATIVE_INFINITY
+
+/**
+ * Parses the `"18 Jul 2026"` label `ClientRecord.lastRentalAd` carries into a
+ * UTC epoch for sorting — the same hand parser `ClientCombobox` uses for its
+ * recent-clients order, because `Date.parse` is engine-dependent for non-ISO
+ * strings. `null` on `'—'` or anything unexpected.
+ */
+function parseAdLabel(label: string | undefined): number | null {
+  if (!label) return null
+  const m = /^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})$/.exec(label.trim())
+  if (!m) return null
+  const [, d, mon, y] = m
+  const monthIndex = AD_MONTHS.indexOf((mon ?? '').slice(0, 3).toLowerCase())
+  if (monthIndex < 0 || !d || !y) return null
+  return Date.UTC(Number(y), monthIndex, Number(d))
+}
+
 /* ── filters ───────────────────────────────────────────────────────────── */
 
 /**
@@ -543,8 +566,11 @@ export function ClientsDirectory({
         case 'deposit':
           return c.depositHeldPaisa
         case 'lastRental':
-          // BS renders as YYYY/MM/DD, so lexical order is chronological.
-          return c.lastRentalBs === '—' ? '' : c.lastRentalBs
+          // `lastRentalBs` is a display label — a BS date where the engine can
+          // name one, the AD date otherwise (queries/clients.ts) — so its string
+          // order is not chronological. The record carries no ISO instant, so
+          // the AD label is parsed instead; a client with no rental sorts last.
+          return parseAdLabel(c.lastRentalAd) ?? NO_RENTAL
         default:
           return c.name
       }
@@ -553,6 +579,8 @@ export function ClientsDirectory({
     return [...rows].sort((a, b) => {
       const va = value(a)
       const vb = value(b)
+      // "No rental yet" stays at the bottom whichever way the column is sorted.
+      if (va === NO_RENTAL || vb === NO_RENTAL) return va === vb ? 0 : va === NO_RENTAL ? 1 : -1
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir
       return String(va).localeCompare(String(vb)) * dir
     })
@@ -1684,8 +1712,11 @@ export function ClientsDirectory({
                               <span style={{ color: 'var(--muted)' }}>No rental yet</span>
                             ) : (
                               <>
+                                {/* No " BS" appended here: `queries/clients.ts` already suffixes a
+                                    BS label, and leaves the suffix off when it fell back to the AD
+                                    date — appending it blindly stamped "BS" on an English date. */}
                                 <span className="figure" style={{ display: 'block', fontWeight: 600, color: 'var(--text)' }}>
-                                  {client.lastRentalBs} BS
+                                  {client.lastRentalBs}
                                 </span>
                                 <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                                   {client.lastRentalAd}

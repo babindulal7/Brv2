@@ -108,7 +108,9 @@ export default function Clients() {
       'PAN',
       'Current Rentals',
       ...(money ? ['Outstanding (Rs)', 'Deposit Held (Rs)'] : []),
-      'Last Rental (BS)',
+      // Not "(BS)": the value is the BS date where the engine can name one and
+      // the AD date otherwise, so the header cannot promise either calendar.
+      'Last Rental',
       'Status',
     ]
     const lines = clients.map((c) =>

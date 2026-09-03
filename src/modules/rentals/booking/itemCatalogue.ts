@@ -313,6 +313,90 @@ export const EQUIPMENT_RESULTS: readonly EquipmentResult[] = PARENTS.flatMap((p)
   )
 })
 
+/* ── The LIVE equipment source ─────────────────────────────────────────────
+ *
+ * `EQUIPMENT_RESULTS` above is the seed catalogue: its ids are product NAMES
+ * and unit SERIALS, so a line built from it can never be saved —
+ * `createRental.validate` refuses a non-uuid `productId` by name. This builds
+ * the same shape from `queries/inventory.ts` rows, whose `id` IS `products.id`.
+ *
+ * ## What is deliberately different, and why
+ *
+ * **One row per PRODUCT, not per unit.** The seed source emits a row per
+ * serialised unit, because it had serials to hand. A booking line references a
+ * product and a quantity; the physical unit is chosen at Pack (§4.30a) or at
+ * creation through `units[]` (D5). Emitting a row per unit here would invite
+ * the operator to pick a serial this screen has no way to reserve.
+ *
+ * **`inBundles` is empty.** The seed path fills it from `bundlesUsing(name)`, a
+ * name match against seed bundles. Doing that for a live product would assert a
+ * relationship from a string collision. Until bundles are live too, saying
+ * nothing is the honest answer — it costs a search facet, not a fact.
+ *
+ * **Availability is present-tense and says so.** It counts `unitsByState`, the
+ * same shape the seed path counts `breakdown` with. It does NOT consult the
+ * booking window: real window availability is `queries/availability.ts`'s GiST
+ * overlap check, which is a per-item query and not something to fire once per
+ * catalogue row while someone types. The detail string states the basis, so a
+ * verdict is never mistaken for one the window was applied to.
+ */
+export interface LiveEquipmentRow {
+  id: string
+  name: string
+  brand?: string | null
+  assetCode?: string | null
+  category?: string | null
+  dailyRate?: number | null
+  unitsByState?: Partial<Record<string, number>> | null
+  unitCountExcludingRetired?: number | null
+  totalQuantity?: number | null
+}
+
+export function equipmentResultsFrom(rows: readonly LiveEquipmentRow[]): readonly EquipmentResult[] {
+  return rows.map((r): EquipmentResult => {
+    const category = r.category ?? 'Uncategorised'
+    const kind: 'equipment' | 'accessory' = ACCESSORY_CATEGORIES.has(category) ? 'accessory' : 'equipment'
+
+    /* `unitsByState` is absent for a non-serialised product; `totalQuantity`
+       carries its bulk count instead. Neither is guessed into the other. */
+    const byState = r.unitsByState ?? {}
+    const free = byState['In Stock'] ?? 0
+    const tracked = r.unitCountExcludingRetired ?? 0
+    const total = tracked > 0 ? tracked : (r.totalQuantity ?? 0)
+
+    const availability =
+      total === 0
+        ? verdict('unavailable', 'No units recorded')
+        : tracked === 0
+          ? /* Bulk stock with no per-unit rows — the count is all we know, and
+               claiming a free/committed split we cannot see would be invention. */
+            verdict('available', `${total} in stock · not unit-tracked`)
+          : free === 0
+            ? verdict('unavailable', `None of ${total} free right now`)
+            : free === total
+              ? verdict('available', `${free} of ${total} free right now`)
+              : verdict('partial', `${free} of ${total} free right now`)
+
+    return {
+      kind,
+      /* THE uuid — the entire reason this source exists. */
+      id: r.id,
+      name: r.name,
+      serial: '—',
+      category,
+      location: r.assetCode ?? '—',
+      status: (free > 0 || tracked === 0 ? 'In Stock' : 'On Rent') as InvStatus,
+      committedTo: '—',
+      ratePaisa: (r.dailyRate ?? 0) as Paisa,
+      ...(r.assetCode ? { sku: r.assetCode } : {}),
+      ...(r.brand ? { brand: r.brand } : {}),
+      inBundles: [],
+      availability,
+      haystack: [r.name, category, r.brand ?? '', r.assetCode ?? ''].filter(Boolean).map(normalise),
+    }
+  })
+}
+
 /* ── Bundle rows ───────────────────────────────────────────────────────── */
 
 /**
@@ -530,6 +614,15 @@ export interface QueryOptions {
   minQueryChars: number
   /** Ids already on the booking — kept in the list, flagged, never re-added. */
   existingLineIds: ReadonlySet<string>
+  /**
+   * The equipment pool to search.
+   *
+   * Omitted, it falls back to the SEED catalogue, whose ids are product names —
+   * fine for a screen that only browses, fatal for one that writes. A caller
+   * that intends to create a booking must pass `equipmentResultsFrom(liveRows)`
+   * so every line carries a real `products.id`.
+   */
+  equipment?: readonly EquipmentResult[]
 }
 
 export interface QueryGroup {
@@ -565,7 +658,7 @@ export function runQuery(w: BookingWindow, o: QueryOptions): QueryOutcome {
 
   const pool: CatalogueResult[] = [
     ...(o.kinds.has('bundle') ? bundleResults(w) : []),
-    ...EQUIPMENT_RESULTS.filter((e) => o.kinds.has(e.kind)),
+    ...(o.equipment ?? EQUIPMENT_RESULTS).filter((e) => o.kinds.has(e.kind)),
   ]
 
   const category = o.category

@@ -335,9 +335,14 @@ function kycStatusFrom(total: number, verified: number): ClientRecord['kycStatus
  * `lib/bs.ts`'s vouched range. It used to return `'—'`, which read as "no date"
  * for every client row once the clock left Shrawan 2083 — the date was known
  * throughout. `formatBsOrAd` owns that fallback for the whole app.
+ *
+ * The suffix is asked for HERE, explicitly: a BS date carries " BS" and the AD
+ * fallback carries nothing, so a render site must not append its own — that
+ * produced "… BS BS" on a BS day and "25 Aug 2026 BS" on an AD fallback, i.e.
+ * an English date labelled as a Nepali one (CL-01).
  */
 function bsLabel(iso: string): string {
-  return formatBsOrAd(new Date(iso))
+  return formatBsOrAd(new Date(iso), { suffix: true })
 }
 
 export interface ListClientsOptions {
@@ -395,6 +400,98 @@ export async function listClientRecords(opts: ListClientsOptions = {}): Promise<
   const { data, error } = await q
   if (error) throw new Error(`listClientRecords failed: ${error.message}`)
   return (data ?? []).map((r) => toClientRecord(r as unknown as DirectoryRow))
+}
+
+/** What {@link sumDepositsHeld} returns: the liability, and how many rows it was summed over. */
+export interface DepositsHeld {
+  /** Every client's `deposit_held_amount`, added up. A liability (Law 5), never revenue. */
+  total: Paisa
+  /** Directory rows read — checked against the server's count before `total` is returned. */
+  clients: number
+}
+
+/** PostgREST's `max_rows` (supabase/config.toml:18). A `.range()` wider than this is silently cut to it. */
+const DEPOSITS_PAGE_SIZE = 1000
+
+/**
+ * The deposits the business is holding, summed over **every** client — active
+ * and deactivated alike (FI-01).
+ *
+ * Law 5: a deposit is a liability, and a liability does not stop existing
+ * because the account that lodged it was closed. `listClients` is the wrong
+ * reader for this figure twice over: it filters `deactivated_at is null`, and
+ * it stops at the 100 newest rows. Either one understates the closing that
+ * `daily_closings.deposits_held` then freezes.
+ *
+ * ## What the column means for a deactivated client
+ *
+ * `client_directory_v.deposit_held_amount` is
+ * `sum(greatest(received - refunded - applied, 0))` over the client's
+ * `security_deposits` (0052:72-76, restated column-for-column in 0053 and
+ * 0054). Nothing in that expression, and nothing in 0052–0054's comments,
+ * conditions it on `clients.status` or `deactivated_at` — so a closed account
+ * whose deposit was never refunded still carries its positive figure, and the
+ * view's row gate (`where auth_is_staff()`) does not drop the row. Whether a
+ * deactivation ought to have forced a refund first is not ruled anywhere in
+ * the schema; until it is, the figure is INCLUDED, because leaving a liability
+ * out of a signed closing is the worse error.
+ *
+ * ## How it is read
+ *
+ * Paged with `.range()` at `max_rows` on the unique `id` (see PAGINATION in
+ * `listQuery.ts` — offset paging over a non-unique key can return a row twice
+ * and skip another), until a short page arrives. The first page asks for
+ * `count: 'exact'`, and the rows actually read are checked against it: a
+ * mismatch throws rather than returning a short liability.
+ *
+ * ⚠ Money-blind session (Law 6): the view NULLs the column instead of
+ * returning 0. That is "this session may not see money", not "nothing is
+ * held", so a null here throws rather than being summed as a false zero.
+ * The screens that call this are already gated on `canViewMoney`, so a caller
+ * sees this error only when a gate is missing — which is exactly when it should.
+ */
+export async function sumDepositsHeld(): Promise<DepositsHeld> {
+  let total = 0
+  let read = 0
+  let withheld = 0
+  let expected: number | null = null
+
+  for (let index = 0; ; index += 1) {
+    const from = index * DEPOSITS_PAGE_SIZE
+    const { data, error, count } = await supabase
+      .from('client_directory_v')
+      .select('id, deposit_held_amount', { count: 'exact' })
+      .order('id', { ascending: true })
+      .range(from, from + DEPOSITS_PAGE_SIZE - 1)
+
+    if (error) throw new Error(`sumDepositsHeld failed: ${error.message}`)
+
+    const rows = (data ?? []) as unknown as Array<Pick<DirectoryRow, 'id' | 'deposit_held_amount'>>
+    if (typeof count === 'number') expected = count
+
+    for (const r of rows) {
+      read += 1
+      const held = toPaisa(r.deposit_held_amount)
+      if (held === null) withheld += 1
+      else total += held
+    }
+
+    if (rows.length < DEPOSITS_PAGE_SIZE) break
+    if (expected !== null && read >= expected) break
+  }
+
+  if (withheld > 0) {
+    throw new Error(
+      `Deposits held cannot be read: ${withheld} of ${read} directory rows returned no deposit figure — this session may not view money (Law 6).`,
+    )
+  }
+  if (expected !== null && read !== expected) {
+    throw new Error(
+      `Deposits held cannot be computed: ${expected} clients in the directory but ${read} were read — a total over a partial read would understate a liability.`,
+    )
+  }
+
+  return { total: total as Paisa, clients: read }
 }
 
 export async function getClient(id: string): Promise<ClientListItem | null> {

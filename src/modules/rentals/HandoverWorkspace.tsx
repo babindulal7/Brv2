@@ -8,6 +8,7 @@ import { PageBody } from '../../components/ui/PageBody'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+import { canViewMoney } from '../../lib/rbac'
 import { captureError } from '../../lib/monitoring'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
@@ -410,6 +411,14 @@ export default function HandoverWorkspace() {
   const [dispatchError, setDispatchError] = useState<string | null>(null)
   const [dispatching, setDispatching] = useState(false)
   /**
+   * HO-05 — the session landed but the stage did not move. `runFloorVerb`
+   * reports that as `stage: null` with `stageHeldBy` naming the lines short
+   * of a terminal state (a staggered collection by design, or a line left
+   * 'Remaining' by a Missing mark beside picked-up units). Neither a failure
+   * nor a success to leave on, so it stays on screen (Law 12).
+   */
+  const [stageHeld, setStageHeld] = useState<{ lines: number; movements: number; heldBy: readonly string[] } | null>(null)
+  /**
    * Law 8 — the idempotency key for THIS handover session, minted when the
    * booking loads (the point the user starts acting), not at send time. A
    * double-press replays the same key and resolves to the first write.
@@ -431,6 +440,7 @@ export default function HandoverWorkspace() {
     setOverrideReason('')
     setDispatchError(null)
     setDispatching(false)
+    setStageHeld(null)
     setCompletionKey(newClientUuid())
   }, [floorId])
 
@@ -501,7 +511,9 @@ export default function HandoverWorkspace() {
           : `${shortReasons.length} missing item${shortReasons.length > 1 ? 's' : ''} need a reason of at least ${MIN_REASON} characters`,
     },
     // §13.1 — "the payment and deposit gates render as Payment cleared / Deposit cleared… no amounts."
-    // §13 — a Manager or Billing user clears the gate directly; `resolve` stands in for that role's action (no role switch exists in this build).
+    // §13 — a Manager or Accounts user clears the gate directly; `resolve` is that action. HO-04: `useAuth`
+    // supplies the real role, so the render decides on `moneyGateClearer` (canViewMoney, Law 6) whether the
+    // control is live or an `Unavailable` — a Warehouse actor never self-certifies a money gate.
     { n: 3, label: 'Payment Verified', passing: paymentPassing, blocking: paymentPassing ? null : 'Payment required', overridable: true, ...(paymentVerified ? {} : { resolve: () => setPaymentVerified(true) }) },
     { n: 4, label: 'Deposit Received', passing: depositPassing, blocking: depositPassing ? null : 'Deposit required', overridable: true, ...(depositReceived ? {} : { resolve: () => setDepositReceived(true) }) },
     { n: 5, label: 'Signatures Complete', passing: signaturesPassing, blocking: signaturesPassing ? null : 'Receiver and warehouse signatures not yet captured' },
@@ -513,18 +525,34 @@ export default function HandoverWorkspace() {
     },
   ]
   const firstBlockedGate = gates.find((g) => !g.passing) ?? null
-  const canComplete = firstBlockedGate === null && !dispatching
+  // HO-05 — once a session is recorded but held, this screen writes nothing
+  // more: re-sending the same marks would record them twice. The way on is
+  // the booking, and a later session for what remains.
+  const canComplete = firstBlockedGate === null && !dispatching && stageHeld === null
   const overridableFailing = !receiverPassing || !paymentPassing || !depositPassing
+  /** HO-04 — who may press "Mark Cleared" on gates 3 / 4: money-sighted roles only (Law 6). */
+  const moneyGateClearer = user !== null && canViewMoney(user.role)
+  const MONEY_GATE_UNAVAILABLE =
+    'Payment and deposit are cleared by Accounts or a Manager — Warehouse cannot clear a money gate (Law 6)'
 
   /**
    * §0 #2, §12 — one label, computed from whether anything remains after this
    * session, never a second button. The stage move itself is `runFloorVerb`'s
    * call, made from the database's line states, not this label.
    */
+  /*
+   * HO-05 — On Rent is promised only when every row is Picked Up. A row marked
+   * Missing on a line that also has picked-up units leaves that line
+   * 'Remaining' (qty < required) and the engine holds the stage; the result
+   * says which, and the notice below the rail shows it.
+   */
   const primaryLabel = allResolved ? 'Complete Handover' : 'Complete Session'
-  const caption = allResolved
-    ? 'Records this session and sets the booking to On Rent'
-    : `Records ${pickedRows.length + missingRows.length} resolved item${pickedRows.length + missingRows.length === 1 ? '' : 's'} — the rest stay for a later session`
+  const caption =
+    allResolved && missingUnits === 0
+      ? 'Records this session and sets the booking to On Rent'
+      : allResolved
+        ? `Records this session with ${missingUnits} unit${missingUnits === 1 ? '' : 's'} marked Missing — the booking may stay Packed if a line is left short of its quantity; the result will say`
+        : `Records ${pickedRows.length + missingRows.length} resolved item${pickedRows.length + missingRows.length === 1 ? '' : 's'} — the rest stay for a later session`
   const gateSummary = canComplete ? null : (firstBlockedGate?.blocking ?? null)
 
   /*
@@ -610,6 +638,12 @@ export default function HandoverWorkspace() {
    * receiver, the signed-in operator for warehouse staff. The timestamp is the
    * capture instant, not the literal `'16 Jul 2026, 02:20 PM'` the seed build
    * stamped on every capture (audit gap #7).
+   *
+   * HO-03 — this is a LOCAL mark for gate 5 and nothing more. The `signatures`
+   * table has zero writers in this build; nothing captured here travels with
+   * the dispatch, and the row says so rather than asserting "Signed".
+   * TODO(decision): what a signature IS on this screen (a drawn image, a typed
+   * attestation, the operator's login?) before a `signatures` writer can exist.
    */
   const captureSignature = (role: 'receiver' | 'warehouse') => {
     const name = role === 'receiver' ? floor?.clientName : user?.name
@@ -646,12 +680,24 @@ export default function HandoverWorkspace() {
             lines: payload,
             clientUuid: completionKey,
             occurredAt: new Date().toISOString(),
+            // HO-02 — gate 1's two facts ride the session
+            // (operation_sessions.government_id_verified / booking_authorization_verified).
+            governmentIdVerified: govIdVerified,
+            bookingAuthorizationVerified: bookingAuthVerified,
             ...(notes === '' ? {} : { notes }),
           },
           { userId: user.id, role: user.role },
         ),
       )
-      .then(() => navigate(`/rentals/${id}`))
+      .then((result) => {
+        // HO-05 — leave only when the stage moved; a held stage stays here and says so.
+        if (result.stage !== null) {
+          navigate(`/rentals/${id}`)
+          return
+        }
+        setStageHeld({ lines: result.lines, movements: result.movements, heldBy: result.stageHeldBy })
+        setDispatching(false)
+      })
       .catch((err: unknown) => {
         captureError(err, { where: 'HandoverWorkspace.close', bookingId: id })
         setDispatchError(err instanceof Error ? err.message : String(err))
@@ -1063,11 +1109,18 @@ export default function HandoverWorkspace() {
                           <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: g.passing ? 'var(--st-in-fg)' : 'var(--text)' }}>{g.label}</div>
                           {!g.passing && g.blocking && <div style={{ fontSize: 'var(--t-meta)', color: 'var(--st-progress-fg)', marginTop: 2 }}>{g.blocking}</div>}
                         </div>
-                        {!g.passing && g.resolve && (
+                        {!g.passing && g.resolve && (moneyGateClearer ? (
                           <button type="button" onClick={g.resolve} style={{ minHeight: 44, border: 'none', background: 'transparent', color: 'var(--link)', fontWeight: 600, fontSize: 'var(--t-meta)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                             Mark Cleared →
                           </button>
-                        )}
+                        ) : (
+                          /* HO-04 — same text, disabled, with the reason (Law 6). */
+                          <Unavailable reason={MONEY_GATE_UNAVAILABLE}>
+                            <button type="button" disabled style={{ minHeight: 44, border: 'none', background: 'transparent', color: 'var(--muted)', fontWeight: 600, fontSize: 'var(--t-meta)', cursor: 'not-allowed', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                              Mark Cleared →
+                            </button>
+                          </Unavailable>
+                        ))}
                         {/* §11.4 calls these three overridable; this build cannot record an
                             override, so the marker says so rather than promising a way past. */}
                         {!g.passing && g.overridable && (
@@ -1083,9 +1136,11 @@ export default function HandoverWorkspace() {
                     <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Booking Condition</div>
                     <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                       <Icon name="info" size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-                      {allResolved
-                        ? 'All items handed over or accounted for — completing this session sets the booking to On Rent.'
-                        : `${outUnits} of ${totalUnits} unit${totalUnits === 1 ? '' : 's'} out — partial. The booking stays Packed with Partial Pickup; untouched items remain for a later session.`}
+                      {allResolved && missingUnits === 0
+                        ? 'All items handed over — completing this session sets the booking to On Rent.'
+                        : allResolved
+                          ? `All items handed over or marked Missing (${missingUnits} missing). A line left short of its quantity holds the booking at Packed — the result will say whether it moved to On Rent.`
+                          : `${outUnits} of ${totalUnits} unit${totalUnits === 1 ? '' : 's'} out — partial. The booking stays Packed with Partial Pickup; untouched items remain for a later session.`}
                     </div>
                   </div>
 
@@ -1153,7 +1208,9 @@ export default function HandoverWorkspace() {
 
                   {/* §9.2 Signatures — captured at session close, never before.
                       Names come off real records: the booking's client, the
-                      signed-in operator. Timestamps are the capture instant. */}
+                      signed-in operator. Timestamps are the capture instant.
+                      HO-03 — local to gate 5 only; nothing here is stored (the
+                      `signatures` table has no writer). See captureSignature. */}
                   <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
                     <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Signatures</div>
                     <SigRow
@@ -1264,6 +1321,36 @@ export default function HandoverWorkspace() {
                     the operator sees instead of being navigated away from a
                     session that was never recorded. */}
                 {dispatchError && <ErrorBanner title="This handover was not recorded" message={dispatchError} />}
+
+                {/* HO-05 — recorded but held. Inline and persistent (Law 12): the
+                    operator is not navigated away as if the booking were On Rent. */}
+                {stageHeld && (
+                  <div role="status" style={{ ...cardStyle, padding: 12, border: '1px solid var(--st-progress-fg)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                      Session recorded — {floor.bookingNo} stays {floor.stage}
+                    </div>
+                    <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.45 }}>
+                      {stageHeld.lines} line{stageHeld.lines === 1 ? '' : 's'} and {stageHeld.movements} unit movement{stageHeld.movements === 1 ? '' : 's'} were written,
+                      but the booking did not move to On Rent — these lines are short of a terminal state (every unit picked up, or missing with a reason):
+                    </p>
+                    <ul style={{ margin: 0, paddingLeft: 18, fontSize: 'var(--t-meta)', color: 'var(--text)', lineHeight: 1.45 }}>
+                      {stageHeld.heldBy.map((lineId) => {
+                        const l = floor.lines.find((x) => x.id === lineId)
+                        return <li key={lineId}>{l ? (l.productName ?? l.description ?? l.lineType) : lineId}</li>
+                      })}
+                    </ul>
+                    <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
+                      Nothing more is written from this screen. What remains stays for a later handover session.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/rentals/${id}`)}
+                      style={{ alignSelf: 'flex-start', minHeight: 44, padding: '0 14px', borderRadius: 'var(--r-btn)', border: '1px solid var(--btn-secondary-border)', background: 'var(--btn-secondary-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+                    >
+                      Back to booking
+                    </button>
+                  </div>
+                )}
 
                 {scanLog.length > 0 && (
                   <div style={{ ...cardStyle, padding: 11 }}>
@@ -1381,8 +1468,9 @@ function SigRow({ label, sig, onCapture, required, disabled, unavailable }: { la
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{label}</div>
         {sig ? (
+          // HO-03 — a gate mark, not a stored signature; the line says exactly that.
           <div style={{ fontSize: 'var(--t-meta)', color: 'var(--success-text)' }}>
-            Signed · {sig.name} · {sig.at}
+            Signed for this session&apos;s gate only · {sig.name} · {sig.at} — not stored
           </div>
         ) : (
           // §9.2 — an uncapturable row renders as "Optional"/absent, never as "Pending".

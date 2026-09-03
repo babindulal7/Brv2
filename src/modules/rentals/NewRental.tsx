@@ -12,18 +12,21 @@ import { useNetwork } from '../../lib/network'
 import { STATUS } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
-import { toBs, formatBs, formatAd } from '../../lib/bs'
+import { toBs, formatBs, formatAd, getBusinessToday } from '../../lib/bs'
 import { validateDiscount } from '../../lib/discount'
 import { getSetting } from '../../lib/settingsStore'
-import { price, formatMoney, rupees, roundHalfUp } from '../../lib/money'
+import { price, formatMoney, rupees, roundHalfUp, toRupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { CLIENTS_DATA } from '../../data/clients'
 import { listClientRecords } from '../../lib/queries/clients'
-import { createRental, deliveryTypeFromLabel } from '../../actions/rentals/createRental'
+import { createRental, deliveryTypeFromLabel, CreateRentalPartialError } from '../../actions/rentals/createRental'
+import type { CrewRoleDb } from '../../types/database'
 import { supabase, newClientUuid } from '../../lib/supabase'
 import { listInventory } from '../../lib/queries/inventory'
+import { equipmentResultsFrom } from './booking/itemCatalogue'
+import type { EquipmentResult } from './booking/itemCatalogue'
 import type { ClientRecord } from '../../data/clients'
-import { PARENTS, INV_STYLE } from '../../data/inventory'
+import { INV_STYLE } from '../../data/inventory'
 import type { InvStatus } from '../../data/inventory'
 import { CREW_ROSTER } from '../../data/crew'
 import type { CrewMember } from '../../data/crew'
@@ -106,55 +109,14 @@ function readVatRatePercent(): number {
  */
 const DISCOUNT_CHIPS = [0, 5, 10, 15, 20, 25] as const
 
-/** A bookable equipment row, flattened from `PARENTS`' parent/child tree — one row per serialized unit, or per non-serialized SKU. */
-interface CatalogueItem {
-  id: string
-  name: string
-  serial: string
-  category: string
-  ratePaisa: Paisa
-  location: string
-  status: InvStatus
-  /** Real `booking` field off the source unit — '—' when free. Used for an honest "already committed to X" note instead of a fabricated conflict. */
-  committedTo: string
-}
-
-/**
- * The DEMO catalogue, flattened from `PARENTS` at module load.
- *
- * ⚠ Its ids are product NAMES and unit SERIALS, not `products.id` uuids, so a
- * line built from it can never be booked — `createRental.validate` refuses a
- * non-uuid `productId` by name. It survives only as the shape the picker knows
- * and as what renders before the live read lands; `liveCatalogue` below is what
- * a real booking is built from. PLAN.md Phase 2: screens read seed arrays.
+/*
+ * `CatalogueItem` and `EQUIPMENT_CATALOGUE` lived here — the demo catalogue,
+ * flattened from `PARENTS` at module load, with product NAMES and unit SERIALS
+ * for ids. Both are gone: `AddItemPanel` now searches a pool of real products
+ * passed in as `equipment`, and it keeps its own seed fallback in
+ * `booking/itemCatalogue.ts` for the moment before the read lands. Keeping a
+ * second copy here would be a second definition of what this screen can book.
  */
-const EQUIPMENT_CATALOGUE: CatalogueItem[] = PARENTS.flatMap((p) => {
-  const ratePaisa = p.dailyRatePaisa ?? (rupees(0) as Paisa)
-  if (!p.children || p.children.length === 0) {
-    return [
-      {
-        id: p.name,
-        name: p.name,
-        serial: '—',
-        category: p.category,
-        ratePaisa,
-        location: p.location,
-        status: p.breakdown[0]?.status ?? 'In Stock',
-        committedTo: '—',
-      },
-    ]
-  }
-  return p.children.map((c) => ({
-    id: c.serial,
-    name: p.name,
-    serial: c.serial,
-    category: p.category,
-    ratePaisa,
-    location: c.location,
-    status: c.status,
-    committedTo: c.booking,
-  }))
-})
 
 interface Line {
   id: string
@@ -1148,8 +1110,16 @@ export default function NewRental() {
    */
   const [clientPool, setClientPool] = useState<ClientRecord[]>(() => [...CLIENTS_DATA])
   const [clientsAreLive, setClientsAreLive] = useState(false)
-  const [catalogue, setCatalogue] = useState<CatalogueItem[]>(() => EQUIPMENT_CATALOGUE)
-  const [catalogueIsLive, setCatalogueIsLive] = useState(false)
+  /**
+   * The live products, in the shape `AddItemPanel` searches — ids are
+   * `products.id` uuids, which is the whole point. `null` until the read lands,
+   * and the panel falls back to the seed catalogue in the meantime.
+   *
+   * There was briefly a second `catalogue` state here holding the same rows in
+   * `CatalogueItem` shape. It was redundant the moment the panel took a real
+   * pool, and two states describing one read is how they drift apart.
+   */
+  const [liveEquipment, setLiveEquipment] = useState<readonly EquipmentResult[] | null>(null)
   /** Why the live read failed, if it did. Law 12 — stated, never swallowed. */
   const [poolError, setPoolError] = useState<string | null>(null)
 
@@ -1179,24 +1149,7 @@ export default function NewRental() {
            missing feature. The rate defaults to zero for display; pricing is
            the engine's, not this screen's. */
         const rows = inventory.rows.filter((r) => r.isActive)
-        if (rows.length > 0) {
-          setCatalogue(
-            rows.map((r) => ({
-              /* THE uuid. This is the whole point of the read. */
-              id: r.id,
-              name: r.name,
-              /* Product-level, so no single serial. A serialised unit is chosen
-                 at Pack (§4.30a) or at creation via `units[]` (D5) — not here. */
-              serial: '—',
-              category: r.category ?? 'Uncategorised',
-              ratePaisa: (r.dailyRate ?? 0) as Paisa,
-              location: r.assetCode,
-              status: 'In Stock' as InvStatus,
-              committedTo: '—',
-            })),
-          )
-          setCatalogueIsLive(true)
-        }
+        if (rows.length > 0) setLiveEquipment(equipmentResultsFrom(rows))
       } catch (e: unknown) {
         if (!cancelled) setPoolError(e instanceof Error ? e.message : String(e))
       }
@@ -1224,11 +1177,18 @@ export default function NewRental() {
   /** redesign v1 §5 — which document the draft-email modal is composing for; null = closed. */
   const [emailDraftDoc, setEmailDraftDoc] = useState<string | null>(null)
 
-  const [project, setProject] = useState("'Echoes of Mustang'")
-  const [kind, setKind] = useState('Documentary Film')
+  /* A new booking starts EMPTY (see the note further down). These used to be
+     demo literals — a named project, a kind, and a July 2026 window — which
+     made every fresh draft look priced and dated before anyone touched it. */
+  const [project, setProject] = useState('')
+  const [kind, setKind] = useState('')
   const [govId, setGovId] = useState(client?.pan ?? '')
-  const [pickup, setPickup] = useState('2026-07-16')
-  const [ret, setRet] = useState('2026-07-19')
+  /* Dates default to the business day (Kathmandu's, `getBusinessToday`) and the
+     day after — a one-day window, never a hardcoded date. `getBusinessToday`
+     returns midnight UTC of the Kathmandu civil date, so `.toISOString()`'s
+     date part IS the Kathmandu calendar date. */
+  const [pickup, setPickup] = useState(() => getBusinessToday().toISOString().slice(0, 10))
+  const [ret, setRet] = useState(() => new Date(getBusinessToday().getTime() + DAY).toISOString().slice(0, 10))
   // redesign v1 §4 — the rental day runs 06:00→06:00, so a booking with no
   // time cannot be priced correctly at the boundary. Defaults are 09:00
   // pickup / 18:00 return, editable, never blank. Day-count pricing still
@@ -1522,6 +1482,27 @@ export default function NewRental() {
    *    "All changes saved", and it may not say that after a save that failed. */
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved')
   /**
+   * **Law 8.** One key per Confirm press, reused by every retry of that press
+   * (the pattern `AddClientModal`'s `saveKey` uses), so a double-click or a
+   * retry after a failure replays the same `create_booking` instead of minting
+   * a second Quote. Cleared only when the whole press has landed.
+   */
+  const confirmKey = useRef<string | null>(null)
+  /**
+   * The Quote `createRental` already committed for this press, if any. A
+   * Confirm press is TWO writes — create (lands a Quote) then `confirmRental` —
+   * and the second can fail after the first landed. Holding the id means a
+   * retry confirms the SAME booking rather than creating another, and the
+   * error line can say what is actually true.
+   */
+  const createdQuote = useRef<{ id: string; no: string } | null>(null)
+  /* NR-02 — Law 8 keys for the rows written beside the header, one per row,
+     minted on the first press and reused on a retry so the same press lands
+     the same rows once. Cleared with `confirmKey` when the whole press lands. */
+  const discountKey = useRef<string | null>(null)
+  const crewKeys = useRef<string[]>([])
+  const transportKey = useRef<string | null>(null)
+  /**
    * Has a Save Draft actually landed? This is what makes `[Cancel]` two
    * behaviours instead of one (Law 3, and `WIREFRAME_RULINGS_2026-08-12.md` §7):
    *
@@ -1574,7 +1555,9 @@ export default function NewRental() {
   }, [dispatchContext, showSuccessToast])
 
   const confirmBooking = useCallback(() => {
-    if (confirmBlocked) return
+    /* A press while the previous one is still in flight is the double-click
+       Law 8 exists for; the button is also disabled on the same condition. */
+    if (confirmBlocked || saveState === 'saving') return
     const ctx = dispatchContext()
     if (!ctx) {
       setActionError('Not confirmed — you are not signed in, so this booking cannot be attributed to anyone. Sign in and confirm again.')
@@ -1644,6 +1627,16 @@ export default function NewRental() {
       setActionError('Not confirmed — a booking with no equipment on it is not a booking. Add at least one item first.')
       return
     }
+    /* Law 6 — `listInventory({ withMoney: false })` returns no `dailyRate` for
+       a money-blind role, so every line here carries `ratePaisa` 0. Sending
+       that would persist the display placeholder as the price of the booking.
+       Refuse before anything is written, and say why. */
+    if (!canBookingMoney) {
+      setActionError(
+        'Not confirmed — equipment rates are hidden for your role, so this booking cannot be priced from this screen; every line would be saved at Rs 0. Nothing was written. Ask a colleague who can see rates to confirm it.',
+      )
+      return
+    }
     const demoLine = lines.find((l) => !UUID_RE_LINE.test(l.id))
     if (demoLine) {
       setActionError(
@@ -1654,8 +1647,22 @@ export default function NewRental() {
 
     setActionError(null)
     setSaveState('saving')
+    /* Minted at the press, not per attempt: a retry of THIS press reuses it. */
+    if (!confirmKey.current) confirmKey.current = newClientUuid()
+    const pressKey: string = confirmKey.current
+    /* Which of the two writes is in flight, so the catch can tell the truth
+       about what landed. Everything up to and including `createRental` is
+       'create' (nothing persisted if it throws); `confirmRental` is 'confirm'. */
+    let step: 'create' | 'confirm' = 'create'
     void (async () => {
       try {
+        /* A retry after a half-success: the Quote exists, so skip straight to
+           confirming it rather than creating a second one.
+           TODO(decision): if the operator EDITS lines/dates after the Quote
+           landed and before the retry, this confirms the Quote as first written,
+           not the screen as it now reads. Whether to lock the form, re-route to
+           the Quote's BookingDetail, or something else is a product call. */
+        if (!createdQuote.current) {
         const { data: userRow, error: userErr } = await supabase
           .from('users')
           .select('branch_id')
@@ -1672,7 +1679,7 @@ export default function NewRental() {
         const created = await createRental(
           {
             /* Law 8 — one key for this press, so a double-click is one booking. */
-            clientUuid: newClientUuid(),
+            clientUuid: pressKey,
             clientId: client.dbId as string,
             branchId,
             project: project.trim() ? project.replace(/^'|'$/g, '') : null,
@@ -1683,6 +1690,54 @@ export default function NewRental() {
             /* The UI says "Client Pickup"; the enum stores "Customer Pickup"
                (Law 17 lives in the label, not the column). */
             deliveryType: deliveryTypeFromLabel(deliveryType),
+            /* NR-02 — the write carries what the rail prices, not equipment
+               lines alone. What still has NO home on a Quote and is therefore
+               not sent: the VAT switch (`vat_rate` lives on the invoice, which
+               does not exist yet) and the advance (a payment settles against
+               an invoice — recordPayment refuses without one). Both are
+               TODO(decision): where a Quote-time VAT choice and a typed
+               advance are recorded before the first invoice. */
+            depositRequired: toRupees(depositRequiredPaisa),
+            ...(discountPct > 0
+              ? {
+                  discounts: [
+                    {
+                      clientUuid: discountKey.current ?? (discountKey.current = newClientUuid()),
+                      discountSource: 'Manual',
+                      percent: discountPct,
+                    },
+                  ],
+                }
+              : {}),
+            ...(crew.length > 0
+              ? {
+                  crew: crew.map((c, i) => ({
+                    clientUuid: crewKeys.current[i] ?? (crewKeys.current[i] = newClientUuid()),
+                    name: c.name,
+                    /* The roster's role vocabulary is not the crew_role enum;
+                       the action refuses a role the enum lacks, by name. */
+                    role: c.role as CrewRoleDb,
+                    phone: c.phone,
+                    dayRate: toRupees(c.dayRatePaisa),
+                    days: days || 1,
+                    overtime: toRupees(c.overtimePaisa),
+                    accommodation: toRupees(c.accommodationPaisa),
+                    meals: toRupees(c.mealsPaisa),
+                  })),
+                }
+              : {}),
+            /* §9.2 — Client Pickup carries no transport row; a delivery does,
+               even at zero charge, because the row is where the vehicle and
+               driver will be recorded. */
+            ...(clientPickup
+              ? {}
+              : {
+                  transport: {
+                    clientUuid: transportKey.current ?? (transportKey.current = newClientUuid()),
+                    deliveryCharge: toRupees(deliveryChargePaisa),
+                    fuelCharge: toRupees(fuelChargePaisa),
+                  },
+                }),
             lines: lines.map((l, i) => ({
               clientUuid: newClientUuid(),
               lineType: 'Equipment' as const,
@@ -1690,31 +1745,65 @@ export default function NewRental() {
               qty: l.qty,
               /* Law 9 — days is mandatory and never defaulted. */
               days: l.days,
-              rate: Math.round(l.ratePaisa / 100),
+              /* `booking_lines.rate` is numeric(14,2) rupees; `toRupees` is the
+                 engine's paisa→rupees and keeps the paisa the old
+                 `Math.round(paisa / 100)` threw away. */
+              rate: toRupees(l.ratePaisa),
               sortOrder: i,
             })),
           },
           ctx,
         )
+        createdQuote.current = { id: created.bookingId, no: created.bookingNo }
+        }
 
         /* Created as a Quote; confirm it into Booked with the id the database
            just minted — never the `bk-new` placeholder this screen used to send. */
+        step = 'confirm'
         const mod = await import('../../actions/rentals/confirmRental')
-        await mod.confirmRental({ id: created.bookingId }, ctx)
+        await mod.confirmRental({ id: createdQuote.current.id }, ctx)
 
+        /* The whole press landed: the next press is a new booking. */
+        confirmKey.current = null
+        createdQuote.current = null
+        discountKey.current = null
+        crewKeys.current = []
+        transportKey.current = null
         setSaveState('saved')
         /* Landing on the rentals list is this app's universal "the write
            landed" signal — now it has. */
         navigate('/rentals')
       } catch (err) {
         setSaveState('error')
-        setActionError(
-          `Not confirmed — ${err instanceof Error ? err.message : String(err)}. Nothing was written, and nothing entered here has been lost.`,
-        )
+        const reason = err instanceof Error ? err.message : String(err)
+        if (err instanceof CreateRentalPartialError) {
+          /* The header, lines and discounts landed; a crew or transport row
+             did not. The Quote is named and a retry confirms it AS IT IS — the
+             rows that failed are not retried, and the message says so. */
+          createdQuote.current = { id: err.bookingId, no: err.bookingNo }
+          setActionError(
+            `Booking saved as a Quote (${err.bookingNo}), but ${reason} Press Confirm Booking again to confirm that Quote without the missing rows, or open it from the Rentals list to add them.`,
+          )
+          return
+        }
+        if (step === 'confirm' && createdQuote.current) {
+          /* The create landed and the confirm did not. "Nothing was written"
+             would be false here — a Quote exists, and it is named so the
+             operator can find it. A retry confirms that same Quote. */
+          setActionError(
+            `Booking saved as a Quote (${createdQuote.current.no}); Confirm did not land: ${reason}. Press Confirm Booking again to confirm that same Quote — no second booking will be created.`,
+          )
+        } else {
+          setActionError(
+            `Not confirmed — ${reason}. Nothing was written, and nothing entered here has been lost.`,
+          )
+        }
       }
     })()
   }, [
     confirmBlocked,
+    saveState,
+    canBookingMoney,
     dispatchContext,
     client,
     clientsAreLive,
@@ -1725,6 +1814,16 @@ export default function NewRental() {
     ret,
     returnTime,
     deliveryType,
+    /* NR-02 — the rows written beside the header read these; without them in
+       the deps the press sent the INITIAL zero discount and no crew (driven
+       3 Sep: 5% on screen, no booking_discounts row in the overlay). */
+    discountPct,
+    crew,
+    clientPickup,
+    deliveryChargePaisa,
+    fuelChargePaisa,
+    days,
+    depositRequiredPaisa,
     navigate,
   ])
 
@@ -2235,7 +2334,7 @@ export default function NewRental() {
    */
   const confirmBlock = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }} title={blockReasonText}>
-      <Button icon="check" variant="primary" onClick={confirmBooking} disabled={confirmBlocked}>
+      <Button icon="check" variant="primary" onClick={confirmBooking} disabled={confirmBlocked || saveState === 'saving'}>
         Confirm Booking
       </Button>
       {blockReasonText && (
@@ -2686,20 +2785,18 @@ export default function NewRental() {
                 * client half of this screen IS live; the equipment half is the
                 * next slice of PLAN.md Phase 2.
                 */}
-              {/* ⚠ UNCONDITIONAL, and that is the point. An earlier version of
-                  this notice was gated on `catalogueIsLive` — which is this
-                  screen's OWN catalogue read, not the panel's source. The panel
-                  reads `booking/itemCatalogue.ts` either way, so the gate hid
-                  the warning exactly when it was still true. It stays until the
-                  panel itself is converted. */}
-              <p style={{ margin: '0 0 var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--warn-text)', lineHeight: 1.5 }}>
-                This panel still lists <strong>sample equipment</strong>, not the live catalogue — items added here
-                cannot be saved yet, and Confirm will say so rather than writing a booking with products that do not
-                exist.
-                {catalogueIsLive
-                  ? ` The catalogue itself is loaded — ${catalogue.length} real products are waiting on this panel's conversion.`
-                  : ' The live catalogue has not loaded either.'}
-              </p>
+              {/* Gated on `liveEquipment` — the pool the panel is ACTUALLY
+                  searching — not on this screen's separate catalogue read. An
+                  earlier version watched the wrong one and hid the warning
+                  exactly while it was still true; the lesson is that a notice
+                  about a source must read that source. */}
+              {!liveEquipment && (
+                <p style={{ margin: '0 0 var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--warn-text)', lineHeight: 1.5 }}>
+                  This panel is still listing <strong>sample equipment</strong> — the live catalogue has not loaded, so
+                  items added here cannot be saved and Confirm will say so rather than writing a booking with products
+                  that do not exist.
+                </p>
+              )}
               {poolError && (
                 <p role="alert" style={{ margin: '0 0 var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--st-danger-fg)', lineHeight: 1.5 }}>
                   The live catalogue and client list could not be read: {poolError}
@@ -2708,6 +2805,7 @@ export default function NewRental() {
 
               <AddItemPanel
                 window={bookingWindow}
+                {...(liveEquipment ? { equipment: liveEquipment } : {})}
                 days={days || 1}
                 existingLineIds={lines.map((l) => l.id)}
                 onAdd={addDrafts}
@@ -3335,7 +3433,7 @@ export default function NewRental() {
             </div>
           )}
           <span style={{ marginLeft: canBookingMoney ? 0 : 'auto' }} title={blockReasonText}>
-            <Button icon="check" variant="primary" onClick={confirmBooking} disabled={confirmBlocked}>
+            <Button icon="check" variant="primary" onClick={confirmBooking} disabled={confirmBlocked || saveState === 'saving'}>
               Confirm Booking
             </Button>
           </span>

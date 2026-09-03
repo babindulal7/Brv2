@@ -111,6 +111,37 @@ function writableTable(table: string): string {
   return VIEW_OF[table] ?? table
 }
 
+/**
+ * The ONE database trigger this store emulates.
+ *
+ * `bookings.stage` is a read model: "Written ONLY by that table's trigger; a
+ * direct UPDATE is rejected" (0002:81, the trigger itself in
+ * `0021_forward_only_stage_transitions.sql`). Without this, every floor verb
+ * and Confirm Booking in dev:mock wrote its `booking_stage_transitions` row and
+ * the booking never moved — Complete Packing on B-716 landed the session, the
+ * lines, the movements, the audit rows and a Booked→Packed transition, and the
+ * detail page reloaded as BOOKED (BUG_AUDIT_LIFECYCLE X-02, 2 Sep 2026). A
+ * driven pass could not tell a working verb from a broken one.
+ *
+ * Only the read-model write is emulated; the forward-only CHECK that 0021 also
+ * enforces stays with the engine's own `planTransition`, which runs before the
+ * insert. The patch goes through the overlay so it survives a reload exactly
+ * as the inserted transition does.
+ */
+function applyTriggers(table: string, row: Row): void {
+  if (table !== 'booking_stage_transitions') return
+  const bookingId = row['booking_id']
+  const to = row['to_stage']
+  if (typeof bookingId !== 'string' || typeof to !== 'string') return
+  const bookings = store['bookings'] ?? []
+  for (const b of bookings) {
+    if (b['id'] !== bookingId) continue
+    const patch: Row = { stage: to, updated_at: row['occurred_at'] ?? row['created_at'] ?? new Date().toISOString() }
+    Object.assign(b, patch)
+    overlay.updates.push({ table: 'bookings', id: b['id'], patch })
+  }
+}
+
 const hooks: EngineHooks = {
   read,
   insert(table, rows) {
@@ -138,6 +169,7 @@ const hooks: EngineHooks = {
       existing.push(row)
       overlay.inserts.push({ table: target, row })
       out.push(row)
+      applyTriggers(target, row)
     }
     saveOverlay(overlay)
     return { rows: out, error: null }
@@ -512,8 +544,48 @@ function createBooking(payload: Record<string, unknown>): { data: Row | null; er
   // Nothing is committed to the store until every line has validated, so a bad
   // line cannot leave a header with no lines behind it — the local stand-in for
   // the transaction the real function gets from Postgres.
+  /* The discounts, as `create_booking` (0065:166-210) writes them — with the
+     two CHECKs of `booking_discounts` (0002:593-600) the real function meets:
+     a hard cap of 25%, and above 10% a reason AND an approver. D3 (31 Aug)
+     removed the gate from the APP; the schema still carries it, and a driven
+     pass has to meet the same refusal production would. TODO(decision): PLAN
+     records D3 and the schema disagree — one of them has to move. */
+  const discounts = Array.isArray(payload['discounts']) ? (payload['discounts'] as Array<Record<string, unknown>>) : []
+  const builtDiscounts: Row[] = []
+  for (const d of discounts) {
+    if (!d['client_uuid']) {
+      return { data: null, error: { code: '23502', message: 'create_booking: every discount needs its own client_uuid (Law 8, one per ROW)', details: '', hint: '' } }
+    }
+    const pct = Number(d['percent'])
+    if (!Number.isFinite(pct) || pct < 0 || pct > 25) {
+      return { data: null, error: { code: '23514', message: `new row for relation "booking_discounts" violates check constraint "booking_discounts_hard_cap" (percent ${String(d['percent'])})`, details: '', hint: '' } }
+    }
+    if (pct > 10 && (!d['reason'] || !d['approver_id'])) {
+      return { data: null, error: { code: '23514', message: 'new row for relation "booking_discounts" violates check constraint "booking_discounts_over_ten_needs_reason_and_approver"', details: '', hint: '' } }
+    }
+    builtDiscounts.push({
+      id: crypto.randomUUID(),
+      client_uuid: d['client_uuid'],
+      booking_id: bookingId,
+      branch_id: payload['branch_id'] ?? null,
+      discount_source: d['discount_source'] ?? 'Manual',
+      percent: pct,
+      reason: d['reason'] ?? null,
+      approver_id: d['approver_id'] ?? null,
+      applied_by: actor,
+      applied_at: now,
+      coupon_id: d['coupon_id'] ?? null,
+      audit_event_id: crypto.randomUUID(),
+      created_at: now,
+    })
+  }
+
   ;(store['bookings'] ??= []).push(header)
   overlay.inserts.push({ table: 'bookings', row: header })
+  for (const d of builtDiscounts) {
+    ;(store['booking_discounts'] ??= []).push(d)
+    overlay.inserts.push({ table: 'booking_discounts', row: d })
+  }
   for (const row of built) {
     ;(store['booking_lines'] ??= []).push(row)
     overlay.inserts.push({ table: 'booking_lines', row })

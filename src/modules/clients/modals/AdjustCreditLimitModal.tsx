@@ -1,70 +1,47 @@
 import { useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
+import { Unavailable } from '../../../components/ui/Unavailable'
 import { rupees, formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
-import { DomainEvents, EVENT_TYPES } from '../../../events/eventBus'
-import { useAuth } from '../../../lib/auth'
 import type { ClientRecord } from '../../../data/clients'
 
 export interface AdjustCreditLimitModalProps {
   isOpen: boolean
   onClose: () => void
+  /**
+   * Never called today — see `SAVE_BLOCKED`. Kept on the contract so the wired
+   * version fires it with the limit the action actually wrote.
+   */
   onSuccess: (newLimitPaisa: Paisa, reason: string) => void
   client: ClientRecord
 }
 
 type Validity = '30 Days' | '90 Days' | 'Permanent'
 
+/*
+ * TODO(decision) — no credit-limit action exists. `approved_credit_limit` is
+ * writable only through the `credit.override` capability (`actions/core.ts`,
+ * `createClient.ts` :372), and no action in `src/actions/clients` implements
+ * it; `updateClient` is a stub. What stood here emitted
+ * `CLIENT_CREDIT_ADJUSTED`, called `onSuccess`, and closed — a Save that wrote
+ * nothing, with an `authorizedBy: user?.name ?? 'Admin'` fallback that
+ * fabricated an approver. Until the action lands, the form states that it
+ * cannot save; the event should be emitted by the action after its write
+ * succeeds, carrying the real approver, not here.
+ */
+const SAVE_BLOCKED =
+  'Credit-limit changes are the credit.override action, which is not built yet — nothing typed here can be saved.'
+
 export function AdjustCreditLimitModal({
   isOpen,
   onClose,
-  onSuccess,
   client,
 }: AdjustCreditLimitModalProps) {
-  const { user } = useAuth()
   const currentLimitRs = Math.round(Number(client.creditLimitPaisa || 0) / 100)
   const [amountRupees, setAmountRupees] = useState<number>(currentLimitRs)
   const [reason, setReason] = useState('')
   const [validity, setValidity] = useState<Validity>('Permanent')
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const handleSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault()
-    if (!Number.isFinite(amountRupees) || amountRupees < 0) {
-      setError('Enter a valid non-negative credit limit in rupees.')
-      return
-    }
-    if (reason.trim().length < 5) {
-      setError('Please provide an audit reason for the credit limit adjustment (minimum 5 characters).')
-      return
-    }
-
-    setSubmitting(true)
-    setError(null)
-
-    try {
-      const newLimitPaisa = rupees(amountRupees)
-      await DomainEvents.emit(EVENT_TYPES.CLIENT_CREDIT_ADJUSTED, {
-        clientId: client.id,
-        clientName: client.name,
-        oldLimitPaisa: client.creditLimitPaisa,
-        newLimitPaisa,
-        validity,
-        reason: reason.trim(),
-        authorizedBy: user?.name ?? 'Admin',
-        atIso: new Date().toISOString(),
-      })
-
-      onSuccess(newLimitPaisa, reason.trim())
-      onClose()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to adjust credit limit')
-    } finally {
-      setSubmitting(false)
-    }
-  }
 
   return (
     <Modal
@@ -75,30 +52,33 @@ export function AdjustCreditLimitModal({
       size="md"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose} disabled={submitting}>
+          <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={() => handleSubmit()} disabled={submitting}>
-            {submitting ? 'Applying Override…' : 'Save Credit Limit'}
-          </Button>
+          <Unavailable reason={SAVE_BLOCKED}>
+            <Button variant="primary" disabled>
+              Save Credit Limit
+            </Button>
+          </Unavailable>
         </>
       }
     >
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-        {error && (
-          <div
-            style={{
-              padding: '10px 14px',
-              borderRadius: 'var(--r-btn)',
-              background: 'var(--st-danger-bg)',
-              color: 'var(--st-danger-fg)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 600,
-            }}
-          >
-            {error}
-          </div>
-        )}
+      {/* Enter inside a field must not submit either — there is nothing to submit to. */}
+      <form onSubmit={(e) => e.preventDefault()} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+        <div
+          role="status"
+          style={{
+            padding: '10px 14px',
+            borderRadius: 'var(--r-btn)',
+            background: 'var(--card2)',
+            border: '1px solid var(--border)',
+            color: 'var(--text2)',
+            fontSize: 'var(--t-meta)',
+            lineHeight: 1.45,
+          }}
+        >
+          {SAVE_BLOCKED}
+        </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

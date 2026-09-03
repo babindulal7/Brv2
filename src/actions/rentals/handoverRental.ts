@@ -37,6 +37,9 @@ export type HandoverRentalInput = {
   notes?: string;
   /** AD/UTC. Defaults to now. */
   occurredAt?: string;
+  /** Gate 1 — checked against the receiver's physical ID at the counter. Written to `operation_sessions`. */
+  governmentIdVerified?: boolean;
+  bookingAuthorizationVerified?: boolean;
 };
 
 export const handoverRental = createAction<HandoverRentalInput, FloorVerbResult>({
@@ -61,6 +64,10 @@ export const handoverRental = createAction<HandoverRentalInput, FloorVerbResult>
         ...(input.clientUuid === undefined ? {} : { clientUuid: input.clientUuid }),
         ...(input.notes === undefined ? {} : { notes: input.notes }),
         ...(input.occurredAt === undefined ? {} : { occurredAt: input.occurredAt }),
+        ...(input.governmentIdVerified === undefined ? {} : { governmentIdVerified: input.governmentIdVerified }),
+        ...(input.bookingAuthorizationVerified === undefined
+          ? {}
+          : { bookingAuthorizationVerified: input.bookingAuthorizationVerified }),
       },
       ctx,
     );

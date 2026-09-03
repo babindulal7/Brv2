@@ -5,6 +5,7 @@ import { rupees, formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import { DomainEvents, EVENT_TYPES } from '../../../events/eventBus'
 import { useAuth } from '../../../lib/auth'
+import { useCanViewMoney } from '../../../lib/moneyVisibility'
 
 export type MaintenanceType = 'Repair' | 'Service' | 'Calibration' | 'Inspection'
 export type MaintenancePriority = 'Low' | 'Medium' | 'High' | 'Critical'
@@ -41,6 +42,9 @@ export function LogMaintenanceModal({
   initialSerial = '',
 }: LogMaintenanceModalProps) {
   const { user } = useAuth()
+  // RS-07 / Law 6 — Warehouse sees no money: the cost field is omitted for a
+  // money-blind role and the payload carries zero rather than reading it.
+  const money = useCanViewMoney()
   const [equipment, setEquipment] = useState(initialEquipment)
   const [serial, setSerial] = useState(initialSerial)
   const [jobType, setJobType] = useState<MaintenanceType>('Service')
@@ -77,7 +81,7 @@ export function LogMaintenanceModal({
         priority,
         technician: technician.trim(),
         ...(vendor.trim() ? { vendor: vendor.trim() } : {}),
-        estCostPaisa: rupees(costRupees),
+        estCostPaisa: money ? rupees(costRupees) : (0 as Paisa),
         estCompletionAd: estCompletion.toISOString().split('T')[0] ?? '',
         ...(bookingImpact.trim() ? { bookingImpact: bookingImpact.trim() } : {}),
         notes: notes.trim(),
@@ -267,7 +271,8 @@ export function LogMaintenanceModal({
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: money ? '1fr 1fr' : '1fr', gap: 'var(--sp-md)' }}>
+          {money && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
               Estimated Cost (Rs)
@@ -292,6 +297,7 @@ export function LogMaintenanceModal({
               {costRupees > 0 ? formatMoney(rupees(costRupees)) : 'Rs 0'}
             </span>
           </div>
+          )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>

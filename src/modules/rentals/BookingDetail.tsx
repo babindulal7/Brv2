@@ -1321,6 +1321,11 @@ export default function BookingDetail() {
         /* Past its return date and not yet back — the same read the page's own
            overdue chip uses, not a second definition of late. */
         isOverdue:
+          /* Same definition as the list's `overdue()` set: only a booking that
+             is OUT can be late back. Without the stage clause a Booked booking
+             whose pickup never happened read as overdue here and not on the
+             list (BUG_AUDIT_LIFECYCLE BD-01). */
+          booking.stage === 'On Rent' &&
           !booking.isClosed &&
           !booking.isCancelled &&
           booking.actualReturnAtAd === null &&

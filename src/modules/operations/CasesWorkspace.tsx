@@ -25,6 +25,7 @@ import {
   outstandingOf,
   ageDays,
   CASES_EXPORT_UNAVAILABLE_REASON,
+  NEW_CASE_UNAVAILABLE_REASON,
   type Case,
   type CaseStatus,
   type CasePriority,
@@ -326,9 +327,15 @@ export function CasesWorkspace() {
               Export
             </Button>
           </Unavailable>
-          <Button variant="primary" icon={<IconPlus size={16} />} onClick={() => setIsLogCaseOpen(true)}>
-            Log Incident
-          </Button>
+          {/* RS-06 — LogCaseModal mints CASE-2026-${random}, writes nothing and
+              closes as a success. Until a case-creation action exists the
+              opener is Unavailable with the reason data/cases.ts already
+              states; the modal stays mounted below, unreachable from here. */}
+          <Unavailable reason={NEW_CASE_UNAVAILABLE_REASON}>
+            <Button variant="primary" icon={<IconPlus size={16} />} disabled onClick={() => setIsLogCaseOpen(true)}>
+              Log Incident
+            </Button>
+          </Unavailable>
         </div>
       </div>
 

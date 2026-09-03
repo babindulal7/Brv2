@@ -626,7 +626,12 @@ export function AddClientModal({
       )
 
       const record: ClientRecord = {
-        id: res.clientId,
+        /* The client CODE, like every other `ClientRecord.id` on screen … */
+        id: res.clientCode,
+        /* … and the `clients.id` uuid, which is what the booking write needs.
+           Without it the booking page auto-selects this record and Confirm
+           refuses it as sample data (`!client?.dbId`). */
+        dbId: res.clientId,
         name: name.trim(),
         clientType,
         membership: DEFAULT_MEMBERSHIP,
@@ -668,15 +673,13 @@ export function AddClientModal({
          BOTH `clientId` (the `clients.id` uuid Postgres generated) and
          `clientCode` (`CL-2026-NNNN`).
 
-         ⚠ TODO — `record.id` below is set from `res.clientId`, the uuid, while
-         every other `ClientRecord.id` in this app is the client CODE (see
-         `data/clients.ts`, and `AddClient.tsx`, which reports
-         `created.clientCode`). So a landed create would hand the booking a
-         record keyed differently from every other client on screen. Left as
-         found: nothing reaches this line today — `actions/core.ts` maps no rule
-         for the `client.create` capability, so the dispatch is denied for every
-         role before `execute` — and switching a record's identifier is a
-         change to what downstream screens match on, not a dispatch fix.
+         `record.id` above is `res.clientCode` — the client CODE, the same key
+         every other `ClientRecord.id` in this app uses (see `data/clients.ts`,
+         and `AddClient.tsx`, which reports `created.clientCode`) — and
+         `record.dbId` is `res.clientId`, the uuid `createRental` writes.
+         (An earlier note here said `client.create` was unmapped and nothing
+         reached this line; that was stale — `actions/core.ts` resolves
+         `client.create` through `rbac.canCreateClient`, so this create lands.)
          The collision check is kept for the same reason it existed: silently
          skipping the push would leave the booking pointing at somebody else's
          record. */

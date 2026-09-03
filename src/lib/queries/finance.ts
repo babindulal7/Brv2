@@ -875,11 +875,29 @@ export function paymentsForClient(clientId: string): ListFilters {
  * Postgres read it as midnight UTC, which is 05:45 the same morning in
  * Kathmandu — so a month's takings would start 5h45m late on the 1st and stop
  * 5h45m early on the last day, silently. See the DAY BOUNDARIES block below.
+ *
+ * ## Money taken, not money handed back (FI-03)
+ *
+ * This is the set behind the Received KPI, the method donut, the collections
+ * chart and the Daily Closing's `collected.*` — every one of them a "takings"
+ * figure. `payment_type` is pinned to 'Advance Payment' because a 'Refund' row
+ * is also `status = 'Received'` with `amount > 0` (`payments_amount_positive`,
+ * 0006:197): left in, a refund would be ADDED to the day's takings rather than
+ * kept out of them. 'Security Deposit' is not listed because the table CHECK
+ * `payments_no_security_deposit` (0006:198) makes it unreachable, so the pin
+ * and the CHECK together leave exactly the one type that is money taken.
+ *
+ * ⚠ This is not "refunds are subtracted" — a refund's sign and its home in the
+ * ledger are `payment_reversals` questions (Law 4), and nothing here nets one
+ * against a receipt. It is only that a refund is not a receipt.
  */
 export function paymentsInPeriod(fromDayAd: string, toDayAd: string): ListFilters {
   return {
     dateRange: { column: 'payment_date', fromAd: startOfDay(fromDayAd), toAd: endOfDay(toDayAd) },
-    chips: { status: ['Received'] satisfies PaymentStatusDb[] },
+    chips: {
+      status: ['Received'] satisfies PaymentStatusDb[],
+      payment_type: ['Advance Payment'] satisfies PaymentTypeDb[],
+    },
     sort: { column: 'payment_date', ascending: false },
   }
 }

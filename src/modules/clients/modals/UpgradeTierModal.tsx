@@ -1,99 +1,102 @@
 import { useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
-import { DomainEvents, EVENT_TYPES } from '../../../events/eventBus'
-import { useAuth } from '../../../lib/auth'
+import { Unavailable } from '../../../components/ui/Unavailable'
 import { MEMBERSHIP_TIERS } from '../../../data/clients'
 import type { ClientRecord, MembershipTier } from '../../../data/clients'
 
 export interface UpgradeTierModalProps {
   isOpen: boolean
   onClose: () => void
+  /**
+   * Never called today — see `SAVE_BLOCKED`. Kept on the contract so the wired
+   * version fires it with the tier the action actually wrote.
+   */
   onSuccess: (newTier: MembershipTier) => void
   client: ClientRecord
 }
 
-const TIER_BENEFITS: Record<MembershipTier, { discount: number; depositWaiver: string; description: string }> = {
-  Academy: { discount: 0, depositWaiver: 'Full standard deposit required', description: 'Entry tier for students and emerging indie film crew.' },
-  Creator: { discount: 5, depositWaiver: 'Standard deposit with ID hold', description: 'Designed for independent creators, vloggers, and commercial videographers.' },
-  Cinematographer: { discount: 10, depositWaiver: '50% deposit reduction', description: 'For professional DoPs, active cinematographers, and frequent renters.' },
-  'Production Alliance': { discount: 15, depositWaiver: 'Zero deposit with corporate guarantee', description: 'For registered production houses, agencies, and long-form projects.' },
-  Elite: { discount: 20, depositWaiver: 'Zero deposit + VIP concierge gear staging', description: 'Top-tier enterprise partners and marquee feature film productions.' },
+/**
+ * Labels only. The discount percentage and deposit-waiver policy that used to
+ * sit beside each tier here are gone: `membership_plans` carries
+ * `individual_discount_pct` and `default_credit_limit` per level, and 0005's
+ * comment on that table is the rule — *"no plan value may be hardcoded in
+ * application code; every read comes from this table."* A "15% OFF RENTALS"
+ * badge from a constant was exactly that, and it disagreed with whatever the
+ * table holds.
+ *
+ * TODO: read the selected tier's entitlements from `membership_plans_v` —
+ * `useMembershipPlans()` (`lib/queries/useClients.ts`) already does, and the
+ * Credit tab (`Clients.tsx` CreditView) already renders it — and show them
+ * here instead of `PLAN_NOTE`. Money columns arrive `null` for a money-blind
+ * session, so the render must tolerate that.
+ */
+const TIER_DESCRIPTIONS: Record<MembershipTier, string> = {
+  Academy: 'Entry tier for students and emerging indie film crew.',
+  Creator: 'Designed for independent creators, vloggers, and commercial videographers.',
+  Cinematographer: 'For professional DoPs, active cinematographers, and frequent renters.',
+  'Production Alliance': 'For registered production houses, agencies, and long-form projects.',
+  Elite: 'Top-tier enterprise partners and marquee feature film productions.',
 }
+
+const PLAN_NOTE = 'Plan entitlements come from the membership plans table and are not shown here yet.'
+
+/*
+ * TODO(decision) — no tier-change action exists. A tier lives in
+ * `client_memberships` (`createClient.ts` :379), a different table from
+ * `clients`, and nothing in `src/actions/clients` writes it; `updateClient` is
+ * a stub. What stood here emitted `MEMBERSHIP_TIER_CHANGED`, called
+ * `onSuccess`, and closed — a Save that wrote nothing, with an
+ * `authorizedBy: user?.name ?? 'Admin'` fallback that fabricated an approver.
+ * The event belongs in the action, after its write succeeds.
+ */
+const SAVE_BLOCKED =
+  'Tier changes are a client-membership action that is not built yet — nothing typed here can be saved.'
 
 export function UpgradeTierModal({
   isOpen,
   onClose,
-  onSuccess,
   client,
 }: UpgradeTierModalProps) {
-  const { user } = useAuth()
   const [selectedTier, setSelectedTier] = useState<MembershipTier>(client.membership || 'Academy')
   const [notes, setNotes] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const benefit = TIER_BENEFITS[selectedTier]
-
-  const handleSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault()
-    setSubmitting(true)
-    setError(null)
-
-    try {
-      await DomainEvents.emit(EVENT_TYPES.MEMBERSHIP_TIER_CHANGED, {
-        clientId: client.id,
-        clientName: client.name,
-        oldTier: client.membership,
-        newTier: selectedTier,
-        discountPct: benefit.discount,
-        notes: notes.trim(),
-        authorizedBy: user?.name ?? 'Admin',
-        atIso: new Date().toISOString(),
-      })
-
-      onSuccess(selectedTier)
-      onClose()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to update membership tier')
-    } finally {
-      setSubmitting(false)
-    }
-  }
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
       title="Change Membership Tier"
-      subtitle={`Update tier plan and automatic discount entitlements for ${client.name}.`}
+      subtitle={`Update the membership tier for ${client.name}.`}
       size="md"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose} disabled={submitting}>
+          <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={() => handleSubmit()} disabled={submitting}>
-            {submitting ? 'Updating Tier…' : 'Apply Tier Change'}
-          </Button>
+          <Unavailable reason={SAVE_BLOCKED}>
+            <Button variant="primary" disabled>
+              Apply Tier Change
+            </Button>
+          </Unavailable>
         </>
       }
     >
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-        {error && (
-          <div
-            style={{
-              padding: '10px 14px',
-              borderRadius: 'var(--r-btn)',
-              background: 'var(--st-danger-bg)',
-              color: 'var(--st-danger-fg)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 600,
-            }}
-          >
-            {error}
-          </div>
-        )}
+      {/* Enter inside a field must not submit either — there is nothing to submit to. */}
+      <form onSubmit={(e) => e.preventDefault()} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+        <div
+          role="status"
+          style={{
+            padding: '10px 14px',
+            borderRadius: 'var(--r-btn)',
+            background: 'var(--card2)',
+            border: '1px solid var(--border)',
+            color: 'var(--text2)',
+            fontSize: 'var(--t-meta)',
+            lineHeight: 1.45,
+          }}
+        >
+          {SAVE_BLOCKED}
+        </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
@@ -115,7 +118,7 @@ export function UpgradeTierModal({
           >
             {MEMBERSHIP_TIERS.map((tier) => (
               <option key={tier} value={tier}>
-                {tier} ({TIER_BENEFITS[tier].discount}% Standing Discount)
+                {tier}
               </option>
             ))}
           </select>
@@ -132,26 +135,12 @@ export function UpgradeTierModal({
             gap: 8,
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontWeight: 700, color: 'var(--text)' }}>{selectedTier} Plan Benefits</span>
-            <span
-              style={{
-                fontSize: 'var(--t-caption)',
-                fontWeight: 700,
-                color: 'var(--primary)',
-                background: 'var(--nav-active-bg)',
-                padding: '2px 8px',
-                borderRadius: 'var(--r-badge)',
-              }}
-            >
-              {benefit.discount}% OFF RENTALS
-            </span>
-          </div>
+          <span style={{ fontWeight: 700, color: 'var(--text)' }}>{selectedTier} plan</span>
           <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.45 }}>
-            {benefit.description}
+            {TIER_DESCRIPTIONS[selectedTier]}
           </p>
           <div style={{ fontSize: 'var(--t-caption)', color: 'var(--muted)', marginTop: 4 }}>
-            <strong>Security Deposit Policy:</strong> {benefit.depositWaiver}
+            {PLAN_NOTE}
           </div>
         </div>
 

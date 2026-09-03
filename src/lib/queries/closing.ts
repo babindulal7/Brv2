@@ -32,7 +32,9 @@
 
 import { listBookings, todaysIncoming, todaysOutgoing } from './bookings'
 import { listInvoices, listPayments, outstandingInvoices, paymentsInPeriod } from './finance'
-import { listClients } from './clients'
+import { sumDepositsHeld } from './clients'
+import type { ListFilters } from './listQuery'
+import type { ListQueryResult } from './useList'
 import type { Paisa } from '../money'
 
 /** The four buckets `daily_digest` prints, plus what fed each. */
@@ -79,22 +81,71 @@ const P = (n: number) => n as Paisa
 export const DAY_BOUNDARY_NOTE =
   'Movement counts use the operational day (D4, default 06:00). Collections use the calendar day, because VAT periods do — so a payment taken before 06:00 sits in a different day here than the return it settles.'
 
+/** PostgREST's `max_rows` (supabase/config.toml:18) — the widest page one request can return. */
+const CLOSING_PAGE_SIZE = 1000
+
+/**
+ * Every row a filter set matches — paged until complete, and **proven**
+ * complete against the server's count before it is returned (FI-02).
+ *
+ * The two money sums in a closing (`collected.*`, `receivablesTotal`) are
+ * reductions over rows, and a reduction over one page of a two-page result is
+ * a smaller number that looks exactly like the right one. `Finance.tsx`'s
+ * `sumOf` refuses to add up a list whose `total !== rows.length`; this is the
+ * same rule for a read that is signed rather than displayed. It pages with
+ * `page` (→ `.range()`, on the list's `id` tiebreak) until a page comes back
+ * short, then checks the rows read against `total`. A mismatch throws a
+ * sentence the screen renders — never a short figure.
+ *
+ * `total` can move between two pages if a payment lands mid-read; the final
+ * check catches that too, and a retry is the right answer to it.
+ */
+async function readEvery<T>(
+  what: string,
+  list: (opts: ListFilters & { withCount: true }) => Promise<ListQueryResult<T>>,
+  filters: ListFilters,
+): Promise<T[]> {
+  const rows: T[] = []
+  let total: number | null = null
+
+  for (let index = 0; ; index += 1) {
+    const page = await list({ ...filters, withCount: true, page: { index, size: CLOSING_PAGE_SIZE } })
+    rows.push(...page.rows)
+    if (typeof page.total === 'number') total = page.total
+
+    if (page.rows.length < CLOSING_PAGE_SIZE) break
+    if (total !== null && rows.length >= total) break
+    /* A server that never gives a count and never gives a short page cannot be
+       read to completion — stop rather than loop, and say so. */
+    if (index >= 10_000) throw new Error(`Daily closing cannot be computed: ${what} did not end after ${rows.length} rows.`)
+  }
+
+  if (total !== null && rows.length !== total) {
+    throw new Error(`Daily closing cannot be computed: ${total} ${what} but only ${rows.length} were read.`)
+  }
+  return rows
+}
+
 /**
  * Read one day's closing position.
  *
- * Six queries, run together. A single failure rejects the whole read rather
+ * Six reads, run together. A single failure rejects the whole read rather
  * than returning a partial closing: a screen showing seven right figures and
  * one silently-zero one is worse than a screen that says it could not load,
  * because the zero is indistinguishable from a real quiet day.
+ *
+ * The three counts take the server's `total`. The two row-sums are read to
+ * completion by {@link readEvery}; deposits come from `sumDepositsHeld`, which
+ * pages every client — deactivated ones included — and count-checks itself.
  */
 export async function fetchDailyClosing(dayAd: string): Promise<DailyClosing> {
-  const [outgoing, incoming, created, payments, invoices, clients] = await Promise.all([
+  const [outgoing, incoming, created, payments, invoices, deposits] = await Promise.all([
     listBookings({ ...todaysOutgoing(dayAd), withCount: true }),
     listBookings({ ...todaysIncoming(dayAd), withCount: true }),
     listBookings({ ...bookingsCreatedOn(dayAd), withCount: true }),
-    listPayments(paymentsInPeriod(dayAd, dayAd)),
-    listInvoices(outstandingInvoices()),
-    listClients(),
+    readEvery('payments today', listPayments, paymentsInPeriod(dayAd, dayAd)),
+    readEvery('outstanding invoices', listInvoices, outstandingInvoices()),
+    sumDepositsHeld(),
   ])
 
   let cash = 0
@@ -103,7 +154,7 @@ export async function fetchDailyClosing(dayAd: string): Promise<DailyClosing> {
   let wallets = 0
   let plainOther = 0
   let unclassified = 0
-  for (const p of payments.rows) {
+  for (const p of payments) {
     switch (p.channelGroup) {
       case 'Cash':
         cash += p.amount
@@ -145,8 +196,8 @@ export async function fetchDailyClosing(dayAd: string): Promise<DailyClosing> {
       digitalWallets: P(wallets),
       unclassified: P(unclassified),
     },
-    receivablesTotal: P(invoices.rows.filter((r) => !r.isVoid).reduce((s, r) => s + r.outstandingAmount, 0)),
-    depositsHeld: P(clients.reduce((s, c) => s + (c.depositHeld ?? 0), 0)),
+    receivablesTotal: P(invoices.filter((r) => !r.isVoid).reduce((s, r) => s + r.outstandingAmount, 0)),
+    depositsHeld: deposits.total,
     dayBoundaryNote: DAY_BOUNDARY_NOTE,
   }
 }

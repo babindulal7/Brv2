@@ -24,11 +24,11 @@ vi.mock('../finance', () => ({
   outstandingInvoices: () => ({}),
   paymentsInPeriod: () => ({}),
 }))
-vi.mock('../clients', () => ({ listClients: vi.fn() }))
+vi.mock('../clients', () => ({ sumDepositsHeld: vi.fn() }))
 
 const { listBookings } = await import('../bookings')
 const { listPayments, listInvoices } = await import('../finance')
-const { listClients } = await import('../clients')
+const { sumDepositsHeld } = await import('../clients')
 const { fetchDailyClosing, varianceLine, bookingsCreatedOn } = await import('../closing')
 
 const asMock = (f: unknown) => f as ReturnType<typeof vi.fn>
@@ -43,7 +43,7 @@ beforeEach(() => {
     .mockResolvedValueOnce({ rows: [], total: 2 })
   asMock(listPayments).mockResolvedValue({ rows: [] })
   asMock(listInvoices).mockResolvedValue({ rows: [] })
-  asMock(listClients).mockResolvedValue([])
+  asMock(sumDepositsHeld).mockResolvedValue({ total: 0, clients: 0 })
 })
 
 const DAY = '2026-08-05T06:00:00.000Z'
@@ -67,8 +67,52 @@ describe('fetchDailyClosing — the counts', () => {
       .mockResolvedValueOnce({ rows: [], total: null })
     asMock(listPayments).mockResolvedValue({ rows: [] })
     asMock(listInvoices).mockResolvedValue({ rows: [] })
-    asMock(listClients).mockResolvedValue([])
+    asMock(sumDepositsHeld).mockResolvedValue({ total: 0, clients: 0 })
     expect((await fetchDailyClosing(DAY)).pickupsCount).toBe(2)
+  })
+})
+
+/**
+ * FI-02 — the two money sums are reductions over rows, so they are only right
+ * when every row was read. A one-page read of a two-page day is a smaller
+ * number that looks exactly like the right one, and it would then be signed.
+ */
+describe('fetchDailyClosing — a sum is only signed over a complete read', () => {
+  const pageOf = (n: number, amount: number) =>
+    Array.from({ length: n }, () => ({ amount: rs(amount), channelGroup: 'Cash' }))
+
+  it('asks every row-sum read for the server count', async () => {
+    await fetchDailyClosing(DAY)
+    for (const call of [...asMock(listPayments).mock.calls, ...asMock(listInvoices).mock.calls]) {
+      expect(call[0]).toMatchObject({ withCount: true })
+    }
+  })
+
+  it('pages payments until the server count is met, and sums all of them', async () => {
+    asMock(listPayments)
+      .mockResolvedValueOnce({ rows: pageOf(1000, 10), total: 1200 })
+      .mockResolvedValueOnce({ rows: pageOf(200, 10), total: 1200 })
+    const out = await fetchDailyClosing(DAY)
+    expect(out.collected.cash).toBe(rs(12_000))
+    expect(asMock(listPayments).mock.calls.map((c) => c[0].page)).toEqual([
+      { index: 0, size: 1000 },
+      { index: 1, size: 1000 },
+    ])
+  })
+
+  it('refuses a short page of payments with a stated reason rather than signing a short figure', async () => {
+    asMock(listPayments).mockResolvedValue({ rows: pageOf(2, 10), total: 5 })
+    await expect(fetchDailyClosing(DAY)).rejects.toThrow(/5 payments today but only 2 were read/)
+  })
+
+  it('refuses a short page of invoices on the same terms', async () => {
+    asMock(listInvoices).mockResolvedValue({ rows: [{ outstandingAmount: rs(1), isVoid: false }], total: 3 })
+    await expect(fetchDailyClosing(DAY)).rejects.toThrow(/3 outstanding invoices but only 1 were read/)
+  })
+
+  it('accepts a short page only when it IS the whole result', async () => {
+    asMock(listPayments).mockResolvedValue({ rows: pageOf(2, 10), total: 2 })
+    expect((await fetchDailyClosing(DAY)).collected.cash).toBe(rs(20))
   })
 })
 
@@ -127,13 +171,19 @@ describe('fetchDailyClosing — the standing position', () => {
     expect((await fetchDailyClosing(DAY)).receivablesTotal).toBe(rs(7500))
   })
 
-  it('sums deposits held and reads a null hold as nothing, not as a gap', async () => {
-    asMock(listClients).mockResolvedValue([{ depositHeld: rs(1000) }, { depositHeld: null }, { depositHeld: rs(500) }])
+  /**
+   * FI-01 — the liability comes from `sumDepositsHeld`, which reads every
+   * client (deactivated included) and count-checks itself. It is NOT rebuilt
+   * here from `listClients`, whose 100-newest-active page understated it.
+   */
+  it('takes deposits held from the all-clients reader, as given', async () => {
+    asMock(sumDepositsHeld).mockResolvedValue({ total: rs(1500), clients: 3 })
     expect((await fetchDailyClosing(DAY)).depositsHeld).toBe(rs(1500))
+    expect(sumDepositsHeld).toHaveBeenCalledTimes(1)
   })
 
   it('rejects the whole read if one query fails, rather than reporting a silent zero', async () => {
-    asMock(listClients).mockRejectedValue(new Error('deposits unavailable'))
+    asMock(sumDepositsHeld).mockRejectedValue(new Error('deposits unavailable'))
     await expect(fetchDailyClosing(DAY)).rejects.toThrow('deposits unavailable')
   })
 

@@ -772,7 +772,9 @@ export default function ClientDetail() {
               edit={edit}
               rows={[
                 { label: 'Membership Tier', value: client.membership, ...(TIER_TONE[client.membership] === 'danger' ? { tone: 'danger' as const } : {}) },
-                { label: 'Last Rental', value: client.lastRentalBs === '—' ? 'No rental yet' : `${client.lastRentalBs} BS · ${client.lastRentalAd}` },
+                // `lastRentalBs` carries its own " BS" suffix when it is a BS date and none
+                // when the query fell back to the AD date — nothing is appended here.
+                { label: 'Last Rental', value: client.lastRentalBs === '—' ? 'No rental yet' : `${client.lastRentalBs} · ${client.lastRentalAd}` },
                 // Open ⭐ #2 (HIS v2.1) — no benefit matrix is ruled yet.
                 { label: 'Benefits', value: 'Not yet defined (Open ⭐ #2)' },
                 ...(moneyScope(gctx) === 'full'
@@ -1213,7 +1215,7 @@ export default function ClientDetail() {
             </li>
             <li style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               <Icon name="calendar" size={14} style={{ color: 'var(--muted)', flexShrink: 0, marginTop: 2 }} />
-              {client.lastRentalBs === '—' ? 'No rental history yet' : `Last rental ${client.lastRentalBs} BS (${client.lastRentalAd})`}
+              {client.lastRentalBs === '—' ? 'No rental history yet' : `Last rental ${client.lastRentalBs} (${client.lastRentalAd})`}
             </li>
             {client.isBlocked && (
               <li style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--danger-text)' }}>

@@ -154,11 +154,21 @@ export function DamageTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+      {/* RS-05 — this used to read "moved to Maintenance and is no longer
+          available for booking". Nothing here writes `damage_findings`, opens a
+          maintenance job or changes `product_units`: there is no damage action
+          in src/actions, so the decision lives in this screen's state only and
+          the notice says exactly that. TODO(decision): an `approveDamageFinding`
+          action (finding write + maintenance job + unit status, per
+          `approvalEffect` in lib/damage.ts) is needed before this can claim
+          the move. */}
       {justApproved && (
-        <div style={{ ...cardStyle, padding: '10px 12px', display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-sm)', borderColor: 'var(--success)' }}>
-          <Icon name="tool" size={14} style={{ flexShrink: 0, marginTop: 2, color: 'var(--success-text)' }} />
+        <div role="status" style={{ ...cardStyle, padding: '10px 12px', display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-sm)' }}>
+          <Icon name="alert_triangle" size={14} style={{ flexShrink: 0, marginTop: 2, color: 'var(--warn-text)' }} />
           <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-            Approved — {justApproved.unitName} moved to Maintenance and is no longer available for booking.
+            Approval for {justApproved.unitName} is recorded on this screen only — nothing has been written. No damage
+            action exists yet, so the finding is not saved, no maintenance job was opened and the unit's availability is
+            unchanged.
           </span>
         </div>
       )}
@@ -342,13 +352,21 @@ export function DamageTab() {
           {findings
             .filter((f) => f.state === 'Approved' || f.state === 'Rejected')
             .map((f) => {
-              const s = settleDeposit(f.depositPaisa, f.chargePaisa)
+              /* RS-04 — a rejected finding charges nothing. Settling against
+                 the figure that was refused printed a refund and an
+                 "uncovered" shortfall for money nobody is owed. */
+              const rejected = f.state === 'Rejected'
+              const s = settleDeposit(f.depositPaisa, rejected ? (0 as Paisa) : f.chargePaisa)
               return (
                 <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap', fontSize: 'var(--t-meta)' }}>
                   <span className="identifier" style={{ fontSize: 'var(--t-th)', fontWeight: 700 }}>{f.id}</span>
                   <span style={{ flex: 1, minWidth: 160 }}>{f.unitName}</span>
                   <Chip tone={f.state === 'Approved' ? 'success' : 'neutral'}>{f.state}</Chip>
-                  <span className="figure" style={{ fontWeight: 600 }}>{formatMoney(f.chargePaisa)}</span>
+                  {rejected ? (
+                    <span style={{ fontWeight: 600, color: 'var(--muted)' }}>No charge — rejected</span>
+                  ) : (
+                    <span className="figure" style={{ fontWeight: 600 }}>{formatMoney(f.chargePaisa)}</span>
+                  )}
                   <span className="figure" style={{ color: 'var(--muted)', fontSize: 'var(--t-th)' }}>
                     refund {formatMoney(s.refundPaisa)}
                     {s.shortfallPaisa > 0 && ` · ${formatMoney(s.shortfallPaisa)} uncovered`}

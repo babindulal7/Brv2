@@ -1,57 +1,40 @@
 import { useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
-import { DomainEvents, EVENT_TYPES } from '../../../events/eventBus'
-import { useAuth } from '../../../lib/auth'
+import { Unavailable } from '../../../components/ui/Unavailable'
 import type { ClientRecord, KycStatus } from '../../../data/clients'
 
 export interface VerifyKycModalProps {
   isOpen: boolean
   onClose: () => void
+  /**
+   * Never called today — see `SAVE_BLOCKED`. Kept on the contract so the wired
+   * version fires it with the status the action actually wrote.
+   */
   onSuccess: (newStatus: KycStatus, notes: string) => void
   client: ClientRecord
 }
 
+/*
+ * TODO(decision) — no KYC action exists. Nothing in `src/actions/clients`
+ * writes a KYC status or a document record; `updateClient` is a stub. What
+ * stood here emitted `KYC_STATUS_UPDATED`, called `onSuccess`, and closed — a
+ * Save that wrote nothing, with a `reviewer: user?.name ?? 'Admin Staff'`
+ * fallback that fabricated a reviewer. The event belongs in the action, after
+ * its write succeeds.
+ */
+const SAVE_BLOCKED =
+  'KYC decisions are a client-KYC action that is not built yet — nothing typed here can be saved.'
+
 export function VerifyKycModal({
   isOpen,
   onClose,
-  onSuccess,
   client,
 }: VerifyKycModalProps) {
-  const { user } = useAuth()
   const [status, setStatus] = useState<KycStatus>(client.kycStatus === 'Not Submitted' ? 'Verified' : client.kycStatus)
   const [docType, setDocType] = useState('Citizenship Certificate / National ID')
   const [docNumber, setDocNumber] = useState(client.pan ?? '')
   const [notes, setNotes] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const handleSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault()
-    setSubmitting(true)
-    setError(null)
-
-    try {
-      await DomainEvents.emit(EVENT_TYPES.KYC_STATUS_UPDATED, {
-        clientId: client.id,
-        clientName: client.name,
-        oldStatus: client.kycStatus,
-        newStatus: status,
-        documentType: docType,
-        documentNumber: docNumber,
-        reviewer: user?.name ?? 'Admin Staff',
-        notes: notes.trim(),
-        atIso: new Date().toISOString(),
-      })
-
-      onSuccess(status, notes.trim())
-      onClose()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to update KYC status')
-    } finally {
-      setSubmitting(false)
-    }
-  }
 
   return (
     <Modal
@@ -62,30 +45,33 @@ export function VerifyKycModal({
       size="md"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose} disabled={submitting}>
+          <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={() => handleSubmit()} disabled={submitting}>
-            {submitting ? 'Updating Status…' : 'Save KYC Decision'}
-          </Button>
+          <Unavailable reason={SAVE_BLOCKED}>
+            <Button variant="primary" disabled>
+              Save KYC Decision
+            </Button>
+          </Unavailable>
         </>
       }
     >
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-        {error && (
-          <div
-            style={{
-              padding: '10px 14px',
-              borderRadius: 'var(--r-btn)',
-              background: 'var(--st-danger-bg)',
-              color: 'var(--st-danger-fg)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 600,
-            }}
-          >
-            {error}
-          </div>
-        )}
+      {/* Enter inside a field must not submit either — there is nothing to submit to. */}
+      <form onSubmit={(e) => e.preventDefault()} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+        <div
+          role="status"
+          style={{
+            padding: '10px 14px',
+            borderRadius: 'var(--r-btn)',
+            background: 'var(--card2)',
+            border: '1px solid var(--border)',
+            color: 'var(--text2)',
+            fontSize: 'var(--t-meta)',
+            lineHeight: 1.45,
+          }}
+        >
+          {SAVE_BLOCKED}
+        </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

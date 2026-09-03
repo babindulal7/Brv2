@@ -5,6 +5,7 @@ import { rupees, formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import { DomainEvents, EVENT_TYPES } from '../../../events/eventBus'
 import { useAuth } from '../../../lib/auth'
+import { useCanViewMoney } from '../../../lib/moneyVisibility'
 import type { Case, CasePriority, CaseType } from '../../../data/cases'
 
 export interface LogCaseModalProps {
@@ -29,6 +30,10 @@ export function LogCaseModal({
   initialNotes = '',
 }: LogCaseModalProps) {
   const { user } = useAuth()
+  // RS-07 / Law 6 — Warehouse sees no money: the cost and deposit-hold fields
+  // are omitted for a money-blind role, and the submit path below must not
+  // read them for that role.
+  const money = useCanViewMoney()
   const [caseType, setCaseType] = useState<CaseType>(initialType)
   const [priority, setPriority] = useState<CasePriority>('Medium')
   const [title, setTitle] = useState(
@@ -58,8 +63,11 @@ export function LogCaseModal({
 
     try {
       const caseNo = `CASE-2026-${Math.floor(1000 + Math.random() * 9000)}`
-      const costPaisa = rupees(estimatedCostRupees)
-      const holdPaisa = holdDeposit ? rupees(depositHoldRupees || estimatedCostRupees) : (0 as Paisa)
+      const costPaisa = money ? rupees(estimatedCostRupees) : (0 as Paisa)
+      // TODO(decision): "hold amount defaults to the estimated cost" is deposit
+      // logic on a page. It belongs in the engine (src/lib/money.ts, beside the
+      // deposit helpers) — left in place, not moved, until that is ruled.
+      const holdPaisa = money && holdDeposit ? rupees(depositHoldRupees || estimatedCostRupees) : (0 as Paisa)
 
       const newCase: Case = {
         id: caseNo,
@@ -262,6 +270,7 @@ export function LogCaseModal({
           </div>
         </div>
 
+        {money && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
@@ -318,6 +327,7 @@ export function LogCaseModal({
             </label>
           </div>
         </div>
+        )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>

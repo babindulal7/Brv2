@@ -829,9 +829,13 @@ export default function RentalsList() {
   /** The same answer as a set, for the per-row marking. */
   const subIdSet = useMemo(() => (subIds === null ? null : new Set(subIds)), [subIds])
 
-  const statusKey = (f.filters.chips?.stage ?? []).join(' ')
+  /* Keyed on a character no stage name contains. This used to join and split
+     on a SPACE, so 'On Rent' became 'On' + 'Rent', both fell out of the
+     vocabulary filter below, and the one stage that matters most on this list
+     could never be filtered (BUG_AUDIT_LIFECYCLE X-04, driven 2 Sep 2026). */
+  const statusKey = (f.filters.chips?.stage ?? []).join('|')
   const statuses = useMemo(
-    () => (statusKey ? statusKey.split(' ').filter((s): s is BookingStatus => (STATUS_ORDER as readonly string[]).includes(s)) : []),
+    () => (statusKey ? statusKey.split('|').filter((s): s is BookingStatus => (STATUS_ORDER as readonly string[]).includes(s)) : []),
     [statusKey],
   )
   const statusFilter = useMemo(() => new Set(statuses), [statuses])

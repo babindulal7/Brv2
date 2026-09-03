@@ -890,6 +890,21 @@ describe('payment filter sets', () => {
     record(paymentsForInvoice('i-1'))
     expect(db.state.calls).toContainEqual(['order', 'payment_date', { ascending: true }])
   })
+
+  /**
+   * FI-03. A 'Refund' row is `status = 'Received'` with `amount > 0`
+   * (payments_amount_positive, 0006:197), so a status-only set would ADD a
+   * refund to the Received KPI, the method donut, the collections chart and
+   * the closing's takings. The takings set names the one type that is money
+   * taken; 'Security Deposit' needs no exclusion because the table CHECK
+   * (0006:198) already makes it unreachable.
+   */
+  it('paymentsInPeriod is money taken: Received AND Advance Payment, never a Refund', () => {
+    record(paymentsInPeriod('2026-08-01', '2026-08-31'))
+    expect(chipCalls()['status']).toEqual(['Received'])
+    expect(chipCalls()['payment_type']).toEqual(['Advance Payment'])
+    expect(chipCalls()['payment_type']).not.toContain('Refund')
+  })
 })
 
 describe('paymentsInPeriod — payment_date is a timestamptz, so the day boundary is Kathmandu', () => {

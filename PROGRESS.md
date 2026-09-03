@@ -2,6 +2,249 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-03 — New Rental driven end to end on the mock build: Create works; four defects, one regression
+**Phase:** verification (no code changed) · **Status:** complete · **Page:** `/rentals/new` — `NewRental.tsx` 3,529 lines, `AddItemPanel.tsx` 1,295, `itemCatalogue.ts` 950; the three carry a third session's **uncommitted** diff (+303/−102)
+
+### Did
+Drove the page as Owner on `dev:mock` at 1440×900, per CLAUDE.md's rule that verification means
+driving the app. Every claim below was observed in the DOM or read at a cited line; where the
+harness misled me it is stated as such rather than reported as a defect.
+
+### Verified — works
+- **Create end to end.** Client picked from the live pool → one equipment line added → Confirm →
+  **`B-902`** created, persisted on `/rentals`, `navigate('/rentals')` on success (`NewRental.tsx`
+  confirmBooking, +219). Zero console errors, zero `[mock]` warnings. Outstanding **Rs 509** =
+  Rs 450 + 13% VAT, whole rupees (R2).
+- **Client picker** — `role=combobox` over `ul[aria-label="Clients"]`; 9 matches for "a" from the
+  live pool; selecting prefills Government ID / PAN (`601928473`).
+- **Add Item** — 66 results, live pool (`liveEquipment` set from `listInventory` → `products_v`,
+  which the mock engine maps); bundles and equipment with availability verdicts. **Click adds**
+  (the target is the inner model-name element at `AddItemPanel.tsx:995`, not the `role=option`
+  wrapper) and **Enter adds** (`:324-332`), proven with a synthetic `keydown` from zero items; a
+  second Enter is a dedupe no-op (`addEquipment`, `existing.has`).
+- **Availability blocking.** Adding the "Aputure 600D Pro Lighting Kit" bundle raised two criticals
+  — *Equipment conflict — Aputure LS 600d Pro is On Rent* / *…V-Mount Battery Plate is Reserved* —
+  and disabled Confirm. Exactly `itemCatalogue.ts:50`'s promise ("a bundle cannot smuggle an
+  unavailable camera past the check").
+- **Empty booking refused.** Confirm is *enabled* with a client and 0 items, but the handler
+  refuses: *"Not confirmed — a booking with no equipment on it is not a booking."* Rendered inline
+  via `actionError` (`:1627`, shown at `:2601`), cleared only when the next action starts (`:1525`,
+  `:1648`, `:1861`), never by a timer — **Law 12 satisfied.**
+- **Remove line** — one `aria-label="Remove <name> from this booking"` button per line (`:2149`).
+- Laws on screen: 5 (deposit under its own "separate, held as a liability" heading), 6 (Owner sees
+  money; `withMoney: canBookingMoney` gates the rate), 9 (Days explicit `1`), 12, 17 (no
+  "customer"). Dates default `3 Sept → 4 Sept 2026` via `getBusinessToday`.
+- **Bundle pricing is by design, and documented.** The bundle advertised Rs 16,000/day and 15
+  items; the booking got **9 items at Rs 19,500**: `includeCrewAndVehicle` is off by default (six
+  crew/vehicle components skipped, priced elsewhere) and `applyBundleSaving` is off (component
+  rates). `AddBundleResult` returns `skipped` with reasons and `savingPct`
+  (`itemCatalogue.ts:29-35, 62-70`).
+
+### Found — defects and gaps
+1. **P0, pre-existing, not this page's** — *"BS not available for this date"* under **both** Out and
+   Return. `DateTimeField.tsx:331` renders it whenever `toBs` returns null, and `bs.ts:112` returns
+   null outside Shrawan 2083 (16 Jul–16 Aug 2026). Law 7's render half is dead on the booking form,
+   as it was on Pulse and the Dashboard.
+2. **Regression in the third session's uncommitted diff** — `kind`'s default went
+   `'Documentary Film'` → `''` (its diff lines 113/118), and the header at `NewRental.tsx:2563`
+   builds `` `${client?.name ?? 'No client selected'} · ${kind}` `` with no empty guard, so it
+   renders **"Nisha Maharjan ·"** with a dangling separator.
+3. **UX gap** — NewRental never surfaces `skipped` or `savingPct` (grep: zero hits). The operator
+   who chose "Rs 16,000/day · 15 items" sees Rs 19,500 and 9 lines with nothing on screen saying
+   six were skipped or why, or that the saving was not applied. The engine is honest; the screen
+   drops it. Against the house rule that a figure resolving to less than expected explains itself.
+4. **A11y** — the Add Item `role="dialog"` (`AddItemPanel.tsx:404`) has **no close button**: its
+   only buttons are the four tabs (DOM-verified). Backdrop click closed it in some runs and not
+   others. Escape-from-the-search-input closes it (proven); Escape from other focus positions is
+   **unverified** — see the harness note. WCAG's dialog pattern and Law 15 want a visible 44×44
+   dismiss regardless.
+5. **Console error-level React warning on every render of the client field** —
+   `ClientCombobox.tsx:363` spreads `borderColor` onto `fieldStyle`, whose base `inputStyle`
+   carries the `border` shorthand ("Removing borderColor border"). Committed code, not the dirty
+   diff.
+6. **Copy** — `:2624` renders `${days} rental days · ${lines.length} items` unpluralised: "1 rental
+   days", "1 items".
+7. **Coverage** — a 3,529-line page with **no direct test file**; only `createRental.test.ts` (the
+   action) and two `BookingDetail` tests exist under `modules/rentals/__tests__`.
+8. **Symptom of open §4.42, not a page bug** — *"Client has Rs 2,23,324.80 outstanding"*.
+   `formatMoney` shows decimals only when the paisa amount is fractional (`money.ts:58-62`), so the
+   corpus holds a non-whole-rupee outstanding. R2 says whole rupees; the data disagrees.
+
+### Found — the harness, recorded so the next session does not repeat it
+- **`computer` `key` presses did not reach the page's input.** Two real Enters and one real Escape
+  produced no effect; the identical `KeyboardEvent` dispatched synthetically on the focused input
+  drove the handler every time. Three rounds were spent chasing a "keyboard defect" that did not
+  exist. **Do keyboard tests with synthetic events on the focused element; treat a `computer` key
+  press with no observed effect as *undelivered*, not as a no-op in the app.**
+- Clicking a `role=option` wrapper does not reach a React `onClick` on its child; target the inner
+  pointer element (`getComputedStyle(el).cursor === 'pointer'`).
+- Clicking "Add Item" **toggles** the panel; check `[role=dialog]` before clicking, or the second
+  click closes what the first opened.
+- A fresh tab opens at the pane's own size (**640×360** here) — phone layout, bottom bar, "New
+  Rental" as a `BUTTON` not an anchor. Resize to the target width before probing nav.
+- The mock session persists (`localStorage` `babin.mock.session.v1`), so a cold load keeps you
+  signed in — the earlier bounce to `/login` was a navigation fired 2.5 s after submit.
+
+### Not verified
+Escape from a non-input focus position (above). The phone layout was not driven. `B-902` landed in
+the B-900 block, which the standing note says collides with real Booqable orders #900+ on the live
+UNIQUE column — a corpus fact, not exercised here.
+
+## 2026-09-03 (cont. 2) — RT-01: the Return verb stamps `bookings.actual_return_at`
+**Phase:** floor engine · **Status:** built, tested, driven
+
+Babin: "next". The next open P1 in lifecycle order was RT-01 — nothing wrote
+`bookings.actual_return_at`, so no late fee could ever be computed from persisted data.
+
+### The ruling was already in the schema
+`floorVerb.ts` refused the write because `dataAccess.ts` lists `bookings` as Booqable-mastered
+at table level. The integration spec masters **at field level**, `booqable/map` maps no
+actual-return instant (only `planned_stops_at`), and the column's own comment says "Set by the
+Return workspace" (`0002:86`). So the stamp is an OS-native write to an OS-native field:
+`runFloorVerb` step 9 writes `actual_return_at = occurredAt` once, only when the Return
+session moves the booking to Returned (never on a partial session, never overwritten), through
+`safeUpdate` with the action key. `pushOrderStop` (the Booqable status write-back) stays
+unruled per PLAN §4.16 and is not called. `bookings.actual_return_at` added to the hand-kept
+`Database` type.
+
+### Verified
+- `tsc --noEmit` exit 0 · `floorVerbs.test.ts` 45/45 (two new: a held Return stamps nothing;
+  a completing Return stamps the session instant with the action key).
+- Driven in mock: B-715 (On Rent after this morning's handover) → Complete Return with all 18
+  units Good → stage Returned, overlay shows `bookings.actual_return_at = 15:50:20Z` and 18 unit
+  rows at Returned.
+
+### Still open at P1
+X-01 (BS month-length data), RT-02 (damage finding from Return), RS-02 (Reset exceptions
+write nothing), RS-03 (Reset does not return units to the pool).
+
+## 2026-09-03 (cont.) — NR-02: the booking write now carries what the screen prices
+**Phase:** Phase 2 write path · **Status:** built, tested, driven in mock
+
+Babin: "fix NR-03 next" — NR-03 was already ticked (the Rs 0 rate write is refused before any
+write), so the next open item, **NR-02**, was taken: the New Rental write sent equipment lines
+only and dropped the discount, crew, transport, deposit and advance the rail priced.
+
+### Did
+- `actions/rentals/createRental.ts` — `CreateRentalInput` grows `crew: CreateRentalCrewLine[]`
+  and `transport: CreateRentalTransport`; `validate` refuses a crew role outside the
+  `crew_role` enum **by name** (the seed roster says "Director of Photography", the enum says
+  "DoP" — no mapping is ruled, so none is invented), negative charges, and days < 1.
+  `execute` writes `booking_crew_lines` / `booking_transport` AFTER `create_booking`, each row
+  with its own Law 8 key, and raises `CreateRentalPartialError` (booking id + number) if one
+  fails — the Quote exists and the message says so. Result carries `crewLines` and
+  `transportWritten`.
+- `types/database.ts` — `CrewRoleDb` and the two tables.
+- `NewRental.tsx` — sends `discounts: [{ discountSource: 'Manual', percent }]` when a discount
+  is set, `depositRequired`, `crew` (roster → enum role, rates via `toRupees`), and a transport
+  row for any delivery that is not Client Pickup; per-row keys minted once per press and
+  cleared with the action key; the partial error lands as "Booking saved as a Quote (B-n),
+  but its crew lines could not be written…". **The confirm callback's deps list gained
+  `discountPct`, `crew`, `clientPickup`, the two charges, `days`, `depositRequiredPaisa`** —
+  the first driven attempt sent a 0% discount because the closure was stale, which is the
+  kind of thing only driving finds.
+- `lib/mock/client.ts` — `create_booking` now stores `booking_discounts` rows and applies the
+  two schema CHECKs (`percent ≤ 25`; above 10 needs reason + approver). **TODO(decision):
+  D3 removed the discount gate from the app; the schema still carries it** — a 15% discount
+  from this screen will be refused by the database, in mock and in production alike.
+- Not sent, stated in code: the VAT switch (`vat_rate` lives on the invoice) and the typed
+  advance (a payment settles against an invoice; none exists at Quote). TODO(decision).
+
+### Verified
+- `tsc --noEmit` exit 0 · `vitest run src/actions/rentals src/modules/rentals src/lib/mock`
+  → 11 files, 289 tests, all green · new `createRentalCrewTransport.test.ts` 5/5.
+- Driven in mock: **B-2** saved as a Quote with a 5% `booking_discounts` row, Confirm refused
+  because the FX9's only unit was held by B-1 — surfaced as the NR-04 half-success message,
+  which is exactly right. **B-3** (Sony FX6, 5%, Arjun Magar as Gaffer, Babin Delivery):
+  Booked, with the discount row, the crew line (Rs 12,000 × 1) and the transport row.
+
+## 2026-09-03 — P1 wave from the lifecycle register: 32 of 38 fixed, driven end to end in mock for the first time
+**Phase:** cross-phase fixes (mock harness · floor engine · six page groups) · **Status:** 32 P1s ticked in [`BUG_AUDIT_LIFECYCLE_2026-09-02.md`](BUG_AUDIT_LIFECYCLE_2026-09-02.md); 6 remain, each needing a ruling or a new write path
+
+Babin: "fix P1s". Every P1 in the register was re-read at its current line (the tree had moved —
+another session landed `1a3c7b7` TODO sweep and `3785d5f` overnight), then fixed or left with
+a stated reason. Six parallel edit passes on disjoint files, the engine and harness fixes done
+by hand. **Nothing committed** — the tree also carries that other session's uncommitted work.
+
+### The harness fix that made the rest drivable
+`src/lib/mock/client.ts` `applyTriggers()` emulates the one trigger the floor depends on:
+`bookings.stage` is a read model written only by the 0021 trigger on
+`booking_stage_transitions`, and the mock had none, so no stage ever advanced in `dev:mock`
+(X-02). Driven after the fix: **B-716 Booked→Packed, B-715 Packed→On Rent, B-864
+On Rent→Returned** — the first time a floor verb has been seen to move a booking in the
+environment the app is verified in. Memory `mock-has-no-stage-trigger` updated to say so.
+
+### Engine (`src/actions/rentals/floorVerb.ts`, `handoverRental.ts`, `types/database.ts`)
+- **X-03 / HO-01** — `writeUnitStates()`: `booking_line_units` finally has a writer. Pack →
+  `packed/packed_at/packed_by/packing_session_id`; Handover → `unit_state 'Picked Up'` +
+  `handover_session_id`; Return → the state `returnMovementState` names + `returned_at` +
+  `return_session_id` (+ condition, `damaged`); a `'missing'` line → `'Missing'` + reason.
+  Scoped to scanned units, or every live unit of a fully-resolved quantity line; released rows
+  (0076 freeze) never touched; written by id through `safeUpdate` so the action key rides.
+  `booking_line_units` added to the hand-maintained `Database` type. **Driven: 18 unit rows
+  flipped to Picked Up on B-715.**
+- **PK-04** — `readSessionMovements()` before the line loop; a resumed session skips units it
+  already moved and never appends a second quantity row (`session_line_movements` is
+  append-only — a changed count within one session is a `TODO(decision)`).
+- **HO-02** — `governmentIdVerified` / `bookingAuthorizationVerified` ride the input into
+  `operation_sessions.government_id_verified` / `booking_authorization_verified` (insert, and
+  update on a resumed session). **Driven: the B-715 session row shows both true.**
+
+### Pages (one line each; the register carries the file:line)
+- **X-04** Rentals list On Rent chip (join/split on space → `'|'`). Driven: 24 rows, pressed.
+- **BD-01** Booking Detail overdue requires `stage === 'On Rent'`.
+- **NR-01/03/04/05/06** New Rental: one action key per press + button disabled while saving;
+  money-blind roles refused before any write and `rate` via `toRupees`; a half-success says
+  the Quote was saved and a retry confirms *that* Quote; blank draft (project/kind empty,
+  today→tomorrow) — driven: TOTAL Rs 0 · Rental paid Rs 0; a client created from the booking
+  now carries `dbId` and its code.
+- **PK-01/02/03** Packing: a held stage is reported inline, not navigated past; Service /
+  Sub-rental / Manual / Bundle-parent lines are not packable rows; the gate counts every unit.
+- **HO-03/04/05** Handover: signature copy says session-only; Mark Cleared gated by
+  `canViewMoney`; caption promises On Rent only with no Missing rows.
+- **RS-01/04/05/06/07/08** Reset sends `resetEntries` (cleaner/QC as `user.id` when it is
+  the operator); DamageTab settles rejected findings at zero charge and stops claiming a
+  Maintenance move; Log Incident / Log Maintenance are Unavailable with a reason; money
+  fields in both modals gated by `useCanViewMoney`.
+- **FI-01/02/03** Daily Closing: `sumDepositsHeld()` pages every client; `readEvery()` pages
+  payments/invoices to completion and throws a stated error on a count mismatch;
+  `paymentsInPeriod` pins `payment_type = 'Advance Payment'`. Driven: closing renders,
+  no error.
+- **CL-01/02/03** Clients: AD dates no longer wear a BS suffix (driven: 0 on /clients);
+  credit/tier/KYC modals are Unavailable with the missing action named, 'Admin' fallbacks
+  gone; hardcoded tier discount copy removed.
+- **AR-01/02** Calendar falls back to the AD month past the BS table (driven: September
+  2026, 30 day cells, 0 em dashes); Sub-rental KPIs read "Not tracked yet", chips derive
+  from the rows.
+
+### Still open at P1 (6) — each named in the register with why
+X-01 (BS month lengths, PLAN §4.34 — data, not code) · NR-02 (the booking write still drops
+discount/crew/transport/deposit/advance — `CreateRentalInput`/RPC need a home for them) ·
+RT-01 (`actual_return_at`, money.ts TODO(decision)) · RT-02 (damage finding from Return) ·
+RS-02 (Reset exceptions write nothing) · RS-03 (Reset does not return units to the pool).
+
+### Verified
+- `tsc --noEmit` → **exit 0** · `npx vitest run` → **103 files, 2,357 tests, all green** (347 s; 16 tests added: closing paging, deposits reader, refund exclusion, the DamageTab notice).
+- Driven in `dev:mock` as Owner: Rentals list On Rent chip; B-716 Booked→Packed via Complete
+  Packing; B-715 Packed→On Rent via Complete Handover (gate-1 facts true, 18 unit updates,
+  20 movements, session row); B-864 On Rent→Returned via Complete Return (2 return_lines,
+  condition Good, transition row, stage patch); New Rental blank draft; /clients dates;
+  /calendar September grid; /finance/closing figures.
+- Not driven: Reset (mock has no `cleaning_queue_entries`), Warehouse-role paths (mock has
+  a warehouse login — next session), the closing count-mismatch error (needs >1000 rows).
+
+### Blocked / next
+- The six open P1s above. NR-02 is the one that hides money from the ledger and should be
+  next: decide whether `create_booking` grows discount/deposit/crew/transport parameters or
+  follow-up actions write them.
+- The other session's uncommitted work is interleaved with this wave in the same files
+  (`NewRental.tsx`, the four workspaces, `ResetWorkspace.tsx`). Commit as one wave or split
+  by `git add -p`; do not `checkout --` any of them.
+- `TODO(decision)`s added this session: within-session movement correction (floorVerb),
+  edits between a half-success and its retry (NewRental), staff picker for cleaner/QC
+  attribution (ResetWorkspace), signatures writer (HandoverWorkspace), credit/tier/KYC actions
+  (three client modals), `approveDamageFinding` (DamageTab), "active" sub-rental definition.
+
 ## 2026-09-03 — `console.*` → `captureError` sweep: observability engine wired, stub lies removed
 **Phase:** cross-phase hygiene · **Status:** complete, gates green · **No schema change, no migration**
 
@@ -82,6 +325,12 @@ flagged, A2-A13 fixed") and staged the stub files whole. Measured with `git show
   interleaves three sessions' work. Both this session's gates (07:05, 102 / 2,344) and the other
   session's (23:49, over a tree already holding these edits) are green, so staging is safe whenever
   the owner chooses.
+- **→ Committed as `b7356ce` at 09:21, on the owner's instruction ("commit the rest").** 28 files,
+  +159/−37: the 27 sweep files plus this entry — staged as its own hunk of `PROGRESS.md` via
+  `git diff -U0 | awk | git apply --cached --unidiff-zero`, so the other session's unstaged
+  fifth-session entry in the same file was **not** swept into it. `NewRental.tsx`,
+  `AddItemPanel.tsx`, `itemCatalogue.ts` and the untracked `BUG_AUDIT_LIFECYCLE_2026-09-02.md`
+  left in the tree untouched — they are a third session's.
 - The `mock/*` `eslint-disable no-console` lines were kept as ruled here; TODO_SWEEP line 130
   questions them. One decision, not two — either keep the disables or turn `no-console` on.
 
@@ -305,6 +554,75 @@ unchanged and unanswered by any of this. §4.42(b) rounding, §4.42(c) `vat_rate
 - Nothing is committed: both sessions' work is in the working tree together.
 
 ---
+
+## 2026-09-02 (fifth session) — Lifecycle bug audit, inquiry → cleaning: 152 findings registered, 30 reproduced in the browser, nothing changed
+**Phase:** cross-phase verification · **Status:** audit complete, register written, no code touched
+
+Babin: "find all the bugs and remaining to-dos in the app, page by page, from inquiry to
+cleaning." Output is [`BUG_AUDIT_LIFECYCLE_2026-09-02.md`](BUG_AUDIT_LIFECYCLE_2026-09-02.md)
+— a checkbox worklist in lifecycle order (cross-cutting · Clients · Inquiry/Quote · Booked ·
+Packing · Handover · Return · Cleaning/Reset · Close the money · Around). **152 items: 38 P1 ·
+81 P2 · 33 P3; 110 bugs, 42 explicitly deferred to-dos.** Items already in
+`FUNCTIONAL_BUGS.md` or filed in PLAN §4 are not repeated.
+
+### Method
+- Seven read-only code passes, one per stage, each reading its pages, modals, data files and
+  the engine/action behind them in full.
+- One driven pass in `dev:mock` as Owner at 1600×960: Dashboard → Rentals → a Quote (B-800) →
+  a Booked booking (B-716) → Packing (completed) → Handover (B-715) → Return (B-864) → Reset
+  (B-888) → Evidence → Finance / Payments / Closing / Expenses → Cases → Operations → Calendar
+  → Clients → New Rental. Every route probed for dead enabled controls via React fiber props
+  (the method from the 2 Sep register), plus text leaks and the word "customer".
+
+### The four that break every stage (all driven)
+1. **The BS table ended 16 Aug** (§4.34 is now live): "Nepali date unavailable" in every
+   header, "—" in Booking Detail's BS slot, an empty Calendar month grid, and Clients printing
+   AD dates with a " BS" suffix.
+2. **In `dev:mock` no stage ever advances.** `bookings.stage` is written only by the 0021
+   trigger and the mock emulates no trigger. Complete Packing on B-716 wrote the session, 2
+   packing_lines, 2 movements, 2 audit rows and a Booked→Packed transition into the overlay;
+   the booking reloaded as BOOKED with no message. Verification by driving is blind to the
+   whole lifecycle. (Memory: `mock-has-no-stage-trigger`.)
+3. **`booking_line_units.unit_state / packed / packed_at` have no writer anywhere** — no
+   action, no trigger, only the 0047 seed. Booking Detail's Packed/Missing/Returned counters
+   never move after real floor work, and Handover reads the same column for "recorded by an
+   earlier session".
+4. **The On Rent stage chip cannot filter.** `RentalsList.tsx:832-836` joins the selected
+   stages with a space and splits on a space, so "On Rent" becomes "On" + "Rent" and both
+   are dropped. `?stage=On+Rent` shows all 120 rows.
+
+### Other P1s worth reading first
+New Rental opens pre-filled with demo money (past dates, 7% discount, "Rental paid Rs 15,000",
+"All changes saved") · double-click Confirm makes two bookings · the write drops discount,
+crew, transport, deposit and advance · Warehouse writes Rs 0 rates · a client created from
+the booking cannot be booked · Complete Packing navigates away on a held stage · service
+lines are counted as packable · Handover signatures and ID checks persist nothing and
+"Mark Cleared" is a one-click self-certification for any role · nothing writes
+`actual_return_at`, no late fee ever lands, no damage finding is raised from a real return ·
+Reset drops cleaner/QC data and never returns units to the pool · Log Case / Log Maintenance /
+Damage Approve / Credit-limit / Tier / KYC modals all report success and write nothing ·
+Daily Closing's "Deposits held" sums only the first 100 clients before it is frozen.
+
+### Verified
+- `npx tsc --noEmit` → **1 error**, `NewRental.tsx:28` unused `PARENTS` (the other session's
+  uncommitted WIP; the WIP itself is coherent and the live equipment pool loads).
+- `npx vitest run` → **101 files, 2,341 tests, all green** (725 s).
+- 30 of the 152 findings carry ✔ driven — reproduced in the browser, not only read.
+- Harness notes for the next driver: direct URL loads in `dev:mock` take 25–60 s (Documents
+  and Inventory did not finish inside 40 s — the closed BUG-008 class, not a defect); the
+  pane's `wait` caps at 10 s; the mock corpus writes invoices as `'Issued'`, which is not in
+  `invoice_status`, so Finance/Closing say "Outstanding Rs 0" while Booking Detail shows
+  Rs 25,934 on INV-3 — a mock corpus bug, registered under Cross-cutting.
+
+### Not done
+No fix was applied and no file outside the new register, this entry and memory was written.
+- ⚠ A concurrent session began a TODO sweep (`TODO_SWEEP_2026-09-02.md`) during this audit and has ~45 files modified in the working tree; the register's line numbers are from `adc1dbc` + the tree as read.
+The register is the worklist; each box is ticked when the item is fixed **and driven**.
+
+### Blocked
+Unchanged — §4.34 (BS month lengths) now blocks every date on every screen; §4.36, §4.40,
+§4.42(b)/(c) still open; the mock trigger gap is new and needs a decision on whether the mock
+should emulate `0021` or whether floor verbs should be driven against `dev:local`.
 
 ## 2026-09-02 (late) — whole-app TODO sweep, gates re-run, mock build driven
 **Phase:** audit · **Status:** complete — worklist in [`TODO_SWEEP_2026-09-02.md`](TODO_SWEEP_2026-09-02.md)

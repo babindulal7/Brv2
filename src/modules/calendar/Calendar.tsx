@@ -6,7 +6,7 @@ import type { IconName } from '../../components/ui/Icon'
 import { Input, Select, EmptyState, TouchTarget } from '../../components/ui'
 import { Card, PageHeader, Button, FooterNote, cardStyle, Rail } from '../../components/ui/Page'
 import { BRAND } from '../../lib/status'
-import { getBusinessToday, toBs, formatBs, formatAd, eachDay, isWeekend, BS_MONTHS } from '../../lib/bs'
+import { getBusinessToday, toBs, formatBs, formatBsOrAd, formatAd, formatAdMonth, adMonthDays, eachDay, isWeekend, BS_MONTHS } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { isIssuedBy } from '../../data/numbering'
 import { useViewport } from '../../lib/device'
@@ -150,10 +150,15 @@ function bsMonthStart(from: Date): Date {
 /**
  * Reads `?d=YYYY-MM-DD` into a UTC-midnight AD date.
  *
- * Returns `null` for anything the Date Engine cannot name — a malformed string,
- * a real date outside the BS table's range, or the `2026-07-32` that Today's
- * next-day button used to emit before its own day arithmetic was fixed. A bad
- * parameter falls back to today rather than throwing or rendering a blank grid.
+ * Returns `null` for anything that is not a real AD date — a malformed string,
+ * or the `2026-07-32` that Today's next-day button used to emit before its own
+ * day arithmetic was fixed. A bad parameter falls back to today rather than
+ * throwing or rendering a blank grid.
+ *
+ * A valid AD date is accepted whether or not `toBs` can name it: the BS table
+ * ends on 16 Aug 2026 (PLAN.md §4.34), and refusing every later `?d=` sent a
+ * link to 17 Aug back to today while the grid below rendered empty anyway. The
+ * month helpers fall back to the AD month for such an anchor.
  */
 function requestedDay(raw: string | null): Date | null {
   if (!raw) return null
@@ -163,7 +168,7 @@ function requestedDay(raw: string | null): Date | null {
   const ad = new Date(Date.UTC(y, mo - 1, d))
   // Rejects overflow like 2026-07-32, which Date would roll into August.
   if (ad.getUTCMonth() !== mo - 1 || ad.getUTCDate() !== d) return null
-  return toBs(ad) ? ad : null
+  return ad
 }
 
 /* ── 3.7 · the other filters live in the URL too ─────────────────────────
@@ -218,8 +223,17 @@ function anchorFor(day: Date | null): Date {
   return adDay(dayDiff(day, TODAY) - 1)
 }
 
-/** Every AD day the engine can still name inside that BS month. */
+/**
+ * Every AD day the engine can still name inside that BS month — or, when the
+ * engine cannot name the anchor at all, every day of the anchor's **AD month**.
+ *
+ * `toBs` is null for any day after 16 Aug 2026 (PLAN.md §4.34), and this used
+ * to return `[]` there, which left the Month view and the rail's mini month as
+ * an empty grid with "—" for a heading. A month grid is never empty
+ * (`lib/bs.ts`): the AD month is always known, so it is shown, labelled as AD.
+ */
 function bsMonthDays(from: Date): Date[] {
+  if (!toBs(from)) return adMonthDays(from)
   const start = bsMonthStart(from)
   const out: Date[] = []
   for (let i = 0; i < 34; i += 1) {
@@ -230,14 +244,23 @@ function bsMonthDays(from: Date): Date[] {
   return out
 }
 
-/** "11 – 17 Shrawan 2083 BS" — collapsed only when the engine agrees it is one month. */
+/**
+ * "11 – 17 Shrawan 2083 BS" — collapsed only when the engine agrees it is one
+ * month. Where either end has no BS name, the window is labelled by its AD
+ * month(s) instead — "September 2026", no " BS" — and the day range stays on
+ * the AD line every caller prints beneath this one.
+ */
 function bsRangeLabel(days: Date[]): string {
   const first = days[0]
   const last = days[days.length - 1]
   if (!first || !last) return '—'
   const a = toBs(first)
   const b = toBs(last)
-  if (!a || !b) return '—'
+  if (!a || !b) {
+    const ma = formatAdMonth(first)
+    const mb = formatAdMonth(last)
+    return ma === mb ? ma : `${ma} – ${mb}`
+  }
   if (a.year === b.year && a.month === b.month) {
     if (a.day === b.day) return formatBs(a)
     return `${a.day} – ${b.day} ${BS_MONTHS[a.month - 1] ?? ''} ${a.year} BS`
@@ -253,10 +276,11 @@ function adRangeLabel(days: Date[]): string {
   return `${formatAd(first)} – ${formatAd(last)} AD`
 }
 
-/** "Shrawan 2083" — the BS month a window sits in, with no day numbers. */
+/** "Shrawan 2083" — the BS month a window sits in, with no day numbers; the AD month ("September 2026") where BS is null. */
 function bsMonthLabel(days: Date[]): string {
-  const bs = toBs(days[0] ?? TODAY)
-  return bs ? `${BS_MONTHS[bs.month - 1] ?? ''} ${bs.year}` : 'Calendar'
+  const first = days[0] ?? TODAY
+  const bs = toBs(first)
+  return bs ? `${BS_MONTHS[bs.month - 1] ?? ''} ${bs.year}` : formatAdMonth(first)
 }
 
 /**
@@ -469,7 +493,9 @@ function BarView({
   const s = BAR_STYLE[bar.kind]
   const bsFrom = toBs(bar.from)
   const bsTo = toBs(bar.to)
-  const when = bsFrom && bsTo ? `${formatBs(bsFrom)} – ${formatBs(bsTo)} · ${formatAd(bar.from)} – ${formatAd(bar.to)}` : ''
+  const when = bsFrom && bsTo
+    ? `${formatBs(bsFrom)} – ${formatBs(bsTo)} · ${formatAd(bar.from)} – ${formatAd(bar.to)}`
+    : `${formatAd(bar.from)} – ${formatAd(bar.to)}`
   return (
     <button
       type="button"
@@ -640,11 +666,11 @@ function Timeline({
                   </span>
                 )}
                 <span className="figure" style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: ink, lineHeight: 1.15 }}>
-                  {bs ? bs.day : '—'}
+                  {bs ? bs.day : d.getUTCDate()}
                 </span>
                 {!compact && (
                   <span className="figure" style={{ display: 'block', fontSize: 'var(--t-th)', color: today ? 'var(--text2)' : 'var(--muted)' }}>
-                    {bs ? `${BS_MONTHS[bs.month - 1]} ${bs.year} BS` : ''}
+                    {bs ? `${BS_MONTHS[bs.month - 1]} ${bs.year} BS` : formatAdMonth(d)}
                   </span>
                 )}
                 <span className="figure" style={{ display: 'block', fontSize: 'var(--t-th)', color: today ? 'var(--text2)' : 'var(--muted)' }}>
@@ -805,7 +831,7 @@ function MonthGrid({
           const picked = sameDay(d, selectedDay)
           const hol = holidayOn(d)
           const list = jobsOn(d)
-          const dateName = `${bs ? formatBs(bs) : '—'}, ${formatAd(d)}`
+          const dateName = bs ? `${formatBs(bs)}, ${formatAd(d)}` : formatAd(d)
           const jobNames = list.map((j) => `${j.bar.kind} ${j.bar.label}`).join(', ')
           return (
             <button
@@ -850,7 +876,7 @@ function MonthGrid({
                     color: today ? 'var(--nav-active-accent)' : isOffDay(d) ? 'var(--danger-text)' : 'var(--text)',
                   }}
                 >
-                  {bs ? bs.day : '—'}
+                  {bs ? bs.day : d.getUTCDate()}
                 </span>
                 <span
                   className="figure"
@@ -913,7 +939,9 @@ function MonthGrid({
         })}
       </div>
       <p style={{ margin: '10px 2px 0', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-        {head ? `${BS_MONTHS[head.month - 1]} ${head.year} BS` : ''} · {days.length} days the Date Engine can name.{' '}
+        {head
+          ? `${BS_MONTHS[head.month - 1]} ${head.year} BS · ${days.length} days the Date Engine can name.`
+          : `${formatAdMonth(first ?? anchor)} · shown as the AD month because the BS month lengths for this period are not loaded yet (PLAN.md §4.34).`}{' '}
         {desktop ? 'Pick a day to peek at its jobs.' : phone ? 'Pick a day to load the agenda below.' : 'Pick a day to open its sheet.'}
       </p>
     </div>
@@ -998,7 +1026,6 @@ function DayJobList({
   overlayNote: boolean
   onOpen: (bookingNo: string) => void
 }) {
-  const bs = toBs(day)
   const hol = holidayOn(day)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
@@ -1006,7 +1033,7 @@ function DayJobList({
         <div style={{ fontSize: 'var(--t-th)', fontWeight: 700, color: 'var(--text2)', letterSpacing: '0.04em' }}>SELECTED DAY</div>
         {/* §4.2 — BS above AD, both from the one Date Engine. */}
         <div className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
-          {bs ? formatBs(bs) : '—'}
+          {formatBsOrAd(day)}
         </div>
         <div className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
           {formatAd(day)} · {weekdayShort(day)}
@@ -1152,7 +1179,7 @@ function MiniMonth({ anchor, onPickDay, busy }: { anchor: Date; onPickDay: (d: D
           <Icon name="chevron_left" size={16} />
         </button>
         <span style={{ fontSize: 'var(--t-ui)', fontWeight: 700 }}>
-          {head ? `${BS_MONTHS[head.month - 1]} ${head.year} BS` : 'Calendar'}
+          {head ? `${BS_MONTHS[head.month - 1]} ${head.year} BS` : formatAdMonth(first ?? anchor)}
         </span>
         <button
           type="button"
@@ -1184,7 +1211,7 @@ function MiniMonth({ anchor, onPickDay, busy }: { anchor: Date; onPickDay: (d: D
               key={d.getTime()}
               type="button"
               onClick={() => onPickDay(d)}
-              title={`${bs ? formatBs(bs) : ''} · ${formatAd(d)}${hol ? ` · ${hol.name}` : ''}`}
+              title={`${bs ? `${formatBs(bs)} · ` : ''}${formatAd(d)}${hol ? ` · ${hol.name}` : ''}`}
               className="figure"
               style={{
                 position: 'relative',
@@ -1201,7 +1228,7 @@ function MiniMonth({ anchor, onPickDay, busy }: { anchor: Date; onPickDay: (d: D
                 cursor: 'pointer',
               }}
             >
-              {bs ? bs.day : ''}
+              {bs ? bs.day : d.getUTCDate()}
               {busy.has(d.getTime()) && !today && (
                 <span aria-hidden style={{ position: 'absolute', bottom: 2, left: '50%', transform: 'translateX(-50%)', width: 4, height: 4, borderRadius: 'var(--r-badge)', background: 'var(--primary)' }} />
               )}
@@ -1231,8 +1258,10 @@ function FestivalCard() {
         {HOLIDAYS.map((h) => {
           const a = toBs(h.from)
           const b = toBs(h.to)
-          const label = a && b ? (a.day === b.day ? `${a.day}` : `${a.day}-${b.day}`) : '—'
-          const month = a ? BS_MONTHS[a.month - 1] : ''
+          /* Outside the BS table the AD day and month stand in — never an em dash (bs.ts). */
+          const [fd, td] = [h.from.getUTCDate(), h.to.getUTCDate()]
+          const label = a && b ? (a.day === b.day ? `${a.day}` : `${a.day}-${b.day}`) : fd === td ? `${fd}` : `${fd}-${td}`
+          const month = a ? BS_MONTHS[a.month - 1] : formatAdMonth(h.from)
           /* §4.2 — every date shows both calendars, BS above AD. */
           const ad = h.from.getTime() === h.to.getTime() ? formatAd(h.from) : `${adShort(h.from)} – ${formatAd(h.to)}`
           return (
@@ -1279,14 +1308,13 @@ function CountList({ rows, money, dots }: { rows: typeof TODAY_SUMMARY; money: b
 /* ── selected event panel ──────────────────────────────────────────────── */
 
 function DateBlock({ label, at, time, icon }: { label: string; at: Date; time: string; icon: IconName }) {
-  const bs = toBs(at)
   return (
     <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
       <Icon name={icon} size={15} style={{ color: 'var(--muted)', flexShrink: 0, marginTop: 2 }} />
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>{label}</div>
         {/* BS above AD, both from the engine — §4.2. */}
-        <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text)' }}>{bs ? formatBs(bs) : '—'}</div>
+        <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text)' }}>{formatBsOrAd(at)}</div>
         <div className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{formatAd(at)}, {time}</div>
       </div>
     </div>
@@ -2119,7 +2147,7 @@ export default function Calendar() {
         <div className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', margin: '2px 0 10px' }}>
           {(() => {
             const bs = toBs(TODAY)
-            return `${bs ? formatBs(bs) : '—'} (${formatAd(TODAY)})`
+            return bs ? `${formatBs(bs)} (${formatAd(TODAY)})` : formatAd(TODAY)
           })()}
         </div>
         <CountList rows={TODAY_SUMMARY} money={money} dots />
@@ -2264,7 +2292,7 @@ export default function Calendar() {
             <div className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', margin: '2px 0 10px' }}>
               {(() => {
                 const bs = toBs(TODAY)
-                return `${bs ? formatBs(bs) : '—'} (${formatAd(TODAY)})`
+                return bs ? `${formatBs(bs)} (${formatAd(TODAY)})` : formatAd(TODAY)
               })()}
             </div>
             <CountList rows={TODAY_SUMMARY} money={money} dots />
