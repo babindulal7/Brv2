@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback, ReactNode } from 'react'
 import { supabase, IS_MOCK } from './supabase'
 import { getSetting } from './settingsStore'
+import { captureError } from './monitoring'
 
 /**
  * The session role IS the system role. They were separate unions until 8 Aug 2026,
@@ -179,10 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
      * which is honest, rather than rendering a Client UI over an Owner account.
      */
     if (error) {
-      console.error(
-        `[auth] Could not re-read the staff row for ${authId}; keeping the previously resolved ` +
-          `identity rather than assuming a role. ${error.message}`,
-      )
+      captureError(error, { where: 'auth.reReadStaffRow', authId })
       setUser((previous) => previous)
       return
     }

@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 import { drainQueue, getPendingMutations } from './offlineQueue'
 import { localStore, isIndexedDbAvailable } from './localStore'
 import type { CachedClient, CachedProduct } from './localStore'
+import { captureError } from './monitoring'
 
 /* What the two delta pulls read off `select('*')`. The client carries no
    `Database` generic at this layer, so the shape is declared rather than
@@ -139,7 +140,7 @@ class SyncEngine {
       return { success: true, pushed: 0 }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err)
-      console.warn('[SyncEngine] Sync failed:', message)
+      captureError(err, { where: 'syncEngine.sync' })
       this.updateState({
         status: 'error',
         error: message,

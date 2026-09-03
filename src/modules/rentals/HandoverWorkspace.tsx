@@ -8,6 +8,7 @@ import { PageBody } from '../../components/ui/PageBody'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+import { captureError } from '../../lib/monitoring'
 import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { statusToken, FLAGS } from '../../lib/workflow'
@@ -652,7 +653,7 @@ export default function HandoverWorkspace() {
       )
       .then(() => navigate(`/rentals/${id}`))
       .catch((err: unknown) => {
-        console.error('handover session close failed:', err)
+        captureError(err, { where: 'HandoverWorkspace.close', bookingId: id })
         setDispatchError(err instanceof Error ? err.message : String(err))
         setDispatching(false)
       })

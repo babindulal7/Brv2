@@ -13,6 +13,7 @@ import type { Slice } from '../../components/ui/Charts'
 import { STATUS, BRAND, BRAND_ON } from '../../lib/status'
 import type { BrandKey, StatusKey } from '../../lib/status'
 import { grouped } from '../../lib/money'
+import { captureError } from '../../lib/monitoring'
 import { getBusinessToday, toBs, formatBs, formatAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
@@ -826,7 +827,7 @@ export default function Warehouses() {
         openTransferCentre()
       })
       .catch((err: unknown) => {
-        console.error('create stock transfer failed:', err)
+        captureError(err, { where: 'Warehouses.transfer' })
         setTransferError(`Not created — ${err instanceof Error ? err.message : String(err)}`)
       })
   }

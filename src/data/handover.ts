@@ -73,6 +73,7 @@
 
 import type { ItemState, ItemCounts, JobState, Flag } from '../lib/workflow'
 import { assertItemCounts, FLAGS } from '../lib/workflow'
+import { captureError } from '../lib/monitoring'
 
 /** A handover session runs the same three-stage lifecycle `JobState` already models — the convention `returnInspection.ts` set for this booking's other session-based job. */
 export type SessionState = JobState
@@ -319,7 +320,10 @@ export const HANDOVER_SEED_ERROR: string | null = (() => {
   return null
 })()
 
-if (HANDOVER_SEED_ERROR) console.error(HANDOVER_SEED_ERROR)
+if (HANDOVER_SEED_ERROR) {
+  console.error(HANDOVER_SEED_ERROR)
+  captureError(new Error(HANDOVER_SEED_ERROR), { where: 'seed.handover' })
+}
 
 /**
  * ⭐ TODO(decision) — `Handover Workflow.md` §17 leaves mandatory evidence

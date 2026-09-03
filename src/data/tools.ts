@@ -2,6 +2,7 @@ import type { IconName } from '../components/ui/Icon'
 import type { BrandKey } from '../lib/status'
 import { roundHalfUp } from '../lib/money'
 import type { Paisa } from '../lib/money'
+import { captureError } from '../lib/monitoring'
 
 /**
  * **Tools** — registry and formulas, built against `03 Core Modules/Tools.md`
@@ -781,7 +782,10 @@ export const SEED_ERRORS: string[] = (() => {
   return errors
 })()
 
-if (SEED_ERRORS.length > 0) console.error(SEED_ERRORS.join(' '))
+if (SEED_ERRORS.length > 0) {
+  console.error(SEED_ERRORS.join(' '))
+  captureError(new Error(SEED_ERRORS.join(' ')), { where: 'seed.tools' })
+}
 
 /** localStorage key for the favourites flag. §6 — a flag, never a segment. */
 export const FAVOURITES_KEY = 'babin.tools.favourites'

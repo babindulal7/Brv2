@@ -11,6 +11,7 @@ import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
 import { formatAd, formatAdDateTime, formatBs, toBs } from '../../lib/bs'
+import { captureError } from '../../lib/monitoring'
 import { useList } from '../../lib/queries/useList'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import {
@@ -350,7 +351,7 @@ export default function StockCheck({ embedded = false }: { embedded?: boolean } 
       .then((m) => m.reconcileStockCheck({ scannedCount, totalCount }, { userId: user.id, role: user.role }))
       .then(() => refetchAll())
       .catch((err: unknown) => {
-        console.error('reconcileStockCheck failed:', err)
+        captureError(err, { where: 'StockCheck.reconcile' })
         setReconcileError(err instanceof Error ? err.message : String(err))
       })
   }

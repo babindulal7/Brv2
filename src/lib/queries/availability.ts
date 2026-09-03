@@ -2,6 +2,7 @@ import { supabase } from '../supabase'
 import { insertViaSourceSwitch } from '../dataAccess'
 import { newClientUuid } from '../supabase'
 import { getSetting } from '../settingsStore'
+import { captureError } from '../monitoring'
 import {
   selectUnitsForLine,
   explainShortfall,
@@ -643,10 +644,7 @@ export async function releaseReservations(reservationIds: readonly string[], rea
       .eq('id', id)
 
     if (error) {
-      console.error(
-        `[availability] Reservation ${id} could not be released (${error.message}). ` +
-          'It is still live and will block that unit until released by hand.',
-      )
+      captureError(error, { where: 'availability.releaseReservation', id })
     }
   }
 }

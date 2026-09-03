@@ -30,6 +30,7 @@
  */
 
 import type { JobName } from '../lib/workflow'
+import { captureError } from '../lib/monitoring'
 
 /* ── §3.1 / §7.1 — the two small vocabularies this job introduces ────────── */
 
@@ -245,7 +246,10 @@ export const RESET_SEED_ERROR: string | null = (() => {
     : `Reset seed data does not reconcile: ${problems.join('; ')}. Counts on this screen cannot be trusted — see src/data/reset.ts.`
 })()
 
-if (RESET_SEED_ERROR) console.error(RESET_SEED_ERROR)
+if (RESET_SEED_ERROR) {
+  console.error(RESET_SEED_ERROR)
+  captureError(new Error(RESET_SEED_ERROR), { where: 'seed.reset' })
+}
 
 /* ── misc seed reference data ─────────────────────────────────────────────── */
 

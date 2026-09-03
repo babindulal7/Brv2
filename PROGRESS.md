@@ -2,6 +2,90 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-03 — `console.*` → `captureError` sweep: observability engine wired, stub lies removed
+**Phase:** cross-phase hygiene · **Status:** complete, gates green · **No schema change, no migration**
+
+### Did
+Applied a fixed per-call classification to every `console.log/error/warn` in non-test `src/`
+(excluding `archive/` and the other session's dirty `modules/rentals/NewRental.tsx`). The
+classification was decided up front from `lib/monitoring.ts`'s own contract — `captureError` is
+`level: 'error'` only, with **no warn/info tier**, and its context must carry *"ids and counts only:
+no client PII, no rupee amounts"* — so a blind `console.*` → `captureError` swap would have been
+wrong. Five rules, applied by three area editors: **DELETE** (unreachable stub logs), **REPLACE**
+(catch blocks whose error already reaches the user inline per Law 12), **ADD** beside a console line
+a code comment explicitly rules kept, **GATE** under `import.meta.env.DEV`, **KEEP**.
+
+- **+27 `captureError` call sites** (1 → 28; the 1 was `ErrorBoundary`). Every context object
+  checked for PII/money words: **clean**.
+- **23 `[DB TX] …` `console.log` lines deleted** from 22 stub actions, each first confirmed
+  `implemented` false/absent so the line was unreachable. `[DB TX]` in code lines: **0**. The eight
+  remaining hits are doc-comment quotes in the eight rewritten actions.
+- **`events/auditLogger.ts` DEV-gated** — it was printing a styled console line for every domain
+  event in production, ungated.
+- **27 console lines remain, every one on the KEEP list:** the five §4.36 audit-write-failure sites
+  (`lib/audit.ts:99-101` rules the console line kept as the fastest dev signal — `captureError` now
+  sits beside each), `ErrorBoundary:28` (already called `captureError` at :41), the four
+  `data/*.ts` seed-integrity checks (`captureError` added beside), `Icon.tsx` and
+  `settingsStore.ts` (same), `dataAccess.ts`'s six offline/network/idempotency warns (handled
+  operational events, not defects — `:200`, the Law 8 missing-`client_uuid` case, gained
+  `captureError` as the one genuine defect among them), the three `eslint-disable`d mock lines,
+  `ScannerFab` (camera permission denial is user behaviour; inline error set), and the DEV-gated
+  URL-contract lint in `useFilters.ts`.
+
+### Verified
+- **My own runs on the final tree, 07:05:** `tsc --noEmit` **0 errors** · `vitest run` **102 files /
+  2,344 tests, 100% passing**, exit 0 (203 s).
+- Independent read-only checks after the editors finished, before trusting any report: residual grep
+  (above) · per-file `captureError` import count — **no file has two** · adjacency scan — **no
+  doubled call** · `git diff --stat` on touched files is 2–20 lines each, so **line endings are
+  intact** (the "LF will be replaced by CRLF" wall is `core.autocrlf` noise, pre-existing on
+  `NewRental.tsx` too) · `git diff NewRental.tsx | grep captureError` → **0**, the dirty file was
+  not touched.
+- **Not driven in a browser** — the change is logging only; nothing renders differently. The
+  concurrent session's 63-route runtime sweep at 23:49 (0 console errors) ran over a tree that
+  already contained these edits.
+
+### Found — two sessions edited the same files at the same time, and it merged cleanly
+`TODO_SWEEP_2026-09-02.md` (the other session, written 23:49 while this sweep's editors ran) did
+overlapping work. Reconciled, with three corrections to the shared record:
+1. **Its A3 added `implemented: false` + a NOT-BUILT comment to 21 of the 22 stubs** — same files my
+   editors deleted the log from. Both landed once each; `cancelRental.ts`'s +8/−2 is their comment
+   plus my deletion. `updateClient.ts` got neither flag; its only `implemented:` is inside a comment,
+   so the key is absent → false — identical behaviour, noted so nobody reads it as a gap.
+2. **Its A4 ruled "the stub logs stay in bodies that A3 makes unreachable." This sweep deleted them,
+   and that supersedes A4.** Reason: unreachable or not, a line reading `[DB TX] Executing
+   CANCEL_RENTAL` in a function that writes no row is a false statement in the file, and the
+   `implemented` gate is the only thing standing between it and an operator. A stub that does nothing
+   should say nothing. Its A4 gate on `auditLogger` and mine were the same edit; it exists once.
+3. **Its "Working tree" section attributes the 23:04–23:10 `captureError` pass to a third session.
+   That pass was this sweep's editors.** No third party added `captureError`; the doc's `git status`
+   was reading my in-flight edits.
+
+### Found — the workflow itself
+The third editor **hung** after finishing its edits: transcript frozen at 23:50:26, still frozen at
+06:53. The verifier never started. Stopped the run and did the verification directly — every
+edit was already on disk. Consistent with the standing note that agents run serially here; the new
+lesson is that a *finished* editor can still fail to report, so check the tree, not the journal.
+
+### Committed · not committed — corrected after checking `git log`, 07:15
+This entry first said "nothing committed". **Wrong.** While the sweep's editors were still running,
+the other session committed `1a3c7b7` at 06:58 ("Land the TODO sweep: lint made real, stubs
+flagged, A2-A13 fixed") and staged the stub files whole. Measured with `git show 1a3c7b7`:
+- **In `1a3c7b7`, under a message that does not mention it:** 22 of this sweep's 23 `[DB TX]`
+  deletions, and 1 of its `captureError` additions. The commit text says "stubs flagged" — the
+  deletions rode in with the flags. Code correct; provenance muddled. Recorded here so the next
+  `git blame` on those lines is not a mystery.
+- **Still uncommitted in the working tree (30 dirty files):** **26 `captureError` sites**, the
+  `auditLogger` DEV gate, and the `updateClient.ts` deletion — i.e. the substance of this sweep —
+  alongside a third session's still-dirty `NewRental.tsx` / `AddItemPanel.tsx` / `itemCatalogue.ts`.
+- **Not committed by this session, deliberately.** The ask was the sweep, not a commit, and the tree
+  interleaves three sessions' work. Both this session's gates (07:05, 102 / 2,344) and the other
+  session's (23:49, over a tree already holding these edits) are green, so staging is safe whenever
+  the owner chooses.
+- The `mock/*` `eslint-disable no-console` lines were kept as ruled here; TODO_SWEEP line 130
+  questions them. One decision, not two — either keep the disables or turn `no-console` on.
+
+
 ## 2026-09-03 — cad819c audited adversarially; option (c) replaced by a better design; 0062 was live all along
 **Phase:** Phase 4/5 — persistence · **Status:** from-scratch fix REDESIGNED and re-proved both ways · one HIGH finding fixed · one defect found in another session's draft
 

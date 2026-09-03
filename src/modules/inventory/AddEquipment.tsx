@@ -17,6 +17,7 @@ import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { captureError } from '../../lib/monitoring'
 import { useToast } from '../../components/ui/Toast'
 import { newClientUuid } from '../../lib/supabase'
 import { parseMoney } from '../../lib/money'
@@ -193,7 +194,7 @@ function AddEquipmentLayout() {
         navigate('/inventory')
       })
       .catch((err: unknown) => {
-        console.error('createEquipment failed:', err)
+        captureError(err, { where: 'AddEquipment.create' })
         setSaving(false)
         setDispatchError(err instanceof Error ? err.message : String(err))
       })

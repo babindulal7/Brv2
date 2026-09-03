@@ -6,6 +6,7 @@ import { Card, Button, cardStyle } from '../../components/ui/Page'
 import { FloorAside, floorPlacements } from '../operations/FloorAside'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+import { captureError } from '../../lib/monitoring'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { Donut, Legend } from '../../components/ui/Charts'
@@ -659,7 +660,7 @@ export default function EvidenceWorkspace() {
                           m.reviewEvidence({ evidenceId: current.id, action: 'review' }, { userId: user.id, role: user.role }),
                         )
                         .catch((err: unknown) => {
-                          console.error('reviewEvidence failed:', err)
+                          captureError(err, { where: 'EvidenceWorkspace.review' })
                           setDispatchError(err instanceof Error ? err.message : String(err))
                         })
                     }}

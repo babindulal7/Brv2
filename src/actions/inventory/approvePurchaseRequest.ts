@@ -3,6 +3,7 @@ import { EVENT_TYPES } from '../../events/eventBus'
 import { safeUpdate } from '../../lib/dataAccess'
 import { supabase } from '../../lib/supabase'
 import { logAuditEvent } from '../../lib/audit'
+import { captureError } from '../../lib/monitoring'
 
 /**
  * # APPROVE_PURCHASE_REQUEST — the write
@@ -206,6 +207,7 @@ export const approvePurchaseRequestConfig: ActionConfig<ApprovePurchaseRequestIn
     })
     if (!audit.ok) {
       console.error('[APPROVE_PURCHASE_REQUEST] audit write failed (verb proceeded, §4.36):', audit.error)
+      captureError(audit.error, { where: 'approvePurchaseRequest.audit', prId: pr.id })
     }
 
     const events = [

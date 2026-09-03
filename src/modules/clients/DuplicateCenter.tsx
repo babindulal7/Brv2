@@ -8,6 +8,7 @@ import { Unavailable } from '../../components/ui/Unavailable'
 import { useToast } from '../../components/ui/Toast'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { captureError } from '../../lib/monitoring'
 import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
 import type { ActionContext } from '../../actions/core'
@@ -294,7 +295,7 @@ export default function DuplicateCenter() {
     try {
       mergeClients = (await import('../../actions/clients/mergeClients')).mergeClients
     } catch (err: unknown) {
-      console.error('merge clients module failed to load:', err)
+      captureError(err, { where: 'DuplicateCenter.loadMerge' })
       setMerging(false)
       setMergeError(
         `Not merged — the merge action could not be loaded (${err instanceof Error ? err.message : String(err)}). ` +
@@ -314,7 +315,7 @@ export default function DuplicateCenter() {
         await mergeClients({ survivorId: survivor.id, duplicateId: c.id }, ctx)
         landed.push(c)
       } catch (err: unknown) {
-        console.error('merge clients failed:', err)
+        captureError(err, { where: 'DuplicateCenter.merge', clientId: c.id })
         failure = { client: c, message: err instanceof Error ? err.message : String(err) }
         break
       }

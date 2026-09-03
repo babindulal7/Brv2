@@ -1,7 +1,9 @@
 import { DomainEvents } from './eventBus';
 
 export function startAuditLogging() {
-  console.log('[AuditLogger] Starting centralized activity logging...');
+  if (import.meta.env.DEV) {
+    console.log('[AuditLogger] Starting centralized activity logging...');
+  }
 
   DomainEvents.subscribe('*', (payload, eventName) => {
     // In a real application, this would POST to a backend /api/audit endpoint
@@ -13,12 +15,14 @@ export function startAuditLogging() {
     const actor = p.actor ? `[User: ${p.actor}]` : '';
     const target = p.id || p.rentalId ? `[Target: ${p.id || p.rentalId}]` : '';
 
-    console.log(
-      `%c[AUDIT LOG] %c${timestamp} %c[${eventName}] ${actor} ${target}`,
-      'color: white; background: #c0392b; padding: 2px 4px; border-radius: 3px; font-weight: bold;',
-      'color: #7f8c8d;',
-      'color: #2980b9; font-weight: bold;',
-      '\nPayload:', payload
-    );
+    if (import.meta.env.DEV) {
+      console.log(
+        `%c[AUDIT LOG] %c${timestamp} %c[${eventName}] ${actor} ${target}`,
+        'color: white; background: #c0392b; padding: 2px 4px; border-radius: 3px; font-weight: bold;',
+        'color: #7f8c8d;',
+        'color: #2980b9; font-weight: bold;',
+        '\nPayload:', payload
+      );
+    }
   });
 }

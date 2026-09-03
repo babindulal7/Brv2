@@ -1,3 +1,5 @@
+import { captureError } from '../lib/monitoring';
+
 type EventHandler<T = unknown> = (payload: T, eventName?: string) => void | Promise<void>;
 
 class EventBus {
@@ -51,7 +53,7 @@ class EventBus {
         // For audit logging, we really need the event name. Let's pass eventName as second param.
         return (handler as EventHandler<unknown>)(payload, eventName);
       } catch (err) {
-        console.error(`[EventBus] Error in handler for ${eventName}:`, err);
+        captureError(err, { where: 'eventBus.handler', eventName });
       }
     });
 

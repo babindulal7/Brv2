@@ -6,6 +6,7 @@
  */
 
 import { idempotentInsert } from './dataAccess'
+import { captureError } from './monitoring'
 import type {
   AuditEventClass,
   AuditCategory,
@@ -99,6 +100,7 @@ export async function logAuditEvent(params: LogAuditParams): Promise<AuditWriteR
     // Kept: the console line is still the fastest signal in a dev session. It
     // is no longer the ONLY signal, which was the defect.
     console.error('[AuditEngine] Failed to write audit event:', error)
+    captureError(error, { where: 'audit.write' })
     return { ok: false, error }
   }
 }

@@ -17,6 +17,7 @@ import {
 } from '../../data/purchaseRequests'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { captureError } from '../../lib/monitoring'
 import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
 import { newClientUuid } from '../../lib/supabase'
@@ -260,7 +261,7 @@ export default function PurchaseRequests() {
         setRequestsList((prev) => prev.map((r) => (r.id === id ? { ...r, status: res.status } : r)))
       })
       .catch((err: unknown) => {
-        console.error('purchase request decision failed:', err)
+        captureError(err, { where: 'PurchaseRequests.decide', verb })
         setActionError(`Not ${verb} — ${err instanceof Error ? err.message : String(err)}`)
       })
   }

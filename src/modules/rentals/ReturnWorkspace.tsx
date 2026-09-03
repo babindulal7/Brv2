@@ -13,6 +13,7 @@ import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+import { captureError } from '../../lib/monitoring'
 import { formatBsOrAd, formatAd, formatAdDateTime } from '../../lib/bs'
 /* `lateBand` and its two formatters return no monetary value — that is the
    whole reason they exist. `lib/money.ts` stays unimported here (§8.3). */
@@ -687,7 +688,7 @@ export default function ReturnWorkspace() {
       )
       .then(() => navigate(`/rentals/${id}`))
       .catch((err: unknown) => {
-        console.error('return failed:', err)
+        captureError(err, { where: 'ReturnWorkspace.return', bookingId: id })
         setDispatchError(err instanceof Error ? err.message : String(err))
         setDispatching(false)
       })

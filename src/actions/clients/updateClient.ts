@@ -33,8 +33,6 @@ export const updateClient = createAction<UpdateClientInput, { success: boolean }
   },
 
   execute: async (input, ctx: ActionContext) => {
-    console.log(`[DB TX] Client ${input.clientId} updated:`, Object.keys(input.patch).join(', '));
-
     const events = [
       {
         type: EVENT_TYPES.CLIENT_UPDATED,

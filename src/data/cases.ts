@@ -3,6 +3,7 @@ import type { StatusKey } from '../lib/status'
 import { rupees, formatMoney } from '../lib/money'
 import type { Paisa } from '../lib/money'
 import { toBs, formatBs, getBusinessToday } from '../lib/bs'
+import { captureError } from '../lib/monitoring'
 
 /*
  * The operating day, resolved once when this module loads, from the real
@@ -980,7 +981,10 @@ export const CASES_SEED_ERROR: string | null = (() => {
     : `Cases seed data does not reconcile: ${problems.join('; ')}. Figures on this screen cannot be trusted — see src/data/cases.ts.`
 })()
 
-if (CASES_SEED_ERROR) console.error(CASES_SEED_ERROR)
+if (CASES_SEED_ERROR) {
+  console.error(CASES_SEED_ERROR)
+  captureError(new Error(CASES_SEED_ERROR), { where: 'seed.cases' })
+}
 
 /* ── misc seed reference data ─────────────────────────────────────────── */
 

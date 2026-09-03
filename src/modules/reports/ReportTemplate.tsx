@@ -6,6 +6,7 @@ import { ReportToolbar, reportDateRange } from '../../components/ui/ReportToolba
 import type { ReportCsvRow, ReportCompare } from '../../components/ui/ReportToolbar'
 import { EmptyState } from '../../components/ui/StateViews'
 import { formatMoney } from '../../lib/money'
+import { captureError } from '../../lib/monitoring'
 import { useViewport } from '../../lib/device'
 import { catColor } from '../../components/ui/Charts'
 import {
@@ -271,7 +272,7 @@ export function ReportTemplate({ report, onBackToCatalog }: ReportTemplateProps)
               localStorage.setItem('babin_saved_report_views', JSON.stringify(saved))
               alert(`View for "${report.name}" (${periodKey}) saved successfully!`)
             } catch (err) {
-              console.error('Failed to save view:', err)
+              captureError(err, { where: 'ReportTemplate.saveView' })
             }
           }}
         >

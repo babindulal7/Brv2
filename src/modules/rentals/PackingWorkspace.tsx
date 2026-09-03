@@ -11,6 +11,7 @@ import type { BookingStatus, JobState } from '../../lib/workflow'
 import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+import { captureError } from '../../lib/monitoring'
 import { formatBsOrAd, formatAd, formatAdDateTime } from '../../lib/bs'
 import { newClientUuid } from '../../lib/supabase'
 import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/queries/bookings'
@@ -516,7 +517,7 @@ export default function PackingWorkspace() {
       )
       .then(() => navigate(`/rentals/${id}`))
       .catch((err) => {
-        console.error('pack failed:', err)
+        captureError(err, { where: 'PackingWorkspace.pack', bookingId: id })
         setDispatchError(err instanceof Error ? err.message : String(err))
         setDispatching(false)
       })
@@ -689,7 +690,7 @@ export default function PackingWorkspace() {
                     import('../../actions/rentals/index')
                       .then((m) => m.saveDraft({ id: floor.id }, { userId: user.id, role: user.role }))
                       .catch((err) => {
-                        console.error('saveDraft failed:', err)
+                        captureError(err, { where: 'PackingWorkspace.saveDraft' })
                         setDispatchError(err instanceof Error ? err.message : String(err))
                       })
                   }}

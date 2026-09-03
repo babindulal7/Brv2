@@ -10,6 +10,7 @@
 import { supabase } from './supabase'
 import type { Database } from '../types/database'
 import { enqueueMutation } from './offlineQueue'
+import { captureError } from './monitoring'
 import { IS_MOCK } from './supabase'
 
 /**
@@ -197,6 +198,7 @@ export async function safeUpdate<
   const actionUuid = clientUuid ?? generateClientUuid()
   if (clientUuid === undefined) {
     console.warn(`[DataAccess] safeUpdate('${String(table)}') was called without a client_uuid — this write has no replay protection (Law 8). Pass the action key from the point the user acted.`)
+    captureError(new Error('safeUpdate without client_uuid'), { where: 'dataAccess.safeUpdate', table: String(table) })
   }
 
   if (shouldQueueOffline()) {

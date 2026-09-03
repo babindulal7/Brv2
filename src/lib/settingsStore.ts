@@ -26,6 +26,7 @@
  */
 
 import { toRupees } from './money'
+import { captureError } from './monitoring'
 import { FEE_PER_CREW_DAY_PAISA } from '../data/crew'
 
 export type SettingKey =
@@ -479,6 +480,7 @@ export function readSettings(): SettingsRecord {
           `${JSON.stringify(spec.default)} is being used instead. Stored: ${JSON.stringify(raw)}. ` +
           'If this is an operations rule, the behaviour it governs has just reverted to its default.',
       )
+      captureError(new Error('Stored setting rejected'), { where: 'settingsStore.load', key, reason: invalid })
       continue
     }
     out[key] = parsed

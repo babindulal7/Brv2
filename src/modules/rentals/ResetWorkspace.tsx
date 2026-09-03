@@ -11,6 +11,7 @@ import { JOBS, statusToken } from '../../lib/workflow'
 import type { BookingStatus, JobState } from '../../lib/workflow'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+import { captureError } from '../../lib/monitoring'
 import { formatBsOrAd, formatAd } from '../../lib/bs'
 import { newClientUuid } from '../../lib/supabase'
 import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/queries/bookings'
@@ -606,7 +607,7 @@ export default function ResetWorkspace() {
       )
       .then(() => navigate(`/rentals/${id}`))
       .catch((err) => {
-        console.error('reset failed:', err)
+        captureError(err, { where: 'ResetWorkspace.reset', bookingId: id })
         setDispatchError(err instanceof Error ? err.message : String(err))
         setDispatching(false)
       })

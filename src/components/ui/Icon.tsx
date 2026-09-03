@@ -71,6 +71,7 @@ import {
   IconMessage,
   type Icon as TablerIconType,
 } from '@tabler/icons-react'
+import { captureError } from '../../lib/monitoring'
 
 /**
  * Tabler icon registry. Keys are stable semantic names used by call sites, so a
@@ -199,6 +200,7 @@ export default function Icon({ name, fill = false, size = 20, label, className, 
     // always renders beside the icon, so a missing glyph costs decoration, never
     // meaning. `name` is typed `IconName`, so reaching here at all now takes a cast.
     console.error(`Icon "${name}" is not in the REGISTRY — rendering nothing.`)
+    captureError(new Error('Icon not in REGISTRY: ' + name), { where: 'Icon.registry', name })
     if (import.meta.env.DEV) {
       return <span style={{ color: 'red', fontWeight: 'bold' }}>[Icon:{name}]</span>
     }
