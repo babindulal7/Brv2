@@ -684,6 +684,12 @@ export default function HandoverWorkspace() {
             // (operation_sessions.government_id_verified / booking_authorization_verified).
             governmentIdVerified: govIdVerified,
             bookingAuthorizationVerified: bookingAuthVerified,
+            /*
+             * R-06 - sent only when something is actually owed. The database asks for
+             * it in exactly that case and ignores it otherwise, so an empty string
+             * would be noise on a booking that owes nothing.
+             */
+            ...(overrideReason.trim() === '' ? {} : { overrideReason: overrideReason.trim() }),
             ...(notes === '' ? {} : { notes }),
           },
           { userId: user.id, role: user.role },

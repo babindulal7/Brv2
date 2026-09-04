@@ -132,12 +132,30 @@ const TERM_DAYS: Record<string, number> = {
  * Widening the enum is a ruling — it decides deposit-versus-invoice precedence
  * too — and `addInvoiceLine` (SPEC-P0-1 §3.2) is blocked behind it.
  */
+/*
+ * Keyed on the REAL `booking_line_type` enum — Equipment | Bundle | Accessory |
+ * Service | Sub-rental | Manual item.
+ *
+ * It previously carried `Crew` and `Transport` keys, which are **not** members of
+ * that enum, so those two entries could never fire. Meanwhile `Bundle`,
+ * `Accessory` and `Manual item` — which ARE members — had no entry and fell
+ * through a `?? 'Equipment Rental'` fallback, so an accessory or an ad-hoc line
+ * was billed as equipment rental with nothing said about it.
+ *
+ * Every member is now named. The three that used to take the fallback keep the
+ * value the fallback gave them, so no existing invoice changes shape; the
+ * difference is that an unmapped type is now impossible rather than silent.
+ *
+ * Crew and transport are not booking_lines at all — they live in their own
+ * tables and are read separately below.
+ */
 const LINE_KIND_BY_TYPE: Record<string, LineKind> = {
   Equipment: 'Equipment Rental',
-  'Sub-rental': 'Sub-Rental',
+  Bundle: 'Equipment Rental',
+  Accessory: 'Equipment Rental',
+  'Manual item': 'Equipment Rental',
   Service: 'Services',
-  Crew: 'Crew Charges',
-  Transport: 'Transport',
+  'Sub-rental': 'Sub-Rental',
 }
 
 type InvoiceTarget = {
@@ -146,6 +164,37 @@ type InvoiceTarget = {
   branchId: string
   bookingNo: string
   termDays: number
+}
+
+/** A line ready to be written, whatever table it came from. */
+type BillableLine = {
+  client_uuid: string
+  line_kind: LineKind
+  description: string
+  qty: number
+  days: number
+  rate: number
+  discount_amount: number
+  sort_order: number
+}
+
+type CrewLineRow = {
+  client_uuid: string
+  name: string | null
+  crew_role: string | null
+  day_rate: number | string
+  days: number | string
+  overtime: number | string | null
+  accommodation: number | string | null
+  meals: number | string | null
+  voided_at: string | null
+}
+
+type TransportChargeRow = {
+  client_uuid: string
+  vehicle: string | null
+  delivery_charge: number | string | null
+  fuel_charge: number | string | null
 }
 
 type BookingLineRow = {
@@ -350,7 +399,97 @@ export const createInvoice = createAction<CreateInvoiceInput, CreateInvoiceResul
       throw new Error(`Could not read the lines of ${bookingNo}, so no invoice was created: ${linesError.message}`)
     }
 
-    const billable = ((lineRows ?? []) as unknown as BookingLineRow[]).filter((l) => l.voided_at === null)
+    const equipmentLines: BillableLine[] = ((lineRows ?? []) as unknown as BookingLineRow[])
+      .filter((l) => l.voided_at === null)
+      .map((l, i) => ({
+        client_uuid: l.client_uuid,
+        line_kind: LINE_KIND_BY_TYPE[l.line_type] ?? 'Equipment Rental',
+        // `booking_lines.description` is nullable and `invoice_lines.description`
+        // is NOT NULL. The line type is the honest fallback — it says what the
+        // charge is for without inventing a product name nobody typed.
+        description: l.description?.trim() || l.line_type,
+        qty: Math.max(1, Number(l.qty)),
+        days: Math.max(1, Number(l.days)),
+        rate: Number(l.rate),
+        discount_amount: Number(l.discount_amount ?? 0),
+        sort_order: l.sort_order ?? i,
+      }))
+
+    /*
+     * -- Crew and transport: a P0, because they were never billed at all -------
+     *
+     * Crew charges live in `booking_crew_lines` and transport in
+     * `booking_transport`, NOT in `booking_lines`. This function only ever read
+     * `booking_lines`, so every crew day and every delivery charge was dropped
+     * from the invoice silently and the client was billed for equipment alone.
+     * Measured on the reference corpus: 120 crew lines worth NPR 2,817,300 across
+     * 79 bookings, none of which could reach an invoice.
+     *
+     * `line_kind` already has `Crew Charges` and `Transport` members, so nothing
+     * was missing schema-side — only the read.
+     */
+    const { data: crewRows, error: crewError } = await supabase
+      .from('booking_crew_lines')
+      .select('client_uuid, name, crew_role, day_rate, days, overtime, accommodation, meals, voided_at')
+      .eq('booking_id', target.bookingId)
+
+    if (crewError) {
+      throw new Error(
+        `Could not read the crew lines of ${bookingNo}, so the invoice would have under-billed the job and ` +
+          `nothing was created: ${crewError.message}`,
+      )
+    }
+
+    const crewLines: BillableLine[] = ((crewRows ?? []) as unknown as CrewLineRow[])
+      .filter((c) => c.voided_at === null)
+      .map((c, i) => {
+        const days = Math.max(1, Number(c.days))
+        /*
+         * Overtime, accommodation and meals are per-engagement totals, not per
+         * day. Folding them into the unit rate keeps quantity x days x rate equal
+         * to the crew member's true cost, which is the arithmetic the recalc
+         * trigger applies to every line without exception.
+         */
+        const extras = Number(c.overtime ?? 0) + Number(c.accommodation ?? 0) + Number(c.meals ?? 0)
+        return {
+          client_uuid: c.client_uuid,
+          line_kind: 'Crew Charges' as LineKind,
+          description: [c.name, c.crew_role].filter(Boolean).join(' - ') || 'Crew',
+          qty: 1,
+          days,
+          rate: Number(c.day_rate) + extras / days,
+          discount_amount: 0,
+          sort_order: 1000 + i,
+        }
+      })
+
+    const { data: transportRows, error: transportError } = await supabase
+      .from('booking_transport')
+      .select('client_uuid, vehicle, delivery_charge, fuel_charge')
+      .eq('booking_id', target.bookingId)
+
+    if (transportError) {
+      throw new Error(
+        `Could not read the transport of ${bookingNo}, so the invoice would have under-billed the job and ` +
+          `nothing was created: ${transportError.message}`,
+      )
+    }
+
+    const transportLines: BillableLine[] = ((transportRows ?? []) as unknown as TransportChargeRow[])
+      .map((t, i) => ({
+        client_uuid: t.client_uuid,
+        line_kind: 'Transport' as LineKind,
+        description: t.vehicle ? `Transport - ${t.vehicle}` : 'Transport',
+        qty: 1,
+        days: 1,
+        rate: Number(t.delivery_charge ?? 0) + Number(t.fuel_charge ?? 0),
+        discount_amount: 0,
+        sort_order: 2000 + i,
+      }))
+      // A transport row carrying no charge is a logistics record, not a bill line.
+      .filter((t) => t.rate > 0)
+
+    const billable: BillableLine[] = [...equipmentLines, ...crewLines, ...transportLines]
 
     if (billable.length === 0) {
       throw new Error(
@@ -449,14 +588,13 @@ export const createInvoice = createAction<CreateInvoiceInput, CreateInvoiceResul
       const lineResult = await idempotentInsert('invoice_lines', {
         client_uuid: line.client_uuid,
         invoice_id: invoiceId,
-        line_kind: LINE_KIND_BY_TYPE[line.line_type] ?? 'Equipment Rental',
-        // `booking_lines.description` is nullable and `invoice_lines.description`
-        // is NOT NULL. The line type is the honest fallback — it says what the
-        // charge is for without inventing a product name nobody typed.
-        description: line.description?.trim() || line.line_type,
-        quantity: Math.max(1, Number(line.qty)),
-        days: Math.max(1, Number(line.days)),
-        unit_rate: Number(line.rate),
+        // Resolved where the line was built: equipment lines through the enum
+        // map, crew and transport from their own tables.
+        line_kind: line.line_kind,
+        description: line.description,
+        quantity: line.qty,
+        days: line.days,
+        unit_rate: line.rate,
         line_total: net,
         discount_percent: 0,
         sort_order: line.sort_order ?? index,

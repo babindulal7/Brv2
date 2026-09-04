@@ -2,6 +2,108 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-04 — the audit's P0s, fixed (and one deliberately not)
+
+**Phase:** Phase 0 · **Status:** 6 of 7 verified P0s fixed · 1 left open as a ruling question
+
+Follows the full E2E audit (`QA_FULL_AUDIT_REPORT.md`). Every fix below was verified by
+running it, not by reading it.
+
+### The live one — numbering (`0089`)
+
+`lpad(v, padding, '0')` **truncates**, and four production sequences carry `padding = 1`.
+Live would have minted `B-9` (not B-918), `C-7` (not C-751), `INV-1` (not INV-121),
+`DEP-9` (not DEP-90) — the first create wrong, the second colliding on the unique index.
+Creating a booking, client, invoice or deposit is broken on production **today**.
+
+`0085` already carried the fix, but it also renumbers every booking — a one-way change
+awaiting its own go-ahead. `0089` is the **function alone**, so production can be un-bricked
+without committing to the renumber. Both are `create or replace` on the same body, so either
+order leaves the same function, and `0089` changes no data.
+
+Verified by minting: `900, 901`, `INV-121, INV-122`, `DEP-90, DEP-91`, `C-74, C-75`, and the
+padded formats `EQ000290` / `PAY-0094` unchanged. The migration's own post-condition **mints**
+each sequence and restores the counter — a counter assertion is precisely what let this
+through, because `current_value` was correct the whole time.
+
+### The lifecycle could not end (`closeRental`)
+
+`closeRental.ts` is 343 lines, fully built, and was **absent from the actions barrel with zero
+importers** — the only mentions of it in `src/` were two comments. A rental could be driven to
+Returned and no further; deposits were never released and no rental was ever settled.
+`canCloseRental` (R-08) already existed. The action needed no change — it needed a caller.
+
+Exported it, and added a **Close Rental** control on Booking Detail at stage Returned, gated
+on `canCloseRental`, mirroring `confirmBooking`'s dispatch idiom exactly. R-07 keeps Close a
+hard gate, so it dispatches and lets the action refuse, with the refusal shown inline.
+
+### Crew and transport were never billed (`createInvoice`)
+
+`createInvoice` read `booking_lines` alone. Crew lives in `booking_crew_lines` and transport in
+`booking_transport`, so **both were dropped from every invoice this application has ever
+created** — 120 crew lines worth NPR 2,817,300 across 79 bookings in the corpus.
+
+Also fixed the mapping beneath it: `LINE_KIND_BY_TYPE` was keyed on `Crew` and `Transport`,
+which are **not** members of `booking_line_type`, while the real members `Bundle`, `Accessory`
+and `Manual item` had no entry and fell through `?? 'Equipment Rental'`. The map is now
+exhaustive over the enum, and the three that took the fallback keep the value it gave them, so
+no existing invoice changes shape.
+
+New `createInvoice.test.ts` (6 tests) pins it with real arithmetic: a booking billing 33 300
+of equipment plus 46 000 of crew plus 4 200 of transport — **83 500 owed, 33 300 billed before
+the fix, a 60% under-bill on an invoice that looked entirely normal.**
+
+### The handover money gate contradicted R-06 (`0090`)
+
+R-06 is binding and explicit: the handover money gate **"warns, does not block"**, and
+proceeding "requires a named override reason, recorded in `audit_events` with the amounts as
+they stood". The gate hard-blocked instead. Measured: **66 of 70 open bookings** carry an
+outstanding balance and **9 Packed bookings** a pending deposit — all refused, with no override
+path and no screen able to reduce `pending_amount`.
+
+Now: money alone no longer blocks; a named reason is required when anything is owed, the
+transition proceeds, and one `audit_events` row records the reason with both amounts. Without
+a reason it still refuses — the message now says what to do.
+
+The reason reaches the trigger as a transaction-local GUC set by
+`apply_booking_stage_transition` from `booking_stage_transitions.reason`. A direct
+`UPDATE bookings SET stage='On Rent'` that bypasses the transition table carries no reason and
+is still refused, so the override exists only on the recorded path.
+
+**R-07's Close gate is deliberately untouched and still hard** — verified: an override reason
+does not open it.
+
+The UI already collected this reason and sent it nowhere; it is now wired through
+HandoverWorkspace → handoverRental → runFloorVerb → advanceStage → the transition row.
+
+### No payment could reach an app-created invoice (`recordPayment`)
+
+`createInvoice` omits `invoice_no` for a Draft (R-15) and `recordPayment` resolved invoices
+**only** by number. Since R-02 keeps an invoice in Draft for the whole rental, no payment could
+ever be attached to one. It now accepts `invoiceId` as well; the number path and its refusal
+wording are unchanged (a test pins that wording).
+
+### NOT fixed, deliberately — the Close gate's deposit test
+
+The audit reported that the Close gate reads `pending_amount`, which measures *uncollected*
+deposit rather than *unreturned* deposit, so a booking can close while still holding client
+money. **This is a product decision, not a defect I may settle.** R-07 says "the deposit
+resolved" without defining it, and `SPEC-P0-2 §1` names `pending_amount` only in a table
+headed *"Already live / Evidence"* — describing what is, not ruling what should be. Changing it
+would be inventing a ruling. Filed as `TODO(decision)` rather than fixed.
+
+### Verified
+`0089`, `0090` applied to the local stack, each passing its own post-conditions · R-06
+behaviour re-probed independently: refused without a reason, allowed with one plus exactly one
+R-06 audit row, **Close still hard-blocked** · `check:rebuild` **88 applied, 0 failed** ·
+`tsc` clean, `eslint` clean, and **all my tests pass** (`createInvoice` 6/6, `recordPayment`
+23/23).
+
+⚠ The working tree at the time of writing does **not** typecheck, for reasons unrelated to
+this work: another session's in-flight edits removed `NOW_AD` from `src/data/today.ts` and
+`getClientRecordByCode` from `lib/queries/clients`. To prove that, I re-verified these changes
+alone on a clean worktree at HEAD — `eslint` 0, my tests green, and the only failing file there
+is `clientsQuery.test.ts`, which is theirs.
 
 ## 2026-09-04 (cont. 4) — Calendar: from 100% seed to the bookings it can honestly draw
 **Phase:** UI · data layer · **Status:** built, reviewed three ways, blockers fixed, driven

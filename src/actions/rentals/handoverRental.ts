@@ -35,6 +35,13 @@ export type HandoverRentalInput = {
   clientUuid?: string;
   /** Free text onto `operation_sessions.notes`. */
   notes?: string;
+  /**
+   * **R-06.** The named reason for handing over while the rental balance or the
+   * security deposit is unpaid. Without it the database still refuses; with it
+   * the handover proceeds and the reason is recorded in `audit_events` against
+   * the person who gave it, with both amounts as they stood.
+   */
+  overrideReason?: string;
   /** AD/UTC. Defaults to now. */
   occurredAt?: string;
   /** Gate 1 — checked against the receiver's physical ID at the counter. Written to `operation_sessions`. */
@@ -63,6 +70,7 @@ export const handoverRental = createAction<HandoverRentalInput, FloorVerbResult>
         ...(input.lines === undefined ? {} : { lines: input.lines }),
         ...(input.clientUuid === undefined ? {} : { clientUuid: input.clientUuid }),
         ...(input.notes === undefined ? {} : { notes: input.notes }),
+        ...(input.overrideReason === undefined ? {} : { overrideReason: input.overrideReason }),
         ...(input.occurredAt === undefined ? {} : { occurredAt: input.occurredAt }),
         ...(input.governmentIdVerified === undefined ? {} : { governmentIdVerified: input.governmentIdVerified }),
         ...(input.bookingAuthorizationVerified === undefined

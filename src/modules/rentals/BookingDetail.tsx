@@ -18,7 +18,7 @@ import { Unavailable } from '../../components/ui/Unavailable'
 import { useAuth } from '../../lib/auth'
 import { newClientUuid } from '../../lib/supabase'
 import { gateContext, canViewMoneyField } from '../../lib/fieldGating'
-import { canRecordPayment, canPerformOperations, canWriteBookingDesk } from '../../lib/rbac'
+import { canRecordPayment, canPerformOperations, canWriteBookingDesk, canCloseRental } from '../../lib/rbac'
 import { IntelCard } from '../../components/ui/IntelCard'
 import { useToast } from '../../components/ui/Toast'
 import { formatMoney, grouped, toRupees } from '../../lib/money'
@@ -1243,6 +1243,51 @@ export default function BookingDetail() {
       .finally(() => setConfirming(false))
   }, [id, user, showSuccessToast, refetchHead])
 
+  /* -- Close Rental — R-07 / R-08 -----------------------------------------
+   *
+   * Rendered at stage Returned, the stage `closeRental`'s transition leaves.
+   *
+   * `closeRental` was written on 4 Sep, is 343 lines, reads all four R-07 gates
+   * from live tables — and was never exported from the actions barrel, so it had
+   * ZERO importers. The lifecycle could be driven as far as Returned and no
+   * further: no control anywhere in the product could close a rental, deposits
+   * were never released and no rental was ever financially settled. The action
+   * needed no change; it needed a caller.
+   *
+   * R-07 keeps Close a HARD gate (unlike handover, which R-06 makes a warning),
+   * so this dispatches and lets the action refuse. `canCloseRental` is R-08's
+   * set — Owner, Admin, Manager, Accounts — and is narrower than the database
+   * policy, which is the safe direction.
+   */
+  const [closeError, setCloseError] = useState<string | null>(null)
+  const [closing, setClosing] = useState(false)
+
+  const closeBooking = useCallback(() => {
+    const ctx = actionCtx(user)
+    if (!ctx) {
+      setCloseError(
+        'Not closed — you are not signed in, so this close cannot be attributed to anyone. ' +
+          'Sign in and close again.',
+      )
+      return
+    }
+    setCloseError(null)
+    setClosing(true)
+    // Law 8 — minted HERE, at the press, and reused by every retry of this one press.
+    const clientUuid = newClientUuid()
+    void import('../../actions/rentals/closeRental')
+      .then((m) => m.closeRental({ bookingNo: id, clientUuid }, ctx))
+      .then((res) => {
+        showSuccessToast('Rental Closed', `${res.bookingNo} is now ${res.stage}`)
+        // The trigger is the sole writer of bookings.stage; re-read, never patch.
+        refetchHead()
+      })
+      .catch((err: unknown) => {
+        setCloseError(`Not closed — ${err instanceof Error ? err.message : String(err)}`)
+      })
+      .finally(() => setClosing(false))
+  }, [id, user, showSuccessToast, refetchHead])
+
   const segments: PhoneSegment[] = canBookingMoney ? ['Items', 'Money', 'Docs'] : ['Items', 'Docs']
   const [segment, setSegment] = useState<PhoneSegment>('Items')
   const onPhone = viewport === 'phone'
@@ -1536,7 +1581,12 @@ export default function BookingDetail() {
             {/* §11.1 — computed from the QUERIED lines on every render; there
                 is no stored `bookings.is_sub_rental` and there must not be. */}
             {subRental && <SubRentedMark label="Sub-rental" />}
-            {stage === 'Quote' && (
+            {stage === 'Returned' && canCloseRental(gctx.role) && (
+                <Button icon="check" variant="primary" onClick={closeBooking} disabled={closing}>
+                  {closing ? 'Closing…' : 'Close Rental'}
+                </Button>
+              )}
+              {stage === 'Quote' && (
               <>
                 <Unavailable reason={SEND_QUOTE_UNAVAILABLE}>
                   <Button icon="arrow_right" variant="secondary" disabled>
@@ -2284,6 +2334,30 @@ export default function BookingDetail() {
           <Rail>{railBody}</Rail>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>{railBody}</div>
+        )}
+
+        {/* The close dispatch's own failure. R-07 keeps Close a HARD gate, so a
+            refusal here is the normal, expected answer when money is outstanding
+            or the deposit is unresolved — it must be readable, not a toast
+            (Law 12 — errors inline, toasts for successes only). */}
+        {closeError && (
+          <div
+            role="alert"
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 'var(--sp-sm)',
+              padding: '10px 12px',
+              borderRadius: 'var(--r-sm)',
+              border: '1px solid var(--danger)',
+              background: 'var(--st-danger-bg)',
+              fontSize: 'var(--t-meta)',
+              color: 'var(--danger-text)',
+            }}
+          >
+            <Icon name="alert_triangle" size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+            <span>{closeError}</span>
+          </div>
         )}
       </div>
 

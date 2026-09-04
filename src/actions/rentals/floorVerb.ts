@@ -238,6 +238,19 @@ export interface ResetEntryInput {
 
 export interface FloorVerbInput {
   /**
+   * **R-06 — the named reason for handing over with money outstanding.**
+   *
+   * Since `0090` the database no longer blocks handover on an unpaid balance or
+   * an unpaid deposit; it asks for a reason, records it in `audit_events` with
+   * both amounts as they stood, and still refuses when none is given. Passing it
+   * here is what turns "blocked" into "allowed, and attributable".
+   *
+   * Ignored by every verb except the one that moves a booking to On Rent — the
+   * other stages have no money gate to override.
+   */
+  overrideReason?: string
+
+  /**
    * `bookings.id` (uuid) or `bookings.booking_no` (`B-` + digits).
    *
    * ⚠ Corrected 15 Aug 2026 — this said `BK-YYYY-NNNN`. See the same correction
@@ -926,7 +939,9 @@ export async function runFloorVerb(
   }
 
   /* 8 — the stage, through the transition trigger and nothing else. */
-  const stage = complete ? await advanceStage(job, booking, ctx, actionUuid, occurredAt) : null
+  const stage = complete
+    ? await advanceStage(job, booking, ctx, actionUuid, occurredAt, input.overrideReason)
+    : null
 
   /* 9 — `bookings.actual_return_at` (0002:33,86): set once, by the session
      that moved the booking to Returned, to the instant that session recorded.
@@ -1635,6 +1650,16 @@ async function advanceStage(
   ctx: ActionContext,
   actionUuid: string,
   occurredAt: string,
+  /*
+   * R-06 — the named reason for proceeding with money outstanding.
+   *
+   * `validate_booking_gates` no longer blocks handover on an unpaid balance or an
+   * unpaid deposit (0090); it requires this reason instead, records it in
+   * `audit_events` with both amounts as they stood, and still refuses when it is
+   * absent. It rides `booking_stage_transitions.reason`, which is where the
+   * database reads it from.
+   */
+  overrideReason?: string,
 ): Promise<{ from: BookingStatus; to: BookingStatus } | null> {
   const to = JOBS[job].sets
   if (to === null) return null
@@ -1648,6 +1673,9 @@ async function advanceStage(
     actorRole: ctx.role,
     clientUuid: actionUuid,
     occurredAt,
+    ...(overrideReason === undefined || overrideReason.trim() === ''
+      ? {}
+      : { reason: overrideReason.trim() }),
   })
 
   if (!ok) {

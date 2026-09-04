@@ -89,7 +89,17 @@ export type RecordPaymentInput = {
    * NOT a booking number: a caller that passes `B-715` gets a named refusal,
    * not a payment posted against nothing.
    */
-  invoiceNo: string
+  invoiceNo?: string
+  /**
+   * `invoices.id`. The way to settle a **Draft**, which by R-15 has no
+   * `invoice_no` at all — `createInvoice` omits the column entirely.
+   *
+   * Resolving only by number made every invoice this application creates
+   * unpayable: R-02 keeps an invoice in Draft for the whole rental and issues it
+   * once at return, so for a rental's entire life there was no number to pass and
+   * no other way in. Pass exactly one of `invoiceId` or `invoiceNo`.
+   */
+  invoiceId?: string
   /** Integer paisa, from `lib/money`'s `rupees()`. Converted to rupees once, below. */
   amountPaisa: Paisa | number
   /**
@@ -191,15 +201,25 @@ type PaymentTarget = {
  * uuids: `payments.branch_id` is NOT NULL, `InvoiceListRow` does not carry it,
  * and `AuthUser` has no branch either — the invoice is the only place it is.
  */
-async function resolvePaymentTarget(invoiceNo: string): Promise<PaymentTarget> {
-  const { data, error } = await supabase
-    .from('invoices')
-    .select('id, booking_id, client_id, branch_id, invoice_no, voided_at')
-    .eq('invoice_no', invoiceNo)
-    .maybeSingle()
+async function resolvePaymentTarget(ref: { invoiceId?: string | undefined; invoiceNo?: string | undefined }): Promise<PaymentTarget> {
+  /*
+   * A Draft carries no number (R-15), so the uuid is the only handle that works
+   * for the whole rental. Number lookup stays for issued invoices and for every
+   * caller that already had one.
+   */
+  const byId = typeof ref.invoiceId === 'string' && ref.invoiceId.trim() !== ''
+  // Reads naturally in both refusals below: "No invoice numbered B-715 exists"
+  // and "No invoice with id <uuid> exists".
+  const label = byId ? `with id ${ref.invoiceId}` : `numbered ${ref.invoiceNo}`
+
+  const base = supabase.from('invoices').select('id, booking_id, client_id, branch_id, invoice_no, voided_at')
+  const { data, error } = await (byId
+    ? base.eq('id', (ref.invoiceId as string).trim())
+    : base.eq('invoice_no', (ref.invoiceNo as string).trim())
+  ).maybeSingle()
 
   if (error) {
-    throw new Error(`Could not look up invoice ${invoiceNo}, so nothing was recorded: ${error.message}`)
+    throw new Error(`Could not look up invoice ${label}, so nothing was recorded: ${error.message}`)
   }
   if (!data) {
     // Reached by BookingDetail and UnifiedInbox, which hand this modal a
@@ -207,7 +227,7 @@ async function resolvePaymentTarget(invoiceNo: string): Promise<PaymentTarget> {
     // payment may be taken before an invoice exists is unruled). Saying which
     // number was not found is what makes that diagnosable instead of "failed".
     throw new Error(
-      `No invoice numbered ${invoiceNo} exists, so this payment has nothing to settle and nothing was recorded.`,
+      `No invoice ${label} exists, so this payment has nothing to settle and nothing was recorded.`,
     )
   }
 
@@ -265,8 +285,10 @@ export const recordPayment = createAction<RecordPaymentInput, RecordPaymentResul
   implemented: true,
 
   validate: (input) => {
-    if (!input.invoiceNo || input.invoiceNo.trim() === '') {
-      throw new Error('A payment must name the invoice it settles.')
+    const hasNo = typeof input.invoiceNo === 'string' && input.invoiceNo.trim() !== ''
+    const hasId = typeof input.invoiceId === 'string' && input.invoiceId.trim() !== ''
+    if (!hasNo && !hasId) {
+      throw new Error('A payment must name the invoice it settles, by number or by id.')
     }
     if (!input.clientUuid || input.clientUuid.trim() === '') {
       // Law 8. Not defaulted here: a generated-at-send-time key gives a
@@ -315,7 +337,7 @@ export const recordPayment = createAction<RecordPaymentInput, RecordPaymentResul
       )
     }
 
-    const target = await resolvePaymentTarget(input.invoiceNo.trim())
+    const target = await resolvePaymentTarget({ invoiceId: input.invoiceId, invoiceNo: input.invoiceNo })
 
     /*
      * `payment_no` from the database's allocator, never from the clock.
