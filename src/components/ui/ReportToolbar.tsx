@@ -1,6 +1,7 @@
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import Icon from './Icon'
 import { Button } from './Page'
+import { DateField } from './DateField'
 import { csvCell } from '../../lib/csv'
 import { NPT_OFFSET_MIN, getBusinessToday, kathmanduCivil, toBs, formatBs, formatAd } from '../../lib/bs'
 import type { ListFilters } from '../../lib/queries/listQuery'
@@ -566,18 +567,26 @@ export function ReportToolbar({
 
           {preset === 'custom' && (
             <>
-              <input
-                type="date"
+              {/* `showBs={false}` — these are query bounds in a filter bar, not
+                  a business date being shown to the operator, and the Date
+                  Engine covers one month, so a BS line here would read "BS not
+                  available for this date" on every report. The BS date is still
+                  in the calendar itself. See `DateFieldProps.showBs`. */}
+              <DateField
                 value={fromDay ?? ''}
-                onChange={(e) => setRange({ fromDay: e.target.value || null })}
-                aria-label="From date"
+                onChange={(v) => setRange({ fromDay: v || null })}
+                ariaLabel="From date"
+                showBs={false}
+                clearable
                 style={controlStyle}
               />
-              <input
-                type="date"
+              <DateField
                 value={toDay ?? ''}
-                onChange={(e) => setRange({ toDay: e.target.value || null })}
-                aria-label="To date"
+                onChange={(v) => setRange({ toDay: v || null })}
+                ariaLabel="To date"
+                showBs={false}
+                clearable
+                align="right"
                 style={controlStyle}
               />
             </>

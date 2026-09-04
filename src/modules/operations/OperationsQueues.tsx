@@ -27,6 +27,7 @@ import { NOW_AD, overdueAlert, quoteLapsedAlert, periodRange } from '../../data/
 import { CASES, isOpenStatus } from '../../data/cases'
 import { useViewport } from '../../lib/device'
 import { kathmanduCivil, NPT_OFFSET_MIN, getBusinessToday } from '../../lib/bs'
+import { DateField } from '../../components/ui/DateField'
 
 /*
  * The operating day, resolved once when this module loads, from the real
@@ -538,19 +539,24 @@ export default function OperationsQueues() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', marginTop: 'var(--sp-sm)' }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               From
-              <input
-                type="date"
+              <DateField
+                ariaLabel="Queue from this day"
                 value={customFrom}
-                onChange={(e) => patch({ from: e.target.value || null })}
+                onChange={(v) => patch({ from: v || null })}
+                showBs={false}
+                clearable
                 style={{ minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
               />
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               To
-              <input
-                type="date"
+              <DateField
+                ariaLabel="Queue up to this day"
                 value={customTo}
-                onChange={(e) => patch({ to: e.target.value || null })}
+                onChange={(v) => patch({ to: v || null })}
+                showBs={false}
+                clearable
+                align="right"
                 style={{ minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
               />
             </label>
@@ -617,19 +623,24 @@ export default function OperationsQueues() {
         <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '10px 14px', flexWrap: 'wrap' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
             From
-            <input
-              type="date"
+            <DateField
+              ariaLabel="Queue from this day"
               value={customFrom}
-              onChange={(e) => patch({ from: e.target.value || null })}
+              onChange={(v) => patch({ from: v || null })}
+              showBs={false}
+              clearable
               style={{ minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
             />
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
             To
-            <input
-              type="date"
+            <DateField
+              ariaLabel="Queue up to this day"
               value={customTo}
-              onChange={(e) => patch({ to: e.target.value || null })}
+              onChange={(v) => patch({ to: v || null })}
+              showBs={false}
+              clearable
+              align="right"
               style={{ minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
             />
           </label>

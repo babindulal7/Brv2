@@ -1,106 +1,50 @@
 import { useEffect, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
 import Icon from '../../../components/ui/Icon'
 import { TouchTarget } from '../../../components/ui/TouchTarget'
-import { toBs, formatBs, formatAd, BS_MONTHS } from '../../../lib/bs'
+import {
+  CalendarPopover,
+  TimeListPopover,
+  displayDate,
+  parseDateInput,
+  parseTimeInput,
+} from '../../../components/ui/DateField'
+import { toBs, formatBs } from '../../../lib/bs'
 
 /**
  * redesign v1 §4 — typeable date + time, two separate 44×44 icon buttons,
- * BS rendered under the AD value, default time never blank. The rental day
+ * BS rendered above the AD value, default time never blank. The rental day
  * runs 06:00→06:00 (Foundation), so a booking with no time cannot be priced
- * correctly at the boundary — this replaces the bare `<input type="date">`
- * NewRental.tsx used before, which had no time component at all.
+ * correctly at the boundary — this replaced the bare `<input type="date">`
+ * NewRental used before, which had no time component at all.
  *
- * No date-picker or BS-calendar component existed anywhere in the repo
- * before this one (confirmed by search) — `lib/bs.ts`'s `toBs`/`formatBs`
- * are the only reusable pieces; everything else here is new.
+ * ## The calendar moved out, 4 Sep 2026
+ *
+ * The month grid, the time list and the date/time parsers used to live in this
+ * file, which meant the app's only real date picker was reachable from exactly
+ * one screen while 24 other date inputs across 13 files fell back to the
+ * browser's native control — and a native control cannot render a BS date at
+ * all (Law 9 §9.4).
+ *
+ * They now live in `components/ui/DateField`, and this file composes them.
+ * Nothing about the rendered field changed; the parsers are re-exported below
+ * because `booking/index.ts` publishes them and tests import them from here.
  */
 
-const MONTH_ABBR = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
-
-function pad2(n: number): string {
-  return n.toString().padStart(2, '0')
-}
-
-function normalizeDate(y: number, mo: number, d: number): string | null {
-  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null
-  const dt = new Date(Date.UTC(y, mo - 1, d))
-  // Date rolls over an invalid day (e.g. 31 Feb) into the next month — catching
-  // that here is what stops "31/02/2026" silently becoming a March date.
-  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null
-  return `${y.toString().padStart(4, '0')}-${pad2(mo)}-${pad2(d)}`
-}
-
-/** '2026-07-16' | '16/07/2026' | '16 Jul 2026' → 'YYYY-MM-DD', or null. */
-export function parseDateInput(text: string): string | null {
-  const s = text.trim()
-  if (!s) return null
-  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s)
-  if (m) return normalizeDate(Number(m[1]), Number(m[2]), Number(m[3]))
-  m = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/.exec(s)
-  if (m) return normalizeDate(Number(m[3]), Number(m[2]), Number(m[1]))
-  m = /^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})$/.exec(s)
-  if (m) {
-    const idx = MONTH_ABBR.indexOf(m[2]!.slice(0, 3).toLowerCase())
-    if (idx === -1) return null
-    return normalizeDate(Number(m[3]), idx + 1, Number(m[1]))
-  }
-  return null
-}
-
-function clampTime(h: number, mi: number): string | null {
-  if (h < 0 || h > 23 || mi < 0 || mi > 59) return null
-  return `${pad2(h)}:${pad2(mi)}`
-}
-
-/** '0900' | '9:00' | '09:00' → 'HH:mm', or null. */
-export function parseTimeInput(text: string): string | null {
-  const s = text.trim()
-  if (!s) return null
-  let m = /^(\d{1,2}):(\d{2})$/.exec(s)
-  if (m) return clampTime(Number(m[1]), Number(m[2]))
-  m = /^(\d{3,4})$/.exec(s)
-  if (m) {
-    const raw = m[1]!.padStart(4, '0')
-    return clampTime(Number(raw.slice(0, 2)), Number(raw.slice(2)))
-  }
-  return null
-}
-
-function displayDate(v: string): string {
-  const d = new Date(v)
-  return Number.isNaN(d.getTime()) ? v : formatAd(d)
-}
+export { parseDateInput, parseTimeInput }
 
 /*
- * The private `TouchInset` that used to live here is gone; its four call sites
- * now use the shared `components/ui/TouchTarget`.
- *
- * Same geometry, one difference that matters: the local copy hard-coded
- * `const TOUCH = 44`, so the floor was written down twice — once in `theme.css`
- * as `--tap` and once here as a number that would not move with it. The shared
- * component reads `var(--tap)`, which is what §3.3 says the number is for.
- *
- * ⚠ KNOWN OVERLAP, pre-existing and NOT introduced here. The calendar and timer
- * buttons at the end of the field are 26px wide and share an edge, so their two
- * 44px targets overlap by 18px — and because the timer button is later in the
- * DOM it wins that band, which reaches ~9px into the calendar button's VISIBLE
- * glyph, so tapping the right edge of the calendar icon opens the time list.
- *
- * RESOLVED 25 Aug 2026 by taking only the axis that is actually free. Both
- * buttons now use `<TouchTarget axis="y" />`: full 44px vertical target, width
- * left at the control's own 26px. The overlap is gone and neither button can
- * steal the other's glyph.
- *
- * The width is still short of 44, and that is stated rather than hidden: two
- * adjacent controls cannot both hold a 44px-wide target inside 52px of space.
- * Closing it needs a layout change — widen the field, or collapse the two
- * pickers into one — which is a design decision about this field, not
- * something a hit-area pass should force. 26x44 with no mis-fire beats 44x44
- * with one.
+ * ⚠ KNOWN, pre-existing: the calendar and timer buttons are 26px wide and share
+ * an edge, so two 44px-wide targets cannot both fit inside 52px of space.
+ * RESOLVED 25 Aug 2026 by taking only the axis that is free — both use
+ * `<TouchTarget axis="y" />`, giving a full 44px vertical target at the
+ * control's own 26px width, with no overlap and neither button able to steal
+ * the other's glyph. Closing the width gap needs a layout change (widen the
+ * field, or collapse the two pickers into one), which is a design decision
+ * about this field rather than something a hit-area pass should force.
+ * 26×44 with no mis-fire beats 44×44 with one.
  */
-const iconBtnStyle: CSSProperties = {
-  position: 'relative',
+const iconBtnStyle = {
+  position: 'relative' as const,
   flexShrink: 0,
   width: 26,
   height: 26,
@@ -111,149 +55,6 @@ const iconBtnStyle: CSSProperties = {
   background: 'transparent',
   color: 'var(--text2)',
   cursor: 'pointer',
-}
-
-function CalendarPopover({ value, onSelect }: { value: string; onSelect: (v: string) => void }) {
-  const initial = Number.isNaN(Date.parse(value)) ? new Date() : new Date(value)
-  const [viewYear, setViewYear] = useState(initial.getUTCFullYear())
-  const [viewMonth, setViewMonth] = useState(initial.getUTCMonth())
-
-  const first = new Date(Date.UTC(viewYear, viewMonth, 1))
-  const startWeekday = first.getUTCDay()
-  const daysInMonth = new Date(Date.UTC(viewYear, viewMonth + 1, 0)).getUTCDate()
-  const cells: Array<{ ad: Date; iso: string } | null> = [
-    ...Array.from({ length: startWeekday }, () => null),
-    ...Array.from({ length: daysInMonth }, (_, i) => {
-      const ad = new Date(Date.UTC(viewYear, viewMonth, i + 1))
-      return { ad, iso: `${viewYear.toString().padStart(4, '0')}-${pad2(viewMonth + 1)}-${pad2(i + 1)}` }
-    }),
-  ]
-  const monthBs = toBs(new Date(Date.UTC(viewYear, viewMonth, 15)))
-
-  return (
-    <div
-      role="dialog"
-      aria-label="Choose a date"
-      style={{
-        position: 'absolute',
-        zIndex: 40,
-        top: 'calc(100% + 6px)',
-        left: 0,
-        width: 260,
-        padding: 10,
-        background: 'var(--dropdown)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--r-card)',
-        boxShadow: 'var(--shadow-modal)',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <button type="button" className="press" aria-label="Previous month" onClick={() => setViewMonth((m) => (m === 0 ? (setViewYear((y) => y - 1), 11) : m - 1))} style={iconBtnStyle}>
-          <TouchTarget />
-          <Icon name="chevron_left" size={14} />
-        </button>
-        <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-          {first.toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })}
-          {monthBs && <span style={{ display: 'block', fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>{BS_MONTHS[monthBs.month - 1]} {monthBs.year} BS</span>}
-        </span>
-        <button type="button" className="press" aria-label="Next month" onClick={() => setViewMonth((m) => (m === 11 ? (setViewYear((y) => y + 1), 0) : m + 1))} style={iconBtnStyle}>
-          <TouchTarget />
-          <Icon name="chevron_right" size={14} />
-        </button>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2, fontSize: 'var(--t-th)', color: 'var(--muted)', textAlign: 'center', marginBottom: 3 }}>
-        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <span key={`${d}-${i}`}>{d}</span>)}
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2 }}>
-        {cells.map((c, i) => {
-          if (!c) return <span key={`empty-${i}`} />
-          const selected = c.iso === value
-          const bs = toBs(c.ad)
-          return (
-            <button
-              key={c.iso}
-              type="button"
-              className="press"
-              onClick={() => onSelect(c.iso)}
-              style={{
-                position: 'relative',
-                minHeight: 34,
-                padding: '2px 0',
-                borderRadius: 'var(--r-xs)',
-                border: 'none',
-                background: selected ? 'var(--btn-primary-bg)' : 'transparent',
-                color: selected ? 'var(--btn-primary-fg)' : 'var(--text)',
-                cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-              }}
-            >
-              <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 600 }}>{c.ad.getUTCDate()}</span>
-              {/* the BS engine only vouches for one anchor month — an honest
-                  blank here beats a fabricated BS day outside it (lib/bs.ts). */}
-              <span className="figure" style={{ fontSize: 9, opacity: 0.75 }}>{bs ? bs.day : ' '}</span>
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function TimeListPopover({ value, onSelect }: { value: string; onSelect: (v: string) => void }) {
-  const times = Array.from({ length: 48 }, (_, i) => `${pad2(Math.floor(i / 2))}:${i % 2 === 0 ? '00' : '30'}`)
-  return (
-    <div
-      role="listbox"
-      aria-label="Choose a time"
-      style={{
-        position: 'absolute',
-        zIndex: 40,
-        top: 'calc(100% + 6px)',
-        right: 0,
-        width: 110,
-        maxHeight: 220,
-        overflowY: 'auto',
-        padding: 4,
-        background: 'var(--dropdown)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--r-card)',
-        boxShadow: 'var(--shadow-modal)',
-      }}
-    >
-      {times.map((t) => {
-        const selected = t === value
-        return (
-          <button
-            key={t}
-            type="button"
-            role="option"
-            aria-selected={selected}
-            className="press"
-            onClick={() => onSelect(t)}
-            style={{
-              display: 'block',
-              width: '100%',
-              minHeight: 30,
-              padding: '0 9px',
-              border: 'none',
-              borderRadius: 'var(--r-xs)',
-              background: selected ? 'var(--btn-primary-bg)' : 'transparent',
-              color: selected ? 'var(--btn-primary-fg)' : 'var(--text)',
-              fontFamily: 'inherit',
-              fontSize: 'var(--t-meta)',
-              fontWeight: selected ? 700 : 400,
-              textAlign: 'left',
-              cursor: 'pointer',
-            }}
-          >
-            {t}
-          </button>
-        )
-      })}
-    </div>
-  )
 }
 
 export interface DateTimeFieldProps {
@@ -318,12 +119,11 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
   return (
     <div ref={rootRef} style={{ position: 'relative', minWidth: 0 }}>
       <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', marginBottom: 3 }}>{label}</span>
-      {/* 01_NEW_RENTAL §1.1 DATES box — "BS above AD on both". The BS line was
-          below the field; the wireframe (and Foundation §3.2's "BS leads AD")
-          put it first, so it moved above the input rather than being duplicated.
-          `lib/bs.ts` is the one Date Engine — nothing here computes a BS date,
-          and outside the month that engine vouches for it says so instead of
-          rendering a plausible one. */}
+      {/* 01_NEW_RENTAL §1.1 DATES box — "BS above AD on both". The wireframe and
+          Foundation §3.2's "BS leads AD" put it first, so it sits above the
+          input rather than under it. `lib/bs.ts` is the one Date Engine: nothing
+          here computes a BS date, and outside the month that engine vouches for
+          it says so instead of rendering a plausible one. */}
       <div
         className="figure"
         style={{ marginBottom: 3, fontSize: 'var(--t-th)', fontWeight: 700, color: bs ? 'var(--text)' : 'var(--muted)' }}
@@ -355,6 +155,8 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
           type="button"
           className="press"
           aria-label={`Open calendar for ${label}`}
+          aria-haspopup="dialog"
+          aria-expanded={calendarOpen}
           onClick={() => {
             setCalendarOpen((o) => !o)
             setTimeListOpen(false)
@@ -368,6 +170,8 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
           type="button"
           className="press"
           aria-label={`Open time picker for ${label}`}
+          aria-haspopup="listbox"
+          aria-expanded={timeListOpen}
           onClick={() => {
             setTimeListOpen((o) => !o)
             setCalendarOpen(false)
@@ -387,6 +191,7 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
             onDateChange(v)
             setCalendarOpen(false)
           }}
+          onDismiss={() => setCalendarOpen(false)}
         />
       )}
       {timeListOpen && (

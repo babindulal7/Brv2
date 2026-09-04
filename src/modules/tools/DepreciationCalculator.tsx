@@ -13,6 +13,7 @@ import {
 } from '../../data/tools'
 import type { DepreciationYear } from '../../data/tools'
 import { PARENTS } from '../../data/inventory'
+import { DateField } from '../../components/ui/DateField'
 
 /**
  * **Depreciation Calculator — `10_TOOLS.md` §10.2.**
@@ -170,11 +171,10 @@ export default function DepreciationCalculator() {
                 required
                 hint="No item in the master carries a purchase date, so this is never prefilled."
               >
-                <input
-                  type="date"
-                  aria-label="Purchase date"
+                <DateField
+                  ariaLabel="Purchase date"
                   value={purchaseDate}
-                  onChange={(e) => setPurchaseDate(e.target.value)}
+                  onChange={setPurchaseDate}
                   style={controlStyle}
                 />
               </Field>

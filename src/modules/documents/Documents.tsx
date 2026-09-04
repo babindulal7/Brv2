@@ -46,6 +46,7 @@ import {
   summarySlices,
 } from '../../data/documents'
 import type { CategoryKey, DocRow, RelatedKind, SortKey } from '../../data/documents'
+import { DateField } from '../../components/ui/DateField'
 
 const th = {
   textAlign: 'left' as const,
@@ -799,24 +800,27 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
               <div>
                 <span style={labelStyle}>Date Range</span>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                  <Input
-                    type="date"
-                    aria-label="Created from"
+                  <DateField
+                    ariaLabel="Created from"
                     value={from}
-                    onChange={(e) => {
-                      setFrom(e.target.value)
+                    onChange={(v) => {
+                      setFrom(v)
                       setPage(1)
                     }}
+                    showBs={false}
+                    clearable
                     style={fieldStyle}
                   />
-                  <Input
-                    type="date"
-                    aria-label="Created to"
+                  <DateField
+                    ariaLabel="Created to"
                     value={to}
-                    onChange={(e) => {
-                      setTo(e.target.value)
+                    onChange={(v) => {
+                      setTo(v)
                       setPage(1)
                     }}
+                    showBs={false}
+                    clearable
+                    align="right"
                     style={fieldStyle}
                   />
                 </div>

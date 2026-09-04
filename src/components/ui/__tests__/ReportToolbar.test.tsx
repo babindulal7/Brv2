@@ -116,6 +116,29 @@ async function change(el: HTMLInputElement | HTMLSelectElement, value: string) {
   })
 }
 
+/**
+ * Sets a `DateField` the way an operator does: type, then leave the field.
+ *
+ * The date bounds stopped being `<input type="date">` on 4 Sep 2026 — they are
+ * `components/ui/DateField` now, so the whole app shows one calendar with the
+ * BS date on it instead of whatever the browser ships. Two consequences the
+ * tests below encode:
+ *
+ *  · **It commits on blur, not on change.** Typing "2026-07-1" would otherwise
+ *    parse as a half-finished date on every keystroke, so nothing is committed
+ *    until the field is left (React's `onBlur` is `focusout`). Same contract
+ *    `DateTimeField` has had since the redesign.
+ *  · **It displays "1 Jul 2026", not "2026-07-01".** The model value stays ISO;
+ *    only the presentation changed. Assertions on the emitted range are
+ *    therefore unchanged, and assertions on `.value` read the display.
+ */
+async function typeDate(el: HTMLInputElement, value: string) {
+  await change(el, value)
+  await act(async () => {
+    el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+  })
+}
+
 async function click(el: HTMLElement) {
   await act(async () => {
     el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -269,14 +292,15 @@ describe('ReportToolbar date range', () => {
       },
     })
     expect(need<HTMLSelectElement>('Date range').value).toBe('custom')
-    expect(need<HTMLInputElement>('From date').value).toBe('2026-07-01')
-    expect(need<HTMLInputElement>('To date').value).toBe('2026-07-31')
+    // DateField renders the day for a human; the model value stays ISO.
+    expect(need<HTMLInputElement>('From date').value).toBe('1 Jul 2026')
+    expect(need<HTMLInputElement>('To date').value).toBe('31 Jul 2026')
   })
 
   it('emits a hand-typed custom bound with the same day boundaries', async () => {
     await mount({ ...BASE, dateColumn: 'expense_date' })
     await change(need<HTMLSelectElement>('Date range'), 'custom')
-    await change(need<HTMLInputElement>('From date'), '2026-07-16')
+    await typeDate(need<HTMLInputElement>('From date'), '2026-07-16')
 
     expect(emitted?.dateRange?.fromAd).toBe(`2026-07-16T00:00:00.000${OFFSET}`)
     // The other end is preserved rather than dropped when only one is edited.
@@ -288,8 +312,8 @@ describe('ReportToolbar date range', () => {
     // because an empty table is the truthful answer to it.
     await mount({ ...BASE, dateColumn: 'expense_date' })
     await change(need<HTMLSelectElement>('Date range'), 'custom')
-    await change(need<HTMLInputElement>('From date'), '2026-07-31')
-    await change(need<HTMLInputElement>('To date'), '2026-07-01')
+    await typeDate(need<HTMLInputElement>('From date'), '2026-07-31')
+    await typeDate(need<HTMLInputElement>('To date'), '2026-07-01')
 
     const alert = container.querySelector('[role="alert"]')
     expect(alert?.textContent).toContain('selects nothing')

@@ -33,6 +33,7 @@ import {
 import type { Database } from '../../types/supabase'
 import { useList, type ListQueryResult } from '../../lib/queries/useList'
 import type { ListFilters } from '../../lib/queries/listQuery'
+import { DateField } from '../../components/ui/DateField'
 
 type ExpenseStatusDb = Database['public']['Enums']['expense_status']
 
@@ -566,12 +567,11 @@ function AddExpenseSheet({
 
         <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Date</span>
-          {/* §9.4 — "BS above AD". Rendered from the AD day the picker emits;
-              Law 7 keeps BS out of storage entirely. */}
-          <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-            {bsLabel(dateAd)}
-          </span>
-          <input type="date" value={dateAd} onChange={(e) => setDateAd(e.target.value)} style={inputStyle} />
+          {/* §9.4 — "BS above AD". The BS line used to be rendered here from a
+              local `bsLabel`; `DateField` now renders it itself, from the same
+              `lib/bs` engine, so keeping this one would print it twice. Law 7
+              still keeps BS out of storage entirely. */}
+          <DateField ariaLabel="Expense date" value={dateAd} onChange={setDateAd} style={inputStyle} />
         </label>
 
         <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

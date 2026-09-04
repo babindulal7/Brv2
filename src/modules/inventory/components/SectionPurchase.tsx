@@ -4,6 +4,7 @@ import { Unavailable } from '../../../components/ui/Unavailable'
 import { DEPRECIATION_UNAVAILABLE_REASON } from '../../../data/addEquipment'
 import { formatMoney, parseMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
+import { DateField } from '../../../components/ui/DateField'
 
 export function SectionPurchase() {
   const {
@@ -38,7 +39,7 @@ export function SectionPurchase() {
               <div style={fieldRow}>
                 <Field label="Purchase date">
                   <BsAbove iso={purchaseIso} />
-                  <input type="date" value={purchaseIso} onChange={(e) => setPurchaseIso(e.target.value)} style={inputStyle()} />
+                  <DateField ariaLabel="Purchase date" value={purchaseIso} onChange={setPurchaseIso} clearable style={inputStyle()} />
                 </Field>
                 <Field label="Supplier">
                   <input value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="e.g. Camera Zone Nepal" style={inputStyle()} />
@@ -98,7 +99,7 @@ export function SectionPurchase() {
                 </Field>
                 <Field label="Insurance expiry">
                   <BsAbove iso={insuranceExpiryIso} />
-                  <input type="date" value={insuranceExpiryIso} onChange={(e) => setInsuranceExpiryIso(e.target.value)} style={inputStyle()} />
+                  <DateField ariaLabel="Insurance expiry" value={insuranceExpiryIso} onChange={setInsuranceExpiryIso} clearable style={inputStyle()} />
                 </Field>
                 <Field label="Depreciation group">
                   <Unavailable reason={DEPRECIATION_UNAVAILABLE_REASON} style={{ width: '100%' }}>

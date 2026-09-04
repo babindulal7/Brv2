@@ -4,6 +4,7 @@ import { Field, SectionCard, inputStyle, fieldRow, ConditionBadge, DraftStatusBa
 import { useEquipmentContext } from './AddEquipmentContext'
 import { TRACKING_MODES, QUANTITY_UNITS, INTAKE_CONDITIONS } from '../../../data/addEquipment'
 import type { IntakeCondition } from '../../../data/addEquipment'
+import { DateField } from '../../../components/ui/DateField'
 
 export function SectionStockUnits() {
   const {
@@ -179,10 +180,12 @@ export function SectionStockUnits() {
                             </td>
                             <td style={td}>
                               <BsAbove iso={u.purchaseIso} />
-                              <input
-                                type="date"
+                              <DateField
+                                ariaLabel="Purchase date for this unit"
                                 value={u.purchaseIso}
-                                onChange={(e) => patchUnit(u.id, { purchaseIso: e.target.value })}
+                                onChange={(v) => patchUnit(u.id, { purchaseIso: v })}
+                                showBs={false}
+                                clearable
                                 style={{ ...inputStyle(), marginTop: 3 }}
                               />
                             </td>

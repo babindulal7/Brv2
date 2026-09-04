@@ -3,7 +3,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Input, Select } from '../../components/ui'
+import { Input, Select, DateField } from '../../components/ui'
 import { Card, PageHeader, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
 import { Modal } from '../../components/ui/Modal'
 import { ErrorBanner } from '../../components/ui/StateViews'
@@ -990,7 +990,7 @@ export default function AddClient() {
 
             <div style={fieldRow}>
               <Field label="Client Since">
-                <Input type="date" value={clientSince} onChange={(e) => setClientSince(e.target.value)} style={inputStyle()} />
+                <DateField ariaLabel="Client since" value={clientSince} onChange={setClientSince} style={inputStyle()} />
               </Field>
               <Field label="Source">
                 <Select value={source} onChange={(e) => setSource(e.target.value)} style={inputStyle()}>

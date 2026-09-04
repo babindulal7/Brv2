@@ -47,6 +47,7 @@ import {
   withSubRental,
 } from '../../data/rentals'
 import type { ChipKey, OptionalColumn, RentalListRow } from '../../data/rentals'
+import { DateField } from '../../components/ui/DateField'
 
 /*
  * The operating day, resolved once when this module loads, from the real
@@ -1472,19 +1473,24 @@ export default function RentalsList() {
         >
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             From
-            <input
-              type="date"
+            <DateField
+              ariaLabel="Rentals from this day"
               value={from}
-              onChange={(e) => setRange(e.target.value, to)}
+              onChange={(v) => setRange(v, to)}
+              showBs={false}
+              clearable
               style={dateInput}
             />
           </label>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             To
-            <input
-              type="date"
+            <DateField
+              ariaLabel="Rentals up to this day"
               value={to}
-              onChange={(e) => setRange(from, e.target.value)}
+              onChange={(v) => setRange(from, v)}
+              showBs={false}
+              clearable
+              align="right"
               style={dateInput}
             />
           </label>

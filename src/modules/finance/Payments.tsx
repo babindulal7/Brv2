@@ -25,6 +25,7 @@ import {
 import type { Database } from '../../types/supabase'
 import { RecordPaymentModal } from './modals/RecordPaymentModal'
 import { RefundPaymentModal } from './modals/RefundPaymentModal'
+import { DateField } from '../../components/ui/DateField'
 
 /**
  * **Finance ▸ Payments** — `updated mds/09_FINANCE.md` §9.3, `/finance/payments`.
@@ -770,21 +771,24 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
         {/* [date ▾] — genuinely server-side, at Kathmandu day boundaries. */}
         <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
           From
-          <input
-            type="date"
-            aria-label="Payments from this Kathmandu day"
+          <DateField
+            ariaLabel="Payments from this Kathmandu day"
             value={fromDay}
-            onChange={(e) => patch({ from: e.target.value || null })}
+            onChange={(v) => patch({ from: v || null })}
+            showBs={false}
+            clearable
             style={inputStyle}
           />
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
           To
-          <input
-            type="date"
-            aria-label="Payments up to and including this Kathmandu day"
+          <DateField
+            ariaLabel="Payments up to and including this Kathmandu day"
             value={toDay}
-            onChange={(e) => patch({ to: e.target.value || null })}
+            onChange={(v) => patch({ to: v || null })}
+            showBs={false}
+            clearable
+            align="right"
             style={inputStyle}
           />
         </label>

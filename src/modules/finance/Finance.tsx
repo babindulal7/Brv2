@@ -44,6 +44,7 @@ import Payments from './Payments'
 import Expenses from './Expenses'
 import Documents from '../documents/Documents'
 import { ReportCatalog } from '../reports/ReportCatalog'
+import { DateField } from '../../components/ui/DateField'
 
 /*
  * The operating day, resolved once when this module loads, from the real
@@ -1161,11 +1162,11 @@ export default function Finance() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', marginTop: 'var(--sp-sm)' }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
             From
-            <input type="date" value={dateFrom} onChange={(e) => setRailDateFrom(e.target.value)} style={railInputStyle} />
+            <DateField ariaLabel="Invoices from this day" value={dateFrom} onChange={setRailDateFrom} showBs={false} clearable style={railInputStyle} />
           </label>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
             To
-            <input type="date" value={dateTo} onChange={(e) => setRailDateTo(e.target.value)} style={railInputStyle} />
+            <DateField ariaLabel="Invoices up to this day" value={dateTo} onChange={setRailDateTo} showBs={false} clearable style={railInputStyle} />
           </label>
           <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
             {dateFrom || dateTo ? 'Kathmandu civil days; stored instants are UTC.' : 'No dates picked — showing every day.'}
@@ -1196,11 +1197,11 @@ export default function Finance() {
       </div>
       <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
         From
-        <input type="date" value={dateFrom} onChange={(e) => setRailDateFrom(e.target.value)} style={railInputStyle} />
+        <DateField ariaLabel="Invoices from this day" value={dateFrom} onChange={setRailDateFrom} showBs={false} clearable style={railInputStyle} />
       </label>
       <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
         To
-        <input type="date" value={dateTo} onChange={(e) => setRailDateTo(e.target.value)} style={railInputStyle} />
+        <DateField ariaLabel="Invoices up to this day" value={dateTo} onChange={setRailDateTo} showBs={false} clearable style={railInputStyle} />
       </label>
       {(railIsFiltered || chip !== 'All') && (
         <Button icon="close" onClick={clearInvoiceFilters}>
