@@ -2,6 +2,86 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-04 — Phase 0 Step 2 (numbering): gate passed, 0085 written, two spec corrections, one false green of my own
+**Phase:** Phase 0 step 2 · **Status:** 2.1 ✅ · 2.2 written but **UNVERIFIED** (Docker down) · 2.3 ✅ · 2.4 ✅ · 2.5/2.6 held behind Step 0
+
+Took Step 2 because PHASE-0-PLAN names it the one that shares no code with Steps 3
+and 4, and a parallel session is already inside that chain. Nothing here touches
+live: Step 0's backup does not exist yet.
+
+### 2.1 — the gate, which the plan says to stop on
+Queried live rather than trusting the spec. **Exactly 46** bookings in the
+900–945 band, and every other figure confirmed: 246 bookings, all `B-` prefixed
+(0 in any other shape), 700→945, `number_sequences.booking.current_value` = 917,
+`external_refs` orders = **0**. The gate passes, and the zero order refs are
+independent confirmation that 2.5 — not the numbering — is the real import
+blocker.
+
+### 2.2 — `0085_booking_numbers_bare.sql`, written; NOT yet proven
+Follows SPEC-P0-3 §3, plus a pre-condition block that re-asserts the 46 and
+refuses if any `booking_no` is off-shape, and a post-condition block asserting
+§7's acceptance list (digits only · 46 parked at 90000–90045 · 900–945 empty ·
+next mint 900 · payment year-less).
+
+**Correction to the spec — its own UPDATE would have failed.**
+`bookings_booking_no_format CHECK (booking_no ~ '^B-[0-9]+$')` is live (0055,
+verified 4 Sep). Bare digits violate it, so the renumber dies on statement one.
+The migration drops it in step 2 and replaces it with `^[0-9]+$` in step 5,
+inside the same transaction, so the column is never unconstrained to a committed
+reader. The spec is otherwise exact.
+
+**`create_booking` needs no change.** Its whole involvement is
+`v_booking_no := next_document_number('booking')` — read from the live function
+body. `next_document_number` formats as `prefix || lpad(current_value + 1, …)`,
+so re-pointing the sequence to `prefix = ''`, `current_value = 899` makes the
+same call return `900`. **That alone fixes P0-4**, where the counter at 917 sits
+behind data reaching 945 and the next mint collides on `bookings_booking_no_key`.
+
+### 2.3 — one helper each way, and the search wired
+`formatBookingNo` and `parseBookingNoSearch` in `lib/format.ts`, per SPEC-P0-3
+§4's instruction not to scatter `'#' + x` through the screens. `parseBookingNoSearch`
+is wired into `listBookings`, where the term reaches `ilike` across `booking_no`
+AND `project` — so it strips a prefix **only when digits follow**, leaving a
+project search like "B-roll" exactly as typed. 8 tests pin that, including the
+§7 criterion that `880`, `#880` and `B-880` reach the same rental.
+
+### 2.4 — `full_sync.sql` quarantined, and the spec's claim corrected
+Read it rather than trusting the description. The description holds: 100 booking
+inserts, **every one** setting `client_id = (SELECT id FROM public.clients LIMIT 1)`,
+and 12 writing `NOW(), NOW()` over both rental dates. The 100 booking guards test
+`external_refs` for `entity = 'orders'` — and live holds zero — so every guard
+passes and every insert is attempted.
+
+**But "corrupts 100+ bookings if run" is not what happens today.** It writes
+B-798…B-897; those numbers already exist live, so the first duplicate aborts the
+single transaction and it **fails closed**. It corrupts only against a database
+lacking those numbers. Quarantined anyway with a refuse-to-run guard and the
+reasoning above in its header: failing closed by coincidence is not safety.
+
+### A false green of my own, and the fix
+The scratch build for 0085 reported **"84 applied, 0 failed"** against a database
+it never touched. Docker Desktop went down during bootstrap, and my scratchpad
+harness decides success by grepping stderr for "ERROR" — a Docker connection
+failure contains no such word. It now trusts the **exit code**, and I confirmed
+it fails loudly with Docker down. The shipped `check:rebuild` does NOT share the
+flaw: `execFileSync` throws on a non-zero exit and the catch reports FAILED.
+
+Recorded because it is the same failure mode this session already found once, in
+`check-rebuild.mjs`'s bootstrap assertion: a check that can report success while
+doing nothing is worse than no check.
+
+### Verified
+`tsc --noEmit` clean · lib and query test files pass, including 8 new
+booking-number tests · live queried read-only throughout.
+
+**NOT verified: `0085` itself.** Docker Desktop is down, so no scratch database
+could be built. It must not go near live until `npm run check:rebuild` is green
+with it in place — and, per Step 0, not until a restorable dump exists.
+
+### Held, deliberately
+2.5 (back-fill `external_refs` orders) and 2.6 (revoke `authenticated` DELETE)
+both write to live and stay behind Step 0's backup and explicit approval.
+
 ## 2026-09-03 — New Rental driven end to end on the mock build: Create works; four defects, one regression
 **Phase:** verification (no code changed) · **Status:** complete · **Page:** `/rentals/new` — `NewRental.tsx` 3,529 lines, `AddItemPanel.tsx` 1,295, `itemCatalogue.ts` 950; the three carry a third session's **uncommitted** diff (+303/−102)
 

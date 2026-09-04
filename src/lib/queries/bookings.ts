@@ -1,4 +1,5 @@
 import { supabase } from '../supabase'
+import { parseBookingNoSearch } from '../format'
 import { getSetting } from '../settingsStore'
 import { dayStartMinutesFrom, operationalDayBounds, operationalDayOf } from '../operationalDay'
 import { rupees, type Paisa } from '../money'
@@ -454,6 +455,15 @@ export async function listBookings(opts: BookingListOptions = {}): Promise<ListQ
    */
   const query = applyListFilters(base, {
     ...filters,
+    /*
+     * R-10 / SPEC-P0-3 §4: `booking_no` is stored bare (`880`) and the `#` is
+     * display-only, so the two forms an operator actually types — `#880` from
+     * the screen in front of them, `B-880` from paperwork issued before 4 Sep —
+     * would both miss on a raw `ilike`. `parseBookingNoSearch` strips a prefix
+     * ONLY when digits follow, so a project search like "B-roll" reaches
+     * `project` unchanged; the same term runs against both columns.
+     */
+    search: filters.search === undefined ? undefined : parseBookingNoSearch(filters.search),
     searchColumns: filters.searchColumns ?? SEARCH_COLUMNS,
     sort: filters.sort ?? { column: 'pickup_at', ascending: true },
     // Deterministic paging — see PAGINATION in `listQuery.ts`. `bookings.id` is

@@ -78,3 +78,41 @@ export function deliveryTypeLabel(value: string | null | undefined, fallback = '
   if (value == null || value === '') return fallback
   return value === 'Customer Pickup' ? 'Client Pickup' : value
 }
+
+/* ── booking numbers ──────────────────────────────────────────────────────────
+ *
+ * R-10 (RULINGS-2026-09-04.md): a booking number is a BARE INTEGER in the
+ * database — `700`, `946`, `90000` — and the `#` is rendered at display only.
+ *
+ * The `#` is never stored because it is a URL fragment delimiter: `/rentals/#920`
+ * never reaches the server, and the same breaks any link pasted into WhatsApp.
+ * Storing bare also lets the column sort numerically, which is why 0085 adds an
+ * expression index on `(booking_no)::bigint` — on text, '1000' sorts before '946'.
+ *
+ * One helper each way, deliberately. SPEC-P0-3 §4: "Do not scatter `'#' + x`
+ * through the screens; the audit already found three phone normalisers with
+ * different rules and that is the same failure waiting to happen."
+ */
+
+/** Display form of a stored booking number. `'946'` → `'#946'`. */
+export function formatBookingNo(bookingNo: string | null | undefined, fallback = '—'): string {
+  const n = (bookingNo ?? '').trim()
+  if (n === '') return fallback
+  return n.startsWith('#') ? n : `#${n}`
+}
+
+/**
+ * Search form → stored form. Staff will type the old `B-946` for months, and so
+ * will clients holding paperwork issued before 4 Sep; `#946` is what the screens
+ * now show. All three must find the same rental (SPEC-P0-3 §7).
+ *
+ * Only a prefix followed by digits is stripped, so a project search for
+ * something like "B-roll" is left exactly as typed — the same term also runs
+ * against `project`, and rewriting it there would silently change what the
+ * operator asked for.
+ */
+export function parseBookingNoSearch(term: string): string {
+  const t = term.trim()
+  const m = /^(?:#|[Bb]-)(\d+)$/.exec(t)
+  return m ? m[1]! : t
+}

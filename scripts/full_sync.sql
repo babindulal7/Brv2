@@ -1,3 +1,39 @@
+-- =============================================================================
+-- QUARANTINED 4 Sep 2026 — this script REFUSES TO RUN. Do not remove the guard
+-- below without reading this.
+--
+-- PLAN: PHASE-0-PLAN.md step 2.4 (P1-7). Verified by reading the file, 4 Sep:
+--
+--   * 100 x `INSERT INTO public.bookings` and EVERY ONE of them sets
+--     `client_id = (SELECT id FROM public.clients LIMIT 1)` — every imported
+--     booking is attached to whichever client the planner happens to return
+--     first, not to its own.
+--   * 12 x `pickup_at, return_at` written as `NOW(), NOW()` — the rental dates
+--     are destroyed and replaced with the moment of import.
+--   * The booking numbers it writes are B-798..B-897, which are REAL Booqable
+--     orders already live in this database.
+--   * The 100 booking guards test `external_refs` for `entity = 'orders'`, and
+--     live holds ZERO order refs (verified) — so every guard passes and every
+--     insert is attempted. The guards protect products and clients, not bookings.
+--
+-- Today it happens to fail closed: `bookings_booking_no_key` rejects the first
+-- duplicate and the single transaction rolls back. That is luck, not safety —
+-- it depends entirely on those numbers already existing. Against an empty or
+-- differently-seeded database the same file writes 100 corrupt bookings.
+--
+-- The import that should replace it must (SPEC-P0-3 §5): take Booqable's own
+-- order number rather than minting one, key idempotency on the order UUID in
+-- `external_refs` (which needs the back-fill in step 2.5), and reconcile on
+-- collision instead of inserting.
+--
+-- To run it anyway you must delete this block, which is the point: that is a
+-- deliberate act, and this comment is what you will have read first.
+-- =============================================================================
+DO $$ BEGIN
+  RAISE EXCEPTION
+    'scripts/full_sync.sql is quarantined (PHASE-0-PLAN 2.4 / P1-7): it attaches all 100 bookings to one arbitrary client and overwrites both rental dates with now(). Read the header before removing this guard.';
+END $$;
+
 BEGIN;
 DO $$ DECLARE v_cat_id uuid := '00000000-0000-0000-0000-000000000505'; v_branch uuid := '00000000-0000-0000-0000-000000000001'; v_user uuid := '00000000-0000-0000-0000-000000000101'; v_new_id uuid; BEGIN
 
