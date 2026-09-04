@@ -416,10 +416,12 @@ interface BookingSpec {
 }
 
 /**
- * `1 Shrawan 2083 BS · 16 Jul 2026, 06:00 AM` — `Sample Data.md`'s date, in
- * Kathmandu (UTC+05:45), stored as the UTC instant. `assertBs` below feeds it
- * back through `bs.ts` and fails the build if it does not render as
- * `1 Shrawan 2083`.
+ * `16 Jul 2026, 06:00 AM` in Kathmandu (UTC+05:45), stored as the UTC instant —
+ * `Sample Data.md`'s date for the reference booking.
+ *
+ * ⛔ That spec pairs this instant with `1 Shrawan 2083 BS`, which is wrong: under
+ * the corrected month-length table 16 Jul 2026 is **32 Ashadh 2083**. Law 7 keeps
+ * the instant and moves the label — see the guard at the end of this file.
  */
 const NPT_OFFSET_MIN = 345
 
@@ -1293,8 +1295,27 @@ export function buildCorpus(): SeedCorpus {
   if (mismatches.length > 0) fail(`B-715 does not reproduce Foundation §2.8 — ${mismatches.join('; ')}`)
   if (reference.itemCount !== 18) fail(`B-715 must carry 18 items (Sample Data.md), corpus has ${reference.itemCount}`)
   if (reference.days !== 3) fail(`B-715 must run 3 days (Sample Data.md), corpus has ${reference.days}`)
-  if (reference.bsPickup !== '1 Shrawan 2083 BS') {
-    fail(`B-715 pickup must render as 1 Shrawan 2083 BS (Sample Data.md), bs.ts renders ${reference.bsPickup ?? 'null'}`)
+  /*
+   * ⛔ Was `'1 Shrawan 2083 BS'` until 5 Sep 2026, and that guard pinned a bug.
+   *
+   * `Sample Data.md` states the pairing **"1 Shrawan 2083 BS · 16 Jul 2026,
+   * 06:00 AM"**. Under the corrected month-length table those cannot both be
+   * true: 16 Jul 2026 is **32 Ashadh 2083**, and 1 Shrawan is the 17th. The spec
+   * inherited the same off-by-one the engine had, and this assertion then held
+   * it in place — it would have failed the corrected engine and looked like the
+   * engine was wrong.
+   *
+   * **Law 7 decides which half survives: AD is stored, BS is rendered and never
+   * stored.** The UTC instant is the fact; the BS string was a derived label the
+   * spec mis-derived. So the instant is unchanged and the expectation moves.
+   *
+   * To revert the other way — move the booking rather than the label — set this
+   * booking's pickup/return to 17/20 Jul and restore `'1 Shrawan 2083 BS'`.
+   * That is a data change, not an engine change, and needs a ruling because it
+   * moves a reference booking every money assertion in the suite is keyed to.
+   */
+  if (reference.bsPickup !== '32 Ashadh 2083 BS') {
+    fail(`B-715 pickup must render as 32 Ashadh 2083 BS (16 Jul 2026 under the corrected BS table), bs.ts renders ${reference.bsPickup ?? 'null'}`)
   }
 
   return {

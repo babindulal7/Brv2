@@ -9,10 +9,43 @@
  *
  * Every BS date in the app must come from here. Nothing computes its own.
  *
- * The anchor is the one §4.2 names as correct — the offset used by Cases,
- * Handover and Maintenance: **16 Jul 2026 = 1 Shrawan 2083**, which puts
- * 26 Jul at 11 Shrawan. That is a spec-supplied fact, not a conversion I
- * derived; a real BS calendar table replaces this file's arithmetic later.
+ * ⛔ **THE ANCHOR WAS WRONG BY ONE DAY — corrected 5 Sep 2026.**
+ *
+ * This file previously declared `16 Jul 2026 = 1 Shrawan 2083` and
+ * `SHRAWAN_2083_DAYS = 32`, sourced from `Calendar.md` §4.2 and carried as "a
+ * spec-supplied fact, not a conversion I derived". **Both are wrong.** The real
+ * values, agreed by four independent sources checked on 16 Aug 2026 — Hamro
+ * Patro, Merokalam (verified against the Ministry of Home Affairs gazette),
+ * nepalicalendar.online, and the `bikram-sambat` package:
+ *
+ *   - **1 Shrawan 2083 = 17 Jul 2026**, not 16 Jul.
+ *   - **Shrawan 2083 has 31 days**, not 32.
+ *
+ * 32 is **Ashadh** 2083 (15 Jun – 16 Jul 2026). The off-by-one anchor pulled
+ * Ashadh's length onto Shrawan's name, which is why 32 looked right to everyone
+ * who checked it.
+ *
+ * Every BS date this app rendered before this correction was **one day ahead**.
+ * The seeded operating day, 31 Jul 2026, is **15 Shrawan 2083** — not 16.
+ *
+ * Recorded because the wrong number won twice, on the record:
+ * `modules/calendar/Calendar.tsx` noted the spec labelling a week "10–16
+ * Shrawan" and resolved it as "the engine's anchor makes it 11–17 and the engine
+ * wins" — the spec was right. And `PROGRESS.md` rejected `Date Engine.md` §2.1's
+ * month row as impossible because the anchors were "exactly 93 days apart"; the
+ * true gap is 94, so the validator itself was calibrated on the wrong anchor.
+ * In both cases a correct external fact was overruled because the wrong one was
+ * already in code. `Calendar.md` §4.2 needs amending, not this file.
+ *
+ * ## Provenance of this correction
+ *
+ * Ported — not re-derived — from `updated mds/COMPLETE/BS date .zip`, produced
+ * 16 Aug 2026, which `RULINGS-2026-09-04.md` R-00 names as authoritative:
+ * *"the 2078–2095 table produced 16 Aug is authoritative — port it, do not
+ * re-source it."* Its `APPLY.md` carries the full derivation. The pack's other
+ * three files were **not** applied wholesale: they are three weeks stale against
+ * this tree (they predate ~400 tests), so only the engine was taken and the
+ * fallout was fixed forward. See PROGRESS.md.
  */
 
 /** Locked month spellings — never "Shravan". */
@@ -38,31 +71,56 @@ export interface BsDate {
   day: number
 }
 
-/** 16 Jul 2026 (AD) === 1 Shrawan 2083 (BS). `Calendar.md` §4.2. */
-const ANCHOR_AD = Date.UTC(2026, 6, 16)
-const ANCHOR_BS: BsDate = { year: 2083, month: 4, day: 1 }
+/**
+ * Days in each BS month, 2078–2095.
+ *
+ * BS is a solar calendar whose month lengths are set by the Sun's transit of
+ * each Rashi under the Surya Siddhanta, so they cannot be computed from a
+ * formula — they come from a published table and vary year to year (29–32).
+ *
+ * **Provenance.** Transcribed 16 Aug 2026 from the `bikram-sambat` Python
+ * package's compiled table, then cross-checked for 2083 against Merokalam's
+ * month-by-month listing (which states its source as the Ministry of Home
+ * Affairs gazette and the NCHL calendar). All twelve 2083 lengths agree
+ * exactly. `bs.test.ts` re-derives every year's total from the AD span between
+ * its own Baishakh 1 and the next, so a transcription error in any of these 216
+ * numbers fails the suite rather than silently shipping a wrong date.
+ *
+ * ⚠ **This table expires.** Beyond 2095 `toBs` returns null — an honest gap
+ * beats a wrong date. Extending it is data entry against a published calendar,
+ * not a product decision. `TODO(decision)`: who reloads it, and how often.
+ */
+const BS_MONTH_DAYS: Readonly<Record<number, readonly number[]>> = {
+  2078: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30],
+  2079: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
+  2080: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 30],
+  2081: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
+  2082: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
+  2083: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
+  2084: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
+  2085: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
+  2086: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
+  2087: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
+  2088: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
+  2089: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
+  2090: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
+  2091: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
+  2092: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
+  2093: [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 29, 31],
+  2094: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
+  2095: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
+}
+
+/** First and last BS year the table can vouch for. Derived, never hand-typed. */
+export const BS_MIN_YEAR = 2078
+export const BS_MAX_YEAR = 2095
 
 /**
- * Days in Shrawan 2083. BS month lengths vary year to year and come from a
- * table; only the anchor month is known here, so conversion is valid within it
- * and `toBs` returns null outside — an honest gap beats a wrong date.
- *
- * ## ⚠ Required before BS may be trusted anywhere else
- *
- * **A full BS month-length table for 2080–2090 has to land in this file before
- * any BS date outside the window below can be rendered.** A Bikram Sambat month
- * is 29, 30, 31 or 32 days and the sequence is published calendar *data*, not
- * arithmetic: there is no rule, no cycle and no leap formula to derive it from,
- * so nothing here may extrapolate past the one month the anchor vouches for.
- * Inventing those lengths would put a wrong Nepali date in front of a client —
- * `Calendar.md` §4.2's highest-priority correctness bug, in a new costume.
- *
- * Until that table exists the product's primary calendar is **English (AD)**:
- * `toBs` returns null outside its window, `formatBsOrAd` falls back to the
- * English date, and screens state `BS_UNSUPPORTED_NOTE` rather than drawing an
- * empty grid or an em dash where a date belongs.
+ * **1 Baishakh 2078 = 14 Apr 2021 (AD).** The single epoch. Every other BS date
+ * is this plus a sum over `BS_MONTH_DAYS` — there is one anchor in this file
+ * and one only, which is the whole point of §4.2.
  */
-const SHRAWAN_2083_DAYS = 32
+const EPOCH_AD = Date.UTC(2021, 3, 14)
 
 const DAY = 86400000
 
@@ -104,13 +162,81 @@ export function kathmanduCivil(ad: Date): number {
   return Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate())
 }
 
-/** AD → BS. Returns null outside the month this file can vouch for. */
+/** AD → BS. Returns null outside the years the table covers. */
 export function toBs(ad: Date): BsDate | null {
   const utc = kathmanduCivil(ad)
-  const offset = Math.round((utc - ANCHOR_AD) / DAY)
-  const day = ANCHOR_BS.day + offset
-  if (day < 1 || day > SHRAWAN_2083_DAYS) return null
-  return { year: ANCHOR_BS.year, month: ANCHOR_BS.month, day }
+  let remaining = Math.round((utc - EPOCH_AD) / DAY)
+  if (remaining < 0) return null
+
+  for (let year = BS_MIN_YEAR; year <= BS_MAX_YEAR; year += 1) {
+    const months = BS_MONTH_DAYS[year]
+    if (!months) return null
+    for (let month = 1; month <= 12; month += 1) {
+      const length = months[month - 1] ?? 0
+      if (remaining < length) return { year, month, day: remaining + 1 }
+      remaining -= length
+    }
+  }
+  return null
+}
+
+/**
+ * BS → AD. The inverse of `toBs`, returning midnight UTC of the Kathmandu civil
+ * date. Needed by `fiscalYear()` and by any screen that filters on a BS range;
+ * without it a caller would build its own offset, which is the banned thing.
+ *
+ * Returns null for a date the table cannot vouch for, including a day number
+ * that does not exist in that month — 32 Shrawan 2083 is not a date.
+ */
+export function toAd(bs: BsDate): Date | null {
+  const months = BS_MONTH_DAYS[bs.year]
+  if (!months) return null
+  if (bs.month < 1 || bs.month > 12) return null
+  const length = months[bs.month - 1] ?? 0
+  if (bs.day < 1 || bs.day > length) return null
+
+  let days = 0
+  for (let year = BS_MIN_YEAR; year < bs.year; year += 1) {
+    const row = BS_MONTH_DAYS[year]
+    if (!row) return null
+    for (const len of row) days += len
+  }
+  for (let month = 1; month < bs.month; month += 1) days += months[month - 1] ?? 0
+  days += bs.day - 1
+
+  return new Date(EPOCH_AD + days * DAY)
+}
+
+/**
+ * The Nepali fiscal year an instant falls in — **Shrawan 1 to the last day of
+ * Ashadh**, which is why this could not be answered while the engine held one
+ * month. `0012_seed_data.sql` seeds `FY 2083/84` and `Header.tsx` renders the
+ * badge; both were reading a literal until now.
+ *
+ * Returns the label in the form the rest of the app already prints —
+ * `"2083/84"` — plus the AD bounds, so a report period is derived here and not
+ * re-derived per screen. `endAd` is the last day *inside* the year, not the
+ * first day after it: a half-open bound read as inclusive is how a VAT period
+ * gains a day.
+ */
+export function fiscalYear(ad: Date): { label: string; startBsYear: number; startAd: Date; endAd: Date } | null {
+  const bs = toBs(ad)
+  if (!bs) return null
+
+  // Shrawan is month 4. Baishakh–Ashadh still belong to the FY that opened the
+  // previous Shrawan.
+  const startBsYear = bs.month >= 4 ? bs.year : bs.year - 1
+  const startAd = toAd({ year: startBsYear, month: 4, day: 1 })
+  const nextStart = toAd({ year: startBsYear + 1, month: 4, day: 1 })
+  if (!startAd || !nextStart) return null
+
+  const shortNext = String((startBsYear + 1) % 100).padStart(2, '0')
+  return {
+    label: `${startBsYear}/${shortNext}`,
+    startBsYear,
+    startAd,
+    endAd: new Date(nextStart.getTime() - DAY),
+  }
 }
 
 /** Whether the engine can name this AD day in BS at all. */
@@ -170,9 +296,14 @@ export function formatAdDateTime(iso: string): string {
  * §4.1 — columns are **generated from a range, never hand-listed**. The build
  * the spec reviewed rendered 28 Jul twice and WED twice: seven days occupying
  * eight columns, which no generated range can produce.
+ *
+ * ⛔ Truncated on `getUTCDate()` until 5 Sep 2026 — the defect this file's
+ * `kathmanduCivil` header describes, left unconverted in this one export
+ * (`BUG_SWEEP_ENGINES_v1.1` E-P1-5). A month range starting from an instant
+ * after 18:15 UTC began a day early.
  */
 export function eachDay(startAd: Date, days: number): Date[] {
-  const start = Date.UTC(startAd.getUTCFullYear(), startAd.getUTCMonth(), startAd.getUTCDate())
+  const start = kathmanduCivil(startAd)
   return Array.from({ length: days }, (_, i) => new Date(start + i * DAY))
 }
 
@@ -222,20 +353,35 @@ export function formatAdWeekday(ad: Date): string {
   return ad.toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'Asia/Kathmandu' })
 }
 
-/** "16 Jul 2026 – 16 Aug 2026" — the only window `toBs` answers inside. */
-export const BS_SUPPORTED_RANGE = `${formatAd(new Date(ANCHOR_AD))} – ${formatAd(
-  new Date(ANCHOR_AD + (SHRAWAN_2083_DAYS - 1) * DAY),
+/**
+ * "14 Apr 2021 – 13 Apr 2039" — the window `toBs` answers inside.
+ *
+ * **Derived from the table, never hand-typed**, so it cannot drift from what
+ * the engine actually covers: the day count is the sum of all 216 month
+ * lengths, and both ends move automatically when a year is added.
+ */
+const BS_TABLE_DAYS = Object.values(BS_MONTH_DAYS).reduce(
+  (total, months) => total + months.reduce((sum, len) => sum + len, 0),
+  0,
+)
+
+export const BS_SUPPORTED_RANGE = `${formatAd(new Date(EPOCH_AD))} – ${formatAd(
+  new Date(EPOCH_AD + (BS_TABLE_DAYS - 1) * DAY),
 )}`
 
 /**
  * The sentence a screen prints where a BS label cannot be computed. It names
  * the gap and what closes it; it never stands in for a date, because the
  * English date is always known and is shown instead.
+ *
+ * Since the 2078–2095 table landed this is a genuine edge case rather than the
+ * everyday path it used to be — it now fires only outside an eighteen-year
+ * span, where before it fired outside a single month.
  */
 export const BS_UNSUPPORTED_NOTE =
-  `Nepali (BS) dates are available for ${BS_SUPPORTED_RANGE} only — the Date Engine needs the 2080–2090 BS ` +
-  'month-length table before it can name any other month, and month lengths are calendar data that is never ' +
-  'inferred here. English dates are shown throughout.'
+  `Nepali (BS) dates are available for ${BS_SUPPORTED_RANGE} — the Date Engine's month-length table covers ` +
+  `BS ${BS_MIN_YEAR}–${BS_MAX_YEAR}, and month lengths are published calendar data that is never inferred here. ` +
+  'English dates are shown outside that span.'
 
 /**
  * §4.3 — **the operating day, from the real clock.** The Today marker, the
@@ -278,7 +424,13 @@ export function getBusinessToday(now: Date = new Date()): Date {
   return new Date(kathmanduCivil(now))
 }
 
-/** Nepal's weekend is Saturday. `Calendar.md` §0 — Saturday shaded, not Sunday. */
+/**
+ * Nepal's weekend is Saturday. `Calendar.md` §0 — Saturday shaded, not Sunday.
+ *
+ * ⛔ Read `getUTCDay()` until 5 Sep 2026 (`BUG_SWEEP_ENGINES_v1.1` E-P1-5):
+ * from 18:15 UTC Friday it is already Saturday in Kathmandu while UTC still
+ * says Friday, so the calendar shaded the wrong column for 5h45m of every day.
+ */
 export function isWeekend(ad: Date): boolean {
-  return ad.getUTCDay() === 6
+  return new Date(kathmanduCivil(ad)).getUTCDay() === 6
 }

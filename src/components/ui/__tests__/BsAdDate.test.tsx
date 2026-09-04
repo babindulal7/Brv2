@@ -2,12 +2,17 @@
 /**
  * `BsAdDate` must never present a Gregorian date as the BS answer.
  *
- * This is `E-P0-1`'s render half (`PLAN.md` §4.34/§4.35). `lib/bs.ts` can only
- * convert inside Shrawan 2083 — 16 Jul 2026 through **16 Aug 2026** — and
- * returns null outside it, deliberately, because the NCDC month-length table is
- * published data that is not in this workspace. The component used to render
- * `bsFormatted || adFormatted`, so from 17 Aug 2026 onward every BS-primary
- * slot in the app silently filled with an **untagged AD date**.
+ * This is `E-P0-1`'s render half (`PLAN.md` §4.34/§4.35). The component used to
+ * render `bsFormatted || adFormatted`, so wherever conversion failed every
+ * BS-primary slot in the app silently filled with an **untagged AD date**.
+ *
+ * ✅ **The cliff moved on 5 Sep 2026.** `lib/bs.ts` covered Shrawan 2083 only —
+ * one month — so this file was written around 16/17 Aug 2026. The authoritative
+ * 2078–2095 month-length table has since landed, so `toBs` now answers from
+ * 14 Apr 2021 to 2039 and those two dates are both *inside* it. The cliff is
+ * now the end of the table, and the dates below moved with it. The contract
+ * under test did not change: an unconvertible date must never render an
+ * untagged AD string in the BS slot.
  *
  * These tests are written around the cliff on purpose: one date on each side of
  * it, so the day the month-length table lands, the second group starts failing
@@ -28,10 +33,14 @@ import { BS_MONTHS } from '../../../lib/bs'
 let container: HTMLDivElement
 let root: Root
 
-/** Last day `lib/bs.ts` can vouch for: day 32 of Shrawan 2083. */
+/** Well inside the table: 31 Shrawan 2083, the last day of that month. */
 const INSIDE = new Date('2026-08-16T04:00:00Z')
-/** First day it cannot — 1 Bhadra 2083, the month no data here describes. */
-const OUTSIDE = new Date('2026-08-17T04:00:00Z')
+/**
+ * Past the end of the table — BS 2095 runs out in 2039, so this is the first
+ * side of the cliff the engine genuinely cannot name. It was 17 Aug 2026 while
+ * the engine held a single month; that date now converts.
+ */
+const OUTSIDE = new Date('2040-08-17T04:00:00Z')
 
 const LAYOUTS: NonNullable<BsAdDateProps['layout']>[] = ['stacked', 'inline', 'bs-only']
 
@@ -78,7 +87,7 @@ describe('BsAdDate past the cliff — the defect this file exists to pin', () =>
 
     // The date is still shown — blanking it would lose information the operator
     // needs — but it is tagged, so it cannot read as the BS answer.
-    expect(text).toContain('17 Aug 2026')
+    expect(text).toContain('17 Aug 2040')
     expect(text).toContain('AD')
   })
 
@@ -94,7 +103,7 @@ describe('BsAdDate past the cliff — the defect this file exists to pin', () =>
 
   it('suppresses the AD parenthetical rather than printing the date twice', async () => {
     const text = await mount({ date: OUTSIDE, layout: 'inline' })
-    expect(text.match(/17 Aug 2026/g)).toHaveLength(1)
+    expect(text.match(/17 Aug 2040/g)).toHaveLength(1)
   })
 })
 
@@ -107,7 +116,7 @@ describe('BsAdDate ad-only is untouched', () => {
     container.remove()
 
     const outside = await mount({ date: OUTSIDE, layout: 'ad-only' })
-    expect(outside).toContain('17 Aug 2026')
+    expect(outside).toContain('17 Aug 2040')
     expect(outside).not.toContain('AD')
   })
 })

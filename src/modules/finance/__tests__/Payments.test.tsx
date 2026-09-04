@@ -256,10 +256,19 @@ describe('row → cell', () => {
     expect(paymentBsLabel('not-a-date')).toBeNull()
   })
 
-  /** `bs.ts` vouches for Shrawan 2083 only; outside it, no BS line is printed. */
-  it('omits the BS reading rather than inventing one outside the month bs.ts vouches for', () => {
-    expect(paymentBsLabel('2026-08-11T09:30:00.000Z')).toBe('27 Shrawan 2083 BS')
-    expect(paymentBsLabel('2027-01-01T00:00:00.000Z')).toBeNull()
+  /**
+   * `bs.ts` covers BS 2078–2095; outside that span no BS line is printed.
+   *
+   * Both figures moved on 5 Sep 2026 when the 2078–2095 table landed and the
+   * anchor was corrected by one day (1 Shrawan 2083 is 17 Jul 2026, not 16):
+   *   · 11 Aug 2026 is **26** Shrawan, not 27.
+   *   · 1 Jan 2027 now resolves (17 Poush 2083) — it used to be outside the
+   *     one-month window. The honest-null contract moved to the edge of the
+   *     TABLE, so this asserts a year the table genuinely cannot name.
+   */
+  it('omits the BS reading rather than inventing one outside the years bs.ts vouches for', () => {
+    expect(paymentBsLabel('2026-08-11T09:30:00.000Z')).toBe('26 Shrawan 2083 BS')
+    expect(paymentBsLabel('2040-01-01T00:00:00.000Z')).toBeNull()
   })
 
   it('reads the chip back out of the URL, defaulting to All', () => {

@@ -291,7 +291,10 @@ describe('dates — AD always, BS only when the engine can vouch for it', () => 
   })
 
   it('drops the bracket rather than guessing outside the window', () => {
-    const out = adBs('2030-01-15T06:00:00.000Z')
+    // 2030 used to be outside the window; since the 2078–2095 table landed it
+    // resolves (1 Magh 2086). The bracket is dropped only where the table
+    // genuinely cannot name the date, so this reaches past its last year.
+    const out = adBs('2040-01-15T06:00:00.000Z')
     expect(out).toMatch(/^\d{1,2} \w{3} \d{4}$/)
   })
 
