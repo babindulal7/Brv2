@@ -4,7 +4,7 @@ import Icon from '../../components/ui/Icon'
 import { Card, Button, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
 import { ScreenHeader } from './TabHeader'
 import { PageBody } from '../../components/ui/PageBody'
-import { STATUS, type StatusKey } from '../../lib/status'
+import { STATUS, PAYMENT_STATUS_TONE } from '../../lib/status'
 import { useViewport } from '../../lib/device'
 import { formatMoney } from '../../lib/money'
 import { toBs, formatBs } from '../../lib/bs'
@@ -256,16 +256,12 @@ export function paymentBsLabel(iso: string): string | null {
  * `payment_status`, including the member that cannot be reached, so adding an
  * enum member is a type error rather than an undefined lookup.
  */
-const STATUS_TONE: Record<PaymentStatus, StatusKey> = {
-  Received: 'in',
-  Refunded: 'neutral',
-  Failed: 'danger',
-  Cancelled: 'neutral',
-}
+/* The map moved to `lib/status.ts`: the booking's payment history and the
+   hover Intel card render these same rows, and each carried its own copy. */
 
 /** Law 11 — colour is never the sole carrier. Dot **and** word **and** tone. */
 function StatusBadge({ status }: { status: PaymentStatus }) {
-  const tok = STATUS[STATUS_TONE[status]]
+  const tok = STATUS[PAYMENT_STATUS_TONE[status]]
   return (
     <span
       style={{

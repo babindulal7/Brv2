@@ -33,6 +33,7 @@
  * renders its word, and STATUS_ICON below keeps the icon part of the token.
  */
 import type { IconName } from '../components/ui/Icon'
+import type { PaymentStatus } from '../types/database'
 
 export type StatusKey =
   /** Gray, solid — Quote, Draft. "Not started yet." */
@@ -202,4 +203,38 @@ export const BRAND_TEXT: Record<BrandKey, string> = {
   warn: 'var(--warn-text)',
   success: 'var(--success-text)',
   danger: 'var(--danger-text)',
+}
+
+/* ── Payment status → tone ────────────────────────────────────────────────
+ *
+ * ⛔ This map existed THREE times: `modules/finance/Payments.tsx`, the payment
+ * history on `modules/rentals/BookingDetail.tsx`, and — as a two-way ternary
+ * that answered differently — `data/bookingIntel.ts`'s `paymentGlance`. The
+ * ledger, the booking's history and the hover card render THE SAME ROW, so
+ * three copies is three chances to disagree about whether money arrived, and
+ * the ternary already did: it painted `Refunded`, `Failed` and `Cancelled`
+ * identically (`progress`, yellow), so a bounced transfer and a refund were
+ * one colour, and neither was the red that `Failed` earns.
+ *
+ * Keyed on `PaymentStatus` so a new enum member is a compile error rather than
+ * a silent fallthrough to some default colour.
+ */
+export const PAYMENT_STATUS_TONE: Record<PaymentStatus, StatusKey> = {
+  Received: 'in',
+  Refunded: 'neutral',
+  Failed: 'danger',
+  Cancelled: 'neutral',
+}
+
+/**
+ * The same map for callers holding a loosely-typed status.
+ *
+ * `PaymentHistoryRow.status` is a bare `string` (a seed shape), so it cannot
+ * index the record above. An unrecognised value resolves to `neutral` — never
+ * to `in`: painting an unknown status with the colour that means "the money
+ * arrived" is the one wrong answer, and a grey chip beside its own printed
+ * word is a legible "we do not recognise this".
+ */
+export function paymentStatusTone(status: string): StatusKey {
+  return (PAYMENT_STATUS_TONE as Record<string, StatusKey | undefined>)[status] ?? 'neutral'
 }

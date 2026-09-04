@@ -52,6 +52,7 @@ import { toBs, formatBs } from '../lib/bs'
 import type { GateContext } from '../lib/fieldGating'
 import { canViewMoneyField } from '../lib/fieldGating'
 import type { IntelGlance, IntelGroup, IntelField } from '../components/ui/IntelCard'
+import { paymentStatusTone } from '../lib/status'
 import { DOCUMENTS } from './booking'
 import type { PaymentHistoryRow } from './booking'
 
@@ -95,12 +96,30 @@ export function paymentGlance(payment: PaymentHistoryRow, bookingNo: string, gct
   const money = canViewMoneyField(gctx, 'booking')
   const bs = bsLabel(payment.date)
 
+  /*
+   * ⛔ Both tones were `payment.status === 'Received' ? 'in' : 'progress'` — a
+   * TWO-way map over a FOUR-member enum. `Refunded`, `Failed` and `Cancelled`
+   * all came out yellow, so a bounced transfer looked like a refund and neither
+   * looked like a failure. The Payment History cell two screens over was fixed
+   * to a four-way map while this card, which opens FROM THAT SAME ROW, kept the
+   * old answer. One map now, in `lib/status.ts`.
+   *
+   * `status` is a bare `string` here (`PaymentHistoryRow` is a seed shape), so
+   * it goes through `paymentStatusTone`, which refuses to answer `in` for a
+   * value it does not recognise.
+   */
+  const tone = paymentStatusTone(payment.status)
+
   return {
     avatarLabel: payment.type.slice(0, 2).toUpperCase(),
-    avatarTone: payment.status === 'Received' ? 'in' : 'progress',
+    avatarTone: tone,
     avatarIcon: 'receipt',
     title: money ? `Rs ${payment.amount} · ${payment.type}` : payment.type,
-    statusDot: payment.status === 'Received' ? 'in' : 'progress',
+    statusDot: tone,
+    /* Law 11 — the dot was the ONLY carrier of status on this card, which is
+       what `Payments.tsx`'s own StatusBadge comment forbids: "dot **and** word
+       **and** tone". The word is the badge. */
+    badges: [{ label: payment.status, tone }],
     subtitle: `${payment.method} · ${bookingNo}`,
     lines: [`${payment.date}${bs ? ` / ${bs}` : ''}`],
   }

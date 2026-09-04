@@ -4,7 +4,7 @@ import type { BookingStatus, Flag } from '../lib/workflow'
 import { rupees, formatMoney } from '../lib/money'
 import type { Paisa } from '../lib/money'
 import { formatAd } from '../lib/bs'
-import { clockPad } from '../lib/format'
+import { clockPad, deliveryTypeLabel } from '../lib/format'
 import { canViewMoneyField } from '../lib/fieldGating'
 import type { GateContext } from '../lib/fieldGating'
 import type { IntelField, IntelGlance, IntelGroup } from '../components/ui/IntelCard'
@@ -1199,9 +1199,18 @@ export function rentalDetailGroups(row: RentalListRow, gctx: GateContext): Intel
       { label: 'Pickup location', value: row.pickupLocation ?? '—' },
       { label: 'Return', value: `${row.ret.date} · ${row.ret.time}` },
       { label: 'Return location', value: row.returnLocation ?? '—' },
-      // An enum member, not UI copy — 'Customer Pickup' is the delivery_type
-      // value and Law 17's ban on the word is about copy, not about data.
-      { label: 'Delivery', value: row.deliveryType },
+      // ⛔ This printed `row.deliveryType` raw. It is the stored
+      // `bookings.delivery_type` enum, whose first member is spelled
+      // 'Customer Pickup' (`0001_enums.sql:280`) — and these groups ARE
+      // rendered: `RentalsList.tsx` passes them to the Intel card as
+      // `detail`. So the banned word reached the DOM (Law 17).
+      //
+      // `deliveryTypeLabel` is the one sanctioned enum→copy crossing.
+      // The ROW field stays the enum on purpose (see its own doc
+      // comment): logic that compares the stored value — e.g.
+      // `driverSignatureRequired` in `HandoverWorkspace.tsx` — must never
+      // be handed the label, which matches no enum member.
+      { label: 'Delivery', value: deliveryTypeLabel(row.deliveryType) },
       { label: 'Items', value: `${row.itemCount} unit${row.itemCount === 1 ? '' : 's'} across live lines` },
       { label: 'Created', value: row.createdOn },
       {

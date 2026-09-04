@@ -6,6 +6,7 @@ import movementList from '../../modules/today/MovementList.tsx?raw'
 import packingWorkspace from '../../modules/rentals/PackingWorkspace.tsx?raw'
 import handoverWorkspace from '../../modules/rentals/HandoverWorkspace.tsx?raw'
 import returnWorkspace from '../../modules/rentals/ReturnWorkspace.tsx?raw'
+import dataRentals from '../../data/rentals.ts?raw'
 import { deliveryTypeLabel } from '../format'
 
 /**
@@ -21,6 +22,12 @@ import { deliveryTypeLabel } from '../format'
  * Three Law 17 tests already existed and none caught it, because all three
  * assert over static label constants — no component or formatter ever saw a
  * stored `deliveryType`. These tests cover the value path instead.
+ *
+ * ⛔ The first pass of this file listed FIVE guarded sites under a heading that
+ * said six. The sixth, `data/rentals.ts`'s Intel-card Delivery field, was not a
+ * screen and so was not in the list — and it stayed raw (audit BD-06). It is
+ * guarded below now, and the guard is no longer described as covering only
+ * screens.
  */
 describe('deliveryTypeLabel — Law 17 on the read path', () => {
   it('renames the stored enum member for display', () => {
@@ -53,13 +60,16 @@ describe('deliveryTypeLabel — Law 17 on the read path', () => {
  * regression coming back by the same route. It does NOT prove the whole app is
  * clean — a *new* display site would need adding here.
  */
-describe('Law 17 — no screen renders a stored delivery type raw', () => {
+describe('Law 17 — nothing that reaches the DOM carries a stored delivery type raw', () => {
   const SITES: ReadonlyArray<readonly [string, string]> = [
     ['BookingDetail.tsx', bookingDetail],
     ['MovementList.tsx', movementList],
     ['PackingWorkspace.tsx', packingWorkspace],
     ['HandoverWorkspace.tsx', handoverWorkspace],
     ['ReturnWorkspace.tsx', returnWorkspace],
+    // Not a screen, but rendered all the same: `rentalDetailGroups` is what
+    // `RentalsList.tsx` hands the Intel card as `detail`.
+    ['data/rentals.ts', dataRentals],
   ]
 
   // The shapes that actually shipped the bug.
@@ -68,6 +78,7 @@ describe('Law 17 — no screen renders a stored delivery type raw', () => {
     "v: floor.deliveryType ?? '—'",
     "value={floor.deliveryType ?? '—'}",
     ', m.deliveryType]',
+    "value: row.deliveryType }",
   ]
 
   it.each(SITES)('%s routes its delivery type through deliveryTypeLabel', (_name, src) => {

@@ -285,6 +285,81 @@ uuid path and one asserting both addresses reach one record.
 - Client **edit does not persist** (`ClientDetail.tsx:367` `onSave` only calls `setDraft`;
   `updateClient.ts` never sets `implemented: true`). Still P0, untouched here.
 
+## 2026-09-05 (cont.) — Booking Detail stops asserting things it does not know
+
+**Phase:** Phase 0 · **Status:** 10 register items closed · 3 filed (one in another session's migration)
+
+Ten Booking Detail findings — BD-02 through BD-08, BD-16, BD-19, BD-20 — chosen because they
+share a theme rather than a file: **the screen told the operator things that were not true.**
+
+### What was being asserted
+
+- While the invoice read was in flight, the header announced "No invoice raised yet" as settled
+  fact, then flipped to Rs 17,097 owed. `hasInvoice` now requires the read to have *happened* —
+  three clauses, each load-bearing, because `useList` raises `loading` inside its effect and
+  **keeps its rows on failure**, so `error` has to be read too.
+- A failed client lookup rendered as "no phone on file". The app did not know there was no
+  phone; it knew it had failed to ask. Now a four-state `ClientContact`, with the failure
+  surfaced inline in the block it is about.
+- A **reversed payment rendered green**, the same hue as money that arrived.
+- The Rentals intel card printed `'Customer Pickup'` raw — the one word this project forbids on
+  screen — while `deliveryTypeLabel()` existed to prevent exactly that and was simply bypassed.
+- A cancelled booking carried no mark and every verb stayed live, while the list refused the
+  same row.
+- Rental days were computed on the page with a third rule, disagreeing with two engines.
+
+### The half-fix the reviews caught
+
+BD-16 is worth recording because the first pass looked complete and was not. The payment pill
+was fixed to a four-way map — but the **hover Intel card that opens from that same row** kept a
+two-way ternary over a four-member enum, so `Refunded`, `Failed` and `Cancelled` all stayed
+yellow there. Two reviewers found it independently.
+
+The real defect was underneath: **three copies of this map existed** — Finance's ledger, the
+booking's history, and the intel card — and they disagreed about whether money had arrived.
+There is one now, `PAYMENT_STATUS_TONE` in `lib/status.ts`, keyed on `PaymentStatus` so a new
+enum member is a compile error, plus `paymentStatusTone()` for the loosely-typed seed shape,
+which refuses to answer `in` for a value it does not recognise. The glance's dot was also
+**colour alone**; the status word sits beside it now.
+
+### Comments corrected, again
+
+The lens I added after last batch earned its place. Three claims in this batch's own comments
+were false or overreaching and are now rewritten:
+
+- BD-03's note said the dispatchers themselves refuse a cancelled booking. True for three verbs;
+  **Extend, Assign crew and Sub-rental contain no `cancelled_at` check at all** — they refuse
+  because they are `implemented: false` stubs. Same conclusion, different mechanism, and the
+  difference matters: when those three are built they must add the check themselves.
+- BD-08's alert promised the phone was "unavailable until it loads". Nothing re-runs that
+  effect. Corrected to name the remount, with the reason written down and a retry filed.
+- BD-05's note put the unit-release × "two cells left". It is in the Serial/ID cell, the second
+  of five.
+
+### Filed, not fixed
+
+- **BD-21** — one frame of BD-02 survives: on the render where the booking head first arrives,
+  `useList` still holds the pre-uuid empty result. The fix belongs in the hook, which every list
+  screen uses, so it does not belong in a Booking Detail batch.
+- **BD-22** — a failed client read cannot be retried without leaving the page.
+- **X-10** — ⚠ in **another session's** committed migration `0092`. It is a Law 6 write guard
+  ("a role that may not READ a price may not WRITE one") that checks **seven** of the **nine**
+  product money columns `0019` masks — `deposit_percent` and `deposit_fixed` are missing — and
+  both triggers are `before update` only, leaving INSERT unguarded while both INSERT policies
+  admit Warehouse. Verified by hand against both migrations. **Not live**: production's
+  `pg_trigger` has no `%money_column_guard%` row, so `0092` is unapplied and this is a latent
+  gap to close *before* it ships, not an open hole.
+
+BD-20 turned out to be **already fixed** — the register entry was stale and the batch that
+claimed it changed nothing. The real calls went in the 3 Sep console sweep. Ticked as closed,
+not as fixed here.
+
+**Verified:** tsc clean; eslint clean; **full suite 114 files / 2509 tests passing**; driven in
+the mock build — Booking Detail renders with a 5-column lines table (the dead ⋮ gone), and BD-03
+was driven by seeding `cancelled_at` on B-903 through the mock overlay, since the corpus contains
+no cancelled booking: CANCELLED renders twice, Operations is disabled reading "B-903 is cancelled
+— no operation runs on it", and all five overflow verbs are disabled. Overlay cleared afterwards.
+
 ## 2026-09-05 — the time-boundary batch, and the day Daily Closing was reading
 
 **Phase:** Phase 0 · **Status:** 7 register items closed (6 batched + 1 the reviews found) · 1 filed unruled

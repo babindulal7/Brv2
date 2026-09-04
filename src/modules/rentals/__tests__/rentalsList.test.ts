@@ -710,6 +710,42 @@ describe('Law 17 — the word "customer" appears in no UI copy', () => {
     // be renaming a column value, not fixing UI copy.
     expect(map().deliveryType).toBe('Customer Pickup')
   })
+
+  /*
+   * ⛔ The test above is the whole reason the defect survived: it asserts the
+   * ROW keeps the enum, and nothing asserted what the CARD prints. The Intel
+   * card's Delivery field printed `row.deliveryType` raw, and `RentalsList.tsx`
+   * renders these groups — so the banned word reached the screen while the
+   * copy test above stayed green, because it only reads static label constants.
+   *
+   * These two ask the payload instead.
+   */
+  it('renders the stored delivery type through the sanctioned label', () => {
+    const schedule = rentalDetailGroups(map({ deliveryType: 'Customer Pickup' }), OWNER).find(
+      (g) => g.title === 'Schedule',
+    )
+    expect(schedule?.fields.find((f) => f.label === 'Delivery')?.value).toBe('Client Pickup')
+  })
+
+  it('never puts the banned word in the Intel payload, for any enum member', () => {
+    const MEMBERS = ['Customer Pickup', 'Babin Delivery', 'Courier', 'Third Party'] as const
+    for (const member of MEMBERS) {
+      const row = map({ deliveryType: member })
+      for (const gctx of [OWNER, WAREHOUSE]) {
+        const payload = JSON.stringify([rentalGlance(row, gctx), rentalDetailGroups(row, gctx)])
+        expect(payload.toLowerCase()).not.toContain('customer')
+      }
+    }
+  })
+
+  it('leaves the other three members untouched, so the label is a rename of one value only', () => {
+    for (const member of ['Babin Delivery', 'Courier', 'Third Party'] as const) {
+      const schedule = rentalDetailGroups(map({ deliveryType: member }), OWNER).find(
+        (g) => g.title === 'Schedule',
+      )
+      expect(schedule?.fields.find((f) => f.label === 'Delivery')?.value).toBe(member)
+    }
+  })
 })
 
 /* ── Sub-Rental — rulings §11.1: line-level fact, derived booking flag ───── */

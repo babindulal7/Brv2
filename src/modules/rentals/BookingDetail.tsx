@@ -9,7 +9,7 @@ import { Badge } from '../../components/ui/Badge'
 import { useViewport } from '../../lib/device'
 import type { Viewport } from '../../lib/device'
 import { BAR_BOX } from '../../components/shell/BottomBar'
-import { STATUS, BRAND, BRAND_ON, BRAND_TEXT } from '../../lib/status'
+import { STATUS, STATUS_ICON, BRAND, BRAND_ON, BRAND_TEXT, PAYMENT_STATUS_TONE } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
 import { BOOKING_STATUS, STATUS_ORDER } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
@@ -49,6 +49,7 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { isSubRentedLine, isSubRentalBooking } from '../../data/booking'
 import type { PaymentHistoryRow } from '../../data/booking'
 import { deliveryTypeLabel } from '../../lib/format'
+import { rentalDaysBetween, formatRentalDays } from '../../lib/rentalDays'
 
 /**
  * # Booking Detail — live, for ANY `:bookingNo`
@@ -351,28 +352,39 @@ function dotTone(stage: BookingStatus, current: BookingStatus): BrandKey {
 
 /**
  * Operations launcher — opens the operations shell, which navigates to the
- * four workspace routes. Disabled only at Quote; the status now comes from the
- * QUERIED booking rather than a module constant, so `/rentals/B-812` gates on
- * B-812's own stage.
+ * four workspace routes.
+ *
+ * ⚠ It takes the ANSWER, not the question. This used to compute
+ * `status === 'Quote'` for itself, which is how the page ended up giving two
+ * answers to one question on one screen: the header launcher was disabled with
+ * "Operations open once this booking is Booked" while the rail's Quick Actions
+ * rendered its own live `Open Operations` button beside it, on the same Quote
+ * booking (BD-04). Both call sites now render this component and both are
+ * handed the one `operationsUnavailable` predicate, so they cannot disagree —
+ * whatever it comes to include (Quote today, cancellation since BD-03).
  */
 function OperationsLauncher({
+  label,
+  icon,
   primary,
-  status,
+  unavailable,
   onOpen,
 }: {
+  label: string
+  icon: IconName
   primary: boolean
-  status: BookingStatus
+  /** The reason this is refused, or `null` when it is offered. */
+  unavailable: string | null
   onOpen: () => void
 }) {
-  const disabled = status === 'Quote'
   const button = (
-    <Button icon="external_link" variant={primary ? 'primary' : 'secondary'} onClick={onOpen} disabled={disabled}>
-      Operations
+    <Button icon={icon} variant={primary ? 'primary' : 'secondary'} onClick={onOpen} disabled={unavailable !== null}>
+      {label}
     </Button>
   )
 
-  if (!disabled) return button
-  return <Unavailable reason="Operations open once this booking is Booked">{button}</Unavailable>
+  if (unavailable === null) return button
+  return <Unavailable reason={unavailable}>{button}</Unavailable>
 }
 
 /**
@@ -788,9 +800,17 @@ function NotesCard({
         height: 28,
         padding: '0 12px',
         borderRadius: 'var(--r-badge)',
-        border: `1px solid ${noteType === t ? 'transparent' : 'var(--border)'}`,
-        background: noteType === t ? 'var(--st-primary-bg)' : 'var(--card2)',
-        color: noteType === t ? 'var(--st-primary-fg)' : 'var(--text2)',
+        /* SELECTED is a control state, not a booking status. This used
+           `--st-primary-*` — §2's blue for "committed / scheduled" — so a
+           pressed toggle was painted in the vocabulary the stage blocks use.
+           `--nav-active-*` is the pair this build already spends on a chosen
+           control: `Payments.tsx`'s filter chips use exactly this bg + accent
+           + border trio, and the Segmented control above takes its on-state ink
+           from the same accent. `aria-pressed` carries the state to a screen
+           reader either way, so nothing rests on the colour. */
+        border: `1px solid ${noteType === t ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+        background: noteType === t ? 'var(--nav-active-bg)' : 'var(--card2)',
+        color: noteType === t ? 'var(--nav-active-accent)' : 'var(--text2)',
         fontSize: 'var(--t-meta)',
         fontWeight: 600,
         cursor: 'pointer',
@@ -835,17 +855,36 @@ function NotesCard({
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {/*
+                  ⛔ This read `--st-progress-*` (yellow, §2's "being worked
+                  in-house / waiting") for Internal and `--st-primary-*` (blue,
+                  "committed / scheduled") for Booking — two of the seven
+                  one-meaning hues spent on a field that is not a state. A note
+                  is Internal or Booking for its whole life and nothing it does
+                  changes that; a reader scanning the card by colour was being
+                  told an internal note was in the workshop. Exactly the case
+                  `ItemBadge` above already documents for `line_type`, and the
+                  same resolution: one neutral surface, distinguished by its
+                  word — plus a padlock on Internal, so the distinction that
+                  matters (it never prints) has a second carrier and does not
+                  rest on reading the label.
+                */}
                 <span
                   title={n.noteType === 'Internal' ? 'Internal — never printed or exported' : undefined}
                   style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
                     padding: '1px 8px',
-                    borderRadius: 'var(--r-badge)',
+                    borderRadius: 'var(--r-chip)',
                     fontSize: 'var(--t-meta)',
                     fontWeight: 600,
-                    background: n.noteType === 'Internal' ? 'var(--st-progress-bg)' : 'var(--st-primary-bg)',
-                    color: n.noteType === 'Internal' ? 'var(--st-progress-fg)' : 'var(--st-primary-fg)',
+                    background: 'var(--card)',
+                    color: 'var(--text2)',
+                    border: '1px solid var(--border)',
                   }}
                 >
+                  {n.noteType === 'Internal' && <Icon name="lock" size={10} />}
                   {n.noteType}
                 </span>
                 <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{formatAdDateTime(n.createdAtAd)}</span>
@@ -911,6 +950,24 @@ function NotesCard({
   )
 }
 
+/**
+ * What this screen knows about the client's contact number.
+ *
+ * Four states, and the two in the middle are the point: `'ready'` with a `null`
+ * phone is *"asked, and this client has no number on file"*, while `'loading'`
+ * and `'failed'` are *"not asked yet"* and *"could not ask"*. A `string | null`
+ * cannot tell them apart, and collapsing them is how a failed read came to
+ * render as a statement about the client's record (Law 12).
+ */
+type ClientContact =
+  /** The booking carries no `client_id` — nothing to read. */
+  | { kind: 'absent' }
+  | { kind: 'loading' }
+  /** Read completed. `phone` is `null` when the client genuinely has none. */
+  | { kind: 'ready'; phone: string | null }
+  /** `getClient` threw — network, RLS refusal, anything. The reason is kept to be shown. */
+  | { kind: 'failed'; message: string }
+
 /** A muted in-card paragraph for a surface whose read genuinely does not exist yet. */
 function NotWiredNote({ children }: { children: React.ReactNode }) {
   return (
@@ -944,18 +1001,66 @@ const TRANSPORT_EDIT_UNAVAILABLE =
 const ADD_DOCUMENT_UNAVAILABLE = 'Document uploads are not wired — document_registry has no write path from this screen.'
 const SEND_QUOTE_UNAVAILABLE = 'Quote sending is not wired yet — no action exists behind this button.'
 
+/**
+ * What the Hover Intel card says under "Recorded by" (BD-19).
+ *
+ * Deliberately not `'Not on file'`, which `paymentDetailGroups` would fall back
+ * to on an absent value: `payments.received_by` is `uuid not null`, so somebody
+ * IS recorded and saying otherwise is the fabrication in the opposite
+ * direction. The sentence separates "no record" from "no way to read it".
+ */
+const RECORDED_BY_UNRESOLVED = 'On file — this screen cannot resolve a staff id to a name'
+
+/**
+ * `payment_status` → the hue that status means (BD-16).
+ *
+ * ⛔ The Payment History cell painted `STATUS.in` — solid green, "settled" —
+ * for EVERY row, whatever `payments.status` said. The enum is
+ * `Received | Refunded | Failed | Cancelled` (`0001_enums.sql`), and `Failed`
+ * and `Cancelled` are both writable — `queries/finance.ts`'s PAYMENT STATUS
+ * note: they *"can only ever be set at INSERT time, which is a legitimate way
+ * to record a bounced transfer."* A bounced transfer therefore rendered
+ * exactly like money that arrived. That is not a colour slip; it is a false
+ * statement about money, and the one carrier meant to be the fallback — the
+ * word — was the only thing that ever contradicted it.
+ *
+ * `Refunded` is in the map for exhaustiveness, not because a row can reach it:
+ * the same note records that it is derived from a reversal row and that a
+ * status UPDATE would breach Law 4.
+ *
+ * The values are `modules/finance/Payments.tsx`'s `STATUS_TONE`, copied
+ * deliberately rather than diverged: Finance's ledger and this booking's
+ * history render the same `payments` rows and must not disagree about one.
+ * Per-module maps are the house pattern for a domain enum — `Expenses.tsx`
+ * keeps its own `STATUS_TOKEN` the same way — with `<Badge>` owning the paint
+ * so the §4 block anatomy is never re-assembled by hand.
+ *
+ * Keyed off `PaymentListRow['status']`, so a new enum member is a compile
+ * error here rather than an `undefined` lookup at render.
+ */
+/* `PAYMENT_STATUS_TONE` moved to `lib/status.ts` — see its header. This file,
+   `modules/finance/Payments.tsx` and `data/bookingIntel.ts` all paint the same
+   payment rows, and the third one disagreed. */
+
 /** Blank BS cell meaning: `lib/bs.ts` can only vouch for Shrawan 2083; outside it there is no BS label, not a wrong one. */
 function bsOrDash(iso: string): string {
   const bs = toBs(new Date(iso))
   return bs ? formatBs(bs) : '—'
 }
 
-/** The AD span between two instants, in whole days, floored at 1 (Law 9's days-explicit floor). */
-function rentalDays(pickupIso: string, returnIso: string): number {
-  const ms = Date.parse(returnIso) - Date.parse(pickupIso)
-  if (!Number.isFinite(ms)) return 1
-  return Math.max(1, Math.round(ms / 86_400_000))
-}
+/*
+ * ⛔ A private `rentalDays()` stood here — `Math.max(1, Math.round(ms /
+ * 86_400_000))`, computed on the page. A booking's length in days is what
+ * `booking_lines` multiplies a rate by, so Law 1 puts it in an engine; it now
+ * comes from `lib/rentalDays.ts`, which also carries the TODO(decision) about
+ * the rule (elapsed hours here, calendar days in `civilDaysBetween`, overage
+ * bands in `lateFee()` — three counts, no spec choosing between them).
+ *
+ * The behaviour is unchanged except at the edge: the local copy answered `1`
+ * for an unparseable instant, and `rentalDaysBetween` answers `null`, which
+ * this screen renders as "—". "1 Day" for dates the screen does not have is a
+ * fabricated fact indistinguishable from a genuine one-day hire.
+ */
 
 export default function BookingDetail() {
   const { bookingNo } = useParams()
@@ -1141,7 +1246,46 @@ export default function BookingDetail() {
   /* Law 3 — a voided invoice still exists, but its money is settled by its
      credit note, so the totals this page states are over the live ones. */
   const liveInvoices = useMemo(() => invoicesList.rows.filter((r) => !r.isVoid), [invoicesList.rows])
-  const hasInvoice = liveInvoices.length > 0
+
+  /**
+   * ## "No invoice" is a THIRD state, not the absence of a first (Law 12)
+   *
+   * `hasInvoice` was `liveInvoices.length > 0` and nothing else, so a read that
+   * had not answered yet — or one that had FAILED — was indistinguishable from
+   * a booking with no invoice. Every surface that branches on it then stated
+   * absence as a settled fact: the Facts strip printed "No invoice raised yet",
+   * the rail said "no Rental Total to state yet", and the Record Payment
+   * launcher offered `NO_INVOICE_PAYMENT_UNAVAILABLE` — all while the request
+   * was still in flight, which is the app claiming to know something about a
+   * client's money that it has not asked for yet.
+   *
+   * `useList` starts `loading: true` and re-raises it on every filter change
+   * (`queries/useList.ts` — `setLoading(true)` at the top of the fetch effect),
+   * and on failure it KEEPS the rows it had, so `error` has to be read too:
+   * a failed refresh leaves a stale-but-plausible row set behind.
+   *
+   * `bookingId !== null` is the third clause. Both money fetchers no-op to
+   * `{ rows: [] }` until the booking's uuid has arrived, and that settled empty
+   * result is about nothing at all — it must not read as "this booking has no
+   * invoice".
+   *
+   * The rendering convention is this file's own, from the Review Summary's
+   * Equipment row: an unknown value renders "Loading…", never the negative.
+   */
+  const invoicesKnown = bookingId !== null && !invoicesList.loading && invoicesList.error === null
+  const hasInvoice = invoicesKnown && liveInvoices.length > 0
+  /** The reason the invoice question is unanswered, or `null` when it is answered. */
+  const invoicesUnknownReason: string | null = invoicesKnown
+    ? null
+    : invoicesList.error !== null
+      ? `This booking’s invoices could not be read, so whether one exists is unknown — not absent. ${invoicesList.error}`
+      : 'This booking’s invoices are still being read, so whether one exists is not known yet.'
+  /**
+   * The same three states in the one-word form the Review Summary's value
+   * column takes. "No invoice" is reserved for the case the app has actually
+   * established; the other two say which question is open.
+   */
+  const noInvoiceCell = invoicesKnown ? 'No invoice' : invoicesList.error !== null ? 'Not read' : 'Loading…'
 
   /* One booking can carry several invoices; the page's Rental Total / Paid /
      Outstanding are their sums — a MERGE of already-fetched rows, not a second
@@ -1178,8 +1322,35 @@ export default function BookingDetail() {
    * Hover Intel builders take. Every field is a real column: `method` is
    * `bank_accounts.channel_group` through the embed, and '—' means "no
    * account recorded on this payment" (never inferred as Cash — 'Cash' is a
-   * channel group of its own). `recordedBy` is a `users.id`: the users table
-   * is self-scoped, so an id is honest where a mostly-null name would not be.
+   * channel group of its own).
+   *
+   * ## "Recorded by" — a uuid is honest and still unreadable (BD-19)
+   *
+   * `recordedBy` used to be `p.receivedById` verbatim, so the Hover Intel
+   * card's Linked group printed a raw `users.id` — `3f7c…` — under the label
+   * "Recorded by". True, and useless: no operator can turn it into a person,
+   * and it is an internal key in front of a client-facing panel.
+   *
+   * The name is NOT substituted, because this build cannot resolve it. `users`
+   * has exactly one SELECT policy — `users_select_own`
+   * (`0020_role_lookup_and_staff_retrofit.sql:55`, widened by `0059` to accept
+   * `auth.uid()` as well) — so a lookup or an embed answers for the VIEWER's
+   * own row and null for everybody else's. That is why `queries/finance.ts`
+   * does not join `received_by` in the first place, and its note says so in the
+   * same words: *"An id is honest; a mostly-null name is not."* The one
+   * directory read that does exist, `queries/staff.ts`'s
+   * `fetchStaffDirectory`, is Owner-only and refuses outright in mock mode.
+   * Inventing a lookup, or printing the signed-in user's own name beside
+   * somebody else's payment, would be a fabricated fact.
+   *
+   * So the field says what is true: the column is `not null` (0006:191), the
+   * person IS on file, and this screen cannot name them.
+   *
+   * TODO(decision) — PLAN.md §4: should a staff id be resolvable to a name for
+   * every staff role, and if so through what? The options are a narrow
+   * `users_public_v` (id + full_name, readable by `auth_is_staff()`), or an
+   * embed on the payments read. Both are new surfaces on a table whose current
+   * policy is self-scoped, which is an access decision, not a display one.
    */
   const paymentRows = useMemo(
     () =>
@@ -1191,10 +1362,14 @@ export default function BookingDetail() {
           method: p.channelGroup ? `${p.channelGroup}${p.bankName ? ` · ${p.bankName}` : ''}` : '—',
           status: p.status,
           ref: p.transactionRef ?? p.paymentNo,
-          recordedBy: p.receivedById,
+          recordedBy: RECORDED_BY_UNRESOLVED,
         }
         return {
           key: p.id,
+          /* Read from the typed enum, not from `display.status` — that field is
+             a plain `string` on `PaymentHistoryRow` and would lose the
+             exhaustiveness the map above depends on. */
+          tone: PAYMENT_STATUS_TONE[p.status],
           payment: display,
           glance: paymentGlance(display, id, gctx),
           detail: paymentDetailGroups(display, id, gctx),
@@ -1316,26 +1491,56 @@ export default function BookingDetail() {
    * The recipient's number is the one field this screen's queries do not
    * carry: `BookingListRow` has `clientId` but no phone, by design — a booking
    * row is not a contact record. So it is read once from the canonical client
-   * query, and a failure is swallowed to `null`: an unreachable client record
-   * leaves the menu offering its entries disabled with the no-phone reason,
-   * the same honest end state as a client who has no number.
+   * query.
+   *
+   * ## Four states, because a nullable string could only hold two (BD-08, BD-19)
+   *
+   * This was `useState<string | null>(null)` with the failure swallowed —
+   * `.catch(() => setClientPhone(null))` — and the old note beside it called
+   * that "the same honest end state as a client who has no number". It is not
+   * the same state at all. `getClient` throws on any Postgres error, RLS
+   * refusal included (`queries/clients.ts` — `throw new Error('getClient
+   * failed: …')`), so a network drop or a policy denial rendered every WhatsApp
+   * entry disabled with `NO_PHONE_REASON`: *"No valid phone on this client —
+   * add one on the client record first."* The app does not know there is no
+   * phone; it knows it failed to ask, and telling an operator to go add a
+   * number that is already on file is a fabricated fact (Law 12).
+   *
+   * The second bug the two-state version carried: the effect returned early on
+   * a missing `clientId` and on a CHANGED one it started the fetch without
+   * clearing what was there, so both left the PREVIOUS client's number in
+   * state. Navigating detail → detail therefore composed booking B's messages
+   * against client A's phone until the new read landed — a wrong recipient on
+   * a live `wa.me` link, and a leak of one client's number into another
+   * client's screen. Setting `{ kind: 'loading' }` synchronously inside the
+   * effect is what closes it: the number is cleared the moment the id changes,
+   * not when the answer arrives.
    */
-  const [clientPhone, setClientPhone] = useState<string | null>(null)
+  const [contact, setContact] = useState<ClientContact>({ kind: 'loading' })
   useEffect(() => {
     const cid = booking?.clientId
-    if (!cid) return
+    if (!cid) {
+      setContact({ kind: 'absent' })
+      return
+    }
     let cancelled = false
+    setContact({ kind: 'loading' })
     getClient(cid)
       .then((c) => {
-        if (!cancelled) setClientPhone(c?.phone ?? null)
+        if (!cancelled) setContact({ kind: 'ready', phone: c?.phone ?? null })
       })
-      .catch(() => {
-        if (!cancelled) setClientPhone(null)
+      .catch((err: unknown) => {
+        if (!cancelled) setContact({ kind: 'failed', message: err instanceof Error ? err.message : String(err) })
       })
     return () => {
       cancelled = true
     }
   }, [booking?.clientId])
+
+  /* Only a completed read yields a number. Every other state is "not known",
+     and `whatsappActionsFor` is told so by the menu below rather than by a
+     null it would translate into NO_PHONE_REASON. */
+  const clientPhone = contact.kind === 'ready' ? contact.phone : null
 
   const waActions = useMemo(() => {
     if (!booking || !user) return []
@@ -1421,7 +1626,97 @@ export default function BookingDetail() {
      generated types in queries/bookings.ts's header), so the DB stage IS the
      workflow status. */
   const stage = booking.stage as BookingStatus
-  const days = rentalDays(booking.pickupAtAd, booking.returnAtAd)
+
+  /* ── Cancelled — the mark and the refusal (BD-03) ────────────────────────
+   *
+   * §1.3 keeps Cancelled orthogonal to the six stages: it is `cancelled_at`,
+   * a flag, so a cancelled booking's `stage` still reads Quote or On Rent and
+   * every stage-driven verb on this page stayed live on it.
+   *
+   * The rule is not invented here (Law 1). It is the one the RENTALS LIST
+   * already applies to the same row — `RentalsList.tsx`'s row menu computes
+   * `!row.isCancelled && o.enabledAt.includes(row.status)` and shows
+   * "`{bookingNo}` is cancelled — no operation runs on it" — and it is the one
+   * the DISPATCHERS themselves enforce — for the three that are built:
+   * `confirmRental.ts` refuses on `cancelled_at !== null` before it writes,
+   * `floorVerb.ts` refuses every floor job the same way, and `closeRental.ts`
+   * refuses too (citing PLAN.md §4.16, which leaves whether a cancelled booking
+   * may still be walked to Closed unruled).
+   *
+   * Be exact about the other three, because an earlier draft of this comment was
+   * not: `extendRental.ts`, `crew/bookCrew.ts` and `subrentals/createSubRental.ts`
+   * contain no `cancelled_at` check at all. They refuse for a different reason —
+   * each is `implemented: false`, so `createAction` turns them away before any
+   * body runs (BD-09/BD-10/BD-11 are the open TODOs for that). The conclusion is
+   * the same for all six — every press could only ever fail — but only half of it
+   * is the cancellation rule. **When those three are built they must check
+   * `cancelled_at` themselves**; this screen's guard is not a substitute, because
+   * the list and the API can both reach them by another route.
+   *
+   * Law 3 wants the terminal action VISIBLE, not merely obeyed — so the mark
+   * goes on the header and on the Rental Days fact beside the stage block,
+   * and disabling is the consequence of the mark rather than a substitute for
+   * it.
+   *
+   * What is deliberately NOT refused: taking money. A cancelled booking can
+   * still carry an unsettled invoice, `FLAGS.Cancelled.blocks` is empty, and
+   * §4.16 is open — refusing a payment here would be inventing that ruling.
+   * Notes stay writable for the same reason.
+   */
+  const cancelledReason: string | null = booking.isCancelled
+    ? `${booking.bookingNo} is cancelled — no operation runs on it`
+    : null
+
+  /**
+   * ONE predicate for "may operations be opened", read by BOTH launchers
+   * (BD-04). The Quote clause keeps the wording the header launcher already
+   * carried, so nothing a user has read changes; the cancelled clause is
+   * BD-03's, and it comes first because a cancelled Quote is refused for the
+   * more fundamental reason.
+   */
+  const operationsUnavailable: string | null =
+    cancelledReason ?? (stage === 'Quote' ? 'Operations open once this booking is Booked' : null)
+
+  /**
+   * What the overflow's "Message client" row offers — or the true reason it
+   * cannot (BD-08).
+   *
+   * ⚠ The CONTACT READ's own state answers first, and that ordering is the
+   * whole fix. `whatsappActionsFor` is handed `clientPhone`, and for a `null`
+   * it returns `NO_PHONE_REASON` — *"No valid phone on this client — add one on
+   * the client record first."* That sentence is a claim about the client's
+   * record, so it may only be reached once the record has actually been read.
+   * Before this, a failed or in-flight `getClient` produced exactly that
+   * sentence, telling an operator to go and add a number that may already be
+   * on file (Law 12).
+   */
+  const messageClient: { unavailable: string } | { submenu: NonNullable<OverflowItem['submenu']> } =
+    contact.kind === 'failed'
+      ? {
+          unavailable:
+            'This client’s record could not be read, so no number is known — which is not the same as no number ' +
+            `being on file. Retry from the client page. ${contact.message}`,
+        }
+      : contact.kind === 'loading'
+        ? { unavailable: 'Still reading this client’s record — the number is not known yet.' }
+        : contact.kind === 'absent'
+          ? { unavailable: 'This booking carries no client record, so there is nobody to message.' }
+          : waActions.length === 0
+            ? {
+                unavailable:
+                  'No message applies at this stage — a quote has nothing to confirm, and a returned booking has nothing to chase.',
+              }
+            : {
+                submenu: waActions.map((a) => ({
+                  label: a.label,
+                  onClick: () => {
+                    if (a.href) openWaLink(a.href)
+                  },
+                  ...(a.unavailable ? { unavailable: a.unavailable } : {}),
+                })),
+              }
+
+  const days = rentalDaysBetween(booking.pickupAtAd, booking.returnAtAd)
   const lines: FloorLine[] = floor?.lines ?? []
   const allUnits = lines.flatMap((l) => l.units)
   const subRental = isSubRentalBooking(lines.map((l) => ({ lineType: l.lineType })))
@@ -1454,18 +1749,23 @@ export default function BookingDetail() {
     },
   ]
 
-  const recordPaymentButton = (label: string) =>
-    hasInvoice ? (
+  const recordPaymentButton = (label: string) => {
+    /* Three reasons, not one. `NO_INVOICE_PAYMENT_UNAVAILABLE` is a statement
+       about this booking; while the read is in flight or after it failed the
+       app does not know that yet, and saying it anyway is the Law 12 defect. */
+    const reason = hasInvoice ? null : (invoicesUnknownReason ?? NO_INVOICE_PAYMENT_UNAVAILABLE)
+    return reason === null ? (
       <Button icon="dollar" variant="primary" onClick={() => setShowPaymentModal(true)}>
         {label}
       </Button>
     ) : (
-      <Unavailable reason={NO_INVOICE_PAYMENT_UNAVAILABLE}>
+      <Unavailable reason={reason}>
         <Button icon="dollar" variant="primary" disabled>
           {label}
         </Button>
       </Unavailable>
     )
+  }
 
   const railBody = (
     <>
@@ -1477,7 +1777,8 @@ export default function BookingDetail() {
           <SummaryRows rows={summaryRows} />
           {!hasInvoice && (
             <p style={{ margin: '8px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-              No invoice has been raised for this booking, so there is no Rental Total to state yet.
+              {invoicesUnknownReason ??
+                'No invoice has been raised for this booking, so there is no Rental Total to state yet.'}
             </p>
           )}
           <p
@@ -1509,19 +1810,43 @@ export default function BookingDetail() {
           <Card title="Quick Actions">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
               {canBookingMoney && canTakePayment && recordPaymentButton('Receive Payment')}
-              <Button icon="queues" onClick={() => setShellOpen(true)}>
-                Open Operations
-              </Button>
-              {canBookingMoney && canOperate && (
-                <Button icon="calendar" onClick={() => setShowExtendModal(true)}>
-                  Extend Rental
-                </Button>
-              )}
-              {canCrewMoney && canOperate && (
-                <Button icon="users" onClick={() => setShowCrewModal(true)}>
-                  Assign Crew
-                </Button>
-              )}
+              {/* BD-04 — the SAME `operationsUnavailable` the header launcher
+                  reads, through the same component. This was a bare live
+                  <Button> and gave the opposite answer to the header's disabled
+                  one on the very same Quote booking. */}
+              <OperationsLauncher
+                label="Open Operations"
+                icon="queues"
+                primary={false}
+                unavailable={operationsUnavailable}
+                onOpen={() => setShellOpen(true)}
+              />
+              {canBookingMoney &&
+                canOperate &&
+                (cancelledReason ? (
+                  <Unavailable reason={cancelledReason}>
+                    <Button icon="calendar" disabled>
+                      Extend Rental
+                    </Button>
+                  </Unavailable>
+                ) : (
+                  <Button icon="calendar" onClick={() => setShowExtendModal(true)}>
+                    Extend Rental
+                  </Button>
+                ))}
+              {canCrewMoney &&
+                canOperate &&
+                (cancelledReason ? (
+                  <Unavailable reason={cancelledReason}>
+                    <Button icon="users" disabled>
+                      Assign Crew
+                    </Button>
+                  </Unavailable>
+                ) : (
+                  <Button icon="users" onClick={() => setShowCrewModal(true)}>
+                    Assign Crew
+                  </Button>
+                ))}
             </div>
           </Card>
 
@@ -1578,14 +1903,28 @@ export default function BookingDetail() {
                 Passing `status` gets the §4 hue, the word and the icon in one
                 move and cannot be half-done. */}
             <Badge status={stage} />
+            {/* Law 3 — the terminal action, on screen. `stage` cannot carry it:
+                Cancelled is `cancelled_at`, orthogonal to the six, so a
+                cancelled booking's block still reads Quote / On Rent. The word,
+                the icon and the hue all come from <Badge>'s `flag` path
+                (FLAGS.Cancelled, token `danger`) — never assembled here. */}
+            {booking.isCancelled && <Badge flag="Cancelled" />}
             {/* §11.1 — computed from the QUERIED lines on every render; there
                 is no stored `bookings.is_sub_rental` and there must not be. */}
             {subRental && <SubRentedMark label="Sub-rental" />}
-            {stage === 'Returned' && canCloseRental(gctx.role) && (
+            {stage === 'Returned' &&
+              canCloseRental(gctx.role) &&
+              (cancelledReason ? (
+                <Unavailable reason={cancelledReason}>
+                  <Button icon="check" variant="primary" disabled>
+                    Close Rental
+                  </Button>
+                </Unavailable>
+              ) : (
                 <Button icon="check" variant="primary" onClick={closeBooking} disabled={closing}>
                   {closing ? 'Closing…' : 'Close Rental'}
                 </Button>
-              )}
+              ))}
               {stage === 'Quote' && (
               <>
                 <Unavailable reason={SEND_QUOTE_UNAVAILABLE}>
@@ -1593,14 +1932,27 @@ export default function BookingDetail() {
                     Send Quote
                   </Button>
                 </Unavailable>
-                <Button icon="plus" variant="primary" onClick={confirmBooking} disabled={confirming}>
-                  {confirming ? 'Confirming…' : 'Confirm Booking'}
-                </Button>
+                {/* `confirmRental` refuses a cancelled booking by name before it
+                    writes anything, so a live Confirm here is a press that can
+                    only end in the error banner below the header. */}
+                {cancelledReason ? (
+                  <Unavailable reason={`${booking.bookingNo} is cancelled — a cancelled booking is not confirmed.`}>
+                    <Button icon="plus" variant="primary" disabled>
+                      Confirm Booking
+                    </Button>
+                  </Unavailable>
+                ) : (
+                  <Button icon="plus" variant="primary" onClick={confirmBooking} disabled={confirming}>
+                    {confirming ? 'Confirming…' : 'Confirm Booking'}
+                  </Button>
+                )}
               </>
             )}
             <OperationsLauncher
+              label="Operations"
+              icon="external_link"
               primary={!['Quote', 'Closed'].includes(stage)}
-              status={stage}
+              unavailable={operationsUnavailable}
               onOpen={() => setShellOpen(true)}
             />
             {/* Two gates, both required: money visibility ("may this role see
@@ -1619,29 +1971,43 @@ export default function BookingDetail() {
                   label: 'Message client',
                   icon: 'message' as const,
                   onClick: () => undefined,
-                  ...(waActions.length === 0
-                    ? {
-                        unavailable:
-                          'No message applies at this stage — a quote has nothing to confirm, and a returned booking has nothing to chase.',
-                      }
-                    : {
-                        submenu: waActions.map((a) => ({
-                          label: a.label,
-                          onClick: () => {
-                            if (a.href) openWaLink(a.href)
-                          },
-                          ...(a.unavailable ? { unavailable: a.unavailable } : {}),
-                        })),
-                      }),
+                  ...messageClient,
                 },
+                /* BD-03 — the three operational verbs carry the SAME refusal
+                   the rentals list gives this row, so a cancelled booking
+                   cannot be extended, crewed or sub-rented from here. Visible
+                   and greyed with the reason (§4.2), never removed: Law 3 is
+                   about what happened to the booking, and hiding the verbs
+                   would hide that it happened. */
                 ...(canBookingMoney && canOperate
-                  ? [{ label: 'Extend rental', icon: 'calendar' as const, onClick: () => setShowExtendModal(true) }]
+                  ? [
+                      {
+                        label: 'Extend rental',
+                        icon: 'calendar' as const,
+                        onClick: () => setShowExtendModal(true),
+                        ...(cancelledReason ? { unavailable: cancelledReason } : {}),
+                      },
+                    ]
                   : []),
                 ...(canCrewMoney && canOperate
-                  ? [{ label: 'Assign crew', icon: 'users' as const, onClick: () => setShowCrewModal(true) }]
+                  ? [
+                      {
+                        label: 'Assign crew',
+                        icon: 'users' as const,
+                        onClick: () => setShowCrewModal(true),
+                        ...(cancelledReason ? { unavailable: cancelledReason } : {}),
+                      },
+                    ]
                   : []),
                 ...(canCrewMoney && canOperate
-                  ? [{ label: 'Create sub-rental', icon: 'box' as const, onClick: () => setShowSubRentalModal(true) }]
+                  ? [
+                      {
+                        label: 'Create sub-rental',
+                        icon: 'box' as const,
+                        onClick: () => setShowSubRentalModal(true),
+                        ...(cancelledReason ? { unavailable: cancelledReason } : {}),
+                      },
+                    ]
                   : []),
                 {
                   label: 'Save draft',
@@ -1696,15 +2062,25 @@ export default function BookingDetail() {
 
         <Fact icon="timer" label="Rental Days" viewport={viewport}>
           <span className="figure" style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--text)' }}>
-            {days}
+            {days ?? '—'}
           </span>
-          <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginLeft: 5 }}>Days</span>
-          <span style={{ display: 'block', marginTop: 6 }}>
+          {/* The unit is dropped with the figure: "— Days" reads as a count of
+              nothing rather than as an unknown length. */}
+          {days !== null && (
+            <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginLeft: 5 }}>
+              Day{days === 1 ? '' : 's'}
+            </span>
+          )}
+          <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
             {/* The second copy of the header's block, in the Rental Days fact.
                 Same delegation, `size="sm"` because it sits in the denser fact
                 strip — the weight, casing and tracking that ARE a status block
                 do not scale away with it. */}
             <Badge status={stage} size="sm" />
+            {/* Law 3 — wherever the stage block appears, the cancellation
+                appears with it. A strip that shows "ON RENT" alone on a
+                cancelled booking is the reading BD-03 is about. */}
+            {booking.isCancelled && <Badge flag="Cancelled" size="sm" />}
           </span>
         </Fact>
 
@@ -1721,7 +2097,15 @@ export default function BookingDetail() {
               {hasInvoice ? money(totals.outstanding) : '—'}
             </div>
             <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 6 }}>
-              {hasInvoice ? 'From this booking’s invoices' : 'No invoice raised yet'}
+              {/* The dash above says "no figure". This line must say WHY, and
+                  "No invoice raised yet" is only one of the three reasons. */}
+              {hasInvoice
+                ? 'From this booking’s invoices'
+                : invoicesList.error !== null
+                  ? 'Invoices could not be read — no figure is stated'
+                  : !invoicesKnown
+                    ? 'Reading this booking’s invoices…'
+                    : 'No invoice raised yet'}
               {' · Deposit Required '}
               <span className="figure" style={{ color: 'var(--progress-text)', fontWeight: 600 }}>
                 {booking.depositRequired !== null ? formatMoney(booking.depositRequired) : 'not recorded'}
@@ -1775,9 +2159,37 @@ export default function BookingDetail() {
                   { label: 'Project', value: booking.project ?? 'Not recorded' },
                   { label: 'Pickup Location', value: booking.pickupLocation ?? 'Not recorded' },
                   { label: 'Return Location', value: booking.returnLocation ?? 'Not recorded' },
-                  { label: 'Rental Days', value: `${days} Days` },
+                  /* `formatRentalDays` also fixes the unpluralised "1 Days"
+                     this row printed on a one-day hire. */
+                  { label: 'Rental Days', value: formatRentalDays(days, 'Not recorded') },
                 ]}
               />
+              {/* BD-08 — inline and persistent, in the block this failure is
+                  ABOUT (§12: errors inline, toasts for successes only). Without
+                  it the only trace of a failed client read was a greyed row
+                  inside a closed overflow menu, and the sentence it carried
+                  there blamed the client's record.
+
+                  The copy says "until the booking is reopened" and not "until it
+                  loads" because THIS SCREEN CANNOT RETRY: the contact effect has
+                  one dependency, `booking?.clientId`, and nothing else re-runs
+                  it — the two retry controls on the page call
+                  `invoicesList.refetch()` and `paymentsList.refetch()`. Only a
+                  remount re-reads the client. A retry control here would be the
+                  better fix; it is not in this change's scope, so the sentence
+                  states what is true today rather than promising a recovery that
+                  never arrives. TODO(decision) is NOT needed — this is a build
+                  task, not a ruling. */}
+              {contact.kind === 'failed' && (
+                <p
+                  role="alert"
+                  style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--danger-text)', lineHeight: 1.5 }}
+                >
+                  This client’s record could not be read, so their phone number is <strong>unknown</strong>, not
+                  absent. WhatsApp messages and the payment receipt stay unavailable until the booking is reopened.{' '}
+                  {contact.message}
+                </p>
+              )}
             </Block>
           )}
 
@@ -1826,8 +2238,10 @@ export default function BookingDetail() {
                           here again means a `booking_lines_v` fetcher, not a
                           seed.
                         */}
-                        {['Item', 'Serial / ID', 'Qty', 'Status', 'Location', ''].map((h, i) => (
-                          <th key={h || i} style={{ ...th, textAlign: i === 2 ? 'right' : 'left' }}>
+                        {/* Five columns, not six. The sixth was an unlabelled
+                            spacer for the ⋮ glyph removed below (BD-05). */}
+                        {['Item', 'Serial / ID', 'Qty', 'Status', 'Location'].map((h, i) => (
+                          <th key={h} style={{ ...th, textAlign: i === 2 ? 'right' : 'left' }}>
                             {h}
                           </th>
                         ))}
@@ -1958,9 +2372,26 @@ export default function BookingDetail() {
                             <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                               {l.units.map((u) => u.location).find((loc) => loc !== null) ?? ''}
                             </td>
-                            <td style={{ ...td, width: 26, color: 'var(--muted)' }}>
-                              <Icon name="more_vert" size={14} />
-                            </td>
+                            {/*
+                              ⛔ A sixth cell held a bare `more_vert` glyph here:
+                              an <Icon>, not a button, with no handler and no
+                              menu anywhere in this file to open. It sat alone
+                              in a 26px last column under an unlabelled header —
+                              the position and the glyph of a row menu — so it
+                              read as one and did nothing when pressed. A fake
+                              affordance (BD-05).
+
+                              Nothing was lost with it. The only row-level verb
+                              this screen has is the unit release, which is the
+                              × on each serial chip in the Serial/ID cell — the
+                              second of the five columns, not the neighbour of
+                              the sixth this removed; line writes
+                              have no path at all, which is what the Add Item
+                              button's `ITEM_EDIT_UNAVAILABLE` says. Removing
+                              dead UI is not a Law 3 deletion — Law 3 governs
+                              entities and data, and no line, unit or booking is
+                              touched here.
+                            */}
                           </tr>
                         )
                       })}
@@ -2036,15 +2467,29 @@ export default function BookingDetail() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                   <div style={{ display: 'flex', gap: 10, fontSize: 'var(--t-meta)', alignItems: 'flex-start' }}>
                     <span style={{ color: 'var(--text2)', flex: 1, minWidth: 0 }}>Delivery Type</span>
+                    {/*
+                      ⛔ This carried `STATUS.in` — the green §2 reserves for
+                      "home & ready / settled". `delivery_type` is not a status:
+                      it is how the gear travels, it is chosen at creation and
+                      nothing the booking does changes it. Painting it green
+                      told a reader scanning the card by colour that a Courier
+                      delivery was settled, and spent one of the seven
+                      one-meaning hues on a field that has no state.
+
+                      Same resolution `ItemBadge` above reached for `line_type`:
+                      one neutral surface with a border, distinguished by its
+                      WORD, which is the only thing that ever carried the fact.
+                    */}
                     <span
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
                         height: 20,
                         padding: '0 8px',
-                        borderRadius: 'var(--r-badge)',
-                        background: STATUS.in.bg,
-                        color: STATUS.in.fg,
+                        borderRadius: 'var(--r-chip)',
+                        background: 'var(--card2)',
+                        color: 'var(--text2)',
+                        border: '1px solid var(--border)',
                         fontSize: 'var(--t-meta)',
                         fontWeight: 600,
                       }}
@@ -2212,7 +2657,7 @@ export default function BookingDetail() {
                           </tr>
                         </thead>
                         <tbody>
-                          {paymentRows.map(({ key, payment: p, glance, detail }) => (
+                          {paymentRows.map(({ key, tone, payment: p, glance, detail }) => (
                             <tr key={key} style={{ borderBottom: '1px solid var(--border)' }}>
                               <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)' }}>
                                 <IntelCard
@@ -2232,21 +2677,11 @@ export default function BookingDetail() {
                                   account picked in the modal. */}
                               <td style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{p.method}</td>
                               <td style={{ ...td, fontSize: 'var(--t-meta)' }}>
-                                <span
-                                  style={{
-                                    display: 'inline-flex',
-                                    height: 19,
-                                    alignItems: 'center',
-                                    padding: '0 7px',
-                                    borderRadius: 5,
-                                    background: STATUS.in.bg,
-                                    color: STATUS.in.fg,
-                                    fontSize: 'var(--t-meta)',
-                                    fontWeight: 600,
-                                  }}
-                                >
-                                  {p.status}
-                                </span>
+                                {/* The row's OWN status, through the one status
+                                    renderer. Hand-assembling the chip here is
+                                    how it came to be green regardless of what
+                                    it said (BD-16). */}
+                                <Badge tone={tone} label={p.status} icon={<Icon name={STATUS_ICON[tone]} size={11} />} size="sm" />
                               </td>
                             </tr>
                           ))}
@@ -2302,12 +2737,12 @@ export default function BookingDetail() {
                       ? [
                           {
                             label: 'Pricing',
-                            value: hasInvoice ? money(totals.total) : 'No invoice',
+                            value: hasInvoice ? money(totals.total) : noInvoiceCell,
                             ok: hasInvoice,
                           },
                           {
                             label: 'Payments',
-                            value: hasInvoice ? (totals.outstanding > 0 ? 'Attention' : 'Settled') : 'No invoice',
+                            value: hasInvoice ? (totals.outstanding > 0 ? 'Attention' : 'Settled') : noInvoiceCell,
                             ok: hasInvoice && totals.outstanding <= 0,
                           },
                         ]
