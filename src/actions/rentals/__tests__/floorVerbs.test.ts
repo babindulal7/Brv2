@@ -719,6 +719,99 @@ describe('Return', () => {
     expect(rows[1]?.payload['inspection_state']).toBeUndefined() // column default: 'Pending'
   })
 
+  /* ── RT-02 · damage found at Return becomes a row, not a note ─────────── */
+
+  it('raises one damage_findings row per damaged unit, parented on the return line', async () => {
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 2 }]]
+    db.state.responses['return_lines'] = [[], [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Returned' }]]
+
+    const result = await completeReturn(
+      {
+        rentalId: 'B-715',
+        lines: [
+          {
+            bookingLineId: LINE_A,
+            unitIds: ['u1', 'u2'],
+            condition: 'Damaged',
+            damage: [
+              { unitId: 'u1', condition: 'Damaged', description: '  Lens mount cracked; will not seat.  ' },
+              { unitId: 'u2', condition: 'Lost', description: 'Battery door missing on return.' },
+            ],
+          },
+        ],
+      },
+      OWNER,
+    )
+
+    const found = insertsOn('damage_findings')
+    expect(found).toHaveLength(2)
+    expect(result.damageFindings).toBe(2)
+
+    const returnLineId = insertsOn('return_lines')[0]?.payload['id']
+    expect(returnLineId).toBeDefined()
+
+    const first = found[0]?.payload ?? {}
+    expect(first['source']).toBe('Return inspection')
+    // 0003:471 — exactly one parent, and it must match the source.
+    expect(first['return_line_id']).toBe(returnLineId)
+    expect(first['cleaning_queue_entry_id']).toBeUndefined()
+    expect(first['unit_id']).toBe('u1')
+    expect(first['damage_type']).toBe('Damaged')
+    expect(first['description']).toBe('Lens mount cracked; will not seat.')
+    // Law 6 / 0003:488 — the approver's field, never written by a floor verb.
+    expect(first['estimated_cost']).toBeUndefined()
+    // The column default is 'Pending Approval'; the verb does not restate it.
+    expect(first['approval_state']).toBeUndefined()
+    expect(String(first['severity'])).toMatch(/no severity scale is ruled/)
+
+    expect(found[1]?.payload['unit_id']).toBe('u2')
+    expect(found[1]?.payload['damage_type']).toBe('Lost')
+  })
+
+  it('raises nothing when no unit was damaged', async () => {
+    db.state.responses['return_lines'] = [[], [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Returned' }]]
+    const result = await completeReturn(
+      { rentalId: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'], condition: 'Good' }] },
+      OWNER,
+    )
+    expect(insertsOn('damage_findings')).toHaveLength(0)
+    expect(result.damageFindings).toBe(0)
+  })
+
+  it('refuses a damage finding with no description — that is a NOT NULL column, not a form rule', async () => {
+    await expect(
+      completeReturn(
+        {
+          rentalId: 'B-715',
+          lines: [{ bookingLineId: LINE_A, unitIds: ['u1'], damage: [{ unitId: 'u1', condition: 'Damaged', description: '   ' }] }],
+        },
+        OWNER,
+      ),
+    ).rejects.toThrow(/no description/)
+    expect(insertsOn('damage_findings')).toHaveLength(0)
+  })
+
+  it('refuses two findings against the same unit on one line', async () => {
+    await expect(
+      completeReturn(
+        {
+          rentalId: 'B-715',
+          lines: [
+            {
+              bookingLineId: LINE_A,
+              unitIds: ['u1'],
+              damage: [
+                { unitId: 'u1', condition: 'Damaged', description: 'Cracked housing.' },
+                { unitId: 'u1', condition: 'Lost', description: 'Also the cap.' },
+              ],
+            },
+          ],
+        },
+        OWNER,
+      ),
+    ).rejects.toThrow(/two damage findings/)
+  })
+
   it('records a Not Returned line with its reason and decision, and moves nothing', async () => {
     db.state.responses['return_lines'] = [[], [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Not Returned' }]]
 
@@ -744,6 +837,18 @@ describe('Return', () => {
     expect(insertsOn('session_line_movements')).toHaveLength(0)
     // Not Returned is terminal for this verb, so the stage still moves.
     expect(result.stage).toEqual({ from: 'On Rent', to: 'Returned' })
+  })
+
+  it('refuses a damage finding on a verb that is not Return', async () => {
+    await expect(
+      packRental(
+        {
+          id: 'B-715',
+          lines: [{ bookingLineId: LINE_A, damage: [{ unitId: 'u1', condition: 'Damaged', description: 'Cracked housing.' }] }],
+        },
+        OWNER,
+      ),
+    ).rejects.toThrow(/Return inspection only/)
   })
 
   it('holds the stage while a line is still Outstanding', async () => {
@@ -864,6 +969,87 @@ describe('Reset — the verb that opens no session and moves no stage', () => {
     expect(updates[0]?.payload['reset_completed_at']).toBe('2026-08-12T05:00:00.000Z')
     // It does not claim the item is Ready — that needs a checklist this verb never saw.
     expect(Object.keys(updates[0]?.payload ?? {})).not.toContain('state')
+  })
+
+  it('records a Reset exception and raises a Cleaning damage finding', async () => {
+    db.state.responses['cleaning_queue_entries'] = [
+      [
+        { id: 'cq-1', unit_id: 'u1', requires_clean: true, requires_reset: true, clean_completed_at: null, reset_completed_at: null },
+        { id: 'cq-2', unit_id: 'u2', requires_clean: true, requires_reset: true, clean_completed_at: null, reset_completed_at: null },
+      ],
+    ]
+
+    const result = await completeReset(
+      {
+        id: 'B-715',
+        resetEntries: [
+          { unitId: 'u1' },
+          {
+            unitId: 'u2',
+            problemState: 'Damaged',
+            damageType: 'Structural',
+            damageSeverity: 'High',
+            problemReason: 'Tripod collar cracked through; will not hold.',
+          },
+        ],
+      },
+      OWNER,
+    )
+
+    // The exception is routed, so it is NOT counted as reset — but it IS recorded.
+    expect(result.unitsReset).toBe(1)
+    expect(result.damageFindings).toBe(1)
+
+    const updates = opsOn('cleaning_queue_entries')
+    const routed = updates.find((o) => o.id === 'cq-2')
+    expect(routed?.payload['problem_state']).toBe('Damaged')
+    // 0003:895 — a routed item is not stamped reset.
+    expect(routed?.payload['reset_completed_at']).toBeUndefined()
+    expect(updates.find((o) => o.id === 'cq-1')?.payload['reset_completed_at']).toBeDefined()
+
+    const finding = insertsOn('damage_findings')[0]?.payload ?? {}
+    expect(finding['source']).toBe('Cleaning')
+    // 0003:474 — a Cleaning finding hangs off the queue entry, never a return line.
+    expect(finding['cleaning_queue_entry_id']).toBe('cq-2')
+    expect(finding['return_line_id']).toBeUndefined()
+    expect(finding['unit_id']).toBe('u2')
+    expect(finding['damage_type']).toBe('Structural')
+    expect(finding['severity']).toBe('High')
+    expect(finding['description']).toBe('Tripod collar cracked through; will not hold.')
+    expect(finding['estimated_cost']).toBeUndefined()
+    // TODO(decision) in the engine: no case is raised because nothing creates one.
+    expect(finding['case_id']).toBeUndefined()
+  })
+
+  it('refuses a Damaged reset entry with no description', async () => {
+    await expect(
+      completeReset({ id: 'B-715', resetEntries: [{ unitId: 'u1', problemState: 'Damaged', problemReason: '  ' }] }, OWNER),
+    ).rejects.toThrow(/marked Damaged with no description/)
+    expect(insertsOn('damage_findings')).toHaveLength(0)
+  })
+
+  it('records Missing Item and Needs Repair without raising a damage finding', async () => {
+    db.state.responses['cleaning_queue_entries'] = [
+      [
+        { id: 'cq-1', unit_id: 'u1', requires_clean: true, requires_reset: true, clean_completed_at: null, reset_completed_at: null },
+        { id: 'cq-2', unit_id: 'u2', requires_clean: true, requires_reset: true, clean_completed_at: null, reset_completed_at: null },
+      ],
+    ]
+
+    const result = await completeReset(
+      {
+        id: 'B-715',
+        resetEntries: [
+          { unitId: 'u1', problemState: 'Missing Item' },
+          { unitId: 'u2', problemState: 'Needs Repair' },
+        ],
+      },
+      OWNER,
+    )
+
+    expect(result.unitsReset).toBe(0)
+    expect(result.damageFindings).toBe(0)
+    expect(opsOn('cleaning_queue_entries').map((o) => o.payload['problem_state'])).toEqual(['Missing Item', 'Needs Repair'])
   })
 
   it('refuses a unit that is not in this booking reset queue', async () => {

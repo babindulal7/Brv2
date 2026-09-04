@@ -158,6 +158,21 @@ export interface AddItemPanelProps {
   minQueryChars?: number
   disabled?: boolean
   /**
+   * Render the search field **in the section** instead of behind an "Add Item"
+   * trigger.
+   *
+   * Babin, 4 Sep 2026: "in new rental equipment bundle & services don't put
+   * +add equipment button, i want search button over there directly." Adding
+   * gear is the whole job of that section, so a button whose only purpose is to
+   * reveal a search box is a click in the way of it.
+   *
+   * The panel body is unchanged — same field, tabs, filters, results and
+   * keyboard model. Inline mode only stops it being a popover: no trigger, no
+   * absolute positioning, no close-on-blur, and Escape clears the query rather
+   * than hiding the control the section is built around.
+   */
+  inline?: boolean
+  /**
    * The equipment pool to search, from `equipmentResultsFrom(liveRows)`.
    *
    * Omitted, this panel searches the SEED catalogue, whose ids are product
@@ -192,6 +207,7 @@ export function AddItemPanel({
   inputStyle,
   minQueryChars = 2,
   disabled = false,
+  inline = false,
   includeCrewAndVehicle = false,
   applyBundleSaving = false,
 }: AddItemPanelProps) {
@@ -200,7 +216,9 @@ export function AddItemPanel({
   const listboxId = `${reactId}-add-item-listbox`
   const hintId = `${reactId}-add-item-hint`
 
-  const [open, setOpen] = useState(false)
+  /* Inline mode has nothing to open — the field is the control, so it starts
+     open and `close()` never hides it. */
+  const [open, setOpen] = useState(inline)
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<TabKey>('all')
   const [category, setCategory] = useState<string | null>(null)
@@ -255,18 +273,28 @@ export function AddItemPanel({
     const onKey = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() !== 'k' || !(e.metaKey || e.ctrlKey)) return
       e.preventDefault()
-      setOpen(true)
+      // Inline: already open, so this is purely "put my cursor in the field".
+      if (!inline) setOpen(true)
       // Next frame — the input does not exist until the panel has rendered.
       globalThis.requestAnimationFrame(() => inputRef.current?.focus())
     }
     globalThis.addEventListener('keydown', onKey)
     return () => globalThis.removeEventListener('keydown', onKey)
-  }, [disabled])
+  }, [disabled, inline])
 
   const close = useCallback(() => {
+    if (inline) {
+      /* Nothing to close. Escape does what it does in every other search field:
+         empties it and hands the cursor back, so the results list collapses to
+         the section's own empty state. */
+      setQuery('')
+      setActiveIndex(0)
+      inputRef.current?.focus()
+      return
+    }
     setOpen(false)
     triggerRef.current?.focus()
-  }, [])
+  }, [inline])
 
   /* ── Committing ─────────────────────────────────────────────────────── */
 
@@ -347,6 +375,7 @@ export function AddItemPanel({
 
   return (
     <div ref={rootRef} style={{ position: 'relative' }}>
+      {!inline && (
       <button
         ref={triggerRef}
         type="button"
@@ -398,26 +427,38 @@ export function AddItemPanel({
           ⌘K
         </kbd>
       </button>
+      )}
 
       {open && (
         <div
-          role="dialog"
-          aria-label="Add item to booking"
+          {...(inline ? {} : { role: 'dialog', 'aria-label': 'Add item to booking' })}
           style={{
-            position: 'absolute',
-            zIndex: 45,
-            top: 'calc(100% + 6px)',
-            right: 0,
-            width: 'min(620px, calc(100vw - 32px))',
-            background: 'var(--dropdown)',
+            /* Inline: part of the section, so it takes the section's width and
+               loses the popover's lift. A dialog role would be a lie for
+               something that is simply on the page, and the modal shadow would
+               make it read as floating over content it is not covering. */
+            ...(inline
+              ? { position: 'relative' as const, width: '100%', background: 'var(--card2)' }
+              : {
+                  position: 'absolute' as const,
+                  zIndex: 45,
+                  top: 'calc(100% + 6px)',
+                  right: 0,
+                  width: 'min(620px, calc(100vw - 32px))',
+                  background: 'var(--dropdown)',
+                  boxShadow: 'var(--shadow-modal)',
+                }),
             border: '1px solid var(--border)',
             borderRadius: 'var(--r-card)',
-            boxShadow: 'var(--shadow-modal)',
             overflow: 'hidden',
           }}
-          onBlur={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node | null) && preview === null) setOpen(false)
-          }}
+          {...(inline
+            ? {}
+            : {
+                onBlur: (e: React.FocusEvent<HTMLDivElement>) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node | null) && preview === null) setOpen(false)
+                },
+              })}
         >
           {/* ── Search field ─────────────────────────────────────────── */}
           <div style={{ padding: 10, borderBottom: '1px solid var(--border)', display: 'grid', gap: 9 }}>
@@ -979,21 +1020,31 @@ function EquipmentGroupRow({
         group.autoPick ? 'Press Enter to add the least-used free unit.' : 'Nothing free for these dates.'
       }`}
       onMouseMove={onHover}
+      /* The WHOLE row adds, as the bundle row above already did.
+         It used to sit on the inner name line only, so a click on the price,
+         the meta line, the availability chip or any whitespace did nothing at
+         all — the operator hit the row and no item was added (Babin, 4 Sep
+         2026: "when i want to add equipment ... doesn't add"). The inline
+         panel made it constant: the list is now always on screen to be
+         clicked at.
+
+         Safe against the controls inside: every one of them — the per-unit
+         chips below and the bundle row's [View] — already calls
+         `e.stopPropagation()`, so picking a specific unit still picks that
+         unit and never also auto-picks another. */
+      onClick={group.autoPick ? onAutoPick : undefined}
       style={{
         display: 'grid',
         gap: 6,
         minHeight: TOUCH,
         padding: '9px 10px',
         borderRadius: 'var(--r-btn)',
+        cursor: group.autoPick ? 'pointer' : 'default',
         background: active ? 'var(--hover-row)' : 'transparent',
       }}
     >
       <div
-        role="button"
-        tabIndex={-1}
-        aria-hidden="true"
-        onClick={group.autoPick ? onAutoPick : undefined}
-        style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minWidth: 0, cursor: group.autoPick ? 'pointer' : 'default' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minWidth: 0 }}
       >
         <span style={{ display: 'inline-flex', flexShrink: 0, color: 'var(--text2)' }}>
           <Icon name={group.kind === 'accessory' ? 'box' : 'camera'} size={15} />

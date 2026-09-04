@@ -160,6 +160,21 @@ export interface ClientComboboxProps {
   disabled?: boolean
   /** Inline, persistent error (never a toast, never an alert). */
   error?: string
+  /**
+   * A **one-shot** escape from §9's "focus opens the list".
+   *
+   * Focus normally means the operator is about to search, so the list opens on
+   * it. A page that moves focus here for some other reason — New Rental hands
+   * `AddClientModal` this input as its focus-restore target, because the
+   * add-client control that was pressed is replaced by the health eye and is
+   * gone by the time the modal restores focus — sets this to `true`
+   * immediately before doing so. The next focus then does not open the list,
+   * and the flag is consumed. It is a ref rather than a boolean prop because
+   * both moments (focusing before the modal opens, and the modal's own restore
+   * on close) happen outside React's render, so a prop would not have
+   * propagated in time.
+   */
+  suppressNextFocusOpen?: { current: boolean }
 }
 
 /* ── Component ─────────────────────────────────────────────────────────── */
@@ -179,6 +194,7 @@ export function ClientCombobox({
   trailing,
   disabled = false,
   error,
+  suppressNextFocusOpen,
 }: ClientComboboxProps) {
   const reactId = useId()
   const inputId = `${reactId}-client-input`
@@ -366,7 +382,15 @@ export function ClientCombobox({
   return (
     <div
       ref={rootRef}
-      style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minWidth: 0 }}
+      /* `flexWrap` is here for the error paragraph below, which used to be
+         `position: absolute; top: 100%` — out of flow, and therefore drawn
+         straight over whatever the calling page had put in the next row. It
+         now takes a full-width line of its own inside this widget, so the
+         field grows by the height of its own error instead of covering a
+         neighbour. The input keeps its line: it is `flex: 1` with
+         `minWidth: 0`, so it shrinks rather than wrapping, and the trailing
+         slot stays beside it. */
+      style={{ position: 'relative', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--sp-sm)', minWidth: 0 }}
       onBlur={(e) => {
         // Only close when focus actually leaves the whole widget.
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) revert()
@@ -397,7 +421,14 @@ export function ClientCombobox({
             setActiveIndex(0)
           }}
           onFocus={(e) => {
-            openList()
+            // One focus without the list, when the page asked for one — see
+            // `suppressNextFocusOpen`. The flag is consumed here, so the very
+            // next focus behaves normally again.
+            if (suppressNextFocusOpen?.current) {
+              suppressNextFocusOpen.current = false
+            } else {
+              openList()
+            }
             // Typing replaces the committed name instead of appending to it.
             e.currentTarget.select()
           }}
@@ -444,10 +475,10 @@ export function ClientCombobox({
           id={errorId}
           role="alert"
           style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            margin: '4px 0 0',
+            /* In flow, on its own wrapped line — see the note on the root. */
+            flexBasis: '100%',
+            width: '100%',
+            margin: 0,
             fontSize: 'var(--t-meta)',
             color: 'var(--danger-text)',
             display: 'flex',

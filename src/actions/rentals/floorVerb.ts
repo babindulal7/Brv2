@@ -145,6 +145,17 @@ export interface FloorLineInput {
   condition?: ItemCondition
   /** Return only, and mandatory on a `'missing'` line (`0003:378`). */
   notReturnedDecision?: NotReturnedDecision
+  /**
+   * Return only — the damage found on individual units of this line.
+   *
+   * `return_lines` carries ONE condition for the whole line (the worst), which
+   * is why this rides alongside it: `damage_findings.unit_id` is NOT NULL
+   * (`0003:455`), so a finding is per unit and cannot be derived from the
+   * line's condition. Before this existed the description and photo tally rode
+   * `operation_sessions.notes` and no finding was ever raised
+   * (BUG_AUDIT_LIFECYCLE RT-02).
+   */
+  damage?: readonly DamageFindingInput[]
   /** Pack only — the shelf the items came off. */
   warehouseLocation?: string
 }
@@ -163,6 +174,23 @@ export interface FloorLineInput {
  * text column for a person on this table, so a typed name has nowhere truthful
  * to go and must not be sent.
  */
+/**
+ * One damage finding, as the floor stated it.
+ *
+ * Deliberately carries no cost: `damage_findings.estimated_cost` is "NULL until
+ * a Manager or Billing user enters it at approval. Warehouse has no cost field
+ * at all" (`0003:488`), and `0034` revokes SELECT on that column from
+ * `authenticated` outright. A money-blind verb neither reads nor writes it.
+ */
+export interface DamageFindingInput {
+  /** `product_units.id`. A quantity line resolves no unit, so it can raise no finding. */
+  unitId: string
+  /** What the floor recorded on the unit. Written to `damage_type`; see `SEVERITY_NOT_ASSESSED`. */
+  condition: 'Damaged' | 'Lost'
+  /** Free text from the floor — `damage_findings.description` is NOT NULL (`0003:457`). */
+  description: string
+}
+
 export interface ResetEntryInput {
   /** `cleaning_queue_entries.unit_id` — a `product_units.id`. */
   unitId: string
@@ -186,6 +214,26 @@ export interface ResetEntryInput {
    * was not reset, it was routed.
    */
   problemState?: CleaningProblemState
+  /**
+   * The damage the cleaner found, when `problemState` is `'Damaged'`.
+   *
+   * Written as a `damage_findings` row with `source = 'Cleaning'`, parented on
+   * the queue entry (`damage_findings_parent_matches_source`, `0003:474`).
+   * Before this existed an exception row was never even dispatched, so a unit
+   * marked Damaged at reset left no record anywhere
+   * (BUG_AUDIT_LIFECYCLE RS-03).
+   *
+   * Unlike the Return path, the cleaning screen collects a real type and a real
+   * severity from fixed lists (`data/reset.ts` — Cosmetic/Functional/Structural
+   * and Low/Medium/High), so these columns take the floor's own words rather
+   * than the "no scale is ruled" placeholder. `TODO(decision)`: those two lists
+   * live in the UI, and `0003:486` still wants the severity scale ruled before
+   * the column becomes an enum.
+   */
+  damageType?: string
+  damageSeverity?: string
+  /** The cleaner's description. `damage_findings.description` is NOT NULL (`0003:457`). */
+  problemReason?: string
 }
 
 export interface FloorVerbInput {
@@ -246,6 +294,8 @@ export interface FloorVerbResult {
   movements: number
   /** Queue entries whose `reset_completed_at` was set. Reset only. */
   unitsReset: number
+  /** `damage_findings` rows raised — Return only, one per damaged or lost unit. */
+  damageFindings: number
   /**
    * `cleaning_queue_entries` rows raised by this call — Return only, one per
    * serialised unit that actually came back. Zero on the other three verbs, and
@@ -338,6 +388,19 @@ const MOVEMENT_STATE: Record<JobName, ItemQuantityState | null> = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MIN_REASON = 10
+
+/**
+ * `damage_findings.severity` is NOT NULL and has no ruled scale — the column's
+ * own comment says so: *"no spec states the severity scale values, so this
+ * stays text until Babin sets them. It becomes an enum the moment the scale is
+ * decided"* (`0003:486`).
+ *
+ * So the row says the scale does not exist rather than inventing a value for
+ * it. `TODO(decision)` — when the scale is ruled, this constant becomes the
+ * assessment the floor (or the approver) actually makes, and these rows are
+ * the ones to migrate.
+ */
+const SEVERITY_NOT_ASSESSED = 'Not assessed — no severity scale is ruled (0003:486)'
 
 /**
  * `unitIds` and `resetEntries` are the same list at two levels of detail, so
@@ -503,6 +566,15 @@ export function validateFloorVerb(job: JobName, input: FloorVerbInput): void {
       }
       seenUnits.add(entry.unitId)
 
+      if (entry.problemState === 'Damaged') {
+        if ((entry.problemReason ?? '').trim() === '') {
+          throw new Error(
+            `Reset: unit ${entry.unitId} is marked Damaged with no description. A damage finding's ` +
+              'description is a NOT NULL column (0003:457), not a form rule — nothing was written.',
+          )
+        }
+      }
+
       if (entry.qcSkipped === true) {
         if ((entry.qcSkipReason ?? '').trim() === '') {
           throw new Error(
@@ -565,6 +637,30 @@ export function validateFloorVerb(job: JobName, input: FloorVerbInput): void {
     }
     if (line.condition !== undefined && job !== 'Return') {
       throw new Error(`${job}: a condition is recorded at Return inspection only (0003:387).`)
+    }
+
+    const damage = line.damage ?? []
+    if (damage.length > 0 && job !== 'Return') {
+      throw new Error(`${job}: a damage finding is raised at Return inspection only (0003:475).`)
+    }
+    const seenDamage = new Set<string>()
+    for (const d of damage) {
+      if (!d.unitId) {
+        throw new Error(
+          `Return: a damage finding must name the product_units id it is against — damage_findings.unit_id ` +
+            `is NOT NULL (0003:455). Booking line ${line.bookingLineId}.`,
+        )
+      }
+      if (seenDamage.has(d.unitId)) {
+        throw new Error(`Return: unit ${d.unitId} carries two damage findings on one line. Merge them into one description.`)
+      }
+      seenDamage.add(d.unitId)
+      if ((d.description ?? '').trim() === '') {
+        throw new Error(
+          `Return: the damage finding on unit ${d.unitId} has no description. That is a NOT NULL column ` +
+            '(0003:457), not a form rule — nothing was written.',
+        )
+      }
     }
   }
 }
@@ -634,7 +730,7 @@ export async function runFloorVerb(
 
   /* 2 — Reset has no session. It is the queue, per item. */
   if (!isSessionJob(job)) {
-    const unitsReset = await completeResetQueue(booking, resetEntriesOf(input), ctx, occurredAt, actionUuid)
+    const resetOutcome = await completeResetQueue(booking, resetEntriesOf(input), ctx, occurredAt, actionUuid)
     return {
       success: true,
       bookingId: booking.id,
@@ -642,7 +738,10 @@ export async function runFloorVerb(
       sessionClosed: null,
       lines: 0,
       movements: 0,
-      unitsReset,
+      // Damage found at cleaning is its own source (0003:484), parented on the
+      // queue entry rather than a return line — RS-03.
+      damageFindings: resetOutcome.findings,
+      unitsReset: resetOutcome.reset,
       queued: 0,
       stage: null,
       stageHeldBy: [],
@@ -716,6 +815,7 @@ export async function runFloorVerb(
     lines.map((l) => l.bookingLineId),
   )
   let movements = 0
+  let findings = 0
   const queueCandidates: ResetQueueCandidate[] = []
   /* Law 8 — a resumed session must not append a second movement for a unit
      the earlier pass already moved. Read once, consult per line. */
@@ -741,6 +841,7 @@ export async function runFloorVerb(
         actionUuid,
       )
       queueCandidates.push(...resetQueueCandidates(line, returnLineId))
+      findings += await writeDamageFindings(line, returnLineId, ctx)
     }
 
     // Absence is never converted into a state (0003:630): a line marked missing,
@@ -816,6 +917,12 @@ export async function runFloorVerb(
       `[floorVerb] ${operation} on ${booking.booking_no} completed with NO audit row for session ${sessionId}.`,
       sessionAudit.error,
     )
+    captureError(sessionAudit.error, {
+      where: 'floorVerb.sessionAudit',
+      operation,
+      bookingNo: booking.booking_no,
+      sessionId,
+    })
   }
 
   /* 8 — the stage, through the transition trigger and nothing else. */
@@ -837,6 +944,7 @@ export async function runFloorVerb(
     sessionClosed: closed,
     lines: lines.length,
     movements,
+    damageFindings: findings,
     unitsReset: 0,
     queued,
     stage,
@@ -917,12 +1025,6 @@ async function writeHandoverLine(
     state,
     qty_required: required,
     ...(outcome === 'missing' ? { missing_reason: line.reason ?? null } : {}),
-    captureError(sessionAudit.error, {
-      where: 'floorVerb.sessionAudit',
-      operation,
-      bookingNo: booking.booking_no,
-      sessionId,
-    })
     // `0003:331` — the session that took the LAST unit, so only a completed line stamps it.
     ...(state === 'Picked Up' ? { completed_session_id: sessionId, picked_up_at: at } : {}),
   }
@@ -1063,6 +1165,46 @@ async function writeMovements(
     written += 1
   }
   return written
+}
+
+/**
+ * **The damage findings a return session raised** (`0003:449-481`).
+ *
+ * One row per damaged or lost unit, parented on the `return_lines` row this
+ * verb just wrote — `damage_findings_exactly_one_parent` and
+ * `damage_findings_parent_matches_source` require exactly that pairing for
+ * `source = 'Return inspection'`.
+ *
+ * What is deliberately NOT set:
+ *   - `estimated_cost` — the approver's field, and money-blind here (0003:488).
+ *   - `approval_state` — the column default is `'Pending Approval'`, which is
+ *     what a finding raised on the floor is.
+ *   - `disposition` / `case_id` / `charge_id` — decisions, not observations.
+ *     A 'Cleaning' finding raises a Manager case (0003:484); a return-inspection
+ *     one does not, because the client has not signed off yet.
+ */
+async function writeDamageFindings(
+  line: FloorLineInput,
+  returnLineId: string,
+  ctx: ActionContext,
+): Promise<number> {
+  const damage = line.damage ?? []
+  for (const d of damage) {
+    await idempotentInsert('damage_findings', {
+      client_uuid: generateClientUuid(),
+      source: 'Return inspection',
+      return_line_id: returnLineId,
+      unit_id: d.unitId,
+      /* The floor's own word for what it found. There is no ruled damage-type
+         vocabulary anywhere in the specs, and inventing one ('Scratch',
+         'Water', …) would be inventing the vocabulary. TODO(decision). */
+      damage_type: d.condition,
+      description: d.description.trim(),
+      severity: SEVERITY_NOT_ASSESSED,
+      created_by: ctx.userId,
+    })
+  }
+  return damage.length
 }
 
 /** What an earlier pass of the SAME session already moved on a line. */
@@ -1323,7 +1465,7 @@ async function completeResetQueue(
   ctx: ActionContext,
   at: string,
   actionUuid: string,
-): Promise<number> {
+): Promise<{ reset: number; findings: number }> {
   const byUnit = new Map(entries.map((e) => [e.unitId, e]))
   const unitIds = [...byUnit.keys()]
 
@@ -1370,6 +1512,7 @@ async function completeResetQueue(
   }
 
   let reset = 0
+  let findings = 0
 
   for (const row of pending) {
     const entry = byUnit.get(row.unit_id) as ResetEntryInput
@@ -1396,6 +1539,31 @@ async function completeResetQueue(
     await safeUpdate('cleaning_queue_entries', row.id, fields, actionUuid)
     if (!routed) reset += 1
 
+    /*
+     * `0003:484` — "Damage found at cleaning is after the client signed off and
+     * raises a Manager case instead of a direct charge decision." The FINDING is
+     * written here, parented on the queue entry as the CHECK requires.
+     *
+     * `TODO(decision)` — the Manager case is NOT raised: `cases` has no writer
+     * anywhere in `src/` and no case-number sequence is built (the workspace
+     * says so itself, `data/cases.ts`'s `NEW_CASE_UNAVAILABLE_REASON`). Raising
+     * one would mean inventing the number and the shape. `case_id` stays null
+     * and the finding is the record until case creation exists.
+     */
+    if (problem === 'Damaged') {
+      await idempotentInsert('damage_findings', {
+        client_uuid: generateClientUuid(),
+        source: 'Cleaning',
+        cleaning_queue_entry_id: row.id,
+        unit_id: row.unit_id,
+        damage_type: entry.damageType ?? 'Not stated',
+        description: (entry.problemReason ?? '').trim(),
+        severity: entry.damageSeverity ?? SEVERITY_NOT_ASSESSED,
+        created_by: ctx.userId,
+      })
+      findings += 1
+    }
+
     // Per item, never per batch (`0003:911`) — and so is its audit row.
     // TODO(decision) §4.36, same ruling as the session row above. Note the extra
     // wrinkle here: the `safeUpdate` on the line before has already committed,
@@ -1420,10 +1588,11 @@ async function completeResetQueue(
         `[floorVerb] Reset committed on cleaning_queue_entries ${row.id} with NO audit row.`,
         entryAudit.error,
       )
+      captureError(entryAudit.error, { where: 'floorVerb.entryAudit', entryId: row.id })
     }
   }
 
-  return reset
+  return { reset, findings }
 }
 
 /* ── The stage, and the cases where it deliberately does not move ───────── */
@@ -1489,4 +1658,3 @@ async function advanceStage(
   }
   return { from: booking.stage, to }
 }
-      captureError(entryAudit.error, { where: 'floorVerb.entryAudit', entryId: row.id })

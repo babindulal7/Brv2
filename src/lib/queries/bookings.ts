@@ -645,14 +645,39 @@ export function overdue(nowAd: string): ListFilters {
  *    and the alternative would be claiming every undated quote had lapsed.
  *  - **It does not include a lead time.** "Expiring within 3 days" is a
  *    different question and belongs to whoever picks the window; pass the
- *    instant you mean.
+ *    instant you mean — as `fromAd` below.
  *
  * `presence: { cancelled_at: false }` for the same reason as every set here:
  * Law 3 / 0015 — 'Cancelled' is a flag, not a stage.
+ *
+ * ## The optional lower bound
+ *
+ * With one argument this is unchanged: everything lapsing at or before `toAd`,
+ * however long ago — the "already expired" alert Operation and Today read, and
+ * the `gte` is not sent at all, so an undated quote still cannot be swept in.
+ *
+ * `fromAd` turns it into a WINDOW — "quotes lapsing between these two instants"
+ * — which is what a forward-looking card like the Calendar's *Upcoming (Next 7
+ * Days)* actually asks. The bound belongs here rather than in the caller for the
+ * same reason every other bound in this module does: a screen that reached past
+ * `ListFilters` to add its own `gte` would be building a second, unreviewed
+ * answer to the same question, and the two would drift.
+ *
+ * Both ends are floored to the minute by `toMinute`, so the filter key is stable
+ * between renders and `useList` cannot loop. Both are INSTANTS, for the same
+ * timezone reason as `toAd`; a bare `YYYY-MM-DD` lower bound would start the
+ * window at 05:45 that morning in Kathmandu.
  */
-export function quotesExpiring(nowAd: string): ListFilters {
+export function quotesExpiring(nowAd: string, fromAd?: string): ListFilters {
   return {
-    dateRange: { column: 'quote_expires_at', toAd: toMinute(nowAd) },
+    dateRange: {
+      column: 'quote_expires_at',
+      // Spread rather than a `fromAd: undefined` key, so a one-argument call
+      // produces byte-identically the filter set it always did — no `gte` is
+      // built, which is what keeps "an undated quote cannot be swept in" true.
+      ...(fromAd === undefined ? {} : { fromAd: toMinute(fromAd) }),
+      toAd: toMinute(nowAd),
+    },
     chips: { stage: ['Quote'] satisfies BookingStageDb[] },
     presence: { cancelled_at: false },
     sort: { column: 'quote_expires_at', ascending: true },

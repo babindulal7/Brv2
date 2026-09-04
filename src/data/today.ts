@@ -755,6 +755,24 @@ export const statusKeyOf = (m: { flags: readonly Flag[]; status: BookingStatus }
  */
 export const NOW_AD = TODAY.toISOString()
 
+/**
+ * The **Kathmandu** calendar day an instant falls on — `YYYY-MM-DD`.
+ *
+ * Exported as a FUNCTION as well as the constant below because a constant is
+ * resolved once, when this module is imported, and a warehouse tablet is left
+ * open for days. A screen that builds "today's pickups" from the constant is
+ * still counting Thursday's pickups on Friday morning, with the heading still
+ * reading Today — a wrong figure that looks exactly like a right one.
+ *
+ * Callers whose figure is labelled *today* must call this at render time. The
+ * constant remains for module-scope filter sets whose day is genuinely fixed at
+ * import (and for the several screens already built on it), and it is defined in
+ * terms of this function so the two cannot answer differently.
+ */
+export function businessDayAd(now: Date = new Date()): string {
+  return new Date(kathmanduCivil(getBusinessToday(now))).toISOString().slice(0, 10)
+}
+
 /** The **Kathmandu** calendar day `NOW_AD` falls on — `YYYY-MM-DD`. */
 export const TODAY_DAY_AD = new Date(kathmanduCivil(TODAY)).toISOString().slice(0, 10)
 
@@ -892,8 +910,14 @@ export interface ColumnQuery {
  * `queries/bookings.ts` and carry the `+05:45` reasoning that makes the day a
  * screen filters by the day it labels; re-deriving them in a data file is how a
  * second, wrong copy of Nepal's offset gets written.
+ *
+ * **Exported** (4 Sep 2026) because the Calendar Workspace's *Upcoming (Next 7
+ * Days)* rail needs the same widening over the same `todaysOutgoing`. Copying
+ * these eight lines into `data/calendar.ts` would have been the second copy this
+ * comment warns about — the one that says "the day boundary is built in exactly
+ * one place" while building it in two. Nothing about the function changed.
  */
-function overDays(
+export function overDays(
   namedSet: (dayAd: string) => ListFilters,
   range: DayRange | null,
   anchorDayAd: string,

@@ -268,6 +268,40 @@ describe('selectUnitsForLine', () => {
     expect(out.shortfall).toBe(1)
   })
 
+  /* ── RS-02 · the reset bench takes a unit out of the pool ─────────────── */
+
+  it('will not assign a unit whose reset is still outstanding', () => {
+    const candidates = [
+      unit({ unitId: 'u-1', openCleaning: { bookingNo: 'B-715', requiresClean: true } }),
+      unit({ unitId: 'u-2' }),
+    ]
+    const out = selectUnitsForLine({ ...base, needed: 2, candidates })
+
+    expect(out.assigned.map((u) => u.unitId)).toEqual(['u-2'])
+    expect(out.rejected[0]?.reason).toMatchObject({ kind: 'cleaning', by: { bookingNo: 'B-715' } })
+    expect(out.shortfall).toBe(1)
+  })
+
+  it('assigns a unit again once its reset has been completed', () => {
+    /* `null` is what `readOpenCleaning` yields for a unit with no open entry —
+       which is exactly what stamping `reset_completed_at` produces. */
+    const out = selectUnitsForLine({ ...base, needed: 1, candidates: [unit({ unitId: 'u-1', openCleaning: null })] })
+    expect(out.assigned.map((u) => u.unitId)).toEqual(['u-1'])
+    expect(out.rejected).toEqual([])
+  })
+
+  it('says which booking the gear is still on the bench from', () => {
+    const out = selectUnitsForLine({
+      ...base,
+      needed: 1,
+      candidates: [unit({ unitId: 'u-1', openCleaning: { bookingNo: 'B-715', requiresClean: false } })],
+    })
+    const why = explainShortfall(out, 'Sony FX9')
+    expect(why).toContain('on the reset bench after B-715')
+    expect(why).toContain('has not been reset yet')
+    expect(why).not.toContain('cleaned or')
+  })
+
   it('checks retirement before state, so a retired unit reads as retired', () => {
     const candidates = [unit({ unitId: 'u-1', state: 'Maintenance', retiredAt: '2026-01-01T00:00:00Z' })]
     const out = selectUnitsForLine({ ...base, needed: 1, candidates, disqualifyingStates: new Set(['Maintenance']) })

@@ -12,6 +12,7 @@ import {
   type BoundConvention,
   type RentalWindow,
   type UnitCandidate,
+  type OpenCleaning,
   type UnitHold,
   type AssignmentOutcome,
 } from '../availability'
@@ -123,7 +124,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * Both resolvers fall back to the ruled default on an unrecognised label rather
  * than to something permissive — see their doc comments in `lib/availability`.
  */
-function availabilityRules(): { disqualifyingStates: ReadonlySet<string>; bounds: BoundConvention } {
+export function availabilityRules(): { disqualifyingStates: ReadonlySet<string>; bounds: BoundConvention } {
   return {
     disqualifyingStates: unitStatesForRule(String(getSetting('unitAvailabilityRule'))),
     bounds: boundsForTurnaround(String(getSetting('rentalTurnaround'))),
@@ -213,7 +214,7 @@ async function readLines(bookingId: string): Promise<{
  * is money, but reading the base table would still break the moment that
  * migration lands — see PLAN.md §4.28.
  */
-async function readCandidates(productIds: readonly string[]): Promise<Map<string, UnitCandidate[]>> {
+export async function readCandidates(productIds: readonly string[]): Promise<Map<string, UnitCandidate[]>> {
   const byProduct = new Map<string, UnitCandidate[]>()
   if (productIds.length === 0) return byProduct
 
@@ -225,14 +226,18 @@ async function readCandidates(productIds: readonly string[]): Promise<Map<string
 
   if (error) throw new Error(`Could not read the equipment units, so nothing was assigned: ${error.message}`)
 
-  for (const row of (data ?? []) as unknown as Array<{
+  const units = (data ?? []) as unknown as Array<{
     id: string
     asset_tag: string
     serial_no: string | null
     product_id: string
     status: string
     retired_at: string | null
-  }>) {
+  }>
+
+  const cleaning = await readOpenCleaning(units.map((u) => u.id))
+
+  for (const row of units) {
     const list = byProduct.get(row.product_id) ?? []
     list.push({
       unitId: row.id,
@@ -241,11 +246,60 @@ async function readCandidates(productIds: readonly string[]): Promise<Map<string
       productId: row.product_id,
       state: row.status,
       retiredAt: row.retired_at,
+      openCleaning: cleaning.get(row.id) ?? null,
     })
     byProduct.set(row.product_id, list)
   }
 
   return byProduct
+}
+
+/**
+ * The units sitting on the reset bench right now.
+ *
+ * An entry counts as OPEN when the booking still wants a reset from it and no
+ * `reset_completed_at` has been stamped — which is exactly the row `Return`
+ * raises and `completeResetQueue` closes. Reading it here is what finally gives
+ * `reset_completed_at` a consequence: before this, completing a reset changed a
+ * tile and nothing else, and unreset gear stayed assignable
+ * (BUG_AUDIT_LIFECYCLE RS-02).
+ *
+ * Deliberately NOT read from `product_units.status`: that column is
+ * Booqable-mastered and the OS may not write it, so an OS-owned fact has to
+ * come from an OS-owned table.
+ */
+async function readOpenCleaning(unitIds: readonly string[]): Promise<Map<string, OpenCleaning>> {
+  const out = new Map<string, OpenCleaning>()
+  if (unitIds.length === 0) return out
+
+  const { data, error } = await supabase
+    .from('cleaning_queue_entries')
+    .select('unit_id, requires_clean, bookings ( booking_no )')
+    .in('unit_id', [...new Set(unitIds)])
+    .eq('requires_reset', true)
+    .is('reset_completed_at', null)
+
+  if (error) {
+    throw new Error(
+      `Could not read the reset queue, so no unit could be shown as free or busy: ${error.message}`,
+    )
+  }
+
+  for (const row of (data ?? []) as unknown as Array<{
+    unit_id: string
+    requires_clean: boolean | null
+    bookings: { booking_no: string } | { booking_no: string }[] | null
+  }>) {
+    const b = Array.isArray(row.bookings) ? row.bookings[0] : row.bookings
+    /* One open entry per unit is the shape the queue is meant to hold; if a
+       second ever exists, the first read wins and the unit is excluded either
+       way, so the answer does not change. */
+    if (!out.has(row.unit_id)) {
+      out.set(row.unit_id, { bookingNo: b?.booking_no ?? null, requiresClean: row.requires_clean === true })
+    }
+  }
+
+  return out
 }
 
 /**
@@ -258,7 +312,7 @@ async function readCandidates(productIds: readonly string[]): Promise<Map<string
  * cannot collide with a named one, so those are filtered out here too, again
  * matching the constraint's `asset_id is not null`.
  */
-async function readHolds(bookingIdToExclude: string | null): Promise<UnitHold[]> {
+export async function readHolds(bookingIdToExclude: string | null): Promise<UnitHold[]> {
   let query = supabase
     .from('inventory_reservations')
     .select('asset_id, booking_id, period, bookings ( booking_no )')

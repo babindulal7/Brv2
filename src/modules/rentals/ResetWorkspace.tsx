@@ -361,6 +361,17 @@ export default function ResetWorkspace() {
   const readyRows = activeRows.filter((r) => recOf(r.key).queueState === 'Ready')
   /** The dispatch payload — the REAL `product_units.id`s the operator made Ready. */
   const readyAssetIds = readyRows.filter((r) => r.assetId !== null).map((r) => r.assetId as string)
+  const readyKeys = new Set(readyRows.map((r) => r.key))
+  /**
+   * Every row this dispatch will name: the Ready ones and the recorded
+   * exceptions. An exception used to be dropped, which is why a unit marked
+   * Damaged left no record at all (RS-03); it is work the floor did and it is
+   * reported. Both halves need a real `product_units.id` — a reset and a
+   * finding are per unit (0003:899, 0003:455).
+   */
+  const dispatchRows = rows.filter(
+    (r) => r.assetId !== null && (readyKeys.has(r.key) || recOf(r.key).problem !== 'No Problems'),
+  )
   const remainingCount = counts.Waiting + counts.Cleaning + counts.QC
 
   const totalUnits = rows.reduce((n, r) => n + r.qty, 0)
@@ -389,14 +400,28 @@ export default function ResetWorkspace() {
       detail: remainingCount === 0 ? null : `${remainingCount} item${remainingCount > 1 ? 's' : ''} still in the queue`,
     },
     {
-      label: 'At least one serialised unit Ready to record',
-      pass: readyAssetIds.length > 0,
+      /* Ready OR a recorded exception: routing a damaged item out of the queue
+         is a result, so a queue where everything turned out damaged is still a
+         session worth recording (RS-03). */
+      label: 'At least one serialised unit to record',
+      pass: dispatchRows.length > 0,
       detail:
-        readyAssetIds.length > 0
+        dispatchRows.length > 0
           ? null
-          : readyRows.length > 0
-            ? 'Only quantity-tracked rows are Ready. Reset is recorded per physical unit (0003:899), and these rows carry no unit id, so there is nothing true to write.'
-            : 'Nothing has reached Ready yet — a reset claiming work on nothing is refused.',
+          : readyRows.length > 0 || exceptionRows.length > 0
+            ? 'Only quantity-tracked rows are resolved. Reset is recorded per physical unit (0003:899), and these rows carry no unit id, so there is nothing true to write.'
+            : 'Nothing has reached Ready and no exception has been recorded — a reset claiming work on nothing is refused.',
+    },
+    {
+      /* The engine refuses this too — it is checked here so the refusal reads
+         before it is a rejection, the same way every other gate on this screen
+         does. `damage_findings.description` is NOT NULL (0003:457). */
+      label: 'Damaged items carry a description',
+      pass: dispatchRows.every((r) => {
+        const rec = recOf(r.key)
+        return rec.problem !== 'Damaged' || (rec.problemReason ?? '').trim() !== ''
+      }),
+      detail: 'A unit marked Damaged raises a damage finding, and its description is a database column, not a form field.',
     },
   ]
   const firstBlockedGate = gates.find((g) => !g.pass) ?? null
@@ -595,28 +620,41 @@ export default function ResetWorkspace() {
      * never guessed at. TODO(decision): a `users.id`-backed staff picker is
      * needed before a second person's cleaning or QC can be attributed — until
      * then a typed QC-by name is a screen fact only (the input says so).
-     * Exception rows stay out of the dispatch as before; routing their
-     * `problemState` through the engine is RS-03, not this change.
+     * RS-03 — exception rows are dispatched too. They used to be dropped
+     * entirely, so a unit marked Damaged, Missing or Needs Repair left NO
+     * record anywhere: `problem_state` has always had a writer in
+     * `completeResetQueue`, but the entry was never named, so it was never
+     * reached. A Damaged row also carries its type, severity and description,
+     * which the engine writes as a `damage_findings` row with
+     * `source = 'Cleaning'` (0003:484).
      */
     const selfIdOf = (name: string | undefined): string | undefined =>
       name !== undefined && actor !== null && name === actor ? user.id : undefined
-    const resetEntries: ResetEntryInput[] = readyRows
-      .filter((r) => r.assetId !== null)
-      .map((r) => {
-        const rec = recOf(r.key)
-        const cleanedBy = selfIdOf(rec.cleanedBy)
-        const qcBy = selfIdOf(rec.qcBy)
-        const skipReason = rec.qcSkipReason?.trim() ?? ''
-        const failReason = rec.qcFailReason?.trim() ?? ''
-        return {
-          unitId: r.assetId as string,
-          ...(cleanedBy === undefined ? {} : { cleanedBy }),
-          ...(qcBy === undefined ? {} : { qcBy }),
-          ...(skipReason === '' ? {} : { qcSkipped: true, qcSkipReason: skipReason }),
-          ...(failReason === '' ? {} : { qcFailReason: failReason }),
-          ...(rec.problem === 'No Problems' ? {} : { problemState: rec.problem }),
-        }
-      })
+    const resetEntries: ResetEntryInput[] = dispatchRows.map((r) => {
+      const rec = recOf(r.key)
+      const cleanedBy = selfIdOf(rec.cleanedBy)
+      const qcBy = selfIdOf(rec.qcBy)
+      const skipReason = rec.qcSkipReason?.trim() ?? ''
+      const failReason = rec.qcFailReason?.trim() ?? ''
+      const problemReason = rec.problemReason?.trim() ?? ''
+      return {
+        unitId: r.assetId as string,
+        ...(cleanedBy === undefined ? {} : { cleanedBy }),
+        ...(qcBy === undefined ? {} : { qcBy }),
+        ...(skipReason === '' ? {} : { qcSkipped: true, qcSkipReason: skipReason }),
+        ...(failReason === '' ? {} : { qcFailReason: failReason }),
+        ...(rec.problem === 'No Problems'
+          ? {}
+          : {
+              problemState: rec.problem,
+              ...(problemReason === '' ? {} : { problemReason }),
+              ...(rec.damageType === undefined || rec.damageType === '' ? {} : { damageType: rec.damageType }),
+              ...(rec.damageSeverity === undefined || rec.damageSeverity === ''
+                ? {}
+                : { damageSeverity: rec.damageSeverity }),
+            }),
+      }
+    })
 
     /*
      * ⚠ Success is reported only on the resolved promise — `navigate` is

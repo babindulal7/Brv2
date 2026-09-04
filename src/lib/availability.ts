@@ -232,6 +232,28 @@ export interface UnitCandidate {
   readonly state: string
   /** `product_units.retired_at`. Non-null means retired — see `isRetired`. */
   readonly retiredAt: string | null
+  /**
+   * An OPEN `cleaning_queue_entries` row for this unit — `requires_reset` with
+   * no `reset_completed_at` — or `null` when the unit is off the queue.
+   *
+   * **Why the queue and not `product_units.status`.** The obvious answer would
+   * be an `inventory_state` of `'Cleaning'`, but `product_units` is
+   * Booqable-mastered (`dataAccess.ts`'s `BOOQABLE_READ_ONLY_TABLES`) and the OS
+   * may not write that column at all. `cleaning_queue_entries` is the OS's own
+   * table, it is what Return fills and Reset stamps, and until this field
+   * existed nothing read `reset_completed_at` — so completing a reset had no
+   * consequence anywhere and unreset gear stayed bookable
+   * (BUG_AUDIT_LIFECYCLE RS-02).
+   */
+  readonly openCleaning?: OpenCleaning | null
+}
+
+/** The queue entry holding a unit off the shelf, as the picker should say it. */
+export interface OpenCleaning {
+  /** The booking the gear came back from, for the sentence the picker prints. */
+  readonly bookingNo: string | null
+  /** True when the entry also still wants a clean — reported, not judged. */
+  readonly requiresClean: boolean
 }
 
 /** Why a candidate was not assignable. Every rejection carries one. */
@@ -239,6 +261,7 @@ export type RejectionReason =
   | { readonly kind: 'retired'; readonly retiredAt: string }
   | { readonly kind: 'state'; readonly state: string }
   | { readonly kind: 'held'; readonly by: UnitHold }
+  | { readonly kind: 'cleaning'; readonly by: OpenCleaning }
 
 export interface RejectedCandidate {
   readonly unitId: string
@@ -468,6 +491,26 @@ export function selectUnitsForLine(input: SelectUnitsInput): AssignmentOutcome {
       continue
     }
 
+    /*
+     * The gear is physically on the reset bench, so it is not assignable —
+     * regardless of the window, and that is the part still to rule.
+     *
+     * `TODO(decision)`: an open queue entry is a fact about TODAY, and §4.30(c)
+     * settled that facts about today belong to the date-overlap check rather
+     * than to a hard exclusion (which is why the four booking-lifecycle states
+     * are not in `DISQUALIFYING_UNIT_STATES`). A reset has no expected
+     * completion date anywhere in the schema, so there is no honest horizon to
+     * compare a future window against — inventing one ("clean within a day")
+     * would be inventing the rule. Until it is ruled this excludes the unit
+     * outright, which is the direction that can only ever refuse a legal
+     * booking; the other direction puts unreset gear on a shoot.
+     */
+    const cleaning = unit.openCleaning
+    if (cleaning !== undefined && cleaning !== null) {
+      rejected.push({ unitId: unit.unitId, assetTag: unit.assetTag, reason: { kind: 'cleaning', by: cleaning } })
+      continue
+    }
+
     const conflicts = conflictingHolds(unit.unitId, window, holds, bounds)
     const blocker = conflicts[0]
     if (blocker !== undefined) {
@@ -508,6 +551,13 @@ export function explainShortfall(outcome: AssignmentOutcome, productName: string
   for (const rejection of unavailable) {
     if (rejection.reason.kind === 'retired') parts.push(`${rejection.assetTag} is retired.`)
     else if (rejection.reason.kind === 'state') parts.push(`${rejection.assetTag} is ${rejection.reason.state}.`)
+    else if (rejection.reason.kind === 'cleaning') {
+      const from = rejection.reason.by.bookingNo
+      parts.push(
+        `${rejection.assetTag} is on the reset bench${from === null ? '' : ` after ${from}`} and has not been ` +
+          `${rejection.reason.by.requiresClean ? 'cleaned or ' : ''}reset yet.`,
+      )
+    }
   }
 
   return parts.join(' ')

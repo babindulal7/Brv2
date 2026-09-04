@@ -271,9 +271,14 @@ function worstCondition(conds: readonly ItemCondition[]): ItemCondition | null {
  *    the stage is held truthfully, which `runFloorVerb` reports in
  *    `stageHeldBy`.
  *
- * Damage detail (description + local photo tally) also rides the notes: no
- * damage-description column exists on `return_lines`, and pretending the local
- * photo count uploaded something would fabricate evidence.
+ * Damage on a serialised unit is now a `damage_findings` row, raised by the
+ * verb against the unit and parented on this line's `return_lines` row
+ * (BUG_AUDIT_LIFECYCLE RT-02). It used to ride the session notes and vanish
+ * into free text. Two things still ride the notes, because they have nowhere
+ * else to go: damage on a QUANTITY line, which names no unit and so cannot
+ * parent a finding (`damage_findings.unit_id` is NOT NULL), and the photo
+ * tally, which is local — pretending it uploaded something would fabricate
+ * evidence.
  */
 function buildReturnLines(
   lines: readonly FloorLine[],
@@ -317,6 +322,20 @@ function buildReturnLines(
     const worst = worstCondition(conds)
     const scanned = returned.filter((r) => r.assetId !== null)
 
+    /* One finding per damaged or lost UNIT — `return_lines` carries the line's
+       worst condition, which cannot say which unit it was. Only serialised rows
+       qualify: a quantity row resolves no `product_units.id`. */
+    const damage = returned
+      .filter((r) => {
+        const c = marks[r.key]?.condition
+        return r.assetId !== null && (c === 'Damaged' || c === 'Lost')
+      })
+      .map((r) => ({
+        unitId: r.assetId as string,
+        condition: marks[r.key]?.condition as 'Damaged' | 'Lost',
+        description: (marks[r.key]?.damageDescription ?? '').trim(),
+      }))
+
     payload.push({
       bookingLineId: line.id,
       ...(scanned.length > 0
@@ -327,6 +346,7 @@ function buildReturnLines(
         : {}),
       qty: returned.reduce((n, r) => n + r.qty, 0),
       ...(worst === null ? {} : { condition: worst }),
+      ...(damage.length > 0 ? { damage } : {}),
     })
 
     if (new Set(conds).size > 1) {
@@ -349,9 +369,14 @@ function buildReturnLines(
     const m = marks[r.key]
     if (!m || m.state !== 'Returned') continue
     if (m.condition !== 'Damaged' && m.condition !== 'Lost') continue
+    const photos = `${m.damagePhotos ?? 0} photo(s) counted locally on the floor; none uploaded from this screen.`
     extraNotes.push(
-      `${r.name}${r.serial ? ` (${r.serial})` : ''} returned ${m.condition}: ${(m.damageDescription ?? '').trim()} — ` +
-        `${m.damagePhotos ?? 0} photo(s) counted locally on the floor; none uploaded from this screen.`,
+      r.assetId === null
+        ? `${r.name} returned ${m.condition}: ${(m.damageDescription ?? '').trim()} — this line tracks a quantity, ` +
+            `not serialised units, so no damage finding could be raised against a unit and this note is the only ` +
+            `record. ${photos}`
+        : `${r.name}${r.serial ? ` (${r.serial})` : ''} returned ${m.condition} — a damage finding was raised ` +
+            `against the unit, pending approval. ${photos}`,
     )
   }
 

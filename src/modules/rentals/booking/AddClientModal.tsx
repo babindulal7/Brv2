@@ -26,10 +26,21 @@ import { ClientHealthChip, ClientHealthReasons, TOUCH } from './ClientHealthChip
 /**
  * **Add Client — New Booking spec §15-19.**
  *
- * §15: opens from a **+ New Client** control sitting beside the Client search
- * on the booking workspace, and must *not* navigate away. Today that control
- * does `navigate('/clients/new')`, which abandons a half-built booking; this
- * modal replaces that trip.
+ * §15: opens from an add-client control on the booking workspace, and must
+ * *not* navigate away. The control that once did `navigate('/clients/new')`
+ * abandoned a half-built booking; this modal replaced that trip.
+ *
+ * That control is no longer a **+ New Client** button standing beside the
+ * Client search. Babin, 4 Sep 2026 — "for costumer the eye button inside search
+ * box appears when we add costumer, before that there will be +client icon to
+ * add client" — so it now lives *inside* the field's trailing slot
+ * (`NewRental.tsx`'s `AddClientButton`), where the §11 health eye replaces it
+ * the moment a client is selected. §10's "Create New Client" row at the foot of
+ * the combobox list opens this same modal and is unchanged.
+ *
+ * Both entry points focus the combobox input before opening this modal, so the
+ * `restoreFocusTo` capture below lands on the input rather than on a control
+ * that is about to unmount.
  *
  * ## §17 — "use the existing Client database fields, do not create a separate
  * duplicate Client model"

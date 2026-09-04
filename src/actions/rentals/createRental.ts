@@ -211,7 +211,20 @@ export class CreateRentalPartialError extends Error {
   }
 }
 
-const CREW_ROLES: readonly CrewRoleDb[] = [
+/**
+ * The `crew_role` enum members this action accepts, in one place.
+ *
+ * Exported because a screen that staffs a booking has to be able to *say*, on
+ * the row, that a person's role will be refused — and law 1 forbids it from
+ * restating the list to work that out. `NewRental.tsx`'s crew picker derives
+ * its warning from this value; nothing outside this file decides membership.
+ *
+ * `as const satisfies` rather than a `readonly CrewRoleDb[]` annotation: the
+ * `satisfies` clause still checks every entry is a real enum member, and the
+ * literal type it keeps is what lets a caller compute the *complement* against
+ * the seed roster at compile time instead of typing it out again.
+ */
+export const CREW_ROLES = [
   'Rental Coordinator',
   'Warehouse Staff',
   'Driver',
@@ -224,7 +237,7 @@ const CREW_ROLES: readonly CrewRoleDb[] = [
   'Grip',
   'Drone Pilot',
   'Sound Recordist',
-]
+] as const satisfies readonly CrewRoleDb[]
 
 export type CreateRentalInput = {
   /** **Law 8.** Minted where the operator pressed the button; reused on retry. */

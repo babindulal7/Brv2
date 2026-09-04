@@ -568,6 +568,42 @@ export function overdueInvoices(todayAd: string): ListFilters {
 }
 
 /**
+ * Invoices falling DUE inside an AD day window — the forward-looking half of
+ * `overdueInvoices`.
+ *
+ * Same unsettled-status set and same void exclusion as `outstandingInvoices`;
+ * the only addition is the `due_date` window. That makes it the answer to
+ * "what has to be paid between these two days", which is the question the
+ * Calendar's *Upcoming (Next 7 Days)* rail asks and the Today rail's Payment
+ * Due row will ask after it.
+ *
+ * **Day granularity is exact.** `due_date` is a `date` (0006:82), not a
+ * `timestamptz`, so both bounds are bare `YYYY-MM-DD` and no `+05:45` arithmetic
+ * is involved — the same reasoning `overdueInvoices` above records. Both ends
+ * are inclusive, matching `applyListFilters`' `gte`/`lte` contract and matching
+ * how an operator reads "the next seven days".
+ *
+ * ⚠ Like every set in this module it answers with ROWS, and RLS decides which
+ * rows a session may see: a money-blind session gets `{ rows: [], total: 0 }`,
+ * which is a permission answer and not an emptiness. Gate the call site with
+ * `financeRestriction()` / `useCanViewMoney()` and omit the figure rather than
+ * rendering the zero — Law 6 is omission, not masking.
+ *
+ * ⚠ It does NOT compare an amount. `outstandingInvoices` records why the numeric
+ * bound is not expressible in `ListFilters` and why faking it through a field
+ * named `fromAd` would be a lie in the code; the same limit applies here, so a
+ * 'Sent' invoice whose outstanding figure is already 0 is counted.
+ */
+export function invoicesDueInPeriod(fromDayAd: string, toDayAd: string): ListFilters {
+  return {
+    dateRange: { column: 'due_date', fromAd: nepalDay(fromDayAd), toAd: nepalDay(toDayAd) },
+    chips: { status: [...UNSETTLED_INVOICE_STATUSES] },
+    presence: { voided_at: false },
+    sort: { column: 'due_date', ascending: true },
+  }
+}
+
+/**
  * One client's invoices, newest first.
  *
  * A single-value `chips` group is how `ListFilters` expresses equality — it

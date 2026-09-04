@@ -813,6 +813,15 @@ describe('Law 4 — payments are immutable, and this module offers no way in', (
       'expensesForCategory',
       'expensesInPeriod',
       'financeRestriction',
+      /*
+       * Added 4 Sep 2026 for the Calendar Workspace's *Upcoming* rail, and
+       * added deliberately rather than to silence this guard: it is a named
+       * `ListFilters` set — the same shape as `outstandingInvoices` and
+       * `overdueInvoices` either side of it — that returns an object and
+       * touches nothing. It reaches `invoices` only through `listInvoices`,
+       * which is already on this list, and it goes nowhere near `payments`.
+       */
+      'invoicesDueInPeriod',
       'invoicesForBooking',
       'invoicesForClient',
       'listExpenseBranches',

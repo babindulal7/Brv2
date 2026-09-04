@@ -544,6 +544,35 @@ export function rosterChipCounts(roster: CrewMember[] = CREW_ROSTER): Record<Ros
   return { All: s.total, Available: s.available, Booked: s.booked, Unavailable: s.onLeave + s.offDuty }
 }
 
+/* ── the roster as something you search ─────────────────────────────────── */
+
+/**
+ * Name **and** role, case-insensitive substring, minus the people already on
+ * the booking. An empty query is not "no results" — it is "nobody excluded
+ * yet", so it returns the whole remaining roster and the picker opens on the
+ * full list.
+ *
+ * This lives here rather than in `NewRental.tsx` for law 1: a page states the
+ * outcome of a match, it does not decide what matches. It is **New Rental's**
+ * picker, and it is not the only one — `modules/crew/CrewBooking.tsx:247-251`
+ * filters `CREW_ROSTER` itself, over id + name + role, for its own §6.1 CREW
+ * list. That copy is untouched and still has its own rule (it matches the
+ * `CR-00n` id, which this one deliberately does not: an operator staffing a
+ * booking types a person's name or the job, never a roster code). Two pickers,
+ * two stated rules — this function does not claim to be the only one.
+ */
+export function searchRoster(
+  query: string,
+  excludeIds: readonly string[] = [],
+  roster: readonly CrewMember[] = CREW_ROSTER,
+): CrewMember[] {
+  const excluded = new Set(excludeIds)
+  const remaining = roster.filter((m) => !excluded.has(m.id))
+  const q = query.trim().toLowerCase()
+  if (q === '') return remaining
+  return remaining.filter((m) => m.name.toLowerCase().includes(q) || m.role.toLowerCase().includes(q))
+}
+
 /* ── date predicates over an assignment, shared by the screen ────────────
  * `parseAd` above is private and the screen had its own copy of it. One
  * parser, exported, so a day-strip box and a conflict check can never

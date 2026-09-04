@@ -348,10 +348,21 @@ export interface CalException {
 }
 
 /**
- * The three gazetted closures come from **`data/calendar`'s own `HOLIDAYS`**,
- * not from a second list. Business Hours and the Calendar Workspace therefore
- * cannot show a different holiday set for the same month; `SEED_ERRORS` fails
- * loudly if a holiday over there gains no classification here.
+ * The gazetted closures come from **`data/calendar`'s own `HOLIDAYS`**, not from
+ * a second list. Business Hours and the Calendar Workspace therefore cannot show
+ * a different holiday set for the same month; `SEED_ERRORS` fails loudly if a
+ * holiday over there gains no classification here.
+ *
+ * ⚠ **`HOLIDAYS` is empty as of 4 Sep 2026**, so `FROM_HOLIDAYS` below is too
+ * and this screen shows no festival closures. That is the point: the three it
+ * used to show had no table behind them anywhere in the schema, and their dates
+ * were wrong (Dashain, an autumn festival, was dated end-of-July). Read
+ * `ARCHIVED_RENDER_HOLIDAYS` in `data/calendar.ts` for the full finding and the
+ * `TODO(decision)` naming what a real source would be.
+ *
+ * The classifications below are kept, not deleted: the day a real calendar
+ * loads, a `Dashain` row in it becomes a `festival` closure here with no further
+ * edit, which is the whole reason the two screens share one list.
  */
 const HOLIDAY_KIND: Record<string, ExceptionKind> = {
   Dashain: 'festival',
@@ -613,9 +624,15 @@ export const INHERITING_SCOPES = [...BRANCH_ROWS, ...WAREHOUSE_ROWS].filter((r) 
 /**
  * Every count is derived from the rows **passed in**, so a holiday or shift
  * added in session moves the rail with it. The render's alert list carries five
- * rows and so does this one, but "Dashain Schedule Not Set" is gone: Dashain is
- * in `data/calendar`'s holiday set with real dates, so the claim is not true
- * here. What *is* true — nothing carries a schedule override — takes its place.
+ * rows; this one carries as many as are true, and "Dashain Schedule Not Set" is
+ * not among them.
+ *
+ * ⚠ The reason changed on 4 Sep 2026 and the old one was wrong. This note used
+ * to say the alert was dropped because *"Dashain is in `data/calendar`'s holiday
+ * set with real dates"* — the dates were invented and, for Dashain, in the wrong
+ * season. The honest reason is that no holiday calendar is loaded at all, so
+ * nothing here can say whether any festival's schedule is set. What *is* true —
+ * nothing carries a schedule override — takes its place, as it always did.
  */
 export function alertsFor(shifts: Shift[], exceptions: CalException[]): Alert[] {
   const ahead = upcomingOf(exceptions)

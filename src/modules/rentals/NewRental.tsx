@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
@@ -19,7 +19,7 @@ import { price, formatMoney, rupees, roundHalfUp, toRupees } from '../../lib/mon
 import type { Paisa } from '../../lib/money'
 import { CLIENTS_DATA } from '../../data/clients'
 import { listClientRecords } from '../../lib/queries/clients'
-import { createRental, deliveryTypeFromLabel, CreateRentalPartialError } from '../../actions/rentals/createRental'
+import { CREW_ROLES, createRental, deliveryTypeFromLabel, CreateRentalPartialError } from '../../actions/rentals/createRental'
 import type { CrewRoleDb } from '../../types/database'
 import { supabase, newClientUuid } from '../../lib/supabase'
 import { listInventory } from '../../lib/queries/inventory'
@@ -28,8 +28,8 @@ import type { EquipmentResult } from './booking/itemCatalogue'
 import type { ClientRecord } from '../../data/clients'
 import { INV_STYLE } from '../../data/inventory'
 import type { InvStatus } from '../../data/inventory'
-import { CREW_ROSTER } from '../../data/crew'
-import type { CrewMember } from '../../data/crew'
+import { CREW_ROSTER, searchRoster } from '../../data/crew'
+import type { CrewMember, CrewRole } from '../../data/crew'
 import { useAuth } from '../../lib/auth'
 import type { ActionContext } from '../../actions/core'
 import { gateContext, canViewMoneyField } from '../../lib/fieldGating'
@@ -149,7 +149,11 @@ function lineAmountPaisa(l: Line): Paisa {
 interface CrewLine {
   crewId: string
   name: string
-  role: string
+  /* `CrewRole`, not `string`: every line here is seeded from a `CrewMember`,
+     and the page has to be able to ask whether the database accepts this role
+     (`dbRejectsRole`) — a question only the roster's own vocabulary can
+     answer. `string` let that check be called on anything. */
+  role: CrewRole
   phone: string
   dayRatePaisa: Paisa
   overtimePaisa: Paisa
@@ -999,6 +1003,392 @@ function DiscountChips({
   )
 }
 
+/**
+ * The add-client control, living **inside the field's trailing slot** — the
+ * same slot the §11 health eye takes over once a client is chosen.
+ *
+ * Babin, 4 Sep 2026: "for costumer the eye button inside search box appears
+ * when we add costumer, before that there will be +client icon to add client."
+ * So that slot is never empty and never holds two things at once: no client
+ * selected → add a client; client selected → their health. The standalone
+ * `+ New Client` button that used to sit beside the field is gone, its job
+ * moved in here.
+ *
+ * Babin said **icon**, and this is an icon: a square control on Law 15's 44px
+ * touch floor carrying the plus glyph and no word. It borrows the eye's
+ * `--r-btn`, its `press` class and the same global `:focus-visible` ring
+ * (`theme.css:877`), but not its colour — the eye is tinted by a health
+ * verdict, and an add button has no verdict to state, so it takes the neutral
+ * secondary treatment.
+ *
+ * It does **not** claim to match the eye's width. The eye is as wide as its
+ * verdict label ("Good", "Watch", "Do not book"), so there was never a fixed
+ * geometry to mirror and the row's width changes when the two swap either way.
+ *
+ * The word survives where a word is useful and costs no room: `aria-label` is
+ * the accessible name, and `title` gives a sighted mouse user the same phrase
+ * on hover. WCAG 2.5.3 (label in name) does not apply — there is no visible
+ * label text to disagree with the accessible name.
+ */
+function AddClientButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="press"
+      onClick={onClick}
+      aria-label="Add a new client"
+      title="Add a new client"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 'var(--tap)',
+        height: 'var(--tap)',
+        minWidth: 'var(--tap)',
+        minHeight: 'var(--tap)',
+        flexShrink: 0,
+        padding: 0,
+        borderRadius: 'var(--r-btn)',
+        background: 'var(--btn-secondary-bg)',
+        color: 'var(--text)',
+        border: '1px solid var(--btn-secondary-border)',
+        lineHeight: 1,
+        cursor: 'pointer',
+      }}
+    >
+      <Icon name="plus" size={20} />
+    </button>
+  )
+}
+
+/* ── Section 3 · the crew picker ─────────────────────────────────────────
+ *
+ * Babin, 4 Sep 2026: **"same for crew and transport"**, said straight after
+ * "in new rental equipment bundle & services don't put +add equipment button,
+ * i want search button over there directly". So Section 3's header slot no
+ * longer carries an `Add Member…` <Select>: the field lives in the section
+ * body, and typing a name or a job is the whole interaction.
+ *
+ * This is deliberately **not** a second `AddItemPanel`. That panel searches
+ * three pools across four tabs, filters by category and by availability inside
+ * the booking window, and sorts. Crew here is one pool of people — no tabs, no
+ * categories, and no availability check on this screen — so it gets a plain
+ * combobox rather than a copy of a panel whose complexity it does not have.
+ *
+ * The matching is `data/crew.ts:searchRoster` (law 1 — the page states the
+ * outcome, it does not decide it). That function's own note records that
+ * `modules/crew/CrewBooking.tsx:247-251` is a second roster picker with its
+ * own rule; this one does not replace it and does not claim to.
+ */
+
+/**
+ * The roster's role vocabulary is not the database's, and that is a live bug.
+ *
+ * `createRental`'s `CREW_ROLES` accepts only a `crew_role` enum member
+ * (`types/database.ts:43`), and crew rides the booking write — so a booking
+ * staffed from one of the roles below would be refused by the action itself:
+ * *"…is not a crew_role the database accepts"*. Five of the roster's eight
+ * roles are in that state; the three the two vocabularies happen to share —
+ * Gaffer, Grip, Sound Recordist — go through. Seven of the twelve people on
+ * the roster carry a rejected role.
+ *
+ * They are still listed and still addable. Hiding them would shrink the roster
+ * to five of twelve with no stated reason, and inventing a mapping
+ * (`1st AC` → `Focus Puller`? `Director of Photography` → `DoP`? `DIT` → what?)
+ * is precisely the product decision CLAUDE.md forbids a page to make — the
+ * action says as much itself: *"no mapping is ruled"*. So the row states the
+ * consequence and lets the operator decide.
+ *
+ * The row is not the last word on it. Adding one of these people raises a
+ * **Critical** blocking notice naming them (see the `alerts` list), so Confirm
+ * is refused with a readable reason rather than throwing the action's message
+ * at the operator after the press.
+ *
+ * TODO(decision) — the roster vocabulary (`data/crew.ts:CrewRole`) and the
+ * `crew_role` enum (`0001_enums.sql:313-325`) disagree on five roles. Either
+ * the enum grows `1st AC`, `2nd AC` and `DIT` and gains the roster's spelling
+ * of DoP and Drone Pilot, or a ruled roster→enum mapping lands in the action.
+ * Until one of those, Confirm refuses any booking staffed from those rows.
+ * Do not change the enum or the action to unblock this picker.
+ *
+ * Law 1 — **this page does not hold a list of what the database accepts.** It
+ * imports the action's own `CREW_ROLES` and takes the complement against the
+ * roster's vocabulary, at compile time for the type and at runtime for the
+ * check. Add a role to the enum and to that list and the warning stops firing
+ * for it here, with no edit on this page; there is no second copy to drift.
+ */
+type RoleRejectedByDb = Exclude<CrewRole, (typeof CREW_ROLES)[number]>
+
+const ROLES_ACCEPTED_BY_DB: ReadonlySet<string> = new Set<string>(CREW_ROLES)
+
+function dbRejectsRole(role: CrewRole): role is RoleRejectedByDb {
+  return !ROLES_ACCEPTED_BY_DB.has(role)
+}
+
+/** One sentence, no jargon, same wording in the row and in its accessible name. */
+function rejectionNote(role: CrewRole): string {
+  return `The database has no “${role}” role, so Confirm will refuse this booking until that is settled.`
+}
+
+function CrewSearch({
+  onBooking,
+  onAdd,
+  showRates,
+}: {
+  /** Who is already on the booking. Excluded from the list — nobody is added twice. */
+  onBooking: readonly CrewLine[]
+  onAdd: (crewId: string) => void
+  /** The page's `canCrewMoney`. A money-blind role sees the roster and never a rate. */
+  showRates: boolean
+}) {
+  const reactId = useId()
+  const labelId = `${reactId}-crew-label`
+  const listboxId = `${reactId}-crew-listbox`
+  const hintId = `${reactId}-crew-hint`
+
+  const [query, setQuery] = useState('')
+  const [activeIndex, setActiveIndex] = useState(0)
+  /**
+   * The empty query returns the whole remaining roster, so this listbox is full
+   * on first render and row 0 is already the active option. An unguarded
+   * `scrollIntoView` effect on `activeId` would therefore fire **on mount** and
+   * scroll the page to Section 3 the moment it is expanded — `AddItemPanel`
+   * never hits this only because its 2-character threshold leaves it empty
+   * until someone types. So the effect stays inert until the operator actually
+   * moves the cursor with the keyboard, and a hover puts it back to inert —
+   * otherwise the first arrow key would arm it for every mouse move after,
+   * and the list would scroll itself out from under the pointer.
+   */
+  const [cursorMoved, setCursorMoved] = useState(false)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  const excludeIds = useMemo(() => onBooking.map((c) => c.crewId), [onBooking])
+  const options = useMemo(() => searchRoster(query, excludeIds), [query, excludeIds])
+  /**
+   * Whether anyone is left to find at all, which is a different question from
+   * whether this query found someone. The empty state used to answer only the
+   * second: with the whole roster already on the booking, typing anything at
+   * all said "No one matches …", which is true and beside the point — there
+   * was nobody to match. An empty query returns the whole remaining roster, so
+   * this is that count.
+   */
+  const rosterExhausted = useMemo(() => searchRoster('', excludeIds).length === 0, [excludeIds])
+
+  // Clamp the cursor whenever the result set shrinks under it.
+  useEffect(() => {
+    setActiveIndex((i) => (i >= options.length ? 0 : i))
+  }, [options.length])
+
+  const activeId = options[activeIndex] ? `${listboxId}-opt-${activeIndex}` : undefined
+
+  useEffect(() => {
+    if (!cursorMoved || !activeId) return
+    document.getElementById(activeId)?.scrollIntoView({ block: 'nearest' })
+  }, [cursorMoved, activeId])
+
+  const commit = (m: CrewMember) => {
+    onAdd(m.id)
+    setQuery('')
+    setActiveIndex(0)
+    inputRef.current?.focus()
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    const count = options.length
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault()
+        setCursorMoved(true)
+        setActiveIndex((i) => (count === 0 ? 0 : (i + 1) % count))
+        return
+      case 'ArrowUp':
+        e.preventDefault()
+        setCursorMoved(true)
+        setActiveIndex((i) => (count === 0 ? 0 : (i - 1 + count) % count))
+        return
+      /*
+       * `ClientCombobox` guards these two with `if (!open) return`, so its
+       * input always has a state in which Home and End reach the ends of the
+       * typed text. This listbox has no closed state — it is rendered
+       * throughout — so an unconditional `preventDefault` here meant the caret
+       * could never get to either end of what the operator had typed. The
+       * equivalent guard is the caret's own: the moment there is text to move
+       * through, these keys belong to the input, not to the list. The hint
+       * below never offered them for the list in the first place.
+       */
+      case 'Home':
+      case 'End': {
+        if (query !== '') return
+        e.preventDefault()
+        setCursorMoved(true)
+        setActiveIndex(e.key === 'Home' ? 0 : Math.max(0, count - 1))
+        return
+      }
+      case 'Enter': {
+        const m = options[activeIndex]
+        if (!m) return
+        // Never let the keystroke that picks a person submit the booking form.
+        e.preventDefault()
+        commit(m)
+        return
+      }
+      case 'Escape':
+        /* Only swallow it when there is something to clear. This listbox has no
+           closed state, so an unguarded stopPropagation() would eat Escape for
+           the whole document whenever the crew field held focus — the drawers
+           and modals above this page listen for it. ClientCombobox guards the
+           same keys the same way. */
+        if (query === '') return
+        e.preventDefault()
+        e.stopPropagation()
+        setQuery('')
+        setActiveIndex(0)
+        setCursorMoved(false)
+        return
+      default:
+    }
+  }
+
+  return (
+    <div style={{ marginBottom: 'var(--sp-md)' }}>
+      <Field label="Add crew" labelId={labelId}>
+        <div style={{ position: 'relative' }}>
+          <input
+            ref={inputRef}
+            type="text"
+            role="combobox"
+            autoComplete="off"
+            spellCheck={false}
+            aria-expanded
+            aria-controls={listboxId}
+            aria-autocomplete="list"
+            aria-haspopup="listbox"
+            aria-labelledby={labelId}
+            aria-describedby={hintId}
+            {...(activeId ? { 'aria-activedescendant': activeId } : {})}
+            placeholder="Search the roster by name or role…"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setActiveIndex(0)
+            }}
+            onKeyDown={onKeyDown}
+            style={{ ...inputStyle, paddingLeft: 32, paddingRight: 10 }}
+          />
+          <span
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              left: 10,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              display: 'inline-flex',
+              color: 'var(--muted)',
+              pointerEvents: 'none',
+            }}
+          >
+            <Icon name="search" size={15} />
+          </span>
+        </div>
+      </Field>
+
+      <p id={hintId} style={{ margin: '4px 0 6px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+        Up and Down to move, Enter to add, Escape to clear. Anyone already on this booking is left out of the list.
+      </p>
+
+      <div style={{ maxHeight: 244, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-btn)' }}>
+        <ul id={listboxId} role="listbox" aria-labelledby={labelId} style={{ listStyle: 'none', margin: 0, padding: 4 }}>
+          {options.map((m, i) => {
+            const active = i === activeIndex
+            const rejected = dbRejectsRole(m.role)
+            const note = rejected ? rejectionNote(m.role) : ''
+            return (
+              <li
+                key={m.id}
+                id={`${listboxId}-opt-${i}`}
+                role="option"
+                aria-selected={active}
+                /* `m.state` — 'Available' / 'Booked' / 'On Leave' / 'Off Duty'
+                   — used to be read out here and printed on the row. It is a
+                   static seed property of the person, not an answer about
+                   THIS booking's dates, and next to a date-bound picker it
+                   reads as exactly the answer it is not. There is no crew
+                   availability engine to replace it with, so the row simply
+                   does not say it. */
+                aria-label={`${m.name}, ${m.role}.${
+                  showRates ? ` ${formatMoney(m.dayRatePaisa)} per day.` : ''
+                }${note ? ` ${note}` : ''} Press Enter to add to this booking.`}
+                /* Disarms the scroll effect as well as moving the active row:
+                   the pointer is already on the row it is pointing at, so
+                   scrolling to it would only drag the list out from under the
+                   mouse. The next arrow key arms it again. */
+                onMouseMove={() => {
+                  setCursorMoved(false)
+                  setActiveIndex(i)
+                }}
+                onClick={() => commit(m)}
+                style={{
+                  display: 'grid',
+                  gap: 2,
+                  minHeight: 'var(--tap)',
+                  alignContent: 'center',
+                  padding: '7px 9px',
+                  borderRadius: 'var(--r-btn)',
+                  cursor: 'pointer',
+                  background: active ? 'var(--hover-row)' : 'transparent',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minWidth: 0 }}>
+                  <span style={{ display: 'inline-flex', flexShrink: 0, color: 'var(--text2)' }}>
+                    <Icon name="crew" size={15} />
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 'var(--t-ui)',
+                      fontWeight: 600,
+                      color: 'var(--text)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {m.name}
+                  </span>
+                  <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{m.role}</span>
+                  {showRates && (
+                    <span
+                      className="figure"
+                      style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}
+                    >
+                      {formatMoney(m.dayRatePaisa)}/day
+                    </span>
+                  )}
+                </div>
+                {note && (
+                  /* Law 11 — the glyph and the sentence carry it, never the colour alone. */
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--warn-text)' }}>
+                    <span style={{ display: 'inline-flex', paddingTop: 1, flexShrink: 0 }}>
+                      <Icon name="alert_triangle" size={13} />
+                    </span>
+                    <span style={{ minWidth: 0 }}>{note}</span>
+                  </div>
+                )}
+              </li>
+            )
+          })}
+          {options.length === 0 && (
+            <li role="presentation" style={{ padding: '10px 9px', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+              {rosterExhausted
+                ? 'Everyone on the roster is already on this booking.'
+                : `No one on the roster matches “${query.trim()}”. Names and roles are searched.`}
+            </li>
+          )}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
 export default function NewRental() {
   const navigate = useNavigate()
   const viewport = useViewport()
@@ -1158,7 +1548,27 @@ export default function NewRental() {
       cancelled = true
     }
   }, [canBookingMoney])
-  const [selectedClientId, setSelectedClientId] = useState<string | null>(CLIENTS_DATA[0]?.id ?? null)
+  /**
+   * **No client.** This was `CLIENTS_DATA[0]?.id ?? null` — a *seed* client
+   * preselected on every fresh draft.
+   *
+   * Two things were wrong with it. First, it contradicts this file's own rule,
+   * stated twice below: "A new booking starts EMPTY". Project, kind, lines and
+   * crew were all emptied for exactly that reason (register item NR-05,
+   * 3 Sep 2026); the client was simply missed. The dates were **not** — they
+   * are not blank and were never meant to be, they default to the Kathmandu
+   * business day and the day after (see `pickup` / `ret` below), which is a
+   * computed one-day window rather than the July 2026 literals they replaced.
+   * Second, it was already a
+   * latent bug: `client` is looked up in `clientPool`, and the moment the live
+   * read replaces the seed pool that seed id is not in it, so the preselected
+   * client silently vanishes and the field empties itself with no explanation.
+   *
+   * Starting at `null` is also the only way the field's no-client state — the
+   * add-client control in the trailing slot, §15 — is reachable on purpose
+   * rather than by accident.
+   */
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const client: ClientRecord | undefined = useMemo(
     () => clientPool.find((c) => c.id === selectedClientId),
     [clientPool, selectedClientId],
@@ -1169,6 +1579,61 @@ export default function NewRental() {
   const [quickViewOpen, setQuickViewOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [addClientOpen, setAddClientOpen] = useState(false)
+  /** Wraps the client combobox, so the page can hand focus back to its input. */
+  const clientFieldRef = useRef<HTMLDivElement | null>(null)
+  /**
+   * Has the operator been in the Client field and left it again?
+   *
+   * The "select a client" error below is a refusal to proceed, and a form the
+   * operator has not touched yet has not tried to proceed. A fresh draft now
+   * starts with **no** client (see `selectedClientId`), so an ungated error
+   * painted itself red the instant the page opened, before anyone had done
+   * anything. Confirm cannot be the trigger here: it is `disabled` whenever
+   * `confirmBlocked`, and "No client selected" is one of the Criticals that
+   * blocks it, so the press never reaches a handler. Leaving the field is the
+   * moment the operator actually passed it by — which is the other trigger the
+   * reviewers named. Until then the rail's blocking-notices card still lists
+   * the missing client, so nothing is hidden; it is simply not shouted.
+   */
+  const [clientFieldTouched, setClientFieldTouched] = useState(false)
+  /**
+   * One-shot: "the next focus on the client input is not a search".
+   *
+   * `AddClientModal` records `document.activeElement` when it opens and focuses
+   * it again on close (the capture/restore pair in its body-scroll-lock
+   * effect). The add-client control lives in the field's trailing slot and is
+   * replaced by the health eye the instant the new client is selected — so it
+   * is unmounted by the time the modal restores focus, and focus would fall
+   * back to `<body>`, stranding a keyboard operator at the top of the document.
+   *
+   * Focusing the input first (synchronously, before the state change that opens
+   * the modal) means the element the modal captures is the one control in that
+   * row that survives the swap. But focus is also what opens the client
+   * dropdown (§9), and neither of these two focus moves is a search: the first
+   * would leave the list open behind the modal, the second would pop it open
+   * the moment the modal closed. So both set this flag, and `ClientCombobox`
+   * consumes it.
+   */
+  const suppressClientListOnFocus = useRef(false)
+  const focusClientInput = useCallback(() => {
+    suppressClientListOnFocus.current = true
+    const input = clientFieldRef.current?.querySelector<HTMLInputElement>('input[role="combobox"]')
+    if (input) input.focus()
+    // Nothing was focused, so nothing consumed the flag — do not leave it armed
+    // for whatever the operator focuses next.
+    else suppressClientListOnFocus.current = false
+  }, [])
+  const openAddClient = useCallback(() => {
+    focusClientInput()
+    setAddClientOpen(true)
+  }, [focusClientInput])
+  const closeAddClient = useCallback(() => {
+    // The modal restores focus to the input on the way out; that focus is not a
+    // search either. Armed here, before the close, because the restore happens
+    // in the modal's own effect cleanup.
+    suppressClientListOnFocus.current = true
+    setAddClientOpen(false)
+  }, [])
   /* The tablet/phone rail handle is gone. `WIREFRAME_RULINGS_2026-08-12.md` §7:
      "Right rails collapse below 1280" means **reflow, not hide** — the rail's
      cards render inline beneath the workspace at tablet and phone, always
@@ -1264,6 +1729,28 @@ export default function NewRental() {
     })
   const [deliveryChargePaisa, setDeliveryChargePaisa] = useState<Paisa>(rupees(0) as Paisa)
   const [fuelChargePaisa, setFuelChargePaisa] = useState<Paisa>(rupees(0) as Paisa)
+  /*
+   * The delivery vehicle, as free text (Babin, 4 Sep 2026).
+   *
+   * `booking_transport` has carried `vehicle`, `number_plate` and
+   * `driver_contact` since `0002:377-380` and `createRental` has accepted all
+   * three since the transport row landed — this screen simply never asked for
+   * them, so every delivery was filed with a charge and no vehicle. The
+   * comment beside the dispatch even said this row is "where the vehicle and
+   * driver will be recorded". Now it is.
+   *
+   * Free TEXT on purpose: there is no vehicle table anywhere in the schema and
+   * no roster in seed, so there is nothing to pick from. A picker would need a
+   * vehicle record ruled first — `TODO(decision)`. Typing what is on the van
+   * is the honest version of that today.
+   *
+   * `driver_id` (a `users` FK, `0002:379`) is deliberately NOT collected here:
+   * a contact string is what the counter knows, and binding a booking to a
+   * staff row needs the staff picker that `ResetWorkspace` is also waiting on.
+   */
+  const [vehicle, setVehicle] = useState('')
+  const [numberPlate, setNumberPlate] = useState('')
+  const [driverContact, setDriverContact] = useState('')
   /* 0, not the worked example's 7 — a discount is something someone grants. */
   const [discountPct, setDiscountPct] = useState(0)
   /* `discountReason` / `approver` / `discountPopoverOpen` left with the
@@ -1358,6 +1845,22 @@ export default function NewRental() {
     ...(discountUnapproved
       ? [{ text: discountVerdict.error ?? 'Discount is not a valid percentage.', severity: 'Critical' as const, action: 'Fix Discount' }]
       : []),
+    /*
+     * The roster's role vocabulary is not the `crew_role` enum (see
+     * `dbRejectsRole`), and `createRental` refuses the whole booking by name
+     * the moment one of those roles is sent. The picker states that on the row
+     * it applies to — but a row-level note is forgotten the instant the person
+     * is added, and until now the next mention of it was an exception thrown
+     * out of Confirm. Carried forward here so Confirm is refused, in the same
+     * list as every other reason, with the person named.
+     */
+    ...crew
+      .filter((c) => dbRejectsRole(c.role))
+      .map((c) => ({
+        text: `${c.name}'s role — ${c.role} — is not one the database accepts, so this booking cannot be confirmed while they are on it`,
+        severity: 'Critical' as const,
+        action: 'Open Crew',
+      })),
     // §02 — client financial warning. Booking may still proceed; this is a warning, not a block.
     ...(canBookingMoney && client && client.outstandingPaisa > 0
       ? [{ text: `Client has ${formatMoney(client.outstandingPaisa)} outstanding`, severity: 'Warning' as const, action: 'View Client' }]
@@ -1445,6 +1948,16 @@ export default function NewRental() {
     const m = CREW_ROSTER.find((x) => x.id === crewId)
     if (!m || crew.some((c) => c.crewId === crewId)) return
     setCrew((p) => [...p, seedCrewLine(m)])
+  }
+
+  /** Take one person off the booking. `CrewSearch` offers them again immediately. */
+  const removeCrew = (crewId: string) => {
+    setCrew((p) => p.filter((c) => c.crewId !== crewId))
+    setExpandedCrew((p) => {
+      const next = new Set(p)
+      next.delete(crewId)
+      return next
+    })
   }
 
   /**
@@ -1563,40 +2076,6 @@ export default function NewRental() {
       setActionError('Not confirmed — you are not signed in, so this booking cannot be attributed to anyone. Sign in and confirm again.')
       return
     }
-    /*
-     * ⛔ Still not dispatched, and the reason CHANGED on 16 Aug 2026.
-     *
-     * It used to send `confirmRental({ id: 'bk-new' }, ctx)` — `'bk-new'` is not
-     * a booking — and then, once that was removed, the message said CREATE_RENTAL
-     * "is not built yet". **CREATE_RENTAL is now built** and drives against the
-     * local store: `actions/rentals/createRental.ts` calls one
-     * `.rpc('create_booking')`, which writes the header, its lines and its
-     * discounts under a single commit.
-     *
-     * What blocks THIS screen is one layer lower, and it is the Phase 2 gap:
-     *
-     *   - `clientPool` comes from `data/clients.ts`, whose ids are **`'C-1'`,
-     *     `'C-2'`** — client CODES, not `clients.id` uuids.
-     *   - `EQUIPMENT_CATALOGUE` is built from `PARENTS` in `data/inventory.ts`,
-     *     seed rows whose ids are not `products.id` uuids either.
-     *
-     * `createRental.validate` refuses both by name rather than letting a `C-1`
-     * fail an FK three layers down — so wiring this button today would produce a
-     * guaranteed, well-explained refusal, not a booking. The screen has to
-     * select its client and its catalogue from `lib/queries/*` first; that is
-     * the same "screens read seed arrays" gap PLAN.md Phase 2 names as the
-     * single largest correctness problem in the app.
-     *
-     * When that lands: dispatch `createRental` here with a `clientUuid` minted
-     * at THIS press (Law 8), map the delivery label through
-     * `deliveryTypeFromLabel` (the UI says "Client Pickup"; the enum stores
-     * "Customer Pickup"), then pass the returned `bookings.id` straight into
-     * `confirmRental` — see `BookingDetail.tsx`'s `confirmBooking`, which is the
-     * wired version of that second call.
-     *
-     * `navigate('/rentals')` is deliberately not called: landing on the rentals
-     * list is this app's universal "the write landed" signal, and nothing landed.
-     */
     /*
      * ── Phase 2 landed: this dispatches CREATE_RENTAL for real ──────────────
      *
@@ -1736,6 +2215,12 @@ export default function NewRental() {
                     clientUuid: transportKey.current ?? (transportKey.current = newClientUuid()),
                     deliveryCharge: toRupees(deliveryChargePaisa),
                     fuelCharge: toRupees(fuelChargePaisa),
+                    /* Empty is NULL, not "". The columns are nullable and an
+                       empty string would read back as a vehicle that was named
+                       and is blank, rather than one nobody recorded. */
+                    vehicle: vehicle.trim() === '' ? null : vehicle.trim(),
+                    numberPlate: numberPlate.trim() === '' ? null : numberPlate.trim(),
+                    driverContact: driverContact.trim() === '' ? null : driverContact.trim(),
                   },
                 }),
             lines: lines.map((l, i) => ({
@@ -1822,6 +2307,11 @@ export default function NewRental() {
     clientPickup,
     deliveryChargePaisa,
     fuelChargePaisa,
+    /* Same reason as the discount above: the transport row reads these, and a
+       stale closure would file a delivery with no vehicle on it. */
+    vehicle,
+    numberPlate,
+    driverContact,
     days,
     depositRequiredPaisa,
     navigate,
@@ -1951,6 +2441,9 @@ export default function NewRental() {
       // Client section, so that is where it goes.
       if (action === 'Select Client') jumpToSection('section-0')
       if (action === 'Open Dates') jumpToSection('section-1')
+      // A rejected crew role is settled where the crew is: remove the person,
+      // or wait for the roster/enum mismatch to be ruled.
+      if (action === 'Open Crew') jumpToSection('section-3')
       if (action === 'Fix Discount') {
         // The approval popover this used to open left with the discount gate
         // (31 Aug 2026); the fix for an arithmetic refusal is the percent
@@ -1973,7 +2466,10 @@ export default function NewRental() {
     { label: 'Client', ok: Boolean(client) && govId.trim().length > 0, targetId: 'section-0' },
     { label: 'Dates', ok: days > 0, targetId: 'section-1' },
     { label: 'Equipment', ok: lines.length > 0 && conflictLines.length === 0, targetId: 'section-2' },
-    { label: 'Crew', ok: true, targetId: 'section-3' },
+    /* Not unconditionally true any more: a crew member whose role the database
+       refuses is a Critical, and §11 forbids an all-green Review while one is
+       open. Crew is otherwise optional, so an empty crew list is still fine. */
+    { label: 'Crew', ok: crew.every((c) => !dbRejectsRole(c.role)), targetId: 'section-3' },
     { label: 'Delivery', ok: true, targetId: 'section-4' },
     { label: 'Pricing', ok: !discountUnapproved && breakdown.rentalTotal > 0, targetId: 'section-5' },
     { label: 'Payments', ok: breakdown.outstanding <= 0, targetId: 'section-5' },
@@ -2654,12 +3150,29 @@ export default function NewRental() {
             onToggle={() => toggle(0)}
             summary={client ? `${client.name} · ${days} days` : 'No client selected'}
           >
-            {/* §7–11 — one Client row: the searchable combobox, the health eye
-                that is also the quick-view trigger, + New Client beside it, and
-                Client History retained. */}
+            {/* §7–11 — one Client row: the searchable combobox, one control in
+                its trailing slot (add a client, or that client's health eye —
+                never both, never neither), and Client History retained. */}
             <Field label="Client" labelId="new-rental-client-label">
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-                <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+                <div
+                  ref={clientFieldRef}
+                  /* "Focused and left" — the moment the operator passed this
+                     field by without choosing anyone, and the moment the
+                     refusal below stops being premature. `focusout` bubbles,
+                     so this fires for the input, the list rows and the
+                     trailing control alike; the containment check keeps a move
+                     between them from counting as leaving. */
+                  onBlur={(e) => {
+                    /* Not while Add Client is open: that dialog takes focus to
+                       its own first field, which is outside this wrapper, so
+                       opening it would otherwise count as passing the field by
+                       and raise the refusal under an untouched form. */
+                    if (addClientOpen) return
+                    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setClientFieldTouched(true)
+                  }}
+                  style={{ flex: '1 1 260px', minWidth: 0 }}
+                >
                   {/* The client half IS live once this flips — a selected
                       client then carries `dbId`, the uuid a booking is filed
                       against. Until then the list is sample data and Confirm
@@ -2668,29 +3181,38 @@ export default function NewRental() {
                     clients={clientPool}
                     selectedClientId={selectedClientId}
                     onSelect={selectClient}
-                    onCreateNew={() => setAddClientOpen(true)}
+                    onCreateNew={openAddClient}
                     onViewAll={() => navigate('/clients')}
                     inputStyle={inputStyle}
                     labelledBy="new-rental-client-label"
                     showOutstanding={canClientBalance}
-                    {...(client ? {} : { error: 'Select a client before confirming this booking.' })}
-                    {...(client && health
-                      ? {
-                          trailing: (
-                            <ClientHealthEye
-                              verdict={health}
-                              clientName={client.name}
-                              open={quickViewOpen}
-                              controls="new-rental-client-quick-view"
-                              onClick={() => setQuickViewOpen((o) => !o)}
-                            />
-                          ),
-                        }
-                      : {})}
+                    suppressNextFocusOpen={suppressClientListOnFocus}
+                    /* Only once the operator has actually been here and moved
+                       on. An untouched form does not shout — see
+                       `clientFieldTouched`. */
+                    {...(client || !clientFieldTouched
+                      ? {}
+                      : { error: 'Select a client before confirming this booking.' })}
+                    /* §11 + §15 in one slot. `client && health` is the whole
+                       condition: with a client there is always a verdict, so
+                       there is no third state where the slot is empty. */
+                    trailing={
+                      client && health ? (
+                        <ClientHealthEye
+                          verdict={health}
+                          clientName={client.name}
+                          open={quickViewOpen}
+                          controls="new-rental-client-quick-view"
+                          onClick={() => setQuickViewOpen((o) => !o)}
+                        />
+                      ) : (
+                        <AddClientButton onClick={openAddClient} />
+                      )
+                    }
                   />
                 </div>
-                {/* §15 — directly beside the field, never buried in a toolbar. */}
-                <Button icon="plus" onClick={() => setAddClientOpen(true)}>New Client</Button>
+                {/* §10 — the combobox's own "Create New Client" row is still
+                    there; it and the slot control open the same modal. */}
                 {/* §20 — retained, and now a drawer instead of a route change. */}
                 {client && <Button icon="activity" onClick={() => setHistoryOpen(true)}>Client History</Button>}
               </div>
@@ -2771,7 +3293,11 @@ export default function NewRental() {
                 **first row inside the card**, above the list, not as a control
                 in the section header. Moved off the header's `action` slot; it
                 is the same panel, raising the same callback (§34), and it still
-                answers availability for the booking's own dates (§32). */}
+                answers availability for the booking's own dates (§32).
+
+                4 Sep 2026: and it is now `inline`, so the field itself is what
+                the operator sees — which is what §1.1's "search gear…" drew in
+                the first place. ⌘K still lands in it. */}
             <div style={{ marginBottom: 10 }}>
               {/*
                 * Law 12 — the truth about what this panel is serving, stated
@@ -2804,6 +3330,11 @@ export default function NewRental() {
               )}
 
               <AddItemPanel
+                /* Babin, 4 Sep 2026 — no "+ Add Item" button here: the search
+                   field IS the control. Adding gear is what this section is
+                   for, so a button that only reveals a search box was a click
+                   in front of the job. */
+                inline
                 window={bookingWindow}
                 {...(liveEquipment ? { equipment: liveEquipment } : {})}
                 days={days || 1}
@@ -2938,7 +3469,7 @@ export default function NewRental() {
                       <td colSpan={equipmentColumns.length} style={{ padding: 20 }}>
                         <EmptyState
                           title="No equipment on this booking yet"
-                          description="Use Add Item to search bundles, equipment and accessories for these dates."
+                          description="Search above for bundles, equipment and accessories — availability is answered for these dates."
                         />
                       </td>
                     </tr>
@@ -2979,32 +3510,41 @@ export default function NewRental() {
             open={open[3] ?? false}
             onToggle={() => toggle(3)}
             summary={crew.length === 0 ? 'No crew assigned' : `${crew.length} crew`}
-            action={
-              <Select
-                aria-label="Add crew"
-                onChange={(e) => {
-                  addCrew(e.target.value)
-                  e.currentTarget.selectedIndex = 0
-                }}
-                style={{ ...inputStyle, width: 'auto', height: 34, fontSize: 'var(--t-meta)' }}
-              >
-                <option>Add Member…</option>
-                {CREW_ROSTER.filter((m) => !crew.some((c) => c.crewId === m.id)).map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} — {m.role}
-                  </option>
-                ))}
-              </Select>
-            }
           >
             <div>
+              {/* Babin, 4 Sep 2026 — "same for crew and transport": no
+                  `Add Member…` dropdown in the header slot, the search field is
+                  the control and it sits in the section itself. */}
+              {/*
+                * Law 12, and the same notice Section 2 carries for its
+                * equipment pool: say what the list actually is before the
+                * operator spends time on it.
+                *
+                * `CREW_ROSTER` is an array literal in `data/crew.ts` — the
+                * twelve people, their phone numbers and every `dayRatePaisa`
+                * on this screen are invented there, and nothing on this page
+                * reads a crew table. What Confirm *does* write is stated
+                * exactly: `createRental` sends each row's name, role, phone
+                * and rate to `booking_crew_lines`, with `crew_member_id` null
+                * (this page has no staff id to send), and `actions/crew/
+                * bookCrew.ts` — the action that would reserve a person — is a
+                * stub the dispatcher refuses. So the booking gets priced crew;
+                * nobody's own calendar hears about it.
+                */}
+              <p style={{ margin: '0 0 var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--warn-text)', lineHeight: 1.5 }}>
+                This is a <strong>sample roster</strong> — the people and the day rates they are priced at are invented in
+                the app, not read from the database. Adding someone puts their name, role and rate on this booking when it
+                is confirmed; it does not link a staff record, and it reserves nobody, because booking a crew member's own
+                calendar is not built yet.
+              </p>
+              <CrewSearch onBooking={crew} onAdd={addCrew} showRates={canCrewMoney} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
                     <thead>
                       <tr style={{ background: 'var(--th-bg)' }}>
-                        {(canCrewMoney ? ['Name', 'Role', 'Day Rate', 'Days', 'Amount', ''] : ['Name', 'Role']).map((h, i) => (
-                          <th key={h || 'expand'} scope="col" style={{ ...th, textAlign: i >= 2 && i <= 4 ? 'right' : 'left' }}>
+                        {(canCrewMoney ? ['Name', 'Role', 'Day Rate', 'Days', 'Amount', '', ''] : ['Name', 'Role', '']).map((h, i) => (
+                          <th key={h === '' ? `blank-${i}` : h} scope="col" style={{ ...th, textAlign: i >= 2 && i <= 4 ? 'right' : 'left' }}>
                             {h}
                           </th>
                         ))}
@@ -3047,10 +3587,30 @@ export default function NewRental() {
                                   </td>
                                 </>
                               )}
+                              {/* Off the booking, one at a time.
+                                  `Clear crew` below empties the whole list, and
+                                  `CrewSearch` hides anyone already added, so
+                                  without this a single wrong pick — a role the
+                                  database rejects, say — could be blocked but
+                                  not undone. Rendered in both money bands: a
+                                  money-blind operator staffs a booking too. */}
+                              <td style={{ ...td, width: 30, textAlign: 'right' }}>
+                                <button
+                                  type="button"
+                                  className="press"
+                                  aria-label={`Remove ${c.name} from this booking`}
+                                  title={`Remove ${c.name}`}
+                                  onClick={() => removeCrew(c.crewId)}
+                                  style={{ position: 'relative', width: 22, height: 22, display: 'grid', placeItems: 'center', borderRadius: 'var(--r-xs)', border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer' }}
+                                >
+                                  <TouchInset />
+                                  <Icon name="close" size={13} />
+                                </button>
+                              </td>
                             </tr>
                             {canCrewMoney && expanded && (
                               <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                                <td colSpan={6} style={{ ...td, background: 'var(--card2)' }}>
+                                <td colSpan={7} style={{ ...td, background: 'var(--card2)' }}>
                                   <div style={{ display: 'flex', gap: 'var(--sp-lg)', flexWrap: 'wrap', fontSize: 'var(--t-meta)' }}>
                                     <span style={{ display: 'inline-flex', gap: 5 }}>
                                       <span style={{ color: 'var(--text2)' }}>Overtime</span>
@@ -3137,6 +3697,39 @@ export default function NewRental() {
                         value={clientPickup ? 0 : fuelChargePaisa / 100}
                         onChange={(e) => setFuelChargePaisa(rupees(Math.max(0, Number(e.target.value) || 0)))}
                         style={{ ...inputStyle, opacity: clientPickup ? 0.55 : 1, cursor: clientPickup ? 'not-allowed' : 'text' }}
+                      />
+                    </Field>
+                  </div>
+                )}
+                {/* The delivery's own facts. Shown only for a Babin Delivery,
+                    which is exactly when a transport row is written — Client
+                    Pickup sends none, so a vehicle typed under it would be
+                    collected and dropped. Not money, so no `canBookingMoney`
+                    gate: a money-blind operator still books the van. */}
+                {!clientPickup && (
+                  <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(0,1fr))', gap: 9, marginTop: 9 }}>
+                    <Field label="Vehicle">
+                      <Input
+                        value={vehicle}
+                        onChange={(e) => setVehicle(e.target.value)}
+                        placeholder="Make and model, or the van's name"
+                        style={inputStyle}
+                      />
+                    </Field>
+                    <Field label="Number Plate">
+                      <Input
+                        value={numberPlate}
+                        onChange={(e) => setNumberPlate(e.target.value)}
+                        placeholder="e.g. BA 2 CHA 1234"
+                        style={inputStyle}
+                      />
+                    </Field>
+                    <Field label="Driver Contact">
+                      <Input
+                        value={driverContact}
+                        onChange={(e) => setDriverContact(e.target.value)}
+                        placeholder="Name and phone"
+                        style={inputStyle}
                       />
                     </Field>
                   </div>
@@ -3467,7 +4060,7 @@ export default function NewRental() {
           they just typed in. */}
       <AddClientModal
         isOpen={addClientOpen}
-        onClose={() => setAddClientOpen(false)}
+        onClose={closeAddClient}
         onCreated={onClientCreated}
         /* The modal closes itself after this fires — do not close it here too. */
         onUseExisting={(c) => {

@@ -1,5 +1,30 @@
 /**
- * Calendar Workspace seed data.
+ * Calendar Workspace — the screen's vocabulary, and what is left of its seed.
+ *
+ * ## 4 Sep 2026 · the bars, the rail figures and the festivals went live or went
+ *
+ * `modules/calendar/Calendar.tsx` had zero imports from `lib/queries` or
+ * `lib/supabase`: every bar, every rail number and every festival on the page
+ * came from this file, under today's real date, beside a Dashboard reading the
+ * live database. The two contradicted each other in front of the operator.
+ *
+ * What this file still owns is the screen's **vocabulary** — the view names, the
+ * bar kinds and their skins, the layer names, the zoom steps, the quick actions,
+ * the legend, the shortcuts. Those are design facts and have no database.
+ *
+ * What it no longer owns is any **assertion about the business**:
+ *
+ *  - `ROWS` is empty. It carried a fleet, a crew roster and two warehouse bays
+ *    that do not exist (0 `vehicles`, 0 `crew_profiles_v2`, 0 `product_units`).
+ *    The transcription survives as `ARCHIVED_RENDER_ROWS` — Law 3, archive, do
+ *    not delete — and is not rendered.
+ *  - `HOLIDAYS` is empty, for two independent reasons; see its own note.
+ *  - `EVENT_DETAIL` is empty. It was the render's one open booking, keyed by
+ *    booking NUMBER, and the page now draws live bookings — so a live `B-715`
+ *    would have inherited invented crew, a vehicle and a shoot in Dolpa.
+ *  - `TODAY_SUMMARY` / `UPCOMING` no longer carry values. They are slots now:
+ *    each row either names a live count the screen fetches, or states why there
+ *    is no figure (Rulings §8 — never a literal, never a plausible zero).
  *
  * ⚠ **Spec-derived** — `03 Core Modules/Calendar.md` v3.2 (Build Locked), now
  * reconciled against the two `03 Core Modules` renders (`Calendar.PNG` and
@@ -24,6 +49,10 @@
 
 import type { IconName } from '../components/ui/Icon'
 import { getBusinessToday } from '../lib/bs'
+import { quotesExpiring, todaysIncoming, todaysOutgoing } from '../lib/queries/bookings'
+import { invoicesDueInPeriod } from '../lib/queries/finance'
+import type { ListFilters } from '../lib/queries/listQuery'
+import { overDays, periodRange, type LivePeriod } from './today'
 
 /*
  * The operating day, resolved once when this module loads, from the real
@@ -105,10 +134,22 @@ export const LAYERS: Array<{ name: LayerName; label: string; icon: IconName }> =
   { name: 'Transport', label: 'Transport', icon: 'truck' },
 ]
 
-/** The overlay a bar belongs to, or `null` when it is part of the base booking layer. */
-export function layerOf(row: ResourceRow, bar: Bar): LayerName | null {
-  if (row.type === 'Crew' || bar.kind === 'Crew Duty') return 'Crew'
-  if (row.type === 'Vehicles') return 'Transport'
+/**
+ * The overlay a bar belongs to, or `null` when it is part of the base booking
+ * layer.
+ *
+ * `row` is nullable because a live booking bar has **no resource row**: the
+ * Month and Week views draw bookings, and the resource dimension they would
+ * hang off (`product_units`, `booking_line_units`) is empty on the live
+ * database. With no row, only the bar's own kind can place it — which is
+ * correct rather than a degraded answer: a Crew Duty band is a crew bar and a
+ * Maintenance bar is a maintenance bar whatever they are drawn against, and the
+ * two row-shaped tests below (`type === 'Crew'`, `type === 'Vehicles'`) exist
+ * only because a resource row can carry a bar whose kind does not say so.
+ */
+export function layerOf(row: ResourceRow | null, bar: Bar): LayerName | null {
+  if (row?.type === 'Crew' || bar.kind === 'Crew Duty') return 'Crew'
+  if (row?.type === 'Vehicles') return 'Transport'
   if (bar.kind === 'Maintenance') return 'Maintenance'
   return null
 }
@@ -238,6 +279,19 @@ export interface Bar {
   kind: BarKind
   /** Bold first line — a booking number, or the event name. */
   label: string
+  /**
+   * The booking this bar IS, when it is one — `bookings.booking_no`, the value
+   * `/rentals/:bookingNo` takes.
+   *
+   * Carried explicitly rather than parsed back out of `label`. The screen used
+   * to decide whether a bar could be opened by asking whether its label looked
+   * like a booking number (`isIssuedBy('BK', bar.label)`), which is a guess
+   * about a string; a bar that carries its own booking cannot be wrong about
+   * it, and a bar with none — a maintenance window, a conflict marker — is
+   * unopenable by construction rather than by a pattern that might one day
+   * match. Absent means "this bar is not a booking", never "we could not tell".
+   */
+  bookingNo?: string
   /** Second line — client / project / reason. */
   sub?: string
   /** Inclusive AD start day (UTC midnight). */
@@ -259,25 +313,72 @@ export interface Bar {
   dot?: 'danger' | 'progress' | 'primary' | 'success'
 }
 
-export interface ResourceRow {
+/**
+ * One lane of the timeline grid: a label column and the bars drawn against it.
+ *
+ * Deliberately says nothing about what the lane IS. The grid geometry — the day
+ * columns, the clipping, the today marker, the zoom — is the same whether a lane
+ * is a camera or a booking, and the Week view needs the second kind: it draws
+ * one lane per live booking, because the resource dimension a lane would
+ * otherwise carry (`product_units`) has no rows.
+ *
+ * `ResourceRow` below is this plus the one thing a *resource* lane knows and a
+ * booking lane cannot: which kind of resource it is.
+ */
+export interface LaneRow {
   id: string
-  type: RowType
   name: string
+  /**
+   * Whether `name` is an ISSUED IDENTIFIER and should be set in the identifier
+   * face — true for a booking lane, whose name is `booking_no`, false for a
+   * resource lane, whose name is a product name and whose identifier is `code`.
+   *
+   * A flag rather than a guess at the render: setting a client's name or a
+   * product's name in the monospace identifier face is the same class of error
+   * as printing a booking number in the prose face, and neither is decidable
+   * from the string.
+   */
+  identifier?: boolean
   /** Serial / crew code / bay code — rendered in the identifier face. */
   code?: string
-  /** Third line: unit count, or the resource's own state. */
+  /** Third line: unit count, or the lane's own state. */
   meta: string
   metaTone?: 'success' | 'primary' | 'muted' | 'progress'
   icon: IconName
   bars: Bar[]
 }
 
+export interface ResourceRow extends LaneRow {
+  type: RowType
+}
+
 /**
- * Row roster and bar placement transcribed from `Calendar.PNG`, with every bar
- * anchored to `TODAY` rather than to a hand-written column index — so the
- * `‹ ›` range controls actually move the picture.
+ * The row roster and bar placement transcribed from `Calendar.PNG`.
+ *
+ * ## Archived 4 Sep 2026 — it asserted a business that does not exist
+ *
+ * Read as a picture this is a faithful transcription. Read as data it was a
+ * claim, rendered as fact under today's date, that Babin Rentals owns:
+ *
+ *  - **a camera van** (`VH-01-BA-5920`) — `vehicles` has 0 rows;
+ *  - **two crew** (Ramesh CR-001, Sunil CR-002) — `crew_profiles_v2`,
+ *    `crew_assignments` and `shifts` all have 0 rows, and nothing in `src/`
+ *    writes any of them;
+ *  - **two warehouse bays** (BAY-A, BAY-P2);
+ *  - **five pieces of equipment with serial numbers and unit counts** — "1
+ *    unit", "2 units", "1 set" — where `product_units` has 0 rows, so there is
+ *    no unit anywhere to count;
+ *  - **eight bookings** (B-702 … B-731) that are not in the 246 live ones,
+ *    a maintenance bench (`maintenance_records`: 0 rows, no writer in `src/`),
+ *    a cleaning queue (`cleaning_queue_entries`: 0 rows) and a case escalation
+ *    (`cases`: 0 rows).
+ *
+ * It is kept, not deleted (Law 3), because it is the only written record of how
+ * the render laid the timeline out, and rebuilding the resource view later
+ * should not mean re-reading a PNG. **It is not rendered and must not be**: it
+ * is a picture of a product, not a state of this one.
  */
-export const ROWS: ResourceRow[] = [
+const ARCHIVED_RENDER_ROWS: ResourceRow[] = [
   {
     id: 'eq-fx3',
     type: 'Equipment',
@@ -419,8 +520,51 @@ export const ROWS: ResourceRow[] = [
   },
 ]
 
+/** The archive, exported so it is reachable by name rather than commented out. */
+export { ARCHIVED_RENDER_ROWS }
+
+/**
+ * The resource rows the Timeline view draws — **empty, and that is the honest
+ * answer.**
+ *
+ * A resource timeline is one lane per physical thing. The lanes would come from
+ * `product_units` (0 rows), the bars on them from `booking_line_units` (0 rows),
+ * and the overlays from `maintenance_records`, `cleaning_queue_entries` and
+ * `crew_assignments` (0 rows each; `maintenance_records` and `crew_assignments`
+ * have no writer in `src/` either, while `cleaning_queue_entries` does — see
+ * `TODAY_SUMMARY`'s Cleaning row). A resource-centric view is therefore
+ * *structurally* writable and *actually* empty, so the screen states that
+ * instead of drawing `ARCHIVED_RENDER_ROWS` above.
+ *
+ * The Month and Week views do not depend on this: they draw the live bookings
+ * through `lib/queries/calendar.ts`, which needs no resource dimension. That
+ * read maps three stages only — Booked and Packed to `Reserved`, On Rent to
+ * `On Rent` — and excludes cancellations, so of the 246 bookings in the
+ * database at most **49** can ever reach the grid (30 Booked + 16 Packed +
+ * 3 On Rent, none cancelled, counted 4 Sep 2026); the other 197 are Quote,
+ * Returned or Closed and have no bar kind. Making this array live is what makes
+ * the Timeline view live, and nothing else.
+ *
+ * Typed `ResourceRow[]` rather than `never[]` so the Timeline's plumbing keeps
+ * its real types and the day it has rows is a data change, not a refactor.
+ */
+export const ROWS: ResourceRow[] = []
+
 /* ── filters ───────────────────────────────────────────────────────────── */
 
+/**
+ * The Client filter's options.
+ *
+ * Empty by construction now that `ROWS` is: the clients on screen are whoever
+ * the live bookings in the window belong to, which only the screen knows after
+ * its read returns. `modules/calendar/Calendar.tsx` derives the list from the
+ * bars it loaded, so the dropdown offers the clients actually on the grid
+ * rather than five names transcribed from a render.
+ *
+ * Kept exported as the empty seed rather than removed, so the derivation stays
+ * visibly in one place and the Timeline view has a list to widen the day it
+ * gains rows.
+ */
 export const CLIENTS: string[] = Array.from(
   new Set(ROWS.flatMap((r) => r.bars.map((b) => b.client).filter((c): c is string => Boolean(c)))),
 ).sort()
@@ -434,13 +578,58 @@ export interface SavedView {
   starred?: boolean
 }
 
-export const SAVED_VIEWS: SavedView[] = [
-  { name: 'My Bookings', rowType: 'All', kinds: ['On Rent', 'Reserved'] },
+/**
+ * The render drew five. **None survives**, and all five are below by name
+ * rather than silently missing.
+ *
+ * A saved view applies a row type and a set of bar kinds, so a view is only
+ * real if one of those two narrows something:
+ *
+ *  - `Warehouse View`, `Equipment View` and `Crew Schedule` apply nothing but a
+ *    row type, and `ROWS` is empty — each is a button whose only possible
+ *    outcome is the empty state.
+ *  - `Conflict View` is that case one step further out: `Conflict` and
+ *    `Case Escalation` are kinds nothing produces (see `QUICK_ACTIONS` on why
+ *    no query lists a conflict), so filtering to them can only ever clear the
+ *    grid.
+ *  - `My Bookings` was kept on 4 Sep and **archived the same day**. It applied
+ *    `kinds: ['On Rent', 'Reserved']`, which is *exactly* the set
+ *    `CALENDAR_BAR_KINDS` says the read can produce — every bar on the grid
+ *    already matches it. So it removed no bar and added no bar, and its only
+ *    observable effect was to flip the page into "filtered" mode: the chip row
+ *    lit up, the empty state stopped saying "nothing is booked in this window"
+ *    and started saying "nothing matches the current filters", and a
+ *    Clear-filters control appeared for filters that were doing nothing. A
+ *    control that changes only the page's account of itself is worse than one
+ *    that does nothing at all.
+ *
+ *    Its NAME is the second problem and the one that decides it cannot simply
+ *    be re-pointed: "my" bookings means the bookings assigned to the signed-in
+ *    operator, and nothing in the schema records that assignment
+ *    (`crew_assignments` has 0 rows and no writer). Reviving it needs that
+ *    record, not a different `kinds` array.
+ *
+ * They come back the day the timeline has rows, the day a conflict query
+ * exists, and the day a booking knows whose it is — not before, because a
+ * live-looking control that can only empty the screen, or only relabel it, is
+ * worse than an absent one.
+ */
+export const SAVED_VIEWS: SavedView[] = []
+
+/** All five of the render's views, kept by name (Law 3). See the note above. */
+export const ARCHIVED_SAVED_VIEWS: SavedView[] = [
+  { name: 'My Bookings', rowType: 'All', kinds: ['On Rent', 'Reserved'], starred: true },
   { name: 'Warehouse View', rowType: 'Warehouse Bays', kinds: [] },
-  { name: 'Equipment View', rowType: 'Equipment', kinds: [], starred: true },
+  { name: 'Equipment View', rowType: 'Equipment', kinds: [] },
   { name: 'Crew Schedule', rowType: 'Crew', kinds: [] },
   { name: 'Conflict View', rowType: 'All', kinds: ['Conflict', 'Case Escalation'] },
 ]
+
+/** Why the Saved Views list is empty, rendered on the panel face. */
+export const SAVED_VIEWS_NOT_AVAILABLE =
+  'No saved view narrows anything yet. Every one the render drew scoped the resource timeline, which has no ' +
+  'rows, filtered to event kinds no booking can carry, or selected the kinds every booking already has. They ' +
+  'are kept by name in ARCHIVED_SAVED_VIEWS and return when the data behind them does.'
 
 /* ── right rail ────────────────────────────────────────────────────────── */
 
@@ -454,78 +643,435 @@ export interface Holiday {
   to: Date
 }
 
-export const HOLIDAYS: Holiday[] = [
+/**
+ * The three festivals the render drew. **Archived 4 Sep 2026 — they were wrong
+ * twice over.**
+ *
+ * ### 1. They had no source
+ *
+ * There is no holiday table anywhere in the schema — not in any of the 125
+ * `create table` statements under `supabase/migrations`. These three dates were
+ * typed into a seed file and then rendered as authoritative: `holidayOn` shaded
+ * month cells, printed a festival's name inside the day, coloured the day number
+ * with the weekend's `--danger-text`, and filled a "Festivals & Holidays" card
+ * whose footer said *"Holiday calendars are configured in Settings"* — of a
+ * calendar configured nowhere. `data/businessHours.ts` then read the same three
+ * rows and turned them into gazetted closures with `blocksBooking: true`, so one
+ * invented list became a scheduling rule on a second screen.
+ *
+ * ### 2. The dates were wrong anyway
+ *
+ * Dashain is an autumn festival; it is dated here at the end of **July**.
+ * Whatever else is true, 28–30 Jul 2026 is not Dashain, and an operator who
+ * planned a shoot around this grid would have planned around a fiction.
+ *
+ * ### Why nothing replaces them
+ *
+ * A festival calendar is **BS calendar data** — the same class of fact as the
+ * month lengths `PLAN.md` §4.34 refuses to infer, and refuses for the same
+ * reason: putting a wrong Nepali date in front of a client is the defect
+ * `Calendar.md` §4.2 calls the highest-priority correctness bug in the product.
+ * Nepal's festival dates are lunar and are fixed each year by the Nepal Calendar
+ * Determination Committee; they cannot be computed from an anchor and they
+ * cannot be guessed from a render.
+ *
+ * `TODO(decision)` — a real source. The three shapes it could take, none of
+ * which is this file's to choose:
+ *   (a) the same 2000–2100 BS table §4.34 already needs, extended with the
+ *       gazetted public-holiday list, shipped as data and versioned;
+ *   (b) a `holidays` table with a migration, editable in Settings — which is
+ *       what the card's own footer already promises, and what
+ *       `businessHours.ts`'s `CalException` shape is already written against;
+ *   (c) per-branch closures only, with no national festival list at all, on the
+ *       argument that what a warehouse needs to know is whether IT is open.
+ * Until one is picked, the screen says the calendar is not loaded rather than
+ * showing three days it made up.
+ */
+export const ARCHIVED_RENDER_HOLIDAYS: Holiday[] = [
   { name: 'Dashain', from: new Date(Date.UTC(2026, 6, 28)), to: new Date(Date.UTC(2026, 6, 30)) },
   { name: 'Buddha Jayanti', from: new Date(Date.UTC(2026, 7, 8)), to: new Date(Date.UTC(2026, 7, 8)) },
   { name: 'Tihar (Laxmi Puja)', from: new Date(Date.UTC(2026, 7, 11)), to: new Date(Date.UTC(2026, 7, 12)) },
 ]
 
+/**
+ * The festival and public-holiday calendar — empty, because none is loaded.
+ *
+ * Read the archive above before adding a row here. A date in this array shades
+ * the month grid, labels the day, colours its number as non-working and feeds
+ * `businessHours.ts`'s closures; it is a scheduling assertion, not decoration.
+ */
+export const HOLIDAYS: Holiday[] = []
+
+/**
+ * The festival covering an AD day, or `null`.
+ *
+ * Always `null` today. Kept as the one lookup so that loading a real calendar is
+ * a change to `HOLIDAYS` alone — no caller has to be found and rewired.
+ *
+ * ⚠ Callers must not read a `null` here as "this is an ordinary working day".
+ * It means "no holiday calendar is loaded", which is a different fact and the
+ * reason `modules/calendar/Calendar.tsx` no longer shades or labels anything
+ * from it: an unshaded cell that silently meant "we do not know" was the whole
+ * defect.
+ */
 export function holidayOn(d: Date): Holiday | null {
   const t = d.getTime()
   return HOLIDAYS.find((h) => t >= h.from.getTime() && t <= h.to.getTime()) ?? null
 }
 
-export interface CountRow {
+/** Why the festival card and the grid say nothing about holidays. Rendered, not hidden in a tooltip. */
+export const HOLIDAYS_NOT_TRACKED =
+  'No holiday calendar is loaded. Nepal’s festival dates are BS calendar data fixed each year, like the ' +
+  'month lengths PLAN.md §4.34 will not infer, and no table in the schema holds them — so the grid shades ' +
+  'and labels nothing rather than showing dates it invented.'
+
+/**
+ * The live counts the two rail cards can actually ask for.
+ *
+ * Each key names ONE query, and the screen fetches exactly these. Adding a key
+ * here without a query behind it is how the literals below came to exist in the
+ * first place, so the union is deliberately small and every member is spoken
+ * for in `CountSlot`'s table.
+ */
+export type CountKey =
+  /** `todaysOutgoing(dayAd)` — pickups due on the operating day that have not left. */
+  | 'todayPickups'
+  /** `todaysIncoming(dayAd)` — returns due on the operating day that are still out. */
+  | 'todayReturns'
+  /** `todaysOutgoing` widened over the card's own window — pickups starting in it. */
+  | 'upcomingPickups'
+  /** `quotesExpiring(windowEnd, windowStart)` — quotes lapsing inside the window. */
+  | 'upcomingQuoteExpiry'
+  /** `invoicesDueInPeriod(from, to)` — unsettled invoices falling due in the window. */
+  | 'upcomingPaymentDue'
+
+/**
+ * One row of a rail card.
+ *
+ * ⛔ This used to be a `CountRow` carrying a hand-typed `value: number`. Ten
+ * numbers — 3 pickups, 5 returns, 4 cleaning, 12 bookings, 4 payments due —
+ * rendered under today's real date, beside a Dashboard reading the live
+ * database, where the honest figures for 4 Sep are zero and zero. Rulings §8:
+ * *a number with no real source renders "not tracked yet", never a plausible
+ * default and never zero.*
+ *
+ * So a row no longer carries a value at all. It carries either a `key` (the
+ * screen counts it) or a `reason` (the screen says why it cannot). Exactly one
+ * of the two, which is what makes a third silent state impossible.
+ */
+export interface CountSlot {
   label: string
-  value: number
   tone: string
   icon?: IconName
-  /** §8.3 — omitted entirely for a role that may not see money. */
+  /** §8.3 — omitted from the markup entirely for a role that may not see money. */
   money?: boolean
+  /** The live count this row shows. `null` when nothing computes it. */
+  key: CountKey | null
+  /** Why there is no figure. Stated on the card face whenever `key` is null. */
+  reason?: string
 }
 
-export const TODAY_SUMMARY: CountRow[] = [
-  { label: 'Pickup', value: 3, tone: 'var(--primary)' },
-  { label: 'Return', value: 5, tone: 'var(--progress)' },
-  { label: 'Cleaning', value: 4, tone: 'var(--success)' },
-  { label: 'Maintenance', value: 2, tone: 'var(--danger)' },
-  { label: 'Sub-Rental Return', value: 2, tone: 'var(--ext-line)' },
+/**
+ * ## Why three of these five rows have no number
+ *
+ * Not an oversight and not a backlog item to be quietly zeroed — each names a
+ * table that is empty, and no query module counts any of the three:
+ *
+ *  - **Cleaning** — `cleaning_queue_entries` has 0 rows on this database.
+ *
+ *    ⛔ This row used to say *"nothing in the app writes one"*. That was
+ *    already false when it was written: `actions/rentals/floorVerb.ts`'s
+ *    `enqueueReturnedUnits` inserts one entry per returned unit on **every**
+ *    Return (`idempotentInsert('cleaning_queue_entries', …)`), and that writer
+ *    landed on 3 Sep 2026 and was driven. The table is empty because no Return
+ *    has been recorded against this database yet, which is a different fact and
+ *    a temporary one.
+ *
+ *    What is true, and what actually keeps the figure off the card, is that
+ *    **no query module reads the table for a count**. `lib/queries/availability.ts`
+ *    reads it to exclude a unit that is still on the bench — a per-unit
+ *    predicate, not a total — and there is nothing else. A number here would
+ *    have to be derived on this screen, which Law 1 forbids.
+ *  - **Maintenance** — `maintenance_records` has 0 rows and no writer in `src/`
+ *    (checked 4 Sep 2026: every mention is a comment, `lib/rbac.ts`, or the
+ *    generated `types/supabase.ts`).
+ *  - **Sub-Rental Return** — the same finding the Sub-Rental figure got on
+ *    3 Sep, and rendered the same way for the same reason.
+ */
+export const TODAY_SUMMARY: CountSlot[] = [
+  { label: 'Pickup', tone: 'var(--primary)', key: 'todayPickups' },
+  { label: 'Return', tone: 'var(--progress)', key: 'todayReturns' },
+  {
+    label: 'Cleaning',
+    tone: 'var(--success)',
+    key: null,
+    reason:
+      'Recording a return puts each unit on the reset bench, but no return has been recorded on this database ' +
+      'yet and no query counts the bench, so there is no figure to show.',
+  },
+  {
+    label: 'Maintenance',
+    tone: 'var(--danger)',
+    key: null,
+    reason: 'Maintenance records are not written anywhere in the app yet, so there is nothing to count.',
+  },
+  {
+    label: 'Sub-Rental Return',
+    tone: 'var(--ext-line)',
+    key: null,
+    reason: 'Sub-rentals are not tracked as their own records yet — the same gap the Sub-Rental figure names.',
+  },
 ]
 
-export const UPCOMING: CountRow[] = [
-  { label: 'Bookings', value: 12, tone: 'var(--primary-text)', icon: 'calendar_event' },
-  { label: 'Sub-Rental Returns', value: 2, tone: 'var(--ext-fg)', icon: 'return_arrow' },
-  { label: 'Quote Expiry', value: 3, tone: 'var(--progress-text)', icon: 'timer' },
-  { label: 'Case Escalations', value: 1, tone: 'var(--danger-text)', icon: 'alert_triangle' },
-  { label: 'Payment Due', value: 4, tone: 'var(--progress-text)', icon: 'dollar', money: true },
+/**
+ * The *Upcoming (Next 7 Days)* card.
+ *
+ * ⚠ **"Bookings" became "Pickups"**, and that is a correction rather than a
+ * rename. "12 Bookings in the next 7 days" has no definition: bookings starting
+ * in the window? ending in it? live at any point during it? Three different
+ * numbers, and the row never said which. What the query behind it counts is
+ * pickups whose day falls inside the window — `todaysOutgoing` widened over the
+ * card's own range — so the row now says that. Making the label true beats
+ * inventing a rule to make the old label true.
+ *
+ * `Case Escalations` has no source for the same reason as Cleaning above:
+ * `cases` has 0 rows. `Sub-Rental Returns` is the plural of the row in
+ * `TODAY_SUMMARY` and stands or falls with it.
+ */
+export const UPCOMING: CountSlot[] = [
+  { label: 'Pickups', tone: 'var(--primary-text)', icon: 'calendar_event', key: 'upcomingPickups' },
+  {
+    label: 'Sub-Rental Returns',
+    tone: 'var(--ext-fg)',
+    icon: 'return_arrow',
+    key: null,
+    reason: 'Sub-rentals are not tracked as their own records yet.',
+  },
+  { label: 'Quote Expiry', tone: 'var(--progress-text)', icon: 'timer', key: 'upcomingQuoteExpiry' },
+  {
+    label: 'Case Escalations',
+    tone: 'var(--danger-text)',
+    icon: 'alert_triangle',
+    key: null,
+    reason: 'No case has been raised, and nothing on this screen escalates one.',
+  },
+  { label: 'Payment Due', tone: 'var(--progress-text)', icon: 'dollar', money: true, key: 'upcomingPaymentDue' },
 ]
+
+/* ── the queries behind the five live figures ──────────────────────────── */
+
+/**
+ * The window the *Upcoming* card's own heading promises — **(Next 7 Days)**.
+ *
+ * Taken from `data/today.ts`'s period vocabulary rather than written out here,
+ * so "next 7 days" means the same span of days on this card as it does on the
+ * Dashboard chip of the same name: today plus the next six, inclusive, which is
+ * the reading `periodRange` documents and the one that matches how the chip sits
+ * beside "Today" and "Tomorrow".
+ */
+export const UPCOMING_PERIOD: LivePeriod = 'Next 7 Days'
+
+/**
+ * `periodRange` is typed `DayRange | null` because the **All** chip means "no
+ * date constraint". `UPCOMING_PERIOD` is not that chip, so the fallback below is
+ * unreachable — it exists so a future edit that points this at 'All' produces a
+ * one-day card rather than an unbounded count of every pickup ever recorded.
+ */
+function upcomingWindow(dayAd: string): { from: string; to: string } {
+  return periodRange(UPCOMING_PERIOD, dayAd) ?? { from: dayAd, to: dayAd }
+}
+
+/**
+ * A count wants `total`, not rows. `withCount: true` reports the full matching
+ * count regardless of the range, and `page` is not a narrowing predicate
+ * (`useList`'s `narrowingKey` ignores it), so a count query can never make a
+ * card read as "filtered". Same constant, same reasoning, as
+ * `data/rentals.ts`'s `COUNT_PAGE`.
+ */
+const COUNT_PAGE: ListFilters['page'] = { index: 0, size: 1 }
+
+/**
+ * Both ends of the Upcoming window as INSTANTS, for `quotesExpiring`.
+ *
+ * `quote_expires_at` is a `timestamptz`, so the bounds have to be instants — a
+ * bare `YYYY-MM-DD` would be read by Postgres as midnight UTC, which is 05:45
+ * that morning in Kathmandu, and quotes lapsing before then on the first day
+ * would be missed. The two instants are lifted off `todaysOutgoing`, which
+ * already builds the operational-day boundary; `lib/queries/calendar.ts` and
+ * `data/today.ts`'s `overDays` take the same route and for the same reason —
+ * `startOfDay` / `endOfDay` are module-private in `queries/bookings.ts` and
+ * re-deriving Nepal's offset in a data file is how a second, wrong copy of it
+ * gets written.
+ */
+function upcomingInstants(dayAd: string): { open: string; close: string } {
+  const window = upcomingWindow(dayAd)
+  return {
+    open: todaysOutgoing(window.from).dateRange?.fromAd ?? window.from,
+    close: todaysOutgoing(window.to).dateRange?.toAd ?? window.to,
+  }
+}
+
+/**
+ * The four figures counted against `bookings`, as filter sets.
+ *
+ * Named here rather than assembled in the screen for the reason
+ * `queries/bookings.ts` names its own sets: change what "today's pickups" means
+ * once, and every surface showing it moves together. The Calendar's Pickup row
+ * and the Dashboard's Pickups column are now the same server-side count of the
+ * same set, so they cannot disagree while both look right.
+ *
+ * ## ⛔ Why this is a function of the day and no longer a constant
+ *
+ * It was `RAIL_BOOKING_COUNTS`, an object built from `data/today.ts`'s
+ * `TODAY_DAY_AD` — which that module resolves **once, when it is imported**. A
+ * warehouse tablet left on the Calendar overnight therefore kept counting
+ * yesterday's pickups and yesterday's returns under a card headed *Today's
+ * Summary*, with today's date rendered directly above them from
+ * `getBusinessToday()`. The card contradicted its own heading and looked
+ * completely normal doing it.
+ *
+ * Taking the day as an argument moves the decision to the caller, which renders
+ * it (`Calendar.tsx` resolves `businessDayAd()` per render), so the figure and
+ * the heading are computed from the same day. `useList` keys its effect on the
+ * VALUE of the filter set (`filterKey`), not its identity, so rebuilding these
+ * objects every render costs nothing and re-queries only when the day actually
+ * turns over.
+ *
+ * **No money.** None of the four passes `withDeposit`, and a count carries no
+ * figure anyway — the Calendar is a Warehouse surface (Foundation §8.3).
+ */
+export function railBookingCounts(dayAd: string): Record<Exclude<CountKey, 'upcomingPaymentDue'>, ListFilters> {
+  const window = upcomingWindow(dayAd)
+  const instants = upcomingInstants(dayAd)
+  return {
+    /** Today ▸ Pickup — pickups due on the operating day that have not left yet. */
+    todayPickups: { ...todaysOutgoing(dayAd), page: COUNT_PAGE },
+    /** Today ▸ Return — returns due on the operating day, still out. */
+    todayReturns: { ...todaysIncoming(dayAd), page: COUNT_PAGE },
+    /**
+     * Upcoming ▸ Pickups — the same outgoing set, widened across the card's own
+     * window. This is what the row that used to say "Bookings" actually counts,
+     * which is why it now says Pickups.
+     */
+    upcomingPickups: { ...overDays(todaysOutgoing, window, dayAd), page: COUNT_PAGE },
+    /**
+     * Upcoming ▸ Quote Expiry — quotes lapsing INSIDE the window.
+     *
+     * `quotesExpiring` had only an upper bound, which answers "already expired,
+     * however long ago" — a backward-looking question on a card headed *Next 7
+     * Days*. It now takes the window's lower bound too, in the data layer.
+     */
+    upcomingQuoteExpiry: { ...quotesExpiring(instants.close, instants.open), page: COUNT_PAGE },
+  }
+}
+
+/**
+ * The one figure counted against `invoices` — Upcoming ▸ Payment Due.
+ *
+ * ⚠ **Money.** Kept in its own function rather than folded into the four above
+ * precisely so the money-blind path is a different call the screen has to make
+ * on purpose: `CountList` already omits a `money: true` row from the markup for
+ * a role that may not see it (§8.3 — omission, not masking), and the screen must
+ * not run this query for that role either. A money-blind session would get
+ * `{ rows: [], total: 0 }` back from RLS, and rendering that 0 would be a
+ * permission answer dressed as a business fact.
+ *
+ * Takes the day for the same reason `railBookingCounts` does — see its note.
+ */
+export function railInvoiceCounts(dayAd: string): Record<'upcomingPaymentDue', ListFilters> {
+  const window = upcomingWindow(dayAd)
+  return {
+    upcomingPaymentDue: { ...invoicesDueInPeriod(window.from, window.to), page: COUNT_PAGE },
+  }
+}
 
 /**
  * The render's four tiles. `to` is a route that exists; `unavailable` states the
  * reason instead of pretending — §0 forbids a control that goes nowhere.
+ *
+ * ## Why this is a union rather than two optional fields
+ *
+ * It was `{ label; icon; to?; unavailable? }`, which admits a fourth shape
+ * neither branch handles: **both absent**. The screen's `runQuickAction` read
+ * `if (a.to) navigate(a.to)` and fell off the end for such a tile — a live,
+ * enabled, hoverable button that did nothing at all when pressed, which is the
+ * exact defect this change removed everywhere else. The union makes that tile
+ * unwriteable: a tile either goes somewhere or says why it cannot, and the
+ * compiler is what enforces it rather than a convention.
+ *
+ * The `action?: 'conflicts'` in-page hook that used to live here went with the
+ * conflict filter it drove — see `QUICK_ACTIONS` below. Nothing else was ever an
+ * in-page action, so the field is gone rather than left as a one-member union
+ * nobody uses.
+ *
+ * `kind` is carried explicitly rather than left implicit in which optional field
+ * is set, because TypeScript narrows a union only on a property whose types are
+ * unit types — `string` is not one, so `if (a.unavailable)` narrows nothing and
+ * the render would still be handed `to: string | undefined` and be back where it
+ * started. The literal makes the discrimination real at both ends.
  */
-export interface QuickAction {
-  label: string
-  icon: IconName
-  to?: string
-  /** In-page action key, handled by the screen. */
-  action?: 'conflicts'
-  unavailable?: string
-}
+export type QuickAction =
+  /** Goes somewhere. `to` is a route that exists. */
+  | { kind: 'route'; label: string; icon: IconName; to: string; unavailable?: never }
+  /** Goes nowhere, and `unavailable` is the reason, stated on its face. */
+  | { kind: 'unavailable'; label: string; icon: IconName; to?: never; unavailable: string }
 
 export const QUICK_ACTIONS: QuickAction[] = [
-  { label: 'New Rental', icon: 'plus', to: '/rentals/new' },
-  { label: 'Block Equipment', icon: 'package', unavailable: 'The Block dialog is not built yet' },
-  { label: 'New Maintenance', icon: 'tool', to: '/inventory' },
-  { label: 'View Conflicts', icon: 'alert_triangle', action: 'conflicts' },
+  { kind: 'route', label: 'New Rental', icon: 'plus', to: '/rentals/new' },
+  { kind: 'unavailable', label: 'Block Equipment', icon: 'package', unavailable: 'The Block dialog is not built yet' },
+  { kind: 'route', label: 'New Maintenance', icon: 'tool', to: '/inventory' },
+  /*
+   * ⛔ Was `action: 'conflicts'`, which filtered the grid to the `Conflict` and
+   * `Case Escalation` bar kinds. Both were seed inventions — the live read
+   * produces `Reserved` and `On Rent` and nothing else — so the button's only
+   * possible outcome became an empty grid captioned as if it had checked.
+   *
+   * Nothing in the product lists conflicting bookings. The overlap defence is
+   * the GiST exclusion on `inventory_reservations`, which REJECTS a write; and
+   * `lib/availability.ts` answers "can this booking's lines be covered" for one
+   * booking at confirm time. Neither can be asked "show me every clash on the
+   * calendar" — that is a different query over a table of assignments that has
+   * no rows. Stated rather than pretended.
+   */
+  {
+    kind: 'unavailable',
+    label: 'View Conflicts',
+    icon: 'alert_triangle',
+    unavailable:
+      'Nothing lists conflicts: the overlap rule is enforced per booking when one is confirmed, and no query ' +
+      'sweeps the calendar for clashes.',
+  },
 ]
 
 /**
- * The event-marker key along the bottom of the render's timeline card. These
- * are *point* markers on a day, distinct from the bar kinds above.
+ * The event-marker key along the bottom of the render's timeline card. These are
+ * *point* markers on a day, distinct from the bar kinds above.
+ *
+ * It is a **legend**, so it carries no counts. It used to be typed as a row of
+ * figures with every value hand-set to `0` — eleven numbers that were never
+ * rendered but that any future reader would reasonably have wired up as real
+ * ones. A legend row is a label, a tone and an icon; nothing else.
  */
-export const EVENT_MARKERS: CountRow[] = [
-  { label: 'Pickup', value: 0, tone: 'var(--success-text)', icon: 'arrow_up' },
-  { label: 'Return', value: 0, tone: 'var(--primary-text)', icon: 'arrow_down' },
-  { label: 'Handover', value: 0, tone: 'var(--text2)', icon: 'crew' },
-  { label: 'Return Session', value: 0, tone: 'var(--text2)', icon: 'return_arrow' },
-  { label: 'Cleaning', value: 0, tone: 'var(--progress-text)', icon: 'refresh' },
-  { label: 'Maintenance', value: 0, tone: 'var(--progress-text)', icon: 'tool' },
-  { label: 'Sub-Rental Out', value: 0, tone: 'var(--ext-fg)', icon: 'external_link' },
-  { label: 'Sub-Rental In', value: 0, tone: 'var(--ext-fg)', icon: 'return_arrow' },
-  { label: 'Case Escalation', value: 0, tone: 'var(--danger-text)', icon: 'flag' },
-  { label: 'Quote Expiry', value: 0, tone: 'var(--progress-text)', icon: 'timer' },
-  { label: 'Payment Due', value: 0, tone: 'var(--danger-text)', icon: 'dollar', money: true },
+export interface LegendMarker {
+  label: string
+  tone: string
+  icon: IconName
+  /** §8.3 — omitted from the markup entirely for a role that may not see money. */
+  money?: boolean
+}
+
+export const EVENT_MARKERS: LegendMarker[] = [
+  { label: 'Pickup', tone: 'var(--success-text)', icon: 'arrow_up' },
+  { label: 'Return', tone: 'var(--primary-text)', icon: 'arrow_down' },
+  { label: 'Handover', tone: 'var(--text2)', icon: 'crew' },
+  { label: 'Return Session', tone: 'var(--text2)', icon: 'return_arrow' },
+  { label: 'Cleaning', tone: 'var(--progress-text)', icon: 'refresh' },
+  { label: 'Maintenance', tone: 'var(--progress-text)', icon: 'tool' },
+  { label: 'Sub-Rental Out', tone: 'var(--ext-fg)', icon: 'external_link' },
+  { label: 'Sub-Rental In', tone: 'var(--ext-fg)', icon: 'return_arrow' },
+  { label: 'Case Escalation', tone: 'var(--danger-text)', icon: 'flag' },
+  { label: 'Quote Expiry', tone: 'var(--progress-text)', icon: 'timer' },
+  { label: 'Payment Due', tone: 'var(--danger-text)', icon: 'dollar', money: true },
 ]
 
 export const SHORTCUTS: Array<{ key: string; label: string }> = [
@@ -558,7 +1104,25 @@ export interface EventDetail {
   notes: string
 }
 
-export const EVENT_DETAIL: Record<string, EventDetail> = {
+/**
+ * The render's one open booking. **Archived 4 Sep 2026 — it became a collision
+ * hazard the moment the grid went live.**
+ *
+ * This map is keyed by booking NUMBER, and the screen looked a bar's label up in
+ * it to decide whether to print a pickup time, a crew list, a vehicle and a
+ * shoot note. That was harmless while every bar was seed. It stopped being
+ * harmless when `lib/queries/calendar.ts` started drawing real bookings — the
+ * Booked, Packed and On Rent ones, at most 49 of the 246 in the database:
+ * a live `B-715` would have been shown Ramesh, Sunil, Anita, Bikash
+ * and Prakash, a camera van it does not have, and *"Outdoor shoot in Dolpa.
+ * Weather dependent."* — five fabricated crew and a location, presented as that
+ * booking's record.
+ *
+ * Kept by name (Law 3) because it is the written record of what the Selected
+ * Event panel is meant to show. It comes back as a per-booking READ — the
+ * sessions, crew and vehicle all have tables — not as a keyed literal.
+ */
+export const ARCHIVED_RENDER_EVENT_DETAIL: Record<string, EventDetail> = {
   'B-715': {
     bookingNo: 'B-715',
     status: 'On Rent',
@@ -577,6 +1141,17 @@ export const EVENT_DETAIL: Record<string, EventDetail> = {
     notes: 'Outdoor shoot in Dolpa. Weather dependent.',
   },
 }
+
+/**
+ * Booking number → its sessions, crew, vehicle and notes. **Empty.**
+ *
+ * Nothing here may be keyed by a number a live booking could also carry — see
+ * the archive above. Filling this needs a per-booking read
+ * (`operation_sessions`, `crew_assignments`, the booking's own notes), not a
+ * literal, and until then the Selected Event panel prints the bar's own window
+ * and says session times live on the booking.
+ */
+export const EVENT_DETAIL: Record<string, EventDetail> = {}
 
 /** §8.2 — a booking is cancelled, never deleted, so no action here deletes. */
 export const EVENT_ACTIONS: Array<{ label: string; icon: IconName; to?: string; unavailable?: string }> = [

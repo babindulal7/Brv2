@@ -538,17 +538,47 @@ export interface ClientProfile {
   membershipKnown: boolean
 }
 
-export async function getClientRecordByCode(clientCode: string): Promise<ClientProfile | null> {
+/**
+ * A client is addressed by `client_code` (`C-0001`) **or** by `clients.id` (a
+ * uuid), and this resolves either.
+ *
+ * It has to. `/clients/:id` is linked from two populations that disagree about
+ * what the segment holds. The clients module builds it from a code, but every
+ * link from *outside* the module builds it from the uuid FK it already has in
+ * hand — `RentalsList.tsx:1834`, `Payments.tsx:854`/`:926`,
+ * `OperationsQueues.tsx:791`/`:867`, `rentals.ts:1148` and two more, all fed by
+ * `bookings.ts:341` / `finance.ts:404`/`:765` mapping `clientId: r.client_id`.
+ *
+ * Before 4 Sep 2026 this filtered on `client_code` alone, so all of those
+ * landed on "Client not found" — and could never do anything else:
+ * `0055_ruled_identifier_formats.sql:136` constrains the column to
+ * `^C-[0-9]+$`, a shape no uuid can take. The bug was invisible from inside
+ * Clients, where the links happen to carry codes.
+ *
+ * Dispatching on the shape of the reference is this codebase's existing answer
+ * to the same problem — `queries/availability.ts:147` and
+ * `queries/bookings.ts:1021` both pick `id` vs a human code exactly this way.
+ * The two formats cannot collide: a uuid never matches `^C-[0-9]+$`.
+ *
+ * NOT fixed here, because it is a different defect: `CasesWorkspace.tsx:409`
+ * and `ClientReports.tsx:343` pass *seed* codes (`C-1`, `C-34`) that match no
+ * live row. Those links are wrong about the data, not about the column.
+ */
+const CLIENT_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export async function getClientRecord(ref: string): Promise<ClientProfile | null> {
+  const column = CLIENT_UUID_RE.test(ref) ? 'id' : 'client_code'
+
   // Deliberately NOT filtered on `deactivated_at`: a link to a closed account
   // must still open it (Law 3 — retained and marked). The flag is returned so
   // the screen can mark it.
   const { data, error } = await supabase
     .from('client_directory_v')
     .select(DIRECTORY_COLUMNS)
-    .eq('client_code', clientCode)
+    .eq(column, ref)
     .maybeSingle()
 
-  if (error) throw new Error(`getClientRecordByCode failed: ${error.message}`)
+  if (error) throw new Error(`getClientRecord failed: ${error.message}`)
   if (!data) return null
 
   const row = data as unknown as DirectoryRow
