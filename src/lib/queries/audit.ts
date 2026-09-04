@@ -314,7 +314,7 @@ export function auditForRecord(tableName: string, recordId: string): ListFilters
  *
  * Each set carries a one-row page: the caller passes it through `useList` with
  * `withCount: true` and reads `total`, so the cost is four counts, not four
- * lists — the `RENTAL_KPI_FILTERS` pattern, exactly.
+ * lists — the `rentalKpiFilters()` pattern, exactly.
  */
 export const AUDIT_KPI_FILTERS: Record<'entries' | 'failed' | 'blocked' | 'critical', ListFilters> = {
   entries: { page: { index: 0, size: 1 } },

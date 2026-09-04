@@ -150,9 +150,18 @@ export function parseCsv(text: string): CsvParseResult {
   return { ok: errors.length === 0, rows: cleaned, errors }
 }
 
-/** Builds one CSV cell, quoting only when the value needs it — mirrors the
- *  quoting rule already used by every export in this app. */
+/**
+ * Builds one CSV cell, quoting only when the value needs it — mirrors the
+ * quoting rule already used by every export in this app.
+ *
+ *  is in the test alongside 
+ because rows are joined with CRLF (RFC 4180)
+ * and `parseCsv` drops a bare  outside quotes. Without it a value carrying a
+ * lone carriage return — pasted from Excel, or from a Mac-classic export, both
+ * of which reach the client-name field — was emitted unquoted and silently
+ * split the row on re-import.
+ */
 export function csvCell(value: string | number): string {
   const s = String(value)
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }

@@ -25,7 +25,7 @@
  * unexplained empty screen is the exact failure this mimic exists to avoid.
  */
 
-import { buildCorpus, seedUuid } from '../seed'
+import { buildCorpus, seedUuid, INVOICE_ISSUED_STATUS } from '../seed'
 import { toRupees, type Paisa } from '../money'
 import type { Row, Store } from './engine'
 
@@ -338,7 +338,28 @@ export function buildStore(): Store {
       invoice_no: b.invoiceNo,
       booking_id: bId,
       client_id: clientId,
-      status: 'Issued',
+      /*
+       * ⛔ This wrote `'Issued'`, which is not a member of `invoice_status`
+       * (Draft · Sent · Partially Paid · Paid · Overdue · Void, 0001) — it
+       * belongs to `document_lifecycle_status`, a different enum for a different
+       * table (X-07). Finance's unsettled set is `['Sent', 'Partially Paid']`,
+       * so it matched nothing: the Finance dashboard and the Daily Closing both
+       * read "Outstanding Rs 0 · every issued invoice has been settled" while
+       * Booking Detail showed Rs 25,934 owed on one of those same invoices. Two
+       * screens, one invoice, two answers about what a client is billed.
+       *
+       * The status is now DERIVED from the figures beside it, mirroring
+       * `sync_payment_to_invoice()` (0010) — which is what sets it live, and
+       * which the mock engine does not run. `INVOICE_ISSUED_STATUS` is `seed.ts`'s
+       * own constant for "raised, nothing paid", so the mimic and the SQL
+       * emitter cannot answer differently.
+       */
+      status:
+        b.breakdown.payments === 0
+          ? INVOICE_ISSUED_STATUS
+          : b.breakdown.outstanding === 0
+            ? 'Paid'
+            : 'Partially Paid',
       subtotal: money(b.breakdown.subtotal),
       discount_amount: money(b.breakdown.discount),
       taxable_amount: money(b.breakdown.taxable),

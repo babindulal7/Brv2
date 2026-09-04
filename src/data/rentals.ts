@@ -18,8 +18,8 @@ import { supabase } from '../lib/supabase'
 import { SUB_RENTAL_LINE_TYPES, isSubRentalBooking, type SubRentedLine } from './booking'
 import {
   ACTIVE_RENTALS_FILTERS,
-  NOW_AD,
-  TODAY_DAY_AD,
+  businessDayAd,
+  businessNowAd,
   avatarToneFor,
   civilDaysBetween,
   dotTone,
@@ -43,7 +43,7 @@ import {
  * - **`KPIS` / `kpisFor`** — six hand-typed strings (52 · 14 · 11 · Rs 142,000 ·
  *   84% · 5) sitting above an eight-row seed, with hand-typed sub-lines ("8
  *   Pending • 6 Completed") nothing derived. Four of the six are real counts and
- *   are now four count queries (`RENTAL_KPI_FILTERS` below, rendered by
+ *   are now four count queries (`rentalKpiFilters()` below, rendered by
  *   `RentalsList.tsx`). **Payment Due** and **Utilization** are gone rather than
  *   dashed: no query in `lib/queries/` produces either, and a card whose value
  *   can only ever be a dash is a promise the screen cannot keep. Both figures
@@ -668,22 +668,10 @@ function boundsFrom(namedSet: (dayAd: string) => ListFilters, range: DayRange): 
   return { column: lo.column, fromAd: lo.fromAd, toAd: hi.toAd }
 }
 
-function dayRangeOf(period: LivePeriod): DayRange {
-  const r = periodRange(period, TODAY_DAY_AD)
+function dayRangeOf(period: LivePeriod, dayAd: string): DayRange {
+  const r = periodRange(period, dayAd)
   if (!r) throw new Error(`periodRange("${period}") has no range; only "All" answers null`)
   return r
-}
-
-/** Resolved once, at import, against the app's single operating day (`lib/bs.ts`'s `TODAY`). */
-const TOMORROW = dayRangeOf('Tomorrow')
-const NEXT_SEVEN = dayRangeOf('Next 7 Days')
-
-const PICKUP_TOMORROW = boundsFrom(todaysOutgoing, TOMORROW)
-const PICKUP_NEXT_SEVEN = boundsFrom(todaysOutgoing, NEXT_SEVEN)
-/** `return_at <= end of tomorrow`, with no lower bound — anything already due counts. */
-const RETURN_BY_TOMORROW: DateRange = {
-  column: 'return_at',
-  toAd: boundsFrom(todaysIncoming, TOMORROW).toAd,
 }
 
 /**
@@ -729,7 +717,27 @@ function customBounds(range: CustomRange): DateRange | undefined {
   }
 }
 
+/**
+ * ⛔ The three day-bounded chips used to read module-scope `PICKUP_TOMORROW` /
+ * `PICKUP_NEXT_SEVEN` / `RETURN_BY_TOMORROW`, built once at import from
+ * `TODAY_DAY_AD` (X-05). A tablet left on this list across midnight kept the
+ * *previous* day's bounds under chips still labelled Tomorrow and Next 7 Days.
+ *
+ * They are derived per call now, and from `nowAd` itself rather than from a
+ * second reading of the clock, so the day these chips bound and the instant the
+ * Overdue chip compares against can never be two different days.
+ */
 function chipFilters(chip: ChipKey, custom: CustomRange, nowAd: string): ListFilters {
+  const dayAd = businessDayAd(new Date(nowAd))
+  const tomorrow = dayRangeOf('Tomorrow', dayAd)
+  const pickupTomorrow = boundsFrom(todaysOutgoing, tomorrow)
+  const pickupNextSeven = boundsFrom(todaysOutgoing, dayRangeOf('Next 7 Days', dayAd))
+  /** `return_at <= end of tomorrow`, with no lower bound — anything already due counts. */
+  const returnByTomorrow: DateRange = {
+    column: 'return_at',
+    toAd: boundsFrom(todaysIncoming, tomorrow).toAd,
+  }
+
   switch (chip) {
     // `All` is the **default scope**, not a date filter: the render shows rows
     // dated 2 Jul – 2 Aug under it, and `matchesChip` returned `true`
@@ -738,9 +746,9 @@ function chipFilters(chip: ChipKey, custom: CustomRange, nowAd: string): ListFil
     case 'All':
       return bySortedPickup()
     case 'Tomorrow':
-      return bySortedPickup({ dateRange: PICKUP_TOMORROW })
+      return bySortedPickup({ dateRange: pickupTomorrow })
     case 'Next 7 Days':
-      return bySortedPickup({ dateRange: PICKUP_NEXT_SEVEN })
+      return bySortedPickup({ dateRange: pickupNextSeven })
     // Not yet handed over. A three-stage union, not a stage.
     case 'Upcoming':
       return bySortedPickup({ chips: { stage: ['Quote', 'Booked', 'Packed'] satisfies BookingStatus[] } })
@@ -753,7 +761,7 @@ function chipFilters(chip: ChipKey, custom: CustomRange, nowAd: string): ListFil
       return {
         chips: { stage: ['On Rent'] satisfies BookingStatus[] },
         presence: { cancelled_at: false, actual_return_at: false },
-        dateRange: RETURN_BY_TOMORROW,
+        dateRange: returnByTomorrow,
         sort: { column: 'return_at', ascending: true },
       }
     // Retired label, live stage. `Inspection` was one of the old thirteen and
@@ -848,15 +856,21 @@ function narrowSubRental(query: RentalsQuery, sub: SubRentalNarrowing): RentalsQ
  * replacing it.
  *
  * `nowAd` is a parameter rather than a `Date.now()` call so the mapping stays
- * pure and testable; the screen passes `data/today.ts`'s `NOW_AD`, which is
- * `lib/bs.ts`'s single operating instant — the same one Today, the Calendar and
- * Pulse read, so no two screens can disagree about what day it is.
+ * pure and testable. It is an **INSTANT** — the Overdue chip is exactly
+ * `overdue(nowAd)` and that set compares `return_at` against a `timestamptz`.
+ *
+ * ⛔ The default was `data/today.ts`'s `NOW_AD`, a module-scope constant holding
+ * midnight UTC of the operating day (X-06). Two faults in one value: it was a
+ * DAY MARKER (05:45 in Kathmandu, so the Overdue chip and KPI silently dropped
+ * every booking that fell due earlier the same day, and `toRentalListRow`'s
+ * "Late today" state could never be reached), and it was frozen at import. The
+ * default now resolves at the call.
  */
 export function rentalsQuery(
   chip: ChipKey,
   custom: CustomRange,
   statuses: readonly BookingStatus[],
-  nowAd: string = NOW_AD,
+  nowAd: string = businessNowAd(),
   subRental: SubRentalNarrowing = SUB_RENTAL_OFF,
 ): RentalsQuery {
   return narrowSubRental(narrowStages(chipFilters(chip, custom, nowAd), statuses), subRental)
@@ -875,19 +889,40 @@ export function rentalsQuery(
  *
  * `Payment Due` (Rs 142,000) and `Utilization` (84%) are absent rather than
  * dashed. No query in `lib/queries/` produces either.
+ *
+ * ## ⛔ Why this is a function of `nowAd` and no longer a constant
+ *
+ * It was `RENTAL_KPI_FILTERS`, an object built at import from `TODAY_DAY_AD`
+ * and `NOW_AD`. Three of the four figures are labelled by the day — Pickups
+ * Today, Returns Today, Overdue — so a tablet left on this list across midnight
+ * kept yesterday's counts under today's headings, and the Overdue count was
+ * measured against 05:45 rather than against now (X-05, X-06).
+ *
+ * Taking the instant as an argument moves the decision to the caller, which
+ * renders it, exactly as `data/calendar.ts`'s `railBookingCounts` does. The day
+ * the two "today" counts bound is derived from that same instant, so the three
+ * cards cannot end up on two different days. `useList` keys its effect on the
+ * VALUE of the filter set, not its identity, so rebuilding these objects costs
+ * nothing and re-queries only when the answer actually changes.
  */
 const COUNT_PAGE: ListFilters['page'] = { index: 0, size: 1 }
 
-export const RENTAL_KPI_FILTERS = {
-  /** Everything currently with a client. Shared verbatim with Today's own card. */
-  active: { ...ACTIVE_RENTALS_FILTERS, page: COUNT_PAGE },
-  /** Today ▸ Outgoing — pickups on the operating day that have not left yet. */
-  pickups: { ...todaysOutgoing(TODAY_DAY_AD), page: COUNT_PAGE },
-  /** Today ▸ Incoming — returns due on the operating day, still out. */
-  returns: { ...todaysIncoming(TODAY_DAY_AD), page: COUNT_PAGE },
-  /** Due back before now and never actually returned. */
-  overdue: { ...overdue(NOW_AD), page: COUNT_PAGE },
-} as const satisfies Record<string, ListFilters>
+export function rentalKpiFilters(nowAd: string = businessNowAd()): Record<
+  'active' | 'pickups' | 'returns' | 'overdue',
+  ListFilters
+> {
+  const dayAd = businessDayAd(new Date(nowAd))
+  return {
+    /** Everything currently with a client. Shared verbatim with Today's own card. */
+    active: { ...ACTIVE_RENTALS_FILTERS, page: COUNT_PAGE },
+    /** Today ▸ Outgoing — pickups on the operating day that have not left yet. */
+    pickups: { ...todaysOutgoing(dayAd), page: COUNT_PAGE },
+    /** Today ▸ Incoming — returns due on the operating day, still out. */
+    returns: { ...todaysIncoming(dayAd), page: COUNT_PAGE },
+    /** Due back before **now** and never actually returned. An instant, not a day. */
+    overdue: { ...overdue(nowAd), page: COUNT_PAGE },
+  }
+}
 
 /* ── raw row → the shape the table renders ─────────────────────────────── */
 
@@ -999,6 +1034,19 @@ function stampOf(instantAd: string): { date: string; time: string } {
  * `actual_return_at` still null — so a row cannot be overdue in the chip and on
  * time in the table.
  *
+ * ⛔ `nowAd` defaulted to `data/today.ts`'s `NOW_AD` — midnight UTC of the
+ * operating day, i.e. 05:45 in Kathmandu (X-06). `lateDays` is
+ * `civilDaysBetween(return_at, nowAd)`, so a booking that fell due at 09:00 this
+ * morning came back as *not overdue at all*. The default is the real instant
+ * now.
+ *
+ * (An earlier note here also claimed the `'Late today'` wording was unreachable
+ * under the old anchor. It was not: a booking due at 02:00 NPT is both before
+ * 05:45 — so the predicate accepts it — and on the same Kathmandu civil day, so
+ * `civilDaysBetween` returns 0. The overnight window is small, but the note
+ * rendered. Left written down because a "this branch is dead" claim is exactly
+ * the kind a later reader deletes code on.)
+ *
  * `Due Soon` is deliberately NOT derived, even though the seed carried it: it
  * needs a "how soon is soon" window no spec in this repo states, and inventing
  * one puts an amber badge on a booking for a reason nobody chose. `VIP` needs a
@@ -1006,7 +1054,7 @@ function stampOf(instantAd: string): { date: string; time: string } {
  */
 export function toRentalListRow(
   row: BookingListRow,
-  nowAd: string = NOW_AD,
+  nowAd: string = businessNowAd(),
   /**
    * The derived sub-rental set, or `null` while it is unknown. Passed in rather
    * than fetched here so the mapping stays pure — and so the one answer the

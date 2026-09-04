@@ -23,18 +23,11 @@ import {
   type Queue,
 } from '../../data/operations'
 import AlertsPanel from '../today/AlertsPanel'
-import { NOW_AD, overdueAlert, quoteLapsedAlert, periodRange } from '../../data/today'
+import { businessNowAd, overdueAlert, quoteLapsedAlert, periodRange } from '../../data/today'
 import { CASES, isOpenStatus } from '../../data/cases'
 import { useViewport } from '../../lib/device'
 import { kathmanduCivil, NPT_OFFSET_MIN, getBusinessToday } from '../../lib/bs'
 import { DateField } from '../../components/ui/DateField'
-
-/*
- * The operating day, resolved once when this module loads, from the real
- * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
- * imported `TODAY` constant frozen at 31 Jul 2026.
- */
-const TODAY = getBusinessToday()
 
 
 const th = {
@@ -172,8 +165,14 @@ function nepalDay(ad: Date): string {
   return new Date(kathmanduCivil(ad)).toISOString().slice(0, 10)
 }
 
+/**
+ * ⛔ This read a module-scope `TODAY = getBusinessToday()` (X-05). The day scope
+ * is resolved once per import, so a tablet left on this screen across midnight
+ * kept querying yesterday under chips reading Today and Tomorrow.
+ * `getBusinessToday()` is called here instead, on every evaluation.
+ */
 function dayOffsetFromToday(days: number): string {
-  return nepalDay(new Date(TODAY.getTime() + days * 86_400_000))
+  return nepalDay(new Date(getBusinessToday().getTime() + days * 86_400_000))
 }
 
 export type DayScope = 'today' | 'tomorrow' | 'week' | 'next7' | 'custom'
@@ -443,10 +442,20 @@ export default function OperationsQueues() {
    * bound to this page's day scope: an overdue booking is an exception on ANY
    * day, and a queue narrowed to tomorrow must not hide today's overdue.
    */
-  const alertsQ = useList<BookingListRow>(fetchBookings, overdue(NOW_AD), { isFilteredOverride: false })
-  const quotesQ = useList<BookingListRow>(fetchBookings, quotesExpiring(NOW_AD), { isFilteredOverride: false })
+  /*
+   * ⚠ An INSTANT, resolved on every render — not `data/today.ts`'s old `NOW_AD`,
+   * which was midnight UTC of the operating day and therefore 05:45 in
+   * Kathmandu (X-06). Both sets take an instant and say so in their headers: fed
+   * a day marker, the Critical row missed every booking that fell due earlier
+   * today and the High row missed every quote that lapsed this morning — the two
+   * alerts most likely to matter, silently absent. One reading feeds the query
+   * and the "N days late" wording, so the list and the label agree.
+   */
+  const nowAd = businessNowAd()
+  const alertsQ = useList<BookingListRow>(fetchBookings, overdue(nowAd), { isFilteredOverride: false })
+  const quotesQ = useList<BookingListRow>(fetchBookings, quotesExpiring(nowAd), { isFilteredOverride: false })
   const alertRows = [
-    ...alertsQ.rows.map((r) => overdueAlert(r, NOW_AD)),
+    ...alertsQ.rows.map((r) => overdueAlert(r, nowAd)),
     ...quotesQ.rows.map((r) => quoteLapsedAlert(r)),
   ]
   const retryAlerts = () => {

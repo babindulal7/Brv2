@@ -40,13 +40,6 @@ const MAINTENANCE_JOB_CREATE_UNAVAILABLE_REASON =
 import { useDomainEvent } from '../../events/useDomainEvent'
 import { EVENT_TYPES } from '../../events/eventBus'
 
-/*
- * The operating day, resolved once when this module loads, from the real
- * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
- * imported `TODAY` constant frozen at 31 Jul 2026.
- */
-const TODAY = getBusinessToday()
-
 
 /**
  * **Maintenance** — the Inventory workspace's fourth tab (Foundation §5.1).
@@ -333,9 +326,18 @@ const th = {
  */
 const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
 
-/** Whole days between two UTC midnights — no calendar arithmetic, so no engine is bypassed. */
+/**
+ * Whole days between two UTC midnights — no calendar arithmetic, so no engine
+ * is bypassed.
+ *
+ * ⛔ It measured from a module-scope `TODAY` resolved at import (X-05). Every
+ * "3 days overdue" chip and every red ETA on this screen was therefore measured
+ * from the day the tab was opened, and a workshop tablet is not reloaded daily:
+ * the counts simply stopped advancing while continuing to look live.
+ * `getBusinessToday()` is called per evaluation instead.
+ */
 const DAY_MS = 86_400_000
-const daysFromToday = (d: Date) => Math.round((d.getTime() - TODAY.getTime()) / DAY_MS)
+const daysFromToday = (d: Date) => Math.round((d.getTime() - getBusinessToday().getTime()) / DAY_MS)
 
 /** The three statuses that mean a job is in flight. Named once so the KPI and any later filter agree. */
 const ACTIVE_STATUSES: MaintenanceStatus[] = ['In Progress', 'Waiting Parts', 'At Vendor']

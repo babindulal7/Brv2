@@ -44,7 +44,7 @@ import {
   CHIP_MEANS,
   OPTIONAL_COLUMNS,
   PAYMENT_DUE_UNAVAILABLE,
-  RENTAL_KPI_FILTERS,
+  rentalKpiFilters,
   ROWS,
   SUB_RENTAL_NOTE,
   withSubRental,
@@ -66,7 +66,7 @@ import {
 } from '../../../data/booking'
 import { overdue, todaysIncoming, todaysOutgoing, type BookingListRow } from '../../../lib/queries/bookings'
 import type { ListFilters } from '../../../lib/queries/listQuery'
-import { NOW_AD, TODAY_DAY_AD } from '../../../data/today'
+import { businessNowAd, TODAY_DAY_AD } from '../../../data/today'
 import { getBusinessToday } from '../../../lib/bs'
 import { gateContext } from '../../../lib/fieldGating'
 import { rupees } from '../../../lib/money'
@@ -88,6 +88,18 @@ const CANONICAL_SIX = Object.keys(BOOKING_STATUS)
 
 /** The retired vocabulary 0015 deleted. None of these may ever reach a query. */
 const RETIRED_STAGE_NAMES = ['Draft', 'Confirmed', 'Preparing', 'Ready', 'Dispatched', 'Return Due', 'Inspection', 'Cleaning', 'Completed', 'Cancelled']
+
+/*
+ * The anchor every query in this file is built from, and asserted against.
+ *
+ * It was `data/today.ts`'s exported `NOW_AD`, removed by X-06: that constant was
+ * midnight UTC of the operating day — a DAY MARKER — where `overdue()` and
+ * `rentalsQuery` need an INSTANT, so the Overdue chip and KPI were asking "due
+ * back before 05:45 this morning" and dropping the day's own overdues. The test
+ * states its own instant now, and BOTH sides of every comparison use it, so the
+ * assertions still pin "the chip is exactly `overdue()`" rather than a value.
+ */
+const NOW_AD = businessNowAd()
 
 const NO_RANGE = { from: '', to: '' }
 const ALL_CHIPS = CHIPS.map((c) => c.label)
@@ -330,7 +342,7 @@ describe('every set this screen can build', () => {
   ]
     .filter((r) => !r.impossible)
     .map((r) => r.filters)
-    .concat(Object.values(RENTAL_KPI_FILTERS))
+    .concat(Object.values(rentalKpiFilters(NOW_AD)))
 
   it('names only members of the canonical six', () => {
     for (const set of SENDABLE) {
@@ -400,24 +412,43 @@ describe('the Status facet narrows, never replaces — chip row and Filters rail
 
 /* ── the KPI strip ───────────────────────────────────────────────────────── */
 
-describe('RENTAL_KPI_FILTERS — four counts, replacing six hand-typed strings', () => {
+describe('rentalKpiFilters — four counts, replacing six hand-typed strings', () => {
   it('carries exactly the four cards that have a query behind them', () => {
     // ⛔ `Payment Due` (Rs 142,000) and `Utilization` (84%) are gone rather than
     // dashed: no query in lib/queries produces either, and a card whose value
     // can only ever be a dash is a promise the screen cannot keep.
-    expect(Object.keys(RENTAL_KPI_FILTERS)).toEqual(['active', 'pickups', 'returns', 'overdue'])
+    expect(Object.keys(rentalKpiFilters(NOW_AD))).toEqual(['active', 'pickups', 'returns', 'overdue'])
   })
 
   it('is each named set plus a one-row page, so the card and the list cannot disagree', () => {
     const page = { index: 0, size: 1 }
-    expect(RENTAL_KPI_FILTERS.pickups).toEqual({ ...todaysOutgoing(TODAY_DAY_AD), page })
-    expect(RENTAL_KPI_FILTERS.returns).toEqual({ ...todaysIncoming(TODAY_DAY_AD), page })
-    expect(RENTAL_KPI_FILTERS.overdue).toEqual({ ...overdue(NOW_AD), page })
-    expect(RENTAL_KPI_FILTERS.active.chips).toEqual({ stage: ['On Rent'] })
+    const kpis = rentalKpiFilters(NOW_AD)
+    expect(kpis.pickups).toEqual({ ...todaysOutgoing(TODAY_DAY_AD), page })
+    expect(kpis.returns).toEqual({ ...todaysIncoming(TODAY_DAY_AD), page })
+    expect(kpis.overdue).toEqual({ ...overdue(NOW_AD), page })
+    expect(kpis.active.chips).toEqual({ stage: ['On Rent'] })
+  })
+
+  /*
+   * X-05 — the set was a module-scope constant and is a function of the anchor
+   * now. This pins the reason: the two day-bounded cards must follow the day the
+   * caller is on, not the day this module happened to be imported on.
+   */
+  it('moves its two "today" counts with the day it is given', () => {
+    const yesterday = new Date(Date.parse(NOW_AD) - 86_400_000).toISOString()
+    const today = rentalKpiFilters(NOW_AD)
+    const before = rentalKpiFilters(yesterday)
+    expect(before.pickups.dateRange?.fromAd).not.toBe(today.pickups.dateRange?.fromAd)
+    expect(before.returns.dateRange?.fromAd).not.toBe(today.returns.dateRange?.fromAd)
+    /* The Overdue card is anchored to the INSTANT, not to the day — and it is a
+       `lte` bound with no lower end, which is what makes "due back before now"
+       the question rather than "due back yesterday". */
+    expect(before.overdue.dateRange?.fromAd).toBeUndefined()
+    expect(before.overdue.dateRange?.toAd).not.toBe(today.overdue.dateRange?.toAd)
   })
 
   it('asks for no money on any card', () => {
-    for (const set of Object.values(RENTAL_KPI_FILTERS)) {
+    for (const set of Object.values(rentalKpiFilters(NOW_AD))) {
       expect(JSON.stringify(set)).not.toContain('deposit')
     }
   })

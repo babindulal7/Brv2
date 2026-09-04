@@ -13,11 +13,26 @@ import type { Paisa } from '../../money'
 
 const rs = (n: number) => (n * 100) as Paisa
 
-vi.mock('../bookings', () => ({
-  listBookings: vi.fn(),
-  todaysOutgoing: () => ({}),
-  todaysIncoming: () => ({}),
-}))
+/*
+ * `operationalDayRange` is mocked with the REAL boundary arithmetic on purpose
+ * (FI-06). What the test below asserts is that "New bookings" is counted over
+ * the same OPERATIONAL day as the two movement counts beside it, and a stub
+ * returning `{}` would assert nothing at all. `lib/operationalDay.ts` is the
+ * pure half — it reads no storage and pulls in no Supabase — so it is safe to
+ * import here; the real `queries/bookings.ts` differs only in reading the
+ * day-start from the setting rather than taking the ruled default.
+ */
+vi.mock('../bookings', async () => {
+  const { operationalDayBounds, operationalDayOf, OPERATIONAL_DAY_START_DEFAULT_MINUTES: START } = await import(
+    '../../operationalDay'
+  )
+  return {
+    listBookings: vi.fn(),
+    todaysOutgoing: () => ({}),
+    todaysIncoming: () => ({}),
+    operationalDayRange: (dayAd: string) => operationalDayBounds(operationalDayOf(dayAd, START), START),
+  }
+})
 vi.mock('../finance', () => ({
   listPayments: vi.fn(),
   listInvoices: vi.fn(),
@@ -224,5 +239,21 @@ describe('bookingsCreatedOn', () => {
 
   it('excludes cancellations by flag, since Cancelled is not a stage', () => {
     expect(bookingsCreatedOn(DAY).presence).toEqual({ cancelled_at: false })
+  })
+
+  /*
+   * FI-06. The bounds were `setUTCHours(0,0,0,0)` / `23:59:59.999` — midnight
+   * UTC, i.e. 05:45 → 05:45 in Kathmandu — so the Daily Closing screen put its
+   * "New bookings" figure on a THIRD day boundary, unstated, beside two movement
+   * counts on the operational day and a collections total on the calendar day.
+   * A booking raised at 05:30 counted on a day the floor had already closed.
+   */
+  it('bounds created_at with the operational day, not with UTC midnight', () => {
+    const { fromAd, toAd } = bookingsCreatedOn(DAY).dateRange
+    expect(fromAd).toBe('2026-08-05T06:00:00.000+05:45')
+    expect(toAd).toBe('2026-08-06T05:59:59.999+05:45')
+    /* The old bounds, spelled out so the regression is unmistakable. */
+    expect(fromAd).not.toBe('2026-08-05T00:00:00.000Z')
+    expect(toAd).not.toBe('2026-08-05T23:59:59.999Z')
   })
 })

@@ -1,6 +1,6 @@
 import Icon from '../../components/ui/Icon'
 import { STATUS } from '../../lib/status'
-import { PICKUPS, RETURNS, TODAY_DATE, timeOf, statusKeyOf, has } from '../../data/today'
+import { PICKUPS, RETURNS, todayDate, timeOf, statusKeyOf, has } from '../../data/today'
 import type { Movement } from '../../types/today'
 
 /**
@@ -121,6 +121,15 @@ function Column({ title, icon, rows, emptyText }: { title: string; icon: 'truck'
  * app's own navigation links to.
  */
 export default function WallDisplay() {
+  /* Per render rather than at import. Strictly better than the module-scope
+     constant it replaced, and — say it plainly — still not a fix for a kiosk:
+     this tree has no state and no timer, so nothing re-renders it and the date
+     is in practice resolved once, when the tab is opened. A wall screen that is
+     never reloaded needs a tick to be correct at all, which this archived file
+     does not get. It is imported by nothing today (`App.tsx` mounts nothing
+     from `archive/`); the honest status is "no longer wrong at import", not
+     "correct". */
+  const date = todayDate()
   const dueOut = [...PICKUPS].sort((a, b) => a.at - b.at)
   const late = RETURNS.filter((m) => has(m, 'Overdue')).sort((a, b) => a.at - b.at)
 
@@ -163,11 +172,11 @@ export default function WallDisplay() {
           </span>
         </span>
         <span className="figure" style={{ textAlign: 'right', color: 'var(--text)', fontWeight: 700, lineHeight: 1.3 }}>
-          {/* `TODAY_DATE.bs` is null outside the Date Engine's BS table; the
+          {/* `date.bs` is null outside the Date Engine's BS table; the
               English date takes the lead line rather than leaving this one blank. */}
-          <span style={{ display: 'block' }}>{TODAY_DATE.bs ?? TODAY_DATE.ad}</span>
-          {TODAY_DATE.bs && (
-            <span style={{ display: 'block', fontWeight: 500, color: 'var(--text2)' }}>{TODAY_DATE.ad}</span>
+          <span style={{ display: 'block' }}>{date.bs ?? date.ad}</span>
+          {date.bs && (
+            <span style={{ display: 'block', fontWeight: 500, color: 'var(--text2)' }}>{date.ad}</span>
           )}
         </span>
       </header>

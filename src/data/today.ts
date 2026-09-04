@@ -54,8 +54,8 @@ const TODAY = getBusinessToday()
  * todaysIncoming …)`, and the row shape they render is `MovementRow` — built by
  * `toMovementRow` at the bottom of this file from a real `BookingListRow`.
  *
- * The seed below stayed because **`modules/wall/WallDisplay.tsx` still reads
- * it** (`PICKUPS`, `RETURNS`, `TODAY_DATE`, `timeOf`, `statusKeyOf`, `has`) and
+ * The seed below stayed because **`archive/wall/WallDisplay.tsx` still reads
+ * it** (`PICKUPS`, `RETURNS`, `todayDate`, `timeOf`, `statusKeyOf`, `has`) and
  * `data/pulse.ts` reads `COUNTS`, `UTILIZATION_PCT` and `REVENUE_TODAY_PAISA`
  * from it. Neither file is in this conversion's scope, so deleting the array
  * would have broken two screens to tidy one. Everything Today alone used —
@@ -73,8 +73,7 @@ const TODAY = getBusinessToday()
  * exact bug the spec calls the highest-priority correctness issue in the
  * product, so nothing here hand-writes a BS date any more.
  */
-const TODAY_BS = toBs(TODAY)
-export const TODAY_DATE = {
+export interface DatePillLabels {
   /**
    * `null` — not `'—'` — when the Date Engine holds no BS month-length data for
    * today. An em dash here claimed the date was unknown while `ad` below held
@@ -82,8 +81,20 @@ export const TODAY_DATE = {
    * beneath: the app hiding a date it knows. The renderer promotes `ad` when
    * this is null; see `lib/bs.ts` `formatBsOrAd` for the same rule in one call.
    */
-  bs: TODAY_BS ? formatBs(TODAY_BS) : null,
-  ad: formatAd(TODAY),
+  readonly bs: string | null
+  readonly ad: string
+}
+
+/**
+ * ⛔ This was a module-scope `TODAY_DATE` object (X-05). The pill is the one
+ * thing on the screen that STATES what day it is, so a tablet left open across
+ * midnight showed yesterday's date over today's rows — the heading and the
+ * figures disagreeing, both looking normal. It is resolved per render now.
+ */
+export function todayDate(now: Date = new Date()): DatePillLabels {
+  const today = getBusinessToday(now)
+  const bs = toBs(today)
+  return { bs: bs ? formatBs(bs) : null, ad: formatAd(today) }
 }
 
 /**
@@ -491,7 +502,17 @@ export const CAL_DAYS: CalDay[] = MONTH_RANGE.slice(0, 31).map((d) => {
 
 const TODAY_INDEX = MONTH_RANGE.findIndex((d) => d.getTime() === TODAY.getTime())
 
-/** Today, and the two days either side of it, as `?d=` keys. */
+/**
+ * Today, and the two days either side of it, as `?d=` keys.
+ *
+ * ⚠ **Frozen at import, and no longer wired to anything.** The mini-calendar
+ * these fed was removed from the Today screen on 30 Aug, and `Today.tsx`'s two
+ * "Open Calendar" controls now call {@link businessDayAd} while they render
+ * (X-05) — a link built from a constant opened the Calendar on the day the tab
+ * was first loaded. They are left here with the rest of that panel's seed rather
+ * than deleted (Law 3), but do not re-point a control at one: it is a stale day
+ * the moment the clock passes midnight, and it will not look stale.
+ */
 export const CAL_TODAY_ISO = isoDay(TODAY)
 export const CAL_PREV_ISO = isoDay(MONTH_RANGE[TODAY_INDEX - 1] ?? TODAY)
 export const CAL_NEXT_ISO = isoDay(MONTH_RANGE[TODAY_INDEX + 1] ?? TODAY)
@@ -738,22 +759,38 @@ export const statusKeyOf = (m: { flags: readonly Flag[]; status: BookingStatus }
  * ═══════════════════════════════════════════════════════════════════════ */
 
 /**
- * ## The anchor — one instant, one day
+ * ## The anchor — **now**, as an instant, resolved at the call
  *
- * `lib/bs.ts`'s `TODAY` is the app's single "today" and is deliberately frozen
- * to the seeded operating day; its own comment says it "becomes the real clock
- * when data is wired". This screen reads it rather than calling `new Date()`,
- * for the reason `Calendar.md` §4.2 calls the highest-priority correctness bug
- * in the product: the app once held three opinions about what day it was. A
- * Today screen that queried the wall clock while the DatePill, the mini-month
- * and Rentals all labelled 31 Jul would be the fourth.
+ * ⛔ This was `export const NOW_AD = TODAY.toISOString()`, and it was wrong
+ * twice over (`BUG_AUDIT_LIFECYCLE_2026-09-02.md` X-06).
  *
- * ⚠ So the screen queries the day `lib/bs.ts:135` names, NOT the wall clock.
- * Flipping that one line moves this screen, the Calendar, Rentals and Pulse
- * together — which is the only safe way to move it. That file is outside this
- * conversion's scope and was not touched.
+ *  1. **It was a DAY MARKER, not an instant.** `getBusinessToday()` returns
+ *     midnight UTC of the Kathmandu civil date — which is 05:45 that *morning*
+ *     in Kathmandu, not now. `queries/bookings.ts`'s `overdue()` and
+ *     `quotesExpiring()` take an INSTANT and say so in their headers: fed a
+ *     day marker, `return_at <= 05:45` misses every booking that fell due
+ *     earlier today, so the Overdue KPI under-counted all day and
+ *     `toRentalListRow`'s "Late today" state was unreachable.
+ *  2. **It was frozen at module load.** A warehouse tablet left open across
+ *     midnight kept asking yesterday's question under today's heading.
+ *
+ * So this is a function, and every caller resolves it while it renders. It is
+ * the sibling of {@link businessDayAd} below and the two must not be swapped:
+ * a **day-bounded** set (`todaysOutgoing`, `periodRange`) takes the day; a
+ * comparison against *now* (`overdue`, `quotesExpiring`, `overdueAlert`) takes
+ * this. Both are safe to call every render — `queries/bookings.ts` floors the
+ * instant to its minute, so `useList`'s filter key stays stable and cannot
+ * loop.
+ *
+ * Law 7: the value is a UTC instant. `new Date()` already is one wherever the
+ * tablet's own clock is set, so no Kathmandu shift is applied here — that
+ * belongs to the day boundaries and to rendering, both of which have it.
+ *
+ * @param now Override for tests and for "what would this have been at X".
  */
-export const NOW_AD = TODAY.toISOString()
+export function businessNowAd(now: Date = new Date()): string {
+  return now.toISOString()
+}
 
 /**
  * The **Kathmandu** calendar day an instant falls on — `YYYY-MM-DD`.
@@ -773,7 +810,14 @@ export function businessDayAd(now: Date = new Date()): string {
   return new Date(kathmanduCivil(getBusinessToday(now))).toISOString().slice(0, 10)
 }
 
-/** The **Kathmandu** calendar day `NOW_AD` falls on — `YYYY-MM-DD`. */
+/**
+ * The **Kathmandu** calendar day this module was imported on — `YYYY-MM-DD`.
+ *
+ * ⚠ Frozen at import, and kept only for the module-scope uses that genuinely
+ * cannot move: reading a named set's *stage chips* off it ({@link LIST_STAGES}),
+ * where the day is irrelevant to the answer. Anything a screen LABELS "today"
+ * must call {@link businessDayAd} while it renders instead.
+ */
 export const TODAY_DAY_AD = new Date(kathmanduCivil(TODAY)).toISOString().slice(0, 10)
 
 const DAY_MS = 86_400_000
@@ -796,8 +840,24 @@ export function kathmanduMinutes(instantAd: string): number {
   return shifted.getUTCHours() * 60 + shifted.getUTCMinutes()
 }
 
-/** The clock position the page is rendered at. Drives the Timeline's "now" ring. */
-export const NOW = kathmanduMinutes(NOW_AD)
+/**
+ * The clock position the page is rendered at, in Kathmandu minutes. Drives the
+ * Timeline's window and its "now" ring.
+ *
+ * ⛔ This was `export const NOW = kathmanduMinutes(NOW_AD)`
+ * (`BUG_AUDIT_LIFECYCLE_2026-09-02.md` AR-03). `NOW_AD` was a day marker —
+ * midnight UTC — so this was **always 05:45**, whatever time it actually was,
+ * and the comment above it claimed otherwise. The Timeline therefore opened on
+ * the first movement after 05:45 and ringed it as "now" at every hour of the
+ * day: at 4pm it was scrolled to the morning with the ring eight hours behind
+ * the operator.
+ *
+ * The comment was the true half, so the VALUE was fixed rather than the words:
+ * this reads the real clock, and the caller resolves it per render.
+ */
+export function clockNowMinutes(now: Date = new Date()): number {
+  return kathmanduMinutes(now.toISOString())
+}
 
 /** Whole Kathmandu calendar days from one instant to another. Negative before. */
 export function civilDaysBetween(fromAd: string, toAd: string): number {
@@ -953,14 +1013,33 @@ function narrowStages(base: ListFilters, stages: readonly BookingStatus[]): Colu
   return { filters: { ...base, chips: { ...base.chips, stage: kept } }, impossible: kept.length === 0 }
 }
 
-/** Today ▸ Pickups — `todaysOutgoing` widened to the chip's range and narrowed by Status. */
-export function pickupsQuery(period: LivePeriod, picked: readonly string[]): ColumnQuery {
-  return narrowStages(overDays(todaysOutgoing, periodRange(period, TODAY_DAY_AD), TODAY_DAY_AD), pickedStages(picked))
+/**
+ * Today ▸ Pickups — `todaysOutgoing` widened to the chip's range and narrowed
+ * by Status.
+ *
+ * `dayAd` defaults to {@link businessDayAd}, which is a DEFAULT ARGUMENT and so
+ * resolves at the call, not at import. Both of these used to close over
+ * `TODAY_DAY_AD`; a tablet left on this screen across midnight then kept
+ * fetching yesterday's pickups under a heading that still said Today, beside a
+ * date pill reading the real date (X-05). The day is a parameter for the same
+ * reason `calendar.ts`'s `railBookingCounts` takes one: the figure and the
+ * heading are then computed from one day.
+ */
+export function pickupsQuery(
+  period: LivePeriod,
+  picked: readonly string[],
+  dayAd: string = businessDayAd(),
+): ColumnQuery {
+  return narrowStages(overDays(todaysOutgoing, periodRange(period, dayAd), dayAd), pickedStages(picked))
 }
 
-/** Today ▸ Returns — the same, over `todaysIncoming`. */
-export function returnsQuery(period: LivePeriod, picked: readonly string[]): ColumnQuery {
-  return narrowStages(overDays(todaysIncoming, periodRange(period, TODAY_DAY_AD), TODAY_DAY_AD), pickedStages(picked))
+/** Today ▸ Returns — the same, over `todaysIncoming`. See {@link pickupsQuery}. */
+export function returnsQuery(
+  period: LivePeriod,
+  picked: readonly string[],
+  dayAd: string = businessDayAd(),
+): ColumnQuery {
+  return narrowStages(overDays(todaysIncoming, periodRange(period, dayAd), dayAd), pickedStages(picked))
 }
 
 /**
@@ -975,6 +1054,9 @@ export function returnsQuery(period: LivePeriod, picked: readonly string[]): Col
  * Incoming's). `narrowStages` reports that emptiness honestly as `impossible`;
  * the chip must be honest one step earlier, before the click.
  */
+/* `TODAY_DAY_AD` is legitimate here and only here: the day picks no rows, it
+   only satisfies the named set's signature so its stage chips can be read back.
+   The answer is the same on every day, so freezing it at import changes nothing. */
 export const LIST_STAGES: Record<'Outgoing' | 'Incoming', readonly BookingStatus[]> = {
   Outgoing: (todaysOutgoing(TODAY_DAY_AD).chips?.['stage'] ?? []) as readonly BookingStatus[],
   Incoming: (todaysIncoming(TODAY_DAY_AD).chips?.['stage'] ?? []) as readonly BookingStatus[],
@@ -1149,8 +1231,13 @@ export function toMovementRow(row: BookingListRow, side: 'outgoing' | 'incoming'
 /**
  * An overdue booking → the Critical alert row.
  *
- * The source is `overdue(NOW_AD)` — stage On Rent, due back before the anchor
- * instant, `actual_return_at` still null. Every field below is that row.
+ * The source is `overdue(businessNowAd())` — stage On Rent, due back before
+ * that instant, `actual_return_at` still null. Every field below is that row.
+ *
+ * ⚠ `nowAd` must be the SAME instant the query was built from, and an instant
+ * it is: `days` is `civilDaysBetween(return_at, nowAd)`, and a day marker there
+ * put every booking that fell due earlier today at "0 days" rather than at
+ * "Late today" (X-06).
  *
  * §8: "every alert carries its own primary action", and it is the same action
  * the Returns column offers, pointing at the same booking.

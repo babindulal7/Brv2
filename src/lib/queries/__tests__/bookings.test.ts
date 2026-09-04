@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   listBookings,
+  operationalToday,
   operationQueue,
   overdue,
   quotesExpiring,
@@ -11,6 +12,8 @@ import {
 } from '../bookings'
 import { filterKey } from '../listQuery'
 import { BOOKING_STATUS } from '../../workflow'
+import { bookingsCreatedOn } from '../closing'
+import { getBusinessToday } from '../../bs'
 
 /**
  * # What this suite pins
@@ -571,5 +574,59 @@ describe('overdue / quotesExpiring — stable across renders', () => {
   it('accepts what its own doc tells callers to pass', () => {
     expect(() => overdue(new Date().toISOString())).not.toThrow()
     expect(() => quotesExpiring(new Date().toISOString())).not.toThrow()
+  })
+})
+
+/**
+ * # `operationalToday` — the day a screen is allowed to call "today"
+ *
+ * This block exists because of a live defect, not a hypothetical one. Daily
+ * Closing built its day as `getBusinessToday().toISOString()` and every figure
+ * on the screen — outgoing, incoming, new bookings, payments — was answered for
+ * the day BEFORE. It is the nastiest shape a date bug takes: a DAY MARKER
+ * dressed as an INSTANT. The callee cannot tell the two apart, `nepalDay` does
+ * exactly the right thing with it, and the screen is signed by an operator.
+ */
+describe('operationalToday — a day marker is not an instant', () => {
+  /** Kathmandu is UTC+05:45, so an NPT wall clock maps to UTC by subtracting it. */
+  const npt = (iso: string) => new Date(`${iso}+05:45`)
+
+  it('names the day that has not ended yet before the 06:00 start', () => {
+    // 05:50 in Kathmandu: the floor is still working the 11th's shift.
+    expect(operationalToday(npt('2026-08-12T05:50:00.000'))).toBe('2026-08-11')
+  })
+
+  it('turns over at the operational start, not at midnight', () => {
+    expect(operationalToday(npt('2026-08-12T06:10:00.000'))).toBe('2026-08-12')
+  })
+
+  it('is date-only, so nepalDay passes it through instead of re-resolving it', () => {
+    expect(operationalToday(npt('2026-08-12T12:00:00.000'))).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
+  /*
+   * ⛔ The regression itself. Both expressions below mean "today" to a reader.
+   * At noon on the 12th one of them says the 11th.
+   */
+  it('does not report yesterday where getBusinessToday().toISOString() did', () => {
+    const noon = npt('2026-08-12T12:00:00.000')
+
+    // What the screen used to send: UTC midnight of the civil day = 05:45 NPT,
+    // which is genuinely inside the 11th's operational day.
+    const dayMarkerAsInstant = getBusinessToday(noon).toISOString()
+    expect(dayMarkerAsInstant).toBe('2026-08-12T00:00:00.000Z')
+    expect(todaysOutgoing(dayMarkerAsInstant).dateRange?.fromAd).toBe('2026-08-11T06:00:00.000+05:45')
+
+    // What it sends now.
+    expect(todaysOutgoing(operationalToday(noon)).dateRange?.fromAd).toBe('2026-08-12T06:00:00.000+05:45')
+  })
+
+  it('keeps every figure on the Daily Closing screen on ONE day', () => {
+    const noon = npt('2026-08-12T12:00:00.000')
+    const day = operationalToday(noon)
+    const from = '2026-08-12T06:00:00.000+05:45'
+    expect(todaysOutgoing(day).dateRange?.fromAd).toBe(from)
+    expect(todaysIncoming(day).dateRange?.fromAd).toBe(from)
+    expect(bookingsCreatedOn(day).dateRange?.fromAd).toBe(from)
   })
 })

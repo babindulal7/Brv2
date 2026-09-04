@@ -15,7 +15,7 @@ import { useAuth } from '../../lib/auth'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useTabularLayout } from '../../lib/device'
 import { newClientUuid } from '../../lib/supabase'
-import { TODAY_DAY_AD } from '../../data/today'
+import { businessDayAd } from '../../data/today'
 import {
   listExpenses,
   listExpenseCategories,
@@ -466,7 +466,11 @@ function AddExpenseSheet({
   lookupsError: string | null
   createdBy: string | null
 }) {
-  const [dateAd, setDateAd] = useState(TODAY_DAY_AD)
+  /* Resolved when the form MOUNTS, not when the module loaded. `TODAY_DAY_AD`
+     is frozen at import, so on a machine left open overnight every new expense
+     was dated yesterday by default — silently, on a field most operators will
+     not re-read, and into the ledger that feeds the VAT period. */
+  const [dateAd, setDateAd] = useState(() => businessDayAd())
   const [categoryId, setCategoryId] = useState('')
   const [branchId, setBranchId] = useState('')
   const [vendor, setVendor] = useState('')

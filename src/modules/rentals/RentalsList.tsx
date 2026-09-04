@@ -26,14 +26,14 @@ import { useList, type ListQueryResult } from '../../lib/queries/useList'
 import { useFilters } from '../../lib/queries/useFilters'
 import { useFacetCounts } from '../../lib/queries/facetCounts'
 import type { ListFilters } from '../../lib/queries/listQuery'
-import { NOW_AD } from '../../data/today'
+import { businessNowAd } from '../../data/today'
 import {
   VIEWS,
   ROWS_PER_PAGE,
   OPTIONAL_COLUMNS,
   CHIP_MEANS,
   RENTAL_DEPOSIT_NOTE,
-  RENTAL_KPI_FILTERS,
+  rentalKpiFilters,
   SUB_RENTAL_NOTE,
   SUB_RENTAL_PENDING,
   SUB_RENTAL_UNANSWERED,
@@ -49,12 +49,7 @@ import {
 import type { ChipKey, OptionalColumn, RentalListRow } from '../../data/rentals'
 import { DateField } from '../../components/ui/DateField'
 
-/*
- * The operating day, resolved once when this module loads, from the real
- * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
- * imported `TODAY` constant frozen at 31 Jul 2026.
- */
-const TODAY = getBusinessToday()
+
 
 
 /**
@@ -881,9 +876,36 @@ export default function RentalsList() {
    * treats an empty chip array as "no constraint", so sending it would return
    * EVERY stage. The set is not sent at all; the empty state renders instead.
    */
+  /*
+   * The operating day, read on every render (X-05). It is a `useMemo`
+   * DEPENDENCY rather than a value passed anywhere: the chip filter sets below
+   * are built from the instant `businessNowAd()` returns when the memo runs, and
+   * naming the day here is what makes the memo re-run when the day turns over.
+   * Without it a tablet left open across midnight kept the previous day's
+   * Tomorrow / Next 7 Days bounds under chips still carrying those labels.
+   */
+  /*
+   * The instant every set below is anchored to, read on EVERY render — the same
+   * shape `Today.tsx` uses for its own Overdue count.
+   *
+   * ⛔ It was `useMemo(() => businessNowAd(), [dayAd])`. `dayAd` was
+   * `businessDayAd()`, which only changes at Kathmandu midnight, so the anchor
+   * was pinned to the FIRST render of the day: a booking falling due at 14:00
+   * did not reach the Overdue chip, the Overdue KPI or the table's `lateDays`
+   * for the rest of the shift. That is the exact defect X-06 was raised for —
+   * keying a clock read on the day cannot unfreeze the clock.
+   *
+   * Safe against a `useList` refetch loop, and not by luck: `useList` keys on
+   * `filterKey(filters)`, a VALUE key, and every set that reads this anchor
+   * floors it first — `overdue()` to the minute, the Tomorrow / Next 7 Days
+   * bounds to the day. Two renders inside the same minute therefore produce the
+   * same key. Anything added here that reads the anchor unfloored WILL loop.
+   */
+  const anchor = businessNowAd()
+
   const query = useMemo(
-    () => rentalsQuery(chip, { from, to }, statuses, NOW_AD, { on: subOn, bookingIds: subIds }),
-    [chip, from, to, statuses, subOn, subIds],
+    () => rentalsQuery(chip, { from, to }, statuses, anchor, { on: subOn, bookingIds: subIds }),
+    [chip, from, to, statuses, subOn, subIds, anchor],
   )
 
   /* §6 — groups, not values. Three stages ticked is ONE thing being filtered
@@ -902,7 +924,9 @@ export default function RentalsList() {
     async (filters: ListFilters): Promise<ListQueryResult<RentalListRow>> => {
       if (query.impossible) return { rows: [], total: 0 }
       const res = await listBookings({ ...filters, withCount: true, ...(money ? { withDeposit: true } : {}) })
-      return { rows: res.rows.map((r) => toRentalListRow(r, NOW_AD)), total: res.total ?? null }
+      /* The instant the rows ARRIVED, not one captured at import: `lateDays`
+         and the 'Late today' note are measured from it (X-06). */
+      return { rows: res.rows.map((r) => toRentalListRow(r, businessNowAd())), total: res.total ?? null }
     },
     [query.impossible, money],
   )
@@ -956,13 +980,13 @@ export default function RentalsList() {
    * NEITHER call passes `withDeposit` (Law 6) — a count carries no money.
    */
   const statusCountBase = useMemo(
-    () => rentalsQuery(chip, { from, to }, [], NOW_AD, { on: subOn, bookingIds: subIds }).filters,
-    [chip, from, to, subOn, subIds],
+    () => rentalsQuery(chip, { from, to }, [], anchor, { on: subOn, bookingIds: subIds }).filters,
+    [chip, from, to, subOn, subIds, anchor],
   )
   const statusCountRows = useCallback(
     async (filters: ListFilters): Promise<number | null> => {
       const probe = (filters.chips?.['status'] ?? []) as readonly BookingStatus[]
-      const q = rentalsQuery(chip, { from, to }, probe, NOW_AD, { on: subOn, bookingIds: subIds })
+      const q = rentalsQuery(chip, { from, to }, probe, businessNowAd(), { on: subOn, bookingIds: subIds })
       if (q.impossible) {
         /*
          * Two different refusals share this flag. A stage the chip does not
@@ -978,10 +1002,14 @@ export default function RentalsList() {
     },
     [chip, from, to, subOn, subIds],
   )
-  const activeKpi = useList<BookingListRow>(countFetcher, RENTAL_KPI_FILTERS.active, { isFilteredOverride: false })
-  const pickupsKpi = useList<BookingListRow>(countFetcher, RENTAL_KPI_FILTERS.pickups, { isFilteredOverride: false })
-  const returnsKpi = useList<BookingListRow>(countFetcher, RENTAL_KPI_FILTERS.returns, { isFilteredOverride: false })
-  const overdueKpi = useList<BookingListRow>(countFetcher, RENTAL_KPI_FILTERS.overdue, { isFilteredOverride: false })
+  /* Rebuilt per render, keyed on the day so the three "today" cards move with
+     the clock. `useList` keys its effect on the filter set's VALUE, so a fresh
+     object with the same content costs nothing. */
+  const kpiFilters = useMemo(() => rentalKpiFilters(anchor), [anchor])
+  const activeKpi = useList<BookingListRow>(countFetcher, kpiFilters.active, { isFilteredOverride: false })
+  const pickupsKpi = useList<BookingListRow>(countFetcher, kpiFilters.pickups, { isFilteredOverride: false })
+  const returnsKpi = useList<BookingListRow>(countFetcher, kpiFilters.returns, { isFilteredOverride: false })
+  const overdueKpi = useList<BookingListRow>(countFetcher, kpiFilters.overdue, { isFilteredOverride: false })
 
   /* `useList` memoises `refetch`; naming them keeps the callback keyed on
      the functions rather than on the whole list objects, which are fresh
@@ -2094,7 +2122,12 @@ export default function RentalsList() {
       <FooterNote
         extra={[
           'Cancelled bookings are retained, never deleted',
-          `Quick filters are relative to ${formatAd(TODAY)}`,
+          /* Resolved as the note is BUILT, not when the module loaded. It was
+             `formatAd(TODAY)` off a module constant, so a tablet left open
+             across midnight printed yesterday's date beside chips whose bounds
+             had already moved on — the footnote contradicted the list it
+             annotated, and the footnote is the part an operator trusts. */
+          `Quick filters are relative to ${formatAd(getBusinessToday())}`,
           'Date chips narrow by pickup date — a return-date range needs a second dateRange the shared filter shape does not carry',
           SUB_RENTAL_NOTE,
           ...(money ? [RENTAL_DEPOSIT_NOTE] : []),

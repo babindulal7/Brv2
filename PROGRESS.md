@@ -2,6 +2,79 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-05 — the time-boundary batch, and the day Daily Closing was reading
+
+**Phase:** Phase 0 · **Status:** 7 register items closed (6 batched + 1 the reviews found) · 1 filed unruled
+
+Cross-cutting P2s from `BUG_AUDIT_LIFECYCLE_2026-09-02.md`: **X-05, X-06, X-07, AR-03, FI-04,
+FI-06**, plus **FI-16**, which the batch did not cause and would not have been found without it.
+
+### The one that mattered — Daily Closing was a day behind (FI-16, P1)
+
+`DailyClosing.tsx` built its day as `getBusinessToday().toISOString()`. That is a **day marker
+dressed as an instant**: `getBusinessToday()` returns UTC midnight of the Kathmandu civil day,
+so the string is `…T00:00:00.000Z` — 05:45 NPT. `queries/bookings.ts`'s `nepalDay` then does
+exactly the right thing with it and resolves it to the operational day 05:45 belongs to, which
+is **the day before**, because the day starts at 06:00.
+
+All four sets took that day — `todaysOutgoing`, `todaysIncoming`, `bookingsCreatedOn`,
+`paymentsInPeriod` — under a header pill naming today, on the screen an operator signs.
+
+Two of those were already wrong at `HEAD`; FI-06 moved the third onto the same wrong day, which
+is how three independent reviews caught it. The fix is one call site: a new exported
+`operationalToday()` names the day **once**, date-only, so `nepalDay` passes it through instead
+of re-resolving it. `getBusinessToday()` stays for the date pill — a pill is a label, and a
+label is civil.
+
+Driven at 23:56 NPT on 4 Sep: the old expression resolved to `2026-09-03`, the new one to
+`2026-09-04`, pill reading "4 Sept 2026". Five pinning tests in `bookings.test.ts`, one of which
+asserts the old call site's wrong answer so the regression cannot come back quietly.
+
+### The rest
+
+- **X-06** — `NOW_AD` deleted; `businessNowAd(now)` at each call site. The first pass then
+  re-froze it on Rentals as `useMemo(() => businessNowAd(), [dayAd])`, which pins the anchor to
+  the day's *first render* — the very defect X-06 was raised for. Now read per render; safe
+  because `useList` keys on `filterKey` (a value key) and every consumer floors the anchor.
+- **X-05** — the module-scope "today" constants unfrozen. Two the first pass missed and review
+  caught: RentalsList's own `const TODAY = getBusinessToday()` (rendered in the footer note) and
+  Expenses' `useState(TODAY_DAY_AD)` — every new expense defaulted to the day the app was
+  *opened*, into the ledger that feeds the VAT period.
+- **AR-03** — `NOW` was always 05:45 under a comment claiming it was the render-time clock.
+- **X-07** — the mock corpus no longer writes `'Issued'` (a `document_lifecycle_status` value);
+  status is derived from the figures beside it, mirroring `sync_payment_to_invoice()`.
+- **FI-04** — the invoice CSV goes through `csvCell`. Review then caught that `csvCell` did not
+  quote a bare `\r`, which joining rows with CRLF had just made reachable.
+- **FI-06** — `bookingsCreatedOn` on the operational day.
+
+### Three comments were wrong, and are now right
+
+Worth logging separately, because in this repo a confident comment is load-bearing and a false
+one is worse than none:
+
+- The FI-06 justification invented a failure it cannot produce. Old and new bounds differ **only**
+  in the 15-minute band 05:45–06:00 NPT; a booking at 05:30 or 23:30 lands on the same day under
+  both. The real defect is the unstated third boundary on a signed screen.
+- X-06/AR-03's "`'Late today'` was unreachable" is false: a booking due at 02:00 NPT is both
+  before the old 05:45 anchor and 0 civil days late, so the note rendered. A "this branch is
+  dead" claim is exactly what a later reader deletes code on.
+- Finance attributed an instant-precision defect to a day-precision query. `invoices.due_date`
+  is a `date` column and `overdueInvoices` compares `previousDay(nepalDay(…))` — there is no
+  05:45 to be wrong about there.
+
+### Left unruled — X-09
+
+`businessDayAd()` is the Kathmandu **civil** day; the floor screens feed it to queries that want
+the **operational** day, so between 00:00 and 06:00 NPT Today, Rentals and Operations name a day
+that has not begun. The swap is mechanical and `operationalToday()` already exists — but at 02:00
+on the 5th, should the date pill say "4 Sept" (the day the figures are for) or "5 Sept"? That is
+a product decision, so it is filed, not guessed. Daily Closing is deliberately already on the
+operational day; the two disagree in that window until Babin rules.
+
+**Verified:** `tsc --noEmit` clean; `eslint` on all changed files 0 errors/0 warnings; **full
+suite 111 files / 2452 tests passing**; driven in the mock build — Daily Closing, Rentals (footer
+note reads today), Add Expense (defaults to today), no console errors.
+
 ## 2026-09-04 — the audit's P0s, fixed (and one deliberately not)
 
 **Phase:** Phase 0 · **Status:** 6 of 7 verified P0s fixed · 1 left open as a ruling question

@@ -11,6 +11,20 @@ import { PARENTS } from './inventory'
  */
 const TODAY = getBusinessToday()
 
+/*
+ * ⚖ X-05, considered and LEFT AS A CONSTANT — deliberately.
+ *
+ * Every figure in this file is seed: the ledger rows, the month series and the
+ * revenue totals are all generated relative to the `TODAY` above, at import.
+ * The date-range options below (`Today`, `Yesterday`, `This week`, …) select
+ * over those generated rows, so anchor and data move together and the screen is
+ * internally consistent. Making the anchor live would leave the DATA frozen and
+ * the RANGES moving — "Today" would select a day the seed has no rows for, and
+ * the Pulse report would start showing empty periods that look like quiet days.
+ *
+ * The fix for this file is wiring it to `lib/queries`, not unfreezing its clock.
+ */
+
 
 /**
  * **Reports ▸ Pulse — the seed ledger.**

@@ -12,6 +12,20 @@ import { captureError } from '../lib/monitoring'
  */
 const TODAY = getBusinessToday()
 
+/*
+ * ⚖ X-05, considered and LEFT AS A CONSTANT — deliberately.
+ *
+ * `CASES` is seed, and every case's `openedAd` / `settledAd` below is computed
+ * FROM this same `TODAY` at import (see the note above `CASES`). `ageDays` and
+ * the escalation thresholds then measure against it, so the ages are the ones
+ * the seed intends. Reading the live clock here would age fabricated cases past
+ * their own escalation thresholds while a tablet stayed open — inventing
+ * "escalate to Owner" alerts about cases that do not exist.
+ *
+ * The fix for this file is a `lib/queries` read, not a live anchor over a
+ * frozen corpus.
+ */
+
 
 /**
  * Cases (Incident Management) seed data — `04 Operations/Cases.md` v1.1

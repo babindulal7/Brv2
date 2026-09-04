@@ -875,6 +875,47 @@ function endOfDay(dayAd: string): string {
   return operationalDayBounds(nepalDay(dayAd), operationalDayStartMinutes()).toAd
 }
 
+/**
+ * One operational day's bounds, for the queries that live in another module but
+ * must sit on the SAME day as the sets above.
+ *
+ * `startOfDay` / `endOfDay` stay private — they are the boundary rule and every
+ * named set here is built from them — but `queries/closing.ts` counts bookings
+ * CREATED on a day, on the same screen as `todaysOutgoing` and `todaysIncoming`,
+ * and it was bounding `created_at` with `setUTCHours(0,0,0,0)` / `23:59:59.999`.
+ * That is midnight UTC, i.e. 05:45 → 05:45 NPT: a third day boundary on a
+ * screen whose own header tells the operator that movement counts use the
+ * operational day (FI-06). Exporting the pair is what lets that count move with
+ * the D4 setting instead of drifting from the two figures printed beside it.
+ */
+export function operationalDayRange(dayAd: string): { fromAd: string; toAd: string } {
+  return { fromAd: startOfDay(dayAd), toAd: endOfDay(dayAd) }
+}
+
+/**
+ * **The operational day the floor is working right now** — `YYYY-MM-DD`.
+ *
+ * The one safe way for a screen to say "today" to any named set in this module.
+ *
+ * `data/today.ts`'s `businessDayAd()` answers the Kathmandu CIVIL day, which is
+ * the right answer for a date pill and the wrong one for a filter: between
+ * midnight and 06:00 the civil day names an operational day that has not begun,
+ * so the floor's own pending returns vanish and the panel fills with a day's
+ * work nobody has started.
+ *
+ * Passing an INSTANT instead is worse, and was the live defect: Daily Closing
+ * sent `getBusinessToday().toISOString()` — `T00:00:00.000Z`, which is 05:45 in
+ * Kathmandu — so `nepalDay` resolved it, correctly, to the day BEFORE, and the
+ * screen counted yesterday's movements under today's date. A day marker dressed
+ * as an instant is indistinguishable from a real one at the callee.
+ *
+ * Returns a date-only string precisely so `nepalDay` passes it through
+ * untouched: the day is named once, here, against the D4 setting.
+ */
+export function operationalToday(now: Date = new Date()): string {
+  return nepalDay(now.toISOString())
+}
+
 /* ── Floor lines ──────────────────────────────────────────────────────────
    The per-booking read the five floor workspaces need, named by the empty
    state they render today: `BookingNotLoaded` says "the missing piece is a

@@ -5,13 +5,13 @@ import { PageHeader, Button, FooterNote, KpiStrip, Rail, Card, type Kpi } from '
 import MovementList from './MovementList'
 import TimelinePanel from './TimelinePanel'
 import {
-  TODAY_DATE,
+  todayDate,
   MORE_FILTERS,
   FILTER_SUPPORT,
   LIST_STAGES,
   mergeByTime,
-  CAL_TODAY_ISO,
-  NOW_AD,
+  businessDayAd,
+  businessNowAd,
   ACTIVE_RENTALS_FILTERS,
   pickupsQuery,
   returnsQuery,
@@ -35,10 +35,15 @@ import { useCanViewMoney } from '../../lib/moneyVisibility'
  */
 function DatePill() {
   const navigate = useNavigate()
+  /* Both the label and the link resolve the day AT RENDER (X-05). They used to
+     read module-scope constants, so a tablet left open across midnight showed
+     yesterday's date and its Calendar link opened yesterday. */
+  const date = todayDate()
+  const dayAd = businessDayAd()
   return (
     <button
       type="button"
-      onClick={() => navigate(`/calendar?d=${CAL_TODAY_ISO}`)}
+      onClick={() => navigate(`/calendar?d=${dayAd}`)}
       aria-label="Open the Calendar at today's date"
       style={{
         display: 'inline-flex',
@@ -72,16 +77,16 @@ function DatePill() {
       </div>
       <span style={{ textAlign: 'left', lineHeight: 1.25 }}>
         {/* BS leads and AD sits beneath (Law 9) — but only while the Date
-            Engine can name the BS day. Outside its table `TODAY_DATE.bs` is
+            Engine can name the BS day. Outside its table `date.bs` is
             null and the English date takes the lead line alone, because the
             alternative shipped an em dash in the bold slot above the date the
             app actually knew. `title` names the gap rather than leaving a
             silently one-line pill. */}
         <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', letterSpacing: '0.01em' }}>
-          {TODAY_DATE.bs ?? TODAY_DATE.ad}
+          {date.bs ?? date.ad}
         </span>
-        {TODAY_DATE.bs ? (
-          <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 500 }}>{TODAY_DATE.ad}</span>
+        {date.bs ? (
+          <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 500 }}>{date.ad}</span>
         ) : (
           <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 500 }} title={BS_UNSUPPORTED_NOTE}>
             Nepali date unavailable
@@ -499,7 +504,7 @@ const NOT_TRACKED = 'Not tracked yet'
  * |---|---|
  * | `pickupsQuery(period, pickedOut)` | Outgoing list · Timeline · Outgoing KPI |
  * | `returnsQuery(period, pickedIn)` | Incoming list · Timeline · Incoming KPI |
- * | `overdue(NOW_AD)` | Overdue KPI |
+ * | `overdue(businessNowAd())` | Overdue KPI |
  * | `ACTIVE_RENTALS_FILTERS` | Active Rentals KPI (count only — one row fetched) |
  *
  * Every one is `listBookings`, Law 2's one booking query. There is no second
@@ -534,8 +539,15 @@ export default function Today() {
   const [segment, setSegment] = useState<Segment>('out')
   const [allKpis, setAllKpis] = useState(false)
 
-  const pickupSet = pickupsQuery(period, pickedOut)
-  const returnSet = returnsQuery(period, pickedIn)
+  /*
+   * The operating day, resolved on every render (X-05). It used to be
+   * `data/today.ts`'s import-time `TODAY_DAY_AD`, so a tablet left on this
+   * screen overnight kept fetching yesterday's movements under a heading, a
+   * date pill and a period chip that all said Today.
+   */
+  const dayAd = businessDayAd()
+  const pickupSet = pickupsQuery(period, pickedOut, dayAd)
+  const returnSet = returnsQuery(period, pickedIn, dayAd)
 
   /*
    * Did the OPERATOR narrow this? `useList`'s heuristic cannot answer it here:
@@ -586,7 +598,10 @@ export default function Today() {
     async (filters: ListFilters): Promise<ListQueryResult<MovementRow>> => {
       if (pickupSet.impossible) return { rows: [], total: 0 }
       const res = await listBookings(filters)
-      return { rows: res.rows.map((r) => toMovementRow(r, 'outgoing', NOW_AD)), total: res.total ?? null }
+      /* `businessNowAd()` inside the fetch, not captured above it: the "N days
+         late" / "Late today" note is measured from when the rows ARRIVED. */
+      const nowAd = businessNowAd()
+      return { rows: res.rows.map((r) => toMovementRow(r, 'outgoing', nowAd)), total: res.total ?? null }
     },
     [pickupSet.impossible],
   )
@@ -595,7 +610,8 @@ export default function Today() {
     async (filters: ListFilters): Promise<ListQueryResult<MovementRow>> => {
       if (returnSet.impossible) return { rows: [], total: 0 }
       const res = await listBookings(filters)
-      return { rows: res.rows.map((r) => toMovementRow(r, 'incoming', NOW_AD)), total: res.total ?? null }
+      const nowAd = businessNowAd()
+      return { rows: res.rows.map((r) => toMovementRow(r, 'incoming', nowAd)), total: res.total ?? null }
     },
     [returnSet.impossible],
   )
@@ -605,7 +621,10 @@ export default function Today() {
 
   /* The Overdue KPI's query. The Alerts panel itself moved to /operations
      (30 Aug) and fetches there; this page keeps only the count it renders. */
-  const alerts = useList(listBookings, overdue(NOW_AD), { isFilteredOverride: false })
+  /* An INSTANT, resolved per render (X-06). `overdue()` floors it to the minute,
+     so the filter key is stable and `useList` cannot loop; a day marker here
+     asked "due back before 05:45 this morning" and lost the day's own overdues. */
+  const alerts = useList(listBookings, overdue(businessNowAd()), { isFilteredOverride: false })
 
   /*
    * Count only. One row is fetched purely because PostgREST needs a range to
@@ -827,7 +846,7 @@ export default function Today() {
           <Button icon="queues" onClick={() => navigate('/operations')}>
             Open Operation
           </Button>
-          <Button icon="calendar" onClick={() => navigate(`/calendar?d=${CAL_TODAY_ISO}`)}>
+          <Button icon="calendar" onClick={() => navigate(`/calendar?d=${businessDayAd()}`)}>
             Open Calendar
           </Button>
         </div>

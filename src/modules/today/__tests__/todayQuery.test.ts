@@ -31,7 +31,9 @@ import { NPT_OFFSET_MIN, getBusinessToday } from '../../../lib/bs'
 import {
   FILTER_SUPPORT,
   MORE_FILTERS,
-  NOW_AD,
+  businessDayAd,
+  businessNowAd,
+  clockNowMinutes,
   TODAY_DAY_AD,
   avatarToneFor,
   civilDaysBetween,
@@ -47,7 +49,20 @@ import {
   returnsQuery,
   toMovementRow,
 } from '../../../data/today'
-import { todaysIncoming, todaysOutgoing, type BookingListRow } from '../../../lib/queries/bookings'
+import { overdue, todaysIncoming, todaysOutgoing, type BookingListRow } from '../../../lib/queries/bookings'
+
+/*
+ * The anchor these mapping tests pass in.
+ *
+ * It was `data/today.ts`'s exported `NOW_AD`, which X-06 removed: that constant
+ * held midnight UTC of the operating day — a DAY MARKER, and 05:45 in Kathmandu
+ * — where every consumer needed an instant. The tests below that use it are
+ * asserting field mappings (`at`, `kind`, `due`, `atDayAd`) that do not depend
+ * on the anchor at all, so they keep the same shape with the real instant; the
+ * ones that DO depend on it already state their own (`NOW_5_AUG`, `NOW_1_AUG`),
+ * which is the pattern the rest of this file follows.
+ */
+const NOW_AD = businessNowAd()
 
 type Raw = BookingListRow
 
@@ -148,9 +163,9 @@ describe('toMovementRow · Overdue, and the flags that are not derived', () => {
 
   it('does not flag one still in the future', () => {
     /* An instant BEFORE the fixture's 2 Aug return, stated here rather than
-       taken from `NOW_AD`. `NOW_AD` is the real operating day now that
-       `lib/bs.ts` reads the clock, so on any day after 2 Aug 2026 this fixture
-       is overdue and the test was asserting the opposite of what it says. */
+       taken from the clock: `businessNowAd()` is the real instant, so on any day
+       after 2 Aug 2026 this fixture is overdue and the test would be asserting
+       the opposite of what it says. */
     const NOW_1_AUG = '2026-08-01T00:00:00.000Z'
     expect(toMovementRow(raw(), 'incoming', NOW_1_AUG).flags).toEqual([])
   })
@@ -490,5 +505,45 @@ describe('alerts · built from rows, never typed', () => {
 
   it('renders an explicit non-value when the date is missing', () => {
     expect(quoteLapsedAlert(raw({ quoteExpiresAtAd: null })).right).toBe('—')
+  })
+})
+
+/* ── X-06 / AR-03 · the anchor ───────────────────────────────────────────── */
+
+/**
+ * The register's X-06: `NOW_AD` was `getBusinessToday().toISOString()`, which is
+ * midnight **UTC** of the Kathmandu civil date — 05:45 that morning in
+ * Kathmandu, and a DAY MARKER where `overdue()` documents that it needs an
+ * INSTANT. Everything fed from it (the Rentals Overdue chip and KPI, the
+ * Dashboard's Overdue count, Operations' Critical alerts) therefore stopped
+ * seeing anything that fell due after 05:45 today.
+ *
+ * These pin the difference in both directions, so a day marker cannot creep
+ * back in under a name that reads like an instant.
+ */
+describe('the Overdue anchor is an INSTANT, not the operating day', () => {
+  /** 5 Aug 2026, 16:00 in Kathmandu. */
+  const at4pm = new Date('2026-08-05T10:15:00.000Z')
+  /** A booking that fell due at 09:00 that same morning — seven hours late. */
+  const dueThisMorning = Date.parse('2026-08-05T03:15:00.000Z')
+
+  it('sweeps in a booking that fell due earlier the same day', () => {
+    const toAd = overdue(businessNowAd(at4pm)).dateRange?.toAd
+    expect(toAd).toBeDefined()
+    expect(dueThisMorning).toBeLessThan(Date.parse(toAd as string))
+  })
+
+  it('⛔ the old day-marker anchor did not — this is the defect, stated', () => {
+    /* Exactly what `NOW_AD` held: midnight UTC of the operating day. */
+    const dayMarker = `${businessDayAd(at4pm)}T00:00:00.000Z`
+    const toAd = overdue(dayMarker).dateRange?.toAd
+    expect(dueThisMorning).toBeGreaterThan(Date.parse(toAd as string))
+  })
+
+  it('AR-03 — the Timeline clock reads the clock, and not 05:45 forever', () => {
+    expect(clockNowMinutes(at4pm)).toBe(16 * 60)
+    /* What the old `NOW = kathmanduMinutes(NOW_AD)` produced, at every hour of
+       every day: the offset itself, mistaken for a time of day. */
+    expect(kathmanduMinutes(`${businessDayAd(at4pm)}T00:00:00.000Z`)).toBe(5 * 60 + 45)
   })
 })

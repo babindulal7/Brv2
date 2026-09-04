@@ -12,6 +12,16 @@ import { WAREHOUSES } from './warehouse'
  */
 const TODAY = getBusinessToday()
 
+/*
+ * ⚖ X-05, considered and LEFT AS A CONSTANT — deliberately.
+ *
+ * This module's only consumer is the ARCHIVED `archive/BusinessHours.tsx`
+ * (`data/calendar.ts` mentions its `CalException` shape in prose but imports
+ * nothing from here). Its week, its exception list and its BS month walk are
+ * all seed built from this anchor, so unfreezing it would move a screen nobody
+ * routes to, over data that would not move with it.
+ */
+
 
 /**
  * **Business Hours & Holidays** seed —

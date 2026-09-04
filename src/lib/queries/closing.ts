@@ -30,7 +30,7 @@
  * carries the wording.
  */
 
-import { listBookings, todaysIncoming, todaysOutgoing } from './bookings'
+import { listBookings, operationalDayRange, todaysIncoming, todaysOutgoing } from './bookings'
 import { listInvoices, listPayments, outstandingInvoices, paymentsInPeriod } from './finance'
 import { sumDepositsHeld } from './clients'
 import type { ListFilters } from './listQuery'
@@ -210,15 +210,39 @@ export async function fetchDailyClosing(dayAd: string): Promise<DailyClosing> {
  * today" means at a counter, and `BookingListRow.createdAtAd`'s own comment
  * makes the same distinction. Cancellations are excluded on the same terms as
  * every other named set — 'Cancelled' is a flag, not a stage.
+ *
+ * ## ⛔ The day this counts over, and the day it used to count over
+ *
+ * The bounds are `queries/bookings.ts`'s operational day — D4, default 06:00,
+ * read from the setting per call — which is the SAME boundary `todaysOutgoing`
+ * and `todaysIncoming` use two lines above in {@link fetchDailyClosing}.
+ *
+ * They used to be `new Date(dayAd)` with `setUTCHours(0,0,0,0)` and
+ * `setUTCHours(23,59,59,999)`: midnight **UTC**, which is 05:45 → 05:45 in
+ * Kathmandu (FI-06). So the Daily Closing screen carried THREE day boundaries —
+ * the operational day for the two movement counts, calendar midnight for
+ * `collected`, and this unstated third one for New bookings — while its header
+ * told the operator there were two and named which figures used which.
+ *
+ * Be precise about the size of it, because the first version of this comment
+ * was not. Old bounds for day D ran D 05:45 → D+1 05:44:59.999 NPT; the
+ * operational day runs D 06:00 → D+1 05:59:59.999. They disagree about exactly
+ * one fifteen-minute band, 05:45–06:00, and about nothing else — a booking
+ * raised at 05:30, or at 23:30, lands on the same day under both rules. The
+ * defect fixed here is therefore the UNSTATED THIRD BOUNDARY on a signed
+ * screen, not a figure that was hours out. A reconciliation that cannot be
+ * reproduced from the screen's own stated rules is the problem; the fifteen
+ * minutes are how often it bites.
+ *
+ * `collected` is deliberately NOT moved with it: the ledger's day stays at
+ * calendar midnight because VAT periods depend on it. That split is the one the
+ * header already states — see this module's own header and
+ * `lib/operationalDay.ts`'s.
  */
 export function bookingsCreatedOn(dayAd: string) {
-  const day = new Date(dayAd)
-  const from = new Date(day)
-  from.setUTCHours(0, 0, 0, 0)
-  const to = new Date(day)
-  to.setUTCHours(23, 59, 59, 999)
+  const { fromAd, toAd } = operationalDayRange(dayAd)
   return {
-    dateRange: { column: 'created_at', fromAd: from.toISOString(), toAd: to.toISOString() },
+    dateRange: { column: 'created_at', fromAd, toAd },
     presence: { cancelled_at: false },
     sort: { column: 'created_at', ascending: false },
   } as const

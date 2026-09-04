@@ -6,6 +6,7 @@ import { Unavailable } from '../../components/ui/Unavailable'
 import { useViewport } from '../../lib/device'
 import { formatMoney, parseMoney, type Paisa } from '../../lib/money'
 import { formatAd, toBs, formatBs, getBusinessToday } from '../../lib/bs'
+import { operationalToday } from '../../lib/queries/bookings'
 import { useAuth } from '../../lib/auth'
 import { canViewMoney, canApproveDailyClosing } from '../../lib/rbac'
 import { newClientUuid } from '../../lib/supabase'
@@ -59,7 +60,19 @@ export default function DailyClosing() {
   const maySeeMoney = user ? canViewMoney(user.role) : false
 
   const today = useMemo(() => getBusinessToday(), [])
-  const dayAd = today.toISOString()
+  /*
+   * ⛔ This was `today.toISOString()`, and every figure on the screen was a day
+   * late. `getBusinessToday()` returns UTC midnight of the Kathmandu civil day,
+   * so the string is `…T00:00:00.000Z` = 05:45 NPT — an INSTANT, which
+   * `queries/bookings.ts` resolves to the operational day it falls in. 05:45 is
+   * before the 06:00 start, so all four sets below (`todaysOutgoing`,
+   * `todaysIncoming`, `bookingsCreatedOn`, `paymentsInPeriod`) were answered for
+   * YESTERDAY, under a header naming today — and the operator signs this screen.
+   *
+   * `operationalToday()` names the day once, date-only, against the D4 setting.
+   * `today` is kept for the date pill: that is a label, and a label is civil.
+   */
+  const dayAd = useMemo(() => operationalToday(), [])
 
   const [figures, setFigures] = useState<ClosingFigures | null>(null)
   const [loading, setLoading] = useState(true)

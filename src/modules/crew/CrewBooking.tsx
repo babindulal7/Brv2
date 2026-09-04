@@ -38,13 +38,6 @@ import {
 } from '../../data/crew'
 import type { CrewAssignment, PayoutStatus, RosterChip, CrewMember } from '../../data/crew'
 
-/*
- * The operating day, resolved once when this module loads, from the real
- * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
- * imported `TODAY` constant frozen at 31 Jul 2026.
- */
-const TODAY = getBusinessToday()
-
 
 /** §11.1 — Tentative and Confirmed share one tone (blue); "on shoot today" is the derived solid-green override. */
 function assignmentTone(a: CrewAssignment, onShootToday: boolean): StatusKey {
@@ -75,11 +68,14 @@ function parseAdDay(s: string): number {
   return Date.UTC(Number(y), month, Number(d))
 }
 
+/* `getBusinessToday()` per call rather than a module-scope `TODAY` (X-05): the
+   "on shoot today" badge was measured against the day this module was imported,
+   so it kept flagging yesterday's shoots on a tablet nobody had reloaded. */
 function onShootToday(a: CrewAssignment): boolean {
   if (a.cancelled || a.status !== 'Confirmed') return false
   const s = parseAdDay(a.startDateAd)
   const e = parseAdDay(a.endDateAd)
-  const t = TODAY.getTime()
+  const t = getBusinessToday().getTime()
   return !Number.isNaN(s) && !Number.isNaN(e) && t >= s && t <= e
 }
 
@@ -916,7 +912,12 @@ function mondayOf(d: Date): Date {
 }
 
 function WeekCalendar({ assignments, conflictIds }: { assignments: CrewAssignment[]; conflictIds: Set<string> }) {
-  const weekStart = useMemo(() => mondayOf(TODAY), [])
+  /* The week shown, and the column the grid highlights, both come from ONE
+     reading of the clock taken while this renders (X-05). They were derived
+     from a module-scope `TODAY`, so the grid kept last-loaded week's columns
+     with the highlight stuck on a day that had passed. */
+  const todayUtc = getBusinessToday().getTime()
+  const weekStart = useMemo(() => mondayOf(new Date(todayUtc)), [todayUtc])
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => new Date(weekStart.getTime() + i * DAY_MS)), [weekStart])
   const weekEnd = days[6] as Date
 
@@ -948,7 +949,9 @@ function WeekCalendar({ assignments, conflictIds }: { assignments: CrewAssignmen
           <div style={{ display: 'grid', gridTemplateColumns: '160px repeat(7, minmax(110px,1fr))', minWidth: 940 }}>
             <div />
             {days.map((d) => {
-              const isToday = d.getTime() === Date.UTC(TODAY.getUTCFullYear(), TODAY.getUTCMonth(), TODAY.getUTCDate())
+              /* `getBusinessToday()` already returns midnight UTC of the
+                 Kathmandu civil day, so this is a plain instant comparison. */
+              const isToday = d.getTime() === todayUtc
               return (
                 <div
                   key={d.getTime()}

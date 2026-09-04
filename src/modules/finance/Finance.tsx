@@ -8,8 +8,9 @@ import { PageBody } from '../../components/ui/PageBody'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { Donut, Legend } from '../../components/ui/Charts'
 import type { Slice } from '../../components/ui/Charts'
-import { getBusinessToday, toBs, formatBs, formatAd, BS_UNSUPPORTED_NOTE } from '../../lib/bs'
+import { formatAd, BS_UNSUPPORTED_NOTE } from '../../lib/bs'
 import { rupees, formatMoney } from '../../lib/money'
+import { csvCell } from '../../lib/csv'
 import type { Paisa } from '../../lib/money'
 import { useAuth } from '../../lib/auth'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
@@ -34,7 +35,7 @@ import {
 } from '../../lib/queries/finance'
 import { useList, type ListQueryResult, type ListResult } from '../../lib/queries/useList'
 import type { ListFilters } from '../../lib/queries/listQuery'
-import { NOW_AD, TODAY_DAY_AD } from '../../data/today'
+import { businessDayAd, businessNowAd, todayDate } from '../../data/today'
 import { SPEC_TABS } from '../../data/nav'
 import { RecordPaymentModal } from './modals/RecordPaymentModal'
 import { CreateInvoiceModal } from './modals/CreateInvoiceModal'
@@ -45,13 +46,6 @@ import Expenses from './Expenses'
 import Documents from '../documents/Documents'
 import { ReportCatalog } from '../reports/ReportCatalog'
 import { DateField } from '../../components/ui/DateField'
-
-/*
- * The operating day, resolved once when this module loads, from the real
- * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
- * imported `TODAY` constant frozen at 31 Jul 2026.
- */
-const TODAY = getBusinessToday()
 
 
 /**
@@ -141,10 +135,11 @@ const TODAY = getBusinessToday()
  * "This Month" alone does not, so the AD calendar month is resolved here and
  * its two ends are rendered in the card title.
  *
- * `TODAY_DAY_AD` is the KATHMANDU calendar day of `TODAY`, resolved through
- * `bs.ts`'s `kathmanduCivil` in `data/today.ts` — not `TODAY.toISOString()
- * .slice(0,10)`, which is a different day for 5h45m of every day. The month
- * bounds below are then pure calendar arithmetic on a bare date: no instant
+ * The day passed in is the KATHMANDU calendar day (`data/today.ts`'s
+ * `businessDayAd`, which goes through `bs.ts`'s `kathmanduCivil`) — not
+ * `new Date().toISOString().slice(0,10)`, which is a different day for 5h45m of
+ * every day. The month bounds below are then pure calendar arithmetic on a bare
+ * date: no instant
  * survives the round trip, so no timezone is implied and none is needed.
  * `paymentsInPeriod` is what converts them to `+05:45` instants, because
  * `payments.payment_date` is a `timestamptz` while `invoices.issue_date` is a
@@ -157,33 +152,53 @@ function lastDayOfMonth(dayAd: string): string {
   return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10)
 }
 
-const PERIOD_FROM_AD = `${TODAY_DAY_AD.slice(0, 7)}-01`
-const PERIOD_TO_AD = lastDayOfMonth(TODAY_DAY_AD)
-const PERIOD_LABEL = `${formatAd(new Date(`${PERIOD_FROM_AD}T00:00:00.000Z`))} – ${formatAd(
-  new Date(`${PERIOD_TO_AD}T00:00:00.000Z`),
-)}`
+export interface ReportingPeriod {
+  /** First day of the AD calendar month, `YYYY-MM-DD`. */
+  readonly fromAd: string
+  /** Last day of it. */
+  readonly toAd: string
+  /** What the card titles print — "1 Sep 2026 – 30 Sep 2026". */
+  readonly label: string
+}
 
-/* ── The named filter sets, resolved once ─────────────────────────────────
+/**
+ * ⛔ These were three module-scope constants built from `data/today.ts`'s
+ * import-time `TODAY_DAY_AD` (X-05). The month is on a *period label the
+ * operator reads*, so a tab left open across a month end kept titling last
+ * month's figures with last month's dates — and `RECEIVED_IN_PERIOD` kept
+ * querying it. Resolved from the day the caller renders on instead.
+ */
+function reportingPeriod(dayAd: string): ReportingPeriod {
+  const fromAd = `${dayAd.slice(0, 7)}-01`
+  const toAd = lastDayOfMonth(dayAd)
+  return {
+    fromAd,
+    toAd,
+    label: `${formatAd(new Date(`${fromAd}T00:00:00.000Z`))} – ${formatAd(new Date(`${toAd}T00:00:00.000Z`))}`,
+  }
+}
+
+/* ── The named filter sets ────────────────────────────────────────────────
  *
- * Module scope rather than inside the component: `TODAY` is frozen
- * (`bs.ts:135`), so these are constants, and `useList` keys its effect on
- * `filterKey(filters)` — a set rebuilt every render would still not refetch,
- * but it would allocate on every keystroke elsewhere on the page.
+ * Three of the five carry no date at all, so they stay module constants and
+ * `useList` gets one stable object for the life of the page.
+ *
+ * ⛔ The other two did NOT belong here and were constants anyway: `Overdue`
+ * bounds `due_date`, and `Received` bounds the current month. Both were
+ * resolved at import (X-05), so both asked their question about the DAY THIS
+ * TAB WAS OPENED — a tab still open on Tuesday answered Monday's Overdue under
+ * Tuesday's heading. They are built in the component now.
+ *
+ * Both are DAY precision, and the distinction is worth keeping straight:
+ * `invoices.due_date` is a `date` column (`0006_finance.sql:82`) and
+ * `overdueInvoices` compares it against `previousDay(nepalDay(…))`. So there is
+ * no instant to be wrong about here, and no 05:45 boundary — that is X-06's
+ * defect, on `bookings.return_at`, which is a `timestamptz`. Keying these two
+ * memos on the day is correct rather than a freeze.
  */
 const LIVE_INVOICES: ListFilters = liveInvoices()
 const VOIDED_INVOICES: ListFilters = voidedInvoices()
 const OUTSTANDING_INVOICES: ListFilters = outstandingInvoices()
-const OVERDUE_INVOICES: ListFilters = overdueInvoices(NOW_AD)
-const RECEIVED_IN_PERIOD: ListFilters = paymentsInPeriod(PERIOD_FROM_AD, PERIOD_TO_AD)
-
-/** §2.2 / §7 — BS dates and the fiscal-year label, from the one Date Engine. */
-const bs = toBs(TODAY)
-/**
- * `bs` is **null**, not `'—'`, outside the Date Engine's table. The em dash took
- * the bold line of the As-of pill while `ad` held the real date in the muted one
- * — the app hiding a date it knows. The renderer promotes `ad` when this is null.
- */
-const AS_OF = { bs: bs ? formatBs(bs) : null, ad: formatAd(TODAY) }
 
 /**
  * §5.2 — payment and invoice statuses are **different sets**, and the build the
@@ -242,7 +257,7 @@ type FinanceTab = 'Dashboard' | 'Invoices' | 'Payments' | 'Expenses' | 'Document
  *    (`0001:1010` — *"'Overdue' is derived (due_date vs today on the AD value)
  *    and must never be persisted"*). `chips: { status: ['Overdue'] }` does not
  *    error; it returns zero rows and the screen reports "no overdue invoices"
- *    to a business that has them. So this chip is `overdueInvoices(NOW_AD)`,
+ *    to a business that has them. So this chip is `overdueInvoices(businessNowAd())`,
  *    which asks the question the schema can answer.
  *  - **Void** is `voidedInvoices()` — `voided_at IS NOT NULL`, the fact the
  *    void CHECK guarantees, rather than the `status` label nothing forces to
@@ -254,11 +269,16 @@ type FinanceTab = 'Dashboard' | 'Invoices' | 'Payments' | 'Expenses' | 'Document
 const INVOICE_CHIPS = ['All', ...STORED_INVOICE_STATUSES.filter((s) => s !== 'Void'), 'Overdue', 'Void'] as const
 type InvoiceChip = (typeof INVOICE_CHIPS)[number]
 
-/** The chip → the named filter set. Never a `.filter()` over fetched rows. */
-function invoiceChipFilters(chip: InvoiceChip): ListFilters {
+/**
+ * The chip → the named filter set. Never a `.filter()` over fetched rows.
+ *
+ * `overdueSet` is passed in rather than read from module scope because it is
+ * the one set here anchored to an instant; see the block above.
+ */
+function invoiceChipFilters(chip: InvoiceChip, overdueSet: ListFilters): ListFilters {
   if (chip === 'All') return LIVE_INVOICES
   if (chip === 'Void') return VOIDED_INVOICES
-  if (chip === 'Overdue') return OVERDUE_INVOICES
+  if (chip === 'Overdue') return overdueSet
   return { ...LIVE_INVOICES, chips: { status: [chip] } }
 }
 
@@ -394,6 +414,48 @@ function toIntelRow(row: InvoiceListRow): InvoiceRow {
   }
 }
 
+/** The invoice export's columns, in the order the file writes them. */
+const INVOICE_CSV_HEADERS = ['Invoice', 'Client', 'Booking', 'Total', 'Outstanding', 'Issued', 'Due', 'Status']
+
+/**
+ * The Invoices tab's CSV, as text — pure, so it can be asserted on.
+ *
+ * ## ⛔ Every money cell used to break the file (FI-04)
+ *
+ * The row was `r.join(',')` with only `clientName` hand-quoted, and `formatMoney`
+ * renders lakh grouping — `Rs 1,39,506`. So one invoice emitted
+ *
+ *     INV-0007,"ABC Films",B-715,Rs 1,39,506,Rs 1,24,506,2026-07-31,…
+ *
+ * — eleven fields under an eight-column header, with Outstanding, Issued, Due
+ * and Status all shifted left. A spreadsheet opens that without complaining,
+ * which is the worst of it: the operator gets a plausible sheet in which the Due
+ * column holds `506`, and the file is the artefact that leaves the building.
+ *
+ * Fixed with ONE quoter over EVERY field rather than a second hand-quoted
+ * exception — `lib/csv.ts`'s `csvCell`, this app's single write-side rule
+ * (`ReportToolbar` exports through it) which round-trips through the `parseCsv`
+ * sitting beside it. Rows are joined with CRLF for the same reason: RFC 4180,
+ * and it matches that other export.
+ *
+ * Money stays FORMATTED rather than raw: the file is read by a person, every
+ * figure in this product goes through the Financial Engine (Law 1), and the
+ * quoting is now what makes that safe.
+ */
+export function invoicesCsv(rows: readonly InvoiceListRow[]): string {
+  const body = rows.map((i) => [
+    i.invoiceNo,
+    i.clientName,
+    i.bookingNo,
+    formatMoney(i.totalAmount),
+    formatMoney(i.outstandingAmount),
+    i.issueDateAd,
+    i.dueDateAd,
+    i.isVoid ? 'Void' : i.status,
+  ])
+  return [INVOICE_CSV_HEADERS, ...body].map((r) => r.map(csvCell).join(',')).join('\r\n')
+}
+
 export default function Finance() {
   const { user } = useAuth()
   /**
@@ -405,6 +467,25 @@ export default function Finance() {
    * `useCanViewMoney()` below, which mirrors the RLS predicate exactly; see the
    * header for why the two are not interchangeable.
    */
+  /*
+   * The operating day and the reporting period, resolved on every render (X-05).
+   * They were module-scope constants, so a Finance tab left open across midnight
+   * — or across a month end — kept a stale As-of pill, a stale period label and
+   * a stale Overdue set, all of which look exactly like fresh ones.
+   *
+   * `dayAd` is what the memos below key on: it changes once a day, so the sets
+   * are rebuilt when (and only when) the answer can have changed.
+   */
+  const dayAd = businessDayAd()
+  const period = useMemo(() => reportingPeriod(dayAd), [dayAd])
+  const asOf = todayDate()
+  /* Keyed on the DAY although the factory reads the clock: `businessNowAd()`
+     cannot express "recompute at midnight", and the Overdue set has to. The
+     lint rule sees an unused dependency; it is the one that makes this correct. */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const overdueInvoiceSet = useMemo(() => overdueInvoices(businessNowAd()), [dayAd])
+  const receivedInPeriod = useMemo(() => paymentsInPeriod(period.fromAd, period.toAd), [period])
+
   const role = user?.role ?? 'Client'
   const gctx = useMemo(() => gateContext(role), [role])
   const money = useCanViewMoney()
@@ -580,7 +661,7 @@ export default function Finance() {
     [money],
   )
 
-  const chipFilters = useMemo(() => invoiceChipFilters(chip), [chip])
+  const chipFilters = useMemo(() => invoiceChipFilters(chip, overdueInvoiceSet), [chip, overdueInvoiceSet])
 
   /* The rail's narrowings, merged OVER the chip's set. The key spaces are
      disjoint — chips own `chips`/`presence`/`sort`, the rail owns `search`
@@ -643,8 +724,8 @@ export default function Finance() {
   /* A KPI is never "filtered": its set is the tile's own definition and no
      operator input reaches it. */
   const outstanding = useList<InvoiceListRow>(invoiceFetcher, OUTSTANDING_INVOICES, { isFilteredOverride: false })
-  const overdue = useList<InvoiceListRow>(invoiceFetcher, OVERDUE_INVOICES, { isFilteredOverride: false })
-  const received = useList<PaymentListRow>(paymentFetcher, RECEIVED_IN_PERIOD, { isFilteredOverride: false })
+  const overdue = useList<InvoiceListRow>(invoiceFetcher, overdueInvoiceSet, { isFilteredOverride: false })
+  const received = useList<PaymentListRow>(paymentFetcher, receivedInPeriod, { isFilteredOverride: false })
 
   /* `useList` memoises `refetch`; naming them keeps the callback keyed on
      the functions rather than on the whole list objects, which are fresh
@@ -697,7 +778,7 @@ export default function Finance() {
       value: moneyOf(receivedTotal),
       icon: 'card',
       accent: 'success',
-      note: PERIOD_LABEL,
+      note: period.label,
     },
   ]
 
@@ -756,7 +837,7 @@ export default function Finance() {
   const dailyPeak = Math.max(...dailyCollections.map((d) => d.total), 1)
   const busiestDay = dailyCollections.reduce(
     (best, d) => (d.total > best.total ? d : best),
-    dailyCollections[0] ?? { dayAd: TODAY_DAY_AD, total: 0 },
+    dailyCollections[0] ?? { dayAd, total: 0 },
   )
 
   /**
@@ -903,19 +984,7 @@ export default function Finance() {
         : `Invoices (${list.total})`
 
   const exportCsv = useCallback(() => {
-    const headers = ['Invoice', 'Client', 'Booking', 'Total', 'Outstanding', 'Issued', 'Due', 'Status']
-    const rows = list.rows.map((i) => [
-      i.invoiceNo,
-      `"${i.clientName.replace(/"/g, '""')}"`,
-      i.bookingNo,
-      formatMoney(i.totalAmount),
-      formatMoney(i.outstandingAmount),
-      i.issueDateAd,
-      i.dueDateAd,
-      i.isVoid ? 'Void' : i.status,
-    ])
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const blob = new Blob([invoicesCsv(list.rows)], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -940,7 +1009,7 @@ export default function Finance() {
             header. */}
         <SummaryRows
           rows={[
-            { label: `Received · ${PERIOD_LABEL}`, value: moneyOf(receivedTotal), tone: 'success' },
+            { label: `Received · ${period.label}`, value: moneyOf(receivedTotal), tone: 'success' },
             { label: 'Receivable (outstanding)', value: moneyOf(receivableTotal), tone: 'progress' },
             { label: 'Of which past due', value: moneyOf(overdueTotal), tone: 'danger' },
           ]}
@@ -985,7 +1054,7 @@ export default function Finance() {
           the `payments` embed. Same rows as the Received KPI, bucketed — so the
           slices sum to it by construction and cannot drift the way two
           hand-typed arrays did. */}
-      <Card title={`By method · ${PERIOD_LABEL}`}>
+      <Card title={`By method · ${period.label}`}>
         {receivedTotal === null ? (
           <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.6 }}>
             {received.loading
@@ -1054,10 +1123,10 @@ export default function Finance() {
         <Icon name="calendar" size={14} style={{ color: 'var(--muted)' }} />
         <span style={{ lineHeight: 1.2, textAlign: 'left' }}>
           <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-            {AS_OF.bs ?? AS_OF.ad}
+            {asOf.bs ?? asOf.ad}
           </span>
-          {AS_OF.bs ? (
-            <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{AS_OF.ad}</span>
+          {asOf.bs ? (
+            <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{asOf.ad}</span>
           ) : (
             <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }} title={BS_UNSUPPORTED_NOTE}>
               Nepali date unavailable
@@ -1365,7 +1434,7 @@ export default function Finance() {
                     construction, and it is labelled as the quantity it actually
                     is rather than as the one the box is captioned.
                   */}
-                  <Card title={`Collections by day · ${PERIOD_LABEL}`}>
+                  <Card title={`Collections by day · ${period.label}`}>
                     {receivedTotal === null ? (
                       <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.6 }}>
                         {received.loading

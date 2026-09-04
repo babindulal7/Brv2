@@ -37,13 +37,6 @@ import {
   type Segment,
 } from '../../data/clients'
 
-/*
- * The operating day, resolved once when this module loads, from the real
- * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
- * imported `TODAY` constant frozen at 31 Jul 2026.
- */
-const TODAY = getBusinessToday()
-
 
 /**
  * Add Client — full-page creation workflow, replacing the old "Register New
@@ -245,7 +238,11 @@ export default function AddClient() {
   const [website, setWebsite] = useState('')
   const [govIdType, setGovIdType] = useState('Citizenship')
 
-  const [clientSince, setClientSince] = useState(TODAY.toISOString().slice(0, 10))
+  /* The default is resolved when the form MOUNTS, not when the module loads
+     (X-05): a module-scope `TODAY` pre-filled "Client since" with the day the
+     tab was opened, so a client added on Tuesday from a tablet last reloaded on
+     Sunday was dated Sunday, silently and by default. */
+  const [clientSince, setClientSince] = useState(() => getBusinessToday().toISOString().slice(0, 10))
   const [source, setSource] = useState('')
   const [referredBy, setReferredBy] = useState('')
   const [membership, setMembership] = useState<MembershipTier>('Creator')

@@ -44,8 +44,8 @@ import { PageBody } from '../../components/ui/PageBody'
  * `quoteLapsedAlert` in `data/today.ts`, off two named filter sets that already
  * existed in `queries/bookings.ts`:
  *
- *   Critical  ← `overdue(NOW_AD)`         — On Rent, due back before now, never returned
- *   High      ← `quotesExpiring(NOW_AD)`  — still a Quote, stated date passed
+ *   Critical  ← `overdue(businessNowAd())`        — On Rent, due back before now, never returned
+ *   High      ← `quotesExpiring(businessNowAd())` — still a Quote, stated date passed
  *
  * **`useCanViewMoney` is gone from this file.** Neither alert carries a rupee
  * figure or a money action, so there is nothing for Law 6 to remove. The five
