@@ -102,6 +102,16 @@ async function typeDate(el: HTMLInputElement, value: string) {
     el.dispatchEvent(new Event('input', { bubbles: true }))
     el.dispatchEvent(new Event('change', { bubbles: true }))
   })
+  /*
+   * ...and then leave the field. These bounds stopped being
+   * `<input type="date">` on 4 Sep 2026 — they are `components/ui/DateField`
+   * now, which commits on blur rather than on every keystroke, because
+   * "2026-07-2" is a parseable-looking half-finished date. React's `onBlur`
+   * listens for `focusout`, so a `blur` event would not reach it.
+   */
+  await act(async () => {
+    el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+  })
 }
 
 /** 25–31 Jul 2026 — the window `last7` covered on the day this suite was written. */

@@ -438,8 +438,20 @@ describe('§9.3 filter row — every control is server-side or visibly disabled'
 
   it('draws two live day inputs', async () => {
     await mount(1280)
-    const days = [...container.querySelectorAll('input[type="date"]')]
+    /*
+     * These were `input[type="date"]` until 4 Sep 2026. They are
+     * `components/ui/DateField` now — one calendar across the whole app, with
+     * the BS date on it, which a native date input cannot show (Law 9 §9.4).
+     * The control is still a text input, so it is found by its accessible name
+     * rather than by a type the field no longer has.
+     */
+    const days = [...container.querySelectorAll<HTMLInputElement>('input')].filter((i) =>
+      /Kathmandu day$/.test(i.getAttribute('aria-label') ?? ''),
+    )
     expect(days).toHaveLength(2)
+    // Each carries its own calendar trigger, so the range is pickable and not
+    // only typeable.
+    expect(container.querySelectorAll('button[aria-label^="Open calendar"]')).toHaveLength(2)
   })
 
   it('reads the active chip from the URL, so a filtered ledger is linkable', async () => {
