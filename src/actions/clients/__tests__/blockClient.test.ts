@@ -101,7 +101,7 @@ const profile = vi.hoisted(() => ({
 }))
 
 vi.mock('../../../lib/queries/clients', () => ({
-  getClientRecordByCode: async (code: string) => {
+  getClientRecord: async (code: string) => {
     profile.codesQueried.push(code)
     return profile.value
   },

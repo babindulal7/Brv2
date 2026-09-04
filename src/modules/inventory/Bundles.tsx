@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Select } from '../../components/ui/Select'
 import { Card, Button, KpiStrip, cardStyle, Rail, SummaryRows } from '../../components/ui/Page'
+import { PageBody } from '../../components/ui/PageBody'
 import type { Kpi } from '../../components/ui/Page'
 import { Unavailable } from '../../components/ui/Unavailable'
-import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
+import { EmptyState } from '../../components/ui/StateViews'
 import { Donut, Legend } from '../../components/ui/Charts'
 import type { Slice } from '../../components/ui/Charts'
 import { STATUS } from '../../lib/status'
@@ -23,20 +24,15 @@ import { useViewport } from '../../lib/device'
 import { IntelCard } from '../../components/ui/IntelCard'
 import { bundleGlance, bundleDetailGroups } from '../../data/bundleIntel'
 import {
-  ACTIVE_BUNDLES,
-  ARCHIVED_BUNDLES,
-  ALL_CATEGORIES,
-  ALL_TAGS,
   BUNDLE_STATES,
-  STATE_COUNTS,
-  NEEDS_ATTENTION,
-  SEED_ERRORS,
   factsOf,
   ratioLabelOf,
   iconFor,
   isPriced,
 } from '../../data/bundles'
+import { useBundleRecords } from '../../lib/queries/useBundles'
 import type { BundleRecord, BundleState, BundleLine, BundleFacts } from '../../data/bundles'
+import { DateField } from '../../components/ui/DateField'
 
 /**
  * **Bundles** — Inventory's second tab (Foundation §5.1 makes it a tab, never a
@@ -183,28 +179,6 @@ function BsAd({ date, prefix }: { date: Date; prefix?: string }) {
         </span>
       )}
     </span>
-  )
-}
-
-/**
- * Foundation §6 — a failure is stated in place, naming the figures that
- * disagree. `data/bundles.ts` reports rather than throws, because a module-scope
- * throw runs before React mounts and blanks the app. Renders through the shared
- * `ErrorBanner` (§2.4) rather than a local reimplementation — this exact banner
- * used to be copy-pasted per-module (see `Maintenance.tsx`'s near-identical one).
- */
-function SeedDefectBanner({ messages }: { messages: string[] }) {
-  return (
-    <ErrorBanner
-      title="These bundle figures do not reconcile."
-      message={
-        <ul style={{ margin: 0, paddingLeft: 'var(--sp-lg)' }}>
-          {messages.map((m) => (
-            <li key={m}>{m}</li>
-          ))}
-        </ul>
-      }
-    />
   )
 }
 
@@ -381,6 +355,28 @@ const SORT_OPTIONS: Array<{ value: string; label: string; money?: boolean }> = [
 
 const ROWS_PER_PAGE = [10, 25, 50]
 
+
+/* ── the window availability is measured against ───────────────────────── */
+
+/** `yyyy-mm-dd` in UTC — what a `<input type="date">` reads and writes. */
+function dayValue(iso: string): string {
+  return iso.slice(0, 10)
+}
+
+/**
+ * A day string back to a full UTC instant. **Law — store AD in UTC**; the BS
+ * line is rendered from this, never stored.
+ */
+function startOfDayUtc(day: string): string {
+  return new Date(`${day}T00:00:00.000Z`).toISOString()
+}
+
+function addDaysUtc(iso: string, days: number): string {
+  const d = new Date(iso)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString()
+}
+
 /* ── the screen ────────────────────────────────────────────────────────── */
 
 export function Bundles() {
@@ -388,6 +384,77 @@ export function Bundles() {
   const money = useCanViewMoney()
   const { user } = useAuth()
   const gctx = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
+
+  /*
+   * §4.44 (ruled 4 Sep 2026) — the window availability is measured against.
+   *
+   * A bundle is not "available" in the abstract; it is available for a window.
+   * The seed baked one figure in as though the question had a single answer,
+   * which is why this pane could show `Available` for gear that was out. The
+   * window lives in the URL beside `?tab=`, so a checked availability can be
+   * linked and shared, and defaults to today→tomorrow: one day, half-open,
+   * matching `RENTAL_WINDOW_BOUNDS`.
+   */
+  const [params, setParams] = useSearchParams()
+  const todayIso = useMemo(() => startOfDayUtc(new Date().toISOString().slice(0, 10)), [])
+  const fromAd = params.get('from') ? startOfDayUtc(params.get('from') as string) : todayIso
+  const toAdRaw = params.get('to') ? startOfDayUtc(params.get('to') as string) : addDaysUtc(todayIso, 1)
+  /* A window must have width. `half-open` means [from, to), so from === to holds
+     nothing and every line would read as free — the exact wrong green §4.44
+     exists to prevent. A backwards or empty range is pushed to one day. */
+  const toAd = Date.parse(toAdRaw) > Date.parse(fromAd) ? toAdRaw : addDaysUtc(fromAd, 1)
+
+  const setWindow = (which: 'from' | 'to', day: string) => {
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p)
+        if (day) next.set(which, day)
+        else next.delete(which)
+        return next
+      },
+      { replace: true },
+    )
+    setPage(1)
+  }
+
+  const bundles = useBundleRecords({ fromAd, toAd }, money)
+
+  const activeBundles = useMemo(() => bundles.rows.filter((b) => !b.archived), [bundles.rows])
+  const archivedBundles = useMemo(() => bundles.rows.filter((b) => b.archived), [bundles.rows])
+
+  /* §1 — every number on this page is computed at render, none is stored. That
+     rule is why these move from module scope to here without changing: they were
+     always derivations, they just used to derive from a literal. */
+  const stateCounts = useMemo(() => {
+    const acc = {} as Record<BundleState, number>
+    for (const state of BUNDLE_STATES) acc[state] = 0
+    for (const b of activeBundles) acc[factsOf(b).state] += 1
+    return acc
+  }, [activeBundles])
+
+  /* §3 — deliberately overlaps two chips and is never summed with them. A bundle
+     that is out is doing its job, so On Rent is not attention. */
+  const needsAttention = useMemo(
+    () =>
+      activeBundles.filter((b) => {
+        const state = factsOf(b).state
+        return state === 'Partially Available' || state === 'On Maintenance'
+      }).length,
+    [activeBundles],
+  )
+
+  const allCategories = useMemo(
+    () => Array.from(new Set(bundles.rows.map((b) => b.category))).sort(),
+    [bundles.rows],
+  )
+  /* Empty against live data — `bundles` has no tags column (§4.44). The filter
+     renders its `All` option and nothing else rather than being removed, so the
+     day a tags column lands the control is already in place. */
+  const allTags = useMemo(
+    () => Array.from(new Set(bundles.rows.flatMap((b) => b.tags))).sort(),
+    [bundles.rows],
+  )
+
 
   const [chip, setChip] = useState<ChipKey>('All')
   const [category, setCategory] = useState('All')
@@ -411,7 +478,7 @@ export function Bundles() {
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [previewId, setPreviewId] = useState<string>(ACTIVE_BUNDLES[0]?.id ?? '')
+  const [previewId, setPreviewId] = useState<string>('')
   const [serialsOpen, setSerialsOpen] = useState<Set<string>>(new Set())
   const [groupsClosed, setGroupsClosed] = useState<Set<string>>(new Set())
 
@@ -428,7 +495,7 @@ export function Bundles() {
   }
 
   const filtered = useMemo(() => {
-    const source = chip === 'Archived' ? ARCHIVED_BUNDLES : ACTIVE_BUNDLES
+    const source = chip === 'Archived' ? archivedBundles : activeBundles
     const rows = source.filter((b) => {
       const f = factsOf(b)
       if (chip !== 'All' && chip !== 'Archived' && f.state !== chip) return false
@@ -459,7 +526,7 @@ export function Bundles() {
           return 0
       }
     })
-  }, [chip, category, tag, hasCrew, hasVehicle, sort])
+  }, [chip, category, tag, hasCrew, hasVehicle, sort, activeBundles, archivedBundles])
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage))
   const safePage = Math.min(page, pageCount)
@@ -488,44 +555,44 @@ export function Bundles() {
     [visible, gctx],
   )
 
-  const preview = filtered.find((b) => b.id === previewId) ?? filtered[0] ?? ACTIVE_BUNDLES[0]
+  const preview = filtered.find((b) => b.id === previewId) ?? filtered[0] ?? activeBundles[0]
   const previewFacts = preview ? factsOf(preview) : null
 
   /* §1 — chips, the invariant and the KPI cards all read one query. */
   const chipRow: Array<{ label: ChipKey; count: number }> = [
-    { label: 'All', count: ACTIVE_BUNDLES.length },
-    ...BUNDLE_STATES.map((s) => ({ label: s as ChipKey, count: STATE_COUNTS[s] })),
-    { label: 'Archived', count: ARCHIVED_BUNDLES.length },
+    { label: 'All', count: activeBundles.length },
+    ...BUNDLE_STATES.map((s) => ({ label: s as ChipKey, count: stateCounts[s] })),
+    { label: 'Archived', count: archivedBundles.length },
   ]
-  const chipSum = BUNDLE_STATES.reduce((s, k) => s + STATE_COUNTS[k], 0)
-  const chipsReconcile = chipSum === ACTIVE_BUNDLES.length
+  const chipSum = BUNDLE_STATES.reduce((sum, k) => sum + stateCounts[k], 0)
+  const chipsReconcile = chipSum === activeBundles.length
 
   const kpis: Kpi[] = [
     {
       label: 'Total Bundles',
-      value: String(ACTIVE_BUNDLES.length),
+      value: String(activeBundles.length),
       icon: 'queues',
       accent: 'primary',
-      note: `Excludes archived (${ARCHIVED_BUNDLES.length})`,
+      note: `Excludes archived (${archivedBundles.length})`,
     },
     {
       // §3 — "`Availables` is not a word. The card is Available, matching its chip."
       label: 'Available',
-      value: String(STATE_COUNTS.Available),
+      value: String(stateCounts.Available),
       icon: 'check',
       accent: 'success',
       note: 'Ready to rent',
     },
     {
       label: 'On Rent',
-      value: String(STATE_COUNTS['On Rent']),
+      value: String(stateCounts['On Rent']),
       icon: 'truck',
       accent: 'progress',
       note: 'Currently out with a client',
     },
     {
       label: 'Needs Attention',
-      value: String(NEEDS_ATTENTION),
+      value: String(needsAttention),
       icon: 'alert_triangle',
       accent: 'danger',
       note: 'Partial, blocked or maintenance',
@@ -593,7 +660,6 @@ export function Bundles() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      {SEED_ERRORS.length > 0 && <SeedDefectBanner messages={SEED_ERRORS} />}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
@@ -688,11 +754,63 @@ export function Bundles() {
             >
               <Icon name={chipsReconcile ? 'check' : 'alert_triangle'} size={12} />
               <span className="figure">
-                {BUNDLE_STATES.map((s) => STATE_COUNTS[s]).join(' + ')} = {chipSum}
+                {BUNDLE_STATES.map((s) => stateCounts[s]).join(' + ')} = {chipSum}
               </span>
               {chipsReconcile
-                ? ` · All ${ACTIVE_BUNDLES.length}`
-                : ` — does not reconcile against All ${ACTIVE_BUNDLES.length}`}
+                ? ` · All ${activeBundles.length}`
+                : ` — does not reconcile against All ${activeBundles.length}`}
+            </span>
+          </div>
+
+          {/*
+            §4.44 — the window every availability figure on this page is measured
+            against. It sits ABOVE the filters and is separated from them,
+            because it is not a filter: it does not decide which bundles are
+            listed, it decides what "available" means for all of them. Putting it
+            in the filter row would have read as one more narrowing control.
+          */}
+          <div
+            style={{
+              display: 'flex',
+              gap: 'var(--sp-sm)',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              padding: '10px 12px',
+              borderRadius: 'var(--r-input)',
+              background: 'var(--card2)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
+              <Icon name="calendar" size={14} />
+              Available for
+            </span>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+              From
+              <DateField
+                ariaLabel="Availability window from"
+                value={dayValue(fromAd)}
+                onChange={(v) => setWindow('from', v)}
+                showBs={false}
+                style={selectStyle}
+              />
+            </label>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+              To
+              <DateField
+                ariaLabel="Availability window to"
+                value={dayValue(toAd)}
+                onChange={(v) => setWindow('to', v)}
+                showBs={false}
+                align="right"
+                style={selectStyle}
+              />
+            </label>
+            <BsAd date={new Date(fromAd)} prefix="From" />
+            <BsAd date={new Date(toAd)} prefix="To" />
+            <span style={{ ...subtle, flexBasis: '100%' }}>
+              Every ready / blocked figure below answers “free for this window”, not “free in
+              general”. Returns are half-open: a rental ending on the To date does not block it.
             </span>
           </div>
 
@@ -706,7 +824,7 @@ export function Bundles() {
               Category
               <Select value={category} onChange={(e) => { setCategory(e.target.value); setPage(1) }} style={selectStyle}>
                 <option value="All">All</option>
-                {ALL_CATEGORIES.map((c) => (
+                {allCategories.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </Select>
@@ -715,7 +833,7 @@ export function Bundles() {
               Tags
               <Select value={tag} onChange={(e) => { setTag(e.target.value); setPage(1) }} style={selectStyle}>
                 <option value="All">All</option>
-                {ALL_TAGS.map((t) => (
+                {allTags.map((t) => (
                   <option key={t} value={t}>{t}</option>
                 ))}
               </Select>
@@ -800,6 +918,16 @@ export function Bundles() {
           </div>
 
           <Card bodyStyle={{ padding: 0 }}>
+            <PageBody
+              loading={bundles.loading}
+              error={bundles.error}
+              onRetry={bundles.refetch}
+              hasRows={bundles.rows.length > 0}
+              empty={bundles.isEmpty}
+              noun="bundles"
+              emptyTitle="No bundles yet"
+              emptyMessage="Nothing has been built as a bundle. Create one and it appears here."
+            >
             {visible.length === 0 ? (
               <EmptyState
                 icon={<Icon name="queues" size={22} />}
@@ -1191,6 +1319,7 @@ export function Bundles() {
                 </span>
               </span>
             </div>
+            </PageBody>
           </Card>
 
           <p style={{ margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>

@@ -1,6 +1,7 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
+import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
 import { TouchTarget } from '../../components/ui/TouchTarget'
@@ -9,12 +10,12 @@ import { Unavailable } from '../../components/ui/Unavailable'
 import { Badge } from '../../components/ui/Badge'
 import type { StatusKey } from '../../lib/status'
 import {
-  PURCHASE_REQUESTS,
-  PURCHASE_REQUEST_KPIS,
   type PRStatus,
   type PRPriority,
   type PurchaseRequest,
 } from '../../data/purchaseRequests'
+import { usePurchaseRequests } from '../../lib/queries/purchaseRequests'
+import { PageBody } from '../../components/ui/PageBody'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { captureError } from '../../lib/monitoring'
@@ -164,11 +165,41 @@ export default function PurchaseRequests() {
   const online = useNetwork()
   const [activeTab, setActiveTab] = useState<'All' | 'Draft' | 'Submitted' | 'Approved' | 'Ordered' | 'Received'>('All')
   const [selectedPrId, setSelectedPrId] = useState<string | null>(null)
-  const [requestsList, setRequestsList] = useState(PURCHASE_REQUESTS)
   const [actionError, setActionError] = useState<string | null>(null)
   const [isCreatePrOpen, setIsCreatePrOpen] = useState(false)
 
-  useDomainEvent<(typeof PURCHASE_REQUESTS)[number]>(EVENT_TYPES.PURCHASE_REQUEST_UPDATED, (payload) => {
+  /*
+   * The rows, from the database.
+   *
+   * `requestsList` stays local state rather than being read straight off the
+   * query, because two things write to it optimistically: the decision flow
+   * below, and the `PURCHASE_REQUEST_UPDATED` event a sibling screen emits. Both
+   * predate this wiring and both are correct — a decision that has already come
+   * back from Postgres should show immediately. The effect re-seeds from the
+   * query whenever it resolves, so a refetch is the source of truth and the
+   * optimistic copy is only ever ahead of it, never instead of it.
+   */
+  const requests = usePurchaseRequests()
+  const [requestsList, setRequestsList] = useState<PurchaseRequest[]>([])
+  useEffect(() => {
+    setRequestsList(requests.rows)
+  }, [requests.rows])
+
+  /*
+   * §1 — derived at render from the rows on screen, never a stored figure. The
+   * seeded `PURCHASE_REQUEST_KPIS` counted a literal array; these count what the
+   * database actually returned, so an approval moves the tiles.
+   */
+  const kpis = useMemo(() => {
+    const countByStatus = (status: PRStatus) => String(requestsList.filter((r) => r.status === status).length)
+    return [
+      { label: 'Draft Requests', value: countByStatus('Draft'), change: 'Accumulating evidence', icon: 'file' as IconName, accent: 'blue' as const },
+      { label: 'Pending Approval', value: countByStatus('Submitted'), change: 'Awaiting a decision', icon: 'queues' as IconName, accent: 'amber' as const },
+      { label: 'Approved / In Flight', value: countByStatus('Approved'), change: 'Cleared to purchase', icon: 'check' as IconName, accent: 'green' as const },
+    ]
+  }, [requestsList])
+
+  useDomainEvent<PurchaseRequest>(EVENT_TYPES.PURCHASE_REQUEST_UPDATED, (payload) => {
     if (payload?.id && payload?.fleetItemName) {
       setRequestsList((prev) => [payload, ...prev.filter((p) => p.id !== payload.id)])
     }
@@ -259,6 +290,10 @@ export default function PurchaseRequests() {
       .then((res) => {
         decisionKeys.current.delete(keyId)
         setRequestsList((prev) => prev.map((r) => (r.id === id ? { ...r, status: res.status } : r)))
+        /* The optimistic line above is what the operator sees immediately; this
+           is what makes it true. Without it the row keeps a status this screen
+           decided rather than one Postgres confirmed. */
+        requests.refetch()
       })
       .catch((err: unknown) => {
         captureError(err, { where: 'PurchaseRequests.decide', verb })
@@ -303,7 +338,7 @@ export default function PurchaseRequests() {
           sub-line (Pending Approval stays "2", without "NPR 845,000 total").
           The grid is auto-fit, so the row closes up rather than leaving a hole. */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
-        {PURCHASE_REQUEST_KPIS.filter((kpi) => money || !isMoneyText(kpi.value)).map((kpi) => (
+        {kpis.filter((kpi) => money || !isMoneyText(kpi.value)).map((kpi) => (
           <div key={kpi.label} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
               <span
@@ -356,6 +391,16 @@ export default function PurchaseRequests() {
       <div style={{ display: 'grid', gridTemplateColumns: activePR ? '1fr 420px' : '1fr', gap: 'var(--sp-lg)', alignItems: 'start' }}>
         {/* Table View */}
         <Card title={`${activeTab} Purchase Requests (${filteredPRs.length})`}>
+          <PageBody
+            loading={requests.loading}
+            error={requests.error}
+            onRetry={requests.refetch}
+            hasRows={requests.rows.length > 0}
+            empty={requests.isEmpty}
+            noun="purchase requests"
+            emptyTitle="No purchase requests yet"
+            emptyMessage="Nothing has been requested. Raise one and it appears here."
+          >
           {filteredPRs.length === 0 ? (
             <EmptyState
               icon={<Icon name="receipt" size={22} />}
@@ -411,7 +456,20 @@ export default function PurchaseRequests() {
                             status. The hand-built span here carried radius 4,
                             weight 700 and sentence case against §4's block
                             anatomy, and picked its own ink; see PRIORITY_TONE. */}
-                        <Badge tone={PRIORITY_TONE[pr.priority]} label={pr.priority} size="sm" />
+                        {/* Unscored is a real state, not a missing render: §6's
+                            formula needs refused-booking and sub-rental evidence
+                            that no table holds, so a live request has no score.
+                            Saying so beats painting every one of them `Low`. */}
+                        {pr.priority === null ? (
+                          <span
+                            title="Not scored — §6 needs refused-booking and sub-rental evidence, which nothing in this build records."
+                            style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}
+                          >
+                            Not scored
+                          </span>
+                        ) : (
+                          <Badge tone={PRIORITY_TONE[pr.priority]} label={pr.priority} size="sm" />
+                        )}
                       </td>
                       {money && (
                         <td style={{ padding: '10px 8px' }}>
@@ -434,6 +492,7 @@ export default function PurchaseRequests() {
             </table>
           </div>
           )}
+          </PageBody>
         </Card>
 
         {/* PR Detail Flyout / Side Panel */}
@@ -485,9 +544,15 @@ export default function PurchaseRequests() {
                   </div>
                   <div>
                     <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Priority Score</div>
-                    <div className="figure" style={{ fontWeight: 700, color: PRIORITY_INK[activePR.priority] }}>
-                      {activePR.priorityScore} ({activePR.priority})
-                    </div>
+                    {activePR.priority === null ? (
+                      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                        Not scored — no refused-booking or sub-rental evidence is recorded
+                      </div>
+                    ) : (
+                      <div className="figure" style={{ fontWeight: 700, color: PRIORITY_INK[activePR.priority] }}>
+                        {activePR.priorityScore} ({activePR.priority})
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -516,6 +581,37 @@ export default function PurchaseRequests() {
 
             <Card title="Acquisition Evidence (Data Room)">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
+                {/*
+                  Stated once, above the two tables, because otherwise this panel
+                  prints `0 Events` and `Rs 0` — which reads as "we looked and
+                  there were none" when the truth is that nothing records it.
+                  §6's priority formula wants refused bookings, sub-rental events
+                  and sub-rental cost; no table or column in this build holds any
+                  of the three, which is also why Priority reads `Not scored`.
+                  A confident zero is the same defect as a confident `Available`.
+                */}
+                {activePR.priority === null && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 'var(--sp-sm)',
+                      alignItems: 'flex-start',
+                      padding: 'var(--sp-md)',
+                      borderRadius: 'var(--r-xs)',
+                      background: 'var(--card2)',
+                      border: '1px solid var(--border)',
+                      fontSize: 'var(--t-th)',
+                      color: 'var(--text2)',
+                    }}
+                  >
+                    <Icon name="info" size={14} />
+                    <span>
+                      No refused booking or sub-rental is recorded anywhere in this build, so the
+                      counts below are <strong>not measured</strong> — they are not a finding of
+                      zero. This is why the request is not scored.
+                    </span>
+                  </div>
+                )}
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-sm)' }}>
                     <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Refused Bookings (Losses)</div>

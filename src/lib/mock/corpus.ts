@@ -423,6 +423,138 @@ export function buildStore(): Store {
     void productBySeq // spec lines already carry assetCode; map retained for clarity
   }
 
+  /* ── Bundles (migration 0004) ────────────────────────────────────────────
+     Three kits built over REAL `products` rows, so `/inventory?tab=bundles`
+     has something to read and its availability can actually be exercised
+     against a window. One is archived (`is_active: false`) so the Archived
+     shelf is not permanently empty.
+
+     Deliberately small: the pane derives every figure it prints from these
+     rows (§1 — "every number is computed at render"), so three bundles are
+     enough to prove the derivations and cheap enough to read in a diff. */
+  const bundles: Row[] = []
+  const bundleItems: Row[] = []
+  {
+    const kits = [
+      { code: 'BND-001', name: 'Documentary Camera Kit', daily: 18000, active: true, take: [0, 1, 2] },
+      { code: 'BND-002', name: 'Lighting Starter Kit', daily: 9000, active: true, take: [3, 4] },
+      { code: 'BND-003', name: 'Retired Podcast Kit', daily: 6000, active: false, take: [5] },
+    ]
+    for (const kit of kits) {
+      const members = kit.take.map((i) => products[i]).filter((row): row is Row => row !== undefined)
+      if (members.length === 0) continue
+      const bundleId = id(`bundle:${kit.code}`)
+      bundles.push({
+        id: bundleId,
+        client_uuid: seedUuid(`bundle:${kit.code}`),
+        bundle_code: kit.code,
+        name: kit.name,
+        description: null,
+        category_id: members[0]?.['category_id'] ?? null,
+        daily_rate: kit.daily,
+        weekly_rate: kit.daily * 5,
+        is_active: kit.active,
+        created_at: '2026-08-01T04:00:00.000Z',
+        created_by: USERS[0]?.['id'] ?? null,
+        updated_at: '2026-08-01T04:00:00.000Z',
+        updated_by: null,
+      })
+      members.forEach((product, index) => {
+        bundleItems.push({
+          id: id(`bundle_item:${kit.code}:${index}`),
+          client_uuid: seedUuid(`bundle_item:${kit.code}:${index}`),
+          bundle_id: bundleId,
+          product_id: product['id'],
+          quantity: index === 0 ? 1 : 2,
+          days: 1,
+          is_mandatory: index === 0,
+          sort_order: index,
+          created_at: '2026-08-01T04:00:00.000Z',
+          created_by: USERS[0]?.['id'] ?? null,
+        })
+      })
+    }
+  }
+
+  /* ── Reservations (migration 0004 / `inventory_reservations`) ────────────
+     Holds are what make availability WINDOW-relative (PLAN.md §4.44). Without
+     a single row here every window returns the same answer, and the Bundles
+     pane's date control would look wired while proving nothing.
+
+     Every unit of BND-002's last component is held for a week in November,
+     against a real booking so the conflict can be named. The effect is exactly
+     the one the ruling is about: that kit reads `Available` for a job next
+     week and `Partially Available` for one in November. */
+  const reservations: Row[] = []
+  {
+    const kitB = bundles.find((b) => b['bundle_code'] === 'BND-002')
+    const lastItem = bundleItems.filter((i) => i['bundle_id'] === kitB?.['id']).at(-1)
+    const held = productUnits.filter((u) => u['product_id'] === lastItem?.['product_id'])
+    const booking = bookings[0]
+    held.forEach((unit, index) => {
+      reservations.push({
+        id: id(`reservation:nov:${index}`),
+        client_uuid: seedUuid(`reservation:nov:${index}`),
+        booking_id: booking?.['id'] ?? null,
+        asset_id: unit['id'],
+        /* Postgres's own text form for a tstzrange — a space rather than `T`
+           and `+00` rather than `Z`, which is what `parseTstzRange` normalises. */
+        period: '["2026-11-10 04:00:00+00","2026-11-17 04:00:00+00")',
+        released_at: null,
+        created_at: '2026-08-01T04:00:00.000Z',
+      })
+    })
+  }
+
+  /* ── Suppliers + purchase requests (migration 0004) ──────────────────────
+     `/inventory/purchase-requests` read a hand-written array while its
+     approve/reject decisions wrote to Postgres, so an approval never changed
+     the list. These rows are what the wired screen reads.
+
+     Deliberately spread across four of the seven `purchase_request_status`
+     members so the status tabs and the KPI tiles have something to separate;
+     `Rejected` carries a `rejection_reason` because that is the only column the
+     decision panel can show. */
+  const suppliers: Row[] = [
+    { id: id('supplier:SUP-001'), client_uuid: seedUuid('supplier:SUP-001'), supplier_code: 'SUP-001', name: 'Everest Broadcast Supply', created_at: '2026-01-10T04:00:00.000Z' },
+    { id: id('supplier:SUP-002'), client_uuid: seedUuid('supplier:SUP-002'), supplier_code: 'SUP-002', name: 'Kathmandu Camera House', created_at: '2026-01-10T04:00:00.000Z' },
+  ]
+
+  const purchaseRequests: Row[] = []
+  {
+    const specs = [
+      { no: 'PR-2026-0001', take: 0, qty: 2, unit: 185000, status: 'Submitted', reason: 'Demand exceeded', urgency: 'High', supplier: 0, rejected: null },
+      { no: 'PR-2026-0002', take: 1, qty: 1, unit: 92000, status: 'Approved', reason: 'Sub-rent event', urgency: 'Normal', supplier: 1, rejected: null },
+      { no: 'PR-2026-0003', take: 2, qty: 4, unit: 15500, status: 'Draft', reason: 'Manual', urgency: 'Low', supplier: null, rejected: null },
+      { no: 'PR-2026-0004', take: 3, qty: 1, unit: 240000, status: 'Rejected', reason: 'Demand exceeded', urgency: 'Normal', supplier: 0, rejected: 'too expensive' },
+    ]
+    specs.forEach((spec, index) => {
+      const product = products[spec.take]
+      if (product === undefined) return
+      const supplier = spec.supplier === null ? null : suppliers[spec.supplier]
+      purchaseRequests.push({
+        id: id(`purchase_request:${spec.no}`),
+        client_uuid: seedUuid(`purchase_request:${spec.no}`),
+        pr_no: spec.no,
+        product_id: product['id'],
+        supplier_id: supplier?.['id'] ?? null,
+        quantity: spec.qty,
+        estimated_unit_cost: spec.unit,
+        total_estimated_cost: spec.unit * spec.qty,
+        reason_type: spec.reason,
+        urgency: spec.urgency,
+        status: spec.status,
+        requested_by: USERS[0]?.['id'] ?? null,
+        approved_by: spec.status === 'Approved' || spec.status === 'Rejected' ? (USERS[0]?.['id'] ?? null) : null,
+        rejection_reason: spec.rejected,
+        created_at: `2026-08-${String(10 + index).padStart(2, '0')}T04:00:00.000Z`,
+        created_by: USERS[0]?.['id'] ?? null,
+        updated_at: `2026-08-${String(10 + index).padStart(2, '0')}T04:00:00.000Z`,
+        updated_by: null,
+      })
+    })
+  }
+
   const store: Store = {
     users: USERS,
     branches: BRANCHES,
@@ -441,6 +573,11 @@ export function buildStore(): Store {
     payments,
     security_deposits: deposits,
     booking_stage_transitions: transitions,
+    bundles,
+    bundle_items: bundleItems,
+    inventory_reservations: reservations,
+    suppliers,
+    purchase_requests: purchaseRequests,
   }
   for (const t of UNSERVED) store[t] = []
   store['probe'] = []

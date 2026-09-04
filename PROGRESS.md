@@ -2,6 +2,204 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+
+## 2026-09-04 (cont.) — PR-P0: Purchase Requests reads the database
+**Phase:** inventory · **Status:** built, tested, driven
+
+Third screen in the read-frozen / write-live cluster, after Bundles. `PurchaseRequests.tsx`
+listed a hand-written array while `approvePurchaseRequest` wrote to Postgres — so an operator
+approved a request and the list never changed.
+
+### Why this one needed no ruling
+Unlike Bundles (§4.44) and Add Bundle (§4.45a), every figure the screen prints has a column:
+`pr_no`, `product_id`, `supplier_id`, `quantity`, `estimated_unit_cost`,
+`total_estimated_cost`, `reason_type`, `urgency`, `status`, `requested_by`, `approved_by`,
+`rejection_reason` (`0004:579`). Costs are explicitly *estimated*, status is an enum whose
+seven members are `PRStatus` exactly, and the approver is a column. Nothing to collapse.
+
+### The one honest gap, and why it is not a zero
+§6's priority formula is `(refused × 2) + sub_rentals + (sub_rent_cost / cost × 10)`.
+**None of its three inputs exists** — no refused-booking table, no sub-rental table, no column
+holding either count, checked across every migration. So `priority` and `priorityScore` are
+now `PRPriority | null`, live rows come back `null`, and the screen prints **`Not scored`**
+rather than `Low`. Scoring every request `Low` would rank an urgent purchase below a trivial
+one, which is worse than declining to rank.
+
+The Data Room panel needed the same treatment: it printed `0 Events` and `Rs 0`, which reads
+as "we looked and found none". A note now states above both tables that nothing records this
+evidence, so the counts are **not measured** rather than measured-as-zero. A confident zero is
+the same defect as a confident `Available`.
+
+### What was built
+- **`lib/queries/purchaseRequests.ts`** (new) — returns the screen's own `PurchaseRequest`
+  shape. Four reads, not one embed: `products` is behind 0062's revoke so names and categories
+  come from `products_v` (`queries/bundles.ts`'s documented reason), and `requested_by` /
+  `approved_by` are **two FKs to the same table**, which PostgREST needs constraint hints for
+  and the mock's `REL` map (keyed `parent.table`) cannot express at all — so `users` is read
+  once by id set instead of encoding a fragile hint. Law 3: no status is filtered out, because
+  the screen has chips for `Rejected` and `Cancelled` and hiding them would make the counts lie.
+- **`PurchaseRequests.tsx`** — `usePurchaseRequests()`; `requestsList` stays local state and is
+  re-seeded by an effect, so the two existing optimistic writers (the decision flow and the
+  `PURCHASE_REQUEST_UPDATED` event) keep working and are only ever *ahead* of the query, never
+  instead of it. A decision now also calls `refetch()`, so the row ends up with the status
+  Postgres confirmed rather than the one this screen decided. KPI tiles derive from the live
+  rows. `PageBody` for loading / error / empty.
+- **`data/purchaseRequests.ts`** — `priority`/`priorityScore` widened to nullable, documented.
+- **`mock/corpus.ts`** — 2 suppliers + 4 purchase requests across Draft / Submitted /
+  Approved / Rejected, the rejected one carrying a `rejection_reason`.
+
+### How it was verified — driven, not read
+Mock build, Owner:
+- **All Purchase Requests (4)**, newest first; KPI tiles **Draft 1 · Pending Approval 1 ·
+  Approved 1**, derived from the rows.
+- Product names resolved through `products_v` — Sony FX9, Sony FX6, NISI Athena 35mm,
+  Aputure LS 600d Pro. Supplier name resolved on the detail panel.
+- Arithmetic correct against the fixture: `15,500 × 4 = Rs 62,000`, `185,000 × 2 = Rs 3,70,000`.
+- Status tab **Approved → 1**; heading and count follow the tab.
+- Priority reads **Not scored** on every row; the Data Room note renders above the counts.
+- Zero console errors. `tsc` and eslint clean for every file touched. 142 tests pass across
+  `modules/inventory` + `lib/mock` + `actions/inventory`.
+
+### Not this change
+Concurrent session, confirmed by `git status` before blaming: `Calendar.tsx` /
+`data/calendar.ts` (`CountSlot`, `QuickAction`), `BookingDetail.tsx` (`closeError` unused),
+`createInvoice.ts` / `recordPayment.ts` / `AddClient.tsx` — their invoice + numbering
+workstream (0085/0086). None touched here.
+
+### Still open in this cluster
+Maintenance and Warehouses remain read-frozen. Maintenance is blocked on **§4.45(b)** — it
+renders `costEst` and `costActual` from a single `cost` column. Add Bundle is blocked on
+**§4.45(a)**. Warehouses is not blocked and is the next clean one.
+
+
+
+## 2026-09-04 (cont.) — BN-P0: the Bundles pane reads the database, for a window you pick
+**Phase:** inventory · **Status:** built, tested, driven · **Ruling:** PLAN.md §4.44 (b)
+
+`Bundles.tsx` rendered a frozen 9-row literal from `data/bundles.ts:498` while
+`createBundle.ts` inserted real rows, and `queries/bundles.ts:130 listBundlesWithItems` —
+written for this screen — had **zero callers**. A bundle you created could never appear.
+
+### The ruling this needed first
+`factsOf`'s state falls through to `Available` for anything not booked, and that branch reads
+`BundleLine.unitsAvailable`. Availability is **window-relative** and a catalogue has no dates,
+so wiring it blind would have printed `Available` for gear that was out — a double-booking
+risk on the screen used to promise kit to clients. Filed as §4.44 and **ruled (b): the
+operator picks the window.** Not invented; the alternatives (a) today and (c) state nothing
+are recorded there with why they lost.
+
+### What was built
+- **`lib/queries/bundleRecords.ts`** (new) — returns the pane's own `BundleRecord` shape, so
+  `factsOf`, the chips and the donut are untouched. Availability comes from the real engine
+  (`readCandidates` + `readHolds` → `selectUnitsForLine`), the same path `planCreationUnits`
+  uses at creation, under the same §4.30 rules. Nothing re-implemented.
+- **`lib/queries/useBundles.ts`** (new) — `useList` wrapper; the window travels in `chips` so
+  moving the dates re-queries. Chip keys are `window_*`, deliberately not column names.
+- **`queries/bundles.ts`** — `includeArchived` + `isActive`, so Law 3's retired bundles reach
+  the Archived shelf instead of being filtered away.
+- **`queries/availability.ts`** — `availabilityRules`, `readCandidates`, `readHolds` exported.
+  One word each, on signature lines another session was not editing, rather than duplicating
+  ~75 lines including `readHolds`'s Law 3 `released_at` rule.
+- **`Bundles.tsx`** — seed constants → live derivations; a date-window control above the
+  filters (it is not a filter: it does not narrow the list, it defines what "available" means);
+  window in the URL per §4.44 so a checked availability can be shared; `PageBody` for
+  loading/error/empty. `SeedDefectBanner` removed — it reported seed arithmetic and there is
+  no seed here now.
+- **`mock/engine.ts`** — four embeds declared (`bundles.inventory_categories`,
+  `bundles.bundle_items`, `booking_lines.bookings`, `inventory_reservations.bookings`).
+  Without them the mock resolves an embed to null and only warns.
+- **`mock/corpus.ts`** — 3 bundles (one archived) over real products, plus
+  `inventory_reservations` holds for a week in November. The holds are the point: with none,
+  every window returns the same answer and the date control would look wired while proving
+  nothing.
+
+### How it was verified — driven, not read
+Mock build, signed in as Owner:
+- Before the fixture: pane showed **`No bundles yet`** — the honest reading of an empty
+  `bundles` table, where it used to show 9 fabricated kits.
+- After: **Total Bundles 2 · Excludes archived (1)**, chips reconcile `1 + 0 + 0 + 1 + 0 = 2
+  · All 2`, Category filter derives **Camera · Lighting · Support** from the rows.
+- **The window demonstrably drives it** — same bundle, same data:
+
+  | Window | BND-002 | chips (All·Avail·Res·Rent·Partial·Maint) |
+  |---|---|---|
+  | 4–5 Sept | `Available` 3 / 3 | 2,1,0,0,1,0 |
+  | 11–14 Nov | `Partially Available` 1 / 3 | 2,0,0,0,2,0 |
+
+- URL-addressable: `?tab=bundles&from=…&to=…` restores the window on load.
+- Zero console errors; no missing-relationship warnings from the mock.
+- `tsc --noEmit` clean for every file touched; eslint clean; 484/485 tests pass in
+  `queries` + `mock` + `inventory` + `availability`.
+
+### Two failures that are NOT this change
+Another session is editing this tree concurrently. Measured, not assumed:
+- `Calendar.tsx(1300,1720)` — `CountSlot.value` / `QuickAction.action`. Both `Calendar.tsx`
+  and `data/calendar.ts` are dirty from their in-flight refactor.
+- `finance.test.ts:799` export-surface pin — they added `invoicesDueInPeriod` to
+  `finance.ts` (confirmed by diffing the export list against HEAD) without updating the pin.
+Neither file was touched here, and neither was "fixed" — they are mid-change.
+
+### Still open
+- **`AddBundle`'s item picker is the same defect one level down.** Creating a bundle through
+  the UI fails with *"Sony FX3 Camera Body (M-FX3-BODY) is not a product in the products
+  table"* — the picker is populated from the seed catalogue, so `createBundle` correctly
+  refuses. The read path is now live; the write path's picker is not. Next in this cluster.
+- `itemCatalogue.ts` (New Rental's Bundles tab) still reads `ACTIVE_BUNDLES`.
+- Bundle **detail** and **edit** screens still do not exist (audit P1).
+- `BlockedBy` has no member for `Missing` / `Retired`, so a line short only for those carries
+  no reason and the donut under-counts. Documented in `bundleRecords.ts`; a fourth member
+  changes the donut's four fixed segments, which is a spec question.
+
+
+## 2026-09-04 — CL-P0: `/clients/:id` resolves a uuid as well as a code
+**Phase:** clients · **Status:** fixed, tested, driven
+
+A full missing-pages audit (`MISSING_PAGES_AUDIT_2026-09-04.md`, 8 dimensions, finder +
+refuter) found that the reported "individual client page is missing" is not a missing page.
+`ClientDetail.tsx` is 1,297 lines and routed at `App.tsx:624`. It rendered **"Client not
+found"** for every link arriving from outside the clients module.
+
+### Why it could never have worked
+`getClientRecordByCode` filtered on `client_code` alone. But eight call sites build
+`/clients/:id` from the uuid FK they already hold — `RentalsList.tsx:1834`,
+`Payments.tsx:854`/`:926`, `OperationsQueues.tsx:791`/`:867`, `rentals.ts:1148` and two more,
+all fed by `bookings.ts:341` / `finance.ts:404`/`:765` mapping `clientId: r.client_id`.
+`0055_ruled_identifier_formats.sql:136` pins `client_code` to `^C-[0-9]+$`, a shape no uuid
+can take, so the match was impossible rather than merely unlikely. Invisible from inside
+Clients, where the links happen to carry codes.
+
+### The fix
+`getClientRecordByCode` → **`getClientRecord(ref)`**, dispatching
+`CLIENT_UUID_RE.test(ref) ? 'id' : 'client_code'`. This is the codebase's existing answer to
+the same problem — `queries/availability.ts:147` and `queries/bookings.ts:1021` both pick `id`
+vs a human code exactly this way. The formats cannot collide. `DIRECTORY_COLUMNS` already
+selects `id`, and the mock engine filters `eq` generically (`mock/engine.ts:223`), so both
+backends took it unchanged. `useClientProfile`'s chip key became `client_ref`, because
+everywhere else a chip key IS a column name (`listQuery.ts:152`) and no `client_ref` column
+exists — it is a cache key whose value may be either format.
+
+### How it was verified
+Driven on the mock build as Owner, not read:
+- `/rentals` list confirmed to emit uuid hrefs (`/clients/356f85c9-010f-…`) — the broken shape.
+- Clicked one through: loads **Annapurna Media Pvt. Ltd. · C-36** with real figures and tabs.
+- `/clients/C-36` (code) and `/clients/356f85c9-…` (uuid) resolve to the **same** record.
+- `/clients/C-99999` and a non-existent uuid both still say "Client not found" — the fix did
+  not turn a miss into a false hit.
+- Zero console errors. `tsc --noEmit` exit 0. 27 tests in `clientsQuery.test.ts` + 34 in
+  `blockClient.test.ts` pass.
+
+The old test asserted the code path and called it *"the id every /clients/:id link carries"* —
+the false premise that let a P0 sit behind a green suite. Replaced with two tests pinning the
+uuid path and one asserting both addresses reach one record.
+
+### Still open (not this change)
+- `CasesWorkspace.tsx:409` and `ClientReports.tsx:343` pass **seed** codes (`C-1`, `C-34`)
+  matching no live row. Wrong about the data, not the column — a separate fix.
+- `ClientsDirectory.tsx` imports no `Link`; three controls labelled "open profile" open a
+  drawer instead (P2, audit item 1c).
+- Client **edit does not persist** (`ClientDetail.tsx:367` `onSave` only calls `setDraft`;
+  `updateClient.ts` never sets `implemented: true`). Still P0, untouched here.
+
 ## 2026-09-05 — the time-boundary batch, and the day Daily Closing was reading
 
 **Phase:** Phase 0 · **Status:** 7 register items closed (6 batched + 1 the reviews found) · 1 filed unruled

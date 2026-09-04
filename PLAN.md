@@ -613,6 +613,127 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
+## 4.45 ⬅ OPEN ×2 — the two rulings the remaining read-frozen screens need
+
+**Raised 4 Sep 2026 after §4.44 closed the Bundles list.** Filed together because ruling
+them in one sitting unblocks four screens; taken one at a time they cost a round trip each.
+
+### (a) Add Bundle's item picker — how do 10 unit statuses become 4 pools?
+
+Creating a bundle through the UI **fails today**: `createBundle.ts:284` refuses with *"Sony
+FX3 Camera Body (M-FX3-BODY) is not a product in the products table"*. It is right to. The
+picker tree is `INVENTORY_MODELS` — 20 hand-written models, `data/addBundle.ts:125-404` — and
+`bundle_items.product_id` is a uuid FK to `products` (`0004:411`). `docs/pages/22_add_bundle.md`
+§7 lists **twelve** separate SEED sources on that one screen, not just the tree.
+
+Sourcing the tree from live `products` is straightforward for id, sku, name, brand, category
+and rate. The blocker is the four count columns the render draws — **Stock · Avail · Res ·
+Rent** — under §5.1's invariant `stock = available + reserved + onRent + maintenance`.
+`product_units.status` has **ten** members (`In Stock · Reserved · Packed · On Rent ·
+Returning · Inspection · Cleaning · Maintenance · Missing · Retired`), and no mapping from
+those ten to these four exists anywhere in the repo — I checked. `Packed`, `Returning`,
+`Inspection`, `Cleaning` and `Missing` have no obvious home, and where they land changes what
+an operator is told is free.
+
+Options: **(i)** collapse by rule — e.g. Reserved+Packed → Res, On Rent+Returning → Rent,
+Maintenance+Inspection+Cleaning → maintenance, Missing/Retired out of stock. **(ii)** name the
+four columns after the four identically-named statuses and let the invariant break where
+units sit in the other six, surfaced by the reconcile banner the screen already has.
+**(iii)** drop the pools from the picker and show availability the way §4.44 ruled — against a
+window — which makes this screen consistent with the Bundles list but is a bigger change.
+
+⚠ Do NOT wire the picker before this is ruled. A wrong pool here tells an operator gear is
+free while they are building the kit they will promise to a client.
+
+### (b) Maintenance — one `cost` column, two figures on screen
+
+`Maintenance.tsx:135-136` renders **`costEstPaisa`** and **`costActualPaisa`** as separate
+values. `maintenance_records` (`0004:513`) has a single `cost numeric(14,2) not null default
+0`. One column cannot answer both, and money is the one place this build has already been
+bitten (§4.42). Either the screen shows one figure, or the table gains a second column.
+
+Also unsourceable on that screen, and to be left absent rather than guessed:
+`conditions` (Under Warranty / Holding a Booking / Repair Approval Pending), `bookingImpact`,
+and `parts[]` — none has a column or a table.
+
+### Clean, and NOT blocked by either of the above
+- **Purchase Requests** — `purchase_requests` (`0004:579`) carries `pr_no`, `product_id`,
+  `supplier_id`, `quantity`, `estimated_unit_cost`, `total_estimated_cost`, `reason_type`,
+  `urgency`, `status`, `requested_by`, `approved_by`, `rejection_reason`. Costs are explicitly
+  *estimated*, status is an enum, the approver is a column. No collapse, no window.
+- **Warehouses** — its writes already go live (`createStockTransfer`); only the read is frozen.
+
+---
+
+## 4.44 ✅ RULED 4 Sep 2026 — the Bundles list reports availability against a window the operator picks
+
+**Ruled by Babin, 4 Sep 2026: option (b).** The pane carries a date-window control; the
+`Available` / `Partially Available` / `On Maintenance` chips and the per-line shortfall
+recompute against whatever window is selected, via `lib/availability.ts`. This is the
+truthful reading — a bundle is quoted for a window, never "in general" — and it is the
+reason (a) was rejected: "today" silently answers a different question than the one the
+operator is asking when they price a job three weeks out.
+
+The window belongs in the URL, like `?tab=`, so a quoted availability can be linked and
+shared. Fields with no column — listed at the foot of this item — stay absent regardless.
+
+**Raised 4 Sep 2026, blocking the Bundles read-frozen/write-live P0.**
+
+`modules/inventory/Bundles.tsx` (the `/inventory?tab=bundles` pane) renders a frozen
+9-row literal from `data/bundles.ts:498`, while `actions/inventory/createBundle.ts`
+inserts into Postgres for real and `lib/queries/bundles.ts:130 listBundlesWithItems`
+— written for exactly this screen — has **zero callers**. A bundle you create can
+therefore never appear. Same shape as Maintenance, Warehouses, Purchase Requests and
+Membership.
+
+### What the wiring does NOT need a ruling for
+Audited against `0004_inventory.sql:380-425` and `0002_bookings.sql:125-147`:
+
+| `BundleRecord` field | Source | Status |
+|---|---|---|
+| id · name · category · rates | `bundles` + `inventory_categories` | ✅ sourceable |
+| lines: model, quantity, days, mandatory | `bundle_items` → `products` | ✅ sourceable |
+| `unitsStock` | `readUnitCounts` (already in the query) | ✅ sourceable |
+| `archived` | `bundles.is_active = false` | ✅ sourceable — query filters it out today |
+| `booking` (id, client, window, state) | **`booking_lines.bundle_id`** → `bookings` → `clients`; FK added `0042:52` | ✅ sourceable |
+
+### The ruling actually needed
+`data/bundles.ts:400 factsOf` sets state by precedence: `booking.state === 'out'` →
+On Rent; `'reserved'` → Reserved; **otherwise** it falls to `allInMaintenance` /
+`readyItems < totalItems` / `Available`, and all three of those read
+`BundleLine.unitsAvailable`.
+
+`unitsAvailable` is **window-relative** and the Bundles list is a catalogue with no
+date context. `lib/availability.ts` can answer it — `selectUnitsForLine`,
+`conflictingHolds`, `explainShortfall` — but only for a stated `RentalWindow`.
+
+**Wiring without deciding this means every un-booked bundle renders `Available`** —
+a confident claim that all of its gear is free, on a screen an operator uses to
+promise kit to a client. That is worse than the seed: the seed is disclosed as
+fabricated, this would not be. It is also a double-booking risk, so it is not a
+"ship it and refine" case.
+
+**The question:** which window does the chip row (`Available` / `Partially Available`
+/ `On Maintenance`) measure against?
+- **(a) Today** — what the seed implies. Cheapest; answers "can this go out now?".
+- **(b) A user-picked window** — a date control on the pane; matches how the bundle
+  is actually sold, but is new UI and a spec change.
+- **(c) Do not state availability at all** until (a) or (b) is built — wire identity,
+  composition, rates, archived and `booking` only, and render the availability chips
+  and the shortfall rows as explicitly not-computed (`Unavailable` / `NotTracked`,
+  the pattern this codebase already uses). Honest, smallest, and reversible — but it
+  removes working-looking chips from a screen that has them today.
+
+### Not blocking, and NOT to be invented either
+`tags[]`, `lockMode`, `nextConflictAd`, `substitutes[]`, `replaceable`, and
+`BundleLine.kind`'s `crew`/`vehicle`/`box` members have **no column anywhere**
+(`bundle_items.product_id` is `not null references products`, so a live bundle cannot
+hold a crew or vehicle line at all). `data/bundles.ts:133-145` already says
+`nextConflictAd` "is seeded, not computed" because the model has no source for it.
+Whatever (a)/(b)/(c) is chosen, these stay absent rather than guessed.
+
+---
+
 ## 4.43 ⬅ OPEN ×3 — the three rulings the on-device database cannot be built without
 
 **Raised 3 Sep 2026.** Babin ruled the direction: *"instead of supabase make local db then

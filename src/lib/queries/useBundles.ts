@@ -1,0 +1,57 @@
+import { listBundleRecords } from './bundleRecords'
+import type { ListFilters } from './listQuery'
+import { useList, type ListQueryResult, type ListResult } from './useList'
+import type { BundleRecord } from '../../data/bundles'
+import type { RentalWindow } from '../availability'
+
+/**
+ * The Bundles pane's records, for the window the operator has picked.
+ *
+ * **PLAN.md §4.44** — availability is measured against a window, so the window
+ * is part of the filter set rather than a constant. It travels in `chips` for
+ * the same reason `useClientProfile`'s reference does: `useList` holds the
+ * fetcher in a ref and re-queries on the filter VALUE, so moving the dates
+ * re-runs the query without remounting the pane.
+ *
+ * The chip keys are `window_from` / `window_to` / `with_money`, and **none of
+ * them is a column name** — unlike everywhere else in `listQuery.ts`, where
+ * `Object.entries(filters.chips)` builds `.eq(column, …)` directly. This fetcher
+ * never hands its filters to that builder; it reads the three values and calls
+ * `listBundleRecords`. Named with a `window_` prefix so the difference is
+ * visible at the call site.
+ *
+ * An absent window short-circuits to zero rows without touching the network —
+ * there is no sensible default, and inventing one is the thing §4.44 ruled out.
+ */
+async function fetchBundleRecords(filters: ListFilters): Promise<ListQueryResult<BundleRecord>> {
+  const fromAd = filters.chips?.['window_from']?.[0]
+  const toAd = filters.chips?.['window_to']?.[0]
+  if (fromAd === undefined || toAd === undefined) return { rows: [], total: 0 }
+
+  const rows = await listBundleRecords(
+    { fromAd, toAd },
+    { withMoney: filters.chips?.['with_money']?.[0] === 'yes' },
+  )
+  return { rows, total: rows.length }
+}
+
+/**
+ * @param window the rental window to measure availability against, or `null`
+ *   before one is known — which yields zero rows rather than a guess.
+ * @param withMoney the caller's own money gate. **Never a literal `true`.**
+ */
+export function useBundleRecords(window: RentalWindow | null, withMoney: boolean): ListResult<BundleRecord> {
+  return useList<BundleRecord>(
+    fetchBundleRecords,
+    {
+      chips: {
+        window_from: window ? [window.fromAd] : [],
+        window_to: window ? [window.toAd] : [],
+        with_money: [withMoney ? 'yes' : 'no'],
+      },
+    },
+    // A catalogue is addressed, not filtered. Without this an empty result would
+    // offer "Clear filters" for a window that genuinely has no bundles in it.
+    { isFilteredOverride: false },
+  )
+}

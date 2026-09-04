@@ -1,4 +1,4 @@
-import { listClientRecords, listMembershipPlans, getClientRecordByCode } from './clients'
+import { listClientRecords, listMembershipPlans, getClientRecord } from './clients'
 import type { ClientProfile, MembershipPlanRow } from './clients'
 import type { ListFilters } from './listQuery'
 import { useList, type ListQueryResult, type ListResult } from './useList'
@@ -85,22 +85,31 @@ export function useClients(): UseClientsResult {
  * bad `/clients/:id` link is, and is a different fact from `error` (the read
  * failed) that the old `CLIENTS_DATA.find(...) ?? null` could not distinguish.
  *
- * The code travels in `chips` so `useList` re-queries when the route param
+ * The reference travels in `chips` so `useList` re-queries when the route param
  * changes: the fetcher is held in a ref and only the filter VALUE retriggers.
- * An absent code short-circuits to zero rows without touching the network —
+ * An absent reference short-circuits to zero rows without touching the network —
  * `in(client_code, [])` would return every row, not none.
+ *
+ * The chip key is `client_ref`, NOT `client_code`. Everywhere else a chip key
+ * IS a column name — `listQuery.ts:152` builds `.eq(column, …)` straight out of
+ * `Object.entries(filters.chips)`. Here it is only a cache key: the value may be
+ * a `client_code` or a `clients.id` uuid, `getClientRecord` decides which column
+ * to read, and no column named `client_ref` exists. Naming it `client_code`
+ * claimed the narrower of the two, which is the mistake this pair of files was
+ * fixed for on 4 Sep 2026.
  */
 async function fetchClientProfile(filters: ListFilters): Promise<ListQueryResult<ClientProfile>> {
-  const code = filters.chips?.['client_code']?.[0]
-  if (!code) return { rows: [], total: 0 }
-  const profile = await getClientRecordByCode(code)
+  const ref = filters.chips?.['client_ref']?.[0]
+  if (!ref) return { rows: [], total: 0 }
+  const profile = await getClientRecord(ref)
   return { rows: profile ? [profile] : [], total: profile ? 1 : 0 }
 }
 
-export function useClientProfile(clientCode: string | undefined): ListResult<ClientProfile> {
+/** @param ref a `client_code` (`C-0001`) or a `clients.id` uuid — either resolves. */
+export function useClientProfile(ref: string | undefined): ListResult<ClientProfile> {
   return useList<ClientProfile>(
     fetchClientProfile,
-    { chips: { client_code: clientCode ? [clientCode] : [] } },
+    { chips: { client_ref: ref ? [ref] : [] } },
     // A profile is addressed, not filtered. Without this the empty state would
     // offer "Clear filters" for a client that does not exist.
     { isFilteredOverride: false },

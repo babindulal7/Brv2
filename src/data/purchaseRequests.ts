@@ -35,8 +35,19 @@ export interface PurchaseRequest {
   totalSubRentPaid: Paisa
   refusedCount: number
   subRentCount: number
-  priorityScore: number
-  priority: PRPriority
+  /**
+   * §6's score, or **`null` when it cannot be computed**.
+   *
+   * The formula needs `refused_bookings`, `sub_rental_events` and
+   * `sub_rental_cost`. No table or column holds any of the three (checked across
+   * every migration), so live rows arrive unscored. `null` is not zero and must
+   * not be coerced to `Low`: ranking a genuinely urgent purchase alongside a
+   * trivial one is worse than saying the ranking is unavailable.
+   *
+   * The seeded rows below keep real values — they carry their own evidence.
+   */
+  priorityScore: number | null
+  priority: PRPriority | null
   suggestedSupplier?: string
   status: PRStatus
   requestedBy: string

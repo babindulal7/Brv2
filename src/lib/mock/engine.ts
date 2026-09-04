@@ -78,6 +78,15 @@ const REL: Record<string, Rel> = {
   'products_v.inventory_categories': { kind: 'one', table: 'inventory_categories', fk: 'category_id' },
   'products_v.product_units_v': { kind: 'many', table: 'product_units_v', fk: 'product_id' },
   'products.inventory_categories': { kind: 'one', table: 'inventory_categories', fk: 'category_id' },
+  /* Bundles — `queries/bundles.ts` embeds both in one call, and
+     `queries/bundleRecords.ts` walks booking_lines → bookings → clients to find
+     what is holding a bundle. `inventory_reservations.bookings` is what
+     `readHolds` asks for so a conflict can be named; without it every hold
+     reports its booking uuid instead of its `B-…` number. */
+  'bundles.inventory_categories': { kind: 'one', table: 'inventory_categories', fk: 'category_id' },
+  'bundles.bundle_items': { kind: 'many', table: 'bundle_items', fk: 'bundle_id' },
+  'booking_lines.bookings': { kind: 'one', table: 'bookings', fk: 'booking_id' },
+  'inventory_reservations.bookings': { kind: 'one', table: 'bookings', fk: 'booking_id' },
   'product_units_v.products_v': { kind: 'one', table: 'products_v', fk: 'product_id' },
   'invoices.clients': { kind: 'one', table: 'clients', fk: 'client_id' },
   'payments.clients': { kind: 'one', table: 'clients', fk: 'client_id' },

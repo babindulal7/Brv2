@@ -81,6 +81,13 @@ export interface BundleWithItems {
   /** `bundles.daily_rate` — the advertised rate the Bundle parent line carries. Never masked. */
   dailyRate: Paisa
   weeklyRate: Paisa
+  /**
+   * `bundles.is_active`. Law 3 — a retired bundle is `false`, never a deleted
+   * row, so "archived" is a value this list carries rather than an absence the
+   * caller has to infer. Only populated when `includeArchived` was asked for;
+   * without it every row is `true` by construction.
+   */
+  isActive: boolean
   items: BundleComponent[]
 }
 
@@ -118,6 +125,14 @@ export interface ListBundlesOptions {
    */
   withMoney?: boolean
   limit?: number
+  /**
+   * Return retired bundles (`is_active = false`) alongside live ones, tagged by
+   * `isActive`. The Bundles pane needs them: its chip row has an **Archived**
+   * shelf, and Law 3 means those rows still exist and must still be openable.
+   * Default `false` keeps the New Rental picker — the original caller — showing
+   * only bundles that can actually be sold.
+   */
+  includeArchived?: boolean
 }
 
 /**
@@ -128,10 +143,13 @@ export interface ListBundlesOptions {
  * `is_active = false`.
  */
 export async function listBundlesWithItems(opts: ListBundlesOptions = {}): Promise<BundleWithItems[]> {
-  const { data, error } = await supabase
-    .from('bundles')
-    .select(BUNDLE_COLUMNS)
-    .eq('is_active', true)
+  let query = supabase.from('bundles').select(BUNDLE_COLUMNS)
+  /* Law 3 — an inactive bundle is retained, never deleted, so it is filtered
+     here rather than expected to be absent. `includeArchived` lifts the filter
+     for the Bundles pane, which has a shelf for exactly these. */
+  if (opts.includeArchived !== true) query = query.eq('is_active', true)
+
+  const { data, error } = await query
     .order('name', { ascending: true })
     .limit(opts.limit ?? 200)
 
@@ -157,6 +175,7 @@ export async function listBundlesWithItems(opts: ListBundlesOptions = {}): Promi
     category: b.category?.name ?? null,
     dailyRate: rupees(b.daily_rate ?? 0),
     weeklyRate: rupees(b.weekly_rate ?? 0),
+    isActive: b.is_active,
     items: [...(b.items ?? [])]
       .sort((x, y) => x.sort_order - y.sort_order || x.id.localeCompare(y.id))
       .map((i): BundleComponent => {
