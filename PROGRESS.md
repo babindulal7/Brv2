@@ -2,6 +2,93 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-04 — 0085 VERIFIED, and running it found three defects reading it had not
+
+**Phase:** Phase 0 step 2 · **Status:** 2.2 ✅ **verified from scratch** · 0088 added · 0079 unblocked · 2.5/2.6 still held behind Step 0
+
+`check:rebuild` is green with 0085 in place: **86 applied, 0 failed**, confirmed on
+two independent from-scratch builds. The previous entry's "UNVERIFIED" is closed.
+
+Everything below was found by *running* the migration. The version committed in
+`5761dc6` had been read carefully, hand-checked, and was wrong in three ways.
+
+### 1 · The pre-condition was live-shaped, and broke the rebuild
+0085 asserted "expect 46 seed bookings in 900-945" straight from SPEC-P0-3 §3.
+A from-scratch database holds **23**, not 46 — `0076_seed_operational_stage_corpus`
+sizes its corpus against `now()` and yields fewer rows the later it is applied,
+while its own header still claims `B-900 … B-945`. So the migration set no longer
+built from scratch: the exact guarantee `check:rebuild` was written to hold, undone
+four days after fixing it. The same shape-lock mistake 0047 had.
+
+The 46 is a fact about live, not an invariant. It is now **reported**, and the gate
+asserts what it was standing in for: that nothing in 900-945 carries an
+`external_refs` orders row, i.e. that none of them is a real Booqable order. That
+passes on live (46 seed, 0 order refs) and on a rebuild (23, 0), and fails exactly
+when the back-fill has put real orders in the band. The 46 check still runs against
+live as PHASE-0-PLAN step 2.1, where it belongs.
+
+The post-condition was absolute in the same way and is now relative to what the
+mapping table actually recorded.
+
+### 2 · The index could never have been built there → `0088`
+`create index … on bookings (((booking_no)::bigint))` failed with
+
+    ERROR:  invalid input syntax for type bigint: "B-918"
+
+*after* `bookings_booking_no_is_digits` had been added and validated, so every live
+row was provably digits. A non-concurrent CREATE INDEX scans with **SnapshotAny**
+and evaluates its expression over recently-dead tuples too — the pre-UPDATE row
+versions from the same transaction, still holding `B-918`. Confirmed by running the
+identical statements across two transactions, where they succeed. The index moved to
+`0088_booking_no_numeric_index.sql`; both files carry the reason so nobody merges
+them back.
+
+### 3 · `padding = 1` made every booking mint as `9`
+The worst one, and the one my own post-conditions passed over. Postgres `lpad`
+**truncates** when the value is longer than the width:
+
+    lpad('900', 1, '0') = '9'
+
+0085 set `padding = 1` so bare numbers would not be zero-padded. The stored counter
+was a correct 899, so the assertion `current_value + 1 = 900` passed — while
+`next_document_number('booking')` returned **`9`**, and the second call `9` again.
+P0-4 would have looked fixed and been worse.
+
+Two consequences:
+
+- **The header's claim that re-pointing the sequence alone fixes P0-4 was false**,
+  and is corrected in place. `create_booking` still needs no change; but
+  `next_document_number` does, and it is now step 6 of 0085.
+- **The truncation is not a booking bug.** Every sequence silently truncates once
+  it outgrows its padding, and the truncated value collides with one already
+  issued: at invoice 10000, `INV-` (padding 4) mints `INV-1000`. Proven, then
+  proven fixed — `greatest(padding, length(v))` pads up but never cuts, and
+  changes nothing already issued.
+
+The post-condition now **mints a number and puts the counter back**, rather than
+inspecting the counter. That is the only assertion that would have caught this.
+
+### Also: `0079` could never have applied
+Not mine — `0079_invoice_vat_rate_is_authoritative` fails its own post-condition,
+which greps `pg_proc.prosrc` for `0.13`. The migration's explanatory comment
+`-- was: round(v_taxable * 0.13, 2)` sits inside the function body, so it lands in
+`prosrc` and trips the check on itself. Fixed by rewording the comment; the check now
+tests the code rather than the prose.
+
+### Verified
+Two clean from-scratch builds, 86/86. Then against the rebuilt database, not the
+source: 0 non-digit booking numbers · 900-945 empty · 23 parked at 90000-90022
+(live will park 46 at 90000-90045) · 102 real bookings at 715-899 · counter left at
+899 · **`next_document_number('booking')` returns 900, 901, 902** · `INV-10000` and
+`EQ1000000` no longer truncate · payment year-less (R-18) · other prefixes unchanged
+(R-12) · 125 mapping rows, `B-900 → 90000`, `B-715 → 715`. `tsc --noEmit` clean, 8
+booking-number tests pass.
+
+### Unchanged
+Nothing here touched live. 2.5 (back-fill `external_refs`) and 2.6 (revoke DELETE)
+still wait on Step 0's dump and explicit approval, and the Booqable token is still
+unrotated.
+
 ## 2026-09-04 — Phase 0 Step 2 (numbering): gate passed, 0085 written, two spec corrections, one false green of my own
 **Phase:** Phase 0 step 2 · **Status:** 2.1 ✅ · 2.2 written but **UNVERIFIED** (Docker down) · 2.3 ✅ · 2.4 ✅ · 2.5/2.6 held behind Step 0
 

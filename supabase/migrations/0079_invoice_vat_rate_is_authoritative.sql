@@ -97,7 +97,11 @@ begin
   -- 3. Calculate step-by-step
   v_discount := round(v_subtotal * (v_discount / 100.0), 2);
   v_taxable := v_subtotal - v_discount;
-  v_vat := round(v_taxable * v_vat_rate, 2);   -- was: round(v_taxable * 0.13, 2)
+  v_vat := round(v_taxable * v_vat_rate, 2);   -- was: a hardcoded rate, not the column
+                                               -- (the old literal is deliberately
+                                               --  NOT written here: the post-condition
+                                               --  below greps prosrc, and a comment
+                                               --  mentioning it fails this migration)
   v_total := v_taxable + v_vat;
   v_outstanding := v_total - v_paid;
 

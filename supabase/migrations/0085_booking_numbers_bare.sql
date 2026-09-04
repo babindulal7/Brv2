@@ -22,9 +22,12 @@
 -- rejects it. Every OS-created booking errors out. Step 4 below re-points the
 -- counter to 899 so the next mint is `900` — the first free number.
 --
--- `create_booking` needs NO change: it calls `next_document_number('booking')`
--- and never touches the shape (checked against the live function body). With
--- `prefix = ''` the same call returns `900` instead of `B-918`.
+-- `create_booking` needs no change: it calls `next_document_number('booking')`
+-- and never touches the shape (checked against the live function body).
+-- `next_document_number` itself DOES need one — see step 6. Re-pointing the
+-- sequence alone is NOT sufficient, which is the opposite of what this header
+-- claimed until the migration was actually run: with `padding = 1` every mint
+-- came back as the single character '9'.
 --
 -- **R-18 — payment numbers stop resetting yearly.** `include_year = true` makes
 -- `next_document_number` reset to 1 each January and re-issue numbers it has
@@ -49,41 +52,60 @@
 begin;
 
 -- -----------------------------------------------------------------------------
--- 1 · The gate. SPEC-P0-3: "Expect 46. If it is not 46, stop."
+-- 1 · The gate.
 --
--- The 900-945 range is the ONLY discriminator available — `external_refs` holds
--- no `orders` rows for any booking (verified: 0) and the seed carries no marker.
--- If the count has moved, the range no longer identifies the seed and renumbering
--- would move real Booqable orders into the 90000 band, which is unrecoverable
--- without the mapping this migration has not yet written.
+-- SPEC-P0-3 §3 says "Expect 46. If it is not 46, stop." That 46 is a fact about
+-- LIVE on 4 Sep 2026, NOT an invariant of the schema. A database built from
+-- these migrations alone holds 23 in the band, because
+-- `0076_seed_operational_stage_corpus` sizes its corpus against `now()` and
+-- yields fewer rows the later it runs (its own header still claims B-900…B-945).
+-- Asserting 46 here made the migration set impossible to build from scratch,
+-- undoing the guarantee `check:rebuild` exists to hold (PLAN §4.42(a)).
+--
+-- So the count is REPORTED, and the gate asserts what the count was standing in
+-- for: that nothing in 900-945 is a genuine Booqable order. `external_refs` is
+-- the real discriminator, so it is checked directly. This degrades correctly in
+-- both directions — it passes on live (46 seed, 0 order refs) and on a rebuild
+-- (23 seed, 0 order refs), and it FAILS the moment the Booqable back-fill has
+-- put real orders in the band, which is the case worth stopping for.
+--
+-- The 46 gate still runs against live: PHASE-0-PLAN step 2.1, before this
+-- migration is applied. Confirmed 46 there on 4 Sep.
 -- -----------------------------------------------------------------------------
 do $$
 declare
-  v_seed integer;
+  v_band  integer;
   v_total integer;
-  v_bad integer;
+  v_bad   integer;
+  v_real  integer;
 begin
-  select count(*) into v_seed from bookings
-   where booking_no ~ '^B-9[0-4][0-9]$'
-     and substring(booking_no from 3)::int between 900 and 945;
-
-  select count(*) into v_total from bookings;
   select count(*) into v_bad from bookings where booking_no !~ '^B-[0-9]+$';
-
-  if v_seed <> 46 then
-    raise exception
-      'PRE-CONDITION FAILED: expected 46 seed bookings in 900-945, found %. '
-      'The range is the only discriminator; renumbering now would move real '
-      'orders into the 90000 band. Stop and re-identify the seed set.', v_seed;
-  end if;
-
   if v_bad > 0 then
     raise exception
       'PRE-CONDITION FAILED: % booking_no value(s) are not in the B-<n> shape. '
       'The renumber below assumes every row is; fix them first.', v_bad;
   end if;
 
-  raise notice '0085 pre-conditions: % bookings, % in the seed band.', v_total, v_seed;
+  select count(*) into v_total from bookings;
+
+  select count(*) into v_band from bookings
+   where substring(booking_no from 3)::int between 900 and 945;
+
+  select count(*) into v_real
+    from bookings b
+    join external_refs r
+      on r.entity = 'orders' and r.local_id = b.id
+   where substring(b.booking_no from 3)::int between 900 and 945;
+
+  if v_real > 0 then
+    raise exception
+      'PRE-CONDITION FAILED: % booking(s) in 900-945 carry an external_refs '
+      'orders row, so they are REAL Booqable orders, not seed. Parking them in '
+      'the 90000 band would destroy their identity. Stop and re-identify the '
+      'seed set before renumbering.', v_real;
+  end if;
+
+  raise notice '0085 pre-conditions: % bookings, % in the 900-945 band, 0 of them real orders.', v_total, v_band;
 end $$;
 
 -- -----------------------------------------------------------------------------
@@ -134,20 +156,96 @@ end
 where booking_no like 'B-%';
 
 -- -----------------------------------------------------------------------------
--- 5 · Constrain and index.
+-- 5 · Constrain.
 --
--- The index is not optional: on text, '1000' sorts before '946'. Every list
--- ordered by booking number needs the numeric expression, and the expression
--- index is what keeps that ordering cheap.
+-- ⚠ The numeric index that belongs with this CHECK is in `0088`, and it CANNOT
+-- be moved back here. A non-concurrent CREATE INDEX scans the heap with
+-- SnapshotAny, so it evaluates its expression over RECENTLY-DEAD tuples too —
+-- including the pre-UPDATE versions this very transaction just superseded, which
+-- still hold `B-918`. The build then dies with:
+--
+--     ERROR:  invalid input syntax for type bigint: "B-918"
+--
+-- even though every live row is digits and this CHECK has already validated
+-- them. Verified by running it, 4 Sep 2026. The index must therefore be built in
+-- a LATER transaction, once those old versions are fully dead. See 0088.
 -- -----------------------------------------------------------------------------
 alter table bookings add constraint bookings_booking_no_is_digits
   check (booking_no ~ '^[0-9]+$');
 
-create index if not exists bookings_booking_no_num
-  on bookings (((booking_no)::bigint));
+-- -----------------------------------------------------------------------------
+-- 6 · Stop `lpad` truncating, so a bare number survives formatting.
+--
+-- `next_document_number` formats as `prefix || lpad(v::text, padding, '0')`, and
+-- Postgres `lpad` TRUNCATES when the value is longer than the width:
+--
+--     lpad('900',   1, '0') = '9'        <- bare booking numbers, after step 7
+--     lpad('10000', 4, '0') = '1000'     <- INV- today, at invoice 10000
+--
+-- The first breaks this migration: step 7 sets `padding = 1` because a bare
+-- number must not be zero-padded, and every mint would then come back as a
+-- single digit. Caught by calling the function, 4 Sep 2026 — the stored
+-- `current_value` was correct (899), so a post-condition that checks the COUNTER
+-- passes while every minted STRING is wrong. The assertion in step 8 now mints.
+--
+-- The second is pre-existing and independent of bookings: every sequence here
+-- silently truncates once it outgrows its padding, and the truncated value
+-- collides with a number already issued. `INV-10000` minting as `INV-1000` is a
+-- duplicate-key error at best and a mis-numbered invoice at worst.
+--
+-- `greatest(padding, length(v))` fixes both: pad up to the width, never cut.
+-- Nothing already issued changes shape, because for every value inside its
+-- padding width the expression is exactly the old one.
+-- -----------------------------------------------------------------------------
+create or replace function next_document_number(p_sequence_key text)
+returns text
+language plpgsql
+as $$
+declare
+  v_rec record;
+  v_year integer := extract(year from current_date);
+  v_next_val bigint;
+  v_formatted text;
+  v_width integer;
+begin
+  select * into v_rec from number_sequences where sequence_key = p_sequence_key for update;
+
+  if not found then
+    raise exception 'Number sequence % does not exist', p_sequence_key;
+  end if;
+
+  -- A year-less sequence must never reset on a year change: it would re-issue
+  -- a number it has already handed out.
+  if v_rec.include_year and v_rec.current_year <> v_year then
+    v_next_val := 1;
+    update number_sequences
+    set current_year = v_year, current_value = 1, updated_at = now()
+    where sequence_key = p_sequence_key;
+  else
+    v_next_val := v_rec.current_value + 1;
+    update number_sequences
+    set current_value = v_next_val, current_year = v_year, updated_at = now()
+    where sequence_key = p_sequence_key;
+  end if;
+
+  -- Never narrower than the number itself. See the header: a fixed width here
+  -- silently truncates and re-issues a number that already exists.
+  v_width := greatest(v_rec.padding, length(v_next_val::text));
+
+  if v_rec.include_year then
+    v_formatted := v_rec.prefix || v_year::text || '-' || lpad(v_next_val::text, v_width, '0');
+  else
+    -- Prefix carries its own separator where it has one ('B-', 'INV-'); EQ has
+    -- none, which is how `EQ000824` keeps working through the same branch.
+    v_formatted := v_rec.prefix || lpad(v_next_val::text, v_width, '0');
+  end if;
+
+  return v_formatted;
+end;
+$$;
 
 -- -----------------------------------------------------------------------------
--- 6 · Re-point the sequences.
+-- 7 · Re-point the sequences.
 --
 -- booking: prefix drops, counter moves to the highest REAL booking number. The
 -- 90000 band is excluded deliberately — it is a parking range for the seed, not
@@ -171,14 +269,16 @@ update number_sequences
  where sequence_key = 'payment';
 
 -- -----------------------------------------------------------------------------
--- 7 · Post-conditions — SPEC-P0-3 §7 acceptance, asserted rather than assumed.
+-- 8 · Post-conditions — SPEC-P0-3 §7 acceptance, asserted rather than assumed.
 -- -----------------------------------------------------------------------------
 do $$
 declare
   v_bad integer;
   v_seed integer;
+  v_expected integer;
   v_free integer;
   v_next bigint;
+  v_minted text;
   v_pay_year boolean;
 begin
   select count(*) into v_bad  from bookings where booking_no !~ '^[0-9]+$';
@@ -186,10 +286,14 @@ begin
     raise exception 'POST-CONDITION FAILED: % booking_no value(s) are not digits.', v_bad;
   end if;
 
+  -- Relative to what step 3 actually recorded, so this holds for live's 46 and
+  -- a rebuild's 23 alike. An absolute count here is what broke the rebuild.
+  select count(*) into v_expected from booking_no_migration_map
+   where (new_no)::bigint >= 90000;
   select count(*) into v_seed from bookings
    where (booking_no)::bigint between 90000 and 90045;
-  if v_seed <> 46 then
-    raise exception 'POST-CONDITION FAILED: expected 46 bookings at 90000-90045, found %.', v_seed;
+  if v_seed <> v_expected then
+    raise exception 'POST-CONDITION FAILED: expected % bookings at 90000-90045, found %.', v_expected, v_seed;
   end if;
 
   select count(*) into v_free from bookings
@@ -203,12 +307,29 @@ begin
     raise exception 'POST-CONDITION FAILED: next booking number would be %, expected 900.', v_next;
   end if;
 
+  -- Mint for real, then put the counter back.
+  --
+  -- Checking the COUNTER alone is exactly what let `padding = 1` through: the
+  -- stored value was a correct 899, and every minted string came back '9'
+  -- because `lpad` truncates. The only assertion that catches that is the one
+  -- that asks the function what the next booking will actually be called.
+  select next_document_number('booking') into v_minted;
+  if v_minted <> v_next::text then
+    raise exception
+      'POST-CONDITION FAILED: the next booking mints as "%", expected "%". '
+      'The counter is right, so this is a formatting fault — check padding and '
+      'the lpad width in next_document_number.', v_minted, v_next;
+  end if;
+  update number_sequences
+     set current_value = current_value - 1, updated_at = now()
+   where sequence_key = 'booking';
+
   select include_year into v_pay_year from number_sequences where sequence_key = 'payment';
   if v_pay_year then
     raise exception 'POST-CONDITION FAILED: payment sequence still resets yearly (R-18).';
   end if;
 
-  raise notice '0085 verified: digits only, 46 parked at 90000+, 900-945 free, next mint 900, payment year-less.';
+  raise notice '0085 verified: digits only, % parked at 90000+, 900-945 free, next mint 900, payment year-less.', v_expected;
 end $$;
 
 commit;
