@@ -2,8 +2,31 @@
 
 Derived from [`QA_FULL_AUDIT_REPORT.md`](QA_FULL_AUDIT_REPORT.md), 4 September 2026, commit `a930db5`.
 
-**Nothing in this plan has been applied.** Per the audit brief (§41) the audit stopped at
-document-and-classify. No production change should be made before the two gates below.
+**Written 4 Sep as document-and-classify only** (audit brief §41). Since then some items have
+been **fixed in the repo** — see the status table below — but **nothing has been applied to
+production**, and nothing should be before the two gates below.
+
+## STATUS — 5 September 2026
+
+| Item | State |
+|---|---|
+| FIX-1 numbering | **done** — `0089`, standalone so live can take it without `0085`'s renumber. **Not applied to live.** |
+| FIX-2 `closeRental` | **done** — exported, Close control on Booking Detail (R-08 gated) |
+| FIX-3 crew/transport billing | **done** — plus the line-kind map made exhaustive; new test pins a 60% under-bill |
+| FIX-4 the four reported money/lifecycle P0s | **done** for three (`0090`, R-06) · BUG-010 **deliberately not fixed**, see §9 |
+| FIX-12 anonymous audit forgery | **done** — `0091`. **Not applied to live.** |
+| *new* Law 6 for the write verb | **done** — `0092`, after the verification pass proved a Warehouse session can rewrite `products.daily_rate`. **Not applied to live.** |
+| FIX-5 double-booking | open — and re-scoped: the DB hole is real but no app path reaches it (see the report's 5 Sep update) |
+| FIX-6 … FIX-11, FIX-13 … FIX-17 | open |
+
+**Four migrations now wait on the dump: `0089`, `0090`, `0091`, `0092`.** All four are verified
+on a rebuilt database (`check:rebuild`: 90 applied, 0 failed) and none has touched live.
+
+The invoice path gained a new blocker that is a ruling, not work: **`PLAN.md` §4.46** — does an
+invoice bill the booking's lines, or the ones typed on the form? Until that is answered the
+crew/transport fix and the Draft-payment fix cannot be reached from a screen.
+
+---
 
 ## Gates that come before any fix
 

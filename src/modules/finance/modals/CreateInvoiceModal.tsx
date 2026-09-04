@@ -314,10 +314,28 @@ export function CreateInvoiceModal({ isOpen, onClose }: CreateInvoiceModalProps)
      * the write, emitted by the dispatcher after `execute` returns, never by a
      * page ahead of it.
      *
-     * There is nothing to dispatch: `src/actions/finance/` holds only
-     * `recordPayment.ts`, and a repo-wide search finds no `createInvoice` /
-     * `CREATE_INVOICE` anywhere. Inventing a stub here would only move the
-     * refusal one file along.
+     * ⚠ STALE AS OF 5 SEP 2026 — the two blockers this comment named are BOTH
+     * resolved, and the one that remains is different from either:
+     *
+     *   · `src/actions/finance/createInvoice.ts` now exists and is implemented,
+     *     taking its number from `next_document_number('invoice')` exactly as
+     *     described below.
+     *   · `invoice.create` IS mapped — `actions/core.ts:231` routes it to
+     *     `canIssueInvoice` (R-05: Owner · Admin · Manager · Accounts).
+     *
+     * What actually blocks the wiring now is a PRODUCT question, not plumbing:
+     * **this form collects hand-typed lines, and `createInvoice` derives its
+     * lines from the booking** (`booking_lines` plus crew and transport, which is
+     * what R-03 requires when damage and late fees append to the Draft). Calling
+     * the action from here today would silently discard every row the operator
+     * typed and bill something else instead — which is the same
+     * success-fabrication this comment was written to prevent, wearing different
+     * clothes.
+     *
+     * So the refusal stays until someone rules whether raising an invoice bills
+     * THE BOOKING (and this form becomes a read-only preview of its lines) or
+     * bills WHAT THE OPERATOR TYPED (and the action grows an explicit lines
+     * input). Filed as `PLAN.md` §4.46. Do not wire this without that answer.
      *
      * So the refusal is stated inline and persistently (Law 12 — and
      * `useToast()` exposes only `showSuccessToast`, which is the wrong shape for
@@ -325,16 +343,10 @@ export function CreateInvoiceModal({ isOpen, onClose }: CreateInvoiceModalProps)
      * clear the form: everything the operator typed is still on screen to copy
      * out or correct.
      *
-     * TODO(decision) — two things are needed before this can be wired, and
-     * neither is this screen's to rule:
-     *   · the write itself (an `invoices` insert that takes its number from
-     *     `next_document_number('invoice')`, the way `recordPayment` takes
-     *     `payment_no`), and
-     *   · the capability. `actions/core.ts:109-125` maps capability strings to
-     *     `lib/rbac`, and there is no `invoice.create` rule — only
-     *     `invoice.void` (`canVoidInvoice`). An unmapped capability is denied,
-     *     fail-closed, so even a finished action would refuse until who may
-     *     raise an invoice is ruled and recorded in `PLAN.md` §4.
+     * TODO(decision) — one thing is now needed before this can be wired, and it
+     * is not this screen's to rule (`PLAN.md` §4.46): whether an invoice bills the BOOKING's lines
+     * (crew and transport included) or the lines typed on this form. See the
+     * note above; the write and the capability both exist already.
      */
     setError(
       'Invoice creation is not connected to the database, so nothing was saved. No invoice number was issued and no ' +

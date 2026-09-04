@@ -2,6 +2,91 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-05 — two security holes closed, and the verification pass corrected one of my own findings
+
+**Phase:** Phase 0 · **Status:** `0091` + `0092` written and verified · audit report reconciled ·
+one new ruling filed (§4.46) · nothing applied to live
+
+### `0091` — an unauthenticated caller could forge audit rows
+
+`audit_events_insert` was declared with no `TO` clause (`0011:205`), so it applied to **PUBLIC**,
+and platform defaults had granted `anon` INSERT. Reproduced on the local stack with the anon key
+alone — no sign-in: `POST /rest/v1/audit_events` → **HTTP 201**, row written. And it could not be
+taken out again: Law 3 refuses DELETE for every role including `service_role`. The anon key ships
+inside the client bundle by design, so this was reachable by anyone who opened the app.
+
+SELECT was correctly restricted to Owner/Manager all along, which is *why* it went unseen — the
+trail could never be read by a stranger, only written by one, so nothing surfaced the forged row
+to the person who could act on it.
+
+INSERT is now `authenticated` + `service_role`, and `anon`'s grant is revoked — the grant being
+the part PostgREST actually checks first. `with check (true)` is **kept** for the roles that
+remain: tying rows to `auth.uid()` was considered and rejected on evidence, because **598 of the
+5 424 live audit rows carry a NULL `actor_id`** and would have been refused.
+
+Nothing legitimate lost a path — verified against live first: `log_audit_event`,
+`record_password_reset_request` and `revoke_staff_pin_for` are all SECURITY DEFINER and **not
+executable by anon**, so trigger-written and pre-login rows are untouched.
+
+### `0092` — Law 6 governs SELECT only; a money-blind role could rewrite prices
+
+**This one corrects my own audit report.** It recorded *"Warehouse writing a price it cannot
+read — PASS"*. That was a bad generalisation: I tested `invoices`, where RLS blocks the rows, and
+concluded prices were safe. The verification pass said otherwise, and it was right — signed in as
+Warehouse, `PATCH /products {"daily_rate": 1}` returned **HTTP 200** and moved the rate from
+6500.00 to 1.00. Every future rental of that product would have quoted Rs 1 a day.
+
+Neither existing control can express the rule. RLS admits Warehouse to `products` and
+`product_units` — correctly, they own serials, location and condition — and a `WITH CHECK` cannot
+say *which columns changed*. Column privileges cannot either: every signed-in user is the same
+Postgres role, `authenticated`, so `REVOKE UPDATE (daily_rate)` would take the column from Owner
+too. (That is also why the bare column revokes elsewhere in this repo are inert — there is no
+Postgres role to revoke *from*.)
+
+So it is a trigger comparing OLD to NEW, reusing the **existing** `auth_can_view_money()`
+predicate rather than inventing one: a role that may not read a price may not write one. Keyed on
+`current_user` so `postgres`/`service_role` pass through — `auth_user_role()` falls back to
+`'Client'` with no JWT, so guarding on the app role alone would have refused `0047`'s own seed.
+
+Two of my own mistakes, both caught by insisting on evidence:
+
+- The first version refused the write for the **wrong reason** — a `text[] || unknown` append
+  raised `22P02` before the Law 6 message could — and a bare `when others` recorded that as a
+  pass. The post-condition now asserts the **message**, not merely the failure.
+- `check:rebuild` then failed it honestly: in a scratch build `authenticated` holds no privilege
+  on `products` at all, so the probe was refused by the missing GRANT rather than by the guard.
+  The assertion refused to accept that as evidence — correctly — and now skips the behavioural
+  half where it cannot be exercised, saying so out loud.
+
+### The audit report is now reconciled with its own verification pass
+
+All 12 dimensions and the adversarial pass finished: **57 findings stand, 11 refuted** — two of
+them P0. The report carries a 5 Sep update recording what changed, including two defects that are
+real at the database but **unreachable through the app today**:
+
+- the double-booking hole (no app path writes `booking_line_units`; `createRental` sends no
+  `units` and `planCreationUnits` has zero importers), and
+- payment against a Draft — because **`createInvoice` has zero callers**.
+
+### `PLAN.md` §4.46 — filed, not answered
+
+`CreateInvoiceModal`'s comment named two blockers; **both are now gone** (the action exists;
+`invoice.create` maps to `canIssueInvoice`, R-05). The real blocker is neither: the modal collects
+**hand-typed lines** while `createInvoice` derives them **from the booking** (R-03). Wiring them
+as they stand would silently discard what the operator typed — the same success-fabrication the
+modal was written to prevent. Recommended (a): an invoice bills the booking. Not ruled, so not
+wired; the stale comment is corrected to say so.
+
+### Verified
+`0091` and `0092` applied locally, each passing its own post-conditions · anon POST 201 → **401**
+with nothing written, authenticated still 201 · Warehouse price write refused with a named Law 6
+message while its own fields and Owner's pricing both still work · `check:rebuild` **90 applied,
+0 failed** · `eslint` clean.
+
+⚠ The working tree does not typecheck and one test fails, both from another session's in-flight
+work — 68 errors in `src/data/warehouse.ts` (dirty) and its consumer, and a Today segment rename
+mid-edit. **Zero errors in any file I touched.** Nothing here has been applied to live: `0089`,
+`0090`, `0091` and `0092` all wait on the Step 0 dump.
 
 ## 2026-09-04 (cont.) — PR-P0: Purchase Requests reads the database
 **Phase:** inventory · **Status:** built, tested, driven

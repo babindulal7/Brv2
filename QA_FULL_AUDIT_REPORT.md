@@ -57,6 +57,73 @@ opportunity: they can all be fixed before the first real transaction, not after.
 
 ---
 
+## UPDATE — 5 September 2026
+
+Two things happened after this report was first written: the adversarial verification pass
+finished, and the P0s were fixed. Both change what is above, so both are recorded here rather
+than silently edited in.
+
+### The verification pass finished: 57 findings stand, 11 refuted
+
+Every row marked *Reported* above has now been through an independent refuter. **Eleven were
+refuted**, including two filed as P0 — which is the point of running the pass, and the reason
+the original report warned that single-source rows carry little weight.
+
+The two that matter most, because they change what the defects actually are:
+
+- **"No payment can be recorded against any app-created invoice" — refuted as unreachable.**
+  Not because the mechanism is wrong (it is right: a Draft has no `invoice_no`, and
+  `recordPayment` resolved only by number) but because **`createInvoice` has zero callers**.
+  `CreateInvoiceModal` imports nothing from `actions/` and its submit handler refuses outright.
+  So the defect is real but latent, and the invoice path is unwired end to end.
+- **"The same physical unit can be double-booked" — refuted as unreachable.** The mechanical
+  half is confirmed and I demonstrated it myself in SQL: the `EXCLUDE` guard sits on the empty
+  `inventory_reservations`, and `booking_line_units` has none. But **no application path
+  writes `booking_line_units`** — `createRental` sends no `units`, and `planCreationUnits` has
+  zero importers. So the hole is real at the database and closed at the app, today.
+
+### One row above was WRONG, and it was mine
+
+The security table claimed *"Warehouse writing a price it cannot read — PASS"*. That was a bad
+generalisation: I tested `invoices`, where RLS blocks the rows, and concluded prices were safe.
+They were not. A Warehouse session both reads `products.daily_rate` and can rewrite it —
+6500.00 → 1.00 over PostgREST, HTTP 200. The verification pass caught it; I reproduced it; it
+is fixed in `0092`.
+
+Law 6 turns out to govern **SELECT only**. RLS admits Warehouse to `products` and
+`product_units` (correctly — they own serials, location and condition), and neither an RLS
+`WITH CHECK` nor a column `REVOKE` can say "but not the price": every signed-in user is the
+same Postgres role, `authenticated`. It needs a trigger comparing OLD to NEW, which is what
+`0092` adds, reusing the existing `auth_can_view_money()` predicate rather than inventing one.
+
+### What is fixed (commits `52c2190`, and this one)
+
+| ID | Fix | Verified by |
+|---|---|---|
+| BUG-001 | `0089` — `greatest(padding, length(v))`, standalone so live can take it without `0085`'s renumber | minting: `900/901`, `INV-121`, `DEP-90`; padded formats unchanged |
+| BUG-002 | `closeRental` exported + a Close control on Booking Detail (R-08 gated) | the action was already correct; it needed a caller |
+| BUG-003 / BUG-007 | `createInvoice` reads `booking_crew_lines` and `booking_transport`; the kind map is exhaustive over the enum | new test: 83 500 owed vs 33 300 billed before — a 60% under-bill |
+| BUG-004 | `0091` — `anon` loses INSERT on `audit_events`; policy narrowed to `authenticated`/`service_role` | anon POST 201 → **401**, nothing written; authenticated still 201 |
+| BUG-008/009/011 | `0090` — R-06's handover gate warns with a named reason recorded in `audit_events`; **R-07's Close gate left hard** | refused without a reason, allowed with one, exactly one audit row, Close still blocked |
+| BUG-012 | `recordPayment` accepts `invoiceId`, so a Draft can be settled | latent until the invoice path is wired — see below |
+| *new* | `0092` — Law 6 for the write verb on `products` / `product_units` | Warehouse price write refused with a named Law 6 message; warehouse's own fields and Owner's pricing both still work |
+
+### Still open, and why
+
+- **The invoice path is unwired.** `createInvoice` is implemented and `invoice.create` is
+  mapped to `canIssueInvoice` (R-05) — the two blockers the modal's comment named are both
+  gone. What remains is a product question, now filed as **`PLAN.md` §4.46**: the modal
+  collects hand-typed lines while the action derives them from the booking (per R-03). Wiring
+  them as they stand would silently discard what the operator typed. Until that is ruled, the
+  crew/transport fix and the Draft-payment fix cannot be exercised from a screen.
+- **The Close gate's deposit test** reads `pending_amount` (uncollected) rather than unreturned
+  deposit. R-07 says "the deposit resolved" without defining it, and SPEC-P0-2 names
+  `pending_amount` only under a heading describing what is *already live*. Unruled, so
+  unchanged.
+- **BUG-005 / BUG-006** stand as written, with BUG-005 qualified as above.
+
+---
+
 ## APP HEALTH
 
 Full detail in [`QA_APP_HEALTH_REPORT.md`](QA_APP_HEALTH_REPORT.md). Summary at HEAD:
@@ -202,7 +269,7 @@ The material finance findings are structural, not arithmetic:
 |---|---|
 | Law 6 — Warehouse reading money on `client_directory_v` | **PASS** — money columns return `null`; Owner sees real values |
 | Law 6 — Warehouse reading `invoices`, `payments`, `expenses`, `invoice_lines`, `security_deposits` | **PASS** — 0 rows; Owner/Coordinator see 120 / 93 / …, so this is masking, not emptiness |
-| Warehouse *writing* a price it cannot read | **PASS** — PATCH matched 0 rows; the reported "warehouse can rewrite prices" claim **did not reproduce** |
+| Warehouse *writing* a price it cannot read | **FAIL — this row was WRONG in the first issue of this report.** I tested `invoices`, where RLS blocks the rows, and generalised from it. On `products` a Warehouse session both READS `daily_rate` and rewrote it 6500.00 → 1.00 over PostgREST (HTTP 200). Confirmed by the verification pass, fixed in `0092`. |
 | Anonymous INSERT into `audit_events` | **FAIL** — HTTP 201, row written, undeletable; production policy confirms it |
 | Audit trail SELECT | **PASS** — restricted to Owner / Admin / Manager |
 

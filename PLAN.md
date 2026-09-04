@@ -665,6 +665,49 @@ and `parts[]` — none has a column or a table.
 
 ---
 
+## 4.46 ⬅ OPEN ×1 — does an invoice bill the BOOKING, or the lines typed on the form?
+
+**Raised 5 Sep 2026**, while fixing the audit's P0s. This is the last thing standing between
+`createInvoice` and a working invoice path — the two blockers `CreateInvoiceModal` used to
+name are both gone.
+
+**What is already settled.** `src/actions/finance/createInvoice.ts` is implemented and takes
+its number from `next_document_number('invoice')`. `invoice.create` is mapped
+(`actions/core.ts:231` → `canIssueInvoice`), which is R-05's set: Owner · Admin · Manager ·
+Accounts. Neither of those is open any more.
+
+**What is not.** The two sides disagree about what an invoice *is*:
+
+- **`createInvoice` derives its lines from the booking** — `booking_lines`, plus
+  `booking_crew_lines` and `booking_transport` since 5 Sep. That matches R-03, where damage
+  and late fees *append as lines to the Draft invoice*: the invoice is the booking's bill.
+- **`CreateInvoiceModal` collects hand-typed lines** — description and amount rows the
+  operator fills in, with no reference to the booking's own lines.
+
+Wiring the modal to the action as they stand would silently discard everything typed and bill
+the booking instead. That is success fabrication in a new coat, so the modal still refuses.
+
+**The options:**
+
+- **(a) An invoice bills the booking.** The modal becomes a read-only preview of the lines
+  `createInvoice` will write — booking lines, crew, transport — with the VAT rate and due
+  date still editable. Ad-hoc charges reach the invoice the way R-03 says they do: as
+  `charges` rows appended to the Draft, not as free text on this form.
+- **(b) An invoice bills what the operator typed.** `createInvoice` grows an explicit `lines`
+  input, and the caller decides whether to seed it from the booking. More flexible, and it
+  reopens the question R-03 answered — an operator could then bill a number that matches no
+  line on the booking, with nothing reconciling the two.
+
+**Recommendation: (a).** It is what R-03 already implies, it is what the action does today,
+and it is the only one of the two where the bill and the booking cannot drift apart. (b)
+needs a second ruling about reconciliation before it would be safe.
+
+**Blocked on this:** the whole invoice path — and with it `recordPayment`'s Draft handling
+(R-15) and the crew/transport billing fixed on 5 Sep, none of which can be exercised until an
+invoice can be raised from a screen.
+
+---
+
 ## 4.44 ✅ RULED 4 Sep 2026 — the Bundles list reports availability against a window the operator picks
 
 **Ruled by Babin, 4 Sep 2026: option (b).** The pane carries a date-window control; the
