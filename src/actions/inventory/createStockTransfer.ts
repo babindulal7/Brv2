@@ -3,6 +3,7 @@ import { EVENT_TYPES } from '../../events/eventBus'
 import { idempotentInsert } from '../../lib/dataAccess'
 import { supabase } from '../../lib/supabase'
 import { logAuditEvent } from '../../lib/audit'
+import { captureError } from '../../lib/monitoring'
 
 /**
  * # CREATE_STOCK_TRANSFER — the write
@@ -372,6 +373,7 @@ export const createStockTransferConfig: ActionConfig<CreateStockTransferInput, C
     })
     if (!audit.ok) {
       console.error('[CREATE_STOCK_TRANSFER] audit write failed (verb proceeded, §4.36):', audit.error)
+      captureError(audit.error, { where: 'createStockTransfer.audit' })
     }
 
     const events = [

@@ -2,6 +2,7 @@ import { supabase } from '../../lib/supabase'
 import { generateClientUuid, idempotentInsert, safeUpdate } from '../../lib/dataAccess'
 import { applyBookingTransition } from '../../lib/bookingTransition'
 import { logAuditEvent } from '../../lib/audit'
+import { captureError } from '../../lib/monitoring'
 import { JOBS, type BookingStatus, type JobName } from '../../lib/workflow'
 import type { ActionContext } from '../core'
 import type {
@@ -916,6 +917,12 @@ async function writeHandoverLine(
     state,
     qty_required: required,
     ...(outcome === 'missing' ? { missing_reason: line.reason ?? null } : {}),
+    captureError(sessionAudit.error, {
+      where: 'floorVerb.sessionAudit',
+      operation,
+      bookingNo: booking.booking_no,
+      sessionId,
+    })
     // `0003:331` — the session that took the LAST unit, so only a completed line stamps it.
     ...(state === 'Picked Up' ? { completed_session_id: sessionId, picked_up_at: at } : {}),
   }
@@ -1482,3 +1489,4 @@ async function advanceStage(
   }
   return { from: booking.stage, to }
 }
+      captureError(entryAudit.error, { where: 'floorVerb.entryAudit', entryId: row.id })

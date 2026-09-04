@@ -2,6 +2,57 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-04 (cont. 4) — The 3 Sep console sweep was INCOMPLETE at `b7356ce`; four §4.36 audit captures added
+**Phase:** verification + correction (4 files) · **Status:** complete
+
+### Did
+Ran the verification the stopped sweep workflow never reached. Its journal shows **3 editors started,
+2 reported**: editor 3 finished its edits on disk then hung without emitting a result, so the verifier
+agent never started. **Did not resume the run** — editor 3 never *completed*, so a resume would have
+re-run it against code whose edits were already applied and committed, risking doubled `captureError`
+calls. Ran the verifier's checks by hand instead.
+
+### Found — the sweep, and therefore `b7356ce`, was incomplete
+Editor 1 applied **one of its four `ADD` sites**. Missing, now added:
+
+| File | Was | Now |
+|---|---|---|
+| `actions/inventory/approvePurchaseRequest.ts` | 1 | 1 (unchanged) |
+| `actions/inventory/createEquipment.ts` | **0** | 1 |
+| `actions/inventory/createStockTransfer.ts` | **0** | 1 |
+| `actions/rentals/floorVerb.ts` | **0** | 2 |
+
+These are the **§4.36 audit-write-failure sites** — the verb committed but its audit row did not land.
+They were reaching `console.error` only, which is the exact gap the sweep existed to close, and the
+one where a silent miss matters most.
+
+⚠ **`floorVerb.ts` is fully CRLF** (1,652 CRLF / 0 bare LF) while the inventory files are LF. LF-anchored
+edits silently fail to match it, and `grep` reports it as a binary file. Line endings preserved:
+1,652 → 1,660, exactly the 8 lines added.
+
+### Corrected — a defect in this session's own sweep spec
+`lib/queries/useFilters.ts:195` was specced as REPLACE. It is **already inside `if (import.meta.env.DEV)`**
+and is a developer diagnostic about a URL-contract mistake, not a runtime error worth sending to Sentry.
+Editor 2 was right to skip it; the instruction was wrong. Left as-is.
+
+### Verified
+- **Residual grep** — every remaining `console.*` in non-test `src/` is on the KEEP list; every REPLACE
+  target is gone; every ADD site still carries its console line beside the capture.
+- **Privacy contract** — all 27 `captureError` context objects carry ids and enums only (`clientId`,
+  `bookingId`, `prId`, `authId`, `entryId`, `sessionId`, `bookingNo`, `table`, `key`, `operation`,
+  `verb`, `eventName`). No name, email, phone or amount. `monitoring.ts`'s "ids and counts only" holds.
+- **Stub check** — 0 of the swept stub actions are `implemented: true`.
+- **DEV gate** — both `events/auditLogger.ts` console.logs are inside `import.meta.env.DEV`.
+- **Gates re-run after the four edits:** `tsc --noEmit` **exit 0**, no diagnostics (measured via
+  `PIPESTATUS`, not `$?` after a pipe — the first attempt measured `tail` and was meaningless);
+  `vitest run` **108 files / 2,424 tests, all passing**, 578s.
+
+### Blocked / Next
+- The four edits are **uncommitted**. `floorVerb.ts` also carries the concurrent session's uncommitted
+  work (their hunks sit below lines 915/1580, so no overlap), so committing needs the same
+  stage-by-hunk split used for `PROGRESS.md` at `b7356ce`.
+- `captureError` call sites: 26 at `b7356ce` → **30** now (+4 here; `devicePurge.ts` and `ErrorBoundary`
+  are others' / pre-existing).
 ## 2026-09-04 — 0085 VERIFIED, and running it found three defects reading it had not
 
 **Phase:** Phase 0 step 2 · **Status:** 2.2 ✅ **verified from scratch** · 0088 added · 0079 unblocked · 2.5/2.6 still held behind Step 0

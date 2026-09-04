@@ -3,6 +3,7 @@ import { EVENT_TYPES } from '../../events/eventBus'
 import { idempotentInsert } from '../../lib/dataAccess'
 import { supabase } from '../../lib/supabase'
 import { logAuditEvent } from '../../lib/audit'
+import { captureError } from '../../lib/monitoring'
 import { toRupees, type Paisa } from '../../lib/money'
 
 /**
@@ -495,6 +496,7 @@ export const createEquipmentConfig: ActionConfig<CreateEquipmentInput, CreateEqu
     })
     if (!productAudit.ok) {
       console.error('[CREATE_EQUIPMENT] audit write failed (verb proceeded, §4.36):', productAudit.error)
+      captureError(productAudit.error, { where: 'createEquipment.audit' })
     }
 
     /* Units — one row each, each under its own Law 8 key. Asset tags are
