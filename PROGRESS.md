@@ -2,6 +2,56 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-05 — WH-P1: the Transfer Center reads the database; the cards stay seeded, on purpose
+**Phase:** inventory · **Status:** built, tested, driven · **Filed:** PLAN.md §4.45(c)
+
+Fourth screen in the read-frozen / write-live cluster. `createStockTransfer` has always
+inserted real `stock_transfers` + `stock_transfer_lines` rows (`:300`, `:340`) while the
+Transfer Center read a hand-written array — so a transfer an operator raised never appeared.
+
+### Why only half of this screen was wired
+Auditing it against the schema first, as with Bundles, changed the plan mid-task. The
+transfers half is completely sourceable. **The rest of the screen mostly does not exist in
+the database:**
+
+- `capacity` / `occupancy` / `availableSpace` — no column on `warehouses` or `storage_zones`.
+  The one `capacity_slots` is on `containers` (`0004:162`), which are transit cases: it counts
+  what fits in a flight case, not a building. Borrowing it would be a category error.
+- **the rack map** — `storage_zones` (`0007:76`) has no room, rack, shelf, bin, capacity or
+  used column. Not one of `STORAGE_LOCATIONS`' nine fields exists.
+- `accuracyPct`, `manager`, `phone`, `image` — no column anywhere.
+
+I started widening `Warehouse` to nullable and stopped at **44 type errors**: capacity is
+threaded through the seed's own derivation layer (`totalsOf`, `usedOf`, `pct`, `ZoneRollup`),
+and wiring it honestly deletes most of what the screen draws. That is a product decision, not
+a wiring one, so the type change was reverted and the question filed as §4.45(c).
+
+### A defect my own half-wiring introduced, and the fix
+With the pane live and the cards seeded, the KPI strip read **`Open Transfers 18`** (summed
+from seeded warehouses) beside a live pane showing 3. Two answers to one question on one
+screen — caught by driving it, not by reading. That one figure now comes from the live list;
+the rest of the strip stays seeded so the seeded half is at least internally consistent.
+
+### How it was verified — driven, not read
+Mock build, Owner, `/inventory/warehouses`:
+- **Transfer Center (3)** with all three fixtures, newest first.
+- Asset counts match the fixture exactly — `[0,1]`→2, `[2]`→1, `[3,4]`→2.
+- Zone routes resolve (ZONE-CAM-A / ZONE-GRIP-C / ZONE-LENS-B); requester resolves to
+  Babin Dulal via `users`; BS above AD (`6 Bhadra 2083 BS` / `22 Aug 2026`).
+- Step buttons derive from `TRANSFER_FLOW` per status: Completed → **Closed**, Received →
+  **Reconcile & Complete**, In Transit → **Mark Received**.
+- **`Open Transfers 2` vs `Transfer Center (3)` is correct, not a contradiction** — the KPI
+  counts non-terminal transfers (Completed excluded by `TRANSFER_TERMINAL`), the tab counts
+  all transfers touching the warehouse. The labels distinguish them.
+- Zero console errors. `tsc` and eslint clean. **471 tests pass** across `modules/inventory`,
+  `lib/mock` and `lib/queries`.
+
+### Still open
+§4.45 now has three parts: (a) Add Bundle's 10-statuses-to-4-pools, (b) Maintenance's single
+`cost` column behind two figures, (c) whether warehouses should record capacity and a manager.
+Ruling them unblocks the last of this cluster.
+
+
 ## 2026-09-05 — two security holes closed, and the verification pass corrected one of my own findings
 
 **Phase:** Phase 0 · **Status:** `0091` + `0092` written and verified · audit report reconciled ·
@@ -87,7 +137,6 @@ message while its own fields and Owner's pricing both still work · `check:rebui
 work — 68 errors in `src/data/warehouse.ts` (dirty) and its consumer, and a Today segment rename
 mid-edit. **Zero errors in any file I touched.** Nothing here has been applied to live: `0089`,
 `0090`, `0091` and `0092` all wait on the Step 0 dump.
-
 ## 2026-09-05 — Four in-session rulings; Dashboard "Still out"; New Rental shows what a bundle add did
 **Phase:** Phase 4/5 — UX · **Status:** built and driven; committed 5 Sep (the commit carrying this entry)
 
@@ -156,7 +205,7 @@ mid-edit. **Zero errors in any file I touched.** Nothing here has been applied t
   `h1` in a short call of its own, then act in separate short calls; never front-load a boot wait.
 - The Dashboard segments carry counts, so match `/Returns/`, never `^Returns$`.
 
-### Committed (on request, 5 Sep ~04:00)
+### Committed (on request, 5 Sep 09:44 — `fc35a64`)
 Eight files, every diff re-read as mine-only before staging: `Today.tsx` +12/−5 · `NewRental.tsx`
 +78/−0 (the earlier "+75" was a miscount) · `dashboardLayout.test.tsx` +3/−3 · `DECISION-SHEET.md`
 +12/−2 · the 4 Sep doc corrections that had never landed — `CAPTURE-BACKLOG.md` +8/−3,
@@ -166,204 +215,6 @@ the other session's entries in a different order than HEAD plus its uncommitted 
 index blob was built as HEAD + my two entries inserted (checked: HEAD ⊂ index, index − HEAD == my
 entries, tree − index == their WH-P1 entry). Left unstaged, theirs: `PLAN.md`, `mock/corpus.ts`,
 `Warehouses.tsx`, untracked `queries/warehouses.ts`, `users`, four zero-byte root files.
-
-## 2026-09-04 (cont.) — PR-P0: Purchase Requests reads the database
-**Phase:** inventory · **Status:** built, tested, driven
-
-Third screen in the read-frozen / write-live cluster, after Bundles. `PurchaseRequests.tsx`
-listed a hand-written array while `approvePurchaseRequest` wrote to Postgres — so an operator
-approved a request and the list never changed.
-
-### Why this one needed no ruling
-Unlike Bundles (§4.44) and Add Bundle (§4.45a), every figure the screen prints has a column:
-`pr_no`, `product_id`, `supplier_id`, `quantity`, `estimated_unit_cost`,
-`total_estimated_cost`, `reason_type`, `urgency`, `status`, `requested_by`, `approved_by`,
-`rejection_reason` (`0004:579`). Costs are explicitly *estimated*, status is an enum whose
-seven members are `PRStatus` exactly, and the approver is a column. Nothing to collapse.
-
-### The one honest gap, and why it is not a zero
-§6's priority formula is `(refused × 2) + sub_rentals + (sub_rent_cost / cost × 10)`.
-**None of its three inputs exists** — no refused-booking table, no sub-rental table, no column
-holding either count, checked across every migration. So `priority` and `priorityScore` are
-now `PRPriority | null`, live rows come back `null`, and the screen prints **`Not scored`**
-rather than `Low`. Scoring every request `Low` would rank an urgent purchase below a trivial
-one, which is worse than declining to rank.
-
-The Data Room panel needed the same treatment: it printed `0 Events` and `Rs 0`, which reads
-as "we looked and found none". A note now states above both tables that nothing records this
-evidence, so the counts are **not measured** rather than measured-as-zero. A confident zero is
-the same defect as a confident `Available`.
-
-### What was built
-- **`lib/queries/purchaseRequests.ts`** (new) — returns the screen's own `PurchaseRequest`
-  shape. Four reads, not one embed: `products` is behind 0062's revoke so names and categories
-  come from `products_v` (`queries/bundles.ts`'s documented reason), and `requested_by` /
-  `approved_by` are **two FKs to the same table**, which PostgREST needs constraint hints for
-  and the mock's `REL` map (keyed `parent.table`) cannot express at all — so `users` is read
-  once by id set instead of encoding a fragile hint. Law 3: no status is filtered out, because
-  the screen has chips for `Rejected` and `Cancelled` and hiding them would make the counts lie.
-- **`PurchaseRequests.tsx`** — `usePurchaseRequests()`; `requestsList` stays local state and is
-  re-seeded by an effect, so the two existing optimistic writers (the decision flow and the
-  `PURCHASE_REQUEST_UPDATED` event) keep working and are only ever *ahead* of the query, never
-  instead of it. A decision now also calls `refetch()`, so the row ends up with the status
-  Postgres confirmed rather than the one this screen decided. KPI tiles derive from the live
-  rows. `PageBody` for loading / error / empty.
-- **`data/purchaseRequests.ts`** — `priority`/`priorityScore` widened to nullable, documented.
-- **`mock/corpus.ts`** — 2 suppliers + 4 purchase requests across Draft / Submitted /
-  Approved / Rejected, the rejected one carrying a `rejection_reason`.
-
-### How it was verified — driven, not read
-Mock build, Owner:
-- **All Purchase Requests (4)**, newest first; KPI tiles **Draft 1 · Pending Approval 1 ·
-  Approved 1**, derived from the rows.
-- Product names resolved through `products_v` — Sony FX9, Sony FX6, NISI Athena 35mm,
-  Aputure LS 600d Pro. Supplier name resolved on the detail panel.
-- Arithmetic correct against the fixture: `15,500 × 4 = Rs 62,000`, `185,000 × 2 = Rs 3,70,000`.
-- Status tab **Approved → 1**; heading and count follow the tab.
-- Priority reads **Not scored** on every row; the Data Room note renders above the counts.
-- Zero console errors. `tsc` and eslint clean for every file touched. 142 tests pass across
-  `modules/inventory` + `lib/mock` + `actions/inventory`.
-
-### Not this change
-Concurrent session, confirmed by `git status` before blaming: `Calendar.tsx` /
-`data/calendar.ts` (`CountSlot`, `QuickAction`), `BookingDetail.tsx` (`closeError` unused),
-`createInvoice.ts` / `recordPayment.ts` / `AddClient.tsx` — their invoice + numbering
-workstream (0085/0086). None touched here.
-
-### Still open in this cluster
-Maintenance and Warehouses remain read-frozen. Maintenance is blocked on **§4.45(b)** — it
-renders `costEst` and `costActual` from a single `cost` column. Add Bundle is blocked on
-**§4.45(a)**. Warehouses is not blocked and is the next clean one.
-
-
-
-## 2026-09-04 (cont.) — BN-P0: the Bundles pane reads the database, for a window you pick
-**Phase:** inventory · **Status:** built, tested, driven · **Ruling:** PLAN.md §4.44 (b)
-
-`Bundles.tsx` rendered a frozen 9-row literal from `data/bundles.ts:498` while
-`createBundle.ts` inserted real rows, and `queries/bundles.ts:130 listBundlesWithItems` —
-written for this screen — had **zero callers**. A bundle you created could never appear.
-
-### The ruling this needed first
-`factsOf`'s state falls through to `Available` for anything not booked, and that branch reads
-`BundleLine.unitsAvailable`. Availability is **window-relative** and a catalogue has no dates,
-so wiring it blind would have printed `Available` for gear that was out — a double-booking
-risk on the screen used to promise kit to clients. Filed as §4.44 and **ruled (b): the
-operator picks the window.** Not invented; the alternatives (a) today and (c) state nothing
-are recorded there with why they lost.
-
-### What was built
-- **`lib/queries/bundleRecords.ts`** (new) — returns the pane's own `BundleRecord` shape, so
-  `factsOf`, the chips and the donut are untouched. Availability comes from the real engine
-  (`readCandidates` + `readHolds` → `selectUnitsForLine`), the same path `planCreationUnits`
-  uses at creation, under the same §4.30 rules. Nothing re-implemented.
-- **`lib/queries/useBundles.ts`** (new) — `useList` wrapper; the window travels in `chips` so
-  moving the dates re-queries. Chip keys are `window_*`, deliberately not column names.
-- **`queries/bundles.ts`** — `includeArchived` + `isActive`, so Law 3's retired bundles reach
-  the Archived shelf instead of being filtered away.
-- **`queries/availability.ts`** — `availabilityRules`, `readCandidates`, `readHolds` exported.
-  One word each, on signature lines another session was not editing, rather than duplicating
-  ~75 lines including `readHolds`'s Law 3 `released_at` rule.
-- **`Bundles.tsx`** — seed constants → live derivations; a date-window control above the
-  filters (it is not a filter: it does not narrow the list, it defines what "available" means);
-  window in the URL per §4.44 so a checked availability can be shared; `PageBody` for
-  loading/error/empty. `SeedDefectBanner` removed — it reported seed arithmetic and there is
-  no seed here now.
-- **`mock/engine.ts`** — four embeds declared (`bundles.inventory_categories`,
-  `bundles.bundle_items`, `booking_lines.bookings`, `inventory_reservations.bookings`).
-  Without them the mock resolves an embed to null and only warns.
-- **`mock/corpus.ts`** — 3 bundles (one archived) over real products, plus
-  `inventory_reservations` holds for a week in November. The holds are the point: with none,
-  every window returns the same answer and the date control would look wired while proving
-  nothing.
-
-### How it was verified — driven, not read
-Mock build, signed in as Owner:
-- Before the fixture: pane showed **`No bundles yet`** — the honest reading of an empty
-  `bundles` table, where it used to show 9 fabricated kits.
-- After: **Total Bundles 2 · Excludes archived (1)**, chips reconcile `1 + 0 + 0 + 1 + 0 = 2
-  · All 2`, Category filter derives **Camera · Lighting · Support** from the rows.
-- **The window demonstrably drives it** — same bundle, same data:
-
-  | Window | BND-002 | chips (All·Avail·Res·Rent·Partial·Maint) |
-  |---|---|---|
-  | 4–5 Sept | `Available` 3 / 3 | 2,1,0,0,1,0 |
-  | 11–14 Nov | `Partially Available` 1 / 3 | 2,0,0,0,2,0 |
-
-- URL-addressable: `?tab=bundles&from=…&to=…` restores the window on load.
-- Zero console errors; no missing-relationship warnings from the mock.
-- `tsc --noEmit` clean for every file touched; eslint clean; 484/485 tests pass in
-  `queries` + `mock` + `inventory` + `availability`.
-
-### Two failures that are NOT this change
-Another session is editing this tree concurrently. Measured, not assumed:
-- `Calendar.tsx(1300,1720)` — `CountSlot.value` / `QuickAction.action`. Both `Calendar.tsx`
-  and `data/calendar.ts` are dirty from their in-flight refactor.
-- `finance.test.ts:799` export-surface pin — they added `invoicesDueInPeriod` to
-  `finance.ts` (confirmed by diffing the export list against HEAD) without updating the pin.
-Neither file was touched here, and neither was "fixed" — they are mid-change.
-
-### Still open
-- **`AddBundle`'s item picker is the same defect one level down.** Creating a bundle through
-  the UI fails with *"Sony FX3 Camera Body (M-FX3-BODY) is not a product in the products
-  table"* — the picker is populated from the seed catalogue, so `createBundle` correctly
-  refuses. The read path is now live; the write path's picker is not. Next in this cluster.
-- `itemCatalogue.ts` (New Rental's Bundles tab) still reads `ACTIVE_BUNDLES`.
-- Bundle **detail** and **edit** screens still do not exist (audit P1).
-- `BlockedBy` has no member for `Missing` / `Retired`, so a line short only for those carries
-  no reason and the donut under-counts. Documented in `bundleRecords.ts`; a fourth member
-  changes the donut's four fixed segments, which is a spec question.
-
-
-## 2026-09-04 — CL-P0: `/clients/:id` resolves a uuid as well as a code
-**Phase:** clients · **Status:** fixed, tested, driven
-
-A full missing-pages audit (`MISSING_PAGES_AUDIT_2026-09-04.md`, 8 dimensions, finder +
-refuter) found that the reported "individual client page is missing" is not a missing page.
-`ClientDetail.tsx` is 1,297 lines and routed at `App.tsx:624`. It rendered **"Client not
-found"** for every link arriving from outside the clients module.
-
-### Why it could never have worked
-`getClientRecordByCode` filtered on `client_code` alone. But eight call sites build
-`/clients/:id` from the uuid FK they already hold — `RentalsList.tsx:1834`,
-`Payments.tsx:854`/`:926`, `OperationsQueues.tsx:791`/`:867`, `rentals.ts:1148` and two more,
-all fed by `bookings.ts:341` / `finance.ts:404`/`:765` mapping `clientId: r.client_id`.
-`0055_ruled_identifier_formats.sql:136` pins `client_code` to `^C-[0-9]+$`, a shape no uuid
-can take, so the match was impossible rather than merely unlikely. Invisible from inside
-Clients, where the links happen to carry codes.
-
-### The fix
-`getClientRecordByCode` → **`getClientRecord(ref)`**, dispatching
-`CLIENT_UUID_RE.test(ref) ? 'id' : 'client_code'`. This is the codebase's existing answer to
-the same problem — `queries/availability.ts:147` and `queries/bookings.ts:1021` both pick `id`
-vs a human code exactly this way. The formats cannot collide. `DIRECTORY_COLUMNS` already
-selects `id`, and the mock engine filters `eq` generically (`mock/engine.ts:223`), so both
-backends took it unchanged. `useClientProfile`'s chip key became `client_ref`, because
-everywhere else a chip key IS a column name (`listQuery.ts:152`) and no `client_ref` column
-exists — it is a cache key whose value may be either format.
-
-### How it was verified
-Driven on the mock build as Owner, not read:
-- `/rentals` list confirmed to emit uuid hrefs (`/clients/356f85c9-010f-…`) — the broken shape.
-- Clicked one through: loads **Annapurna Media Pvt. Ltd. · C-36** with real figures and tabs.
-- `/clients/C-36` (code) and `/clients/356f85c9-…` (uuid) resolve to the **same** record.
-- `/clients/C-99999` and a non-existent uuid both still say "Client not found" — the fix did
-  not turn a miss into a false hit.
-- Zero console errors. `tsc --noEmit` exit 0. 27 tests in `clientsQuery.test.ts` + 34 in
-  `blockClient.test.ts` pass.
-
-The old test asserted the code path and called it *"the id every /clients/:id link carries"* —
-the false premise that let a P0 sit behind a green suite. Replaced with two tests pinning the
-uuid path and one asserting both addresses reach one record.
-
-### Still open (not this change)
-- `CasesWorkspace.tsx:409` and `ClientReports.tsx:343` pass **seed** codes (`C-1`, `C-34`)
-  matching no live row. Wrong about the data, not the column — a separate fix.
-- `ClientsDirectory.tsx` imports no `Link`; three controls labelled "open profile" open a
-  drawer instead (P2, audit item 1c).
-- Client **edit does not persist** (`ClientDetail.tsx:367` `onSave` only calls `setDraft`;
-  `updateClient.ts` never sets `implemented: true`). Still P0, untouched here.
-
 ## 2026-09-05 (cont.) — Booking Detail stops asserting things it does not know
 
 **Phase:** Phase 0 · **Status:** 10 register items closed · 3 filed (one in another session's migration)
@@ -614,6 +465,74 @@ this work: another session's in-flight edits removed `NOW_AD` from `src/data/tod
 `getClientRecordByCode` from `lib/queries/clients`. To prove that, I re-verified these changes
 alone on a clean worktree at HEAD — `eslint` 0, my tests green, and the only failing file there
 is `clientsQuery.test.ts`, which is theirs.
+## 2026-09-04 (cont.) — PR-P0: Purchase Requests reads the database
+**Phase:** inventory · **Status:** built, tested, driven
+
+Third screen in the read-frozen / write-live cluster, after Bundles. `PurchaseRequests.tsx`
+listed a hand-written array while `approvePurchaseRequest` wrote to Postgres — so an operator
+approved a request and the list never changed.
+
+### Why this one needed no ruling
+Unlike Bundles (§4.44) and Add Bundle (§4.45a), every figure the screen prints has a column:
+`pr_no`, `product_id`, `supplier_id`, `quantity`, `estimated_unit_cost`,
+`total_estimated_cost`, `reason_type`, `urgency`, `status`, `requested_by`, `approved_by`,
+`rejection_reason` (`0004:579`). Costs are explicitly *estimated*, status is an enum whose
+seven members are `PRStatus` exactly, and the approver is a column. Nothing to collapse.
+
+### The one honest gap, and why it is not a zero
+§6's priority formula is `(refused × 2) + sub_rentals + (sub_rent_cost / cost × 10)`.
+**None of its three inputs exists** — no refused-booking table, no sub-rental table, no column
+holding either count, checked across every migration. So `priority` and `priorityScore` are
+now `PRPriority | null`, live rows come back `null`, and the screen prints **`Not scored`**
+rather than `Low`. Scoring every request `Low` would rank an urgent purchase below a trivial
+one, which is worse than declining to rank.
+
+The Data Room panel needed the same treatment: it printed `0 Events` and `Rs 0`, which reads
+as "we looked and found none". A note now states above both tables that nothing records this
+evidence, so the counts are **not measured** rather than measured-as-zero. A confident zero is
+the same defect as a confident `Available`.
+
+### What was built
+- **`lib/queries/purchaseRequests.ts`** (new) — returns the screen's own `PurchaseRequest`
+  shape. Four reads, not one embed: `products` is behind 0062's revoke so names and categories
+  come from `products_v` (`queries/bundles.ts`'s documented reason), and `requested_by` /
+  `approved_by` are **two FKs to the same table**, which PostgREST needs constraint hints for
+  and the mock's `REL` map (keyed `parent.table`) cannot express at all — so `users` is read
+  once by id set instead of encoding a fragile hint. Law 3: no status is filtered out, because
+  the screen has chips for `Rejected` and `Cancelled` and hiding them would make the counts lie.
+- **`PurchaseRequests.tsx`** — `usePurchaseRequests()`; `requestsList` stays local state and is
+  re-seeded by an effect, so the two existing optimistic writers (the decision flow and the
+  `PURCHASE_REQUEST_UPDATED` event) keep working and are only ever *ahead* of the query, never
+  instead of it. A decision now also calls `refetch()`, so the row ends up with the status
+  Postgres confirmed rather than the one this screen decided. KPI tiles derive from the live
+  rows. `PageBody` for loading / error / empty.
+- **`data/purchaseRequests.ts`** — `priority`/`priorityScore` widened to nullable, documented.
+- **`mock/corpus.ts`** — 2 suppliers + 4 purchase requests across Draft / Submitted /
+  Approved / Rejected, the rejected one carrying a `rejection_reason`.
+
+### How it was verified — driven, not read
+Mock build, Owner:
+- **All Purchase Requests (4)**, newest first; KPI tiles **Draft 1 · Pending Approval 1 ·
+  Approved 1**, derived from the rows.
+- Product names resolved through `products_v` — Sony FX9, Sony FX6, NISI Athena 35mm,
+  Aputure LS 600d Pro. Supplier name resolved on the detail panel.
+- Arithmetic correct against the fixture: `15,500 × 4 = Rs 62,000`, `185,000 × 2 = Rs 3,70,000`.
+- Status tab **Approved → 1**; heading and count follow the tab.
+- Priority reads **Not scored** on every row; the Data Room note renders above the counts.
+- Zero console errors. `tsc` and eslint clean for every file touched. 142 tests pass across
+  `modules/inventory` + `lib/mock` + `actions/inventory`.
+
+### Not this change
+Concurrent session, confirmed by `git status` before blaming: `Calendar.tsx` /
+`data/calendar.ts` (`CountSlot`, `QuickAction`), `BookingDetail.tsx` (`closeError` unused),
+`createInvoice.ts` / `recordPayment.ts` / `AddClient.tsx` — their invoice + numbering
+workstream (0085/0086). None touched here.
+
+### Still open in this cluster
+Maintenance and Warehouses remain read-frozen. Maintenance is blocked on **§4.45(b)** — it
+renders `costEst` and `costActual` from a single `cost` column. Add Bundle is blocked on
+**§4.45(a)**. Warehouses is not blocked and is the next clean one.
+
 
 ## 2026-09-04 (cont. 5) — Two of my own "dead module" findings were stale; documents corrected
 **Phase:** correction (docs only, no code) · **Status:** complete
@@ -659,7 +578,6 @@ believing 'we already do X' **or** 'we don't have X'" — I followed it on 31 Au
 The facet-counts wiring itself — it was the premise of the task and it does not need doing. What
 remains is genuinely narrower: `/rentals`' **status group has counts; its other filter groups do
 not**. That is a smaller, real piece of work, not the "engine is dead" story I had been telling.
-
 ## 2026-09-04 (cont. 4) — Calendar: from 100% seed to the bookings it can honestly draw
 **Phase:** UI · data layer · **Status:** built, reviewed three ways, blockers fixed, driven
 
@@ -733,6 +651,57 @@ shipped worse than it started:
 - A per-day-per-product availability grid needs `product_units`, which is empty.
 - 197 of 246 bookings carry no `booking_lines`, so they can never hang on a resource row. Data job.
 
+## 2026-09-04 (cont. 4) — The 3 Sep console sweep was INCOMPLETE at `b7356ce`; four §4.36 audit captures added
+**Phase:** verification + correction (4 files) · **Status:** complete
+
+### Did
+Ran the verification the stopped sweep workflow never reached. Its journal shows **3 editors started,
+2 reported**: editor 3 finished its edits on disk then hung without emitting a result, so the verifier
+agent never started. **Did not resume the run** — editor 3 never *completed*, so a resume would have
+re-run it against code whose edits were already applied and committed, risking doubled `captureError`
+calls. Ran the verifier's checks by hand instead.
+
+### Found — the sweep, and therefore `b7356ce`, was incomplete
+Editor 1 applied **one of its four `ADD` sites**. Missing, now added:
+
+| File | Was | Now |
+|---|---|---|
+| `actions/inventory/approvePurchaseRequest.ts` | 1 | 1 (unchanged) |
+| `actions/inventory/createEquipment.ts` | **0** | 1 |
+| `actions/inventory/createStockTransfer.ts` | **0** | 1 |
+| `actions/rentals/floorVerb.ts` | **0** | 2 |
+
+These are the **§4.36 audit-write-failure sites** — the verb committed but its audit row did not land.
+They were reaching `console.error` only, which is the exact gap the sweep existed to close, and the
+one where a silent miss matters most.
+
+⚠ **`floorVerb.ts` is fully CRLF** (1,652 CRLF / 0 bare LF) while the inventory files are LF. LF-anchored
+edits silently fail to match it, and `grep` reports it as a binary file. Line endings preserved:
+1,652 → 1,660, exactly the 8 lines added.
+
+### Corrected — a defect in this session's own sweep spec
+`lib/queries/useFilters.ts:195` was specced as REPLACE. It is **already inside `if (import.meta.env.DEV)`**
+and is a developer diagnostic about a URL-contract mistake, not a runtime error worth sending to Sentry.
+Editor 2 was right to skip it; the instruction was wrong. Left as-is.
+
+### Verified
+- **Residual grep** — every remaining `console.*` in non-test `src/` is on the KEEP list; every REPLACE
+  target is gone; every ADD site still carries its console line beside the capture.
+- **Privacy contract** — all 27 `captureError` context objects carry ids and enums only (`clientId`,
+  `bookingId`, `prId`, `authId`, `entryId`, `sessionId`, `bookingNo`, `table`, `key`, `operation`,
+  `verb`, `eventName`). No name, email, phone or amount. `monitoring.ts`'s "ids and counts only" holds.
+- **Stub check** — 0 of the swept stub actions are `implemented: true`.
+- **DEV gate** — both `events/auditLogger.ts` console.logs are inside `import.meta.env.DEV`.
+- **Gates re-run after the four edits:** `tsc --noEmit` **exit 0**, no diagnostics (measured via
+  `PIPESTATUS`, not `$?` after a pipe — the first attempt measured `tail` and was meaningless);
+  `vitest run` **108 files / 2,424 tests, all passing**, 578s.
+
+### Blocked / Next
+- The four edits are **uncommitted**. `floorVerb.ts` also carries the concurrent session's uncommitted
+  work (their hunks sit below lines 915/1580, so no overlap), so committing needs the same
+  stage-by-hunk split used for `PROGRESS.md` at `b7356ce`.
+- `captureError` call sites: 26 at `b7356ce` → **30** now (+4 here; `devicePurge.ts` and `ErrorBoundary`
+  are others' / pre-existing).
 ## 2026-09-04 (cont. 3) — Equipment rows only added when you hit the name
 **Phase:** UI · **Status:** fixed and driven
 
@@ -885,417 +854,6 @@ wrong pick trapped the booking. Fixed with a per-row remove. Also deleted a 33-l
 - ⚠ Harness note: the pane mounts the page at its own width, so a tab opened small stays in phone
   accordion mode after a resize — reload after resizing or Client/Dates read as collapsed.
 
-## 2026-09-04 — RS-02 and RS-03: the reset bench finally has consequences
-**Phase:** floor engine · availability · **Status:** both built, tested, driven — **P1 open is now 1**
-
-The last two fixable P1s in the register. Both were the same shape as X-03 and RT-02: a
-fully modelled table with no writer, or a written column nothing read.
-
-### RS-02 — completing a reset returns the unit to the pool
-Nothing consulted `reset_completed_at`, so a finished reset changed a tile and nothing else,
-and unreset gear stayed bookable.
-
-The obvious fix would be an `inventory_state` of `'Cleaning'` on `product_units` — and it is
-**not available**: that table is Booqable-mastered (`dataAccess.ts`'s
-`BOOQABLE_READ_ONLY_TABLES`) and the OS may not write the column at all. So an OS-owned fact
-comes from an OS-owned table. `UnitCandidate.openCleaning` carries the unit's open queue entry
-(`requires_reset`, no `reset_completed_at`), `selectUnitsForLine` rejects it with a new
-`{ kind: 'cleaning' }` reason, `explainShortfall` names the booking the gear is still back
-from, and `queries/availability.ts` reads the entries beside the units.
-
-**`TODO(decision)` recorded in place:** an open entry is a fact about *today*, and §4.30(c)
-settled that facts about today belong to the date-overlap check rather than a hard exclusion —
-which is why the four booking-lifecycle states are not in `DISQUALIFYING_UNIT_STATES`. But a
-reset has no expected completion date anywhere in the schema, so there is no honest horizon to
-compare a future window against; inventing one would be inventing the rule. It excludes
-outright for now, which is the direction that can only ever refuse a legal booking.
-
-### RS-03 — a Reset exception becomes a row
-`problem_state` has always had a writer in `completeResetQueue`. The screen simply never named
-the entry: only Ready rows were dispatched, so a unit marked Damaged, Missing or Needs Repair
-was dropped on the floor of the client and left no record anywhere.
-
-`dispatchRows` now carries Ready rows **and** recorded exceptions. A Damaged row also sends its
-type, severity and description, and the engine writes a `damage_findings` row with
-`source = 'Cleaning'`, parented on the queue entry as `damage_findings_parent_matches_source`
-requires. Unlike the Return path, this screen collects real vocabularies from fixed lists
-(Cosmetic/Functional/Structural, Low/Medium/High), so those two NOT NULL columns take the
-floor's own words instead of RT-02's "no scale is ruled" placeholder.
-
-Two gate changes follow: the completion gate now admits an **exception-only** session (routing
-a damaged item out of the queue is a result, not an absence of work), and a Damaged row with no
-description is refused before it is a rejection.
-
-**`TODO(decision)`:** `0003:484` says damage found at cleaning "raises a Manager case". No case
-is raised — `cases` has no writer anywhere in `src/` and no case-number sequence is built, so
-raising one would mean inventing the number and the shape. `case_id` stays null and the finding
-is the record.
-
-### Verified
-- **`tsc --noEmit` exit 0 — zero errors in the whole repo** (the two that were outstanding this
-  morning, the untracked `devicePurge` pair and `createInvoice`'s missing `invoice_lines` type,
-  are gone: the other session closed them while this work ran). `npx vitest run` → **106 files,
-  2,391 tests, all green** (254 s).
-- `floorVerbs.test.ts` **53/53** (+3: the routed exception and its Cleaning finding parented on
-  the queue entry; a Damaged entry with no description refused; Missing Item and Needs Repair
-  recorded without raising a finding). `availability.test.ts` **48/48** (+3: an outstanding
-  reset is not assigned, a completed one is, and the shortfall sentence names the booking).
-- **Driven** on B-715, the first time the Reset workspace has been reachable at all — the
-  `enqueueReturnedUnits` write that landed with the Return path put 18 real
-  `cleaning_queue_entries` in the store. Cleaned, self-QC'd with a reason, one unit marked
-  Damaged (Structural / High / description / evidence), Complete Reset: **18 entries updated,
-  17 stamped `reset_completed_at`, 1 routed with `problem_state` Damaged and no stamp**, and a
-  Cleaning finding beside the Return-inspection one from RT-02 — right parent, no
-  `estimated_cost`, no `case_id`.
-- The availability picker itself is **not driven**: `planAssignment` runs at Confirm and New
-  Rental's panel reads `itemCatalogue`, so no screen reaches the engine yet. Unit tests only.
-
-### X-01 is not a code fix
-The BS converter stops at 16 Aug 2026 because it has no month lengths past it. Those are
-calendar data, and both `bs.ts` and PLAN §4.34 say they are never inferred — inventing them
-would put every Nepali date in the product one day out. It needs the table, from Babin.
-The Calendar's empty-grid symptom was fixed separately (AR-01, falls back to the AD month).
-
-### Blocked / next
-- **P1 is down to X-01 alone.** The register's 118 open items are now P2 and P3.
-- Still nothing committed; the tree also carries the other session's work, which now
-  typechecks clean alongside this wave.
-- New `TODO(decision)`s: the availability horizon for an open reset entry, and the Manager
-  case for a cleaning-sourced finding.
-
-## 2026-09-03 (cont. 3) — RT-02: damage found at Return becomes a row, not a sentence in the notes
-**Phase:** floor engine · **Status:** built, tested, driven
-
-Next open P1 in lifecycle order. Damage found at Return had no record: the description and
-the photo tally were appended to `operation_sessions.notes` and `damage_findings` — a fully
-modelled table since `0003` — had no writer at all.
-
-### Per unit, because the table is per unit
-`return_lines` carries ONE condition for a line (the worst of its units), so it can never say
-WHICH unit was damaged, and `damage_findings.unit_id` is NOT NULL. So `FloorLineInput` gained
-`damage?: DamageFindingInput[]` — `{ unitId, condition, description }` per damaged or lost
-unit — and `runFloorVerb`'s Return branch writes one row each, parented on the `return_lines`
-row it has just written (`damage_findings_exactly_one_parent` and
-`..._parent_matches_source` require exactly that pairing for `source = 'Return inspection'`).
-`FloorVerbResult.damageFindings` reports the count.
-
-### What is deliberately not written
-- **`estimated_cost`** — `0003:488` reserves it for the approver ("Warehouse has no cost field
-  at all") and `0034` revokes SELECT on it from `authenticated`. A money-blind verb neither
-  reads nor writes it.
-- **`approval_state`** — the column default is `'Pending Approval'`, which is what a finding
-  raised on the floor IS. Restating it would be noise.
-- **`disposition` / `case_id` / `charge_id`** — decisions, not observations. Only a `'Cleaning'`
-  finding raises a Manager case (`0003:484`); a return-inspection one does not, because the
-  client has not signed off yet.
-
-### Two TODO(decision)s the schema itself already carried
-`severity` is NOT NULL with no ruled scale — the column comment says so outright — so the row
-says *"Not assessed — no severity scale is ruled (0003:486)"* rather than inventing a value.
-`damage_type` is NOT NULL with no vocabulary anywhere, so it takes the floor's own word
-(`Damaged` / `Lost`); inventing 'Scratch' / 'Water' would be inventing the vocabulary.
-
-A **quantity line** resolves no `product_units.id` and so can raise no finding. Those still
-ride the notes, and the note now says that is why it is the only record.
-
-### Verified
-- `tsc --noEmit` — zero errors in the files this change touched. (Two pre-existing failures
-  remain, both the other session's in-flight work: the untracked `src/lib/devicePurge.ts` +
-  its test have no node types, and `actions/finance/createInvoice.ts` needs `invoice_lines`
-  in `types/database.ts` — the same gap this session closed for `booking_line_units` and now
-  `damage_findings`.)
-- `floorVerbs.test.ts` **50/50** (5 new: the row and its parent, no finding when nothing is
-  damaged, a blank description refused, two findings on one unit refused, a finding on a
-  non-Return verb refused). Touched folders: 11 files, 295 tests green.
-- **Driven** in `dev:mock` on the fresh 5174 origin: B-715 Packed → handed over → On Rent →
-  returned with 18 units, one Damaged with a description and a counted photo. Overlay shows
-  exactly one `damage_findings` row — source `Return inspection`, parent = the first
-  `return_lines` id, `damage_type` `Damaged`, description intact, no `estimated_cost`, no
-  `approval_state` — beside the `actual_return_at` stamp from RT-01.
-
-### Still open
-**Nothing reads these rows yet.** `DamageTab` is still the seed corpus (RS-05) and there is no
-approve-or-charge action, so the finding is auditable but the deposit-deduction path is not
-built. That is the other half of RT-02's original sentence and it is stated on the ticked row.
-
-**P1 remaining (3):** X-01 (BS month-length data), RS-02 (Reset returns no unit to the pool),
-RS-03 (a Reset exception writes no record).
-
-## 2026-09-03 (cont. 2) — RT-01: the Return verb stamps `bookings.actual_return_at`
-**Phase:** floor engine · **Status:** built, tested, driven
-
-Babin: "next". The next open P1 in lifecycle order was RT-01 — nothing wrote
-`bookings.actual_return_at`, so no late fee could ever be computed from persisted data.
-
-### The ruling was already in the schema
-`floorVerb.ts` refused the write because `dataAccess.ts` lists `bookings` as Booqable-mastered
-at table level. The integration spec masters **at field level**, `booqable/map` maps no
-actual-return instant (only `planned_stops_at`), and the column's own comment says "Set by the
-Return workspace" (`0002:86`). So the stamp is an OS-native write to an OS-native field:
-`runFloorVerb` step 9 writes `actual_return_at = occurredAt` once, only when the Return
-session moves the booking to Returned (never on a partial session, never overwritten), through
-`safeUpdate` with the action key. `pushOrderStop` (the Booqable status write-back) stays
-unruled per PLAN §4.16 and is not called. `bookings.actual_return_at` added to the hand-kept
-`Database` type.
-
-### Verified
-- `tsc --noEmit` exit 0 · `floorVerbs.test.ts` 45/45 (two new: a held Return stamps nothing;
-  a completing Return stamps the session instant with the action key).
-- Driven in mock: B-715 (On Rent after this morning's handover) → Complete Return with all 18
-  units Good → stage Returned, overlay shows `bookings.actual_return_at = 15:50:20Z` and 18 unit
-  rows at Returned.
-
-### Still open at P1
-X-01 (BS month-length data), RT-02 (damage finding from Return), RS-02 (Reset exceptions
-write nothing), RS-03 (Reset does not return units to the pool).
-
-## 2026-09-03 (cont.) — NR-02: the booking write now carries what the screen prices
-**Phase:** Phase 2 write path · **Status:** built, tested, driven in mock
-
-Babin: "fix NR-03 next" — NR-03 was already ticked (the Rs 0 rate write is refused before any
-write), so the next open item, **NR-02**, was taken: the New Rental write sent equipment lines
-only and dropped the discount, crew, transport, deposit and advance the rail priced.
-
-### Did
-- `actions/rentals/createRental.ts` — `CreateRentalInput` grows `crew: CreateRentalCrewLine[]`
-  and `transport: CreateRentalTransport`; `validate` refuses a crew role outside the
-  `crew_role` enum **by name** (the seed roster says "Director of Photography", the enum says
-  "DoP" — no mapping is ruled, so none is invented), negative charges, and days < 1.
-  `execute` writes `booking_crew_lines` / `booking_transport` AFTER `create_booking`, each row
-  with its own Law 8 key, and raises `CreateRentalPartialError` (booking id + number) if one
-  fails — the Quote exists and the message says so. Result carries `crewLines` and
-  `transportWritten`.
-- `types/database.ts` — `CrewRoleDb` and the two tables.
-- `NewRental.tsx` — sends `discounts: [{ discountSource: 'Manual', percent }]` when a discount
-  is set, `depositRequired`, `crew` (roster → enum role, rates via `toRupees`), and a transport
-  row for any delivery that is not Client Pickup; per-row keys minted once per press and
-  cleared with the action key; the partial error lands as "Booking saved as a Quote (B-n),
-  but its crew lines could not be written…". **The confirm callback's deps list gained
-  `discountPct`, `crew`, `clientPickup`, the two charges, `days`, `depositRequiredPaisa`** —
-  the first driven attempt sent a 0% discount because the closure was stale, which is the
-  kind of thing only driving finds.
-- `lib/mock/client.ts` — `create_booking` now stores `booking_discounts` rows and applies the
-  two schema CHECKs (`percent ≤ 25`; above 10 needs reason + approver). **TODO(decision):
-  D3 removed the discount gate from the app; the schema still carries it** — a 15% discount
-  from this screen will be refused by the database, in mock and in production alike.
-- Not sent, stated in code: the VAT switch (`vat_rate` lives on the invoice) and the typed
-  advance (a payment settles against an invoice; none exists at Quote). TODO(decision).
-
-### Verified
-- `tsc --noEmit` exit 0 · `vitest run src/actions/rentals src/modules/rentals src/lib/mock`
-  → 11 files, 289 tests, all green · new `createRentalCrewTransport.test.ts` 5/5.
-- Driven in mock: **B-2** saved as a Quote with a 5% `booking_discounts` row, Confirm refused
-  because the FX9's only unit was held by B-1 — surfaced as the NR-04 half-success message,
-  which is exactly right. **B-3** (Sony FX6, 5%, Arjun Magar as Gaffer, Babin Delivery):
-  Booked, with the discount row, the crew line (Rs 12,000 × 1) and the transport row.
-
-## 2026-09-03 — P1 wave from the lifecycle register: 32 of 38 fixed, driven end to end in mock for the first time
-**Phase:** cross-phase fixes (mock harness · floor engine · six page groups) · **Status:** 32 P1s ticked in [`BUG_AUDIT_LIFECYCLE_2026-09-02.md`](BUG_AUDIT_LIFECYCLE_2026-09-02.md); 6 remain, each needing a ruling or a new write path
-
-Babin: "fix P1s". Every P1 in the register was re-read at its current line (the tree had moved —
-another session landed `1a3c7b7` TODO sweep and `3785d5f` overnight), then fixed or left with
-a stated reason. Six parallel edit passes on disjoint files, the engine and harness fixes done
-by hand. **Nothing committed** — the tree also carries that other session's uncommitted work.
-
-### The harness fix that made the rest drivable
-`src/lib/mock/client.ts` `applyTriggers()` emulates the one trigger the floor depends on:
-`bookings.stage` is a read model written only by the 0021 trigger on
-`booking_stage_transitions`, and the mock had none, so no stage ever advanced in `dev:mock`
-(X-02). Driven after the fix: **B-716 Booked→Packed, B-715 Packed→On Rent, B-864
-On Rent→Returned** — the first time a floor verb has been seen to move a booking in the
-environment the app is verified in. Memory `mock-has-no-stage-trigger` updated to say so.
-
-### Engine (`src/actions/rentals/floorVerb.ts`, `handoverRental.ts`, `types/database.ts`)
-- **X-03 / HO-01** — `writeUnitStates()`: `booking_line_units` finally has a writer. Pack →
-  `packed/packed_at/packed_by/packing_session_id`; Handover → `unit_state 'Picked Up'` +
-  `handover_session_id`; Return → the state `returnMovementState` names + `returned_at` +
-  `return_session_id` (+ condition, `damaged`); a `'missing'` line → `'Missing'` + reason.
-  Scoped to scanned units, or every live unit of a fully-resolved quantity line; released rows
-  (0076 freeze) never touched; written by id through `safeUpdate` so the action key rides.
-  `booking_line_units` added to the hand-maintained `Database` type. **Driven: 18 unit rows
-  flipped to Picked Up on B-715.**
-- **PK-04** — `readSessionMovements()` before the line loop; a resumed session skips units it
-  already moved and never appends a second quantity row (`session_line_movements` is
-  append-only — a changed count within one session is a `TODO(decision)`).
-- **HO-02** — `governmentIdVerified` / `bookingAuthorizationVerified` ride the input into
-  `operation_sessions.government_id_verified` / `booking_authorization_verified` (insert, and
-  update on a resumed session). **Driven: the B-715 session row shows both true.**
-
-### Pages (one line each; the register carries the file:line)
-- **X-04** Rentals list On Rent chip (join/split on space → `'|'`). Driven: 24 rows, pressed.
-- **BD-01** Booking Detail overdue requires `stage === 'On Rent'`.
-- **NR-01/03/04/05/06** New Rental: one action key per press + button disabled while saving;
-  money-blind roles refused before any write and `rate` via `toRupees`; a half-success says
-  the Quote was saved and a retry confirms *that* Quote; blank draft (project/kind empty,
-  today→tomorrow) — driven: TOTAL Rs 0 · Rental paid Rs 0; a client created from the booking
-  now carries `dbId` and its code.
-- **PK-01/02/03** Packing: a held stage is reported inline, not navigated past; Service /
-  Sub-rental / Manual / Bundle-parent lines are not packable rows; the gate counts every unit.
-- **HO-03/04/05** Handover: signature copy says session-only; Mark Cleared gated by
-  `canViewMoney`; caption promises On Rent only with no Missing rows.
-- **RS-01/04/05/06/07/08** Reset sends `resetEntries` (cleaner/QC as `user.id` when it is
-  the operator); DamageTab settles rejected findings at zero charge and stops claiming a
-  Maintenance move; Log Incident / Log Maintenance are Unavailable with a reason; money
-  fields in both modals gated by `useCanViewMoney`.
-- **FI-01/02/03** Daily Closing: `sumDepositsHeld()` pages every client; `readEvery()` pages
-  payments/invoices to completion and throws a stated error on a count mismatch;
-  `paymentsInPeriod` pins `payment_type = 'Advance Payment'`. Driven: closing renders,
-  no error.
-- **CL-01/02/03** Clients: AD dates no longer wear a BS suffix (driven: 0 on /clients);
-  credit/tier/KYC modals are Unavailable with the missing action named, 'Admin' fallbacks
-  gone; hardcoded tier discount copy removed.
-- **AR-01/02** Calendar falls back to the AD month past the BS table (driven: September
-  2026, 30 day cells, 0 em dashes); Sub-rental KPIs read "Not tracked yet", chips derive
-  from the rows.
-
-### Still open at P1 (6) — each named in the register with why
-X-01 (BS month lengths, PLAN §4.34 — data, not code) · NR-02 (the booking write still drops
-discount/crew/transport/deposit/advance — `CreateRentalInput`/RPC need a home for them) ·
-RT-01 (`actual_return_at`, money.ts TODO(decision)) · RT-02 (damage finding from Return) ·
-RS-02 (Reset exceptions write nothing) · RS-03 (Reset does not return units to the pool).
-
-### Verified
-- `tsc --noEmit` → **exit 0** · `npx vitest run` → **103 files, 2,357 tests, all green** (347 s; 16 tests added: closing paging, deposits reader, refund exclusion, the DamageTab notice).
-- Driven in `dev:mock` as Owner: Rentals list On Rent chip; B-716 Booked→Packed via Complete
-  Packing; B-715 Packed→On Rent via Complete Handover (gate-1 facts true, 18 unit updates,
-  20 movements, session row); B-864 On Rent→Returned via Complete Return (2 return_lines,
-  condition Good, transition row, stage patch); New Rental blank draft; /clients dates;
-  /calendar September grid; /finance/closing figures.
-- Not driven: Reset (mock has no `cleaning_queue_entries`), Warehouse-role paths (mock has
-  a warehouse login — next session), the closing count-mismatch error (needs >1000 rows).
-
-### Blocked / next
-- The six open P1s above. NR-02 is the one that hides money from the ledger and should be
-  next: decide whether `create_booking` grows discount/deposit/crew/transport parameters or
-  follow-up actions write them.
-- The other session's uncommitted work is interleaved with this wave in the same files
-  (`NewRental.tsx`, the four workspaces, `ResetWorkspace.tsx`). Commit as one wave or split
-  by `git add -p`; do not `checkout --` any of them.
-- `TODO(decision)`s added this session: within-session movement correction (floorVerb),
-  edits between a half-success and its retry (NewRental), staff picker for cleaner/QC
-  attribution (ResetWorkspace), signatures writer (HandoverWorkspace), credit/tier/KYC actions
-  (three client modals), `approveDamageFinding` (DamageTab), "active" sub-rental definition.
-
-## 2026-09-02 (fifth session) — Lifecycle bug audit, inquiry → cleaning: 152 findings registered, 30 reproduced in the browser, nothing changed
-**Phase:** cross-phase verification · **Status:** audit complete, register written, no code touched
-
-Babin: "find all the bugs and remaining to-dos in the app, page by page, from inquiry to
-cleaning." Output is [`BUG_AUDIT_LIFECYCLE_2026-09-02.md`](BUG_AUDIT_LIFECYCLE_2026-09-02.md)
-— a checkbox worklist in lifecycle order (cross-cutting · Clients · Inquiry/Quote · Booked ·
-Packing · Handover · Return · Cleaning/Reset · Close the money · Around). **152 items: 38 P1 ·
-81 P2 · 33 P3; 110 bugs, 42 explicitly deferred to-dos.** Items already in
-`FUNCTIONAL_BUGS.md` or filed in PLAN §4 are not repeated.
-
-### Method
-- Seven read-only code passes, one per stage, each reading its pages, modals, data files and
-  the engine/action behind them in full.
-- One driven pass in `dev:mock` as Owner at 1600×960: Dashboard → Rentals → a Quote (B-800) →
-  a Booked booking (B-716) → Packing (completed) → Handover (B-715) → Return (B-864) → Reset
-  (B-888) → Evidence → Finance / Payments / Closing / Expenses → Cases → Operations → Calendar
-  → Clients → New Rental. Every route probed for dead enabled controls via React fiber props
-  (the method from the 2 Sep register), plus text leaks and the word "customer".
-
-### The four that break every stage (all driven)
-1. **The BS table ended 16 Aug** (§4.34 is now live): "Nepali date unavailable" in every
-   header, "—" in Booking Detail's BS slot, an empty Calendar month grid, and Clients printing
-   AD dates with a " BS" suffix.
-2. **In `dev:mock` no stage ever advances.** `bookings.stage` is written only by the 0021
-   trigger and the mock emulates no trigger. Complete Packing on B-716 wrote the session, 2
-   packing_lines, 2 movements, 2 audit rows and a Booked→Packed transition into the overlay;
-   the booking reloaded as BOOKED with no message. Verification by driving is blind to the
-   whole lifecycle. (Memory: `mock-has-no-stage-trigger`.)
-3. **`booking_line_units.unit_state / packed / packed_at` have no writer anywhere** — no
-   action, no trigger, only the 0047 seed. Booking Detail's Packed/Missing/Returned counters
-   never move after real floor work, and Handover reads the same column for "recorded by an
-   earlier session".
-4. **The On Rent stage chip cannot filter.** `RentalsList.tsx:832-836` joins the selected
-   stages with a space and splits on a space, so "On Rent" becomes "On" + "Rent" and both
-   are dropped. `?stage=On+Rent` shows all 120 rows.
-
-### Other P1s worth reading first
-New Rental opens pre-filled with demo money (past dates, 7% discount, "Rental paid Rs 15,000",
-"All changes saved") · double-click Confirm makes two bookings · the write drops discount,
-crew, transport, deposit and advance · Warehouse writes Rs 0 rates · a client created from
-the booking cannot be booked · Complete Packing navigates away on a held stage · service
-lines are counted as packable · Handover signatures and ID checks persist nothing and
-"Mark Cleared" is a one-click self-certification for any role · nothing writes
-`actual_return_at`, no late fee ever lands, no damage finding is raised from a real return ·
-Reset drops cleaner/QC data and never returns units to the pool · Log Case / Log Maintenance /
-Damage Approve / Credit-limit / Tier / KYC modals all report success and write nothing ·
-Daily Closing's "Deposits held" sums only the first 100 clients before it is frozen.
-
-### Verified
-- `npx tsc --noEmit` → **1 error**, `NewRental.tsx:28` unused `PARENTS` (the other session's
-  uncommitted WIP; the WIP itself is coherent and the live equipment pool loads).
-- `npx vitest run` → **101 files, 2,341 tests, all green** (725 s).
-- 30 of the 152 findings carry ✔ driven — reproduced in the browser, not only read.
-- Harness notes for the next driver: direct URL loads in `dev:mock` take 25–60 s (Documents
-  and Inventory did not finish inside 40 s — the closed BUG-008 class, not a defect); the
-  pane's `wait` caps at 10 s; the mock corpus writes invoices as `'Issued'`, which is not in
-  `invoice_status`, so Finance/Closing say "Outstanding Rs 0" while Booking Detail shows
-  Rs 25,934 on INV-3 — a mock corpus bug, registered under Cross-cutting.
-
-### Not done
-No fix was applied and no file outside the new register, this entry and memory was written.
-- ⚠ A concurrent session began a TODO sweep (`TODO_SWEEP_2026-09-02.md`) during this audit and has ~45 files modified in the working tree; the register's line numbers are from `adc1dbc` + the tree as read.
-The register is the worklist; each box is ticked when the item is fixed **and driven**.
-
-### Blocked
-Unchanged — §4.34 (BS month lengths) now blocks every date on every screen; §4.36, §4.40,
-§4.42(b)/(c) still open; the mock trigger gap is new and needs a decision on whether the mock
-should emulate `0021` or whether floor verbs should be driven against `dev:local`.
-
-## 2026-09-04 (cont. 4) — The 3 Sep console sweep was INCOMPLETE at `b7356ce`; four §4.36 audit captures added
-**Phase:** verification + correction (4 files) · **Status:** complete
-
-### Did
-Ran the verification the stopped sweep workflow never reached. Its journal shows **3 editors started,
-2 reported**: editor 3 finished its edits on disk then hung without emitting a result, so the verifier
-agent never started. **Did not resume the run** — editor 3 never *completed*, so a resume would have
-re-run it against code whose edits were already applied and committed, risking doubled `captureError`
-calls. Ran the verifier's checks by hand instead.
-
-### Found — the sweep, and therefore `b7356ce`, was incomplete
-Editor 1 applied **one of its four `ADD` sites**. Missing, now added:
-
-| File | Was | Now |
-|---|---|---|
-| `actions/inventory/approvePurchaseRequest.ts` | 1 | 1 (unchanged) |
-| `actions/inventory/createEquipment.ts` | **0** | 1 |
-| `actions/inventory/createStockTransfer.ts` | **0** | 1 |
-| `actions/rentals/floorVerb.ts` | **0** | 2 |
-
-These are the **§4.36 audit-write-failure sites** — the verb committed but its audit row did not land.
-They were reaching `console.error` only, which is the exact gap the sweep existed to close, and the
-one where a silent miss matters most.
-
-⚠ **`floorVerb.ts` is fully CRLF** (1,652 CRLF / 0 bare LF) while the inventory files are LF. LF-anchored
-edits silently fail to match it, and `grep` reports it as a binary file. Line endings preserved:
-1,652 → 1,660, exactly the 8 lines added.
-
-### Corrected — a defect in this session's own sweep spec
-`lib/queries/useFilters.ts:195` was specced as REPLACE. It is **already inside `if (import.meta.env.DEV)`**
-and is a developer diagnostic about a URL-contract mistake, not a runtime error worth sending to Sentry.
-Editor 2 was right to skip it; the instruction was wrong. Left as-is.
-
-### Verified
-- **Residual grep** — every remaining `console.*` in non-test `src/` is on the KEEP list; every REPLACE
-  target is gone; every ADD site still carries its console line beside the capture.
-- **Privacy contract** — all 27 `captureError` context objects carry ids and enums only (`clientId`,
-  `bookingId`, `prId`, `authId`, `entryId`, `sessionId`, `bookingNo`, `table`, `key`, `operation`,
-  `verb`, `eventName`). No name, email, phone or amount. `monitoring.ts`'s "ids and counts only" holds.
-- **Stub check** — 0 of the swept stub actions are `implemented: true`.
-- **DEV gate** — both `events/auditLogger.ts` console.logs are inside `import.meta.env.DEV`.
-- **Gates re-run after the four edits:** `tsc --noEmit` **exit 0**, no diagnostics (measured via
-  `PIPESTATUS`, not `$?` after a pipe — the first attempt measured `tail` and was meaningless);
-  `vitest run` **108 files / 2,424 tests, all passing**, 578s.
-
-### Blocked / Next
-- The four edits are **uncommitted**. `floorVerb.ts` also carries the concurrent session's uncommitted
-  work (their hunks sit below lines 915/1580, so no overlap), so committing needs the same
-  stage-by-hunk split used for `PROGRESS.md` at `b7356ce`.
-- `captureError` call sites: 26 at `b7356ce` → **30** now (+4 here; `devicePurge.ts` and `ErrorBoundary`
-  are others' / pre-existing).
 ## 2026-09-04 — 0085 VERIFIED, and running it found three defects reading it had not
 
 **Phase:** Phase 0 step 2 · **Status:** 2.2 ✅ **verified from scratch** · 0088 added · 0079 unblocked · 2.5/2.6 still held behind Step 0
@@ -1462,6 +1020,268 @@ with it in place — and, per Step 0, not until a restorable dump exists.
 ### Held, deliberately
 2.5 (back-fill `external_refs` orders) and 2.6 (revoke `authenticated` DELETE)
 both write to live and stay behind Step 0's backup and explicit approval.
+
+## 2026-09-04 — RS-02 and RS-03: the reset bench finally has consequences
+**Phase:** floor engine · availability · **Status:** both built, tested, driven — **P1 open is now 1**
+
+The last two fixable P1s in the register. Both were the same shape as X-03 and RT-02: a
+fully modelled table with no writer, or a written column nothing read.
+
+### RS-02 — completing a reset returns the unit to the pool
+Nothing consulted `reset_completed_at`, so a finished reset changed a tile and nothing else,
+and unreset gear stayed bookable.
+
+The obvious fix would be an `inventory_state` of `'Cleaning'` on `product_units` — and it is
+**not available**: that table is Booqable-mastered (`dataAccess.ts`'s
+`BOOQABLE_READ_ONLY_TABLES`) and the OS may not write the column at all. So an OS-owned fact
+comes from an OS-owned table. `UnitCandidate.openCleaning` carries the unit's open queue entry
+(`requires_reset`, no `reset_completed_at`), `selectUnitsForLine` rejects it with a new
+`{ kind: 'cleaning' }` reason, `explainShortfall` names the booking the gear is still back
+from, and `queries/availability.ts` reads the entries beside the units.
+
+**`TODO(decision)` recorded in place:** an open entry is a fact about *today*, and §4.30(c)
+settled that facts about today belong to the date-overlap check rather than a hard exclusion —
+which is why the four booking-lifecycle states are not in `DISQUALIFYING_UNIT_STATES`. But a
+reset has no expected completion date anywhere in the schema, so there is no honest horizon to
+compare a future window against; inventing one would be inventing the rule. It excludes
+outright for now, which is the direction that can only ever refuse a legal booking.
+
+### RS-03 — a Reset exception becomes a row
+`problem_state` has always had a writer in `completeResetQueue`. The screen simply never named
+the entry: only Ready rows were dispatched, so a unit marked Damaged, Missing or Needs Repair
+was dropped on the floor of the client and left no record anywhere.
+
+`dispatchRows` now carries Ready rows **and** recorded exceptions. A Damaged row also sends its
+type, severity and description, and the engine writes a `damage_findings` row with
+`source = 'Cleaning'`, parented on the queue entry as `damage_findings_parent_matches_source`
+requires. Unlike the Return path, this screen collects real vocabularies from fixed lists
+(Cosmetic/Functional/Structural, Low/Medium/High), so those two NOT NULL columns take the
+floor's own words instead of RT-02's "no scale is ruled" placeholder.
+
+Two gate changes follow: the completion gate now admits an **exception-only** session (routing
+a damaged item out of the queue is a result, not an absence of work), and a Damaged row with no
+description is refused before it is a rejection.
+
+**`TODO(decision)`:** `0003:484` says damage found at cleaning "raises a Manager case". No case
+is raised — `cases` has no writer anywhere in `src/` and no case-number sequence is built, so
+raising one would mean inventing the number and the shape. `case_id` stays null and the finding
+is the record.
+
+### Verified
+- **`tsc --noEmit` exit 0 — zero errors in the whole repo** (the two that were outstanding this
+  morning, the untracked `devicePurge` pair and `createInvoice`'s missing `invoice_lines` type,
+  are gone: the other session closed them while this work ran). `npx vitest run` → **106 files,
+  2,391 tests, all green** (254 s).
+- `floorVerbs.test.ts` **53/53** (+3: the routed exception and its Cleaning finding parented on
+  the queue entry; a Damaged entry with no description refused; Missing Item and Needs Repair
+  recorded without raising a finding). `availability.test.ts` **48/48** (+3: an outstanding
+  reset is not assigned, a completed one is, and the shortfall sentence names the booking).
+- **Driven** on B-715, the first time the Reset workspace has been reachable at all — the
+  `enqueueReturnedUnits` write that landed with the Return path put 18 real
+  `cleaning_queue_entries` in the store. Cleaned, self-QC'd with a reason, one unit marked
+  Damaged (Structural / High / description / evidence), Complete Reset: **18 entries updated,
+  17 stamped `reset_completed_at`, 1 routed with `problem_state` Damaged and no stamp**, and a
+  Cleaning finding beside the Return-inspection one from RT-02 — right parent, no
+  `estimated_cost`, no `case_id`.
+- The availability picker itself is **not driven**: `planAssignment` runs at Confirm and New
+  Rental's panel reads `itemCatalogue`, so no screen reaches the engine yet. Unit tests only.
+
+### X-01 is not a code fix
+The BS converter stops at 16 Aug 2026 because it has no month lengths past it. Those are
+calendar data, and both `bs.ts` and PLAN §4.34 say they are never inferred — inventing them
+would put every Nepali date in the product one day out. It needs the table, from Babin.
+The Calendar's empty-grid symptom was fixed separately (AR-01, falls back to the AD month).
+
+### Blocked / next
+- **P1 is down to X-01 alone.** The register's 118 open items are now P2 and P3.
+- Still nothing committed; the tree also carries the other session's work, which now
+  typechecks clean alongside this wave.
+- New `TODO(decision)`s: the availability horizon for an open reset entry, and the Manager
+  case for a cleaning-sourced finding.
+
+## 2026-09-04 (cont.) — BN-P0: the Bundles pane reads the database, for a window you pick
+**Phase:** inventory · **Status:** built, tested, driven · **Ruling:** PLAN.md §4.44 (b)
+
+`Bundles.tsx` rendered a frozen 9-row literal from `data/bundles.ts:498` while
+`createBundle.ts` inserted real rows, and `queries/bundles.ts:130 listBundlesWithItems` —
+written for this screen — had **zero callers**. A bundle you created could never appear.
+
+### The ruling this needed first
+`factsOf`'s state falls through to `Available` for anything not booked, and that branch reads
+`BundleLine.unitsAvailable`. Availability is **window-relative** and a catalogue has no dates,
+so wiring it blind would have printed `Available` for gear that was out — a double-booking
+risk on the screen used to promise kit to clients. Filed as §4.44 and **ruled (b): the
+operator picks the window.** Not invented; the alternatives (a) today and (c) state nothing
+are recorded there with why they lost.
+
+### What was built
+- **`lib/queries/bundleRecords.ts`** (new) — returns the pane's own `BundleRecord` shape, so
+  `factsOf`, the chips and the donut are untouched. Availability comes from the real engine
+  (`readCandidates` + `readHolds` → `selectUnitsForLine`), the same path `planCreationUnits`
+  uses at creation, under the same §4.30 rules. Nothing re-implemented.
+- **`lib/queries/useBundles.ts`** (new) — `useList` wrapper; the window travels in `chips` so
+  moving the dates re-queries. Chip keys are `window_*`, deliberately not column names.
+- **`queries/bundles.ts`** — `includeArchived` + `isActive`, so Law 3's retired bundles reach
+  the Archived shelf instead of being filtered away.
+- **`queries/availability.ts`** — `availabilityRules`, `readCandidates`, `readHolds` exported.
+  One word each, on signature lines another session was not editing, rather than duplicating
+  ~75 lines including `readHolds`'s Law 3 `released_at` rule.
+- **`Bundles.tsx`** — seed constants → live derivations; a date-window control above the
+  filters (it is not a filter: it does not narrow the list, it defines what "available" means);
+  window in the URL per §4.44 so a checked availability can be shared; `PageBody` for
+  loading/error/empty. `SeedDefectBanner` removed — it reported seed arithmetic and there is
+  no seed here now.
+- **`mock/engine.ts`** — four embeds declared (`bundles.inventory_categories`,
+  `bundles.bundle_items`, `booking_lines.bookings`, `inventory_reservations.bookings`).
+  Without them the mock resolves an embed to null and only warns.
+- **`mock/corpus.ts`** — 3 bundles (one archived) over real products, plus
+  `inventory_reservations` holds for a week in November. The holds are the point: with none,
+  every window returns the same answer and the date control would look wired while proving
+  nothing.
+
+### How it was verified — driven, not read
+Mock build, signed in as Owner:
+- Before the fixture: pane showed **`No bundles yet`** — the honest reading of an empty
+  `bundles` table, where it used to show 9 fabricated kits.
+- After: **Total Bundles 2 · Excludes archived (1)**, chips reconcile `1 + 0 + 0 + 1 + 0 = 2
+  · All 2`, Category filter derives **Camera · Lighting · Support** from the rows.
+- **The window demonstrably drives it** — same bundle, same data:
+
+  | Window | BND-002 | chips (All·Avail·Res·Rent·Partial·Maint) |
+  |---|---|---|
+  | 4–5 Sept | `Available` 3 / 3 | 2,1,0,0,1,0 |
+  | 11–14 Nov | `Partially Available` 1 / 3 | 2,0,0,0,2,0 |
+
+- URL-addressable: `?tab=bundles&from=…&to=…` restores the window on load.
+- Zero console errors; no missing-relationship warnings from the mock.
+- `tsc --noEmit` clean for every file touched; eslint clean; 484/485 tests pass in
+  `queries` + `mock` + `inventory` + `availability`.
+
+### Two failures that are NOT this change
+Another session is editing this tree concurrently. Measured, not assumed:
+- `Calendar.tsx(1300,1720)` — `CountSlot.value` / `QuickAction.action`. Both `Calendar.tsx`
+  and `data/calendar.ts` are dirty from their in-flight refactor.
+- `finance.test.ts:799` export-surface pin — they added `invoicesDueInPeriod` to
+  `finance.ts` (confirmed by diffing the export list against HEAD) without updating the pin.
+Neither file was touched here, and neither was "fixed" — they are mid-change.
+
+### Still open
+- **`AddBundle`'s item picker is the same defect one level down.** Creating a bundle through
+  the UI fails with *"Sony FX3 Camera Body (M-FX3-BODY) is not a product in the products
+  table"* — the picker is populated from the seed catalogue, so `createBundle` correctly
+  refuses. The read path is now live; the write path's picker is not. Next in this cluster.
+- `itemCatalogue.ts` (New Rental's Bundles tab) still reads `ACTIVE_BUNDLES`.
+- Bundle **detail** and **edit** screens still do not exist (audit P1).
+- `BlockedBy` has no member for `Missing` / `Retired`, so a line short only for those carries
+  no reason and the donut under-counts. Documented in `bundleRecords.ts`; a fourth member
+  changes the donut's four fixed segments, which is a spec question.
+
+## 2026-09-04 — CL-P0: `/clients/:id` resolves a uuid as well as a code
+**Phase:** clients · **Status:** fixed, tested, driven
+
+A full missing-pages audit (`MISSING_PAGES_AUDIT_2026-09-04.md`, 8 dimensions, finder +
+refuter) found that the reported "individual client page is missing" is not a missing page.
+`ClientDetail.tsx` is 1,297 lines and routed at `App.tsx:624`. It rendered **"Client not
+found"** for every link arriving from outside the clients module.
+
+### Why it could never have worked
+`getClientRecordByCode` filtered on `client_code` alone. But eight call sites build
+`/clients/:id` from the uuid FK they already hold — `RentalsList.tsx:1834`,
+`Payments.tsx:854`/`:926`, `OperationsQueues.tsx:791`/`:867`, `rentals.ts:1148` and two more,
+all fed by `bookings.ts:341` / `finance.ts:404`/`:765` mapping `clientId: r.client_id`.
+`0055_ruled_identifier_formats.sql:136` pins `client_code` to `^C-[0-9]+$`, a shape no uuid
+can take, so the match was impossible rather than merely unlikely. Invisible from inside
+Clients, where the links happen to carry codes.
+
+### The fix
+`getClientRecordByCode` → **`getClientRecord(ref)`**, dispatching
+`CLIENT_UUID_RE.test(ref) ? 'id' : 'client_code'`. This is the codebase's existing answer to
+the same problem — `queries/availability.ts:147` and `queries/bookings.ts:1021` both pick `id`
+vs a human code exactly this way. The formats cannot collide. `DIRECTORY_COLUMNS` already
+selects `id`, and the mock engine filters `eq` generically (`mock/engine.ts:223`), so both
+backends took it unchanged. `useClientProfile`'s chip key became `client_ref`, because
+everywhere else a chip key IS a column name (`listQuery.ts:152`) and no `client_ref` column
+exists — it is a cache key whose value may be either format.
+
+### How it was verified
+Driven on the mock build as Owner, not read:
+- `/rentals` list confirmed to emit uuid hrefs (`/clients/356f85c9-010f-…`) — the broken shape.
+- Clicked one through: loads **Annapurna Media Pvt. Ltd. · C-36** with real figures and tabs.
+- `/clients/C-36` (code) and `/clients/356f85c9-…` (uuid) resolve to the **same** record.
+- `/clients/C-99999` and a non-existent uuid both still say "Client not found" — the fix did
+  not turn a miss into a false hit.
+- Zero console errors. `tsc --noEmit` exit 0. 27 tests in `clientsQuery.test.ts` + 34 in
+  `blockClient.test.ts` pass.
+
+The old test asserted the code path and called it *"the id every /clients/:id link carries"* —
+the false premise that let a P0 sit behind a green suite. Replaced with two tests pinning the
+uuid path and one asserting both addresses reach one record.
+
+### Still open (not this change)
+- `CasesWorkspace.tsx:409` and `ClientReports.tsx:343` pass **seed** codes (`C-1`, `C-34`)
+  matching no live row. Wrong about the data, not the column — a separate fix.
+- `ClientsDirectory.tsx` imports no `Link`; three controls labelled "open profile" open a
+  drawer instead (P2, audit item 1c).
+- Client **edit does not persist** (`ClientDetail.tsx:367` `onSave` only calls `setDraft`;
+  `updateClient.ts` never sets `implemented: true`). Still P0, untouched here.
+
+## 2026-09-03 (cont. 3) — RT-02: damage found at Return becomes a row, not a sentence in the notes
+**Phase:** floor engine · **Status:** built, tested, driven
+
+Next open P1 in lifecycle order. Damage found at Return had no record: the description and
+the photo tally were appended to `operation_sessions.notes` and `damage_findings` — a fully
+modelled table since `0003` — had no writer at all.
+
+### Per unit, because the table is per unit
+`return_lines` carries ONE condition for a line (the worst of its units), so it can never say
+WHICH unit was damaged, and `damage_findings.unit_id` is NOT NULL. So `FloorLineInput` gained
+`damage?: DamageFindingInput[]` — `{ unitId, condition, description }` per damaged or lost
+unit — and `runFloorVerb`'s Return branch writes one row each, parented on the `return_lines`
+row it has just written (`damage_findings_exactly_one_parent` and
+`..._parent_matches_source` require exactly that pairing for `source = 'Return inspection'`).
+`FloorVerbResult.damageFindings` reports the count.
+
+### What is deliberately not written
+- **`estimated_cost`** — `0003:488` reserves it for the approver ("Warehouse has no cost field
+  at all") and `0034` revokes SELECT on it from `authenticated`. A money-blind verb neither
+  reads nor writes it.
+- **`approval_state`** — the column default is `'Pending Approval'`, which is what a finding
+  raised on the floor IS. Restating it would be noise.
+- **`disposition` / `case_id` / `charge_id`** — decisions, not observations. Only a `'Cleaning'`
+  finding raises a Manager case (`0003:484`); a return-inspection one does not, because the
+  client has not signed off yet.
+
+### Two TODO(decision)s the schema itself already carried
+`severity` is NOT NULL with no ruled scale — the column comment says so outright — so the row
+says *"Not assessed — no severity scale is ruled (0003:486)"* rather than inventing a value.
+`damage_type` is NOT NULL with no vocabulary anywhere, so it takes the floor's own word
+(`Damaged` / `Lost`); inventing 'Scratch' / 'Water' would be inventing the vocabulary.
+
+A **quantity line** resolves no `product_units.id` and so can raise no finding. Those still
+ride the notes, and the note now says that is why it is the only record.
+
+### Verified
+- `tsc --noEmit` — zero errors in the files this change touched. (Two pre-existing failures
+  remain, both the other session's in-flight work: the untracked `src/lib/devicePurge.ts` +
+  its test have no node types, and `actions/finance/createInvoice.ts` needs `invoice_lines`
+  in `types/database.ts` — the same gap this session closed for `booking_line_units` and now
+  `damage_findings`.)
+- `floorVerbs.test.ts` **50/50** (5 new: the row and its parent, no finding when nothing is
+  damaged, a blank description refused, two findings on one unit refused, a finding on a
+  non-Return verb refused). Touched folders: 11 files, 295 tests green.
+- **Driven** in `dev:mock` on the fresh 5174 origin: B-715 Packed → handed over → On Rent →
+  returned with 18 units, one Damaged with a description and a counted photo. Overlay shows
+  exactly one `damage_findings` row — source `Return inspection`, parent = the first
+  `return_lines` id, `damage_type` `Damaged`, description intact, no `estimated_cost`, no
+  `approval_state` — beside the `actual_return_at` stamp from RT-01.
+
+### Still open
+**Nothing reads these rows yet.** `DamageTab` is still the seed corpus (RS-05) and there is no
+approve-or-charge action, so the finding is auditable but the deposit-deduction path is not
+built. That is the other half of RT-02's original sentence and it is stated on the ticked row.
+
+**P1 remaining (3):** X-01 (BS month-length data), RS-02 (Reset returns no unit to the pool),
+RS-03 (a Reset exception writes no record).
 
 ## 2026-09-03 — New Rental driven end to end on the mock build: Create works; four defects, one regression
 **Phase:** verification (no code changed) · **Status:** complete · **Page:** `/rentals/new` — `NewRental.tsx` 3,529 lines, `AddItemPanel.tsx` 1,295, `itemCatalogue.ts` 950; the three carry a third session's **uncommitted** diff (+303/−102)

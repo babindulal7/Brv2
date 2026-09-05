@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -18,13 +18,13 @@ import { getBusinessToday, toBs, formatBs, formatAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
 import { newClientUuid } from '../../lib/supabase'
+import { useStockTransfers } from '../../lib/queries/warehouses'
 import { gateContext } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
 import { rackGlance, rackDetailGroups } from '../../data/rackIntel'
 import {
   WAREHOUSES,
   STORAGE_LOCATIONS,
-  TRANSFERS,
   EQUIPMENT_DISTRIBUTION,
   WAREHOUSE_STATUS_TONE,
   WAREHOUSE_STATUS_ICON,
@@ -536,8 +536,27 @@ export default function Warehouses() {
   const [selectedId, setSelectedId] = useState(WAREHOUSES[0]?.id ?? '')
   const [profileTab, setProfileTab] = useState<'overview' | 'layout' | 'map' | 'capacity' | 'transfers' | 'staff'>('overview')
 
-  /* transfers */
-  const [transfers, setTransfers] = useState<StockTransfer[]>(TRANSFERS)
+  /*
+   * Transfers, from the database.
+   *
+   * `createStockTransfer` has always written real `stock_transfers` and
+   * `stock_transfer_lines` rows; this list read a hand-written array, so a
+   * transfer an operator raised never appeared. Local state is kept rather than
+   * reading `live.rows` directly because the create path below prepends
+   * optimistically — the effect re-seeds from the query, so the optimistic copy
+   * is only ever ahead of the truth, never instead of it.
+   *
+   * The warehouse cards and the rack map above are still seeded, and still say
+   * so: nothing in the schema records a warehouse's capacity, and `storage_zones`
+   * has no room, rack, shelf or bin column at all. See PLAN.md §4.45(c) and this
+   * module's query header — half-wiring them would put live and invented figures
+   * side by side with nothing to tell them apart.
+   */
+  const live = useStockTransfers()
+  const [transfers, setTransfers] = useState<StockTransfer[]>([])
+  useEffect(() => {
+    setTransfers(live.rows)
+  }, [live.rows])
   const [modalOpen, setModalOpen] = useState(false)
   /* Law 12 — a create that did not land says so, in the modal's own existing
      ErrorBanner slot, and persists there until the next attempt. */
@@ -559,7 +578,23 @@ export default function Warehouses() {
 
   const selected = WAREHOUSES.find((w) => w.id === selectedId) ?? WAREHOUSES[0]
 
-  const totals = totalsOf(WAREHOUSES)
+  /*
+   * `totalsOf` sums the SEEDED warehouse cards, so its `transfers` figure is
+   * seeded too — and once the Transfer Center below reads the database, that
+   * number and the pane's own count are two different answers to one question
+   * on one screen. Whichever is right, showing both is wrong.
+   *
+   * So the open-transfer count is overridden with the live one. It is the single
+   * figure in this strip that IS sourceable; capacity, accuracy, assets and
+   * staff stay seeded because nothing records them (§4.45(c)), and they keep
+   * `totalsOf`'s values rather than being blanked, so the seeded half stays
+   * internally consistent instead of becoming half-empty.
+   */
+  const seededTotals = totalsOf(WAREHOUSES)
+  const totals = {
+    ...seededTotals,
+    transfers: transfers.filter((t) => !TRANSFER_TERMINAL.has(t.status)).length,
+  }
   const alerts = alertsOf(WAREHOUSES, transfers)
   const activity = recentActivity(transfers)
   const insights = insightsOf(WAREHOUSES)
@@ -818,6 +853,10 @@ export default function Warehouses() {
           notes: form.notes.trim(),
         }
         setTransfers((prev) => [created, ...prev])
+        /* The prepend above is what the operator sees at once; this is what makes
+           it true. `created` is assembled from the form, so only a refetch proves
+           what Postgres actually stored — the transfer_no among other things. */
+        live.refetch()
         /* This transfer landed — the next modal-open mints fresh Law 8 keys. */
         transferKeys.current = null
         setModalOpen(false)
@@ -1822,6 +1861,24 @@ export default function Warehouses() {
                 {/* Transfer Center */}
                 {profileTab === 'transfers' && (
                   <div style={{ padding: 0 }}>
+                    {/* The transfers pane is the only live-read surface on this
+                        screen, so it is the only one that can fail to load or be
+                        genuinely empty. The cards and rack map above are seeded
+                        and always render. */}
+                    {live.error !== null && (
+                      <div style={{ padding: '10px 14px' }}>
+                        <ErrorBanner
+                          title="Could not load transfers"
+                          message={live.error}
+                          {...{ onRetry: live.refetch }}
+                        />
+                      </div>
+                    )}
+                    {live.loading && live.rows.length === 0 && (
+                      <div style={{ padding: '14px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                        Loading transfers…
+                      </div>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
                       <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                         {profileTransfers.length} transfers touch {selected.name}

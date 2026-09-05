@@ -613,7 +613,7 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
-## 4.45 ⬅ OPEN ×2 — the two rulings the remaining read-frozen screens need
+## 4.45 ⬅ OPEN ×3 — the rulings the remaining read-frozen screens need
 
 **Raised 4 Sep 2026 after §4.44 closed the Bundles list.** Filed together because ruling
 them in one sitting unblocks four screens; taken one at a time they cost a round trip each.
@@ -655,6 +655,35 @@ bitten (§4.42). Either the screen shows one figure, or the table gains a second
 Also unsourceable on that screen, and to be left absent rather than guessed:
 `conditions` (Under Warranty / Holding a Booking / Repair Approval Pending), `bookingImpact`,
 and `parts[]` — none has a column or a table.
+
+### (c) Warehouses — should a warehouse record its capacity, and a manager?
+
+**Raised 5 Sep 2026 while wiring the Transfer Center.** The transfers half of
+`Warehouses.tsx` is now live. The rest of that screen is left on its seed
+deliberately, because **most of what it draws has no schema at all**:
+
+| Surface | Why it cannot be read |
+|---|---|
+| `capacity` · `occupancy` · `availableSpace` | no column on `warehouses` (`0007:48`) or `storage_zones` (`0007:76`). The only `capacity_slots` in the schema is on `containers` (`0004:162`) — "physical transit cases and bags", so it counts what fits in a flight case, not a building |
+| the rack map (`STORAGE_LOCATIONS`) | `storage_zones` has **no room, rack, shelf, bin, capacity or used column** — not one of the map's nine fields exists |
+| `accuracyPct` | no stock-accuracy figure is stored anywhere |
+| `manager` · `phone` · `image` | no column on `warehouses`; no asset store for photos |
+
+Sourceable today: name, code, branch, address, status, plus counts of
+`storage_zones`, `product_units` and non-terminal `stock_transfers`.
+
+**The question:** wiring the cards honestly means the KPI strip and every card
+loses capacity, occupancy, accuracy and the whole rack map — most of the screen.
+So either **(i)** the schema gains `capacity` (and `manager`) on `warehouses`,
+plus capacity/used on `storage_zones` if the rack map is to survive, or
+**(ii)** the screen is redrawn around what exists and the capacity UI is retired.
+
+⚠ Half-wiring is what to avoid, and it already bit once: with the transfers pane
+live and the cards seeded, the KPI strip's `Open Transfers` (summed from seeded
+warehouses) and the pane's own count were two different answers to one question
+on one screen. That one figure is now taken from the live list; the rest of the
+strip stays seeded so the seeded half is at least internally consistent. Do not
+extend that pattern further without ruling this.
 
 ### Clean, and NOT blocked by either of the above
 - **Purchase Requests** — `purchase_requests` (`0004:579`) carries `pr_no`, `product_id`,

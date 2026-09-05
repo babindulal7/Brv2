@@ -555,6 +555,76 @@ export function buildStore(): Store {
     })
   }
 
+  /* ── Stock transfers (migration 0004) ────────────────────────────────────
+     The Warehouses screen's Transfer Center read a hand-written array while
+     `createStockTransfer` inserted real header + line rows, so a transfer an
+     operator raised never appeared. These are what the wired pane reads.
+
+     Three states across the lifecycle — one still moving, one delivered, one
+     finished — so the status pills, the step buttons and the
+     `TRANSFER_TERMINAL` split all have something to separate. Only the ONE
+     warehouse in this corpus exists, so source and destination share it and the
+     zones carry the difference; that is a real shape (a Zone Transfer) rather
+     than a second warehouse invented to make the fixture look richer. */
+  const stockTransfers: Row[] = []
+  const stockTransferLines: Row[] = []
+  {
+    const specs = [
+      { no: 'TR-2026-0001', kind: 'Zone Transfers', status: 'In Transit', from: 0, to: 1, take: [0, 1], dispatched: true, received: false },
+      { no: 'TR-2026-0002', kind: 'Zone Transfers', status: 'Received', from: 1, to: 2, take: [2], dispatched: true, received: true },
+      { no: 'TR-2026-0003', kind: 'Temporary Holding', status: 'Completed', from: 2, to: 0, take: [3, 4], dispatched: true, received: true },
+    ]
+    specs.forEach((spec, index) => {
+      const transferId = id(`stock_transfer:${spec.no}`)
+      const day = `2026-08-${String(20 + index).padStart(2, '0')}`
+      stockTransfers.push({
+        id: transferId,
+        client_uuid: seedUuid(`stock_transfer:${spec.no}`),
+        transfer_no: spec.no,
+        transfer_type: spec.kind,
+        status: spec.status,
+        source_branch_id: BRANCH_ID,
+        source_warehouse_id: WAREHOUSE_ID,
+        source_zone_id: ZONES[spec.from]?.['id'] ?? null,
+        destination_branch_id: BRANCH_ID,
+        destination_warehouse_id: WAREHOUSE_ID,
+        destination_zone_id: ZONES[spec.to]?.['id'] ?? null,
+        requested_by: USERS[0]?.['id'] ?? null,
+        approved_by: USERS[0]?.['id'] ?? null,
+        dispatched_by: spec.dispatched ? (USERS[0]?.['id'] ?? null) : null,
+        received_by: spec.received ? (USERS[0]?.['id'] ?? null) : null,
+        requested_at: `${day}T04:00:00.000Z`,
+        approved_at: `${day}T05:00:00.000Z`,
+        dispatched_at: spec.dispatched ? `${day}T06:00:00.000Z` : null,
+        received_at: spec.received ? `${day}T09:00:00.000Z` : null,
+        completed_at: spec.status === 'Completed' ? `${day}T10:00:00.000Z` : null,
+        cancelled_at: null,
+        cancelled_by: null,
+        cancellation_reason: null,
+        notes: null,
+        created_at: `${day}T04:00:00.000Z`,
+      })
+      spec.take.forEach((unitIndex, line) => {
+        const unit = productUnits[unitIndex]
+        if (unit === undefined) return
+        stockTransferLines.push({
+          id: id(`stock_transfer_line:${spec.no}:${line}`),
+          client_uuid: seedUuid(`stock_transfer_line:${spec.no}:${line}`),
+          transfer_id: transferId,
+          product_id: unit['product_id'],
+          product_unit_id: unit['id'],
+          requested_quantity: 1,
+          transferred_quantity: spec.dispatched ? 1 : 0,
+          received_quantity: spec.received ? 1 : 0,
+          /* Only a receipt records a condition — an in-flight line has none. */
+          condition_on_receipt: spec.received ? 'Good' : null,
+          notes: null,
+          created_at: `${day}T04:00:00.000Z`,
+        })
+      })
+    })
+  }
+
   const store: Store = {
     users: USERS,
     branches: BRANCHES,
@@ -578,6 +648,8 @@ export function buildStore(): Store {
     inventory_reservations: reservations,
     suppliers,
     purchase_requests: purchaseRequests,
+    stock_transfers: stockTransfers,
+    stock_transfer_lines: stockTransferLines,
   }
   for (const t of UNSERVED) store[t] = []
   store['probe'] = []
