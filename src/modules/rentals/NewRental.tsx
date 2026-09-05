@@ -13,6 +13,7 @@ import { STATUS } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
 import { toBs, formatBs, formatAd, getBusinessToday } from '../../lib/bs'
+import { rentalDaysBetween } from '../../lib/rentalDays'
 import { validateDiscount } from '../../lib/discount'
 import { getSetting } from '../../lib/settingsStore'
 import { price, formatMoney, rupees, roundHalfUp, toRupees } from '../../lib/money'
@@ -84,6 +85,55 @@ import type { AddItemSource, BookingLineDraft, BookingWindow } from './booking'
 const DAY = 86400000
 
 /**
+ * The two pickers of one end of the booking — a `YYYY-MM-DD` date and an
+ * `HH:mm` wall-clock time — as a single instant, or `null` if either is
+ * unparseable.
+ *
+ * This is the **same construction `confirmBooking` sends** (`new
+ * Date(`${date}T${time}`)`, local wall-clock in, `.toISOString()` — AD/UTC —
+ * out, Law 7). It exists so the page cannot measure the booking over one pair
+ * of instants and store it over another: before NR-19 the length was computed
+ * from the DATES ALONE while the write sent date+time, so the two disagreed by
+ * up to a day at every booking whose times were not midnight.
+ *
+ * `null` rather than a fallback instant: an unparseable value is not midnight,
+ * and `DateTimeField` never lets one through anyway — `commitDate` reverts to
+ * the last good date and `commitTime` to the last good time, so the guard here
+ * is a type-level one rather than a state this screen can reach.
+ */
+export function bookingInstant(date: string, time: string): Date | null {
+  const d = new Date(`${date}T${time}`)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/**
+ * The booking's length in whole rental days, or `0` for a window that is not a
+ * booking at all.
+ *
+ * The arithmetic is **not** here — `lib/rentalDays.ts` owns it (Law 1), and its
+ * header settles which of this repo's three day-counts this is: the priced
+ * span, elapsed ms ÷ 86 400 000, rounded half-up, floored at 1. What is here is
+ * the page's own gate, and only that: a return at or before the pickup is `0`,
+ * which every date-dependent thing on this screen reads as "unset" (an em dash,
+ * never a zero — §8.6) and which blocks Confirm.
+ *
+ * ⛔ NR-19 — the page used to difference the two `YYYY-MM-DD` picker values and
+ * ignore the times beside them, so a 09:00 → 18:00 same-day hire measured 0 and
+ * was refused for being zero days long. `createRental.validate` refuses only a
+ * return strictly BEFORE the pickup, and the write sends date+time, so the page
+ * was rejecting bookings its own action would have taken. Measured over the
+ * instants that are actually stored, that hire is 9 h → the engine's floor of
+ * one rental day.
+ *
+ * `0` cannot be a stored length: Law 9 and six `days >= 1` CHECKs, and Confirm
+ * is blocked while this is 0.
+ */
+export function bookingDays(pickupAt: Date | null, returnAt: Date | null): number {
+  if (!pickupAt || !returnAt || returnAt.getTime() <= pickupAt.getTime()) return 0
+  return rentalDaysBetween(pickupAt.toISOString(), returnAt.toISOString()) ?? 0
+}
+
+/**
  * The VAT rate is **read from Settings**, never a literal.
  *
  * `VAT_PCT = 13` used to live here and is deleted: `PLAN.md` §5 Conventions
@@ -126,6 +176,23 @@ interface Line {
   ratePaisa: Paisa
   /** §8.3 — Days is mandatory. A per-booking line stores 1 explicitly. */
   days: number
+  /**
+   * Has the operator set this line's Days by hand?
+   *
+   * `AddItemPanel` stamps every draft with the booking's length at the moment
+   * it is added, and before NR-19 that number was never looked at again: a
+   * booking built over 3–5 Sep and then moved to 3–12 Sep kept 2 on every line
+   * it already held, and those stale counts are what `booking_lines.days` was
+   * written from — the length the client is billed over. The effect beside
+   * `lines` re-stamps the booking's length onto its lines when the window
+   * changes.
+   *
+   * This flag is what keeps that re-stamp from being destructive. A line whose
+   * Days the operator deliberately shortened (the §36 stepper below) is a
+   * per-line fact, not a copy of the header, so it is left exactly where they
+   * put it. Absent, never `false`, on a line nobody has touched.
+   */
+  daysOverridden?: boolean | undefined
   qty: number
   discountPct: number
   location: string
@@ -143,6 +210,104 @@ interface Line {
 /** §10.1 — line amount, rounded once at the end (half-up), same convention `lib/money.ts`'s `price()` uses internally. */
 function lineAmountPaisa(l: Line): Paisa {
   return roundHalfUp(l.qty * l.days * l.ratePaisa * (1 - l.discountPct / 100)) as Paisa
+}
+
+/**
+ * A live catalogue row's id is a `products.id` uuid; a demo row's id is the
+ * product NAME. This is the cheapest honest test of which one a line is.
+ *
+ * Module scope rather than inside the Confirm handler so it is compiled once
+ * instead of per render, and so a second caller cannot quietly write a fourth
+ * spelling of "is this a uuid".
+ *
+ * (An earlier note here claimed two places had to agree about it and pointed at
+ * `confirmWriteRefusals`. That was wrong: `confirmWriteRefusals` is handed a
+ * precomputed `sampleLineName` and never sees the regex — there is exactly one
+ * use, the `lines.find` that computes that argument.)
+ */
+const PRODUCT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * One reason Confirm Booking is refused, in the shape the rail's blocking-
+ * notices card renders.
+ *
+ * `action` is one of `runNoticeAction`'s verbs and is **optional**: a refusal
+ * the operator cannot act on from this screen gets no button rather than a
+ * button that silently does nothing. (§12's "every alert carries exactly one
+ * action" governs `alerts`, and every alert-derived notice still carries one.)
+ */
+export interface BlockingNotice {
+  text: string
+  action?: string
+}
+
+/** Everything `confirmWriteRefusals` needs to know, and nothing else. */
+export interface ConfirmWriteState {
+  /** Whether a client is chosen at all. `false` is the alert model's own Critical, not ours. */
+  clientSelected: boolean
+  /** The chosen client's `clients.id` uuid — `null` when it came from the seed array. */
+  clientDbId: string | null
+  /** Has the live client read landed? It changes what a missing uuid MEANS. */
+  clientsAreLive: boolean
+  lineCount: number
+  /** The first line whose id is not a `products.id` uuid, by name; `null` if none. */
+  sampleLineName: string | null
+  /** Law 6 — whether this role is shown equipment rates at all. */
+  canBookingMoney: boolean
+}
+
+/**
+ * ⛔ NR-10 — the four refusals that used to live ONLY inside the Confirm
+ * handler, lifted out so one computation answers both the card and the button.
+ *
+ * The defect: `confirmBlocked` was `critical.length > 0 || days === 0`, and the
+ * handler then refused, in its own body and with its own sentences, on a client
+ * with no `dbId`, on zero lines, on a money-blind role and on a line id that is
+ * not a uuid. None of those four reached `blockingNotices`, so the rail's card
+ * said **"Nothing is blocking this booking · Every requirement for Confirm
+ * Booking is met"**, the button was enabled, and the press failed into the
+ * inline error line. Two lists describing one rule, and they had already
+ * drifted.
+ *
+ * These are the handler's own refusals, verbatim in substance, re-written as
+ * standalone sentences so they read correctly in the card as well as after
+ * "Not confirmed — " in the error line.
+ *
+ * Pure and exported for `__tests__/newRentalGuards.test.ts`.
+ */
+export function confirmWriteRefusals(s: ConfirmWriteState): BlockingNotice[] {
+  const out: BlockingNotice[] = []
+  /* Only when a client IS chosen: "No client selected" is already a Critical in
+     the alert model, and stating it twice is its own defect. */
+  if (s.clientSelected && !s.clientDbId) {
+    out.push({
+      text: s.clientsAreLive
+        ? 'The selected client came from sample data and has no database record, so there is nothing to book against. Pick a client from the live list.'
+        : 'The client list has not loaded from the database yet, so the selected client is sample data. Wait for it to load, then re-select the client.',
+      action: 'Select Client',
+    })
+  }
+  if (s.lineCount === 0) {
+    out.push({
+      text: 'A booking with no equipment on it is not a booking. Add at least one item first.',
+      action: 'Open Equipment',
+    })
+  }
+  /* Law 6 — `listInventory({ withMoney: false })` returns no `dailyRate`, so
+     every line this role holds carries `ratePaisa` 0. Sending that would
+     persist the display placeholder as the price of the booking. */
+  if (!s.canBookingMoney) {
+    out.push({
+      text: 'Equipment rates are hidden for your role, so this booking cannot be priced from this screen — every line would be saved at Rs 0. Ask a colleague who can see rates to confirm it.',
+    })
+  }
+  if (s.sampleLineName !== null) {
+    out.push({
+      text: `"${s.sampleLineName}" is a sample row, not a product in the catalogue, so it cannot be saved. Remove it and add the item from the live catalogue.`,
+      action: 'Open Equipment',
+    })
+  }
+  return out
 }
 
 /** A crew member's charge on this booking. `dayRatePaisa` seeds from `CrewMember.dayRatePaisa` but is editable per booking — a rate can be negotiated differently per job. */
@@ -1659,6 +1824,30 @@ export default function NewRental() {
      made every fresh draft look priced and dated before anyone touched it. */
   const [project, setProject] = useState('')
   const [kind, setKind] = useState('')
+  /**
+   * The Government ID / PAN box, seeded from the selected client's `pan`
+   * (`clients.pan_vat`, read by `queries/clients.ts`).
+   *
+   * **TODO(decision) — this field is collected and then dropped, and it gates
+   * Confirm on the way.** `govId` has exactly four readers: the
+   * "Missing client ID or PAN" Critical, the Review card's Client row, the
+   * input itself and its inline error. It is in no write. `CreateRentalInput`
+   * has no field for it (`actions/rentals/createRental.ts` — clientUuid,
+   * clientId, branchId, contactId, project, the two instants, deliveryType,
+   * the two locations, quoteExpiresAt, depositRequired, lines, discounts, crew,
+   * transport), and this page dispatches nothing else, so a PAN typed here is
+   * lost the moment the page unmounts — while a blank one blocks the booking.
+   *
+   * Three answers are possible and none of them is mine to pick:
+   *  a. write it back to the client record — `clients.pan_vat` exists and
+   *     `createClient` already writes it (`panVat`, CHECK: nine digits), so
+   *     this would be an `updateClient` on select/confirm;
+   *  b. store it per booking — there is no column for it today;
+   *  c. drop the gate — it is the only Critical on this page that guards a
+   *     value nothing consumes.
+   * Whichever it is, (a) and (b) are schema/action work and (c) is a product
+   * call, so the gate is left exactly as it is rather than quietly relaxed.
+   */
   const [govId, setGovId] = useState(client?.pan ?? '')
   /* Dates default to the business day (Kathmandu's, `getBusinessToday`) and the
      day after — a one-day window, never a hardcoded date. `getBusinessToday`
@@ -1785,22 +1974,80 @@ export default function NewRental() {
   const depositRequiredPaisa = rupees(0) as Paisa
   const depositReceivedPaisa = rupees(0) as Paisa
 
-  const days = useMemo(() => {
-    const a = Date.parse(pickup)
-    const b = Date.parse(ret)
-    if (Number.isNaN(a) || Number.isNaN(b)) return 0
-    return Math.max(0, Math.round((b - a) / DAY))
-  }, [pickup, ret])
+  /** Pickup and return as instants — see `bookingInstant`. */
+  const pickupAt = useMemo(() => bookingInstant(pickup, pickupTime), [pickup, pickupTime])
+  const returnAt = useMemo(() => bookingInstant(ret, returnTime), [ret, returnTime])
 
-  /** §32 — availability is answered for *these* dates, not for today. */
-  const bookingWindow = useMemo<BookingWindow>(() => {
-    const a = Date.parse(pickup)
-    const b = Date.parse(ret)
-    return {
-      pickupAd: Number.isNaN(a) ? null : new Date(a),
-      returnAd: Number.isNaN(b) ? null : new Date(b),
-    }
-  }, [pickup, ret])
+  /**
+   * The booking's length in whole rental days — `bookingDays`, which is where
+   * NR-19 and the Law 1 delegation to `lib/rentalDays.ts` are written up.
+   *
+   * The page stays fractionally stricter than `createRental.validate` in one
+   * respect, on purpose: a return exactly equal to the pickup is refused here
+   * though `validate` allows it, because a zero-length hire would still be
+   * floored to one billed day and nobody types a booking with no duration
+   * deliberately.
+   */
+  const days = useMemo(() => bookingDays(pickupAt, returnAt), [pickupAt, returnAt])
+
+  /*
+   * "1 days". Pre-existing — three summaries hardcoded the plural — but NR-19
+   * is what made it the page's OPENING state: a fresh booking defaults to one
+   * date, which used to measure 0 days ("0 days", grammatical by luck) and now
+   * correctly measures 1. Computed once here rather than a fourth time inline;
+   * `formatRentalDays` is not used because these three read "rental days" and
+   * "→ N days" in lower case, and it renders "N Days".
+   */
+  const dayWord = days === 1 ? 'day' : 'days'
+
+  /**
+   * NR-19, second half — the booking's length reaches the lines it already has.
+   *
+   * A line's Days is stamped once, by `AddItemPanel`, from the `days` prop this
+   * page passes it. Change the window afterwards and every line already on the
+   * booking kept the old number: the Days column, the line amounts, the
+   * Equipment Subtotal and — the part that matters — `booking_lines.days` in
+   * `confirmBooking`'s payload were all measured over a window that is no
+   * longer the booking's. Nothing on screen said so, because the header's Days
+   * figure updated and the lines' did not.
+   *
+   * Only lines nobody has edited move: `daysOverridden` (set by the Days
+   * stepper) marks a per-line decision, and re-stamping over it would be the
+   * same defect pointing the other way. `days === 0` is the invalid-window
+   * gate, not a length — nothing is re-stamped from it.
+   */
+  useEffect(() => {
+    if (days === 0) return
+    setLines((prev) => {
+      let changed = false
+      const next = prev.map((l) => {
+        if (l.daysOverridden === true || l.days === days) return l
+        changed = true
+        return { ...l, days }
+      })
+      return changed ? next : prev
+    })
+  }, [days])
+
+  /**
+   * §32 — availability is answered for *these* dates, not for today.
+   *
+   * ⛔ This differenced the two `YYYY-MM-DD` picker values and threw the TIMES
+   * away, which stopped mattering the moment NR-19 let a same-day booking
+   * through: for a 09:00→18:00 hire on one date both bounds were the same
+   * midnight, and `itemCatalogue.ts`'s `validWindow` returns `null` for
+   * `to <= from`. So the booking Confirm now accepts was the booking
+   * availability could not be answered for — every unit fell back to its
+   * unwindowed reading, silently.
+   *
+   * It reads the same two instants `days` and the write payload use
+   * (`bookingInstant`), so the window a unit is checked against and the window
+   * that reaches `booking_lines` cannot disagree.
+   */
+  const bookingWindow = useMemo<BookingWindow>(
+    () => ({ pickupAd: pickupAt, returnAd: returnAt }),
+    [pickupAt, returnAt],
+  )
 
   /* ── §10.1 calculation order — via lib/money.ts's canonical price(), not a local re-derivation. ── */
   const equipmentPaisa = useMemo(() => lines.reduce((s, l) => s + lineAmountPaisa(l), 0) as Paisa, [lines])
@@ -1916,23 +2163,47 @@ export default function NewRental() {
   const critical = alerts.filter((a) => a.severity === 'Critical')
   /** Warnings and information — the criticals live in the blocking-notices card. */
   const nonBlockingAlerts = alerts.filter((a) => a.severity !== 'Critical')
-  const confirmBlocked = critical.length > 0 || days === 0
 
   /**
    * 01_NEW_RENTAL §1.1 — the rail's `⚠ blocking notices (inline, persists)`.
    *
-   * Every reason Confirm is refused, in full, in one list. The bad date is in
-   * here too: it blocks Confirm and had no home in the alert model, so it read
-   * only as a sentence under the page header.
+   * **Every** reason Confirm is refused, in full, in one list — and since NR-10
+   * that is the literal truth rather than the intention. Three sources feed it
+   * and there is no fourth anywhere on this page:
+   *
+   *  1. the date window, which blocks Confirm and has no home in the alert
+   *     model, so it read only as a sentence under the page header;
+   *  2. the Criticals from `alerts`;
+   *  3. `confirmWriteRefusals` — the refusals the Confirm handler used to keep
+   *     to itself. See that function.
    *
    * Law 12 — inline and persistent. This never becomes a toast and is never
    * truncated into the sticky bar; at tablet and phone the card detaches from
    * the rail and renders immediately above that bar instead.
    */
-  const blockingNotices: Array<{ text: string; action: string }> = [
-    ...(days === 0 ? [{ text: 'The return date must be later than the pickup date.', action: 'Open Dates' }] : []),
+  const blockingNotices: BlockingNotice[] = [
+    /* "date" was dropped from this sentence with NR-19: the times are part of
+       the comparison now, so a same-day window with the return time earlier
+       than the pickup time lands here too, and the dates are not what is
+       wrong with it. */
+    ...(days === 0 ? [{ text: 'The return must be later than the pickup — check the times as well as the dates.', action: 'Open Dates' }] : []),
     ...critical.map((a) => ({ text: a.text, action: a.action })),
+    ...confirmWriteRefusals({
+      clientSelected: Boolean(client),
+      clientDbId: client?.dbId ?? null,
+      clientsAreLive,
+      lineCount: lines.length,
+      sampleLineName: lines.find((l) => !PRODUCT_ID_RE.test(l.id))?.name ?? null,
+      canBookingMoney,
+    }),
   ]
+  /**
+   * ONE predicate. The card lists `blockingNotices`, this disables the button
+   * on the same array, and `confirmBooking` refuses the press on it too — so
+   * the card can no longer read "nothing is blocking this booking" while the
+   * next press fails.
+   */
+  const confirmBlocked = blockingNotices.length > 0
   const blockReasonText = confirmBlocked
     ? `Blocked — ${blockingNotices.length} ${blockingNotices.length === 1 ? 'notice' : 'notices'} must be resolved before this booking can be confirmed.`
     : undefined
@@ -2022,8 +2293,11 @@ export default function NewRental() {
 
   /* ── §58 — the save-state line. The header owns the Save Draft action; the
    *    footer only ever reports state, so there is one Save Draft on the page.
-   *    'error' exists because 'saved' is a success claim: the footer reads
-   *    "All changes saved", and it may not say that after a save that failed. */
+   *
+   *    'saved' is the INITIAL value and does not mean anything has been saved —
+   *    NR-13 renamed what the footer says about it, because nothing on this
+   *    page persists a draft. 'error' exists so a rejected save cannot fall
+   *    back into that quiet state; see the footer's own note. */
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved')
   /**
    * **Law 8.** One key per Confirm press, reused by every retry of that press
@@ -2099,8 +2373,23 @@ export default function NewRental() {
   }, [dispatchContext, showSuccessToast])
 
   const confirmBooking = useCallback(() => {
-    /* A press while the previous one is still in flight is the double-click
-       Law 8 exists for; the button is also disabled on the same condition. */
+    /*
+     * `saveState === 'saving'` is the double-click Law 8 exists for — a press
+     * while the previous one is still in flight. Both Confirm buttons are
+     * `disabled` on this same expression.
+     *
+     * ⛔ NR-10 — and the other half of it is ONE predicate.
+     *
+     * Four refusals used to be written out AGAIN in this body — a client with
+     * no uuid, zero lines, a money-blind role, a line id that is not a uuid —
+     * each with its own sentence, and none of them in `blockingNotices`. So the
+     * rail's card said "Nothing is blocking this booking · Every requirement
+     * for Confirm Booking is met", both Confirm buttons stayed enabled, and the
+     * press failed into the inline error line. They live in that list now
+     * (`confirmWriteRefusals`), `confirmBlocked` IS that list being non-empty,
+     * and both buttons are `disabled` on the same expression — so the notice is
+     * on screen, persistently, before the press instead of after it (Law 12).
+     */
     if (confirmBlocked || saveState === 'saving') return
     const ctx = dispatchContext()
     if (!ctx) {
@@ -2122,36 +2411,18 @@ export default function NewRental() {
      * `BookingDetail`'s own confirm dispatches. Both are sent here so the
      * button does what it says.
      */
-    /* A live catalogue row's id is a `products.id` uuid; a demo row's is the
-       product NAME. This is the cheapest honest test of which one a line is. */
-    const UUID_RE_LINE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-    if (!client?.dbId) {
-      setActionError(
-        clientsAreLive
-          ? 'Not confirmed — the selected client came from sample data and has no database record, so there is nothing to book against. Pick a client from the live list.'
-          : 'Not confirmed — the client list has not loaded from the database yet, so the selected client is sample data. Wait for it to load, then re-select the client.',
-      )
-      return
-    }
-    if (lines.length === 0) {
-      setActionError('Not confirmed — a booking with no equipment on it is not a booking. Add at least one item first.')
-      return
-    }
-    /* Law 6 — `listInventory({ withMoney: false })` returns no `dailyRate` for
-       a money-blind role, so every line here carries `ratePaisa` 0. Sending
-       that would persist the display placeholder as the price of the booking.
-       Refuse before anything is written, and say why. */
-    if (!canBookingMoney) {
-      setActionError(
-        'Not confirmed — equipment rates are hidden for your role, so this booking cannot be priced from this screen; every line would be saved at Rs 0. Nothing was written. Ask a colleague who can see rates to confirm it.',
-      )
-      return
-    }
-    const demoLine = lines.find((l) => !UUID_RE_LINE.test(l.id))
-    if (demoLine) {
-      setActionError(
-        `Not confirmed — "${demoLine.name}" is a sample row, not a product in the catalogue, so it cannot be saved. Remove it and add the item from the live catalogue.`,
-      )
+    /*
+     * The three values the payload cannot be built without. Each is already
+     * guaranteed by a blocking notice: `client.dbId` by "No client selected"
+     * (the alert model) together with `confirmWriteRefusals`' no-uuid case, and
+     * `pickupAt` / `returnAt` by the `days === 0` notice — `bookingDays`
+     * answers 0 for exactly `!pickupAt || !returnAt || returnAt <= pickupAt`.
+     * So this is the type narrowing rather than a fifth rule, and it states a
+     * reason instead of returning blank in the case that cannot arise.
+     */
+    const clientDbId = client?.dbId
+    if (!clientDbId || !pickupAt || !returnAt) {
+      setActionError('Not confirmed — this booking has no client record or no usable dates. Nothing was written.')
       return
     }
 
@@ -2190,13 +2461,15 @@ export default function NewRental() {
           {
             /* Law 8 — one key for this press, so a double-click is one booking. */
             clientUuid: pressKey,
-            clientId: client.dbId as string,
+            clientId: clientDbId,
             branchId,
             project: project.trim() ? project.replace(/^'|'$/g, '') : null,
             /* Law 7 — the stored instant is AD/UTC; the pickers hold local
-               wall-clock, so they are combined and sent as a full ISO string. */
-            pickupAt: new Date(`${pickup}T${pickupTime}`).toISOString(),
-            returnAt: new Date(`${ret}T${returnTime}`).toISOString(),
+               wall-clock, so they are combined and sent as a full ISO string.
+               NR-19 — the SAME two instants the page measured `days` over
+               (`bookingInstant`), not a second construction of them. */
+            pickupAt: pickupAt.toISOString(),
+            returnAt: returnAt.toISOString(),
             /* The UI says "Client Pickup"; the enum stores "Customer Pickup"
                (Law 17 lives in the label, not the column). */
             deliveryType: deliveryTypeFromLabel(deliveryType),
@@ -2317,18 +2590,18 @@ export default function NewRental() {
       }
     })()
   }, [
+    /* NR-10 — one boolean, and it is `blockingNotices.length > 0`. The four
+       refusals this handler used to carry are in that list, so refusing on it
+       refuses on them. */
     confirmBlocked,
     saveState,
-    canBookingMoney,
     dispatchContext,
     client,
-    clientsAreLive,
     lines,
     project,
-    pickup,
-    pickupTime,
-    ret,
-    returnTime,
+    /* NR-19 — the two instants, not the four picker strings they came from. */
+    pickupAt,
+    returnAt,
     deliveryType,
     /* NR-02 — the rows written beside the header read these; without them in
        the deps the press sent the INITIAL zero discount and no crew (driven
@@ -2407,7 +2680,21 @@ export default function NewRental() {
   /* ── §7–20 — client selection handlers. ───────────────────────────────── */
   const selectClient = useCallback((c: ClientRecord) => {
     setSelectedClientId(c.id)
-    if (c.pan) setGovId(c.pan)
+    /*
+     * ⛔ NR-14 — this was `if (c.pan) setGovId(c.pan)`, and the guard was the
+     * bug. Choosing a client with a PAN and then switching to one without left
+     * the FIRST client's PAN sitting in the field: the operator saw a filled
+     * Government ID / PAN box, the "Missing client ID or PAN" Critical stayed
+     * clear, and the document on screen belonged to somebody else.
+     *
+     * `?? ''` is not a new rule invented here — it is what the page's two other
+     * client-selection sites already do (`onClientCreated` below, and
+     * `AddClientModal`'s `onUseExisting` at the bottom of the file). Three
+     * client-selection paths write this field; two cleared it and one did not,
+     * which is the whole defect. They agree now, on the version that cannot
+     * carry a stale value.
+     */
+    setGovId(c.pan ?? '')
   }, [])
 
   /** §18 — auto-select the created client. The operator never searches for it. */
@@ -2472,6 +2759,10 @@ export default function NewRental() {
       // Client section, so that is where it goes.
       if (action === 'Select Client') jumpToSection('section-0')
       if (action === 'Open Dates') jumpToSection('section-1')
+      /* NR-10 — both equipment refusals settle in the Equipment section: one
+         wants a first item added, the other wants a sample row removed and
+         re-added from the live catalogue. Same destination, one verb. */
+      if (action === 'Open Equipment') jumpToSection('section-2')
       // A rejected crew role is settled where the crew is: remove the person,
       // or wait for the roster/enum mismatch to be ruled.
       if (action === 'Open Crew') jumpToSection('section-3')
@@ -2508,16 +2799,33 @@ export default function NewRental() {
   ]
   const reviewCompleteCount = reviewItems.filter((r) => r.ok).length
 
-  /** redesign v1 §5 — nothing is pre-generated on a Draft (§11). Quote,
-   *  Rental Agreement, Invoice and Delivery Note are client-facing and gain
-   *  a ✉ action (§7); Packing List is warehouse-internal and does not. */
-  const documentTiles: Array<{ n: string; from: string; ready: boolean; emailable: boolean }> = [
-    { n: 'Quote', from: 'Quote', ready: true, emailable: true },
-    { n: 'Rental Agreement', from: 'Confirmed', ready: false, emailable: true },
-    { n: 'Packing List', from: 'Preparing', ready: false, emailable: false },
-    { n: 'Delivery Note', from: 'Dispatched', ready: false, emailable: true },
-    { n: 'Invoice', from: 'invoice generated', ready: false, emailable: true },
-  ]
+  /*
+   * ⛔ NR-12 — `documentTiles` lived here and is gone. It listed five documents
+   * with a `ready` flag and a stage each becomes available at, and all three
+   * halves of that were invented:
+   *
+   *  1. `{ n: 'Quote', ready: true }` — "Available", on a booking that does not
+   *     exist. Nothing in this build generates a document of any kind:
+   *     `actions/documents/createDocument.ts` declares `implemented: false` and
+   *     has no caller in `src/` (its only mention is a comment in
+   *     `modules/documents/Documents.tsx`), `data/documents.ts` states it in
+   *     one line — "document storage, generation and delivery are unwired" —
+   *     and this page's own Send Quote menu already disables Download PDF with
+   *     "No PDF generator is connected in this build."
+   *  2. The `from` vocabulary — "At Confirmed", "At Preparing", "At Dispatched"
+   *     — is not this system's. `lib/workflow.ts` §1.2 has six statuses (Quote ·
+   *     Booked · Packed · On Rent · Returned · Closed); Confirmed, Preparing and
+   *     Dispatched are members of the RETIRED v1.x list that `§1.4`'s `RETIRED`
+   *     map exists to translate away, and the type holding them is deliberately
+   *     not exported so a retired stage cannot reach a component. These reached
+   *     one as string literals.
+   *  3. The ✉ on the Quote tile opened a client email whose body said the
+   *     document was attached. See the `DraftEmailModal` call site below.
+   *
+   * What replaces it is the true statement, in the same card, in the same rail
+   * position. `reviewItems`' Documents row is unchanged — it was already
+   * `ok: false`, and it still jumps here.
+   */
 
   /* ── §36–38 — the equipment table's columns, declared once so the header,
    *    the alignment and the empty-state colSpan cannot drift apart. ─────── */
@@ -2617,12 +2925,15 @@ export default function NewRental() {
             onChange={(n) => setLines((p) => p.map((x) => (x.id === l.id ? { ...x, qty: n } : x)))}
           />
         </td>
-        {/* §8.3 — Days is mandatory and explicit on every line, now a stepper. */}
+        {/* §8.3 — Days is mandatory and explicit on every line, now a stepper.
+            Editing it marks the line (NR-19): the booking's own length is
+            re-stamped onto lines that have not been set by hand, and this is
+            the hand. */}
         <td style={{ ...td, textAlign: 'right' }}>
           <Stepper
             value={l.days}
             label={`days for ${l.name}`}
-            onChange={(n) => setLines((p) => p.map((x) => (x.id === l.id ? { ...x, days: n } : x)))}
+            onChange={(n) => setLines((p) => p.map((x) => (x.id === l.id ? { ...x, days: n, daysOverridden: true } : x)))}
           />
         </td>
         {canBookingMoney && (
@@ -2824,27 +3135,38 @@ export default function NewRental() {
         <EmptyState title="Nothing is blocking this booking" description="Every requirement for Confirm Booking is met." />
       ) : (
         <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {blockingNotices.map((n) => (
-            <li key={n.text} style={{ padding: '8px 9px', borderRadius: 'var(--r-btn)', background: 'var(--st-danger-bg)' }}>
-              <div style={{ display: 'flex', gap: 7, alignItems: 'flex-start' }}>
-                <Icon name="error" size={13} style={{ color: 'var(--st-danger-fg)', flexShrink: 0, marginTop: 2 }} />
-                {/* The full sentence, never clipped — Law 12. */}
-                <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--st-danger-fg)', lineHeight: 1.4 }}>
-                  <span style={srOnly}>Blocking: </span>
-                  {n.text}
-                </span>
-              </div>
-              <button
-                type="button"
-                className="press"
-                onClick={() => runNoticeAction(n.action)}
-                style={{ position: 'relative', marginTop: 5, marginLeft: 20, minHeight: 26, padding: '0 8px', borderRadius: 'var(--r-btn)', border: '1px solid var(--st-danger-fg)', background: 'transparent', color: 'var(--st-danger-fg)', fontFamily: 'inherit', fontSize: 'var(--t-th)', fontWeight: 700, cursor: 'pointer' }}
-              >
-                <TouchInset />
-                {n.action}
-              </button>
-            </li>
-          ))}
+          {blockingNotices.map((n) => {
+            /* Hoisted so the guard below narrows it for the click handler too —
+               a property read would not stay narrowed inside the closure. */
+            const action = n.action
+            return (
+              <li key={n.text} style={{ padding: '8px 9px', borderRadius: 'var(--r-btn)', background: 'var(--st-danger-bg)' }}>
+                <div style={{ display: 'flex', gap: 7, alignItems: 'flex-start' }}>
+                  <Icon name="error" size={13} style={{ color: 'var(--st-danger-fg)', flexShrink: 0, marginTop: 2 }} />
+                  {/* The full sentence, never clipped — Law 12. */}
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--st-danger-fg)', lineHeight: 1.4 }}>
+                    <span style={srOnly}>Blocking: </span>
+                    {n.text}
+                  </span>
+                </div>
+                {/* NR-10 — a notice with nowhere to send the operator gets no
+                    button. The money-blind refusal is the one: its fix is another
+                    person, not another section, and `runNoticeAction` matches no
+                    branch for it, so a button here would do nothing at all. */}
+                {action !== undefined && (
+                  <button
+                    type="button"
+                    className="press"
+                    onClick={() => runNoticeAction(action)}
+                    style={{ position: 'relative', marginTop: 5, marginLeft: 20, minHeight: 26, padding: '0 8px', borderRadius: 'var(--r-btn)', border: '1px solid var(--st-danger-fg)', background: 'transparent', color: 'var(--st-danger-fg)', fontFamily: 'inherit', fontSize: 'var(--t-th)', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    <TouchInset />
+                    {action}
+                  </button>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
     </Card>
@@ -2952,36 +3274,15 @@ export default function NewRental() {
       </Card>
 
       {/* redesign v1 §6 — Documents also moved from Section 5 into the rail.
-          §11 — nothing is pre-generated on a Draft. */}
+          §11 — nothing is pre-generated on a Draft. NR-12: and nothing is
+          generated *after* one either, so the card says so rather than listing
+          five documents with an availability each. See the note where
+          `documentTiles` used to be built. */}
       <Card id="rail-documents" title="Documents">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {documentTiles.map((d) => (
-            <div
-              key={d.n}
-              title={d.ready ? `${d.n} is available now` : `${d.n} becomes available at ${d.from}`}
-              style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '6px 2px', fontSize: 'var(--t-meta)' }}
-            >
-              <Icon name="file" size={16} style={{ color: d.ready ? 'var(--link)' : 'var(--disabled)', flexShrink: 0 }} />
-              <span style={{ flex: 1, minWidth: 0, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.n}</span>
-              <span style={{ flexShrink: 0, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{d.ready ? 'Available' : `At ${d.from}`}</span>
-              {/* redesign v1 §5 — every client-facing document tile gains a ✉
-                  action once it is actually available; Packing List stays
-                  internal (documentTiles.emailable) and none fire on click. */}
-              {d.emailable && d.ready && (
-                <button
-                  type="button"
-                  className="press"
-                  aria-label={`Email ${d.n} to client`}
-                  onClick={() => setEmailDraftDoc(d.n)}
-                  style={{ position: 'relative', flexShrink: 0, width: 22, height: 22, display: 'grid', placeItems: 'center', borderRadius: 'var(--r-xs)', border: 'none', background: 'transparent', color: 'var(--link)', cursor: 'pointer' }}
-                >
-                  <TouchInset />
-                  <Icon name="mail" size={13} />
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
+        <EmptyState
+          title="No documents"
+          description="This booking has no documents: it has not been created, and no document — quote, agreement, packing list, delivery note or invoice — is generated anywhere in this build yet. There is nothing to open, download or send."
+        />
       </Card>
 
       {/* §54–56 — compact alerts. Severity is a labelled chip, not a colour;
@@ -3047,23 +3348,38 @@ export default function NewRental() {
         </p>
       </Card>
 
-      {/* §57 — Activity Timeline last. */}
+      {/* §57 — Activity Timeline last.
+
+          ⛔ NR-20 — this card listed two events, and neither had happened:
+
+           - `{ at: 'Just now', what: 'Draft created', who: 'by Ramesh Dulal' }`
+             — a literal, and demo data at that: that name is a seed CREW roster
+             member (`data/crew.ts`, CR-007, a Grip), not the person at the
+             keyboard, whom this component has had all along in `useAuth()`.
+             Worse than the wrong name is the event: no draft is created by this
+             page. `saveDraft` dispatches an action declared
+             `implemented: false`, so it rejects; the first row this screen can
+             write is the Quote `confirmBooking` creates, and that navigates
+             away.
+           - `'Items added'` counted the lines currently on screen and stamped
+             them "Just now" — a running total dressed as a past event, at an
+             instant nothing occurred.
+
+          Naming the real actor would not have fixed it: there is no event for
+          an actor to have performed. A booking's history begins when the
+          booking does, so this states that instead. The card is kept rather
+          than dropped — `WIREFRAME_RULINGS_2026-08-12.md` §1 keeps the rail
+          cards the wireframe does not draw, and the operator should find the
+          same rail here as on a saved booking.
+
+          `BookingDetail.tsx`'s own Activity Timeline says the matching thing
+          for a booking that DOES exist: `booking_stage_transitions` holds the
+          history and has no query module yet. */}
       <Card title="Activity Timeline">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {[
-            { at: 'Just now', what: 'Draft created', who: 'by Ramesh Dulal' },
-            { at: 'Just now', what: 'Items added', who: `${lines.length} line${lines.length === 1 ? '' : 's'}` },
-          ].map((t) => (
-            <div key={t.what} style={{ display: 'flex', gap: 9 }}>
-              <span aria-hidden style={{ width: 7, height: 7, borderRadius: 'var(--r-badge)', background: 'var(--link)', flexShrink: 0, marginTop: 5 }} />
-              <span style={{ minWidth: 0 }}>
-                <span className="figure" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{t.at}</span>
-                <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{t.what}</span>
-                <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{t.who}</span>
-              </span>
-            </div>
-          ))}
-        </div>
+        <EmptyState
+          title="No activity yet"
+          description="Nothing has happened to this booking — it has not been created. Its history starts at the moment it is confirmed, and is kept against the booking itself, not against this screen."
+        />
       </Card>
     </>
   )
@@ -3148,7 +3464,7 @@ export default function NewRental() {
         <StripCell
           label="Stage"
           value={`${status} · ${flag}`}
-          support={`${days} rental days · ${lines.length} items · ${crew.length} crew`}
+          support={`${days} rental ${dayWord} · ${lines.length} items · ${crew.length} crew`}
           style={canBookingMoney ? summaryDivider : undefined}
         />
         {canBookingMoney && (
@@ -3179,7 +3495,7 @@ export default function NewRental() {
             title={SECTIONS[0]}
             open={open[0] ?? true}
             onToggle={() => toggle(0)}
-            summary={client ? `${client.name} · ${days} days` : 'No client selected'}
+            summary={client ? `${client.name} · ${days} ${dayWord}` : 'No client selected'}
           >
             {/* §7–11 — one Client row: the searchable combobox, one control in
                 its trailing slot (add a client, or that client's health eye —
@@ -3285,7 +3601,7 @@ export default function NewRental() {
             summary={
               days === 0
                 ? 'Return must be later than pickup'
-                : `${pickupBs ? formatBs(pickupBs) : formatAd(new Date(pickup))} → ${days} days`
+                : `${pickupBs ? formatBs(pickupBs) : formatAd(new Date(pickup))} → ${days} ${dayWord}`
             }
           >
             <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(0,1fr)) auto', gap: 11, alignItems: 'start' }}>
@@ -3294,14 +3610,17 @@ export default function NewRental() {
                   `lib/bs.ts` is the one Date Engine — nothing here hand-writes
                   a BS date. */}
               <DateTimeField label="Out" dateValue={pickup} timeValue={pickupTime} onDateChange={setPickup} onTimeChange={setPickupTime} />
-              {/* §7 — return must be later than pickup. */}
+              {/* §7 — return must be later than pickup. NR-19: "later" is
+                  measured over the date AND the time, so a same-day booking is
+                  a booking and this no longer tells the operator to change a
+                  date that is already correct. */}
               <DateTimeField
                 label="Return"
                 dateValue={ret}
                 timeValue={returnTime}
                 onDateChange={setRet}
                 onTimeChange={setReturnTime}
-                error={days === 0 ? 'Return must be later than pickup. Pick a later return date.' : undefined}
+                error={days === 0 ? 'Return must be later than pickup. Change the return date or its time.' : undefined}
               />
               {/* §8.6 — an unset value is an em dash, never a zero. */}
               <div style={{ minWidth: 0, alignSelf: 'end', paddingBottom: 8 }}>
@@ -3984,7 +4303,44 @@ export default function NewRental() {
 
           {/* §58 — the footer reports the save state and nothing else. The one
               real Save Draft action lives in the header; a second large button
-              here read as a second primary and had to go. */}
+              here read as a second primary and had to go.
+
+              ⛔ NR-13 — two of the four branches claimed a save that had not
+              happened, and one of them named a store that does not exist:
+
+               - the default branch read **"All changes saved"**. `saveState`
+                 *initialises* to `'saved'`, so that sentence was on screen from
+                 first paint, before anything had been typed, on a page that
+                 persists nothing until Confirm Booking. Nothing on this screen
+                 writes a draft: `saveDraft` dispatches
+                 `actions/rentals/saveDraft.ts`, which declares
+                 `implemented: false`, and `createAction` fails closed on that
+                 flag (`actions/core.ts`), so the dispatch rejects today.
+
+                 Two code paths set `'saved'` after an attempt, not one:
+                 `saveDraft`'s `.then()` and `confirmBooking`'s success path.
+                 Neither can leave this sentence standing on an unsaved booking
+                 TODAY — the first is unreachable while the stub rejects, and
+                 the second navigates to `/rentals` and unmounts this line. But
+                 the first becomes reachable the moment `saveDraft` is
+                 implemented (NR-15), and at that point this branch must say
+                 something different again. Written down because the previous
+                 version of this note said `confirmBooking` was the only path
+                 and would have made that change look unnecessary.
+               - the `!online` branch read **"Offline · Changes saved locally"**.
+                 There is no local store: this file contains no `localStorage`,
+                 no `sessionStorage` and no IndexedDB write of any kind, and the
+                 booking lives entirely in React state in this tab.
+
+              So the default now states the true position — unsaved, tab-local —
+              and the offline case adds what offline actually changes here:
+              `createRental.execute` refuses outright when
+              `ctx.isOnline === false || navigator.onLine === false`, because a
+              create is one RPC and the outbox (`lib/dataAccess.ts`'s
+              `enqueueMutation`) queues table inserts and updates, nothing else.
+
+              `saving` and `error` are unchanged; both are genuinely reachable
+              (Save Draft rejects into `error`, and `confirmBooking` sets both). */}
           <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '0 2px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
             {saveState === 'saving' ? (
               <>
@@ -3999,15 +4355,15 @@ export default function NewRental() {
                 <Icon name="error" size={13} style={{ color: 'var(--danger-text)' }} />
                 <span style={{ color: 'var(--danger-text)', fontWeight: 600 }}>Not saved</span>
               </>
-            ) : !online ? (
-              <>
-                <Icon name="plug" size={13} style={{ color: 'var(--progress-text)' }} />
-                Offline · Changes saved locally
-              </>
             ) : (
+              /* Never colour alone — the words carry it, the glyph decorates. */
               <>
-                <Icon name="check" size={13} style={{ color: 'var(--success-text)' }} />
-                All changes saved
+                <Icon name={online ? 'info' : 'plug'} size={13} style={{ color: 'var(--text2)' }} />
+                <span style={{ lineHeight: 1.4 }}>
+                  <span style={{ fontWeight: 600, color: 'var(--text2)' }}>Not saved</span> — this
+                  booking exists only in this browser tab. It is written when you confirm it.
+                  {!online && ' You are offline, and confirming a booking is refused until you are back online.'}
+                </span>
               </>
             )}
           </div>
@@ -4140,6 +4496,14 @@ export default function NewRental() {
         isOpen={addClientOpen}
         onClose={closeAddClient}
         onCreated={onClientCreated}
+        /* NR-16 — the LIVE pool, the same one `ClientCombobox` above reads and
+           the same one `client` is resolved from. The prop's own doc explains
+           why it is filtered to `dbId`-confirmed rows inside the modal; what it
+           cannot do is filter a pool it was never handed. Dropping the old
+           `= CLIENTS_DATA` default without wiring this line left the check
+           running over `[]` — no false positives from seed rows, and no true
+           positives either. */
+        clients={clientPool}
         /* The modal closes itself after this fires — do not close it here too. */
         onUseExisting={(c) => {
           setSelectedClientId(c.id)
@@ -4147,19 +4511,35 @@ export default function NewRental() {
         }}
       />
 
-      {/* redesign v1 §5 — draft-only. Fired from the Send Quote split button
-          and each rail Documents tile's ✉ action. The modal's send control is
-          Unavailable with a named reason (no email backend exists in this
-          build), so this call site no longer answers a send that cannot
-          happen — the "Email queued" toast it used to fire here was a success
-          for a write that never landed. */}
+      {/* redesign v1 §5 — draft-only. Fired from the Send Quote split button.
+          (The rail Documents tiles that also raised it are gone — NR-12.) The
+          modal's send control is Unavailable with a named reason (no email
+          backend exists in this build), so this call site no longer answers a
+          send that cannot happen — the "Email queued" toast it used to fire
+          here was a success for a write that never landed.
+
+          ⛔ NR-12, the serious half — the prefilled body read "Please find the
+          {document} for your booking attached." No document is attached and
+          none can be: nothing in this build generates one (see the note where
+          `documentTiles` was built), and this modal has no attachment control
+          at all — `DraftEmailModal`'s props are to / subject / body. An
+          operator who copied that draft into their own mail client would have
+          told a client to look for an attachment that does not exist. The body
+          now says what is true, and says it in brackets so it reads as a note
+          to the operator rather than a sentence to leave in. */}
       <DraftEmailModal
         isOpen={emailDraftDoc !== null}
         onClose={() => setEmailDraftDoc(null)}
         documentName={emailDraftDoc ?? ''}
         toEmail={client?.email ?? ''}
         subject={`${emailDraftDoc ?? 'Document'} — ${client?.name ?? 'New Rental'}`}
-        body={`Dear ${client?.name ?? 'Client'},\n\nPlease find the ${emailDraftDoc ?? 'document'} for your booking attached.\n\nRegards,\nBabin Rentals`}
+        body={
+          `Dear ${client?.name ?? 'Client'},\n\n` +
+          `This is about the ${emailDraftDoc ?? 'document'} for your booking with Babin Rentals.\n\n` +
+          `[Nothing is attached to this draft — ${emailDraftDoc ?? 'document'} documents are not generated by this system yet. ` +
+          `Write the details in below, or attach your own copy, and delete this note.]\n\n` +
+          `Regards,\nBabin Rentals`
+        }
       />
 
       {/*

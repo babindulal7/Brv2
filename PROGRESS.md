@@ -2,6 +2,88 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-05 (cont. 2) — New Rental stops claiming work it did not do
+
+**Phase:** Phase 0 · **Status:** 8 register items closed · 2 filed · 3 rulings raised
+
+NR-10, NR-12, NR-13, NR-14, NR-16, NR-17, NR-19, NR-20 — chosen as a set because they share
+one defect, not one file: **the page reported work that had not happened.**
+
+### What it was claiming
+
+- The footer read **"All changes saved"** from first paint. `saveState` *initialises* to
+  `'saved'`, and nothing on this screen persists anything — there is no localStorage,
+  sessionStorage or IndexedDB in the file, and `saveDraft` is an `implemented: false` stub.
+  Offline it went further: "Changes saved locally", naming a store that does not exist.
+  It now reads *"Not saved — this booking exists only in this browser tab. It is written when
+  you confirm it."*
+- The Activity Timeline credited **"Draft created · by Ramesh Dulal"**. Worth correcting my own
+  framing: that is not a name from nowhere — it is a seed crew member (CR-007, a Grip) standing
+  in for the operator. Naming the real signed-in user would not have fixed it either, because
+  there is no event: no draft is created by this page at all, and "Items added" was the current
+  line count dressed as a past event at an invented instant.
+- The ✉ action prefilled **"Please find the {document} for your booking attached"** — on a modal
+  with no attachment control, for a document nothing in this build generates. The block's
+  "At Confirmed / Preparing / Dispatched" vocabulary turned out to be the **retired v1.x stage
+  list**, deliberately unexported from `lib/workflow.ts` so it could not reach a component.
+- Add Client collected six fields, dropped them, and showed "Credit limit Rs X" as stored.
+- The blocking card said nothing was wrong while the next press of Confirm failed inline.
+- A same-day 09:00→18:00 booking was **refused for being zero days long**, though `createRental`
+  would have accepted it.
+
+### NR-17 — the research was the work
+
+Three of the six fields are storable and are now sent (`clientType` → `type_parent`,
+`pan` → `pan_vat`, `notes`). Three are not: **there is no contact column on `clients` at all**
+(a contact is a row in `client_contacts`), and credit limit and payment terms are, in
+`0005_clients.sql`'s own words, "written ONLY by an Approved `client_commercial_overrides` row".
+
+Sending the type forced one addition rather than allowing one: CHECK `clients_org_subtype_pairing`
+requires `org_subtype` for an Organisation, and this dialog *defaults* to Organisation — so
+sending the type without it would have converted a silent drop into a hard save failure on the
+default path. The Organisation Type select was copied from the existing full-page Add Client
+screen, options and default, so nothing was invented.
+
+### Two half-fixes, both caught by review
+
+Recording these because they are the same shape as last batch's, and the review lens is now
+paying for itself three batches running.
+
+- **NR-16 was briefly made worse.** Removing `AddClientModal`'s `clients = CLIENTS_DATA` default
+  was right — the seed is not the client list — but the one call site was never wired to pass
+  the live pool. `clients` was then `undefined` on every render, `confirmedClients(undefined)`
+  returned `[]`, and duplicate-phone detection **could not fire at all**: no false positives from
+  seed rows, and no true positives either. All three reviewers found it independently.
+- **NR-19's fix broke availability for the booking it unblocked.** The length was taught about
+  the times, but `bookingWindow` still differenced the two `YYYY-MM-DD` values — and
+  `itemCatalogue.ts`'s `validWindow` returns `null` for `to <= from`. So the same-day booking
+  Confirm now accepts was the booking availability could not be answered for, and every unit
+  fell back to its unwindowed reading, silently. The window is built from the same two instants
+  as the length now.
+
+Three comments in the batch's own diff were also false and are rewritten: a regex documented as
+having two callers that has one; a claim that `confirmBooking` is the only path to
+`saveState === 'saved'` when `saveDraft`'s resolved path is a second; and a prop doc still
+promising pricing rules and payment terms that the same change had just stopped sending.
+
+### Filed
+
+- **NR-27** — **not one payment-terms option the operator can pick is storable.** The UI offers
+  `Due on Pickup · Due on Return · Net 7 · Net 15 · Net 30 · Prepaid · Custom`; the enum is
+  `Immediate · 7 days · 15 days · 30 days`. The two sets share no member. Latent today because
+  nothing sends the field — a trap laid for whoever wires that write.
+- **NR-28** — "Government ID / PAN" is labelled for two columns and sent as one.
+
+Also fixed in passing: three summaries read **"1 days"**. Pre-existing, but NR-19 made it the
+page's opening state — a fresh booking defaults to one date, which used to measure 0 days
+(grammatical by luck) and now correctly measures 1.
+
+**Verified:** tsc clean; eslint clean; **full suite 116 files / 2543 tests**; driven in the mock
+build — footer reads "Not saved…", Activity Timeline reads "No activity yet", Documents reads
+"no document … is generated anywhere in this build yet", Blocking notices shows 2 with jump
+actions and Confirm disabled, and a default same-day booking reads "1 rental day" with
+"Availability shown for this booking's dates · 1 day". Console clean.
+
 ## 2026-09-05 — WH-P1: the Transfer Center reads the database; the cards stay seeded, on purpose
 **Phase:** inventory · **Status:** built, tested, driven · **Filed:** PLAN.md §4.45(c)
 
