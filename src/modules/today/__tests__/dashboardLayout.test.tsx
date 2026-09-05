@@ -187,8 +187,8 @@ describe("phone — the filter row follows the segment and arrives CLOSED", () =
     expect(outTrigger?.getAttribute('aria-expanded')).toBe('true')
     await clickBooked()
 
-    /* Switch to In. */
-    const inSegment = buttons().find((b) => (b.textContent ?? '').replace(/\s+/g, '') === 'In0')
+    /* Switch to Returns (the segment was "In" until the 5 Sep rename). */
+    const inSegment = buttons().find((b) => (b.textContent ?? '').replace(/\s+/g, '') === 'Returns0')
     expect(inSegment).toBeDefined()
     await act(async () => {
       inSegment?.click()
@@ -204,7 +204,7 @@ describe("phone — the filter row follows the segment and arrives CLOSED", () =
     expect(buttons().some((b) => (b.getAttribute('aria-label') ?? '').startsWith('Clear incoming'))).toBe(false)
 
     /* And Outgoing still remembers ITS chip when the operator returns. */
-    const outSegment = buttons().find((b) => (b.textContent ?? '').replace(/\s+/g, '') === 'Out0')
+    const outSegment = buttons().find((b) => (b.textContent ?? '').replace(/\s+/g, '') === 'Pickups0')
     await act(async () => {
       outSegment?.click()
     })

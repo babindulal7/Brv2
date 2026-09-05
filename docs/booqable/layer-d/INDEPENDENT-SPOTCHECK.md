@@ -9,13 +9,39 @@ mode is confident fabrication, and a verification document is exactly the artifa
 be hardest to notice: it *looks* like evidence. So the register's most consequential findings were
 re-derived from scratch, without reading its per-screen files first, and compared afterwards.
 
-**Result: every claim checked holds.** One apparent discrepancy turned out to be the checker's own
+**Result: four of six hold; two went stale — see the correction banner above.** One apparent discrepancy turned out to be the checker's own
 misreading, and it is recorded below rather than quietly dropped, because the correction is itself
 worth knowing.
 
 ---
 
-## 1. The "zero importers" findings — all confirmed
+> ## ⛔ CORRECTED 4 Sep 2026 — two of the six claims below are FALSE as of today
+>
+> This document asserted *"every claim checked holds"* for six "zero importer" findings. **Two do not.**
+> Re-checked 4 Sep with a binary-safe grep:
+>
+> | Module | This doc said | Actual, 4 Sep |
+> |---|---|---|
+> | `lib/queries/facetCounts.ts` | zero callers ✅ | **1 caller** — `modules/rentals/RentalsList.tsx:27,563` |
+> | `lib/queries/bundles.ts` | zero importers ✅ | **live chain** — `queries/bundleRecords.ts:3` → `useBundles.ts` + `mock/engine.ts` |
+>
+> **Both were true when the Layer D pass ran on 31 Aug.** `useFacetCounts` was wired into `/rentals` on
+> **1 Sep** (`9c81017`); `bundleRecords.ts` is **untracked**, created by a concurrent session on 4 Sep.
+> So the register's 31 Aug verdicts were correct *at the time* — the error is this document's, for
+> re-asserting them on 4 Sep as freshly verified.
+>
+> **The remaining four still hold** (re-checked 4 Sep): `kpiEngine` 0 · `bookingQuery` 0 ·
+> `fetchCanonicalBooking` 0 · `auditForRecord` 0.
+>
+> **Why it slipped through, and the rule that follows.** The re-check's grep returned a **false
+> negative** — the same pattern finds `RentalsList.tsx` today, so binary detection is not the
+> explanation and no root cause was established. That is precisely why it is dangerous: a `0` from a
+> grep is indistinguishable from a `0` from a broken grep. **Never publish a "zero callers" claim
+> without a positive control** — grep for a string you know exists in the same run, and treat the
+> claim as unverified if the control does not fire. And re-date every such finding: in this repo a
+> "dead module" claim has a shelf life of days, because a concurrent session wires things.
+
+## 1. The "zero importers" findings — four of six still hold
 
 The register's finding #4 names a repeating pattern: *the fully-built, fully-tested, entirely unwired
 module.* This is the highest-value claim in the document, because it is what makes v2.5's
@@ -25,10 +51,10 @@ own file and its `__tests__`:
 | Module | Register says | Independently found | Verdict |
 |---|---|---|---|
 | `lib/kpiEngine.ts` | zero importers | **0** | ✅ |
-| `lib/queries/facetCounts.ts` | zero callers | **0** | ✅ |
+| `lib/queries/facetCounts.ts` | zero callers | **0** | ⛔ **STALE** — 1 caller since 1 Sep |
 | `lib/bookingQuery.ts` (2,568 lines) | zero callers | **0** | ✅ |
 | `fetchCanonicalBooking` | zero call sites outside its own test | **0** | ✅ |
-| `lib/queries/bundles.ts` | zero importers | **0** | ✅ |
+| `lib/queries/bundles.ts` | zero importers | **0** | ⛔ **STALE** — live via `bundleRecords.ts` |
 | `auditForRecord()` | zero callers | **0** | ✅ |
 
 **The one worth pausing on is `bookingQuery.ts`.** It is 2,568 lines and it is the implementation of
@@ -37,7 +63,9 @@ own file and its `__tests__`:
 than either "done" or "not done", and it is not what a reader of v2.5 §10.6 would conclude.
 
 **The operational rule the register draws from this is correct and worth repeating:** before citing
-any module as "we already do X", grep for its importers.
+any module as "we already do X", grep for its importers — **and the converse, which this document
+got wrong: before citing one as dead, grep again, today, with a positive control.** Two of the six
+above were wired by another session within days of being recorded as dead.
 
 ## 2. `/calendar` has no data layer — confirmed
 

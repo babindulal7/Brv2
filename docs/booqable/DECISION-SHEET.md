@@ -65,7 +65,12 @@ several of this pack's corrections may already be incorporated in it.
 
 ---
 
-### B2. Do booking list rows carry the rental total?
+### ~~B2. Do booking list rows carry the rental total?~~ — ✅ **RULED 5 Sep 2026: deposits only; total deferred.**
+
+> Babin's answer, in-session: **keep what is built — deposits via the masked view `bookings_deposit_v` behind
+> `useCanViewMoney()` — and defer the rental total until the canonical engine can produce one.** Decided
+> once, for all lists. No column is added; no engine is commissioned. `CanonicalEngineInput` typing `crew`,
+> `transport`, `vatPercent`, `payments` as `null` stays the recorded blocker under any future 'yes'.
 
 **Unblocks:** `/rentals`' columns, the Dashboard rows, and every future list of bookings. The spec
 asks for this to be decided **once, for all lists**, and that is right.
@@ -113,7 +118,12 @@ one people did read costs a daily glance they now have to hunt for.
 
 ---
 
-### B4. Should `Coming back` include same-day returns?
+### ~~B4. Should `Coming back` include same-day returns?~~ — ✅ **RULED 5 Sep 2026: rename, do not widen.**
+
+> Babin's answer, in-session: **leave `todaysIncoming` alone and retitle the panel to what it does.** The
+> query stays `stage ['On Rent']` with `actual_return_at` null — 'still out', not 'due back today'. The
+> label in `Today.tsx` (`'Incoming today'` / `` `Incoming · ${period}` ``) becomes **'Still out today'** /
+> **`Still out · ${period}`**. No query change, no test of the filter set changes.
 
 **Unblocks:** `todaysIncoming`, and the honesty of the Dashboard's second panel.
 

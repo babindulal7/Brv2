@@ -88,6 +88,85 @@ work — 68 errors in `src/data/warehouse.ts` (dirty) and its consumer, and a To
 mid-edit. **Zero errors in any file I touched.** Nothing here has been applied to live: `0089`,
 `0090`, `0091` and `0092` all wait on the Step 0 dump.
 
+## 2026-09-05 — Four in-session rulings; Dashboard "Still out"; New Rental shows what a bundle add did
+**Phase:** Phase 4/5 — UX · **Status:** built and driven; committed 5 Sep (the commit carrying this entry)
+
+### Ruled (Babin, in-session, 5 Sep)
+- **D1 sizing** — run `scripts/booqable-cost-audit.mjs` against live Booqable. **Blocked on
+  `BOOQABLE_TOKEN`**: not set at user or process level when checked, so not run. Set it with
+  `setx BOOQABLE_TOKEN <token>` + `setx BOOQABLE_COMPANY babin-rentals` (user-level, so a new
+  process sees it) and it runs. Read-only, ~10–20 GET calls.
+- **B2 money on list rows** — deposits only, via the masked `bookings_deposit_v` behind
+  `useCanViewMoney()`; the rental total waits for an engine that can compute one. Decided once for
+  all lists. Recorded in `docs/booqable/DECISION-SHEET.md`.
+- **B4 Dashboard second panel** — rename, do not widen. `todaysIncoming` untouched.
+- **Next build** — the bundle notice on New Rental (below).
+
+### Did
+1. **Dashboard: "Incoming" → "Still out"** (`modules/today/Today.tsx`). KPI label `'Still out today'` /
+   `` `Still out · ${period}` ``, list title `on('Still out')`, naming comment extended with the ruling.
+   The query positively excludes anything already returned, so the panel answers "what is still out",
+   and now says so. **Phone segments `Out | In` → `Pickups | Returns`** — an "In" segment beside a
+   panel called "Still out" read as a contradiction; the new labels name the rows, matching the
+   list's own `noun="returns"`. Reversible; flagged here because the ruling covered the title only.
+2. **New Rental: the bundle notice** (`modules/rentals/NewRental.tsx`, +75). `AddBundleResult` already
+   carried `notes` — *"sentences the UI shows verbatim, never a silent behaviour"* — plus `skipped`,
+   `savingPct`; `addDrafts` dropped `source.bundle` on the floor. Now: `bundleNotice` state (declared
+   before `addDrafts`, no use-before-define), set from `source.bundle` on every add, rendered as a
+   `role="status"` block above the lines table — bundle name, each engine note verbatim, skipped
+   components grouped one line per reason, and a `<Button variant="ghost">` Dismiss. `inlineInfoStyle`
+   is `inlineErrorStyle`'s muted sibling (`--text2`, never red). Information, not error — Law 12.
+3. `dashboardLayout.test.tsx` pins `'In0'`/`'Out0'` (label + count) → `'Returns0'`/`'Pickups0'`.
+
+### Verified — driven on the mock build at 1440×900 as Owner
+- Dashboard renders **"Still out today"** (KPI) and **"Still out Today"** (list title); zero
+  "Incoming" leftovers in `main`.
+- New Rental: client picked → bundle "Aputure 600D Pro Lighting Kit · Rs 16,000/day" added via the
+  inline combobox (`placeholder^="Search name, SKU"`; there is no button since `e6c306e`) → **9
+  items** → notice present: *"9 component lines from Aputure 600D Pro Lighting Kit (BND-14), 1 day
+  each."* and *"Components are added at their own daily rates. The bundle rate is **18%** lower than
+  the sum of parts — apply that in Pricing if it is being honoured."* Title colour `rgb(28,30,34)` =
+  `--text`, not danger. **Dismiss measures 44px** (Law 15). Gone after dismiss. Console clean.
+- ⚠ **Corrects an earlier claim of mine.** I had said six components were "skipped". Nothing was:
+  the panel's "15 items" is **units** across 9 lines (2+2+2+4+1+1+1+1+1), and `skipped` was empty. The
+  Rs 16,000 → 19,500 gap is entirely the unapplied 18% saving, which the notice now states. The
+  grouped-skipped render is **not exercised in-browser**: re-adding a bundle whose components are
+  all present is a no-op by design (`AddItemPanel.tsx:318` returns before `onAdd` when
+  `result.lines` is empty). It typechecks; reachable via a partial overlap.
+- Gates: **targeted vitest** (`modules/today`, `modules/rentals`, `components/shell`, `nav`) —
+  **270/271 → after the pin fix, `dashboardLayout.test.tsx` 6/6**; full suite not re-run.
+  **`tsc --noEmit`: exit 2 at 02:50 (four errors, none mine) → exit 0 at 03:08.** The four were
+  `modules/inventory/Warehouses.tsx:1804–1808` — `selected.occupancy` / `.capacity` / `.availableSpace`
+  typed `number | null`. **Pinned:** `selected` is `WAREHOUSES.find(…)` from `src/data/warehouse.ts`
+  (`occupancy: number`, last committed 12 Aug), whose **mtime is 02:52:33** — the other session rewrote
+  it to HEAD content two minutes after my run, in the same second it created the untracked
+  `src/lib/queries/warehouses.ts` (header: occupancy/capacity stay seeded, §4.45(c)). The red was that
+  session's in-flight copy of `data/warehouse.ts`, since withdrawn — not a committed regression. The
+  03:08 re-run is green against a tree that includes its now-dirty `Warehouses.tsx` (+23 lines) and
+  its `a25d5d5` commit (03:00, migrations 0091/0092 + `CreateInvoiceModal` — no file of mine).
+  `Today.tsx` and `NewRental.tsx` contribute **0** errors.
+- Four zero-byte untracked files sit at the repo root (`0`, `100`, `MAX_EVENTS_PER_SESSION)`, `new`;
+  3–5 Sep) — shell-redirect accidents. No command in this session's transcript contains those
+  literals, so they are not mine; left in place, not `git add`-able by accident (untracked).
+
+### Found — harness
+- Every JS timeout this session was the pane being a **hidden document** (`document.hidden: true`)
+  on a fresh server: the ~5,800-line New Rental chunk's first transform exceeds the 45 s cap, and a
+  hidden pane may not paint. It *does* finish — the same probe succeeded minutes later. Poll for the
+  `h1` in a short call of its own, then act in separate short calls; never front-load a boot wait.
+- The Dashboard segments carry counts, so match `/Returns/`, never `^Returns$`.
+
+### Committed (on request, 5 Sep ~04:00)
+Eight files, every diff re-read as mine-only before staging: `Today.tsx` +12/−5 · `NewRental.tsx`
++78/−0 (the earlier "+75" was a miscount) · `dashboardLayout.test.tsx` +3/−3 · `DECISION-SHEET.md`
++12/−2 · the 4 Sep doc corrections that had never landed — `CAPTURE-BACKLOG.md` +8/−3,
+`CORRECTIONS.md` +4/−2, `layer-d/INDEPENDENT-SPOTCHECK.md` +33/−5 — and `PROGRESS.md` carrying this
+entry plus "2026-09-04 (cont. 5)". `PROGRESS.md` was **not** staged from the tree: the tree copy holds
+the other session's entries in a different order than HEAD plus its uncommitted WH-P1 entry, so the
+index blob was built as HEAD + my two entries inserted (checked: HEAD ⊂ index, index − HEAD == my
+entries, tree − index == their WH-P1 entry). Left unstaged, theirs: `PLAN.md`, `mock/corpus.ts`,
+`Warehouses.tsx`, untracked `queries/warehouses.ts`, `users`, four zero-byte root files.
+
 ## 2026-09-04 (cont.) — PR-P0: Purchase Requests reads the database
 **Phase:** inventory · **Status:** built, tested, driven
 
@@ -535,6 +614,51 @@ this work: another session's in-flight edits removed `NOW_AD` from `src/data/tod
 `getClientRecordByCode` from `lib/queries/clients`. To prove that, I re-verified these changes
 alone on a clean worktree at HEAD — `eslint` 0, my tests green, and the only failing file there
 is `clientsQuery.test.ts`, which is theirs.
+
+## 2026-09-04 (cont. 5) — Two of my own "dead module" findings were stale; documents corrected
+**Phase:** correction (docs only, no code) · **Status:** complete
+
+### Did
+Went to wire `facetCounts.ts` to `/rentals` — the job this session's own notes called "the best next
+piece of code." **It is already wired.** `RentalsList.tsx:27` imports `useFacetCounts` and `:563`
+calls it for the status group. Checked the rest of the "zero importer" set and corrected every
+document that repeated a stale finding.
+
+### Found — 2 of 6 findings false, and I published them today as verified
+
+| Module | Claimed | Actual, 4 Sep | When it changed |
+|---|---|---|---|
+| `lib/queries/facetCounts.ts` | zero callers | **1** — `RentalsList.tsx:27,563` | wired **1 Sep**, `9c81017` |
+| `lib/queries/bundles.ts` | zero importers | **live chain** — `bundleRecords.ts:3` → `useBundles.ts`, `mock/engine.ts` | `bundleRecords.ts` created **4 Sep**, still untracked |
+| `lib/kpiEngine.ts` | zero importers | **0** — holds | — |
+| `lib/bookingQuery.ts` | zero callers | **0** — holds | — |
+| `fetchCanonicalBooking` | zero call sites | **0** — holds | — |
+| `auditForRecord()` | zero callers | **0** — holds | — |
+
+**Both were TRUE when the Layer D pass ran on 31 Aug.** The defect is not the original finding — it
+is that `layer-d/INDEPENDENT-SPOTCHECK.md` re-asserted them on 4 Sep as independently re-derived,
+and its re-check grep returned a **false negative**. The same pattern finds `RentalsList.tsx` today,
+so binary detection is not the explanation and **no root cause was established**. That is what makes
+it dangerous: a `0` from a working grep and a `0` from a broken one are indistinguishable.
+
+### Ruled — method, and it is the second time this session's rule has been proved by breaking it
+**Never publish a "zero callers / dead module" claim without a positive control** — in the same run,
+grep for a string known to exist; if the control does not fire, the claim is unverified, not zero.
+And **date every such finding**: in this repo a dead-module claim has a shelf life of days, because a
+concurrent session wires things. `v25-layer-d-is-28-percent` already said "grep for callers before
+believing 'we already do X' **or** 'we don't have X'" — I followed it on 31 Aug and not on 4 Sep.
+
+### Corrected
+- `docs/booqable/layer-d/INDEPENDENT-SPOTCHECK.md` — correction banner; §1 heading "all confirmed" →
+  "four of six still hold"; both rows marked ⛔ STALE; "every claim checked holds" → "four of six".
+- `docs/booqable/CORRECTIONS.md` §7 — "completely unwired" now dated to 31 Aug, with the 1 Sep wiring.
+- `docs/booqable/CAPTURE-BACKLOG.md` — §4's facetCounts claim superseded; the separate "third
+  fully-built, fully-unwired query module" line about `queries/bundles.ts` corrected in place.
+
+### Not done
+The facet-counts wiring itself — it was the premise of the task and it does not need doing. What
+remains is genuinely narrower: `/rentals`' **status group has counts; its other filter groups do
+not**. That is a smaller, real piece of work, not the "engine is dead" story I had been telling.
 
 ## 2026-09-04 (cont. 4) — Calendar: from 100% seed to the bookings it can honestly draw
 **Phase:** UI · data layer · **Status:** built, reviewed three ways, blockers fixed, driven

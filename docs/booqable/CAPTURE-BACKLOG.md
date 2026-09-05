@@ -138,8 +138,11 @@ findings are in §7. Each line below carries its own verdict split.
       [`layer-d/bundles-store.md`](layer-d/bundles-store.md). §18.1 invents
       **`bundle_items.component_price`** — `bundle_items` has 10 columns and **not one** carries a
       rate, discount or price. Treat it the way `CORRECTIONS.md` treats §2.4: an invented Layer D name
-      that must not reach a migration. `src/lib/queries/bundles.ts` is a third fully-built,
-      fully-unwired query module.
+      that must not reach a migration. `src/lib/queries/bundles.ts` was a third fully-built,
+      fully-unwired query module **as of 31 Aug — no longer true.** A concurrent session added
+      `queries/bundleRecords.ts` (untracked, 4 Sep) which imports `listBundlesWithItems` from it, and
+      that is reached by `useBundles.ts` and `mock/engine.ts`.
+
 - [x] §19 Collections, Settings ▸ Emails, Contract document — done 31 Aug, 19 claims: 2 CONFIRMED /
       1 WRONG-NAME / 7 GAP / 8 MISLEADING / 1 UNVERIFIABLE, see
       [`layer-d/collections-emails.md`](layer-d/collections-emails.md). Migration
@@ -211,7 +214,9 @@ them.**
 
 - [x] **"true faceting vs base-scope counts"** — already faceted, and by the better rule.
       `src/lib/queries/facetCounts.ts` counts each option **with its own group's selection removed**,
-      so a group can be widened, not only narrowed. **But it is completely unwired:** `countFacet` is
+      so a group can be widened, not only narrowed. ⛔ **Superseded 4 Sep:** `useFacetCounts` was wired into `/rentals` on **1 Sep** (`9c81017`,
+      `RentalsList.tsx:27,563`) — its status group now renders counts. The remaining gap is narrower:
+      the other filter groups still do not. **As of 31 Aug it was completely unwired:** `countFacet` was
       imported only by its own test, `useFacetCounts` has no caller in `src/`, and the count-rendering
       `FilterOptionList` is mounted only in its own test. **No screen shows an option count today.**
       A.3's `booking_facets(filters)` RPC is a reasonable later step — confirmed absent from all 72

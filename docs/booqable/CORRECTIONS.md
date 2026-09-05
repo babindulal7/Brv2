@@ -205,8 +205,10 @@ constrains.
 So **§9.8 open decision 2 is already answered in code, in the more useful direction.** Do not
 re-open it.
 
-**But the real gap is elsewhere, and the spec missed it.** The engine is built and **completely
-unwired**:
+**But the real gap is elsewhere, and the spec missed it.** The engine was built and, on 31 Aug,
+**completely unwired**:
+
+> ⛔ **Superseded 4 Sep 2026.** `useFacetCounts` was wired into `/rentals` on **1 Sep** (`9c81017`, `RentalsList.tsx:27,563`), so the "unwired" finding below is TRUE ONLY AS OF 31 AUG. The remaining gap is narrower: the status group has counts, other groups do not. See `layer-d/INDEPENDENT-SPOTCHECK.md`.
 
 - `countFacet` is imported by exactly one file: `src/lib/queries/__tests__/facetCounts.test.ts:9`.
 - `useFacetCounts` has **no caller anywhere in `src/`**.

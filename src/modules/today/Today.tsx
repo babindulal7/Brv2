@@ -389,8 +389,8 @@ function MoreFilters({
  * control is the locked alternative.
  */
 const SEGMENTS = [
-  { key: 'out', label: 'Out' },
-  { key: 'in', label: 'In' },
+  { key: 'out', label: 'Pickups' },
+  { key: 'in', label: 'Returns' },
 ] as const
 
 type Segment = (typeof SEGMENTS)[number]['key']
@@ -702,7 +702,7 @@ export default function Today() {
       note: 'Booked and Packed',
     },
     {
-      label: period === 'Today' ? 'Incoming today' : `Incoming · ${period}`,
+      label: period === 'Today' ? 'Still out today' : `Still out · ${period}`,
       value: countOf(returns, returns.rows.length),
       icon: 'return_arrow',
       accent: 'progress',
@@ -759,9 +759,16 @@ export default function Today() {
   ], [active])
 
   /*
-   * The lists title themselves "Outgoing today" / "Incoming today". That is only
+   * The lists title themselves "Outgoing today" / "Still out today". That is only
    * true while the period *is* Today — a heading that keeps saying "today" over
    * tomorrow's rows is the one way this layout could mislead.
+   *
+   * "Still out", not "Incoming" (ruled 5 Sep 2026): `todaysIncoming` positively
+   * excludes anything already returned, so this list answers "what is still
+   * out", never "what was due back". The title says what the rows are; the
+   * query was deliberately left alone. The phone segments follow the same
+   * rule — "Pickups" / "Returns" name the rows, where "Out" / "In" had read as
+   * a contradiction beside a panel called "Still out".
    */
   const on = (noun: string) => (period === 'Today' ? `${noun} Today` : `${noun} · ${period}`)
   const phrase = PERIOD_PHRASE[period]
@@ -783,7 +790,7 @@ export default function Today() {
 
   const incoming = (
     <MovementList
-      title={on('Incoming')}
+      title={on('Still out')}
       badge={`${countOf(returns, overdueReturns)} Overdue`}
       badgeStatus="danger"
       list={returns}

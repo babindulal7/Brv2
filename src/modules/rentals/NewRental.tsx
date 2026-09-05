@@ -268,6 +268,18 @@ const inlineErrorStyle = {
   lineHeight: 1.4,
 } as const
 
+/** Informational sibling of `inlineErrorStyle` — same shape, muted, never red. */
+const inlineInfoStyle = {
+  margin: 0,
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: 7,
+  fontSize: 'var(--t-meta)',
+  fontWeight: 500,
+  color: 'var(--text2)',
+  lineHeight: 1.4,
+} as const
+
 /**
  * A transparent 44×44 hit area centred on a control that is visually smaller.
  * The touch minimum applies on desktop too, and inflating a table's remove
@@ -1931,7 +1943,26 @@ export default function NewRental() {
   /* ── §24 / §34 — the Add Item panel hands back ready lines; the page appends
    *    them and every existing pricing / availability path recomputes as it
    *    already did. Nothing about how a line is priced changed (§67). ─────── */
+  /**
+   * What the last bundle add did and did not do — the engine's own sentences
+   * (`AddBundleResult.notes` / `skipped`, itemCatalogue.ts), which this page used
+   * to drop on the floor: an operator picked a bundle advertised at one rate and
+   * saw fewer lines at a higher total with nothing on screen saying why. Shown
+   * inline above the lines table; cleared by the next add or by the operator.
+   * Information, not an error — no toast, no red (Law 12).
+   */
+  const [bundleNotice, setBundleNotice] = useState<{
+    name: string
+    notes: readonly string[]
+    skipped: ReadonlyArray<{ model: string; reason: string }>
+  } | null>(null)
+
   const addDrafts = useCallback((drafts: readonly BookingLineDraft[], source: AddItemSource) => {
+    setBundleNotice(
+      source.kind === 'bundle' && source.bundle
+        ? { name: source.name, notes: source.bundle.notes, skipped: source.bundle.skipped }
+        : null,
+    )
     setLines((prev) => {
       const have = new Set(prev.map((l) => l.id))
       const fresh = drafts
@@ -3365,6 +3396,53 @@ export default function NewRental() {
                 ? `${conflictLines.length} conflict${conflictLines.length > 1 ? 's' : ''} — ${conflictLines[0]?.name} is ${conflictLines[0]?.status}${conflictLines[0]?.committedTo !== '—' ? ` (${conflictLines[0]?.committedTo})` : ''}`
                 : 'All items available for the selected dates. No conflicts found.'}
             </div>
+
+            {bundleNotice && (
+              <div
+                role="status"
+                aria-live="polite"
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                  padding: '8px 10px',
+                  marginBottom: 8,
+                  borderRadius: 'var(--r-card)',
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                <p style={{ ...inlineInfoStyle, fontWeight: 600, color: 'var(--text)' }}>
+                  <Icon name="info" size={13} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span>{bundleNotice.name}</span>
+                </p>
+                {bundleNotice.notes.map((n) => (
+                  <p key={n} style={inlineInfoStyle}>
+                    <span aria-hidden="true" style={{ flexShrink: 0 }}>·</span>
+                    <span>{n}</span>
+                  </p>
+                ))}
+                {/* One line per reason, models joined — the engine's reason text verbatim. */}
+                {Array.from(
+                  bundleNotice.skipped.reduce((m, x) => {
+                    m.set(x.reason, [...(m.get(x.reason) ?? []), x.model])
+                    return m
+                  }, new Map<string, string[]>()),
+                ).map(([reason, models]) => (
+                  <p key={reason} style={inlineInfoStyle}>
+                    <span aria-hidden="true" style={{ flexShrink: 0 }}>·</span>
+                    <span>
+                      Not added — {models.join(', ')}: {reason}
+                    </span>
+                  </p>
+                ))}
+                <div style={{ marginTop: 2 }}>
+                  <Button variant="ghost" onClick={() => setBundleNotice(null)}>
+                    Dismiss
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
