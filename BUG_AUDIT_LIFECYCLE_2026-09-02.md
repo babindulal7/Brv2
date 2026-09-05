@@ -120,8 +120,9 @@ _New Rental workspace — /rentals/new_ — 26 items (6 P1)
 - [x] **NR-06 · P1 · BUG** — A client created from the booking cannot be booked: the record is built without dbId (comment claims client.create is unmapped — stale, core.ts:162 maps it), so it is auto-selected and Confirm refuses it as “sample data”.  
   `src/modules/rentals/booking/AddClientModal.tsx:628-629,671-694`
   ↳ FIXED 3 Sep 2026 — record built with id = clientCode and dbId = clientId; stale comment corrected.
-- [ ] **NR-07 · P2 · BUG** ✔ driven — WIP: PARENTS is imported and unused → tsc TS6133 under noUnusedLocals. The repo typecheck is red on this one line (other session's uncommitted diff).  
+- [x] **NR-07 · P2 · BUG** ✔ driven — WIP: PARENTS is imported and unused → tsc TS6133 under noUnusedLocals. The repo typecheck is red on this one line (other session's uncommitted diff).  
   `src/modules/rentals/NewRental.tsx:28`
+  ↳ ALREADY FIXED — stale entry, closed by the other session's own commit of that WIP diff. Verified 5 Sep: `PARENTS` survives in `NewRental.tsx` only inside a doc comment, there is no import of it, and `tsc --noEmit` is clean at HEAD. Ticked as closed, not as fixed by this batch.
 - [ ] **NR-08 · P2 · BUG** — WIP: Bundles are always seed — bundleResults reads ACTIVE_BUNDLES regardless of the live pool and gives ids like BND-x::model that createRental.validate rejects; the “sample equipment” notice now hides once the live pool lands, so the Bundles tab silently offers unsaveable rows.  
   `src/modules/rentals/booking/itemCatalogue.ts:660,801 · NewRental.tsx:2633`
 - [ ] **NR-09 · P2 · BUG** — Live rows get a fabricated status (free>0 ? 'In Stock' : 'On Rent'); the page then raises Critical “Equipment conflict — X is On Rent” and blocks Confirm on today's stock for a future window, while the panel claims “Availability shown for this booking's dates”. Real window availability (queries/availability.ts) is not consulted.  
