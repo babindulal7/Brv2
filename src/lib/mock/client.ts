@@ -127,6 +127,23 @@ function writableTable(table: string): string {
  * enforces stays with the engine's own `planTransition`, which runs before the
  * insert. The patch goes through the overlay so it survives a reload exactly
  * as the inserted transition does.
+ *
+ * ⚠ **`enforce_inventory_reservation_capacity()` is NOT emulated — and it is
+ * the arbiter for bulk stock.** 0045's trigger takes a `for update` lock on the
+ * `products` row and refuses a hold whose peak concurrent `qty` would exceed
+ * stock on hand; here, an insert into `inventory_reservations` is accepted
+ * unconditionally, quantity holds included. So in `dev:mock` the app-side
+ * preview in `lib/availability.ts:capacityFor` is the ONLY thing standing
+ * between two bookings and the same forty cables, while on the live project it
+ * is a courtesy that produces a readable sentence and the database is the
+ * defence. A mock pass therefore proves the preview computes the right answer;
+ * it can never prove the ceiling holds under two operators at once. Do not read
+ * a green mock run as evidence that the ceiling works, and do not "fix" a
+ * capacity bug by tightening only the app.
+ *
+ * The same caveat applies to `inventory_reservations_no_double_booking`, the
+ * GiST exclusion on the serialised half: also not emulated, for the same reason
+ * — an exclusion over a range type is not something this store can express.
  */
 function applyTriggers(table: string, row: Row): void {
   if (table !== 'booking_stage_transitions') return

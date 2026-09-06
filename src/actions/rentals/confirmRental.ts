@@ -218,8 +218,27 @@ export type ConfirmRentalResult = {
    * `units` and can be assigned no serial, so `unitsReserved < units` is the
    * normal, correct shape for a booking carrying one. Collapsing them would
    * hide which lines got gear.
+   *
+   * ⚠ Counts SERIALISED holds only. Bulk stock is held by
+   * `quantityReserved`/`quantityHolds` below and is not added in here, because a
+   * cable held by a count is not a body with a serial on it and the floor
+   * screens treat the two differently.
    */
   unitsReserved: number
+  /**
+   * Items of bulk stock held — Σ `qty` across the product-level
+   * `inventory_reservations` rows this Confirm wrote.
+   *
+   * On the live catalogue this is where every hold lands: all 204 products are
+   * `tracking_mode = 'Quantity'` with no `product_units` rows, so `unitsReserved`
+   * is 0 and this is the number that says the booking has stock behind it.
+   */
+  quantityReserved: number
+  /**
+   * How many product-level rows carried that quantity — one per quantity line.
+   * Separate from `quantityReserved` because one row can hold forty cables.
+   */
+  quantityHolds: number
 }
 
 interface BookingHead {
@@ -261,6 +280,28 @@ async function readLiveLines(bookingId: string): Promise<Array<{ id: string; qty
 
   if (error) throw new Error(`Could not read the lines of the booking, so nothing was confirmed: ${error.message}`)
   return (data ?? []) as unknown as Array<{ id: string; qty: number }>
+}
+
+/**
+ * The sentence naming holds a rollback could not give back.
+ *
+ * `releaseReservations` is best-effort by construction — it is called from a
+ * failure path and must not replace the real error with a second one — so it
+ * returns the ids it released and the difference is what is still live against a
+ * booking that was never confirmed. Until 7 Sep 2026 that difference went only to
+ * `captureError`, which nobody on the floor reads (INV-05): the stock stayed off
+ * the shelf and the only clue was a `released_reason` on rows nobody knew to look
+ * for. Empty string when everything came back, so the message is unchanged in the
+ * ordinary case.
+ */
+function strandedNote(written: readonly string[], released: readonly string[]): string {
+  const stranded = written.filter((id) => !released.includes(id))
+  if (stranded.length === 0) return ''
+  return (
+    ` ⚠ ${stranded.length} hold${stranded.length === 1 ? '' : 's'} could not be released and ` +
+    `${stranded.length === 1 ? 'is' : 'are'} still live — inventory_reservations ${stranded.join(', ')}. ` +
+    `Release ${stranded.length === 1 ? 'it' : 'them'} by hand or the stock stays off the shelf.`
+  )
 }
 
 /** The stage the database holds now. This is the persistence check — see execute. */
@@ -406,6 +447,22 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
      * exclusion. `lib/availability` decides; `lib/queries/availability` fetches
      * and writes. Nothing about availability is decided in this file — Law 1.
      *
+     * ## Serials are only half of it — 7 Sep 2026
+     *
+     * `products.tracking_mode` has three values and only one of them has units.
+     * Until this date the plan treated every line as needing serials, so a line
+     * naming bulk stock resolved an empty pool and this action refused the
+     * booking with *"not every line has … free for these dates"* — on the
+     * live project that is 204 of 204 products, every one of them `Quantity`
+     * with no `product_units` rows (INV-02). `planAssignment` now splits the
+     * lines by mode and writes a product-level hold (`product_id`, `qty`,
+     * `period`) for the quantity ones, which is the shape
+     * `inventory_reservations_serialised_xor_quantity` was written for and which
+     * `enforce_inventory_reservation_capacity()` — live since 11 Aug — has been
+     * guarding with nothing to guard.
+     *
+     * Nothing in the ORDER below changed. Reserve, verify, then move the stage.
+     *
      * ## Why reserve BEFORE moving the stage
      *
      * `0003:1478` — *"If reservation fails on any line, Confirm is rejected
@@ -435,6 +492,14 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
     const assignment = await planAssignment(booking.id)
     if (!assignment.complete) throw new AssignmentIncompleteError(assignment)
 
+    /*
+     * `reserveAssignedUnits` verifies its own write before it returns — it
+     * compares the rows that came back against the number the plan decided on
+     * and reads them back live (INV-05). Two of `idempotentInsert`'s branches
+     * report success having written nothing, so without that check this line
+     * could hand back a reservation that does not exist and the stage would move
+     * on a booking holding no stock at all. It throws rather than under-reporting.
+     */
     const reservation = await reserveAssignedUnits(assignment, { userId: ctx.userId })
 
     const clientUuid = input.clientUuid ?? generateClientUuid()
@@ -453,16 +518,17 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
     })
 
     if (!ok) {
-      /* The units are already held at this point. Give them back before
-         reporting the refusal, or a booking that was never confirmed keeps a
-         camera off the shelf until someone finds it by hand. */
-      await releaseReservations(
+      /* The stock is already held at this point. Give it back before reporting
+         the refusal, or a booking that was never confirmed keeps a camera — or
+         forty cables — off the shelf until someone finds it by hand. */
+      const released = await releaseReservations(
         reservation.reservationIds,
         `Rolled back: ${booking.booking_no} was not confirmed (${plan.blockers.map((b) => b.label).join('; ')}).`,
       )
       throw new Error(
         `${booking.booking_no} was not confirmed: ` +
-          plan.blockers.map((b) => `${b.label}${b.blocking === null ? '' : ` (${b.blocking})`}`).join('; '),
+          plan.blockers.map((b) => `${b.label}${b.blocking === null ? '' : ` (${b.blocking})`}`).join('; ') +
+          strandedNote(reservation.reservationIds, released),
       )
     }
 
@@ -490,13 +556,15 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
        * unit on the booking held against a Quote, invisibly, until someone
        * found them by hand.
        */
-      await releaseReservations(
+      const released = await releaseReservations(
         reservation.reservationIds,
         `Rolled back: ${booking.booking_no} did not reach ${to} — the confirm was queued or rejected.`,
       )
       throw new Error(
         `${booking.booking_no} is still at ${persisted ?? 'an unreadable stage'} — the confirm was queued or ` +
-          'rejected rather than applied, so treat the booking as NOT confirmed. Check the connection and try again.',
+          'rejected rather than applied, so treat the booking as NOT confirmed. Check the connection and ' +
+          'try again.' +
+          strandedNote(reservation.reservationIds, released),
       )
     }
 
@@ -512,6 +580,8 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
         lines: lines.length,
         units,
         unitsReserved: reservation.units,
+        quantityReserved: reservation.quantityReserved,
+        quantityHolds: reservation.quantityHolds,
       },
       events: [
         {
@@ -526,6 +596,8 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
             lines: lines.length,
             units,
             unitsReserved: reservation.units,
+            quantityReserved: reservation.quantityReserved,
+            quantityHolds: reservation.quantityHolds,
             occurredAt,
             userId: ctx.userId,
           },

@@ -9,8 +9,12 @@ import {
   rankLeastUsed,
   unitStatesForRule,
   boundsForTurnaround,
+  capacityFor,
+  explainCapacityShortfall,
   type BoundConvention,
+  type CapacityOutcome,
   type RentalWindow,
+  type QuantityHold,
   type UnitCandidate,
   type OpenCleaning,
   type UnitHold,
@@ -57,21 +61,64 @@ import {
  * projection of it and are built where those questions are answered.
  */
 
-/** A booking line that needs physical units. */
+/**
+ * A booking line that needs stock held.
+ *
+ * ⚠ This said "physical units" until 7 Sep 2026, and that was the bug.
+ * `products.tracking_mode` (0001:505-509) decides whether a line is covered by
+ * NAMED UNITS or by a NUMBER, and nothing on the Confirm path read it — so a
+ * `Quantity` line resolved an empty unit pool, `selectUnitsForLine` reported a
+ * shortfall equal to its whole qty, and Confirm refused the booking. On the live
+ * project that is 204 of 204 products (INV-02).
+ *
+ * The mode and the ceiling travel WITH the line, read once in `readLines`, so
+ * nothing downstream re-derives them and the plan cannot be built under one
+ * answer and written under another — the same reasoning `AssignmentPlan.bounds`
+ * gives for carrying the bound convention.
+ */
 export interface AssignableLine {
   readonly lineId: string
   readonly productId: string
   /** `booking_lines.description` — what the operator sees in a conflict message. */
   readonly label: string
   readonly qty: number
+  /** `products_v.tracking_mode`, verbatim — `Serialised` | `Quantity` | `Consumable`. */
+  readonly trackingMode: string
+  /** `products_v.total_quantity` — the ceiling 0045's trigger compares a quantity hold against. */
+  readonly totalQuantity: number
 }
 
-export interface AssignmentPlanLine {
+/**
+ * A line covered by NAMED UNITS — `tracking_mode = 'Serialised'`.
+ *
+ * Unchanged from the original shape, deliberately: this is the path the GiST
+ * exclusion protects and nothing about it was wrong.
+ */
+export interface SerialisedPlanLine {
+  readonly kind: 'serialised'
   readonly line: AssignableLine
   readonly outcome: AssignmentOutcome
   /** Law 12: the inline, specific sentence. `null` when the line is fully covered. */
   readonly problem: string | null
 }
+
+/**
+ * A line covered by a NUMBER — `Quantity` or `Consumable`.
+ *
+ * One `inventory_reservations` row naming the product, whose peak concurrency
+ * the live `enforce_inventory_reservation_capacity()` trigger checks against
+ * `products.total_quantity`. `capacity` is the app-side preview of that answer;
+ * the trigger is the arbiter.
+ */
+export interface QuantityPlanLine {
+  readonly kind: 'quantity'
+  readonly line: AssignableLine
+  readonly capacity: CapacityOutcome
+  /** Law 12: the inline, specific sentence. `null` when the line is fully covered. */
+  readonly problem: string | null
+}
+
+export type AssignmentPlanLine = SerialisedPlanLine | QuantityPlanLine
 
 export interface AssignmentPlan {
   readonly bookingId: string
@@ -158,8 +205,84 @@ async function readWindow(ref: string): Promise<BookingWindowRow> {
 }
 
 /**
+ * Which planning path a line takes.
+ *
+ * Mirrors the live arbiter exactly — `enforce_inventory_reservation_capacity()`
+ * branches `if v_tracking_mode = 'Serialised' … else v_capacity :=
+ * v_total_quantity` (0045:176-191) — rather than listing the two quantity modes.
+ * Written this way round so that a fourth `product_tracking_mode` member would
+ * fall to the NUMBER path here and at the database together, instead of the app
+ * and the trigger disagreeing silently about a value neither was told about.
+ *
+ * ⚠ `Consumable` is therefore planned exactly as `Quantity` is, because that is
+ * what the trigger does. Whether returning a consumable should decrement
+ * `total_quantity` — *"Quantity, and consumed on return — never comes back"*,
+ * Add Equipment §5.1 — is a separate question, unruled, and is NOT answered here.
+ */
+function isSerialisedMode(trackingMode: string): boolean {
+  return trackingMode === 'Serialised'
+}
+
+interface ProductMode {
+  readonly trackingMode: string
+  readonly totalQuantity: number
+}
+
+/**
+ * `tracking_mode` and `total_quantity` for a set of products, read through
+ * **`products_v`** and never the base table — 0062 revokes table-level SELECT on
+ * `products`, the same reason `readCandidates` reads `product_units_v`.
+ *
+ * Neither column is money. `products_v` returns `null` for its nine money
+ * columns to a money-blind session (`queries/inventory.ts` MONEY) and these two
+ * are not among them — the inventory list read already names both — so this
+ * survives Law 6's mask for every role that can confirm a booking.
+ *
+ * A SEPARATE read rather than a `booking_lines → products_v` embed. The embed
+ * would save a round trip, but PostgREST's ability to resolve a base-table →
+ * view relationship has been measured here for `products_v →
+ * inventory_categories` and `product_units_v → products_v` and NOT for this
+ * pair. An embed that silently resolved nothing would send every line down the
+ * quantity path with a ceiling of zero, which refuses every booking — so the
+ * unmeasured shape is not used on the Confirm path.
+ */
+export async function readProductModes(productIds: readonly string[]): Promise<Map<string, ProductMode>> {
+  const byId = new Map<string, ProductMode>()
+  if (productIds.length === 0) return byId
+
+  const { data, error } = await supabase
+    .from('products_v')
+    .select('id, tracking_mode, total_quantity')
+    .in('id', [...new Set(productIds)])
+
+  if (error) {
+    throw new Error(`Could not read how these products are tracked, so nothing was assigned: ${error.message}`)
+  }
+
+  for (const row of (data ?? []) as unknown as Array<{
+    id: string
+    tracking_mode: string | null
+    total_quantity: number | null
+  }>) {
+    byId.set(row.id, {
+      /* A null mode is not a mode. Falling back to `Serialised` sends the line
+         down the unit path, which can only ever REFUSE a booking — the safe
+         direction, and the same one `unitStatesForRule` takes on a label it does
+         not recognise. Falling back to the number path would need a ceiling
+         nobody supplied. */
+      trackingMode: row.tracking_mode ?? 'Serialised',
+      totalQuantity: typeof row.total_quantity === 'number' ? row.total_quantity : 0,
+    })
+  }
+  return byId
+}
+
+/**
  * Live lines only — Law 3. A removed line is `voided_at`, never deleted, and a
  * voided line reserves nothing.
+ *
+ * Reads each line's tracking mode and hands it on. It splits nothing itself:
+ * *which* path a line takes is a rule, and `planAssignment` applies it (Law 1).
  */
 async function readLines(bookingId: string): Promise<{
   assignable: AssignableLine[]
@@ -181,6 +304,10 @@ async function readLines(bookingId: string): Promise<{
     description: string | null
   }>
 
+  const modes = await readProductModes(
+    rows.map((row) => row.product_id).filter((id): id is string => id !== null),
+  )
+
   const assignable: AssignableLine[] = []
   const skipped: Array<{ lineId: string; label: string; reason: string }> = []
 
@@ -194,11 +321,37 @@ async function readLines(bookingId: string): Promise<{
       skipped.push({
         lineId: row.id,
         label,
-        reason: `${row.line_type} lines name no product, so no serial can be assigned to them here.`,
+        reason: `${row.line_type} lines name no product, so no stock can be held for them here.`,
       })
       continue
     }
-    assignable.push({ lineId: row.id, productId: row.product_id, label, qty: row.qty })
+
+    const mode = modes.get(row.product_id)
+    if (mode === undefined) {
+      /*
+       * The line names a product `products_v` did not return — deleted, outside
+       * this session's reach, or a stale id. It is REFUSED rather than skipped.
+       *
+       * Skipping would be the unsafe direction and quietly so: `skipped` lines do
+       * not count against `complete`, so the booking would reach Booked with a
+       * line whose stock was never checked and never held. Guessing a mode is
+       * worse — both guesses invent a fact about stock.
+       */
+      throw new Error(
+        `${label} names a product that could not be read from the catalogue, so no hold could be planned ` +
+          'for it and nothing was assigned. Confirming past it would commit a line with stock behind it ' +
+          'that was never checked.',
+      )
+    }
+
+    assignable.push({
+      lineId: row.id,
+      productId: row.product_id,
+      label,
+      qty: row.qty,
+      trackingMode: mode.trackingMode,
+      totalQuantity: mode.totalQuantity,
+    })
   }
 
   return { assignable, skipped }
@@ -349,6 +502,72 @@ export async function readHolds(bookingIdToExclude: string | null): Promise<Unit
 }
 
 /**
+ * Live PRODUCT-LEVEL holds on a set of products — the mirror of `readHolds`,
+ * filtered the other way.
+ *
+ * `readHolds` asks for `asset_id is not null` because that is the GiST
+ * exclusion's own `where`. This asks for `product_id is not null` because that is
+ * the predicate on `idx_inventory_reservations_product_period` (0045:97-100), the
+ * index the capacity trigger's sweep reads through. Between them the two
+ * functions cover the whole table and neither silently swallows the other's rows
+ * — which `readHolds`'s own comment already anticipated: *"a quantity hold names
+ * a product instead"*. Until 7 Sep 2026 nothing called the other half.
+ *
+ * `released_at is null` is the liveness test the trigger uses. Same predicate,
+ * same answer — the app previews the question the database will ask, not a
+ * similar one that could disagree at the edges.
+ */
+export async function readQuantityHolds(
+  productIds: readonly string[],
+  bookingIdToExclude: string | null,
+): Promise<Map<string, QuantityHold[]>> {
+  const byProduct = new Map<string, QuantityHold[]>()
+  const ids = [...new Set(productIds)]
+  if (ids.length === 0) return byProduct
+
+  let query = supabase
+    .from('inventory_reservations')
+    .select('product_id, qty, booking_id, period, bookings ( booking_no )')
+    .is('released_at', null)
+    .not('product_id', 'is', null)
+    .in('product_id', ids)
+
+  /* `null` means "there is no booking of ours to leave out" — the same tentative
+     case `readHolds` documents. */
+  if (bookingIdToExclude !== null) query = query.neq('booking_id', bookingIdToExclude)
+
+  const { data, error } = await query
+
+  if (error) throw new Error(`Could not read existing stock holds, so nothing was assigned: ${error.message}`)
+
+  for (const row of (data ?? []) as unknown as Array<{
+    product_id: string | null
+    qty: number | null
+    booking_id: string
+    period: string
+    bookings: { booking_no: string } | { booking_no: string }[] | null
+  }>) {
+    const window = parseTstzRange(row.period)
+    if (row.product_id === null || window === null) continue
+    const booking = Array.isArray(row.bookings) ? row.bookings[0] : row.bookings
+    const list = byProduct.get(row.product_id) ?? []
+    list.push({
+      bookingId: row.booking_id,
+      bookingNo: booking?.booking_no ?? row.booking_id,
+      /* `qty` is `int not null default 1` at the database, so a null is a failed
+         read, not a hold of one. It is passed through as NaN rather than
+         defaulted: `capacityFor` refuses a hold it cannot count, and defaulting
+         to 1 would UNDER-count stock that is already promised. */
+      qty: row.qty ?? Number.NaN,
+      window,
+    })
+    byProduct.set(row.product_id, list)
+  }
+
+  return byProduct
+}
+
+/**
  * PostgREST hands a `tstzrange` back as its text form —
  * `["2026-08-16 03:15:00+00","2026-08-18 12:15:00+00")`. Postgres's text output
  * uses a space rather than `T` and `+00` rather than `Z`, neither of which
@@ -408,14 +627,71 @@ export function toTstzRangeLiteral(window: RentalWindow, bounds: BoundConvention
  * Workflow §8.5), which is why it is a plan rather than a side effect: the same
  * answer has to be showable before anyone commits to it.
  */
+/**
+ * A product's SERIAL holds, restated as quantity holds of one.
+ *
+ * 0045's `live` CTE unions BOTH hold shapes before it sweeps, because for a
+ * Serialised product they draw on the same finite pool: *"a model-level hold of
+ * 3 plus a serial hold on a fourth unit is 4 units claimed"* (0045:120-125). A
+ * `Quantity` product has no `product_units` rows at all, so on the live
+ * catalogue this contributes nothing — it is written anyway so the preview
+ * matches the arbiter for ANY product, rather than only for the mode the
+ * catalogue happens to hold today.
+ */
+function serialHoldsAsQuantity(
+  productId: string,
+  candidatesByProduct: ReadonlyMap<string, readonly UnitCandidate[]>,
+  holds: readonly UnitHold[],
+): QuantityHold[] {
+  const unitIds = new Set((candidatesByProduct.get(productId) ?? []).map((unit) => unit.unitId))
+  if (unitIds.size === 0) return []
+  return holds
+    .filter((hold) => unitIds.has(hold.unitId))
+    .map((hold) => ({ bookingId: hold.bookingId, bookingNo: hold.bookingNo, qty: 1, window: hold.window }))
+}
+
+/**
+ * What an EARLIER line of this same plan already promised, expressed as a hold.
+ *
+ * The quantity-mode counterpart of the `claimed` unit set below. Two lines
+ * naming the same cable on one booking must not both be told the same five are
+ * free — and nothing in the database would catch it until the second row hit
+ * 0045's ceiling, at which point the operator gets a Postgres exception instead
+ * of a sentence.
+ *
+ * A hold rather than a reduced ceiling, so `explainCapacityShortfall` can say
+ * where the stock went: an operator who listed the same product twice is told
+ * exactly that, rather than being told the warehouse is short.
+ */
+function planClaimAsHold(
+  productId: string,
+  claimedQty: ReadonlyMap<string, number>,
+  window: RentalWindow,
+  bookingId: string,
+  bookingNo: string,
+): QuantityHold[] {
+  const claimed = claimedQty.get(productId) ?? 0
+  if (claimed < 1) return []
+  return [{ bookingId, bookingNo: `${bookingNo} (an earlier line on this booking)`, qty: claimed, window }]
+}
+
 export async function planAssignment(bookingRef: string): Promise<AssignmentPlan> {
   const booking = await readWindow(bookingRef)
   const window: RentalWindow = { fromAd: booking.pickup_at, toAd: booking.return_at }
 
   const { assignable, skipped } = await readLines(booking.id)
-  const [candidatesByProduct, holds] = await Promise.all([
+
+  /* Both reads are issued for EVERY line's product, not only its own mode's.
+     `readCandidates` is what tells `serialHoldsAsQuantity` which units belong to
+     a product, and a Serialised product may legitimately carry a model-level
+     hold — 0045 counts both against one ceiling, so both are fetched. */
+  const [candidatesByProduct, holds, quantityHoldsByProduct] = await Promise.all([
     readCandidates(assignable.map((line) => line.productId)),
     readHolds(booking.id),
+    readQuantityHolds(
+      assignable.filter((line) => !isSerialisedMode(line.trackingMode)).map((line) => line.productId),
+      booking.id,
+    ),
   ])
 
   /* Units taken by an earlier line in THIS plan are not available to a later
@@ -423,6 +699,8 @@ export async function planAssignment(bookingRef: string): Promise<AssignmentPlan
      the same camera — and nothing in the database would catch that until the
      second reservation hit the exclusion. */
   const claimed = new Set<string>()
+  /* The same rule for bulk stock — see `planClaimAsHold`. */
+  const claimedQty = new Map<string, number>()
   const lines: AssignmentPlanLine[] = []
 
   /* Read ONCE per plan, not once per line: a rule that changed mid-loop would
@@ -431,17 +709,38 @@ export async function planAssignment(bookingRef: string): Promise<AssignmentPlan
   const rules = availabilityRules()
 
   for (const line of assignable) {
-    const pool = (candidatesByProduct.get(line.productId) ?? []).filter((unit) => !claimed.has(unit.unitId))
-    const outcome = selectUnitsForLine({
-      needed: line.qty,
+    if (isSerialisedMode(line.trackingMode)) {
+      const pool = (candidatesByProduct.get(line.productId) ?? []).filter((unit) => !claimed.has(unit.unitId))
+      const outcome = selectUnitsForLine({
+        needed: line.qty,
+        window,
+        candidates: pool,
+        holds,
+        disqualifyingStates: rules.disqualifyingStates,
+        bounds: rules.bounds,
+      })
+      for (const unit of outcome.assigned) claimed.add(unit.unitId)
+      lines.push({ kind: 'serialised', line, outcome, problem: explainShortfall(outcome, line.label) })
+      continue
+    }
+
+    const capacity = capacityFor({
       window,
-      candidates: pool,
-      holds,
-      disqualifyingStates: rules.disqualifyingStates,
+      holds: [
+        ...(quantityHoldsByProduct.get(line.productId) ?? []),
+        ...serialHoldsAsQuantity(line.productId, candidatesByProduct, holds),
+        ...planClaimAsHold(line.productId, claimedQty, window, booking.id, booking.booking_no),
+      ],
+      totalQuantity: line.totalQuantity,
+      qtyRequested: line.qty,
       bounds: rules.bounds,
     })
-    for (const unit of outcome.assigned) claimed.add(unit.unitId)
-    lines.push({ line, outcome, problem: explainShortfall(outcome, line.label) })
+    /* Only a covered line claims. An uncovered one already fails the plan, and
+       claiming stock it did not get would make the NEXT line's sentence wrong. */
+    if (capacity.shortfall === 0) {
+      claimedQty.set(line.productId, (claimedQty.get(line.productId) ?? 0) + line.qty)
+    }
+    lines.push({ kind: 'quantity', line, capacity, problem: explainCapacityShortfall(capacity, line.label) })
   }
 
   return {
@@ -450,7 +749,10 @@ export async function planAssignment(bookingRef: string): Promise<AssignmentPlan
     window,
     bounds: rules.bounds,
     lines,
-    complete: lines.every((entry) => entry.outcome.shortfall === 0),
+    /* `problem` is `null` exactly when a line is covered, under both paths —
+       `explainShortfall` and `explainCapacityShortfall` each hold that contract —
+       so completeness is asked once rather than branched on the line's kind. */
+    complete: lines.every((entry) => entry.problem === null),
     skipped,
   }
 }
@@ -466,7 +768,8 @@ export class AssignmentIncompleteError extends Error {
       .map((entry) => entry.problem)
       .filter((problem): problem is string => problem !== null)
     super(
-      `${plan.bookingNo} cannot be confirmed: not every line has units free for these dates. ${problems.join(' ')}`,
+      `${plan.bookingNo} cannot be confirmed: not every line has stock free for these dates. ` +
+        problems.join(' '),
     )
     this.name = 'AssignmentIncompleteError'
     this.plan = plan
@@ -612,8 +915,202 @@ export async function planCreationUnits(
 }
 
 export interface ReservationResult {
+  /** `inventory_reservations.id` for every row written, serial and quantity alike. */
   readonly reservationIds: readonly string[]
+  /** Serialised holds — one row per physical unit, `qty` 1 each. */
   readonly units: number
+  /** Product-level holds — one row per quantity line, whatever its qty. */
+  readonly quantityHolds: number
+  /**
+   * Σ `qty` across those product-level rows — items of bulk stock held.
+   *
+   * Reported separately from `quantityHolds` because they differ by design: one
+   * row can hold 40 cables. Collapsing them would make "5 holds" mean two
+   * different things depending on the booking.
+   */
+  readonly quantityReserved: number
+}
+
+/**
+ * Thrown when fewer holds reached the database than the plan asked for — INV-05.
+ *
+ * Not a network error and not a conflict: it is the case where the write path
+ * reported success and wrote nothing. `idempotentInsert` returns
+ * `{ data: <the payload you sent>, error: null }` on two branches — the offline
+ * queue (`dataAccess.ts:115-119`) and the `'Failed to fetch'` / 408 retry
+ * (`:126-132`, which fires even when `navigator.onLine` is true) — and the
+ * echoed payload carries no `id`, so the row was never written and the caller
+ * was never told. Confirm would then move the stage on a booking holding
+ * nothing.
+ */
+export class ReservationNotPersistedError extends Error {
+  /** Holds the plan asked for. */
+  readonly planned: number
+  /** Rows that came back with an id. */
+  readonly written: number
+  /** Of those, how many the database can still see live. */
+  readonly live: number
+  /**
+   * Written rows the compensation could NOT release — live holds left behind.
+   *
+   * Deliberately NOT `readonly`: the compensation runs AFTER this error is
+   * built, so it is filled in by `explainReservationFailure` on the way out. A
+   * screen reading it gets the ids it must chase by hand.
+   */
+  stranded: readonly string[]
+
+  constructor(bookingNo: string, planned: number, written: number, live: number, stranded: readonly string[]) {
+    super(
+      `${bookingNo} was NOT confirmed: ${planned} hold${planned === 1 ? '' : 's'} were planned but ` +
+        `${live} can be seen in the database. A reservation that returns no row id was queued to replay ` +
+        'later rather than written now, possibly after another booking has taken the stock, so the booking ' +
+        'is left at Quote and the holds that did land have been released. Check the connection and ' +
+        'confirm again.',
+    )
+    this.name = 'ReservationNotPersistedError'
+    this.planned = planned
+    this.written = written
+    this.live = live
+    this.stranded = stranded
+  }
+}
+
+/**
+ * The three ways the database says *"someone took it since you looked"*.
+ *
+ * `23P01` is the GiST exclusion refusing a second live hold on one unit;
+ * `23505` is a unique violation; and the capacity ceiling raises a plain
+ * `P0001` whose message begins *"Reservation rejected:"* (0045:222-226), which
+ * is why the text is matched as well as the codes. All three mean the same
+ * thing to an operator and all three deserve a fresh availability read rather
+ * than a raw Postgres string — Law 12.
+ */
+function isContentionFailure(message: string): boolean {
+  return (
+    message.includes('23P01') ||
+    message.includes('23505') ||
+    message.includes('Reservation rejected') ||
+    message.includes('no_double_booking') ||
+    message.includes('exclusion constraint')
+  )
+}
+
+/**
+ * One `inventory_reservations` row.
+ *
+ * Returns the row id, or `null` when the write path reported success without
+ * one — which is the INV-05 case and is caught by the count check, not here.
+ * The `error` branch is kept even though `idempotentInsert` mostly THROWS
+ * instead (it re-raises everything that is not a 408 or a `client_uuid`
+ * duplicate), because the two shapes must be handled identically and a caller
+ * cannot tell which it will get.
+ */
+async function insertHold(row: Record<string, unknown>, what: string): Promise<string | null> {
+  let data: unknown
+  try {
+    const result = await insertViaSourceSwitch('inventory_reservations', row as never)
+    if (result.error) throw new Error(result.error.message)
+    data = result.data
+  } catch (failure) {
+    const message = failure instanceof Error ? failure.message : String(failure)
+    throw new Error(`${what}: ${message}`)
+  }
+  const id = (data as { id?: unknown } | null)?.id
+  return typeof id === 'string' ? id : null
+}
+
+/**
+ * INV-05 — the exact-count and read-back contract.
+ *
+ * Two checks, because they catch different failures. The COUNT catches a write
+ * that returned no id (queued, or swallowed by the 408 branch). The READ-BACK
+ * catches a row that was written and is not there — released by something else,
+ * or never committed. Confirm's own persistence check on `bookings.stage` is
+ * the same pattern applied to the same class of lie; this is that pattern moved
+ * one step earlier, so the stage never moves on a booking holding nothing.
+ *
+ * A failed read-back is treated as a failure, not as an unknown: an unverified
+ * hold is exactly as dangerous as a missing one.
+ */
+async function assertHoldsAreLive(written: readonly string[], planned: number, bookingNo: string): Promise<void> {
+  if (written.length !== planned) {
+    throw new ReservationNotPersistedError(bookingNo, planned, written.length, written.length, [])
+  }
+  if (planned === 0) return
+
+  const { data, error } = await supabase
+    .from('inventory_reservations')
+    .select('id')
+    .in('id', [...written])
+    .is('released_at', null)
+
+  if (error) {
+    throw new Error(
+      `${bookingNo}'s holds could not be read back, so it is not known whether the stock is actually ` +
+        `held: ${error.message}. The booking was NOT confirmed.`,
+    )
+  }
+
+  const live = new Set((data ?? []).map((row) => (row as { id?: unknown }).id).filter((id) => typeof id === 'string'))
+  if (live.size !== written.length) {
+    throw new ReservationNotPersistedError(bookingNo, planned, written.length, live.size, [])
+  }
+}
+
+/**
+ * Annotates a failed reservation with the sentence an operator can act on — Law 12.
+ *
+ * A contention failure gets a FRESH availability read appended, taken after the
+ * compensation has run, so the message says what is free NOW rather than what
+ * was free when the plan was made. That read is best-effort: if it fails too,
+ * the original refusal is still reported rather than replaced by a second error.
+ *
+ * It MUTATES and returns the original error rather than wrapping it. Wrapping
+ * would turn a `ReservationNotPersistedError` into a plain `Error` carrying its
+ * name, and a caller written to branch on the class — which is the whole point
+ * of a typed error — would silently stop matching. The stack is kept for the
+ * same reason.
+ */
+async function explainReservationFailure(
+  failure: unknown,
+  plan: AssignmentPlan,
+  stranded: readonly string[],
+): Promise<Error> {
+  const base = failure instanceof Error ? failure : new Error(String(failure))
+  if (base instanceof ReservationNotPersistedError) base.stranded = stranded
+  const parts = [base.message]
+
+  if (isContentionFailure(base.message)) {
+    parts.push('Another booking took this stock between the check and the write.')
+    try {
+      const fresh = await planAssignment(plan.bookingId)
+      const problems = fresh.lines
+        .map((entry) => entry.problem)
+        .filter((problem): problem is string => problem !== null)
+      parts.push(
+        problems.length === 0
+          ? 'Re-read just now: everything on this booking is free again, so confirming again should work.'
+          : `Re-read just now: ${problems.join(' ')}`,
+      )
+    } catch (reread) {
+      parts.push(
+        'Availability could not be re-read to say what is free now ' +
+          `(${reread instanceof Error ? reread.message : String(reread)}).`,
+      )
+    }
+  }
+
+  if (stranded.length > 0) {
+    parts.push(
+      `${stranded.length} hold${stranded.length === 1 ? '' : 's'} could not be released and ` +
+        `${stranded.length === 1 ? 'is' : 'are'} still live — inventory_reservations ` +
+        `${stranded.join(', ')}. Release ${stranded.length === 1 ? 'it' : 'them'} by hand or the stock ` +
+        'stays off the shelf.',
+    )
+  }
+
+  base.message = parts.join(' ')
+  return base
 }
 
 /**
@@ -650,36 +1147,81 @@ export async function reserveAssignedUnits(
   /* The plan's own convention, not a fresh settings read — see `AssignmentPlan.bounds`. */
   const period = toTstzRangeLiteral(plan.window, plan.bounds)
   const written: string[] = []
+  let units = 0
+  let quantityHolds = 0
+  let quantityReserved = 0
+
+  /* One row per assigned unit, one row per quantity line — the number
+     `assertHoldsAreLive` holds the write to. Derived from the plan rather than
+     counted as we go, so the check compares the write against what was DECIDED
+     and not against itself. */
+  const planned = plan.lines.reduce(
+    (total, entry) => total + (entry.kind === 'serialised' ? entry.outcome.assigned.length : 1),
+    0,
+  )
 
   try {
     for (const entry of plan.lines) {
-      for (const unit of entry.outcome.assigned) {
-        const { data, error } = await insertViaSourceSwitch('inventory_reservations', {
+      if (entry.kind === 'serialised') {
+        for (const unit of entry.outcome.assigned) {
+          const id = await insertHold(
+            {
+              client_uuid: newClientUuid(),
+              booking_id: plan.bookingId,
+              booking_line_id: entry.line.lineId,
+              asset_id: unit.unitId,
+              qty: 1,
+              period,
+              created_by: ctx.userId,
+            },
+            `${unit.assetTag} could not be reserved for ${plan.bookingNo}`,
+          )
+          if (id !== null) written.push(id)
+          units += 1
+        }
+        continue
+      }
+
+      /*
+       * A quantity line is ONE row naming the product — never a row per item.
+       * `inventory_reservations_serialised_xor_quantity` forbids naming both an
+       * asset and a product, and `inventory_reservations_serialised_hold_is_one`
+       * pins a serial hold to `qty = 1`, so `qty` above one is only legal on this
+       * shape. The live `enforce_inventory_reservation_capacity()` trigger reads
+       * it back through `idx_inventory_reservations_product_period` and refuses
+       * the row if the peak would exceed `products.total_quantity`.
+       *
+       * `client_uuid` is minted PER ROW, not per action: it carries a unique
+       * constraint, so one key across several rows would collide on the second.
+       */
+      const id = await insertHold(
+        {
           client_uuid: newClientUuid(),
           booking_id: plan.bookingId,
           booking_line_id: entry.line.lineId,
-          asset_id: unit.unitId,
-          qty: 1,
+          product_id: entry.line.productId,
+          qty: entry.line.qty,
           period,
           created_by: ctx.userId,
-        } as never)
-
-        if (error) {
-          throw new Error(
-            `${unit.assetTag} could not be reserved for ${plan.bookingNo}: ${error.message}. ` +
-              'Another booking may have taken it since this plan was read.',
-          )
-        }
-        const id = (data as { id?: unknown } | null)?.id
-        if (typeof id === 'string') written.push(id)
-      }
+        },
+        `${entry.line.qty} × ${entry.line.label} could not be held for ${plan.bookingNo}`,
+      )
+      if (id !== null) written.push(id)
+      quantityHolds += 1
+      quantityReserved += entry.line.qty
     }
+
+    await assertHoldsAreLive(written, planned, plan.bookingNo)
   } catch (failure) {
-    await releaseReservations(written, `Rolled back: ${plan.bookingNo} assignment failed part-way.`)
-    throw failure
+    const released = await releaseReservations(
+      written,
+      `Rolled back: ${plan.bookingNo} assignment failed part-way.`,
+    )
+    const stranded = written.filter((id) => !released.includes(id))
+    throw await explainReservationFailure(failure, plan, stranded)
   }
 
-  return { reservationIds: written, units: written.length }
+  return { reservationIds: written, units, quantityHolds, quantityReserved }
 }
 
 /**
@@ -689,8 +1231,21 @@ export async function reserveAssignedUnits(
  * Best-effort by construction: it is called from a failure path, and throwing
  * here would replace the real error with a second one. Each failure is logged
  * with the row id so a live hold left behind is findable.
+ *
+ * **Returns the ids it released**, so the caller can name the ones it could not
+ * — a compensation that half-ran leaves live holds against a booking that was
+ * never confirmed, and until 7 Sep 2026 those went only to `captureError` and
+ * never to the operator staring at the failure (INV-05).
+ *
+ * ⚠ "Released" here means the UPDATE returned no error. PostgREST reports no
+ * error for an update that matched no row, so this is the honest upper bound and
+ * not a proof — the same limit `safeUpdate` has everywhere else.
  */
-export async function releaseReservations(reservationIds: readonly string[], reason: string): Promise<void> {
+export async function releaseReservations(
+  reservationIds: readonly string[],
+  reason: string,
+): Promise<readonly string[]> {
+  const released: string[] = []
   for (const id of reservationIds) {
     const { error } = await supabase
       .from('inventory_reservations')
@@ -699,6 +1254,9 @@ export async function releaseReservations(reservationIds: readonly string[], rea
 
     if (error) {
       captureError(error, { where: 'availability.releaseReservation', id })
+      continue
     }
+    released.push(id)
   }
+  return released
 }

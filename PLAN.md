@@ -751,6 +751,60 @@ extend that pattern further without ruling this.
 
 ---
 
+## 4.49 ⬅ OPEN ×2 — two questions the quantity-hold work (INV-02) could not answer for itself
+
+**Raised 7 Sep 2026** while building product-level holds so `Confirm` can succeed on the live
+catalogue, where **204 of 204 products are `Quantity`-tracked with zero `product_units` rows**.
+Neither question was invented to be asked: each is a fork the implementation actually reached,
+and each is implemented as the narrowest reading that changes no existing behaviour.
+
+### ⬅ (a) Does returning a `Consumable` give the stock back?
+
+`capacityFor` treats `Consumable` exactly as `Quantity`, because `0045`'s capacity trigger does —
+it branches on `tracking_mode = 'Serialised'` and takes every other mode down one path. So a
+consumable is held for the booking window and freed when the hold is released, like any bulk item.
+
+**What is unsettled.** `Add Equipment §5.1` describes a consumable as *"consumed on return — never
+comes back"*. If that is the rule, then a return should decrement `products.total_quantity`, and
+nothing anywhere does that today: not the trigger, not the floor verbs, not this work.
+
+| Option | Behaviour | Consequence |
+|---|---|---|
+| **(1) Hold and release — IMPLEMENTED** | Consumable behaves as Quantity | Gaffer tape returns to stock on Close. Overstates availability for anything genuinely used up. |
+| (2) Decrement on return | Return lowers `total_quantity` | Matches §5.1. Needs a writer, an audit row, and a rule for a partial return; Law 3 makes a wrong decrement permanent. |
+| (3) Split the mode | Keep `Consumable` for held-and-returned, add a mode for consumed | Most honest, largest change: a new enum value touches the trigger, the types and every picker. |
+
+**Recommendation: (2)**, because a consumable that silently returns to stock will be promised to a
+second booking that cannot be filled — an inventory loss, which §9 of the audit spec rates P0/P1.
+But it is a business rule about Cine Sewa's own stock, not an engineering choice, so it is not
+implemented. Until it is ruled, availability for consumables is optimistic and says so nowhere.
+
+### ⬅ (b) Does creation-time serial assignment (D5) apply to bulk stock?
+
+`planCreationUnits` — the D5 planner that picks least-used serials at creation — is quantity-blind:
+it looks for unit rows, finds none for a bulk line, and reports *"N more units needed than are
+free (0 assigned)"*. Harmless today, because it has **zero importers** (confirmed: the only
+mentions are doc comments in `bundleRecords.ts` and `productAvailability.ts`), and `INV-03` files
+the fact that New Rental never calls it.
+
+**The question is what it should do when it is wired.** D5 was ruled for serialised units, where
+"which physical item" is a real choice. A quantity line has no such choice — there is only *how
+many* — so either the planner skips bulk lines and returns a hold quantity instead, or D5 is
+declared serialised-only and New Rental must not ask it about bulk lines at all.
+
+**Recommendation: skip bulk lines in the planner and let `capacityFor` answer them**, which is what
+`planAssignment` already does at Confirm — one engine, two line shapes. Not implemented, because
+extending a ruling to a case it did not contemplate is exactly what `CLAUDE.md` forbids, and
+`INV-03` will have to wire the planner anyway.
+
+**Two related notes that are NOT decisions**, recorded so they are not re-derived: a *serialised*
+product with zero unit rows is still refused through the unit path rather than falling back to
+`total_quantity` (rerouting it would need a ruling, and no such product exists on live); and the
+`{ error }` branch in `insertHold` is near-dead, because `idempotentInsert` re-throws everything
+that is not a timeout or a `client_uuid` duplicate — both branches behave identically, and the
+path retires when `confirm_booking` (INV-01 Option B) lands.
+
+---
 ## 4.47 ⬅ OPEN ×2 — who may reverse a booking's stage, and how far back?
 
 **Raised 6 Sep 2026** while closing the direct-stage-write hole (`0094`). That file made

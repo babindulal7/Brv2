@@ -11,7 +11,11 @@ import {
   UNIT_AVAILABILITY_PRESETS,
   DISQUALIFYING_UNIT_STATES,
   RENTAL_WINDOW_BOUNDS,
+  capacityFor,
+  explainCapacityShortfall,
+  windowContains,
   type RentalWindow,
+  type QuantityHold,
   type UnitCandidate,
   type UnitHold,
 } from '../availability'
@@ -490,5 +494,324 @@ describe('rankLeastUsed — the 27 Jul lock, ruled into force by D5 (30 Aug 2026
     const input = [A, B]
     rankLeastUsed(input, new Map([['u-a', 9]]))
     expect(input.map((u) => u.unitId)).toEqual(['u-a', 'u-b'])
+  })
+})
+
+/**
+ * # capacityFor — the quantity half (INV-02)
+ *
+ * These cases are the app-side twin of `enforce_inventory_reservation_capacity()`
+ * (`0045_reservation_capacity_ceiling.sql`, applied to the live project). The
+ * trigger is the arbiter; this function is the preview, and a preview that
+ * disagrees with the arbiter at the edges is worse than none — it produces a
+ * green screen followed by a database refusal nobody can explain. So the cases
+ * below are written against the trigger's own arithmetic: peak concurrent qty at
+ * the candidate instants, not a naive sum over the window.
+ *
+ * The bound convention is passed explicitly on every call, for the same reason
+ * every entry point above requires it: §4.30(b) is RULED `half-open`, and both
+ * answers are pinned here so re-ruling it is a one-constant change against a
+ * suite that already says what will happen.
+ */
+describe('capacityFor', () => {
+  const qHold = (qty: number, window: RentalWindow, bookingNo = 'B-901'): QuantityHold => ({
+    bookingId: `id-${bookingNo}`,
+    bookingNo,
+    qty,
+    window,
+  })
+
+  /** Inside WINDOW: 16 Aug 09:00 → 17 Aug 09:00, Kathmandu. */
+  const FIRST_DAY: RentalWindow = { fromAd: '2026-08-16T09:00:00+05:45', toAd: '2026-08-17T09:00:00+05:45' }
+  /** Inside WINDOW, starting exactly where FIRST_DAY ends. */
+  const SECOND_DAY: RentalWindow = { fromAd: '2026-08-17T09:00:00+05:45', toAd: '2026-08-18T18:00:00+05:45' }
+  /** Ends exactly where WINDOW begins. */
+  const ENDS_AT_PICKUP: RentalWindow = { fromAd: '2026-08-14T09:00:00+05:45', toAd: '2026-08-16T09:00:00+05:45' }
+  /** Begins exactly where WINDOW ends. */
+  const STARTS_AT_RETURN: RentalWindow = { fromAd: '2026-08-18T18:00:00+05:45', toAd: '2026-08-20T18:00:00+05:45' }
+  /** Swallows WINDOW whole — its lower bound is OUTSIDE the window. */
+  const SURROUNDS: RentalWindow = { fromAd: '2026-08-10T09:00:00+05:45', toAd: '2026-08-25T09:00:00+05:45' }
+
+  it('reports the whole stock free when nothing is held', () => {
+    const out = capacityFor({ window: WINDOW, holds: [], totalQuantity: 5, qtyRequested: 2, bounds: 'half-open' })
+    expect(out.peakHeld).toBe(0)
+    expect(out.free).toBe(5)
+    expect(out.shortfall).toBe(0)
+    expect(out.problems).toEqual([])
+  })
+
+  /**
+   * ⭐ The INV-02 verification case, stated as arithmetic: 2 wanted out of a
+   * stock of 5, with 3 already held across an overlapping window. Two are free,
+   * so the line is covered and Confirm may write the hold.
+   */
+  it('covers a line when the peak leaves enough behind — 2 of 5 with 3 held', () => {
+    const out = capacityFor({
+      window: WINDOW,
+      holds: [qHold(3, SURROUNDS, 'B-880')],
+      totalQuantity: 5,
+      qtyRequested: 2,
+      bounds: 'half-open',
+    })
+    expect(out.peakHeld).toBe(3)
+    expect(out.free).toBe(2)
+    expect(out.shortfall).toBe(0)
+    expect(out.problems).toEqual([])
+    expect(explainCapacityShortfall(out, 'BNC Cable 3m')).toBeNull()
+  })
+
+  /** The same booking with one more already held: one short, and it says whose. */
+  it('refuses and names the booking holding the stock — 2 of 5 with 4 held', () => {
+    const out = capacityFor({
+      window: WINDOW,
+      holds: [qHold(4, SURROUNDS, 'B-880')],
+      totalQuantity: 5,
+      qtyRequested: 2,
+      bounds: 'half-open',
+    })
+    expect(out.peakHeld).toBe(4)
+    expect(out.free).toBe(1)
+    expect(out.shortfall).toBe(1)
+    expect(out.problems).toEqual([{ kind: 'held', by: expect.objectContaining({ bookingNo: 'B-880', qty: 4 }) }])
+
+    const sentence = explainCapacityShortfall(out, 'BNC Cable 3m')
+    expect(sentence).toContain('BNC Cable 3m')
+    expect(sentence).toContain('1 more needed')
+    expect(sentence).toContain('B-880')
+  })
+
+  /**
+   * PEAK, not total. Two holds of 3 that do not overlap each other draw on the
+   * same five items at different times, so five is never short — summing them
+   * would refuse a legal booking, which is 0045's stated reason for sweeping.
+   */
+  it('takes the peak concurrency, so back-to-back holds do not add up', () => {
+    const out = capacityFor({
+      window: WINDOW,
+      holds: [qHold(3, FIRST_DAY, 'B-880'), qHold(3, SECOND_DAY, 'B-881')],
+      totalQuantity: 5,
+      qtyRequested: 2,
+      bounds: 'half-open',
+    })
+    expect(out.peakHeld).toBe(3)
+    expect(out.free).toBe(2)
+    expect(out.shortfall).toBe(0)
+  })
+
+  it('adds holds that ARE live at the same instant', () => {
+    const out = capacityFor({
+      window: WINDOW,
+      holds: [qHold(3, SURROUNDS, 'B-880'), qHold(2, SECOND_DAY, 'B-881')],
+      totalQuantity: 5,
+      qtyRequested: 2,
+      bounds: 'half-open',
+    })
+    expect(out.peakHeld).toBe(5)
+    expect(out.free).toBe(0)
+    expect(out.shortfall).toBe(2)
+    /* The peak is reached where the second hold starts, not at pickup. */
+    expect(out.peakAtAd).toBe(SECOND_DAY.fromAd)
+  })
+
+  /**
+   * A hold that CONTAINS the window has its lower bound outside it, so it never
+   * contributes a candidate instant of its own — the window's own start is the
+   * one that finds it. 0045 clamps its candidate set the same way, "so this row
+   * stays answerable for the window it actually claims".
+   */
+  it('counts a hold that surrounds the window, from the window own start', () => {
+    const out = capacityFor({
+      window: WINDOW,
+      holds: [qHold(4, SURROUNDS, 'B-880')],
+      totalQuantity: 5,
+      qtyRequested: 1,
+      bounds: 'half-open',
+    })
+    expect(out.peakHeld).toBe(4)
+    expect(out.peakAtAd).toBe(WINDOW.fromAd)
+  })
+
+  /* ── §4.30(b), from the quantity side ──────────────────────────────────── */
+
+  it('half-open: a hold ending exactly at pickup frees its stock', () => {
+    const out = capacityFor({
+      window: WINDOW,
+      holds: [qHold(5, ENDS_AT_PICKUP, 'B-880')],
+      totalQuantity: 5,
+      qtyRequested: 5,
+      bounds: 'half-open',
+    })
+    expect(out.peakHeld).toBe(0)
+    expect(out.shortfall).toBe(0)
+  })
+
+  it('half-open: a hold beginning exactly at return does not take any', () => {
+    const out = capacityFor({
+      window: WINDOW,
+      holds: [qHold(5, STARTS_AT_RETURN, 'B-880')],
+      totalQuantity: 5,
+      qtyRequested: 5,
+      bounds: 'half-open',
+    })
+    expect(out.peakHeld).toBe(0)
+    expect(out.shortfall).toBe(0)
+  })
+
+  /**
+   * The other convention, pinned so re-ruling §4.30(b) is a one-constant change.
+   * `crew_bookings_no_double_booking` chose `'[]'` inside this same schema and
+   * the disagreement with rentals is deliberate — see `RENTAL_WINDOW_BOUNDS`.
+   */
+  it('closed: the same touching hold DOES take it', () => {
+    const out = capacityFor({
+      window: WINDOW,
+      holds: [qHold(5, ENDS_AT_PICKUP, 'B-880')],
+      totalQuantity: 5,
+      qtyRequested: 5,
+      bounds: 'closed',
+    })
+    expect(out.peakHeld).toBe(5)
+    expect(out.free).toBe(0)
+    expect(out.shortfall).toBe(5)
+  })
+
+  /* ── The two structural refusals ───────────────────────────────────────── */
+
+  it('says so when the product records no stock at all', () => {
+    const out = capacityFor({ window: WINDOW, holds: [], totalQuantity: 0, qtyRequested: 1, bounds: 'half-open' })
+    expect(out.free).toBe(0)
+    expect(out.shortfall).toBe(1)
+    expect(out.problems).toEqual([{ kind: 'no-stock' }])
+    expect(explainCapacityShortfall(out, 'Gaffer Tape')).toContain('no stock on hand at all')
+  })
+
+  it('says so when more is asked for than the product owns, so no date frees it', () => {
+    const out = capacityFor({ window: WINDOW, holds: [], totalQuantity: 4, qtyRequested: 6, bounds: 'half-open' })
+    expect(out.free).toBe(4)
+    expect(out.shortfall).toBe(2)
+    expect(out.problems).toEqual([{ kind: 'exceeds-stock', totalQuantity: 4 }])
+    expect(explainCapacityShortfall(out, 'Gaffer Tape')).toContain('no date frees it')
+  })
+
+  /* ── Refusals rather than answers ──────────────────────────────────────── */
+
+  it('refuses a qty that is not a whole number above zero', () => {
+    const call = (qtyRequested: number) =>
+      capacityFor({ window: WINDOW, holds: [], totalQuantity: 5, qtyRequested, bounds: 'half-open' })
+    expect(() => call(0)).toThrow(/at least one/)
+    expect(() => call(-1)).toThrow(/at least one/)
+    expect(() => call(1.5)).toThrow(/at least one/)
+  })
+
+  it('refuses a negative stock level rather than inventing capacity', () => {
+    expect(() =>
+      capacityFor({ window: WINDOW, holds: [], totalQuantity: -1, qtyRequested: 1, bounds: 'half-open' }),
+    ).toThrow(/failed read/)
+  })
+
+  /**
+   * A hold whose qty cannot be counted is stock that would silently look free —
+   * the same unsafe direction `parseTstzRange` guards on the range side. It is
+   * refused, not skipped.
+   */
+  it('refuses a hold it cannot count', () => {
+    expect(() =>
+      capacityFor({
+        window: WINDOW,
+        holds: [qHold(Number.NaN, SURROUNDS, 'B-880')],
+        totalQuantity: 5,
+        qtyRequested: 1,
+        bounds: 'half-open',
+      }),
+    ).toThrow(/B-880/)
+  })
+
+  it('refuses an inverted window, which would overlap nothing and report everything free', () => {
+    expect(() =>
+      capacityFor({
+        window: { fromAd: WINDOW.toAd, toAd: WINDOW.fromAd },
+        holds: [],
+        totalQuantity: 5,
+        qtyRequested: 1,
+        bounds: 'half-open',
+      }),
+    ).toThrow(/ends before it begins/)
+  })
+
+  /**
+   * A zero-length window is EMPTY under half-open — Postgres's own range
+   * semantics, and the same answer `windowsOverlap` gives. Nothing is held
+   * across an instant of no duration, so the whole stock reads free. Left as-is
+   * rather than special-cased, for the reason `windowsOverlap` states: a booking
+   * of no duration is a data defect to surface elsewhere, not a conflict to
+   * invent here.
+   */
+  it('half-open: a zero-length window holds nothing and is held by nothing', () => {
+    const instant = { fromAd: WINDOW.fromAd, toAd: WINDOW.fromAd }
+    const out = capacityFor({
+      window: instant,
+      holds: [qHold(5, SURROUNDS, 'B-880')],
+      totalQuantity: 5,
+      qtyRequested: 5,
+      bounds: 'half-open',
+    })
+    expect(out.peakHeld).toBe(0)
+    expect(out.peakAtAd).toBeNull()
+    expect(out.shortfall).toBe(0)
+  })
+
+  it('closed: the same zero-length window is a real instant and IS held', () => {
+    const instant = { fromAd: WINDOW.fromAd, toAd: WINDOW.fromAd }
+    const out = capacityFor({
+      window: instant,
+      holds: [qHold(5, SURROUNDS, 'B-880')],
+      totalQuantity: 5,
+      qtyRequested: 5,
+      bounds: 'closed',
+    })
+    expect(out.peakHeld).toBe(5)
+    expect(out.shortfall).toBe(5)
+  })
+
+  /* Law 7: the same two instants written two ways are the same window. */
+  it('compares instants, not text — an offset window and its UTC twin agree', () => {
+    const asOffset = capacityFor({
+      window: WINDOW,
+      holds: [qHold(3, SURROUNDS)],
+      totalQuantity: 5,
+      qtyRequested: 2,
+      bounds: 'half-open',
+    })
+    const asUtc = capacityFor({
+      window: WINDOW_UTC,
+      holds: [qHold(3, SURROUNDS)],
+      totalQuantity: 5,
+      qtyRequested: 2,
+      bounds: 'half-open',
+    })
+    expect(asUtc.peakHeld).toBe(asOffset.peakHeld)
+    expect(asUtc.free).toBe(asOffset.free)
+  })
+})
+
+describe('windowContains — Postgres range @> timestamptz', () => {
+  it('half-open includes the lower bound and excludes the upper', () => {
+    expect(windowContains(WINDOW, WINDOW.fromAd, 'half-open')).toBe(true)
+    expect(windowContains(WINDOW, WINDOW.toAd, 'half-open')).toBe(false)
+  })
+
+  it('closed includes both', () => {
+    expect(windowContains(WINDOW, WINDOW.fromAd, 'closed')).toBe(true)
+    expect(windowContains(WINDOW, WINDOW.toAd, 'closed')).toBe(true)
+  })
+
+  it('excludes an instant outside the window under either convention', () => {
+    expect(windowContains(WINDOW, '2026-08-20T09:00:00+05:45', 'half-open')).toBe(false)
+    expect(windowContains(WINDOW, '2026-08-20T09:00:00+05:45', 'closed')).toBe(false)
+  })
+
+  /* Law 7 — an instant with no offset would be read as the device's local time. */
+  it('refuses an instant that carries no offset', () => {
+    expect(() => windowContains(WINDOW, '2026-08-16T09:00:00', 'half-open')).toThrow(/Law 7/)
   })
 })

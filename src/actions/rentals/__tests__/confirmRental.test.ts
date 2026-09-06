@@ -144,16 +144,32 @@ const assign = vi.hoisted(() => {
     complete: true,
     /** Reservation ids handed back by a successful reserve. */
     reservationIds: ['res-1', 'res-2'] as string[],
+    /** Serialised holds the reserve reports — one row per physical unit. */
+    units: 2,
+    /** Product-level holds, and Σ qty across them (INV-02). */
+    quantityHolds: 0,
+    quantityReserved: 0,
     /** Ordered log of every availability call, for interleaving assertions. */
     calls: [] as string[],
     /** Rows released, with the reason given. */
     released: [] as Array<{ ids: readonly string[]; reason: string }>,
+    /**
+     * Ids the release refuses to give back. `releaseReservations` is best-effort
+     * and returns the ids it DID release, so the difference is a live hold left
+     * against a booking that was never confirmed — which Confirm must name
+     * (INV-05).
+     */
+    releaseFails: new Set<string>(),
   }
   function reset(): void {
     state.complete = true
     state.reservationIds = ['res-1', 'res-2']
+    state.units = 2
+    state.quantityHolds = 0
+    state.quantityReserved = 0
     state.calls = []
     state.released = []
+    state.releaseFails = new Set()
   }
   return { state, reset }
 })
@@ -162,7 +178,7 @@ vi.mock('../../../lib/queries/availability', () => {
   class AssignmentIncompleteError extends Error {
     plan: unknown
     constructor(plan: unknown) {
-      super('cannot be confirmed: not every line has units free for these dates.')
+      super('cannot be confirmed: not every line has stock free for these dates.')
       this.name = 'AssignmentIncompleteError'
       this.plan = plan
     }
@@ -175,11 +191,19 @@ vi.mock('../../../lib/queries/availability', () => {
     },
     reserveAssignedUnits: async () => {
       assign.state.calls.push('reserve')
-      return { reservationIds: assign.state.reservationIds, units: assign.state.reservationIds.length }
+      return {
+        reservationIds: assign.state.reservationIds,
+        units: assign.state.units,
+        quantityHolds: assign.state.quantityHolds,
+        quantityReserved: assign.state.quantityReserved,
+      }
     },
     releaseReservations: async (ids: readonly string[], reason: string) => {
       assign.state.calls.push('release')
       assign.state.released.push({ ids, reason })
+      /* The real one returns the ids it released, so a caller can name the ones
+         it could not — see `assign.state.releaseFails`. */
+      return ids.filter((id) => !assign.state.releaseFails.has(id))
     },
   }
 })
@@ -612,7 +636,7 @@ describe('Auto Assign Serials', () => {
     assign.state.complete = false
     setUpConfirmable()
 
-    await expect(confirm({ id: 'B-715', clientUuid: ACTION_KEY })).rejects.toThrow(/not every line has units free/)
+    await expect(confirm({ id: 'B-715', clientUuid: ACTION_KEY })).rejects.toThrow(/not every line has stock free/)
     /* 0003:1478 — "If reservation fails on any line, Confirm is rejected with
        the conflicting line named." Rejected means nothing moved. */
     expect(insertsOn('booking_stage_transitions')).toHaveLength(0)
@@ -636,11 +660,58 @@ describe('Auto Assign Serials', () => {
 
   it('reports units reserved separately from qty, because a bundle line has no serial', async () => {
     assign.state.reservationIds = ['res-1']
+    assign.state.units = 1
     setUpConfirmable([{ id: LINE_A, qty: 2 }, { id: LINE_B, qty: 3 }])
 
     const { result } = await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
     expect(result.units).toBe(5)
     expect(result.unitsReserved).toBe(1)
+  })
+
+  /**
+   * ⭐ INV-02 from Confirm's side. On the live catalogue every product is
+   * `tracking_mode = 'Quantity'` with no `product_units` rows, so `unitsReserved`
+   * is 0 for every booking and `quantityReserved` is the number that says the
+   * booking has stock behind it. Reporting only the first would read as "nothing
+   * was held" on 204 of 204 products.
+   */
+  it('reports bulk stock held separately from serialised units', async () => {
+    assign.state.reservationIds = ['res-1']
+    assign.state.units = 0
+    assign.state.quantityHolds = 1
+    assign.state.quantityReserved = 40
+    setUpConfirmable([{ id: LINE_A, qty: 40 }])
+
+    const { result, events } = await confirm({ id: 'B-715', clientUuid: ACTION_KEY })
+
+    expect(result.unitsReserved).toBe(0)
+    expect(result.quantityHolds).toBe(1)
+    expect(result.quantityReserved).toBe(40)
+    /* The same two figures reach the bus, so a listener is not left inferring
+       from `unitsReserved: 0` that the booking holds nothing. */
+    expect(events[0]?.payload).toMatchObject({ quantityReserved: 40, quantityHolds: 1 })
+  })
+
+  /**
+   * The compensation is best-effort by construction — it is called from a
+   * failure path and must not replace the real error with a second one. What it
+   * could NOT give back is a live hold against a booking that was never
+   * confirmed, so it is named in the sentence rather than left to
+   * `captureError`, which nobody on the floor reads (INV-05).
+   */
+  it('names a hold the rollback could not release, instead of only logging it', async () => {
+    assign.state.releaseFails = new Set(['res-2'])
+    db.state.responses['bookings'] = [[bookingAt('Quote')], [{ stage: 'Quote' }]]
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
+
+    await expect(confirm({ id: 'B-715', clientUuid: ACTION_KEY })).rejects.toThrow(/res-2/)
+  })
+
+  it('says nothing about stranded holds when every one came back', async () => {
+    db.state.responses['bookings'] = [[bookingAt('Quote')], [{ stage: 'Quote' }]]
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
+
+    await expect(confirm({ id: 'B-715', clientUuid: ACTION_KEY })).rejects.not.toThrow(/still live/)
   })
 
   /*

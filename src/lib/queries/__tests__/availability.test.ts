@@ -1,5 +1,13 @@
-import { describe, it, expect } from 'vitest'
-import { parseTstzRange, toTstzRangeLiteral } from '../availability'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
+import {
+  parseTstzRange,
+  toTstzRangeLiteral,
+  planAssignment,
+  reserveAssignedUnits,
+  releaseReservations,
+  AssignmentIncompleteError,
+  ReservationNotPersistedError,
+} from '../availability'
 import { windowsOverlap, RENTAL_WINDOW_BOUNDS, type RentalWindow } from '../../availability'
 
 /**
@@ -127,5 +135,568 @@ describe('toTstzRangeLiteral', () => {
   it('can be asked for the other convention explicitly', () => {
     expect(toTstzRangeLiteral(window, 'closed').endsWith(']')).toBe(true)
     expect(toTstzRangeLiteral(window, 'half-open').endsWith(')')).toBe(true)
+  })
+})
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * THE PLAN AND THE WRITE — INV-02 and INV-05
+ *
+ * The header above says the IO half of this module is "exercised against the
+ * live project rather than mocked". That held while the only thing it decided
+ * was which serial to pick. It does not hold for the two things below, and
+ * neither can be driven against the live project at all:
+ *
+ *  - the TRACKING-MODE SPLIT (INV-02) needs a Serialised product and a Quantity
+ *    product on one booking, and the live catalogue is 204 of 204 Quantity;
+ *  - the EXACT-COUNT contract (INV-05) is about a write path that reports
+ *    success having written nothing, which cannot be provoked against a
+ *    database that is working.
+ *
+ * So `lib/supabase` and `lib/dataAccess` are replaced by a small in-memory store
+ * carrying the same filter vocabulary the module actually uses. It is a store,
+ * not a stub handing back canned rows: the reads run their real predicates over
+ * it, so a query that stops meaning what it says fails here rather than passing.
+ *
+ * ⚠ What no case below can prove, stated once and loudly: **the arbiters are not
+ * emulated.** `enforce_inventory_reservation_capacity()` and
+ * `inventory_reservations_no_double_booking` live in Postgres. Everything here
+ * exercises the app-side PREVIEW of their answer, and a green run is not evidence
+ * that the ceiling holds under two operators at once.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+const db = vi.hoisted(() => {
+  type Row = Record<string, unknown>
+
+  const state = {
+    tables: {} as Record<string, Row[]>,
+    /** Every payload handed to `insertViaSourceSwitch`, in order. */
+    inserts: [] as Array<{ table: string; payload: Row }>,
+    /**
+     * Ids the insert helper hands back, shifted per call. A `null` entry
+     * reproduces `idempotentInsert`'s two silent branches — the offline queue and
+     * the `'Failed to fetch'` / 408 retry — which echo the payload, carry no
+     * `id`, and write no row (INV-05). An empty queue means "mint one and write
+     * the row".
+     */
+    insertIds: [] as Array<string | null>,
+    /** Ids written with `released_at` already set: an id came back, the row is not live. */
+    ghostIds: new Set<string>(),
+    /** Insert calls that should throw, by 1-based call number. */
+    insertThrowsOn: new Map<number, string>(),
+    /** Ids whose release UPDATE returns an error, so the hold is left stranded. */
+    releaseErrors: new Set<string>(),
+    seq: 0,
+  }
+
+  function rows(table: string): Row[] {
+    const existing = state.tables[table]
+    if (existing !== undefined) return existing
+    const fresh: Row[] = []
+    state.tables[table] = fresh
+    return fresh
+  }
+
+  function reset(): void {
+    state.tables = {}
+    state.inserts = []
+    state.insertIds = []
+    state.ghostIds = new Set()
+    state.insertThrowsOn = new Map()
+    state.releaseErrors = new Set()
+    state.seq = 0
+  }
+
+  function from(table: string) {
+    const preds: Array<(r: Row) => boolean> = []
+    let patch: Row | null = null
+    let eqId: string | null = null
+
+    function settle(): { data: unknown; error: { message: string } | null } {
+      const hit = rows(table).filter((r) => preds.every((f) => f(r)))
+      if (patch === null) return { data: hit, error: null }
+      if (eqId !== null && state.releaseErrors.has(eqId)) {
+        return { data: null, error: { message: `simulated failure releasing ${eqId}` } }
+      }
+      for (const r of hit) Object.assign(r, patch)
+      return { data: hit, error: null }
+    }
+
+    const builder: Record<string, unknown> = {
+      select() {
+        return builder
+      },
+      update(next: Row) {
+        patch = next
+        return builder
+      },
+      eq(column: string, value: unknown) {
+        if (column === 'id') eqId = String(value)
+        preds.push((r) => r[column] === value)
+        return builder
+      },
+      neq(column: string, value: unknown) {
+        preds.push((r) => r[column] !== value)
+        return builder
+      },
+      is(column: string, value: unknown) {
+        preds.push((r) => (r[column] ?? null) === value)
+        return builder
+      },
+      not(column: string, _operator: string, value: unknown) {
+        preds.push((r) => (r[column] ?? null) !== value)
+        return builder
+      },
+      in(column: string, values: unknown[]) {
+        preds.push((r) => values.includes(r[column]))
+        return builder
+      },
+      order() {
+        return builder
+      },
+      maybeSingle() {
+        const settled = settle()
+        const list = (settled.data ?? []) as Row[]
+        return Promise.resolve({ data: list[0] ?? null, error: settled.error })
+      },
+      then(onOk: unknown, onErr: unknown) {
+        return Promise.resolve(settle()).then(onOk as never, onErr as never)
+      },
+    }
+    return builder
+  }
+
+  return { state, rows, reset, from }
+})
+
+vi.mock('../../supabase', () => ({
+  supabase: { from: db.from },
+  newClientUuid: () => `key-${String(++db.state.seq).padStart(4, '0')}`,
+  IS_MOCK: true,
+}))
+
+vi.mock('../../monitoring', () => ({ captureError: () => undefined }))
+
+/* The two ruled defaults, stated rather than read out of `localStorage`, which
+   does not exist in this suite's `node` environment. `boundsForTurnaround`
+   resolves this label to `half-open` — PLAN.md §4.30(b). */
+vi.mock('../../settingsStore', () => ({
+  getSetting: (key: string) =>
+    key === 'unitAvailabilityRule' ? 'Condition only' : 'Same-instant handover allowed',
+}))
+
+vi.mock('../../dataAccess', () => ({
+  insertViaSourceSwitch: async (table: string, payload: Record<string, unknown>) => {
+    db.state.inserts.push({ table, payload })
+    const call = db.state.inserts.length
+    const boom = db.state.insertThrowsOn.get(call)
+    if (boom !== undefined) throw new Error(`[DataAccess] Insert failed on ${table}: ${boom}`)
+
+    const queued = db.state.insertIds.length > 0 ? db.state.insertIds.shift() : `res-${call}`
+    /* The INV-05 branch: the helper echoes the payload it was handed and reports
+       no error, having QUEUED the write rather than made it. No id, no row. */
+    if (queued === null || queued === undefined) return { data: { ...payload }, error: null }
+
+    const row = {
+      id: queued,
+      ...payload,
+      released_at: db.state.ghostIds.has(queued) ? '2026-09-07T00:00:00.000Z' : null,
+      released_reason: db.state.ghostIds.has(queued) ? 'taken by something else' : null,
+    }
+    db.rows(table).push(row)
+    return { data: row, error: null }
+  },
+}))
+
+/* ── Fixtures ────────────────────────────────────────────────────────────── */
+
+const BOOKING_ID = '11111111-2222-4333-8444-555555555555'
+const LINE_SERIAL = 'aaaaaaaa-0000-4000-8000-000000000001'
+const LINE_QTY = 'bbbbbbbb-0000-4000-8000-000000000002'
+const LINE_QTY_2 = 'eeeeeeee-0000-4000-8000-000000000005'
+const P_SERIAL = 'cccccccc-0000-4000-8000-000000000003'
+const P_QTY = 'dddddddd-0000-4000-8000-000000000004'
+
+const PICKUP = '2026-08-16T09:00:00+05:45'
+const RETURN = '2026-08-18T18:00:00+05:45'
+/** Postgres's own text form, and a window that swallows the booking's whole. */
+const OVERLAPPING = '["2026-08-10 04:00:00+00","2026-08-25 04:00:00+00")'
+
+interface LineSpec {
+  lineId: string
+  productId: string
+  qty: number
+  description: string
+}
+
+/**
+ * One Quote booking, its lines, and the catalogue rows behind them. A Serialised
+ * product gets unit rows; a Quantity one gets none, which is what
+ * `tracking_mode = 'Quantity'` MEANS (0001:504) and is exactly the live shape.
+ */
+function seed(options: { lines: LineSpec[]; serialUnits?: number; quantityTotal?: number }): void {
+  db.reset()
+  const serialUnits = options.serialUnits ?? 3
+  db.rows('bookings').push({ id: BOOKING_ID, booking_no: 'B-715', pickup_at: PICKUP, return_at: RETURN })
+  for (const line of options.lines) {
+    db.rows('booking_lines').push({
+      id: line.lineId,
+      booking_id: BOOKING_ID,
+      product_id: line.productId,
+      qty: line.qty,
+      line_type: 'Equipment',
+      description: line.description,
+      voided_at: null,
+    })
+  }
+  db.rows('products_v').push(
+    { id: P_SERIAL, tracking_mode: 'Serialised', total_quantity: serialUnits },
+    { id: P_QTY, tracking_mode: 'Quantity', total_quantity: options.quantityTotal ?? 5 },
+  )
+  for (let n = 1; n <= serialUnits; n += 1) {
+    db.rows('product_units_v').push({
+      id: `unit-${n}`,
+      asset_tag: `EQ000001-U0${n}`,
+      serial_no: `SN-00${n}`,
+      product_id: P_SERIAL,
+      status: 'In Stock',
+      retired_at: null,
+    })
+  }
+}
+
+/** One live PRODUCT-level hold on the bulk product, across the booking's window. */
+function holdBulk(qty: number, bookingNo = 'B-880'): void {
+  db.rows('inventory_reservations').push({
+    id: `existing-${bookingNo}-${qty}`,
+    booking_id: `other-${bookingNo}`,
+    booking_line_id: 'other-line',
+    asset_id: null,
+    product_id: P_QTY,
+    qty,
+    period: OVERLAPPING,
+    released_at: null,
+    bookings: { booking_no: bookingNo },
+  })
+}
+
+const SERIAL_LINE: LineSpec = { lineId: LINE_SERIAL, productId: P_SERIAL, qty: 1, description: 'Sony FX3' }
+const QTY_LINE: LineSpec = { lineId: LINE_QTY, productId: P_QTY, qty: 2, description: 'BNC Cable 3m' }
+
+const CTX = { userId: 'usr-owner' }
+
+async function messageOf(run: Promise<unknown>): Promise<string> {
+  try {
+    await run
+  } catch (failure) {
+    return failure instanceof Error ? failure.message : String(failure)
+  }
+  throw new Error('expected the call to reject, and it resolved')
+}
+
+/* ── The split ───────────────────────────────────────────────────────────── */
+
+describe('planAssignment — the tracking-mode split (INV-02)', () => {
+  beforeEach(() => {
+    db.reset()
+  })
+
+  /**
+   * ⭐ The defect, stated as a test. Before 7 Sep 2026 this booking was refused:
+   * a `Quantity` product has no `product_units` rows, `readCandidates` returned
+   * an empty pool, and `selectUnitsForLine` reported a shortfall equal to the
+   * whole line. On the live project every one of 204 products is in this state,
+   * so this is every booking.
+   */
+  it('plans a quantity line by capacity instead of demanding serials it cannot have', async () => {
+    seed({ lines: [QTY_LINE], quantityTotal: 5 })
+    holdBulk(3)
+
+    const plan = await planAssignment(BOOKING_ID)
+
+    expect(plan.complete).toBe(true)
+    expect(plan.lines).toHaveLength(1)
+    const line = plan.lines[0]
+    if (line === undefined || line.kind !== 'quantity') throw new Error('expected one quantity line')
+    expect(line.capacity.peakHeld).toBe(3)
+    expect(line.capacity.free).toBe(2)
+    expect(line.capacity.shortfall).toBe(0)
+    expect(line.problem).toBeNull()
+  })
+
+  it('refuses it inline, naming the shortfall and the booking, when one more is held', async () => {
+    seed({ lines: [QTY_LINE], quantityTotal: 5 })
+    holdBulk(4)
+
+    const plan = await planAssignment(BOOKING_ID)
+
+    expect(plan.complete).toBe(false)
+    expect(plan.lines[0]?.problem).toContain('BNC Cable 3m')
+    expect(plan.lines[0]?.problem).toContain('B-880')
+    expect(new AssignmentIncompleteError(plan).message).toContain('B-715 cannot be confirmed')
+  })
+
+  it('leaves a serialised line on the unit path, untouched', async () => {
+    seed({ lines: [SERIAL_LINE], serialUnits: 3 })
+
+    const plan = await planAssignment(BOOKING_ID)
+
+    const line = plan.lines[0]
+    if (line === undefined || line.kind !== 'serialised') throw new Error('expected one serialised line')
+    expect(line.outcome.assigned.map((unit) => unit.assetTag)).toEqual(['EQ000001-U01'])
+    expect(line.outcome.shortfall).toBe(0)
+  })
+
+  /** One booking, both modes — the case neither half of the engine sees alone. */
+  it('plans a mixed booking, one line down each path, in one plan', async () => {
+    seed({ lines: [SERIAL_LINE, QTY_LINE], serialUnits: 2, quantityTotal: 5 })
+    holdBulk(3)
+
+    const plan = await planAssignment(BOOKING_ID)
+
+    expect(plan.complete).toBe(true)
+    expect(plan.lines.map((entry) => entry.kind)).toEqual(['serialised', 'quantity'])
+  })
+
+  /**
+   * Two lines naming the same bulk product must not both be told the same five
+   * are free. Nothing in the database would catch it until the second row hit
+   * 0045's ceiling — the same reasoning the `claimed` unit set carries on the
+   * serialised side.
+   */
+  it('does not promise the same bulk stock to two lines of one booking', async () => {
+    seed({
+      lines: [
+        { lineId: LINE_QTY, productId: P_QTY, qty: 3, description: 'BNC Cable 3m' },
+        { lineId: LINE_QTY_2, productId: P_QTY, qty: 3, description: 'BNC Cable 3m' },
+      ],
+      quantityTotal: 5,
+    })
+
+    const plan = await planAssignment(BOOKING_ID)
+
+    expect(plan.lines[0]?.problem).toBeNull()
+    expect(plan.complete).toBe(false)
+    expect(plan.lines[1]?.problem).toContain('an earlier line on this booking')
+  })
+
+  /**
+   * A line naming a product the catalogue cannot return is REFUSED, not skipped.
+   * `skipped` lines do not count against `complete`, so skipping would confirm a
+   * booking carrying a line whose stock was never checked and never held.
+   */
+  it('refuses outright when a line names a product it cannot read', async () => {
+    seed({ lines: [QTY_LINE] })
+    db.state.tables['products_v'] = []
+
+    await expect(planAssignment(BOOKING_ID)).rejects.toThrow(/could not be read from the catalogue/)
+  })
+
+  /** A bundle line still names no product and is still reported, not guessed at. */
+  it('still reports a product-less line as skipped rather than planning it', async () => {
+    seed({ lines: [] })
+    db.rows('booking_lines').push({
+      id: 'ffffffff-0000-4000-8000-000000000006',
+      booking_id: BOOKING_ID,
+      product_id: null,
+      qty: 1,
+      line_type: 'Bundle',
+      description: 'Lens Set',
+      voided_at: null,
+    })
+
+    const plan = await planAssignment(BOOKING_ID)
+
+    expect(plan.lines).toHaveLength(0)
+    expect(plan.skipped).toHaveLength(1)
+  })
+})
+
+/* ── The write ───────────────────────────────────────────────────────────── */
+
+describe('reserveAssignedUnits — what reaches inventory_reservations', () => {
+  beforeEach(() => {
+    db.reset()
+  })
+
+  /**
+   * ⭐ The other half of INV-02: ONE row naming the PRODUCT, carrying the line's
+   * own qty and no `asset_id`. That is the shape
+   * `inventory_reservations_serialised_xor_quantity` was written for and the one
+   * the live capacity trigger reads through
+   * `idx_inventory_reservations_product_period`.
+   */
+  it('writes ONE product-level hold for a quantity line, never a row per item', async () => {
+    seed({ lines: [QTY_LINE], quantityTotal: 5 })
+    holdBulk(3)
+
+    const plan = await planAssignment(BOOKING_ID)
+    const result = await reserveAssignedUnits(plan, CTX)
+
+    expect(db.state.inserts).toHaveLength(1)
+    const payload = db.state.inserts[0]?.payload ?? {}
+    expect(payload).toMatchObject({
+      booking_id: BOOKING_ID,
+      booking_line_id: LINE_QTY,
+      product_id: P_QTY,
+      qty: 2,
+      created_by: 'usr-owner',
+    })
+    expect(payload['asset_id']).toBeUndefined()
+    /* Law 8 — the ROW's own key, minted per row because it carries `unique`. */
+    expect(payload['client_uuid']).toBe('key-0001')
+    /* The plan's own convention, so the bracket the database compares is the one
+       the check ran under. §4.30(b) is half-open, hence the `)`. */
+    expect(payload['period']).toBe(`[${PICKUP},${RETURN})`)
+
+    expect(result.units).toBe(0)
+    expect(result.quantityHolds).toBe(1)
+    expect(result.quantityReserved).toBe(2)
+    expect(result.reservationIds).toHaveLength(1)
+  })
+
+  it('writes one asset hold of qty 1 per unit for a serialised line, unchanged', async () => {
+    seed({ lines: [SERIAL_LINE], serialUnits: 3 })
+
+    const plan = await planAssignment(BOOKING_ID)
+    const result = await reserveAssignedUnits(plan, CTX)
+
+    expect(db.state.inserts).toHaveLength(1)
+    const payload = db.state.inserts[0]?.payload ?? {}
+    expect(payload).toMatchObject({ asset_id: 'unit-1', qty: 1 })
+    expect(payload['product_id']).toBeUndefined()
+    expect(result.units).toBe(1)
+    expect(result.quantityHolds).toBe(0)
+    expect(result.quantityReserved).toBe(0)
+  })
+
+  it('writes both shapes for a mixed booking and reports them separately', async () => {
+    seed({ lines: [SERIAL_LINE, QTY_LINE], serialUnits: 2, quantityTotal: 5 })
+
+    const plan = await planAssignment(BOOKING_ID)
+    const result = await reserveAssignedUnits(plan, CTX)
+
+    expect(db.state.inserts).toHaveLength(2)
+    expect(result.units).toBe(1)
+    expect(result.quantityHolds).toBe(1)
+    expect(result.quantityReserved).toBe(2)
+    expect(result.reservationIds).toHaveLength(2)
+  })
+
+  it('refuses an incomplete plan outright and writes nothing', async () => {
+    seed({ lines: [QTY_LINE], quantityTotal: 5 })
+    holdBulk(4)
+
+    const plan = await planAssignment(BOOKING_ID)
+
+    await expect(reserveAssignedUnits(plan, CTX)).rejects.toBeInstanceOf(AssignmentIncompleteError)
+    expect(db.state.inserts).toHaveLength(0)
+  })
+})
+
+/* ── INV-05 ──────────────────────────────────────────────────────────────── */
+
+describe('reserveAssignedUnits — the exact-count and read-back contract (INV-05)', () => {
+  beforeEach(() => {
+    db.reset()
+  })
+
+  /**
+   * ⭐ The defect. `idempotentInsert` returns `{ data: <the payload you sent>,
+   * error: null }` on the offline queue and on the `'Failed to fetch'` / 408
+   * retry — which fires even when `navigator.onLine` is true — and the echoed
+   * payload carries no `id`. Before 7 Sep 2026 the loop simply skipped it and
+   * reported success, so Confirm moved the stage on a booking holding nothing.
+   */
+  it('throws rather than reporting success when a write lands no row', async () => {
+    seed({ lines: [SERIAL_LINE, QTY_LINE], serialUnits: 2, quantityTotal: 5 })
+    db.state.insertIds = ['res-1', null]
+
+    const plan = await planAssignment(BOOKING_ID)
+
+    await expect(reserveAssignedUnits(plan, CTX)).rejects.toBeInstanceOf(ReservationNotPersistedError)
+  })
+
+  it('leaves no partial holds behind — what did land is released, never deleted', async () => {
+    seed({ lines: [SERIAL_LINE, QTY_LINE], serialUnits: 2, quantityTotal: 5 })
+    db.state.insertIds = ['res-1', null]
+
+    const plan = await planAssignment(BOOKING_ID)
+    await expect(reserveAssignedUnits(plan, CTX)).rejects.toThrow()
+
+    const rows = db.rows('inventory_reservations')
+    expect(rows).toHaveLength(1)
+    /* Law 3 — released, with a reason, never removed. */
+    expect(rows[0]?.['id']).toBe('res-1')
+    expect(rows[0]?.['released_at']).not.toBeNull()
+    expect(String(rows[0]?.['released_reason'])).toContain('B-715')
+  })
+
+  /**
+   * The check the count alone cannot make: every id came back, and the rows are
+   * not live in the database anyway. An unverified hold is exactly as dangerous
+   * as a missing one, so it is treated as a failure rather than as an unknown.
+   */
+  it('reads the rows back and refuses when they are not live', async () => {
+    seed({ lines: [QTY_LINE], quantityTotal: 5 })
+    db.state.insertIds = ['ghost']
+    db.state.ghostIds.add('ghost')
+
+    const plan = await planAssignment(BOOKING_ID)
+
+    await expect(reserveAssignedUnits(plan, CTX)).rejects.toBeInstanceOf(ReservationNotPersistedError)
+  })
+
+  /**
+   * A refusal by the arbiter — the GiST exclusion, or 0045's ceiling — means
+   * *"someone took it since you looked"*, and Law 12 wants the operator told what
+   * is free NOW rather than handed a Postgres string. The re-read runs after the
+   * compensation, so it describes the world the operator is actually looking at.
+   */
+  it('re-reads availability and says what is free now when the database refuses', async () => {
+    seed({ lines: [QTY_LINE], quantityTotal: 5 })
+    db.state.insertThrowsOn.set(1, 'Reservation rejected: product would have 12 units held at once')
+
+    const plan = await planAssignment(BOOKING_ID)
+    /* Someone else's hold lands between the plan and the write. */
+    holdBulk(4, 'B-881')
+
+    const message = await messageOf(reserveAssignedUnits(plan, CTX))
+    expect(message).toContain('Reservation rejected')
+    expect(message).toContain('Re-read just now')
+    expect(message).toContain('B-881')
+  })
+
+  /** A hold the compensation could not give back is NAMED, not merely logged. */
+  it('names the holds a failed rollback left live', async () => {
+    seed({ lines: [SERIAL_LINE, QTY_LINE], serialUnits: 2, quantityTotal: 5 })
+    db.state.insertIds = ['res-1', null]
+    db.state.releaseErrors.add('res-1')
+
+    const plan = await planAssignment(BOOKING_ID)
+
+    const message = await messageOf(reserveAssignedUnits(plan, CTX))
+    expect(message).toContain('still live')
+    expect(message).toContain('res-1')
+  })
+})
+
+describe('releaseReservations', () => {
+  beforeEach(() => {
+    db.reset()
+  })
+
+  it('returns the ids it released, so a caller can name the ones it could not', async () => {
+    db.rows('inventory_reservations').push(
+      { id: 'a', released_at: null, released_reason: null },
+      { id: 'b', released_at: null, released_reason: null },
+    )
+    db.state.releaseErrors.add('b')
+
+    const released = await releaseReservations(['a', 'b'], 'Rolled back: test')
+
+    expect(released).toEqual(['a'])
+    expect(db.rows('inventory_reservations')[0]?.['released_reason']).toBe('Rolled back: test')
+    /* Law 3 — the row that could not be released is still there, and still live. */
+    expect(db.rows('inventory_reservations')[1]?.['released_at']).toBeNull()
   })
 })

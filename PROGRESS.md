@@ -2,6 +2,88 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-07 (cont.) — Confirm can work on the live catalogue: the availability engine grows its quantity half
+
+**Phase:** Phase 0 · **Status:** INV-02 (P0) and INV-05 (P1) implemented · app-side only, no migration · `check:rebuild` still BLOCKED
+
+`REMEDIATION_AUDIT_2026-09-05.md` INV-02, the audit's Option A. **All 204 products on live are
+`Quantity`-tracked with zero `product_units` rows**, and `readLines` treated every line as
+serialised-assignable, so the candidate pool was always empty and Confirm would refuse every
+booking on the real catalogue the moment numbering stopped bricking creation. No product-level
+hold was ever written, which is why `0045`'s capacity trigger and the GiST index on
+`(product_id, period)` have been guarding rows nothing creates.
+
+### The engine
+
+`capacityFor` in `lib/availability.ts` is pure and **restates `0045`'s own sweep** rather than
+inventing an algorithm: candidate instants are the window start plus the lower bound of every
+overlapping hold that falls inside the window, occupancy is summed at each, and `free = total −
+peak`. It refuses rather than answers on a non-integer quantity, a negative total, an inverted
+window or a hold it cannot count — an availability engine that guesses is worse than one that
+declines. `explainCapacityShortfall` is its Law 12 sibling and names the bookings holding the
+stock.
+
+`AssignmentPlanLine` became a discriminated union of serialised and quantity lines, and
+`planAssignment` branches per line. `isSerialisedMode` mirrors the trigger's own
+`if tracking_mode = 'Serialised' … else` instead of listing the quantity modes, so a mode added
+later behaves the same in both places.
+
+Two deliberate calls worth recording. `readProductModes` reads `products_v`, never `products`
+(0062 armed that table), and does so as its own query rather than an embed through
+`booking_lines`, because the embed shape is unmeasured here and a silent miss would refuse every
+booking. And `readLines` now **throws** when a line's product is unreadable instead of marking it
+`skipped` — a skipped line does not count against `complete`, so skipping would have confirmed a
+line nobody checked.
+
+### INV-05 — the writer stops reporting success for rows it did not write
+
+`reserveAssignedUnits` wrote holds and trusted a null error from a helper whose contract is
+optimistic success, so a Confirm could reach Booked with zero live holds. It now compares the
+written count against the plan **and** reads the rows back live by id; on any mismatch it
+releases what it wrote and throws. Contention (`23P01`, `23505`, or the capacity trigger's own
+refusal) is recognised as "someone took it" and reported inline with a fresh availability read
+appended, not as a generic failure. `releaseReservations` returns the ids it released, and
+`confirmRental` names any hold the rollback could not give back rather than silently stranding it.
+
+### What is proven, and what is not
+
+Proven by test: a quantity line of 2 against a total of 5 with an existing hold of 3 plans
+complete and writes one product row with no `asset_id`; against a hold of 4 it refuses inline
+naming the holding booking and the shortfall; a serialised line still takes the old path
+unchanged; a write that lands fewer rows than planned throws and releases what landed, keeping
+the row per Law 3.
+
+**Not proven, and stated as such:** the arbiters are in Postgres and were never exercised.
+`enforce_inventory_reservation_capacity()` and the GiST exclusion are what actually stop two
+concurrent Confirms taking the last unit; every test here drives the app-side preview. There is
+no pgTAP and no live insert, and `check:rebuild` cannot run (Docker's privileged service is
+stopped — see the previous entry). The quantity path has also never rendered in a browser: the
+mock corpus makes every product `Serialised` (`corpus.ts:179`), and changing that would move data
+every screen reads while two other sessions are live-editing. `mock/client.ts` now carries a
+comment saying the capacity trigger and the exclusion are not emulated, so `capacityFor` is the
+mock's only guard and a green mock run is not evidence the ceiling holds.
+
+### Recorded, not invented — `PLAN.md §4.49`
+
+Two forks the work actually reached. **(a)** A `Consumable` is held and released exactly like
+bulk stock, because the trigger treats it that way; `Add Equipment §5.1` says a consumable is
+"consumed on return — never comes back", which would mean a return decrements
+`products.total_quantity`, and nothing anywhere does. The recommendation is to decrement, because
+a consumable that silently returns to stock gets promised to a booking that cannot be filled —
+but that is a rule about Cine Sewa's stock, not an engineering choice. **(b)** D5's
+creation-time planner is quantity-blind and will report "0 assigned" for every bulk line; it has
+zero importers today, so the question is only what it should do when `INV-03` wires it.
+
+### Verified
+
+`npx eslint` on all seven touched files — exit 0. `npx vitest run` on
+`lib/__tests__/availability.test.ts`, `lib/queries/__tests__/availability.test.ts` and
+`actions/rentals/__tests__/confirmRental.test.ts` — **148 passed**, exit 0, re-run independently
+after the work landed. A wider run over the other consumers of these modules passed 261.
+`npx tsc --noEmit` fails, in one file this entry does not touch and did not create:
+`modules/finance/__tests__/RecordPaymentModal.test.tsx`, whose type source is another agent's
+in-flight change to that modal's props. No error names any file committed here.
+
 ## 2026-09-07 — Phase 1 of the remediation audit: the views stop accepting writes, and the numbering drafts stop truncating
 
 **Phase:** Phase 0 · **Status:** 2 of 7 Phase 1 items drafted · nothing applied to live · `check:rebuild` BLOCKED on Docker

@@ -562,3 +562,300 @@ export function explainShortfall(outcome: AssignmentOutcome, productName: string
 
   return parts.join(' ')
 }
+
+/* ── QUANTITY-TRACKED STOCK — the other half of the schema ───────────────────
+ *
+ * Everything above answers the SERIALISED question: which physical unit goes on
+ * which booking. `product_tracking_mode` (0001:505-509) has three values and two
+ * of them — `Quantity` and `Consumable` — have no `product_units` rows at all
+ * ("Governs whether product_units rows may exist", 0001:504). For those, "is it
+ * free" is not a question about units; it is a question about a NUMBER.
+ *
+ * Until 7 Sep 2026 nothing here asked it, so a booking line naming bulk stock
+ * resolved an empty candidate pool and Confirm refused it — on the live project
+ * that is 204 of 204 products (INV-02).
+ *
+ * ## This mirrors a trigger that is already live
+ *
+ * `enforce_inventory_reservation_capacity()` — `0045_reservation_capacity_ceiling.sql`,
+ * applied to the live project — is the arbiter, exactly as the GiST exclusion is
+ * the arbiter for serial holds. It takes a `for update` lock on the `products`
+ * row and refuses a hold whose PEAK CONCURRENT qty would exceed stock on hand.
+ * This function is the app-side preview of that answer, so an operator gets a
+ * sentence rather than a 400 — the same relationship `selectUnitsForLine` has
+ * with the exclusion, and the same one `confirmRental` has with the stage
+ * trigger. **It is not the defence.** Two operators pressing Confirm in the same
+ * second are separated by the row lock in the database, never by this file.
+ *
+ * ## Peak concurrency, not a naive total — and why the arithmetic is copied
+ *
+ * Two holds of 100 each on a stock of 150 are perfectly legal if they do not
+ * overlap, so summing every hold that touches the window would refuse a legal
+ * booking. 0045 evaluates occupancy at a set of candidate instants and compares
+ * the maximum; the candidates are the lower bounds of the overlapping live
+ * holds, clamped to the new row's own period, and the new row is itself one of
+ * them so its start is always in the set. The occupancy function only ever steps
+ * UP at a hold's lower bound, so its maximum over the window is attained at one
+ * of those instants or nowhere.
+ *
+ * That sweep is restated here, deliberately, rather than approximated. An app
+ * preview that disagrees with the arbiter at the edges is worse than no preview:
+ * it produces a green screen followed by a database refusal nobody can explain.
+ * The one thing that must never drift is therefore written twice and pinned by
+ * tests on both sides.
+ *
+ * ## Law 1
+ *
+ * Pure. No IO, no clock, no settings read. `bounds` and the numbers arrive from
+ * `lib/queries/availability.ts`, which is the only module that touches storage,
+ * for the same reasons stated at the top of this file.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * An existing live hold on a product's BULK stock, for a window.
+ *
+ * The quantity-mode sibling of `UnitHold`: `inventory_reservations` names either
+ * an `asset_id` **or** a `product_id`, never both
+ * (`inventory_reservations_serialised_xor_quantity`, 0003:1457-1459), and a
+ * serial hold is additionally pinned to `qty = 1`
+ * (`inventory_reservations_serialised_hold_is_one`). So a hold carrying a `qty`
+ * above one is always this shape.
+ *
+ * `bookingNo` is carried for exactly the reason `UnitHold` carries it — a
+ * conflict that names the booking holding the stock tells the coordinator what
+ * to do next, which "unavailable" does not.
+ */
+export interface QuantityHold {
+  /** `inventory_reservations.booking_id`. */
+  readonly bookingId: string
+  /** `bookings.booking_no`, for the operator-facing sentence. */
+  readonly bookingNo: string
+  /** `inventory_reservations.qty` — `> 0` at the database. */
+  readonly qty: number
+  readonly window: RentalWindow
+}
+
+/**
+ * Why a quantity line could not be covered. Every refusal carries one, the same
+ * contract `RejectionReason` holds for the serialised path.
+ */
+export type CapacityProblem =
+  /** `products.total_quantity` is 0 — the product records no bulk stock at all. */
+  | { readonly kind: 'no-stock' }
+  /** More was asked for than the product owns, so no date frees it. */
+  | { readonly kind: 'exceeds-stock'; readonly totalQuantity: number }
+  /** One hold that was live at the peak instant. */
+  | { readonly kind: 'held'; readonly by: QuantityHold }
+
+export interface CapacityOutcome {
+  /** `products.total_quantity` — the ceiling 0045 compares against. */
+  readonly totalQuantity: number
+  /** The largest qty held at any one instant inside the window, by OTHER holds. */
+  readonly peakHeld: number
+  /** `totalQuantity − peakHeld`, floored at 0. */
+  readonly free: number
+  readonly qtyRequested: number
+  /** `qtyRequested − free`, floored at 0. Zero means the line is covered. */
+  readonly shortfall: number
+  /**
+   * The instant the peak was attained, reported as it was supplied. `null` when
+   * the window contains no instant at all — a zero-length window under
+   * `half-open` is empty and holds nothing, which is Postgres's own range
+   * semantics and is left as-is for the reason `windowsOverlap` gives.
+   */
+  readonly peakAtAd: string | null
+  /** Empty exactly when `shortfall` is 0. */
+  readonly problems: readonly CapacityProblem[]
+}
+
+export interface CapacityInput {
+  /** The window to hold for, normally the booking's `pickup_at`…`return_at`. */
+  readonly window: RentalWindow
+  /**
+   * Live holds drawing on this product's stock. Released holds must be filtered
+   * out by the caller (Law 3), matching the trigger's `released_at is null`.
+   *
+   * For a Serialised product this must ALSO carry that product's serial holds as
+   * `qty: 1` entries — 0045's `live` CTE unions both shapes, because a
+   * model-level hold of 3 plus a serial hold on a fourth unit is 4 units
+   * claimed. Passing only one shape would preview a ceiling the database does
+   * not have.
+   */
+  readonly holds: readonly QuantityHold[]
+  /** `products.total_quantity` — `integer not null default 0`, CHECK ≥ 0 (0004:97, :142). */
+  readonly totalQuantity: number
+  /** `booking_lines.qty` for this line. */
+  readonly qtyRequested: number
+  /**
+   * Required, no default — the same rule every entry point above holds to.
+   * Application code passes the value carried on the plan, which came from
+   * `boundsForTurnaround`. See `BoundConvention`.
+   */
+  readonly bounds: BoundConvention
+}
+
+/**
+ * Is `atAd` inside `window`? Postgres's `range @> timestamptz`.
+ *
+ * Split out and exported because it is the one place the bound convention
+ * decides an INSTANT rather than an overlap, and 0045's sweep asks this question
+ * at every candidate. Under `half-open` a window ending at 18:00 does not
+ * contain 18:00 — the same ruling (§4.30(b)) that lets a booking ending at 18:00
+ * free its stock for one starting at 18:00, seen from the other side.
+ */
+export function windowContains(window: RentalWindow, atAd: string, bounds: BoundConvention): boolean {
+  assertWindow(window, 'The window')
+  if (!isInstant(atAd)) {
+    throw new Error(
+      `${JSON.stringify(atAd)} is not an AD/UTC instant carrying an offset (Law 7). Nothing was checked.`,
+    )
+  }
+  return containsMs(window, instant(atAd), bounds)
+}
+
+function containsMs(window: RentalWindow, atMs: number, bounds: BoundConvention): boolean {
+  const from = instant(window.fromAd)
+  const to = instant(window.toAd)
+  return bounds === 'closed' ? from <= atMs && atMs <= to : from <= atMs && atMs < to
+}
+
+/**
+ * How much of a product's bulk stock is free across `window`, and why not more.
+ *
+ * The quantity-mode counterpart of `selectUnitsForLine`, and it keeps that
+ * function's contract: it **never partially lies**. A caller asking for 4 with 2
+ * free receives `shortfall: 2` and the holds standing in the way, not a number
+ * that looks like a yes.
+ *
+ * Refuses rather than answers on input it cannot have meant, for the reason
+ * `assertWindow` gives: a wrong answer here is the direction that puts the same
+ * cable on two shoots.
+ */
+export function capacityFor(input: CapacityInput): CapacityOutcome {
+  const { window, holds, totalQuantity, qtyRequested, bounds } = input
+
+  if (!Number.isInteger(qtyRequested) || qtyRequested < 1) {
+    throw new Error(
+      `A line needs at least one of a product; received ${JSON.stringify(qtyRequested)}. ` +
+        'booking_lines carries `qty > 0` at the database (Law 9). Nothing was checked.',
+    )
+  }
+  if (!Number.isInteger(totalQuantity) || totalQuantity < 0) {
+    throw new Error(
+      'Stock on hand must be a whole number of units at or above zero; received ' +
+        `${JSON.stringify(totalQuantity)}. products.total_quantity is \`integer not null\` with a CHECK at ` +
+        'or above 0 (0004:97, :142), so this is a failed read rather than a real stock level, and ' +
+        'answering it would invent capacity. Nothing was checked.',
+    )
+  }
+  assertWindow(window, 'The booking window')
+
+  const overlapping: QuantityHold[] = []
+  for (const hold of holds) {
+    if (!Number.isInteger(hold.qty) || hold.qty < 1) {
+      throw new Error(
+        `${hold.bookingNo} holds ${JSON.stringify(hold.qty)} of this product, which is not a whole number ` +
+          'above zero. inventory_reservations_qty_positive forbids it at the database, so this is a failed ' +
+          'read — and a hold that cannot be counted is stock that would look free. Nothing was checked.',
+      )
+    }
+    if (windowsOverlap(window, hold.window, bounds)) overlapping.push(hold)
+  }
+
+  /*
+   * 0045's candidate set, restated: the lower bound of every overlapping live
+   * hold that falls INSIDE this window, plus this window's own start — which is
+   * the trigger's `NEW.period @> lower(l.period)` with NEW itself among `live`.
+   * Occupancy only steps up at a lower bound, so the maximum is attained at one
+   * of these or nowhere.
+   */
+  const candidates = new Set<number>()
+  const start = instant(window.fromAd)
+  if (containsMs(window, start, bounds)) candidates.add(start)
+  for (const hold of overlapping) {
+    const at = instant(hold.window.fromAd)
+    if (containsMs(window, at, bounds)) candidates.add(at)
+  }
+
+  let peakHeld = 0
+  let peakAt: number | null = null
+  let peakHolds: readonly QuantityHold[] = []
+
+  for (const at of candidates) {
+    const live = overlapping.filter((hold) => containsMs(hold.window, at, bounds))
+    const held = live.reduce((sum, hold) => sum + hold.qty, 0)
+    if (peakAt === null || held > peakHeld) {
+      peakHeld = held
+      peakAt = at
+      peakHolds = live
+    }
+  }
+
+  const free = Math.max(0, totalQuantity - peakHeld)
+  const shortfall = Math.max(0, qtyRequested - free)
+
+  const problems: CapacityProblem[] = []
+  if (shortfall > 0) {
+    if (totalQuantity === 0) problems.push({ kind: 'no-stock' })
+    else if (qtyRequested > totalQuantity) problems.push({ kind: 'exceeds-stock', totalQuantity })
+    for (const hold of peakHolds) problems.push({ kind: 'held', by: hold })
+  }
+
+  return {
+    totalQuantity,
+    peakHeld,
+    free,
+    qtyRequested,
+    shortfall,
+    peakAtAd: peakAt === null ? null : instantSourceOf(peakAt, window, overlapping),
+    problems,
+  }
+}
+
+/**
+ * The ISO text the peak instant arrived as, so nothing is re-serialised into a
+ * third format — the same text/instant distinction the rest of this file keeps.
+ * The fallback can only be reached if a candidate came from neither the window
+ * nor a hold, which the construction above forbids.
+ */
+function instantSourceOf(atMs: number, window: RentalWindow, holds: readonly QuantityHold[]): string {
+  if (instant(window.fromAd) === atMs) return window.fromAd
+  for (const hold of holds) {
+    if (instant(hold.window.fromAd) === atMs) return hold.window.fromAd
+  }
+  return new Date(atMs).toISOString()
+}
+
+/**
+ * The operator-facing sentence for a quantity shortfall — Law 12's inline,
+ * persistent, specific error, and the sibling of `explainShortfall`.
+ *
+ * Names the bookings holding the stock for the same reason that one does: it is
+ * the fact that tells a coordinator what to do next. It does NOT restate 0045's
+ * exception text — that message belongs to the database, arrives only when the
+ * database refuses, and quoting it here would suggest the app had been refused
+ * when it had not.
+ */
+export function explainCapacityShortfall(outcome: CapacityOutcome, productName: string): string | null {
+  if (outcome.shortfall === 0) return null
+
+  const parts = [
+    `${productName}: ${outcome.shortfall} more needed than the stock free for these dates ` +
+      `(${outcome.free} of ${outcome.totalQuantity} free, ${outcome.qtyRequested} asked for).`,
+  ]
+
+  for (const problem of outcome.problems) {
+    if (problem.kind === 'no-stock') {
+      parts.push(`${productName} records no stock on hand at all (Total Quantity is 0).`)
+    } else if (problem.kind === 'exceeds-stock') {
+      parts.push(
+        `${outcome.qtyRequested} is more than the ${problem.totalQuantity} this product owns in total, ` +
+          'so no date frees it.',
+      )
+    } else {
+      parts.push(`${problem.by.bookingNo} holds ${problem.by.qty} over these dates.`)
+    }
+  }
+
+  return parts.join(' ')
+}
