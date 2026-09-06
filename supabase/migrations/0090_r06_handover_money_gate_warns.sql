@@ -87,6 +87,16 @@ begin
     from invoices
     where booking_id = NEW.id and status not in ('Void');
 
+    /*
+     * `select … into` leaves the variable NULL when NO ROW matches — the
+     * `coalesce` inside the query only covers a row that exists with a null
+     * column. A booking with no `security_deposits` row therefore arrived here
+     * as NULL, which printed "pending deposit of Rs. <NULL>" in the refusal and
+     * made the test below three-valued. Observed 6 Sep on booking 864.
+     */
+    v_deposit_pending    := coalesce(v_deposit_pending, 0);
+    v_rental_outstanding := coalesce(v_rental_outstanding, 0);
+
     if v_deposit_pending > 0 or v_rental_outstanding > 0 then
       v_reason := nullif(btrim(coalesce(current_setting('app.stage_override_reason', true), '')), '');
 
@@ -132,6 +142,7 @@ begin
     select coalesce(sum(outstanding_amount), 0) into v_rental_outstanding
     from invoices
     where booking_id = NEW.id and status not in ('Void');
+    v_rental_outstanding := coalesce(v_rental_outstanding, 0);
 
     if v_rental_outstanding > 0 then
       raise exception 'Gate Check Failure: Cannot Close booking with unsettled invoices.';
@@ -140,6 +151,7 @@ begin
     select coalesce(pending_amount, 0) into v_deposit_pending
     from security_deposits
     where booking_id = NEW.id;
+    v_deposit_pending := coalesce(v_deposit_pending, 0);
 
     if v_deposit_pending > 0 then
       raise exception 'Gate Check Failure: Cannot Close booking with unsettled security deposit.';

@@ -2,6 +2,83 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-06 (cont. 2) — forward-only stage transitions enforced, and an adversarial pass found the door I left open
+
+**Phase:** Phase 0 · **Status:** `0094` written and verified · BUG-014/016 closed · BUG-017 filed
+as `PLAN.md` §4.47 · nothing applied to live
+
+### `0094` — `booking_stage_transitions` is now actually the sole door
+
+Reproduced first, as Warehouse against live's grant shape:
+
+    PATCH /rest/v1/bookings?id=eq.<800>  {"stage":"Returned"}   ->  204
+    stage Quote -> Returned, three stages skipped, transition rows unchanged
+
+`0021` intended exactly this to be impossible and enforced it with
+`revoke update (stage, closed_at) on bookings from authenticated`. That is **inert**: a
+column REVOKE cannot subtract from a table-level GRANT. Confirmed on live —
+`has_column_privilege(...,'stage','UPDATE')` is still `true`, and the leftover ACL entry reads
+`authenticated=r/postgres`, i.e. it granted a SELECT and removed no UPDATE.
+
+One root cause explains every inert revoke in this repo: **every signed-in user is the same
+Postgres role.** The app's role lives in `users.primary_role`, so no GRANT can tell Owner from
+Warehouse. Only a trigger comparing OLD to NEW can — the same conclusion `0092` reached.
+
+The guard exempts by **allowlist** (`postgres`, `supabase_admin`, `service_role`), so an
+unforeseen role is guarded rather than trusted. `apply_booking_stage_transition` is SECURITY
+DEFINER owned by `postgres`, so the legitimate path passes on privilege context alone — no
+session variable involved.
+
+### The adversarial pass earned its keep — twice
+
+Four independent attackers ran against the first draft. Between them they tried the whole
+PostgREST write surface, SECURITY DEFINER reachability, trigger mechanics, and every app write
+path. The guard refused all of it. They also found **two real gaps I had left**:
+
+1. **`closed_at` on INSERT.** `POST /bookings` with `stage:'Quote'` and `closed_at` set
+   returned **201** — and the row was then frozen forever, because
+   `apply_booking_stage_transition` refuses every transition once `closed_at` is set and Law 3
+   forbids deleting it. Guarding `stage` alone left a worse hole than the one being closed.
+2. **`cancelled_at` — the second door to the same room.** `0015` makes Cancelled the sixth
+   state, carried on `cancelled_at` rather than in `stage`, and every "is this live" predicate
+   reads `stage <> 'Closed' and cancelled_at is null`. Reproduced over real HTTP: a Warehouse
+   session cancelled an **On Rent** booking — gear with the client — writing `cancelled_by` as
+   the Owner's id, because that column is caller-supplied. No transition, no gate, no
+   capability check, and the same call in reverse un-cancelled it, which Law 3 forbids.
+
+Both are now guarded, on INSERT and UPDATE. Nothing legitimate loses a path:
+`cancelRental.ts` is `implemented: false`, and `floorVerb`'s only direct write to `bookings`
+touches `actual_return_at`, which is untouched (verified: still 204).
+
+A third report — that `service_role` is exempt and forgeable — is a **local-only** artifact:
+the demo stack ships a public JWT secret, live's is private, and `service_role` is what
+`scripts/import-booqable-direct.mjs` legitimately uses. Left exempt, documented.
+
+### BUG-017 filed, not fixed — `PLAN.md` §4.47
+
+Reproduced: a Warehouse user inserted a reversal **On Rent → Quote**, three stages back,
+approving it themselves. HTTP 201.
+
+I did not fix it, because the obvious fix would contradict a decision already taken here.
+`enforce_approver_is_actor` requires the approver to *be* the actor — *"recording somebody else
+as the approver is not an approval, it is an assertion about them."* So "approver ≠ actor" is
+not available; the lever is the approver's **role**, and R-09/R-16 rule only the reversal out of
+*Closed* (Owner·Admin). Reversals from other stages are unruled, so §4.47 asks the two open
+questions and recommends Owner·Admin·Manager, one stage per reversal.
+
+### Verified
+`0094` applied locally, post-conditions passing in both directions (refused for the right
+reason; the transition path still moves the stage) · over REST: stage jump 400, cancel 400,
+born-closed 400, `actual_return_at` still 204 · `check:rebuild` **92 applied, 0 failed, grants
+verified** · `tsc` 0, `eslint` 0.
+
+Also fixed in passing: `0090` printed "pending deposit of Rs. `<NULL>`" because `select … into`
+leaves the variable NULL when no row matches — the `coalesce` inside the query only covers a row
+that exists. Both branches now coalesce after the select. Observed on booking 864.
+
+Local corpus was rebuilt mid-session: two probes left rows that Law 3 forbids deleting
+(a frozen booking, a reversal transition). Worth knowing before probing again — an
+irreversible-by-design corpus punishes careless tests.
 ## 2026-09-06 (cont.) — New Rental answers the booking's dates, not today's stock
 
 **Phase:** Phase 0 · **Status:** 3 register items closed · 1 register claim corrected · 6 leftovers filed

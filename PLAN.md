@@ -694,6 +694,54 @@ extend that pattern further without ruling this.
 
 ---
 
+## 4.47 ⬅ OPEN ×2 — who may reverse a booking's stage, and how far back?
+
+**Raised 6 Sep 2026** while closing the direct-stage-write hole (`0094`). That file made
+`booking_stage_transitions` the sole door. This is about who may walk through it *backwards*.
+
+**Reproduced, as Warehouse, against live's grant shape:**
+
+    POST /rest/v1/booking_stage_transitions
+      { from_stage: "On Rent", to_stage: "Quote", is_reversal: true,
+        approved_by: <the warehouse user themselves>, reason: "...", audit_event_id: ... }
+    -> HTTP 201, booking 864 moved On Rent -> Quote
+
+Three stages backwards, approved by the person who did it, on a booking that was out with a
+client. Nothing refused it.
+
+**What is already settled, and why it does not cover this.** `R-16`/`R-09` rule the reversal
+*out of Closed*: permitted to **Owner and Admin only**, with a reason, clearing `closed_at`.
+That path is currently unreachable anyway — `apply_booking_stage_transition` refuses every
+transition once `closed_at` is set, which is exactly what R-16 exists to change. Reversals from
+any *other* stage are unruled.
+
+**What the database enforces today:** `booking_stage_transitions_reversal_needs_approval`
+requires `approved_by`, a non-empty `reason`, and an `audit_event_id`. The INSERT policy admits
+Owner, Admin, Manager, Coordinator **and Warehouse**, and requires `actor_id` to be the caller.
+Nothing checks the approver's **role**, and nothing limits the **distance** of a reversal.
+
+**Note the precedent before assuming the fix.** `enforce_approver_is_actor` (on
+`damage_findings` / `late_fee_findings`) requires the approver to *be* the actor, reasoning that
+*"recording somebody else as the approver is not an approval, it is an assertion about them."*
+So "approver ≠ actor" would contradict an established decision here — the lever is the
+approver's **role**, not their distinctness.
+
+**The two questions:**
+
+- **(a) Which roles may approve a reversal?** R-09's Owner·Admin for the Closed case is the
+  obvious candidate to extend. Manager is arguable. Warehouse self-approving a rental back out
+  of *On Rent* — while the gear is with the client — is the case that looks wrong.
+- **(b) May a reversal skip stages?** Today `On Rent → Quote` is one insert. If a reversal is
+  meant to be a correction, one stage at a time is the conservative reading; if it is meant to
+  undo a whole job, it is not.
+
+**Recommendation: (a) Owner · Admin · Manager, and (b) one stage per reversal**, each
+reversal recorded separately. That matches R-09's instinct and keeps the audit trail a
+sequence rather than a jump. **Not implemented** — inventing this is exactly what `CLAUDE.md`
+forbids, and `0094` deliberately stops at making the door the only way in.
+
+---
+
 ## 4.46 ⬅ OPEN ×1 — does an invoice bill the BOOKING, or the lines typed on the form?
 
 **Raised 5 Sep 2026**, while fixing the audit's P0s. This is the last thing standing between
