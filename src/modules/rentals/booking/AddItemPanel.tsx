@@ -72,6 +72,7 @@ import type {
   BookingLineDraft,
   BookingWindow,
   BundleResult,
+  EquipmentAvailabilitySource,
   EquipmentModelGroup,
   EquipmentResult,
   QueryGroup,
@@ -102,11 +103,19 @@ const TABS: ReadonlyArray<{ key: TabKey; label: string }> = [
   { key: 'services', label: 'Services' },
 ]
 
+/*
+ * `AvailabilityLevel` gained `'unknown'` when the windowed read arrived, and
+ * this list did not follow it. Two consequences, both real: there was no way
+ * to see the unchecked rows, and "Available only" emptied the entire catalogue
+ * for as long as the read was in flight — every live row is `unknown` until it
+ * lands, and on the live project (no `product_units`) every row stays that way.
+ */
 const AVAILABILITY_FILTERS: ReadonlyArray<{ value: AvailabilityLevel | 'any'; label: string }> = [
   { value: 'any', label: 'Any availability' },
   { value: 'available', label: 'Available only' },
   { value: 'partial', label: 'Partial only' },
   { value: 'unavailable', label: 'Unavailable only' },
+  { value: 'unknown', label: 'Not checked only' },
 ]
 
 /* ── Flattened options, so ↑/↓ can cross a group heading ───────────────── */
@@ -119,17 +128,34 @@ const AVAILABILITY_FILTERS: ReadonlyArray<{ value: AvailabilityLevel | 'any'; la
  * above for a bundle's [View] button.
  */
 type FlatOption =
-  | { type: 'bundle'; result: BundleResult; index: number }
-  | { type: 'equipmentGroup'; group: EquipmentModelGroup; index: number }
+  | { type: 'bundle'; groupKind: ResultKind; result: BundleResult; index: number }
+  | { type: 'equipmentGroup'; groupKind: ResultKind; group: EquipmentModelGroup; index: number }
 
+/**
+ * ⛔ `groupKind` is carried so the list below can be RENDERED from this array
+ * rather than by calling `groupEquipmentResults` a second time.
+ *
+ * The second call was a real defect, not a tidiness point. Every row looks up
+ * its cursor position with `options.findIndex((o) => o.group === group)` —
+ * reference equality — and `groupEquipmentResults` returns freshly built
+ * objects on every call, so a group built in the render could never equal the
+ * one built here. Every equipment row got `flatIndex === -1`: it never
+ * highlighted as active, hovering set the cursor to −1, and
+ * `aria-activedescendant` pointed at an id (`…-opt-<n>`) that no element on the
+ * page carried, because the element rendered was `…-opt--1`. Bundle rows were
+ * unaffected — they match on `o.result === r`, and `r` is the same object in
+ * both places.
+ */
 function flatten(groups: readonly QueryGroup[]): FlatOption[] {
   const out: FlatOption[] = []
   for (const g of groups) {
     if (g.kind === 'bundle') {
-      for (const r of g.results) out.push({ type: 'bundle', result: r as BundleResult, index: out.length })
+      for (const r of g.results) {
+        out.push({ type: 'bundle', groupKind: g.kind, result: r as BundleResult, index: out.length })
+      }
     } else if (g.kind === 'equipment' || g.kind === 'accessory') {
       for (const group of groupEquipmentResults(g.results as EquipmentResult[])) {
-        out.push({ type: 'equipmentGroup', group, index: out.length })
+        out.push({ type: 'equipmentGroup', groupKind: g.kind, group, index: out.length })
       }
     }
   }
@@ -180,6 +206,16 @@ export interface AddItemPanelProps {
    * creates bookings must pass this.
    */
   equipment?: readonly EquipmentResult[]
+  /**
+   * The state of the windowed availability read behind `equipment` (NR-09).
+   *
+   * Only the hint line reads it — every row already carries its own verdict.
+   * It is here so that line cannot claim *"Availability shown for this
+   * booking's dates"* while the read that answers for those dates is still in
+   * flight or has failed, which is the BD-02 / NR-13 defect written as a
+   * sentence. Omitted, the panel is searching the seed pool and says so.
+   */
+  availability?: EquipmentAvailabilitySource
   /** Crew and vehicle lines ride along with a bundle. Off — both are priced in Section 3. */
   includeCrewAndVehicle?: boolean
   /** Stamp the bundle's saving on each component line. Off — pricing is the page's (§67). */
@@ -202,6 +238,7 @@ export function AddItemPanel({
   days,
   existingLineIds,
   equipment,
+  availability: availabilitySource,
   onAdd,
   showPrices = true,
   inputStyle,
@@ -609,16 +646,33 @@ export function AddItemPanel({
               }}
             >
               <Icon name="calendar" size={12} />
-              {bookingWindow.pickupAd && bookingWindow.returnAd ? (
+              {/*
+                NR-09 — this line used to promise "Availability shown for this
+                booking's dates" over rows whose own strings said "right now",
+                and to offer "availability is shown for today" as the fallback,
+                which is the answer to a question nobody asked. It now states
+                what the read behind the rows actually is.
+              */}
+              {availabilitySource === undefined ? (
+                <span style={{ color: 'var(--warn-text)', fontWeight: 600 }}>
+                  Sample catalogue — availability here is not checked against this booking&rsquo;s dates.
+                </span>
+              ) : availabilitySource.state === 'ready' ? (
                 <>
                   Availability shown for this booking&rsquo;s dates ·{' '}
                   <span className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>
                     {days} day{days === 1 ? '' : 's'}
                   </span>
                 </>
-              ) : (
+              ) : availabilitySource.state === 'checking' ? (
+                <span style={{ fontWeight: 600 }}>Checking availability for this booking&rsquo;s dates…</span>
+              ) : availabilitySource.state === 'no-window' ? (
                 <span style={{ color: 'var(--ready-text)', fontWeight: 600 }}>
-                  No valid pickup/return yet — availability is shown for today.
+                  No valid pickup/return yet — availability is not checked.
+                </span>
+              ) : (
+                <span style={{ color: 'var(--warn-text)', fontWeight: 600 }}>
+                  Availability could not be checked for these dates: {availabilitySource.reason}
                 </span>
               )}
               {filtersOn > 0 && (
@@ -703,42 +757,43 @@ export function AddItemPanel({
                     </p>
                   ) : (
                     <ul role="presentation" style={{ listStyle: 'none', margin: 0, padding: 'var(--sp-xs)' }}>
-                      {g.kind === 'bundle'
-                        ? g.results.map((r) => {
-                            const bundle = r as BundleResult
-                            const flatIndex = options.findIndex((o) => o.type === 'bundle' && o.result === bundle)
-                            return (
-                              <BundleRow
-                                key={bundle.id}
-                                id={`${listboxId}-opt-${flatIndex}`}
-                                result={bundle}
-                                active={flatIndex === activeIndex}
-                                showPrices={showPrices}
-                                onHover={() => setActiveIndex(flatIndex)}
-                                onAdd={() => addBundle(bundle)}
-                                onView={() => setPreview(bundle.record)}
-                              />
-                            )
-                          })
-                        : // redesign v1 §2 — one row per model, one chip per unit.
-                          groupEquipmentResults(g.results as EquipmentResult[]).map((group) => {
-                            const flatIndex = options.findIndex((o) => o.type === 'equipmentGroup' && o.group === group)
-                            return (
-                              <EquipmentGroupRow
-                                key={group.name}
-                                id={`${listboxId}-opt-${flatIndex}`}
-                                group={group}
-                                active={flatIndex === activeIndex}
-                                existing={existing}
-                                showPrices={showPrices}
-                                allowOverbooking={allowOverbooking}
-                                onHover={() => setActiveIndex(flatIndex)}
-                                onAutoPick={() => group.autoPick && addEquipment(group.autoPick)}
-                                onPickUnit={(unit) => addEquipment(unit)}
-                                onRequestOverride={(unit) => setOverrideUnit(unit)}
-                              />
-                            )
-                          })}
+                      {/* Rendered from `options` — the SAME objects the cursor
+                          indexes — so `o.index` is the row's real position and
+                          no second grouping pass can disagree with it. */}
+                      {options
+                        .filter((o) => o.groupKind === g.kind)
+                        .map((o) =>
+                          o.type === 'bundle' ? (
+                            <BundleRow
+                              key={o.result.id}
+                              id={`${listboxId}-opt-${o.index}`}
+                              result={o.result}
+                              active={o.index === activeIndex}
+                              showPrices={showPrices}
+                              onHover={() => setActiveIndex(o.index)}
+                              onAdd={() => addBundle(o.result)}
+                              onView={() => setPreview(o.result.record)}
+                            />
+                          ) : (
+                            // redesign v1 §2 — one row per model, one chip per unit.
+                            // NR-21 — keyed on the group's own identity (a
+                            // product uuid live, the model name in seed), never
+                            // on the display name two products can share.
+                            <EquipmentGroupRow
+                              key={o.group.key}
+                              id={`${listboxId}-opt-${o.index}`}
+                              group={o.group}
+                              active={o.index === activeIndex}
+                              existing={existing}
+                              showPrices={showPrices}
+                              allowOverbooking={allowOverbooking}
+                              onHover={() => setActiveIndex(o.index)}
+                              onAutoPick={() => o.group.autoPick && addEquipment(o.group.autoPick)}
+                              onPickUnit={(unit) => addEquipment(unit)}
+                              onRequestOverride={(unit) => setOverrideUnit(unit)}
+                            />
+                          ),
+                        )}
                     </ul>
                   )}
                 </li>
@@ -1004,12 +1059,28 @@ function EquipmentGroupRow({
   onRequestOverride: (unit: EquipmentResult) => void
 }) {
   const bulk = group.units.length === 1 && group.units[0]!.serial === '—'
-  const freeCount = group.units.filter((u) => u.status === 'In Stock').length
+  /* Counted on the VERDICT, not on a unit's present status — since NR-09 a live
+     row carries no status at all, and for a seed serialised row the two tests
+     agree exactly (`equipmentAvailability` maps In Stock → available). */
+  const freeCount = group.units.filter((u) => u.availability.level === 'available').length
   const allOnBooking = group.units.every((u) => existing.has(u.id))
   const meta = [group.kind === 'accessory' ? 'Accessory' : 'Equipment', group.category, group.sku ?? null, group.brand ?? null].filter(
     (x): x is string => Boolean(x),
   )
+  /* One row, one honest sentence: the group's own verdict carries the window
+     (or says it has no answer), and only a multi-unit row can count units. */
   const summary = bulk ? group.availability.detail : `${freeCount} of ${group.units.length} free for these dates`
+  /**
+   * §3 — the escape hatch when nothing is auto-pickable.
+   *
+   * Without this the row is simply inert: since NR-09 a live product row CAN be
+   * `unavailable` for the window (it never could before — the old code stamped
+   * `'In Stock'` whenever any unit was free today), so `autoPick` is null and
+   * clicking does nothing at all. When the valve is on, the click opens the
+   * override dialog on the first unit not already booked instead.
+   */
+  const overrideCandidate =
+    !group.autoPick && allowOverbooking ? (group.units.find((u) => !existing.has(u.id)) ?? null) : null
 
   return (
     <li
@@ -1017,7 +1088,11 @@ function EquipmentGroupRow({
       role="option"
       aria-selected={active}
       aria-label={`${group.name}. ${meta.join(', ')}. ${summary}. ${showPrices ? `${formatMoney(group.ratePaisa)} per day. ` : ''}${
-        group.autoPick ? 'Press Enter to add the least-used free unit.' : 'Nothing free for these dates.'
+        group.autoPick
+          ? 'Press Enter to add the least-used free unit.'
+          : overrideCandidate
+            ? 'Nothing free for these dates. Opens the overbooking override.'
+            : 'Nothing free for these dates.'
       }`}
       onMouseMove={onHover}
       /* The WHOLE row adds, as the bundle row above already did.
@@ -1032,14 +1107,16 @@ function EquipmentGroupRow({
          chips below and the bundle row's [View] — already calls
          `e.stopPropagation()`, so picking a specific unit still picks that
          unit and never also auto-picks another. */
-      onClick={group.autoPick ? onAutoPick : undefined}
+      onClick={
+        group.autoPick ? onAutoPick : overrideCandidate ? () => onRequestOverride(overrideCandidate) : undefined
+      }
       style={{
         display: 'grid',
         gap: 6,
         minHeight: TOUCH,
         padding: '9px 10px',
         borderRadius: 'var(--r-btn)',
-        cursor: group.autoPick ? 'pointer' : 'default',
+        cursor: group.autoPick || overrideCandidate ? 'pointer' : 'default',
         background: active ? 'var(--hover-row)' : 'transparent',
       }}
     >
@@ -1110,8 +1187,15 @@ function EquipmentGroupRow({
       {!bulk && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {group.units.map((u) => {
-            const free = u.status === 'In Stock'
+            /* The verdict, not a raw status: a chip is only ever drawn for a
+               serialised SEED unit today (a live row is `bulk`), where the two
+               agree — but reading the verdict means this cannot start lying the
+               day live units get their own chips. */
+            const free = u.availability.level === 'available'
             const onBooking = existing.has(u.id)
+            /* What is holding it, in words. A unit row has a status; if it ever
+               does not, the verdict's own detail is the honest substitute. */
+            const why = `${u.status ?? u.availability.detail}${u.committedTo !== '—' ? ` · ${u.committedTo}` : ''}`
             // §3 — a booked/maintenance chip is a hard block by default. When
             // the valve is on it becomes tappable too, opening the override
             // dialog instead of adding directly.
@@ -1123,15 +1207,15 @@ function EquipmentGroupRow({
                 type="button"
                 className="press"
                 disabled={!tappable}
-                title={free ? `${u.serial} — free` : `${u.serial} · ${u.status}${u.committedTo !== '—' ? ` · ${u.committedTo}` : ''}`}
+                title={free ? `${u.serial} — free` : `${u.serial} · ${why}`}
                 aria-label={
                   onBooking
                     ? `${u.serial} — already on this booking`
                     : free
                       ? `Add unit ${u.serial}`
                       : opensOverride
-                        ? `${u.serial} — booked. ${u.status}${u.committedTo !== '—' ? ` · ${u.committedTo}` : ''}. Opens the overbooking override.`
-                        : `${u.serial} — booked, not tappable. ${u.status}${u.committedTo !== '—' ? ` · ${u.committedTo}` : ''}`
+                        ? `${u.serial} — booked. ${why}. Opens the overbooking override.`
+                        : `${u.serial} — booked, not tappable. ${why}`
                 }
                 onClick={(e) => {
                   e.stopPropagation()

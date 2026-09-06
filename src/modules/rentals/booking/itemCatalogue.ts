@@ -59,6 +59,8 @@ import { bundlesUsing } from '../../../data/addEquipment'
 import { CATEGORY_OPTIONS, PARENTS } from '../../../data/inventory'
 import type { InvStatus, ParentRow } from '../../../data/inventory'
 import type { Paisa } from '../../../lib/money'
+/* Type-only, so this module keeps importing nothing that touches IO. */
+import type { ProductWindowAvailability } from '../../../lib/queries/productAvailability'
 import type { StatusKey } from '../../../lib/status'
 import type { IconName } from '../../../components/ui/Icon'
 
@@ -84,7 +86,24 @@ export interface BookingLineDraft {
   qty: number
   discountPct: number
   location: string
-  status: InvStatus
+  /**
+   * The **physical unit's own** `inventory_state`, where the draft came from a
+   * row that is a physical unit.
+   *
+   * ⚠ Optional since NR-09, and the absence is the point. A live catalogue row
+   * is a PRODUCT (`products.id`), not a unit, and `products` carries no
+   * `inventory_state` column — so a live-sourced draft has no unit status and
+   * says so by omitting one, rather than stamping `'In Stock'` / `'On Rent'`
+   * from a count of where the product's units happen to be at this instant.
+   * That fabricated value is what `NewRental.tsx` used to raise a Critical
+   * from; availability for the booking's window is now answered by
+   * `lib/queries/productAvailability.ts` instead.
+   *
+   * Present on: seed catalogue rows (a serialised unit, or a pooled SKU
+   * carrying its own breakdown status) and bundle component drafts, whose
+   * status comes from `BundleLine.blockedBy`.
+   */
+  status?: InvStatus
   committedTo: string
 }
 
@@ -94,12 +113,23 @@ export const SHAPE_NOTE =
 
 /* ── Availability ──────────────────────────────────────────────────────── */
 
-export type AvailabilityLevel = 'available' | 'partial' | 'unavailable'
+/**
+ * `unknown` is not a fourth flavour of bad news — it is the absence of an
+ * answer.
+ *
+ * NR-09 / BD-02 / NR-13 are the same defect three times: a read that had not
+ * landed (or had failed) rendered as a settled fact. The windowed availability
+ * read is asynchronous and its window changes under it, so there is a real
+ * interval in which this module has nothing to say. Saying so is a state; it is
+ * not "available", and it is not "unavailable" either — refusing a booking
+ * because a query is in flight would be its own defect.
+ */
+export type AvailabilityLevel = 'available' | 'partial' | 'unavailable' | 'unknown'
 
 export interface AvailabilityVerdict {
   level: AvailabilityLevel
   /** Never colour alone — this word ships with the colour, always. */
-  label: 'Available' | 'Partial' | 'Unavailable'
+  label: 'Available' | 'Partial' | 'Unavailable' | 'Checking' | 'Not checked'
   /** The one-line *why*: "1 component unavailable", "On Rent · B-710". */
   detail: string
   tone: StatusKey
@@ -110,14 +140,23 @@ export interface AvailabilityVerdict {
   freedLines: BundleLine[]
 }
 
+/**
+ * Sort and "worst of a group" order. `unknown` sits between `available` and
+ * `partial`: a row nobody has checked must not out-rank one that is genuinely
+ * free, and must not be buried under rows that are genuinely short.
+ */
 const AVAILABILITY_RANK: Record<AvailabilityLevel, number> = {
   available: 0,
-  partial: 1,
-  unavailable: 2,
+  unknown: 1,
+  partial: 2,
+  unavailable: 3,
 }
 
 function verdict(
-  level: AvailabilityLevel,
+  /* The three ANSWERS. `unknown` is not one of them and cannot be reached
+     through here — it is built by `unknownVerdict` below, which has to carry
+     its own label and glyph anyway. */
+  level: 'available' | 'partial' | 'unavailable',
   detail: string,
   shortLines: BundleLine[] = [],
   freedLines: BundleLine[] = [],
@@ -132,6 +171,25 @@ function verdict(
     icon: level === 'available' ? 'check' : level === 'partial' ? 'alert_triangle' : 'error',
     shortLines,
     freedLines,
+  }
+}
+
+/**
+ * "We do not know yet" and "we could not find out" — the two shapes of no
+ * answer, both neutral-toned so neither reads as a verdict.
+ *
+ * `timer` and `info` are two silhouettes, so the chip still carries its state
+ * without the hue (Law 11) even though both share the neutral colour.
+ */
+function unknownVerdict(label: 'Checking' | 'Not checked', detail: string): AvailabilityVerdict {
+  return {
+    level: 'unknown',
+    label,
+    detail,
+    tone: 'neutral',
+    icon: label === 'Checking' ? 'timer' : 'info',
+    shortLines: [],
+    freedLines: [],
   }
 }
 
@@ -173,11 +231,28 @@ export interface EquipmentResult {
   kind: 'equipment' | 'accessory'
   /** The page's line id — a serial for a serialised unit, the SKU name otherwise. */
   id: string
+  /**
+   * The PRODUCT this row belongs to — the key `groupEquipmentResults` collapses
+   * rows on, so one model renders as one row with a chip per unit.
+   *
+   * NR-21: grouping was done on `name`, which is right for the seed source
+   * (where a name owns many units of one model) and wrong for the live one
+   * (where every row is a distinct product, so two products that happen to
+   * share a name collapsed into one group — the chips went "—" and `autoPick`
+   * silently took whichever sorted first, a different product from the one on
+   * screen). The two sources therefore state their own identity here: the seed
+   * sets the model name, the live source sets `products.id`.
+   */
+  productKey: string
   name: string
   serial: string
   category: string
   location: string
-  status: InvStatus
+  /**
+   * The unit's own `inventory_state`. **Absent on a live product row** — see
+   * `BookingLineDraft.status`. Nothing gates on this; availability does.
+   */
+  status?: InvStatus
   committedTo: string
   ratePaisa: Paisa
   /** From `INVENTORY_MODELS` where the name matches; absent otherwise. */
@@ -228,16 +303,19 @@ export function normalise(s: string): string {
 }
 
 /**
- * Present-tense availability of one equipment row.
+ * Present-tense availability of one **seed** equipment row.
  *
- * The **line-level rule is the page's own, unchanged**: `NewRental.tsx` treats
- * `status !== 'In Stock'` as a conflict, so a row that is not In Stock is not
- * offered as Available here either. The extra state this adds is `partial`,
- * and only for non-serialised SKUs, where the row stands for a pool of units
- * and the parent's own `breakdown` already says how that pool is split. That
- * is more information about the same fact, not a different rule — the
- * `status` this module stamps on a `BookingLineDraft` is byte-identical to
- * what the page's own flatten would have stamped.
+ * A seed row IS a physical unit (or a pooled SKU with its own `breakdown`), so
+ * its `status` is a real recorded fact and this reads it directly: In Stock →
+ * available, anything else → unavailable, plus `partial` for a pooled SKU whose
+ * breakdown is split.
+ *
+ * It is still present-tense, and that is a property of the seed data rather
+ * than a choice made here — `data/inventory.ts` records no dates against a
+ * unit's status, so there is nothing to compare a window with. The seed pool is
+ * browse-only (its ids are names and serials, which `createRental.validate`
+ * refuses) and the panel prints a warning saying so while it is in use. The
+ * LIVE pool is answered for the booking's window — see `liveEquipmentVerdict`.
  */
 function equipmentAvailability(p: ParentRow, unitStatus: InvStatus, committedTo: string): AvailabilityVerdict {
   const serialised = Boolean(p.children && p.children.length > 0)
@@ -276,6 +354,10 @@ export const EQUIPMENT_RESULTS: readonly EquipmentResult[] = PARENTS.flatMap((p)
   ): EquipmentResult => ({
     kind,
     id,
+    /* Seed rows: the model name IS the product identity — every serialised
+       child of one `ParentRow` shares it, which is what makes the chip row a
+       row of units of one model. */
+    productKey: p.name,
     name: p.name,
     serial,
     category: p.category,
@@ -333,12 +415,23 @@ export const EQUIPMENT_RESULTS: readonly EquipmentResult[] = PARENTS.flatMap((p)
  * relationship from a string collision. Until bundles are live too, saying
  * nothing is the honest answer — it costs a search facet, not a fact.
  *
- * **Availability is present-tense and says so.** It counts `unitsByState`, the
- * same shape the seed path counts `breakdown` with. It does NOT consult the
- * booking window: real window availability is `queries/availability.ts`'s GiST
- * overlap check, which is a per-item query and not something to fire once per
- * catalogue row while someone types. The detail string states the basis, so a
- * verdict is never mistaken for one the window was applied to.
+ * **Availability is answered FOR THE BOOKING'S WINDOW** — NR-09.
+ *
+ * ⛔ It used to count `unitsByState`, a snapshot of where each unit is at this
+ * instant, and derive two things from it that were both wrong for a future
+ * booking: a `status` of `'In Stock'` / `'On Rent'` (there is no such column on
+ * a product — the row is a product, not a unit) and a verdict whose own strings
+ * said *"right now"*, rendered under a panel header reading *"Availability
+ * shown for this booking's dates"*. `NewRental.tsx` then raised a **Critical**
+ * from that status and blocked Confirm, so a booking three weeks out was
+ * refused because a camera was on someone else's shoot today.
+ *
+ * The window answer now arrives as an `EquipmentAvailabilitySource`, computed
+ * by `lib/queries/productAvailability.ts` through the same engine, rules and
+ * half-open bound convention `queries/bundleRecords.ts` uses for bundles — so
+ * the catalogue and the Bundles pane cannot disagree about the same unit.
+ * `unitsByState` is no longer read at all: a now-count cannot answer a future
+ * window, and keeping it around as a fallback is how it comes back.
  */
 export interface LiveEquipmentRow {
   id: string
@@ -347,54 +440,308 @@ export interface LiveEquipmentRow {
   assetCode?: string | null
   category?: string | null
   dailyRate?: number | null
-  unitsByState?: Partial<Record<string, number>> | null
   unitCountExcludingRetired?: number | null
   totalQuantity?: number | null
 }
 
-export function equipmentResultsFrom(rows: readonly LiveEquipmentRow[]): readonly EquipmentResult[] {
+/**
+ * The windowed availability read, in every state it can be in.
+ *
+ * The read is async and its window changes under it, so "no answer yet" and
+ * "the answer failed" are states the catalogue has to be able to render. They
+ * are modelled rather than collapsed into a boolean because BD-02 and NR-13
+ * were both the same defect — a pending read drawn as a settled fact — and a
+ * `Map | null` invites exactly that: an empty map is indistinguishable from
+ * "nothing is available".
+ */
+export type EquipmentAvailabilitySource =
+  /** The booking has no usable pickup/return pair, so there is no window to check. */
+  | { readonly state: 'no-window' }
+  /** The read is in flight. */
+  | { readonly state: 'checking' }
+  /** The read failed; `reason` is shown, never swallowed (Law 12). */
+  | { readonly state: 'failed'; readonly reason: string }
+  | {
+      readonly state: 'ready'
+      readonly byProduct: ReadonlyMap<string, ProductWindowAvailability>
+    }
+
+/**
+ * One live row's verdict, from the windowed answer where there is one.
+ *
+ * Four cases, in the order they are decided:
+ *
+ * 1. **No answer** (`checking` / `failed` / `no-window`) — `unknown`. Not
+ *    green, not red. Requirement of NR-09 and the lesson of BD-02/NR-13.
+ * 2. **Bulk stock** — the product has no unit rows for the overlap check to
+ *    work on. `totalQuantity` is all that is known, so that is all that is
+ *    said, exactly as before: *"N in stock · not unit-tracked"*. Nothing is
+ *    guessed into a free/committed split that no row records.
+ * 3. **No stock at all** — no unit rows and no quantity. `unavailable`.
+ * 4. **Unit-tracked** — the engine's count, phrased for the window.
+ */
+function liveEquipmentVerdict(
+  row: LiveEquipmentRow,
+  source: EquipmentAvailabilitySource,
+): AvailabilityVerdict {
+  if (source.state === 'checking') return unknownVerdict('Checking', 'Checking availability for these dates…')
+  if (source.state === 'no-window') {
+    return unknownVerdict('Not checked', 'Set a pickup and return first — availability is answered for those dates')
+  }
+  if (source.state === 'failed') {
+    return unknownVerdict('Not checked', `Availability could not be checked for these dates: ${source.reason}`)
+  }
+
+  const answer = source.byProduct.get(row.id)
+  if (answer === undefined) {
+    return unknownVerdict('Not checked', 'This product was not in the availability read for these dates')
+  }
+
+  if (answer.unitsOwned === 0) {
+    /*
+     * ⛔ No unit rows means nothing for the date-overlap check to overlap — so
+     * this row has NOT been checked against the window, and it must not claim
+     * it has.
+     *
+     * This branch used to answer `verdict('available', 'N in stock · not
+     * unit-tracked')` — a green chip reading **Available**, under a header
+     * that says "Availability shown for this booking's dates", derived from a
+     * bulk count that was never compared with those dates. An earlier note
+     * here defended it as "the same honest answer this function gave before
+     * the window existed". It was not honest before either: answering
+     * `available` off a stock count is precisely the NR-09 defect this file
+     * was rewritten to remove, and keeping it meant the rewrite closed the
+     * hole for unit-tracked products only.
+     *
+     * On the live project that is not an edge case, it is EVERY row: 204
+     * active products and 0 `product_units` (queried 6 Sep 2026). It also put
+     * the panel at odds with the strip beneath it, which already called these
+     * same rows "not checked", and with `confirmRental`'s `planAssignment`,
+     * which refuses a line whose product resolves no units.
+     *
+     * `unknown` is the true answer, and the bulk count still ships with it —
+     * it is a real fact, just not an answer about these dates.
+     */
+    const bulk = row.totalQuantity ?? 0
+    return bulk === 0
+      ? verdict('unavailable', 'No units recorded')
+      : unknownVerdict('Not checked', `${bulk} in stock, but not unit-tracked — nothing to check against these dates`)
+  }
+
+  const { unitsOwned, unitsFree, heldBy } = answer
+  /* The bookings holding the busy units, named — the fact that tells a
+     coordinator what to do next. Two, then a count, so a popular camera does
+     not turn a chip into a paragraph. */
+  const held =
+    heldBy.length === 0
+      ? ''
+      : ` · held by ${heldBy.slice(0, 2).join(', ')}${heldBy.length > 2 ? ` +${heldBy.length - 2} more` : ''}`
+
+  if (unitsFree === 0) return verdict('unavailable', `None of ${unitsOwned} free for these dates${held}`)
+  if (unitsFree === unitsOwned) return verdict('available', `${unitsFree} of ${unitsOwned} free for these dates`)
+  return verdict('partial', `${unitsFree} of ${unitsOwned} free for these dates${held}`)
+}
+
+/**
+ * `source` is **required and has no default** — the same pressure
+ * `listBundleRecords` applies to its window argument, for the same reason. A
+ * caller that cannot say what the availability answer is (or that it does not
+ * have one yet) must not get a green catalogue by omission.
+ */
+export function equipmentResultsFrom(
+  rows: readonly LiveEquipmentRow[],
+  source: EquipmentAvailabilitySource,
+): readonly EquipmentResult[] {
   return rows.map((r): EquipmentResult => {
     const category = r.category ?? 'Uncategorised'
     const kind: 'equipment' | 'accessory' = ACCESSORY_CATEGORIES.has(category) ? 'accessory' : 'equipment'
-
-    /* `unitsByState` is absent for a non-serialised product; `totalQuantity`
-       carries its bulk count instead. Neither is guessed into the other. */
-    const byState = r.unitsByState ?? {}
-    const free = byState['In Stock'] ?? 0
-    const tracked = r.unitCountExcludingRetired ?? 0
-    const total = tracked > 0 ? tracked : (r.totalQuantity ?? 0)
-
-    const availability =
-      total === 0
-        ? verdict('unavailable', 'No units recorded')
-        : tracked === 0
-          ? /* Bulk stock with no per-unit rows — the count is all we know, and
-               claiming a free/committed split we cannot see would be invention. */
-            verdict('available', `${total} in stock · not unit-tracked`)
-          : free === 0
-            ? verdict('unavailable', `None of ${total} free right now`)
-            : free === total
-              ? verdict('available', `${free} of ${total} free right now`)
-              : verdict('partial', `${free} of ${total} free right now`)
 
     return {
       kind,
       /* THE uuid — the entire reason this source exists. */
       id: r.id,
+      /* NR-21 — one live row is one PRODUCT, so its uuid is its identity. Two
+         products sharing a name are two rows, as they are two products. */
+      productKey: r.id,
       name: r.name,
       serial: '—',
       category,
       location: r.assetCode ?? '—',
-      status: (free > 0 || tracked === 0 ? 'In Stock' : 'On Rent') as InvStatus,
+      /* No `status`. A product has no `inventory_state`; see
+         `BookingLineDraft.status` for what used to be stamped here. */
       committedTo: '—',
       ratePaisa: (r.dailyRate ?? 0) as Paisa,
       ...(r.assetCode ? { sku: r.assetCode } : {}),
       ...(r.brand ? { brand: r.brand } : {}),
       inBundles: [],
-      availability,
+      availability: liveEquipmentVerdict(r, source),
       haystack: [r.name, category, r.brand ?? '', r.assetCode ?? ''].filter(Boolean).map(normalise),
     }
   })
+}
+
+/* ── The windowed conflict (NR-09, requirement 2) ─────────────────────────── */
+
+/** One booking line's worth of equipment that the window cannot cover. */
+export interface EquipmentConflict {
+  /** `products.id` — the line ids that produced it are the same uuid. */
+  readonly productId: string
+  readonly name: string
+  /** Units this booking wants of that product, summed across its lines. */
+  readonly needed: number
+  /** Units the engine can assign for the window. */
+  readonly free: number
+  /** Bookings holding the rest, by `booking_no`. */
+  readonly heldBy: readonly string[]
+  /** The operator-facing sentence, ready to render. */
+  readonly text: string
+}
+
+export interface EquipmentConflictSummary {
+  readonly state: EquipmentAvailabilitySource['state']
+  /** Empty unless `state` is `'ready'` — a conflict is an answer, not a guess. */
+  readonly conflicts: readonly EquipmentConflict[]
+  /** Lines the windowed read answered for. */
+  readonly checked: number
+  /**
+   * Lines it could not answer for: bulk stock with no unit rows, seed rows
+   * whose id is a product name, and bundle component drafts. Counted and
+   * reported rather than folded into "no conflicts".
+   */
+  readonly unchecked: number
+  /** The one-line state of the check, for the section's inline strip. */
+  readonly text: string
+  /**
+   * Every line's own verdict, by line id — so the row's availability cell and
+   * the section's conflict strip are the SAME computation and cannot contradict
+   * each other. In particular a product wanted by two lines is judged once,
+   * against the summed quantity, and both rows say the same thing.
+   */
+  readonly verdictByLineId: ReadonlyMap<string, AvailabilityVerdict>
+}
+
+/** The shape this needs off a booking line, and nothing else. */
+export interface ConflictCheckLine {
+  readonly id: string
+  readonly name: string
+  readonly qty: number
+}
+
+/**
+ * Does the booking's window actually cover what is on the booking?
+ *
+ * **This replaces `lines.filter((l) => l.status !== 'In Stock')`**, which asked
+ * whether a unit was free at this instant and blocked Confirm on the answer.
+ *
+ * The rule here is not invented: a line is in conflict when fewer units are
+ * free for the window than the booking wants, which is precisely the refusal
+ * `confirmRental.ts` already makes — it calls `planAssignment` and throws
+ * `AssignmentIncompleteError` unless every line is fully covered
+ * (`confirmRental.ts:435-436`). So this screen now refuses in advance, by name,
+ * what the write path would otherwise refuse after two round trips. A partial
+ * shortfall counts for the same reason: `reserveAssignedUnits` refuses an
+ * incomplete plan outright, so "3 of 4" is not a booking that can be confirmed.
+ *
+ * Lines are summed **per product** before comparing, because units are a pool
+ * and two lines naming one camera would compete for it. That sum does not fire
+ * today — `AddItemPanel` refuses to add an id already on the booking, so a
+ * product appears at most once — and it is written that way so the rule stays
+ * correct if a second line for one product ever becomes reachable, rather than
+ * silently answering the wrong question then.
+ */
+export function equipmentConflicts(
+  lines: readonly ConflictCheckLine[],
+  source: EquipmentAvailabilitySource,
+): EquipmentConflictSummary {
+  if (source.state !== 'ready') {
+    const [label, text]: ['Checking' | 'Not checked', string] =
+      source.state === 'checking'
+        ? ['Checking', 'Checking availability for these dates…']
+        : source.state === 'no-window'
+          ? ['Not checked', 'Availability is not checked — set a pickup and return first.']
+          : ['Not checked', `Availability could not be checked for these dates: ${source.reason}`]
+    const pending = unknownVerdict(label, text)
+    return {
+      state: source.state,
+      conflicts: [],
+      checked: 0,
+      unchecked: lines.length,
+      text,
+      verdictByLineId: new Map(lines.map((l) => [l.id, pending])),
+    }
+  }
+
+  /* Keyed by product, and quantities added: see the header on why the addition
+     is unreachable today and kept anyway. Line ids ARE product ids for every
+     line this can check, which is what makes one map serve both. */
+  const wanted = new Map<string, { name: string; qty: number }>()
+  const verdictByLineId = new Map<string, AvailabilityVerdict>()
+  let unchecked = 0
+  for (const line of lines) {
+    const answer = source.byProduct.get(line.id)
+    /* `unitsOwned === 0` is bulk stock: no unit rows, so the overlap check has
+       nothing to answer with. Not a conflict, and not a clean bill either. */
+    if (answer === undefined || answer.unitsOwned === 0) {
+      unchecked += 1
+      verdictByLineId.set(
+        line.id,
+        unknownVerdict(
+          'Not checked',
+          answer === undefined
+            ? 'Not in the availability read for these dates'
+            : 'Not unit-tracked — no units to check against these dates',
+        ),
+      )
+      continue
+    }
+    const held = wanted.get(line.id)
+    if (held === undefined) wanted.set(line.id, { name: line.name, qty: line.qty })
+    else held.qty += line.qty
+  }
+
+  const conflicts: EquipmentConflict[] = []
+  for (const [productId, want] of wanted) {
+    const answer = source.byProduct.get(productId)
+    if (answer === undefined) continue
+    const { unitsFree, unitsOwned, heldBy } = answer
+    const heldSentence =
+      heldBy.length === 0
+        ? ''
+        : ` Held by ${heldBy.slice(0, 2).join(', ')}${heldBy.length > 2 ? ` and ${heldBy.length - 2} more` : ''}.`
+
+    if (unitsFree >= want.qty) {
+      verdictByLineId.set(productId, verdict('available', `${unitsFree} of ${unitsOwned} free for these dates`))
+      continue
+    }
+
+    verdictByLineId.set(
+      productId,
+      unitsFree === 0
+        ? verdict('unavailable', `None of ${unitsOwned} free for these dates`)
+        : verdict('partial', `${unitsFree} of ${want.qty} wanted are free for these dates`),
+    )
+    conflicts.push({
+      productId,
+      name: want.name,
+      needed: want.qty,
+      free: unitsFree,
+      heldBy,
+      text:
+        `${want.name} — ${want.qty} unit${want.qty === 1 ? '' : 's'} wanted, ${unitsFree} free for ` +
+        `these dates.${heldSentence}`,
+    })
+  }
+
+  const checked = lines.length - unchecked
+  const uncheckedNote = unchecked === 0 ? '' : ` ${unchecked} line${unchecked === 1 ? '' : 's'} could not be checked.`
+  const text =
+    conflicts.length > 0
+      ? `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} — ${conflicts[0]?.text ?? ''}${uncheckedNote}`
+      : checked === 0
+        ? `No line on this booking could be checked against these dates.${uncheckedNote}`
+        : `All ${checked} checked line${checked === 1 ? '' : 's'} have units free for these dates.${uncheckedNote}`
+
+  return { state: 'ready', conflicts, checked, unchecked, text, verdictByLineId }
 }
 
 /* ── Bundle rows ───────────────────────────────────────────────────────── */
@@ -768,10 +1115,15 @@ export interface AddBundleResult {
  * price, and does not decide: `lines` is a list the caller appends, `skipped`
  * and `notes` are sentences the caller shows.
  *
- * A short component is added with the status that is holding it, so the page's
- * existing conflict rule (`status !== 'In Stock'`) raises the same Critical
- * alert it would for any other unavailable line. A bundle cannot smuggle an
- * unavailable camera onto a booking past the check.
+ * A short component is still added carrying the status that is holding it, and
+ * `notes` still says so. ⚠ Since NR-09 that status no longer raises the page's
+ * Critical: `equipmentConflicts` answers the window per PRODUCT and a bundle
+ * component draft carries a `BND-…::model` id, which is not a `products.id`, so
+ * these lines land in the summary's `unchecked` count instead. They are also
+ * refused at Confirm by `confirmWriteRefusals`' sample-row rule, because the
+ * bundle catalogue this reads (`data/bundles.ts`) is still seed. Live bundles
+ * have their own windowed path in `queries/bundleRecords.ts`; wiring this
+ * function to it is the next slice, not something to fake here.
  */
 export function addBundleToBooking(
   b: BundleRecord,
@@ -846,7 +1198,13 @@ export function addBundleToBooking(
   }
   if (availability.level !== 'available') {
     notes.push(
-      `${availability.label} — ${availability.detail}. Short components are added with the status holding them, so the booking's conflict check still sees them.`,
+      /* ⛔ This used to end "…so the booking's conflict check still sees them."
+         It does not: a component draft's id is `${bundleId}::${model}`, which is
+         not a `products.id`, so it is never in the availability read and
+         `equipmentConflicts` counts it `unchecked` and raises no Critical. The
+         sentence promised a net that the windowed rewrite removed, directly
+         above a strip saying the line could not be checked. */
+      `${availability.label} — ${availability.detail}. Short components are still added, and the booking's conflict check cannot see them: a bundle component is not a catalogue product, so it is not in the availability read for these dates.`,
     )
   }
 
@@ -873,6 +1231,8 @@ export function addBundleToBooking(
  */
 
 export interface EquipmentModelGroup {
+  /** The identity the group was formed on — `EquipmentResult.productKey`. Unique within a result set. */
+  key: string
   name: string
   kind: 'equipment' | 'accessory'
   category: string
@@ -897,27 +1257,49 @@ export interface EquipmentModelGroup {
   availability: AvailabilityVerdict
 }
 
-/** Groups one query group's already-sorted equipment/accessory results by model name. */
+/**
+ * Groups one query group's already-sorted results by **product identity**
+ * (`productKey`), not by display name.
+ *
+ * NR-21: this grouped on `r.name`. For the seed source that is the product
+ * identity — every serialised child of one `ParentRow` carries its parent's
+ * name — but for the live source every row is a distinct product, so two
+ * products that happen to share a name collapsed into one group. Both fed
+ * `first` (the chips, the SKU, the rate) and `autoPick` silently returned
+ * whichever had sorted first, which is a different product from the one the
+ * operator is looking at. Each source now declares its own key.
+ *
+ * `autoPick` is picked on **availability, not on unit status**: a live row has
+ * no unit status at all since NR-09, and for a seed serialised row the two are
+ * the same test (`equipmentAvailability` maps In Stock → `available` and every
+ * other state → `unavailable`). `unknown` is pickable — a read still in flight
+ * is not a reason to refuse an item, and Confirm has its own windowed check.
+ */
 export function groupEquipmentResults(results: readonly EquipmentResult[]): EquipmentModelGroup[] {
   const order: string[] = []
-  const byName = new Map<string, EquipmentResult[]>()
+  const byKey = new Map<string, EquipmentResult[]>()
   for (const r of results) {
-    if (!byName.has(r.name)) {
-      byName.set(r.name, [])
-      order.push(r.name)
+    let bucket = byKey.get(r.productKey)
+    if (bucket === undefined) {
+      bucket = []
+      byKey.set(r.productKey, bucket)
+      order.push(r.productKey)
     }
-    byName.get(r.name)!.push(r)
+    bucket.push(r)
   }
-  return order.map((name) => {
-    const units = byName.get(name)!
+  return order.map((key) => {
+    const units = byKey.get(key)!
     const first = units[0]!
-    const free = units.filter((u) => u.status === 'In Stock').sort((a, b) => a.serial.localeCompare(b.serial))
+    const free = units
+      .filter((u) => u.availability.level !== 'unavailable')
+      .sort((a, b) => a.serial.localeCompare(b.serial))
     const availability = units.reduce(
       (best, u) => (AVAILABILITY_RANK[u.availability.level] < AVAILABILITY_RANK[best.level] ? u.availability : best),
       first.availability,
     )
     return {
-      name,
+      key,
+      name: first.name,
       kind: first.kind,
       category: first.category,
       ratePaisa: first.ratePaisa,
@@ -944,7 +1326,9 @@ export function equipmentLineDraft(e: EquipmentResult, days: number): BookingLin
     qty: 1,
     discountPct: 0,
     location: e.location,
-    status: e.status,
+    /* `exactOptionalPropertyTypes` — a live row has NO unit status, and
+       `status: undefined` is not the same as omitting the key. */
+    ...(e.status ? { status: e.status } : {}),
     committedTo: e.committedTo,
   }
 }

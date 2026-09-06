@@ -2,6 +2,74 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-06 (cont.) — New Rental answers the booking's dates, not today's stock
+
+**Phase:** Phase 0 · **Status:** 3 register items closed · 1 register claim corrected · 6 leftovers filed
+
+NR-09, NR-21, NR-11. **The editor that wrote this batch died mid-run** — it completed every edit,
+stopped at 20:02 on 5 Sep, and never reported, so its three reviewers never started and the harness
+still listed it as running ~18 hours later. `TaskStop` confirmed it had been dead the whole time.
+The work was recovered from the tree and put through a review-only pass instead.
+
+### What it fixes
+
+The catalogue derived a **fabricated** status — `free > 0 ? 'In Stock' : 'On Rent'` — from a
+snapshot of stock *now*, and the page raised a Critical *"Equipment conflict — X is On Rent"* that
+blocked Confirm. A booking three weeks out was refused because a camera was on someone else's shoot
+today, under a panel header reading "Availability shown for this booking's dates". The code
+half-admitted it: its own strings said *"free right now"*.
+
+It now answers the window through the real engine — a new `lib/queries/productAvailability.ts`
+feeding `readCandidates` + `readHolds` into `lib/availability.ts`, with the same rules and half-open
+bounds `queries/bundleRecords.ts` already uses for bundles, so the two panes cannot disagree about a
+unit.
+
+### What the review caught — the rewrite closed the hole for half the rows
+
+Two reviewers independently found that a product with **no `product_units` rows** still rendered a
+green **Available** chip, off a bulk count nothing had compared with the window. Three things
+disagreed at once: the panel said Available, the strip beneath said the same row could not be
+checked, and `confirmRental`'s `planAssignment` would refuse it outright.
+
+**On the live project that is not an edge case, it is every row** — 204 active products, 0
+`product_units` (queried 6 Sep). So the batch would have shipped a green catalogue and an enabled
+Confirm over a write path guaranteed to fail. It answers `Not checked` now and still carries the
+bulk count, which is a true fact just not an answer about those dates. The test that had pinned the
+old wording is rewritten, with why.
+
+Also fixed from the review: the bundle note promised *"the booking's conflict check still sees
+them"* for short components — it cannot, a component id is not a `products.id`; a successful but
+empty catalogue read left the strip saying *"Checking availability…"* forever, because `liveRows`
+stayed null and null also means "show the seed"; and `AVAILABILITY_FILTERS` never learned about the
+fourth level, so "Available only" emptied the catalogue while any read was in flight.
+
+### Register correction
+
+**NR-21's "`key={group.name}` duplicates" clause was wrong.** The grouping map deduplicates names,
+so those keys could not collide from that path. I flagged it as suspect in the brief rather than
+letting it be "fixed", and it was confirmed false. The real half — two live products sharing a name
+collapsing into one row — was real and is fixed by keying on `productKey`.
+
+### Filed, not fixed
+
+Six leftovers the reviewers identified as half-written, consistent with an editor that died
+mid-edit: a dead `unitCountExcludingRetired` field, an unconsumed `unitsHeld`, six barrel exports
+with no importer while `NewRental` still deep-imports past the barrel, and stale wording in the
+override modal. All inert; none affects behaviour. Recorded rather than churned.
+
+### Verified
+
+tsc clean; eslint clean; **full suite 121 files / 2591 tests**. Driven in the mock, where every
+product is unit-tracked: rows read "6 of 6 free **for these dates**", the "Not checked only" filter
+exists, and the console is clean.
+
+**A note on my own process.** I twice reported this batch as "still running" when it had been dead
+for hours, because I treated the absence of a completion notification as evidence of progress. And
+while verifying, a poisoned HMR tab and a cold start led me to call a page freeze "a real blocker"
+before establishing it: a fresh server and a fresh tab loaded the page in 10,887 characters with no
+errors. Neither mistake reached the code, but both cost time, and the first is now written into my
+notes as a rule: past the expected finish, stat the transcript rather than wait.
+
 ## 2026-09-06 (cont.) — 0093 would have broken live, and fixing it reversed yesterday's correction
 
 **Phase:** Phase 0 · **Status:** `0093` corrected before it ever reached live · BUG-015

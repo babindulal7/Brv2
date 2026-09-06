@@ -24,8 +24,14 @@ import { CREW_ROLES, createRental, deliveryTypeFromLabel, CreateRentalPartialErr
 import type { CrewRoleDb } from '../../types/database'
 import { supabase, newClientUuid } from '../../lib/supabase'
 import { listInventory } from '../../lib/queries/inventory'
-import { equipmentResultsFrom } from './booking/itemCatalogue'
-import type { EquipmentResult } from './booking/itemCatalogue'
+import { readProductAvailability } from '../../lib/queries/productAvailability'
+import type { RentalWindow } from '../../lib/availability'
+import { equipmentConflicts, equipmentResultsFrom } from './booking/itemCatalogue'
+import type {
+  AvailabilityVerdict,
+  EquipmentAvailabilitySource,
+  LiveEquipmentRow,
+} from './booking/itemCatalogue'
 import type { ClientRecord } from '../../data/clients'
 import { INV_STYLE } from '../../data/inventory'
 import type { InvStatus } from '../../data/inventory'
@@ -196,7 +202,17 @@ interface Line {
   qty: number
   discountPct: number
   location: string
-  status: InvStatus
+  /**
+   * The physical unit's own `inventory_state` - **absent for a live line**.
+   *
+   * NR-09: a live catalogue row is a PRODUCT and `products` carries no
+   * `inventory_state`, so a value here was fabricated from a count of where
+   * that product's units sat at that instant. Nothing gates on this any more;
+   * availability for the booking's window is `conflictSummary` below.
+   * `booking/itemCatalogue.ts`'s `BookingLineDraft.status` is the same field
+   * and carries the longer note.
+   */
+  status?: InvStatus | undefined
   committedTo: string
   /**
    * §34 — set when the line arrived as part of a bundle, so the footer can
@@ -1678,7 +1694,7 @@ export default function NewRental() {
   const [clientPool, setClientPool] = useState<ClientRecord[]>(() => [...CLIENTS_DATA])
   const [clientsAreLive, setClientsAreLive] = useState(false)
   /**
-   * The live products, in the shape `AddItemPanel` searches — ids are
+   * The live products, straight off `listInventory`. Their ids are
    * `products.id` uuids, which is the whole point. `null` until the read lands,
    * and the panel falls back to the seed catalogue in the meantime.
    *
@@ -1686,7 +1702,19 @@ export default function NewRental() {
    * `CatalogueItem` shape. It was redundant the moment the panel took a real
    * pool, and two states describing one read is how they drift apart.
    */
-  const [liveEquipment, setLiveEquipment] = useState<readonly EquipmentResult[] | null>(null)
+  const [liveRows, setLiveRows] = useState<readonly LiveEquipmentRow[] | null>(null)
+  /*
+   * Has the catalogue read FINISHED, whatever it found?
+   *
+   * `liveRows` cannot answer that: it stays `null` both before the read lands
+   * and after a read that returned no active products, because `null` is also
+   * the signal that puts the seed catalogue on screen. Without this flag the
+   * availability effect below read that second case as "still loading" and
+   * pinned the strip at "Checking availability for these dates…" for the life
+   * of the page — a check that was not running, reported as in flight, under a
+   * panel already saying the sample catalogue is not checked at all.
+   */
+  const [poolSettled, setPoolSettled] = useState(false)
   /** Why the live read failed, if it did. Law 12 — stated, never swallowed. */
   const [poolError, setPoolError] = useState<string | null>(null)
 
@@ -1716,9 +1744,19 @@ export default function NewRental() {
            missing feature. The rate defaults to zero for display; pricing is
            the engine's, not this screen's. */
         const rows = inventory.rows.filter((r) => r.isActive)
-        if (rows.length > 0) setLiveEquipment(equipmentResultsFrom(rows))
+        /* The ROWS, not the catalogue results. The results carry an
+           availability verdict that depends on the booking's window, and the
+           window changes long after this read lands — so they are derived
+           below, where both inputs are in scope, instead of frozen here. */
+        if (rows.length > 0) setLiveRows(rows)
       } catch (e: unknown) {
         if (!cancelled) setPoolError(e instanceof Error ? e.message : String(e))
+      } finally {
+        /* Settled means ANSWERED, not answered well: a read that returned
+           nothing has still finished, and the strip must stop claiming to be
+           checking. Set on the failure path too — `poolError` drives its own
+           branch, and leaving this false there would strand the flag. */
+        if (!cancelled) setPoolSettled(true)
       }
     })()
     return () => {
@@ -2049,6 +2087,77 @@ export default function NewRental() {
     [pickupAt, returnAt],
   )
 
+  /* ── NR-09 · availability for THESE DATES, through the real engine ────────
+   *
+   * ⛔ The catalogue used to answer "is this free at this instant" from
+   * `unitsByState`, and this page raised a **Critical** from the status it
+   * fabricated out of that count — so a booking three weeks out was refused
+   * because a camera was on someone else's shoot today. The engine that can
+   * answer the real question already existed and is what the Bundles pane uses
+   * (`queries/bundleRecords.ts`); `queries/productAvailability.ts` is its
+   * equipment sibling, same rules, same half-open bounds.
+   *
+   * The read is asynchronous and the window moves under it, so the state is
+   * modelled with an explicit "no answer" rather than a `Map | null` — an empty
+   * map is indistinguishable from "nothing is free", which is precisely the
+   * BD-02 / NR-13 defect of drawing a pending read as a settled fact.
+   */
+  const [availabilitySource, setAvailabilitySource] = useState<EquipmentAvailabilitySource>({
+    state: 'checking',
+  })
+
+  useEffect(() => {
+    /* An invalid window is not a failed read — there is simply nothing to ask.
+       `bookingDays` answers 0 for exactly this case and drives its own notice. */
+    if (!pickupAt || !returnAt || returnAt.getTime() <= pickupAt.getTime()) {
+      setAvailabilitySource({ state: 'no-window' })
+      return
+    }
+    if (poolError !== null) {
+      setAvailabilitySource({ state: 'failed', reason: poolError })
+      return
+    }
+    if (liveRows === null) {
+      /* The read has finished and produced no live catalogue, so the SEED rows
+         are what render. There is nothing in flight and nothing failed — the
+         honest answer is a landed read that knows nothing about these products,
+         which is what an empty map says: every row falls to the
+         `answer === undefined` branch and reads "Not checked", agreeing with
+         the sample-catalogue notice above it instead of spinning under it. */
+      setAvailabilitySource(poolSettled ? { state: 'ready', byProduct: new Map() } : { state: 'checking' })
+      return
+    }
+
+    let cancelled = false
+    setAvailabilitySource({ state: 'checking' })
+    /* Law 7 — the same two instants `days` and the write payload are measured
+       over, handed across as AD/UTC ISO strings carrying their offset. */
+    const window: RentalWindow = { fromAd: pickupAt.toISOString(), toAd: returnAt.toISOString() }
+    void (async () => {
+      try {
+        const byProduct = await readProductAvailability(window, liveRows.map((r) => r.id))
+        if (!cancelled) setAvailabilitySource({ state: 'ready', byProduct })
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setAvailabilitySource({ state: 'failed', reason: e instanceof Error ? e.message : String(e) })
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [liveRows, pickupAt, returnAt, poolError, poolSettled])
+
+  /**
+   * The pool `AddItemPanel` searches — rebuilt whenever the rows OR the
+   * windowed answer change, so a verdict on screen is never one measured
+   * against a window the operator has since moved.
+   */
+  const liveEquipment = useMemo(
+    () => (liveRows === null ? null : equipmentResultsFrom(liveRows, availabilitySource)),
+    [liveRows, availabilitySource],
+  )
+
   /* ── §10.1 calculation order — via lib/money.ts's canonical price(), not a local re-derivation. ── */
   const equipmentPaisa = useMemo(() => lines.reduce((s, l) => s + lineAmountPaisa(l), 0) as Paisa, [lines])
   const crewChargesPaisa = useMemo(
@@ -2080,8 +2189,28 @@ export default function NewRental() {
   const depositPendingPaisa = (depositRequiredPaisa - depositReceivedPaisa) as Paisa
 
   /* ── §12 alerts. Critical blocks Confirm; Warning blocks Handover. ─────── */
-  // §03 — a real conflict reads the unit's own status/booking, not a fabricated one.
-  const conflictLines = lines.filter((l) => l.status !== 'In Stock')
+  /**
+   * §03 / §8.5 — a real conflict, for the booking's own dates.
+   *
+   * ⛔ This was `lines.filter((l) => l.status !== 'In Stock')`. The comment
+   * above it claimed it read "the unit's own status/booking, not a fabricated
+   * one", and for a live line that was exactly backwards: `status` was
+   * synthesised by `equipmentResultsFrom` from a count of where the product's
+   * units sit **at this instant**, so a Critical fired — blocking Confirm — for
+   * a booking three weeks out whose gear happens to be on a shoot today.
+   *
+   * `equipmentConflicts` asks the engine instead: fewer units free across the
+   * booking's window than the booking wants. That is not a new rule. It is the
+   * refusal `confirmRental` already makes downstream — `planAssignment` then
+   * `AssignmentIncompleteError` unless every line is covered
+   * (`confirmRental.ts:435-436`) — surfaced here instead of after two round
+   * trips.
+   */
+  const conflictSummary = useMemo(
+    () => equipmentConflicts(lines, availabilitySource),
+    [lines, availabilitySource],
+  )
+  const conflictLines = conflictSummary.conflicts
   /**
    * Law 10 as amended 31 Aug 2026, through the engine rather than a
    * re-derivation on the page. The gate is GONE (D3, Babin: "don't put any
@@ -2094,11 +2223,28 @@ export default function NewRental() {
   const discountUnapproved = !discountVerdict.valid
 
   const alerts: Array<{ text: string; severity: 'Critical' | 'Warning' | 'Information'; action: string }> = [
-    ...conflictLines.map((l) => ({
-      text: l.committedTo !== '—' ? `Equipment conflict — ${l.name} committed to ${l.committedTo}` : `Equipment conflict — ${l.name} is ${l.status}`,
+    ...conflictLines.map((c) => ({
+      text: `Equipment conflict — ${c.text}`,
       severity: 'Critical' as const,
       action: 'Open Inventory',
     })),
+    /*
+     * A failed availability read is a Warning, not a Critical.
+     *
+     * Blocking Confirm because a query failed would invent a rule: `confirmRental`
+     * plans the assignment itself and refuses by name if anything is short, so
+     * the write is protected either way. What is NOT acceptable is silence —
+     * Law 12 — so the failure is stated where every other reason is stated.
+     */
+    ...(availabilitySource.state === 'failed'
+      ? [
+          {
+            text: `Availability could not be checked for these dates: ${availabilitySource.reason}. Confirm will re-check and refuse if anything is short.`,
+            severity: 'Warning' as const,
+            action: 'Open Equipment',
+          },
+        ]
+      : []),
     ...(!client ? [{ text: 'No client selected', severity: 'Critical' as const, action: 'Select Client' }] : []),
     ...(client && govId.trim().length === 0 ? [{ text: 'Missing client ID or PAN', severity: 'Critical' as const, action: 'Edit Client' }] : []),
     ...(discountUnapproved
@@ -2866,13 +3012,67 @@ export default function NewRental() {
    * wireframe's `⋮`; a nested child carries the compact remove, because
    * "remove all of these" already lives on the group's menu.
    */
+  /**
+   * Section 38's availability pill for one line - icon + label + colour, never
+   * the colour alone (Law 11), and never a status the line does not have.
+   *
+   * Two sources, in this order, because they answer different questions:
+   *
+   *  - a line that IS a physical unit (seed catalogue, bundle component) has a
+   *    real `inventory_state` and shows it, exactly as before;
+   *  - a live line is a product with no unit status at all, so it shows the
+   *    windowed verdict `conflictSummary` computed - the same computation the
+   *    section's conflict strip prints, so a row can never read "Available"
+   *    under a strip that names it as a conflict.
+   *
+   * `rank` is worst-wins, used by the group parent row below.
+   */
+  const linePill = (
+    l: Line,
+  ): { label: string; title: string; bg: string; fg: string; icon: IconName; rank: number } => {
+    if (l.status) {
+      const inv = INV_STYLE[l.status]
+      return {
+        label: l.status,
+        title: l.committedTo !== '—' ? `${l.status} — committed to ${l.committedTo}` : l.status,
+        bg: inv.bg === 'transparent' ? 'var(--st-in-bg)' : inv.bg,
+        fg: inv.bg === 'transparent' ? 'var(--st-in-fg)' : inv.fg,
+        icon: inv.icon,
+        rank: l.status === 'In Stock' ? 0 : 3,
+      }
+    }
+    const v: AvailabilityVerdict | undefined = conflictSummary.verdictByLineId.get(l.id)
+    if (v === undefined) {
+      /* Unreachable while `conflictSummary` is built from `lines` - every line
+         gets an entry. Rendered rather than asserted, because a crash in a
+         table cell is a worse failure than an honest "we do not know". */
+      return {
+        label: 'Not checked',
+        title: 'No availability answer for this line',
+        bg: 'var(--st-neutral-bg)',
+        fg: 'var(--st-neutral-fg)',
+        icon: 'info',
+        rank: 1,
+      }
+    }
+    const t = STATUS[v.tone]
+    return {
+      label: v.label,
+      title: v.detail,
+      bg: t.bg,
+      fg: t.fg,
+      icon: v.icon,
+      rank: v.level === 'available' ? 0 : v.level === 'unknown' ? 1 : v.level === 'partial' ? 2 : 3,
+    }
+  }
+
   const equipmentRow = (
     l: Line,
     child: boolean,
     groupLabel: string,
     menuItems?: Array<{ label: string; icon: IconName; onClick: () => void }>,
   ) => {
-    const inv = INV_STYLE[l.status]
+    const pill = linePill(l)
     return (
       <tr key={l.id} style={{ borderBottom: '1px solid var(--border)' }}>
         {/* §36 — item name strong, serial small and secondary underneath it.
@@ -2959,7 +3159,7 @@ export default function NewRental() {
         {/* §38 — availability is a status pill: icon + label + colour, never colour alone. */}
         <td style={td}>
           <span
-            title={l.committedTo !== '—' ? `${l.status} — committed to ${l.committedTo}` : l.status}
+            title={pill.title}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -2969,12 +3169,12 @@ export default function NewRental() {
               borderRadius: 'var(--r-badge)',
               fontSize: 'var(--t-th)',
               fontWeight: 700,
-              background: inv.bg === 'transparent' ? 'var(--st-in-bg)' : inv.bg,
-              color: inv.bg === 'transparent' ? 'var(--st-in-fg)' : inv.fg,
+              background: pill.bg,
+              color: pill.fg,
             }}
           >
-            <Icon name={inv.icon} size={11} />
-            {l.status}
+            <Icon name={pill.icon} size={11} />
+            {pill.label}
           </span>
         </td>
         <td style={{ ...td, width: 34, textAlign: 'right' }}>
@@ -3686,7 +3886,9 @@ export default function NewRental() {
                    in front of the job. */
                 inline
                 window={bookingWindow}
-                {...(liveEquipment ? { equipment: liveEquipment } : {})}
+                {...(liveEquipment
+                  ? { equipment: liveEquipment, availability: availabilitySource }
+                  : {})}
                 days={days || 1}
                 existingLineIds={lines.map((l) => l.id)}
                 onAdd={addDrafts}
@@ -3695,26 +3897,39 @@ export default function NewRental() {
               />
             </div>
 
-            {/* §8.5 — inline conflict check on every change to dates or items, read from each unit's own real status/booking, never fabricated. */}
-            <div
-              style={{
-                display: 'flex',
-                gap: 7,
-                alignItems: 'center',
-                padding: '7px 10px',
-                borderRadius: 'var(--r-btn)',
-                marginBottom: 10,
-                background: conflictLines.length ? 'var(--st-danger-bg)' : 'var(--st-in-bg)',
-                color: conflictLines.length ? 'var(--st-danger-fg)' : 'var(--st-in-fg)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-              }}
-            >
-              <Icon name={conflictLines.length ? 'error' : 'check'} size={13} style={{ flexShrink: 0 }} />
-              {conflictLines.length
-                ? `${conflictLines.length} conflict${conflictLines.length > 1 ? 's' : ''} — ${conflictLines[0]?.name} is ${conflictLines[0]?.status}${conflictLines[0]?.committedTo !== '—' ? ` (${conflictLines[0]?.committedTo})` : ''}`
-                : 'All items available for the selected dates. No conflicts found.'}
-            </div>
+            {/* §8.5 — the inline conflict check, re-run on every change to the
+                dates or the items. NR-09: it now reports the WINDOWED answer,
+                including the two states that are not answers at all, rather
+                than claiming "all items available for the selected dates" over
+                a check nobody has run. */}
+            {(() => {
+              const conflicted = conflictSummary.conflicts.length > 0
+              const answered = conflictSummary.state === 'ready'
+              const tone = conflicted
+                ? { bg: 'var(--st-danger-bg)', fg: 'var(--st-danger-fg)', icon: 'error' as IconName }
+                : answered
+                  ? { bg: 'var(--st-in-bg)', fg: 'var(--st-in-fg)', icon: 'check' as IconName }
+                  : { bg: 'var(--st-neutral-bg)', fg: 'var(--st-neutral-fg)', icon: 'timer' as IconName }
+              return (
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 7,
+                    alignItems: 'center',
+                    padding: '7px 10px',
+                    borderRadius: 'var(--r-btn)',
+                    marginBottom: 10,
+                    background: tone.bg,
+                    color: tone.fg,
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: 600,
+                  }}
+                >
+                  <Icon name={tone.icon} size={13} style={{ flexShrink: 0 }} />
+                  {conflictSummary.text}
+                </div>
+              )
+            })()}
 
             {bundleNotice && (
               <div
@@ -3787,12 +4002,13 @@ export default function NewRental() {
                     const minDays = Math.min(...dayValues)
                     const maxDays = Math.max(...dayValues)
                     const groupAmountPaisa = g.lines.reduce((s, l) => s + lineAmountPaisa(l), 0) as Paisa
-                    // The parent row states the group's *worst* availability —
-                    // one blocked unit blocks the group, and saying "In Stock"
-                    // over a blocked child would be the lie.
-                    const blocked = g.lines.find((l) => l.status !== 'In Stock')
-                    const parentStatus: InvStatus = blocked?.status ?? g.lines[0]?.status ?? 'In Stock'
-                    const parentInv = INV_STYLE[parentStatus]
+                    /* The parent states the group's WORST availability - one
+                       blocked unit blocks the group, and a green pill over a
+                       blocked child would be the lie. Same `linePill` the child
+                       rows use, so the two can never disagree. */
+                    const parentPill = g.lines
+                      .map(linePill)
+                      .reduce((worst, x) => (x.rank > worst.rank ? x : worst))
                     const menuItems = [
                       {
                         label: nested ? `Remove all ${g.lines.length} lines` : 'Remove from this booking',
@@ -3834,7 +4050,7 @@ export default function NewRental() {
                             {/* Law 11 — icon + label + colour, never the colour alone. */}
                             <td style={td}>
                               <span
-                                title={blocked ? `${blocked.name} is ${blocked.status}` : parentStatus}
+                                title={parentPill.title}
                                 style={{
                                   display: 'inline-flex',
                                   alignItems: 'center',
@@ -3844,12 +4060,12 @@ export default function NewRental() {
                                   borderRadius: 'var(--r-badge)',
                                   fontSize: 'var(--t-th)',
                                   fontWeight: 700,
-                                  background: parentInv.bg === 'transparent' ? 'var(--st-in-bg)' : parentInv.bg,
-                                  color: parentInv.bg === 'transparent' ? 'var(--st-in-fg)' : parentInv.fg,
+                                  background: parentPill.bg,
+                                  color: parentPill.fg,
                                 }}
                               >
-                                <Icon name={parentInv.icon} size={11} />
-                                {parentStatus}
+                                <Icon name={parentPill.icon} size={11} />
+                                {parentPill.label}
                               </span>
                             </td>
                             <td style={{ ...td, width: 34, textAlign: 'right' }}>
