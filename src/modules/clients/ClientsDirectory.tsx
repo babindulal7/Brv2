@@ -14,6 +14,7 @@ import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { canRecordPayment } from '../../lib/rbac'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+import { canBlockClient } from '../../lib/rbac'
 import { useNetwork } from '../../lib/network'
 import { newClientUuid } from '../../lib/supabase'
 import type { ActionContext } from '../../actions/core'
@@ -72,13 +73,30 @@ function parseAdLabel(label: string | undefined): number | null {
  * these), and Blocked / On Stop moved to `overlays` below, which intersect with
  * whatever is selected here.
  *
- * There is no `(Active)` chip, and inventing one would be worse than the
- * omission: `ClientRecord` carries no deactivation field at all
+ * ## `active` here is the BOOKING sense, not the account sense
+ *
+ * ⚠ Read this before adding anything else called "Active". The `active` member
+ * selects clients with at least one booking that is neither Closed nor
+ * cancelled — see the KPI note further down for the whole chain back to
+ * `active_bookings_count`. It says nothing about whether the ACCOUNT is active.
+ *
+ * There is still no client-STATUS Active chip, and inventing one would be worse
+ * than the omission: `ClientRecord` carries no deactivation field at all
  * (`deactivatedAtAd` lives on `ClientProfile`, which the directory never
- * fetches), so an Active chip would select exactly what `All` already selects
- * and lie about doing something. Reported rather than faked.
+ * fetches), so a status-Active chip would select exactly what `All` already
+ * selects and lie about doing something. Reported rather than faked.
+ *
+ * TODO(decision): the chip strip reads All · Organisation · Individual ·
+ * Unassigned · Active · Payment Due · VIP, and in that company a bare "Active"
+ * can be read as the account sense the paragraph above says does not exist.
+ * The label was ruled in the 5–6 Sep session and is recorded in this repo at
+ * `BUG_AUDIT_LIFECYCLE_2026-09-02.md` under CL-04 — cite that, not this
+ * comment. It replaced "On Rent", which was a claim about one of five stages.
+ * Whether it should be QUALIFIED — "Active Rentals", the wording the table
+ * column and the CSV header now use — is a separate product call, so it is
+ * asked here, not decided.
  */
-type FilterKey = 'all' | 'onRent' | 'paymentDue' | 'vip' | 'typeOrg' | 'typeInd' | 'typeUnassigned'
+type FilterKey = 'all' | 'active' | 'paymentDue' | 'vip' | 'typeOrg' | 'typeInd' | 'typeUnassigned'
 
 /**
  * §18 — the directory's filter state IS the query string, the same contract
@@ -98,7 +116,7 @@ const FILTER_PARAM: Record<Exclude<FilterKey, 'all'>, string> = {
   typeOrg: 'organisation',
   typeInd: 'individual',
   typeUnassigned: 'unassigned',
-  onRent: 'on-rent',
+  active: 'active',
   paymentDue: 'payment-due',
   vip: 'vip',
 }
@@ -113,8 +131,24 @@ const FILTER_PARAM: Record<Exclude<FilterKey, 'all'>, string> = {
  * same absence the chip itself keeps for that role: the filter must not run
  * for a session that may not know the answer.
  */
+/**
+ * Wire values this screen used to mint, kept readable forever.
+ *
+ * CL-04 renamed the chip's wire value `on-rent` → `active`. A query string is
+ * the one piece of this UI that OUTLIVES the build: it sits in bookmarks, in
+ * pasted links and in WhatsApp messages. Without this map an old link did not
+ * fail loudly — `filterFromParam` returns `all` for anything it does not
+ * recognise, so it silently showed the UNFILTERED directory under a URL that
+ * named a filter, which is the same class of quiet lie CL-04 was raised about.
+ */
+const LEGACY_FILTER_PARAM: Record<string, Exclude<FilterKey, 'all'>> = {
+  'on-rent': 'active',
+}
+
 function filterFromParam(raw: string | null, money: boolean): FilterKey {
   if (!raw) return 'all'
+  const legacy = LEGACY_FILTER_PARAM[raw]
+  if (legacy) return legacy === 'paymentDue' && !money ? 'all' : legacy
   const hit = (Object.entries(FILTER_PARAM) as Array<[Exclude<FilterKey, 'all'>, string]>).find(
     ([, wire]) => wire === raw,
   )
@@ -160,7 +194,7 @@ interface SavedView {
 const SAVED_VIEWS: SavedView[] = [
   { label: 'VIP Clients', filter: 'vip', sort: { key: 'name', dir: 'asc' } },
   { label: 'Payment Due', filter: 'paymentDue', sort: { key: 'outstanding', dir: 'desc' }, money: true },
-  { label: 'On Rent', filter: 'onRent', sort: { key: 'rentals', dir: 'desc' } },
+  { label: 'Active', filter: 'active', sort: { key: 'rentals', dir: 'desc' } },
   { label: 'Recently Added', filter: 'all', sort: { key: 'lastRental', dir: 'desc' } },
   /* Now an OVERLAY over every client, not a status that excludes the rest. */
   { label: 'Blocked Clients', filter: 'all', sort: { key: 'name', dir: 'asc' }, overlays: { blocked: true } },
@@ -370,6 +404,18 @@ export function ClientsDirectory({
   // primitive it actually derives from so `pageRowsWithIntel` below (and any
   // other memo keyed on `gctx`) doesn't invalidate on every unrelated render.
   const gctx = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
+  /*
+   * The same gate `ClientDetail` applies to the same verb (CL-06).
+   *
+   * Without it these controls are offered to every seat and refused by the
+   * dispatcher on press — `blockClient` carries `permissions: ['client.block']`
+   * and `actions/core.ts` resolves it through `rbac.canBlockClient`, which is
+   * Owner/Admin/Manager. A Coordinator or Warehouse session got an enabled
+   * button and an error, which is the shape CL-06 was raised about; fixing one
+   * surface and not the other would have left the two disagreeing about who may
+   * block a client.
+   */
+  const mayBlock = canBlockClient(user?.role ?? 'Client')
   // HIS v2.1 §4.2 — phone/email were rendering unconditionally for every role
   // before this; gated here the same way `money` already gates Outstanding/
   // Deposit, so a Warehouse or Technician session never receives the column.
@@ -528,6 +574,11 @@ export function ClientsDirectory({
         const q = searchQuery.toLowerCase()
         const matches =
           client.name.toLowerCase().includes(q) ||
+          // Guarded, and it never fires on a directory row: nothing fills
+          // `company` (see the search placeholder's note). Kept because it is
+          // a conditional, not a claim — it costs one falsy check and would
+          // start working the day the field has a source. The PROMISE it used
+          // to back, "…email, company, PAN…", is what was removed.
           (client.company ? client.company.toLowerCase().includes(q) : false) ||
           client.phone.toLowerCase().includes(q) ||
           client.email.toLowerCase().includes(q) ||
@@ -543,7 +594,7 @@ export function ClientsDirectory({
       if (overlays.blocked && !client.isBlocked) return false
       if (overlays.onStop && !stopVerdicts.get(client.id)?.onStop) return false
 
-      if (activeFilter === 'onRent') return client.currentRentalsCount > 0
+      if (activeFilter === 'active') return client.currentRentalsCount > 0
       if (activeFilter === 'paymentDue') return client.outstandingPaisa > 0
       if (activeFilter === 'vip') return Boolean(client.isVip)
       if (activeFilter === 'typeOrg') return client.clientType === 'Organisation'
@@ -702,10 +753,14 @@ export function ClientsDirectory({
 
   /** A real CSV of just the selected rows — same quoting rule as the full-directory export. */
   const exportSelected = () => {
+    // No 'Company' column — the same removal, for the same reason, that
+    // `Clients.tsx`'s full-directory export already made: `ClientRecord.company`
+    // has no source in `client_directory_v`, the mapper never sets it, and the
+    // directory only ever holds mapped rows, so every cell under that header
+    // was blank on every row.
     const headers = [
       'Client ID',
       'Name',
-      'Company',
       'Type',
       'Membership',
       'Phone',
@@ -718,14 +773,17 @@ export function ClientsDirectory({
       [
         c.id,
         c.name,
-        c.company ?? '',
         c.clientType,
         c.membership,
         c.phone,
         c.email,
         c.pan ?? '',
         ...(money ? [formatMoney(c.outstandingPaisa), formatMoney(c.depositHeldPaisa)] : []),
-        c.isBlocked ? 'Blocked' : 'Active',
+        /* NOT "Active": since CL-04 that word means "has a booking that is
+           neither Closed nor cancelled", and this column is about the block
+           flag — a different fact about a different thing. Two senses of one
+           word in one export is a spreadsheet nobody can filter. */
+        c.isBlocked ? 'Blocked' : 'Not blocked',
       ]
         .map(csvCell)
         .join(','),
@@ -882,12 +940,32 @@ export function ClientsDirectory({
       accent: 'primary',
       note: 'All clients (all statuses)',
     },
+    /*
+     * ⚠ "Active", not "On Rent" — the label is bounded by what the figure can
+     * actually answer, and it is not "how many clients have gear out today".
+     *
+     * Follow the number back: `clientMetrics.onRent` counts rows with
+     * `currentRentalsCount > 0` (data/clients.ts:1044); `currentRentalsCount`
+     * is `active_bookings_count` (lib/queries/clients.ts:216); and that view
+     * column is
+     *   `count(*) filter (where b.stage <> 'Closed' and b.cancelled_at is null)`
+     * (0054_rls_backstops_and_directory_block_flag.sql:321). The canonical
+     * stages are Quote · Booked · Packed · On Rent · Returned · Closed
+     * (0054:317-319), so `<> 'Closed'` sweeps in the five non-closed stages —
+     * a quote nobody has confirmed, and a rental already returned, count here
+     * exactly as loudly as gear that is out.
+     *
+     * The column is honestly named; only the label was lying. Renaming the
+     * label is the whole fix available here: a genuine on-rent count needs a
+     * SECOND counter in the view (`b.stage = 'On Rent' and b.cancelled_at is
+     * null`), which is a migration, not a screen change.
+     */
     {
-      label: 'On Rent',
+      label: 'Active',
       value: String(metrics.onRent),
       icon: 'checklist',
       accent: 'success',
-      note: 'Clients with active rentals',
+      note: 'Clients with any booking not closed or cancelled',
     },
     ...(money
       ? [
@@ -919,7 +997,7 @@ export function ClientsDirectory({
     { label: 'Organisation', key: 'typeOrg', count: metrics.typeOrg },
     { label: 'Individual', key: 'typeInd', count: metrics.typeInd },
     { label: 'Unassigned', key: 'typeUnassigned', count: metrics.typeUnassigned },
-    { label: 'On Rent', key: 'onRent', count: metrics.onRent },
+    { label: 'Active', key: 'active', count: metrics.onRent },
     ...(money ? [{ label: 'Payment Due', key: 'paymentDue' as FilterKey, count: metrics.paymentDue }] : []),
     { label: 'VIP', key: 'vip', count: metrics.vip },
   ]
@@ -1086,7 +1164,14 @@ export function ClientsDirectory({
               type="search"
               value={searchQuery}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search client, phone, email, company, PAN…"
+              /* No "company". `ClientRecord.company` has no source in
+                 `client_directory_v` — the live view's 31 columns carry no
+                 company field and `toClientRecord` never sets one — so this
+                 placeholder was advertising a haystack with nothing in it.
+                 (0005_clients.sql:36: "There is no separate companies table";
+                 for an Organisation the company name IS `clients.name`, which
+                 this box already searches.) */
+              placeholder="Search client, phone, email, PAN…"
               aria-label="Search clients"
               style={{
                 width: 280,
@@ -1313,7 +1398,15 @@ export function ClientsDirectory({
                   {/* Only the un-blocked ones — asking to block a client that is
                       already blocked has no write to make, and the action says so
                       rather than silently succeeding. */}
-                  {selectedClients.some((c) => !c.isBlocked) && (
+                  {/* `mayBlock` — see its definition. This file HIDES what a
+                      role may not use, where `ClientDetail` greys it with a
+                      stated reason: that is this screen's own precedent, the
+                      one `filterFromParam` already keeps for the money-blind
+                      Payment Due filter ("the filter must not run for a session
+                      that may not know the answer"). A bulk toolbar that
+                      appears only when rows are selected has nowhere to put a
+                      reason without shouting it at every selection. */}
+                  {mayBlock && selectedClients.some((c) => !c.isBlocked) && (
                     <Button
                       variant="danger"
                       icon="alert_triangle"
@@ -1324,7 +1417,7 @@ export function ClientsDirectory({
                   )}
                   {/* Law 3 — a block is lifted, never deleted, so the lift needs a
                       control of its own wherever the block has one. */}
-                  {selectedClients.some((c) => c.isBlocked) && (
+                  {mayBlock && selectedClients.some((c) => c.isBlocked) && (
                     <Button
                       icon="checklist"
                       onClick={() => openBlockDialog('unblock', selectedClients.filter((c) => c.isBlocked))}
@@ -1481,7 +1574,7 @@ export function ClientsDirectory({
                           <span className="figure" style={{ color: 'var(--text)', fontWeight: 600 }}>
                             {client.currentRentalsCount}
                           </span>{' '}
-                          on rent
+                          active
                         </span>
                         {money && client.outstandingPaisa > 0 && (
                           <span className="figure" style={{ color: 'var(--danger-text)', fontWeight: 600 }}>
@@ -1525,7 +1618,10 @@ export function ClientsDirectory({
                       {pii && !narrow && <SortHeader label="Contact" sort={sort} onSort={applySortKey} />}
                       {!narrow && <SortHeader label="Type" sortKey="type" sort={sort} onSort={applySortKey} />}
                       <SortHeader label="Membership" sortKey="membership" sort={sort} onSort={applySortKey} />
-                      {!narrow && <SortHeader label="Current Rentals" sortKey="rentals" sort={sort} onSort={applySortKey} />}
+                      {/* "Active Rentals", not "Current Rentals": the figure is
+                          `active_bookings_count` — every booking that is neither
+                          Closed nor cancelled, see the KPI note above. */}
+                      {!narrow && <SortHeader label="Active Rentals" sortKey="rentals" sort={sort} onSort={applySortKey} />}
                       {money && <SortHeader label="Outstanding" sortKey="outstanding" sort={sort} onSort={applySortKey} />}
                       {money && !narrow && <SortHeader label="Deposit Held" sortKey="deposit" sort={sort} onSort={applySortKey} />}
                       {!narrow && <SortHeader label="Last Rental (BS / AD)" sortKey="lastRental" sort={sort} onSort={applySortKey} />}
@@ -1665,7 +1761,7 @@ export function ClientsDirectory({
                           <td style={td}>
                             {client.currentRentalsCount > 0 ? (
                               <span className="figure" style={{ color: 'var(--link)', fontWeight: 600 }}>
-                                {client.currentRentalsCount} on rent
+                                {client.currentRentalsCount} active
                               </span>
                             ) : (
                               <span className="figure" style={{ color: 'var(--muted)' }}>
@@ -1922,8 +2018,32 @@ export function ClientsDirectory({
               </div>
 
               <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {/*
+                  `blockReason` is NEVER set on a directory record, so this
+                  banner used to render its title over an empty message.
+                  `toClientRecord` deliberately omits the key
+                  (lib/queries/clients.ts:280-284) and
+                  `__tests__/clientsQuery.test.ts` asserts `'blockReason' in
+                  record` is false.
+
+                  The reason is not missing from the DATABASE — `client_flags.reason`
+                  is a real nullable text column (0005_clients.sql:231, confirmed
+                  on the live schema) — it is missing from THIS READ:
+                  `client_directory_v` publishes the `is_blocked` boolean and
+                  nothing else about the flag (0054:287-297; the live view has
+                  31 columns and no reason among them). So the honest sentence
+                  is the one `ClientDetail.tsx` already renders for the same
+                  gap (search its "not carried by this view"), reused
+                  verbatim rather than reworded into a third variant.
+                */}
                 {selectedClient.isBlocked && (
-                  <ErrorBanner title="Account blocked." message={selectedClient.blockReason} />
+                  <ErrorBanner
+                    title="Account blocked."
+                    message={
+                      selectedClient.blockReason ??
+                      'The reason is recorded on the flag but is not carried by this view.'
+                    }
+                  />
                 )}
 
                 {/*
@@ -2159,8 +2279,18 @@ export function ClientsDirectory({
                 )}
 
                 <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+                  {/* Was `${blockReason ?? 'account under review'}` — a reason
+                      nobody recorded, presented as the one that was. The field
+                      is always absent here (see the banner above), so that
+                      fallback was the ONLY string this tooltip ever showed.
+                      Same shape as `ClientDetail`'s own blocked notice: name the reason
+                      when it is carried, say nothing when it is not. */}
                   {selectedClient.isBlocked ? (
-                    <Unavailable reason={`Blocked: ${selectedClient.blockReason ?? 'account under review'} — clear the block before starting a rental`}>
+                    <Unavailable
+                      reason={`Blocked${
+                        selectedClient.blockReason ? `: ${selectedClient.blockReason}` : ''
+                      } — clear the block before starting a rental`}
+                    >
                       <Button variant="primary" disabled>
                         Start rental
                       </Button>
@@ -2185,10 +2315,22 @@ export function ClientsDirectory({
                     View Full Profile
                   </Button>
                   {/* One client, both directions. Law 3: unblocking must be
-                      possible, and this is the surface that has it — the Block
-                      control on `ClientDetail` is still disabled behind an
-                      `Unavailable` reason that this change makes stale (reported). */}
-                  {selectedClient.isBlocked ? (
+                      possible, and this surface has always had it. `ClientDetail`
+                      now has it too — CL-06, in this same change, replaced the
+                      `Unavailable` reason that claimed `client.block` was unruled
+                      with a real dispatch gated on `canBlockClient`. Both
+                      surfaces write through `actions/clients/blockClient`. */}
+                  {!mayBlock ? (
+                    /* Greyed with the rule stated, matching the Ledger control
+                       three lines up — the rail already carries `Unavailable`
+                       refusals, so here the verb stays discoverable, exactly as
+                       `ClientDetail` now does it. */
+                    <Unavailable reason="Blocking a client is an Owner, Admin or Manager action (client.block)">
+                      <Button icon="alert_triangle" disabled>
+                        Block Client
+                      </Button>
+                    </Unavailable>
+                  ) : selectedClient.isBlocked ? (
                     <Button icon="checklist" onClick={() => openBlockDialog('unblock', [selectedClient])}>
                       Unblock Client
                     </Button>
@@ -2223,7 +2365,7 @@ export function ClientsDirectory({
         }
         subtitle={
           blockMode === 'block'
-            ? 'A blocked client cannot start a new rental — the database refuses it, for every role including Owner. Existing bookings, invoices and history are untouched. State a reason; it is kept on the block.'
+            ? 'Start Rental is refused on the client’s profile and in this directory while the block stands. Existing bookings, invoices and history are untouched. State a reason; it is kept on the block.'
             : 'The block is lifted, not deleted: the record of who applied it, why, and who lifted it is kept.'
         }
         footer={

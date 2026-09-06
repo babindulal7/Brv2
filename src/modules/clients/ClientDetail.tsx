@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
@@ -10,6 +10,8 @@ import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { useViewport } from '../../lib/device'
 import { PageBody } from '../../components/ui/PageBody'
 import { Unavailable } from '../../components/ui/Unavailable'
+import { Modal } from '../../components/ui/Modal'
+import { useToast } from '../../components/ui/Toast'
 import { useClientProfile } from '../../lib/queries/useClients'
 import { useList } from '../../lib/queries/useList'
 import type { ListFilters } from '../../lib/queries/listQuery'
@@ -23,6 +25,9 @@ import { formatAd } from '../../lib/bs'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useAuth } from '../../lib/auth'
+import { useNetwork } from '../../lib/network'
+import { canBlockClient } from '../../lib/rbac'
+import { newClientUuid } from '../../lib/supabase'
 import { gateContext, canViewPII, canViewOnStopReason, moneyScope } from '../../lib/fieldGating'
 import { STATUS } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
@@ -88,6 +93,15 @@ const TAB_DEFS: TabDef[] = [
   { key: 'notes', label: 'Notes' },
   { key: 'activity', label: 'Activity' },
 ]
+
+/**
+ * The shortest a block reason may be, mirroring `blockClientConfig.validate`
+ * (`actions/clients/blockClient.ts`), which throws below ten characters. One
+ * number for one rule: a looser copy here would walk the operator into a
+ * refusal they could not see coming, and a stricter one would refuse a block
+ * the action would have taken.
+ */
+const BLOCK_REASON_MIN = 10
 
 function Tone({
   text,
@@ -268,9 +282,17 @@ export default function ClientDetail() {
   const navigate = useNavigate()
   const money = useCanViewMoney()
   const { user } = useAuth()
+  const online = useNetwork()
+  const { showSuccessToast } = useToast()
   const role = user?.role ?? 'Client'
   const gctx = useMemo(() => gateContext(role), [role])
   const pii = canViewPII(gctx)
+  /**
+   * CL-06 — the real capability, not a guess about one. `actions/core.ts`
+   * maps `client.block` to exactly this function, so a role that fails here
+   * is a role the dispatcher would refuse.
+   */
+  const canBlock = canBlockClient(role)
   /*
     Spec 8.2 draws three layouts and this file had no width read at all — both
     of its tables fell back to a horizontal scrollbar on a phone, which the
@@ -307,6 +329,38 @@ export default function ClientDetail() {
   const [isAdjustCreditOpen, setIsAdjustCreditOpen] = useState(false)
   const [isUpgradeTierOpen, setIsUpgradeTierOpen] = useState(false)
   const [isVerifyKycOpen, setIsVerifyKycOpen] = useState(false)
+
+  /* ── Block / Unblock — CL-06 ────────────────────────────────────────────
+     `null` means the dialog is shut; the two open states are the two
+     directions, so it cannot be open without knowing which verb it confirms. */
+  const [blockMode, setBlockMode] = useState<'block' | 'unblock' | null>(null)
+  const [blockReason, setBlockReason] = useState('')
+  const [blockBusy, setBlockBusy] = useState(false)
+  /*
+   * The wording the block dialog renders WHILE IT FADES OUT.
+   *
+   * `Modal` keeps its surface mounted for TRANSITION_MS (200 ms) after
+   * `isOpen` flips false, and renders from live props throughout — so deriving
+   * the title, the subtitle and the button verb from `blockMode`, which closing
+   * sets to `null`, flipped an "Unblock" dialog to the "Block" wording for the
+   * whole fade. Both branches read as a statement about the client, so the last
+   * thing the operator saw on dismissing an unblock was "Block {name}?".
+   *
+   * The last non-null mode is retained purely for the render; every DECISION
+   * still reads `blockMode`, so a closed dialog cannot act.
+   */
+  const lastBlockMode = useRef<'block' | 'unblock'>('block')
+  if (blockMode !== null) lastBlockMode.current = blockMode
+  const blockDialogMode: 'block' | 'unblock' = blockMode ?? lastBlockMode.current
+  /** Law 12 — a refused block stays on screen, in the dialog holding the reason. */
+  const [blockError, setBlockError] = useState<string | null>(null)
+  /**
+   * **Law 8** — one key per press, reused by every retry of that press. Minted
+   * when the dialog opens (the point `ClientsDirectory` mints its own), so
+   * pressing again after a network wobble replays the key instead of writing a
+   * second flag row.
+   */
+  const blockKey = useRef<string | null>(null)
 
   useDomainEvent<{ clientId?: string; newLimitPaisa?: ClientRecord['creditLimitPaisa'] }>(EVENT_TYPES.CLIENT_CREDIT_ADJUSTED, (payload) => {
     if (payload?.clientId === client?.id && payload?.newLimitPaisa !== undefined) {
@@ -482,6 +536,86 @@ export default function ClientDetail() {
     )
   }
 
+  /**
+   * Open the block dialog in one direction, minting this press's Law 8 key.
+   *
+   * `client.id` is the **client code**, not the uuid —
+   * `queries/clients.ts:toClientRecord` sets `id` from `client_code` — and
+   * `BlockClientInput.clientCode` is documented as taking exactly that and
+   * resolving the uuid itself. So the code passed below is the shape the
+   * action asks for, not a code landing in a uuid column.
+   */
+  function openBlockDialog(mode: 'block' | 'unblock') {
+    setBlockReason('')
+    setBlockError(null)
+    blockKey.current = newClientUuid()
+    setBlockMode(mode)
+  }
+
+  /**
+   * The dispatch — awaited, and reported from its own outcome only.
+   *
+   * A block is refused by `blockClientConfig.validate` unless it carries a
+   * reason of at least ten characters, so this screen collects one and the
+   * dialog's button stays disabled until it has one. The action stays the
+   * backstop; it is not the first thing that says no, which is the failure
+   * shape where an operator fills a form and learns the rule afterwards.
+   *
+   * **TODO(decision)** — `client_flags.reason` is still physically nullable,
+   * and 0005's comment on that column says why: *"nullable ONLY because
+   * Blacklist.md leaves mandatory-reason unsettled while arguing it should be
+   * mandatory. Do not ship nullable for Blocked without that ruling."* Every
+   * block surface in the app enforces ten characters and the column enforces
+   * nothing. Which of the two moves is a schema ruling, not a screen's.
+   */
+  async function confirmBlockChange() {
+    if (!client || blockMode === null) return
+    const blocking = blockMode === 'block'
+    const reason = blockReason.trim()
+    if (blocking && reason.length < BLOCK_REASON_MIN) return
+
+    if (!user) {
+      setBlockError(
+        'You are not signed in, so this cannot be recorded — a block has to name who applied it. ' +
+          'Sign in and try again.',
+      )
+      return
+    }
+
+    setBlockBusy(true)
+    setBlockError(null)
+    try {
+      const { blockClient } = await import('../../actions/clients/blockClient')
+      const outcome = await blockClient(
+        {
+          clientCode: client.id,
+          blocked: blocking,
+          ...(reason ? { reason } : {}),
+          ...(blockKey.current ? { clientUuid: blockKey.current } : {}),
+        },
+        { userId: user.id, role: user.role, isOnline: online },
+      )
+      /* `isBlocked` is a database fact (`client_directory_v`, 0054), so the
+         page re-reads rather than deciding for itself what the row now says.
+         The draft overlay is patched as well, because while one exists it is
+         what renders and a refetch alone would be invisible. */
+      setDraft((d) => (d ? { ...d, isBlocked: outcome.blocked } : d))
+      profile.refetch()
+      showSuccessToast(
+        blocking ? 'Client blocked' : 'Block lifted',
+        `${outcome.clientName} (${outcome.clientCode})`,
+      )
+      setBlockMode(null)
+      setBlockReason('')
+    } catch (err) {
+      /* Law 12 — inline and persistent, inside the dialog that still holds the
+         reason, so a retry does not retype it. Never a toast. */
+      setBlockError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBlockBusy(false)
+    }
+  }
+
   const kpis: Kpi[] = [
     { label: 'Total Rentals', value: String(client.totalRentalsCount), icon: 'checklist', accent: 'primary', note: `${client.currentRentalsCount} active now` },
     ...(money
@@ -559,40 +693,48 @@ export default function ClientDetail() {
               Merge Duplicate
             </Button>
             {/*
-              Block / Unblock is disabled and says why, instead of appearing to
-              work. It used to flip `isBlocked` in component state, fire a
-              success toast and call `actions/clients/blockClient` into a promise
-              with no `.catch()`, so the rejection was unobserved and the toast
-              claimed a block that had never left the browser.
+              ── CL-06 — Block / Unblock is live ──────────────────────────
+              This control was disabled behind an `Unavailable` reason whose
+              every clause had gone false. Re-checked 6 Sep 2026, each against
+              the file it named:
 
-              ⚠ The old reason text said "blockClient.ts is a stub". That went
-              stale in the 12 Aug rebuild: `blockClient.ts:195` is now
-              `implemented: true` with a real body. What still blocks it is one
-              level up — its capability string `client.block` is not in
-              `core.ts:checkCapability`'s switch, so `checkCapability` returns
-              `undefined` and the dispatcher denies it for every role, Owner
-              included. That is fail-closed and therefore safe, but it is a
-              different gap from the one this control used to name, and the same
-              verb IS reachable from the directory's bulk action — so the reason
-              has to be accurate or the two screens look arbitrary.
+                · `actions/clients/blockClient.ts` — `implemented: true`, with
+                  a body that writes `client_flags` and verifies the row;
+                · `actions/core.ts` — `case 'client.block': return
+                  rbac.canBlockClient(ctx.role)`, so the capability RESOLVES;
+                  it is no longer one of the strings that falls through to
+                  `undefined`;
+                · `lib/rbac.ts` — `canBlockClient` is Owner, Admin, Manager.
 
-              TODO(decision) — PLAN.md §4: which roles hold `client.block`,
-              `client.create` and `rental.confirm`. A page may not answer that
-              (CLAUDE.md), and until it is ruled the capability must not be
-              mapped to a guess.
+              So the whole path is built and ruled, and the only thing still
+              refusing the verb was this screen — while the same verb was
+              reachable from the directory's own dialog.
 
-              Now that `isBlocked` is a database fact (0054), a local flip would
-              also be painting over a real value rather than filling a gap.
+              It dispatches the way the other live verbs on these screens do
+              (`createClient` in `AddClient.tsx`, `blockClient` in
+              `ClientsDirectory.tsx`): awaited, success reported from the
+              resolved path ONLY, failure inline and persistent.
+
+              The gate is the capability itself rather than a bare `disabled`,
+              so a role the dispatcher would refuse never gets a live control.
             */}
-            <Unavailable reason="Blocking is built but not yet reachable: its capability `client.block` is unruled, so actions/core.ts denies it for every role. Which roles may block a client is an open decision (PLAN.md §4), as is whether a block reason is mandatory (migration 0005)">
+            {canBlock ? (
               <Button
                 icon={client.isBlocked ? 'checklist' : 'alert_triangle'}
                 variant={client.isBlocked ? 'secondary' : 'danger'}
-                disabled
+                onClick={() => openBlockDialog(client.isBlocked ? 'unblock' : 'block')}
               >
                 {client.isBlocked ? 'Unblock Client' : 'Block Client'}
               </Button>
-            </Unavailable>
+            ) : (
+              <Unavailable
+                reason={`Blocking a client is Owner, Admin or Manager only — lib/rbac.ts canBlockClient, which actions/core.ts maps the client.block capability to. Your role (${role}) would be refused by the dispatcher before the write, so the control is greyed rather than failing on press.`}
+              >
+                <Button icon={client.isBlocked ? 'checklist' : 'alert_triangle'} variant="secondary" disabled>
+                  {client.isBlocked ? 'Unblock Client' : 'Block Client'}
+                </Button>
+              </Unavailable>
+            )}
             {client.isBlocked ? (
               <Unavailable reason={`Blocked${client.blockReason ? `: ${client.blockReason}` : ''} — clear the block before starting a rental`}>
                 <Button variant="primary" icon="plus" disabled>
@@ -703,7 +845,18 @@ export default function ClientDetail() {
                    every database record — absent from the query, not absent
                    from the business. */
                 { label: 'Tags', value: client.tags?.length ? client.tags.join(', ') : '—' },
-                { key: 'pan', label: 'PAN', value: client.pan ?? 'Not on file', hint: 'Optional — a client without a PAN can still rent.' },
+                /* CL-09 — the one answer both clients screens now give, settled
+                   from the code rather than from taste. `clients.pan_vat` is
+                   nullable (0005:47) and `clients_pan_vat_nine_digits` reads
+                   `pan_vat is null or pan_vat ~ '^[0-9]{9}$'`;
+                   `createClient.validate` checks a PAN's SHAPE and never its
+                   presence; and neither `actions/rentals/confirmRental.ts` nor
+                   `createRental.ts` reads it — no migration adds a gate on it
+                   either. `AddClient` used to claim the opposite ("required
+                   before a booking can be confirmed"); it does not any more.
+                   New Rental's own Government ID / PAN box is a separate,
+                   page-level gate, so it is named as one. */
+                { key: 'pan', label: 'PAN', value: client.pan ?? 'Not on file', hint: 'Optional — a client without a PAN can still rent. New Rental asks for a PAN or citizenship number in its own box before Confirm.' },
                 { label: 'KYC', value: client.kycStatus },
                 { key: 'id', label: 'Client number', value: client.id },
               ]}
@@ -1260,6 +1413,102 @@ export default function ClientDetail() {
               setDraft((d) => (d ? { ...d, kycStatus: newStatus } : d))
             }}
           />
+
+          {/*
+            ── CL-06 — the block dialog ────────────────────────────────────
+            Inline rather than in `./modals/`, which is outside this change's
+            files. It asks for what the action asks for: a reason of at least
+            ten characters on the way in, an optional one on the way out.
+          */}
+          <Modal
+            isOpen={blockMode !== null}
+            /* Guarded like Cancel beside it. Escape, the backdrop and the
+               header X all call this unconditionally, so without the guard the
+               dialog could be dismissed mid-dispatch — leaving the write in
+               flight with nowhere to report a failure, since `blockError`
+               renders inside this dialog. */
+            onClose={() => {
+              if (!blockBusy) setBlockMode(null)
+            }}
+            title={blockDialogMode === 'unblock' ? `Lift the block on ${client.name}?` : `Block ${client.name}?`}
+            subtitle={
+              blockDialogMode === 'unblock'
+                ? 'The block is lifted, not deleted — who applied it, why, and who lifted it all stay on the record (Law 3).'
+                : 'Start Rental is refused on this page while a block stands, and the clients directory reads the same flag. Existing bookings, invoices and rental history are untouched.'
+            }
+            footer={
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, width: '100%' }}>
+                <Button variant="secondary" onClick={() => setBlockMode(null)} disabled={blockBusy}>
+                  Cancel
+                </Button>
+                <Button
+                  variant={blockDialogMode === 'unblock' ? 'primary' : 'danger'}
+                  onClick={confirmBlockChange}
+                  disabled={blockBusy || (blockMode === 'block' && blockReason.trim().length < BLOCK_REASON_MIN)}
+                >
+                  {blockBusy ? 'Saving…' : blockDialogMode === 'unblock' ? 'Unblock Client' : 'Block Client'}
+                </Button>
+              </div>
+            }
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+              {/* Law 12 — inline, persistent, and beside the control that caused it. */}
+              {blockError && (
+                <ErrorBanner
+                  title={blockDialogMode === 'unblock' ? 'The block was not lifted' : 'This client was not blocked'}
+                  message={blockError}
+                />
+              )}
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--t-meta)' }}>
+                <span style={{ fontWeight: 600, color: 'var(--text2)' }}>
+                  {blockMode === 'unblock'
+                    ? 'Reason for lifting it (optional)'
+                    : `Reason (minimum ${BLOCK_REASON_MIN} characters)`}
+                </span>
+                <textarea
+                  value={blockReason}
+                  onChange={(e) => setBlockReason(e.target.value)}
+                  rows={3}
+                  placeholder={
+                    blockMode === 'unblock'
+                      ? 'e.g. Outstanding balance settled in full'
+                      : 'e.g. Repeated unreturned equipment, escalated to the owner'
+                  }
+                  style={{
+                    padding: 10,
+                    borderRadius: 'var(--r-input)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--card2)',
+                    color: 'var(--text)',
+                    fontSize: 'var(--t-meta)',
+                    fontFamily: 'inherit',
+                    resize: 'vertical',
+                  }}
+                />
+                {/* A disabled control with no stated reason is what
+                    `Unavailable` exists to prevent; inside a dialog the same
+                    duty is a live count rather than a hover. */}
+                {blockMode === 'block' && blockReason.trim().length < BLOCK_REASON_MIN && (
+                  <span
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 'var(--sp-xs)',
+                      fontSize: 'var(--t-th)',
+                      color: 'var(--text2)',
+                    }}
+                  >
+                    <Icon name="info" size={12} style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span>
+                      {BLOCK_REASON_MIN - blockReason.trim().length} more character
+                      {BLOCK_REASON_MIN - blockReason.trim().length === 1 ? '' : 's'} — a block whose reason nobody
+                      recorded becomes a block nobody dares remove.
+                    </span>
+                  </span>
+                )}
+              </label>
+            </div>
+          </Modal>
         </>
       )}
 

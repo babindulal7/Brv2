@@ -78,6 +78,31 @@ const SEGMENTS: Segment[] = [
   'Commercial', 'Feature', 'YouTube / Creator', 'Education', 'Other'
 ]
 
+/**
+ * PAN/VAT — the database's rule, not a second one.
+ *
+ * `clients_pan_vat_nine_digits` (`0005_clients.sql:93`) is
+ * `check (pan_vat is null or pan_vat ~ '^[0-9]{9}$')`, and
+ * `actions/clients/createClient.ts`'s `validate` already mirrors it as
+ * `/^[0-9]{9}$/`, and so does `lib/booqable/map/clients.ts`'s
+ * `PAN_VAT_FORMAT`, whose own comment says it mirrors the same CHECK. Counting
+ * the CHECK itself this is the FOURTH copy of those nine digits — an earlier
+ * draft of this note said "third" and had missed the Booqable mapper — and it
+ * is deliberate: `validate()` below has to answer PER FIELD and BEFORE Save,
+ * and the alternative was to keep letting the CHECK answer afterwards.
+ *
+ * ⚠ It must never become the looser copy. A client-side rule that admits what
+ * the CHECK refuses only moves the refusal later; one that refuses what the
+ * CHECK admits blocks a save the database would have taken. Both are worse
+ * than no rule at all.
+ *
+ * TODO(refactor): hoist to a `lib/pan.ts` the way the phone rule lives in
+ * `lib/phone.ts`, so the screens and the action read one constant.
+ * `createClient.ts` is outside this change's files.
+ */
+const PAN_RE = /^[0-9]{9}$/
+const PAN_REJECTION = 'PAN/VAT must be exactly nine digits.'
+
 const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png']
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 
@@ -422,6 +447,28 @@ export default function AddClient() {
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       e.email = 'Enter a valid email address.'
     }
+    /*
+     * ── CL-10 — the CHECK, at the field, before Save ────────────────────
+     *
+     * Optional stays optional: a blank PAN is accepted here exactly as
+     * `clients_pan_vat_nine_digits` accepts a NULL. What changed is that a
+     * PRESENT one is shaped here instead of arriving as a post-submit banner
+     * after the whole form has been filled and the operator has been sent
+     * back to find which field caused it. The banner stays — the database is
+     * still the authority — but it is the backstop now, not the first refusal.
+     *
+     * ⛔ `org_subtype`, the other half of the register's claim, is NOT checked
+     * here and needs no check. `ORG_TYPES` above lists the seven members of
+     * `client_organisation_subtype` (`0001_enums.sql:796-804`) and nothing
+     * else; `orgType` is typed `OrganisationType`, initialised to
+     * 'Production House', and its `Select` offers no empty option — so this
+     * screen can emit neither a value outside the enum nor an absent one for
+     * an Organisation, and `clients_org_subtype_pairing` has nothing to
+     * catch. A branch for it would be a validation that can never fire.
+     */
+    if (pan.trim() && !PAN_RE.test(pan.trim())) {
+      e.pan = PAN_REJECTION
+    }
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -586,9 +633,40 @@ export default function AddClient() {
               <span>Contact person</span>
             </div>
           )}
+          {/*
+            ── CL-09 — the invented half of a two-screen disagreement ───────
+            This row read "VAT / PAN missing — required before a booking can be
+            confirmed" while `ClientDetail` read "Optional — a client without a
+            PAN can still rent". Both cannot be true, and the code says which
+            one is:
+
+              · `clients.pan_vat` is nullable (`0005_clients.sql:47`), and
+                `clients_pan_vat_nine_digits` is `pan_vat is null or …`;
+              · `createClient.validate` checks a PAN's SHAPE, never its
+                presence — a client saves without one;
+              · neither `actions/rentals/confirmRental.ts` nor
+                `createRental.ts` reads it, and no migration adds a gate on
+                it: `validate_booking_gates()` guards the deposit and the
+                invoice outstanding, and nothing else.
+
+            So no booking is refused for a missing PAN, and this row says so.
+            It keeps a mark rather than disappearing, because New Rental raises
+            a Critical of its own — "Missing client ID or PAN" — over a
+            Government ID / PAN box seeded from this very field.
+
+            **TODO(decision).** 0005's own comment on the column says *"Not
+            required at create; the booking Confirm gate enforces it"*, and
+            that gate does not exist anywhere. Either it gets built — and this
+            row goes back to naming a real rule — or the comment goes. A screen
+            may not pick which.
+          */}
           <div style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', alignItems: 'flex-start' }}>
-            <Icon name={pan.trim() ? 'check' : 'alert_triangle'} size={14} style={{ color: pan.trim() ? 'var(--success-text)' : 'var(--ready-text)', flexShrink: 0, marginTop: 2 }} />
-            <span>VAT / PAN {!pan.trim() && 'missing — required before a booking can be confirmed'}</span>
+            <Icon name={pan.trim() ? 'check' : 'info'} size={14} style={{ color: pan.trim() ? 'var(--success-text)' : 'var(--muted)', flexShrink: 0, marginTop: 2 }} />
+            <span>
+              VAT / PAN
+              {!pan.trim() &&
+                ' — optional, and no booking is refused without it. New Rental asks for a PAN or citizenship number in its own box before Confirm.'}
+            </span>
           </div>
           <div style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', alignItems: 'flex-start' }}>
             <Icon name={address.trim() ? 'check' : 'alert_triangle'} size={14} style={{ color: address.trim() ? 'var(--success-text)' : 'var(--ready-text)', flexShrink: 0, marginTop: 2 }} />
@@ -912,8 +990,22 @@ export default function AddClient() {
                   </div>
                 </Field>
               )}
-              <Field label="VAT / PAN No.">
-                <Input value={pan} onChange={(e) => setPan(e.target.value)} placeholder="e.g. 600123456" style={inputStyle()} />
+              <Field
+                label="VAT / PAN No."
+                error={errors.pan}
+                help="Optional. If given, exactly nine digits — the rule the database enforces."
+              >
+                <Input
+                  value={pan}
+                  inputMode="numeric"
+                  onChange={(e) => {
+                    setPan(e.target.value)
+                    clearError('pan')
+                  }}
+                  placeholder="e.g. 600123456"
+                  className="figure"
+                  style={inputStyle(!!errors.pan)}
+                />
               </Field>
             </div>
           </SectionCard>

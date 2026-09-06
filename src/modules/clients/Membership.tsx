@@ -986,7 +986,12 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
         {GRACE_NOTE}
       </p>
 
-      {!embedded && <FooterNote extra={['Discount stacking is capped at 25%']} />}
+      {/* No `extra` any more. It carried "Discount stacking is capped at 25%",
+          a cap D3 rescinded (see STACK_NOTE in data/membership.ts, which is
+          rendered above this in BOTH the embedded and standalone views). The
+          surviving rule is stated there once; repeating a shortened version in
+          a footer strip is how the two got to disagree in the first place. */}
+      {!embedded && <FooterNote />}
     </div>
   )
 }

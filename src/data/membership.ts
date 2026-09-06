@@ -285,7 +285,7 @@ export const PLANS: Plan[] = [
     icon: 'crew',
     price: 'Rs 6,000',
     per: '/ year',
-    discounts: ['10% Individual discount (max cap 25%)', '5% Bundle discount'],
+    discounts: ['10% Individual discount', '5% Bundle discount'],
     limits: [
       { label: 'Monthly Booking Limit', value: '3' },
       { label: 'Simultaneous Rental Limit', value: '1' },
@@ -303,7 +303,7 @@ export const PLANS: Plan[] = [
     icon: 'eye',
     price: 'Rs 15,000',
     per: '/ year',
-    discounts: ['15% Individual discount (max cap 25%)', '7% Bundle discount'],
+    discounts: ['15% Individual discount', '7% Bundle discount'],
     limits: [
       { label: 'Monthly Booking Limit', value: '7' },
       { label: 'Simultaneous Rental Limit', value: '2' },
@@ -321,7 +321,7 @@ export const PLANS: Plan[] = [
     icon: 'users',
     price: 'Rs 35,000',
     per: '/ year',
-    discounts: ['20% Individual discount (max cap 25%)', '10% Bundle discount'],
+    discounts: ['20% Individual discount', '10% Bundle discount'],
     limits: [
       { label: 'Monthly Booking Limit', value: '10' },
       { label: 'Simultaneous Rental Limit', value: '3' },
@@ -339,7 +339,7 @@ export const PLANS: Plan[] = [
     icon: 'briefcase',
     price: 'Rs 80,000',
     per: '/ year',
-    discounts: ['20% Individual discount (max cap 25%)', '12% Bundle discount'],
+    discounts: ['20% Individual discount', '12% Bundle discount'],
     limits: [
       { label: 'Monthly Booking Limit', value: '20' },
       { label: 'Simultaneous Rental Limit', value: '7' },
@@ -358,7 +358,7 @@ export const PLANS: Plan[] = [
     badge: 'Elite Member',
     icon: 'sparkles',
     price: 'Custom pricing',
-    discounts: ['20% Individual discount (max cap 25%)', 'Custom bundle discount'],
+    discounts: ['20% Individual discount', 'Custom bundle discount'],
     limits: [
       { label: 'Monthly Booking Limit', value: 'Unlimited' },
       { label: 'Simultaneous Rental Limit', value: 'Unlimited' },
@@ -395,8 +395,43 @@ export const COMPARISON_ROWS: ComparisonRow[] = [
 export const PLAN_VIEWS = ['Cards', 'Comparison Table'] as const
 export type PlanView = (typeof PLAN_VIEWS)[number]
 
+/**
+ * ⛔ **This used to state a 25% stacking cap. There is no such cap.**
+ *
+ * D3 — ruled by Babin 30 Aug 2026 and settled by his final word on 31 Aug,
+ * *"don't put any gate on discount"* (PLAN.md §0, Law 10). `lib/discount.ts`'s
+ * `validateDiscount` refuses exactly two things now, both arithmetic: a
+ * negative percent, and one above 100.
+ *
+ * Read off the live project directly (read-only, 6 Sep 2026) rather than from
+ * the migration headers, which are stale:
+ *   · `booking_discounts_percent_sane`      CHECK (percent >= 0 AND percent <= 100)
+ *   · `invoices_discount_percent_sane`      CHECK (0..100)
+ *   · `invoice_lines_discount_percent_sane` CHECK (0..100)
+ *   · `enforce_booking_discount_stacking()` — the only PERCENTAGE threshold it
+ *     still raises on is a stacked total past 100. The 25% stacked ceiling and
+ *     the >10%-needs-reason-and-approver branches are absent from the deployed
+ *     function body; its remaining branches are the exclusive-source checks
+ *     described below.
+ * `booking_discounts_hard_cap` and `invoices_discount_cap` are not on the live
+ * schema at all.
+ *
+ * What genuinely survives is the exclusive-source matrix, and that is what this
+ * note now says: the same deployed trigger still refuses to let Student,
+ * College or Named-client rates share a booking with any other discount row
+ * (0001_enums.sql:381 names the same three; 0005_clients.sql:396 states it in
+ * prose). That is a stacking RULE, not a stacking CAP, and it is the only one
+ * left.
+ *
+ * Two `<= 25` CHECKs do still exist live and are deliberately NOT described
+ * here, because neither limits a discount an operator applies:
+ * `membership_plans_discount_hard_cap` ceilings the plan's own configured
+ * `individual_discount_pct` / `bundle_discount_pct`, and
+ * `coupons_discount_pct_cap` ceilings a coupon where it is created. Both bound
+ * a product configured once; neither caps a total at the till.
+ */
 export const STACK_NOTE =
-  'Individual + promotional discount stacking is capped at 25%. (e.g. Women DoP 5% + plan discount max 20%).'
+  'Student, College and Named-client rates do not stack — a booking carrying one of them may carry no other discount.'
 
 export const GRACE_NOTE =
   'Grace period: 30 days after the renewal date. After that the membership becomes Lapsed and benefits are suspended.'

@@ -2,6 +2,88 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-06 — Clients: a label, a rescinded cap, and a feature switched off by a stale comment
+
+**Phase:** Phase 0 · **Status:** 7 register items closed · 1 closed as already-fixed · 4 filed
+
+CL-04, CL-06, CL-07, CL-09, CL-10, CL-11, CL-12 — five of the seven are the same disease as the
+last three batches: **the screen asserting something that was true once, or never.**
+
+### The one that cost a working feature
+
+**CL-06.** Block/Unblock sat behind *"Blocking is built but not yet reachable: its capability
+`client.block` is unruled, so actions/core.ts denies it for every role."* Every clause was false:
+`blockClient.ts` is `implemented: true`, `core.ts:164` maps `client.block` →
+`rbac.canBlockClient`, and `rbac.ts:164` rules it Owner/Admin/Manager. The whole path was built
+and ruled, and the screen refused to let anyone use it.
+
+It also turned out the screen collected no **reason**, while `blockClientConfig.validate` demands
+ten characters — so simply enabling the old button would have produced a refusal. The dialog now
+collects one.
+
+**The stale comment that caused it is not unique.** `blockClient.ts` and `createClient.ts` both
+carry headers still claiming their capability "is not one of" the ones `core.ts` resolves. Those
+are the headers a reader consults before wiring a control. Filed as **CL-17** — they are another
+session's files, so reported, not edited.
+
+### Settled from the code, not from taste
+
+**CL-09** — two screens stated opposite rules about whether a PAN is required. Rather than pick,
+the answer was read out: `pan_vat` is nullable, its CHECK admits NULL, `createClient.validate`
+checks a PAN's *shape* and never its presence, and neither confirm path reads it.
+**Client Detail's "Optional" was true; Add Client's "required before a booking can be confirmed"
+was invented.** The migration comment that seeded the invention (`0005:133-134`, "the booking
+Confirm gate enforces it" — a gate that does not exist) is filed as **CL-18**.
+
+**CL-07** — the rescinded 25% discount cap survived in **eight** places, not the five filed. The
+agent verified against the live project rather than migration headers: no hard-cap constraint
+exists and the deployed stacking trigger has no 25% branch. Two `<= 25` CHECKs *do* still exist,
+but both ceiling a product configured once rather than a total at the till — so neither justified
+the copy, and the replacement states the exclusive-source rule that genuinely survives.
+
+### Two half-fixes caught in review — one of them *between* the two agents
+
+- **CL-04's rename broke every existing bookmark.** The chip's URL wire value went `on-rent` →
+  `active` with no alias, and `filterFromParam` returns `all` for anything it does not recognise
+  — so an old link did not fail, it silently showed the **unfiltered** directory under a URL that
+  named a filter. Precisely the quiet lie CL-04 was raised about. `LEGACY_FILTER_PARAM` reads it
+  now, and the pinning test was rewritten: the rule is that nothing *mints* `on-rent`, not that
+  the string is absent — the first version of that test would have been satisfied by the bug.
+- **The two Block surfaces disagreed.** Client Detail gated the verb on `canBlockClient`; the
+  directory's bulk and rail controls did not, so a Coordinator was offered it and refused on
+  press — the same shape as CL-06 itself. Both are gated now.
+
+Also removed: the directory's block dialog asserted *"the database refuses it, for every role
+including Owner."* Unsubstantiated — `0005` records that as `TRIGGER REQUIRED` and no migration
+builds it; the only `client_flags` references in any migration are RLS policies. It now says what
+is true.
+
+**Two "Active"s collided.** The relabelled chip means "has a booking that is not Closed"; the CSV
+`Status` column already used the word for "not blocked". The chip's label is the ruled one, so
+the export now says "Not blocked".
+
+### Corrections to the register itself
+
+- **CL-05 closed as already fixed** — and fixed well: it parses the AD label with a hand parser
+  because `Date.parse` is engine-dependent, and its comment states the BS order *isn't*
+  chronological, the opposite of what the entry attributed to it. Third stale entry this session.
+- **CL-10 was over-stated** — its `org_subtype` clause is unreachable from Add Client. Closed on
+  the PAN half, which was real.
+- **CL-04's ruling is now recorded in the register**, because a reviewer correctly objected that
+  the code cited "Babin's ruling" with nothing in the workspace to check it against.
+
+### Verified
+
+tsc clean; eslint clean; **full suite 121 files / 2591 tests**; clients suite 8 files / 91 tests
+including 12 new ones. Driven in the mock: `/clients?filter=on-rent` still selects the Active
+chip, the KPI reads "Active · 40 · Clients with any booking not closed or cancelled", and no
+"on rent" string survives on the page.
+
+**Not driven: CL-06.** The mock's client-detail route would not resolve a seed id and I could not
+obtain a live client code cheaply. It is covered by six jsdom tests against the real screen and by
+my own reading of the capability chain — but it has not been exercised in a browser, and that is
+worth someone's five minutes before it is trusted.
+
 ## 2026-09-06 — the grants are stated, the gate proves them, and my 0092 claim is re-scoped
 
 **Phase:** Phase 0 · **Status:** `0093` written and verified · `check:rebuild` asserts the grant

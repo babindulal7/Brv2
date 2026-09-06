@@ -13,6 +13,7 @@ import { useToast } from '../../components/ui/Toast'
 import { formatMoney, rupees, type Paisa } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { TIER_TONE, type ClientRecord } from '../../data/clients'
+import { STACK_NOTE } from '../../data/membership'
 import { STATUS } from '../../lib/status'
 
 /**
@@ -106,7 +107,10 @@ export default function Clients() {
       'Phone',
       'Email',
       'PAN',
-      'Current Rentals',
+      // `active_bookings_count`: every booking that is neither Closed nor
+      // cancelled, not the ones currently out — see the KPI note in
+      // ClientsDirectory.tsx.
+      'Active Rentals',
       ...(money ? ['Outstanding (Rs)', 'Deposit Held (Rs)'] : []),
       // Not "(BS)": the value is the BS date where the engine can name one and
       // the AD date otherwise, so the header cannot promise either calendar.
@@ -125,7 +129,11 @@ export default function Clients() {
         c.currentRentalsCount,
         ...(money ? [formatMoney(c.outstandingPaisa), formatMoney(c.depositHeldPaisa)] : []),
         c.lastRentalBs,
-        c.isBlocked ? 'Blocked' : 'Active',
+        /* NOT "Active": since CL-04 that word means "has a booking that is
+           neither Closed nor cancelled", and this column is about the block
+           flag — a different fact about a different thing. Two senses of one
+           word in one export is a spreadsheet nobody can filter. */
+        c.isBlocked ? 'Blocked' : 'Not blocked',
       ]
         .map(csvCell)
         .join(','),
@@ -519,7 +527,10 @@ function CreditView({
           }}
         >
           <Icon name="info" size={13} style={{ color: 'var(--muted)', flexShrink: 0, marginTop: 1 }} />
-          Discount stacking is capped at 25% — a plan discount plus any promotion may not exceed it.
+          {/* The 25% stacking cap this line used to state was rescinded — see
+              STACK_NOTE's own note in data/membership.ts. Imported rather than
+              restated so the two surfaces cannot drift apart again. */}
+          {STACK_NOTE}
         </p>
       </Card>
 
