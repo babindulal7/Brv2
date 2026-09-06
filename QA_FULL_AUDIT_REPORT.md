@@ -96,6 +96,35 @@ Law 6 turns out to govern **SELECT only**. RLS admits Warehouse to `products` an
 same Postgres role, `authenticated`. It needs a trigger comparing OLD to NEW, which is what
 `0092` adds, reusing the existing `auth_can_view_money()` predicate rather than inventing one.
 
+### Corrected again — 6 September, and this one is also mine
+
+Stating the grants (`0093`, below) exposed that **my 0092 reproduction ran on a local stack I
+had hand-granted full DML**. Under live's real grant shape the same `PATCH /products
+{"daily_rate": 1}` is refused *before* 0092's trigger is consulted: `authenticated` holds no
+SELECT on `products`, and PostgREST needs SELECT to target the row. The view path is closed
+too — `products_v` is auto-updatable, but every money column in it is a masking *expression*,
+so Postgres refuses to update it. And `src/` has no product-UPDATE path at all; the only write
+is `createEquipment`'s INSERT, gated to Owner/Admin/Manager.
+
+So 0092 did **not** close an active live hole. It is defence in depth — the layer that says
+"no" for a stated reason, and the one that still holds if a later migration grants SELECT on
+the base table. The migration's own header now says exactly this. The "60% under-bill" and
+the anonymous audit forgery (0091) stand as verified; this one is re-scoped, not withdrawn.
+
+### BUG-006 is fixed — and the gate now proves it
+
+`0093_state_the_grants.sql` encodes live's actual grant shape, derived read-only from the
+production project: `authenticated` may SELECT every table **except** the ten Law 6 money
+tables, may DELETE only ten sync/portal scratch tables (Law 3), may UPDATE everything **except**
+the 21 immutables (Law 4); `anon`'s writes as live has them (RLS governs them, and every
+PUBLIC write policy checks `auth_user_role()`), with `audit_events` INSERT re-revoked so `0091`
+survives in either order. It revokes before it grants, so it converges from any starting
+state — a no-op on live, the establishing step in a rebuild, and a correction on my
+over-granted local (DELETE on `clients` went `t → f` on apply).
+
+`check:rebuild` now asserts that shape after every rebuild with six probes chosen so that a
+"grant all" fails them too. Result: **91 applied, 0 failed, grants verified.**
+
 ### What is fixed (commits `52c2190`, and this one)
 
 | ID | Fix | Verified by |

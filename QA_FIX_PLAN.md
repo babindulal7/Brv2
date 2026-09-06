@@ -15,12 +15,13 @@ production**, and nothing should be before the two gates below.
 | FIX-3 crew/transport billing | **done** — plus the line-kind map made exhaustive; new test pins a 60% under-bill |
 | FIX-4 the four reported money/lifecycle P0s | **done** for three (`0090`, R-06) · BUG-010 **deliberately not fixed**, see §9 |
 | FIX-12 anonymous audit forgery | **done** — `0091`. **Not applied to live.** |
-| *new* Law 6 for the write verb | **done** — `0092`, after the verification pass proved a Warehouse session can rewrite `products.daily_rate`. **Not applied to live.** |
+| *new* Law 6 for the write verb | **done, re-scoped 6 Sep** — `0092`. My reproduction ran on an over-granted local; under live's real grants the PATCH is refused by the grant layer, the view's money columns are expressions, and the app has no product-UPDATE path. Defence in depth, not a closed active hole. **Not applied to live.** |
 | FIX-5 double-booking | open — and re-scoped: the DB hole is real but no app path reaches it (see the report's 5 Sep update) |
-| FIX-6 … FIX-11, FIX-13 … FIX-17 | open |
+| FIX-9 state the grants (BUG-006) | **done** — `0093` encodes live's shaped grants (Law 3/4/6 revokes intact, 0091 intact) and converges from any state; `check:rebuild` now asserts the shape. **91 applied, 0 failed, grants verified.** |
+| FIX-6 … FIX-8, FIX-10 … FIX-11, FIX-13 … FIX-17 | open |
 
-**Four migrations now wait on the dump: `0089`, `0090`, `0091`, `0092`.** All four are verified
-on a rebuilt database (`check:rebuild`: 90 applied, 0 failed) and none has touched live.
+**Five migrations now wait on the dump: `0089`, `0090`, `0091`, `0092`, `0093`.** All five are verified
+on a rebuilt database (`check:rebuild`: 91 applied, 0 failed, grants asserted) and none has touched live.
 
 The invoice path gained a new blocker that is a ruling, not work: **`PLAN.md` §4.46** — does an
 invoice bill the booking's lines, or the ones typed on the form? Until that is answered the

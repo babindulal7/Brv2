@@ -232,6 +232,52 @@ for (const f of files) {
 
 /* Left in place on failure so the half-built database can be inspected; dropped
    on success, because a green run has nothing to look at. */
+/*
+ * The grants, asserted — because a migration set that builds cleanly can still
+ * yield a database the application cannot read. Found 4 Sep 2026 by signing in
+ * against a rebuilt database: token 200, then `42501 permission denied for table
+ * users` on every read. No migration granted a base-table privilege; the app was
+ * living on the hosting platform's defaults, which a fresh database does not
+ * have. `0093` states the shape; this proves it survived every later file.
+ *
+ * Six probes, chosen so that a "grant all" cannot pass them either: the shape is
+ * deliberately narrow (Law 3 forbids DELETE, Law 4 forbids UPDATE on payments,
+ * Law 6 hides the money base tables), and `0091` withholds audit_events INSERT
+ * from anon. Skipped, not failed, if a migration in the set actually failed —
+ * the failure itself is the finding then.
+ */
+if (failures.length === 0) {
+  const grantCheck = execFileSync(
+    'docker',
+    ['exec', '-i', container, 'psql', '-tA', '-v', 'ON_ERROR_STOP=1', '-q', '-U', 'postgres', '-d', SCRATCH],
+    { input: `select
+       has_table_privilege('authenticated','public.users','SELECT')::int,
+       has_table_privilege('authenticated','public.clients','INSERT')::int,
+       (not has_table_privilege('authenticated','public.products','SELECT'))::int,
+       (not has_table_privilege('authenticated','public.clients','DELETE'))::int,
+       (not has_table_privilege('authenticated','public.payments','UPDATE'))::int,
+       (not has_table_privilege('anon','public.audit_events','INSERT'))::int;`,
+      stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8' },
+  )
+  const probes = [
+    'authenticated can SELECT users',
+    'authenticated can INSERT clients',
+    'authenticated cannot SELECT products (Law 6)',
+    'authenticated cannot DELETE clients (Law 3)',
+    'authenticated cannot UPDATE payments (Law 4)',
+    'anon cannot INSERT audit_events (0091)',
+  ]
+  const results = grantCheck.trim().split('|').map(Number)
+  const broken = probes.filter((_, i) => results[i] !== 1)
+  if (broken.length > 0) {
+    console.log('\nGRANTS: the rebuilt database does not carry the shape the application needs:')
+    for (const b of broken) console.log(`        ✗ ${b}`)
+    failures.push({ file: '(grants)', error: `${broken.length} grant probe(s) failed — see above` })
+  } else {
+    console.log('\nGrants verified: the application role can read and write, and Law 3/4/6 + 0091 hold.')
+  }
+}
+
 if (failures.length === 0) psql('postgres', `drop database if exists ${SCRATCH} (force);`)
 
 console.log(`\n${applied} applied, ${failures.length} failed.`)

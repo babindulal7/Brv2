@@ -15,6 +15,28 @@
 -- Every future rental of that product would have quoted Rs 1 a day, and nothing
 -- in the app would have said so. Restored immediately after the probe.
 --
+-- ## Reachability — corrected 6 Sep 2026, after stating the grants (0093)
+--
+-- The reproduction above is real, but it ran on a local stack that had been
+-- hand-granted full DML. Under live's actual grant shape — now encoded in
+-- `0093` — the same request is refused before this trigger is ever consulted:
+--
+--   * `authenticated` holds no SELECT on `products` (Law 6), and a PostgREST
+--     `PATCH …?id=eq.X` needs SELECT to target the row -> 403 from the grant.
+--   * `products_v` IS auto-updatable and `authenticated` holds UPDATE on it — but
+--     every money column in that view is a masking EXPRESSION, not a column, so
+--     Postgres refuses: "cannot update column daily_rate of view products_v".
+--   * `src/` has no product-UPDATE path at all. The only write is
+--     `createEquipment`'s INSERT, and `inventory.create` -> `canCreateBundle`
+--     admits Owner/Admin/Manager only — a money-blind role cannot set a price at
+--     creation either.
+--
+-- So this guard was NOT the closing of an active live hole. It is defence in
+-- depth: the first layer that says "no" for a reason rather than by accident,
+-- and the one that still holds if a later migration grants SELECT on the base
+-- table, or a future path edits `products` through a view without the masking
+-- expressions. It stays, with its reach described honestly.
+--
 -- ## Why the existing controls do not catch it
 --
 -- `products_update` admits Owner, Admin, Manager **and Warehouse** — confirmed on

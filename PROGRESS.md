@@ -2,6 +2,64 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-06 — the grants are stated, the gate proves them, and my 0092 claim is re-scoped
+
+**Phase:** Phase 0 · **Status:** `0093` written and verified · `check:rebuild` asserts the grant
+shape · 0092's reachability corrected · five migrations wait on the dump · nothing applied to live
+
+### `0093_state_the_grants.sql` — BUG-006 closed
+
+A database rebuilt from every migration could not be used by the application: sign-in
+succeeded, then `42501 permission denied for table users` on every read. No migration granted a
+base-table privilege; the app lived on the hosting platform's defaults.
+
+The trap in fixing it: live is **not** "platform defaults". The platform grants full DML, and
+earlier migrations then *revoke* — DELETE for Law 3, UPDATE for Law 4, SELECT for Law 6. In a
+scratch build those revokes ran against nothing, so a blanket "grant all" here would have
+silently undone all three laws.
+
+So `0093` states the **final shaped state**, derived read-only from live on 6 Sep:
+`authenticated` SELECT on everything except the ten Law 6 money tables; INSERT on everything
+but `staff_auth_pins`; UPDATE on everything but the 21 immutables; DELETE on exactly ten
+sync/portal scratch tables. `anon` as live has it — RLS governs its writes, and I verified
+every PUBLIC write policy checks `auth_user_role()`, which anon cannot satisfy — with
+`audit_events` INSERT re-revoked so `0091` survives whatever order the two apply in. Views,
+sequences, functions likewise, with the eight PIN/password/audit functions withheld from anon by
+name through `pg_proc`. Default privileges set to match live's so later migrations inherit the
+same baseline in a rebuild.
+
+It **revokes before it grants**, so it converges from any starting state. Proven three ways:
+a no-op shape on live; the establishing step in a scratch build; and a correction on my own
+hand-over-granted local, where DELETE on `clients` went `t → f` on apply.
+
+`check:rebuild` now asserts the shape after every rebuild — six probes chosen so that a
+"grant all" cannot pass them either (Law 3, Law 4, Law 6, and 0091 each get one). **91 applied,
+0 failed, grants verified.**
+
+### 0092's reach, corrected — the third claim of mine this audit has cut down
+
+Stating the grants exposed that **my 0092 reproduction ran on a local I had hand-granted full
+DML**. Under live's real shape the same `PATCH /products {"daily_rate": 1}` is refused by the
+grant layer before the trigger is consulted. I then chased the view path, because
+`products_v` *is* auto-updatable with definer semantics and `authenticated` holds UPDATE on
+it — a real route around the missing SELECT. Tested: Postgres refuses, because every money
+column in that view is a masking **expression**, not a column. And `src/` has no product-UPDATE
+path at all; the only write is `createEquipment`'s INSERT, gated to Owner/Admin/Manager.
+
+So 0092 is defence in depth, not the closing of an active hole. It stays — it is the layer that
+says "no" for a stated reason, and the one that still holds if a later migration grants SELECT
+on the base table. Its header, the audit report and the fix plan all now say exactly this.
+Confirmed unchanged: the crew under-bill and the anonymous audit forgery.
+
+### Verified
+`0093` applied locally, converging from a wrong state and passing its own post-conditions ·
+REST after the reshape: owner reads `users` 200, anon `audit_events` **401**, owner `audit_events`
+201, warehouse `client_directory_v` money `null`, owner `products_v` 200 while the base table is
+403 — exactly live's behaviour · `check:rebuild` **91 applied, 0 failed, grants verified** ·
+`node --check` on the gate.
+
+⚠ `tsc` and one test still fail from another session's in-flight warehouse and Today-segment
+edits; nothing I touched is in `src/`. **Five migrations wait on the Step 0 dump: 0089–0093.**
 ## 2026-09-05 (cont. 2) — New Rental stops claiming work it did not do
 
 **Phase:** Phase 0 · **Status:** 8 register items closed · 2 filed · 3 rulings raised
