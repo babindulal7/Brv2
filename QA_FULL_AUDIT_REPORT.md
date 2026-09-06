@@ -96,20 +96,37 @@ Law 6 turns out to govern **SELECT only**. RLS admits Warehouse to `products` an
 same Postgres role, `authenticated`. It needs a trigger comparing OLD to NEW, which is what
 `0092` adds, reusing the existing `auth_can_view_money()` predicate rather than inventing one.
 
-### Corrected again — 6 September, and this one is also mine
+### Corrected twice on 6 September — and the second correction reversed the first
 
-Stating the grants (`0093`, below) exposed that **my 0092 reproduction ran on a local stack I
-had hand-granted full DML**. Under live's real grant shape the same `PATCH /products
-{"daily_rate": 1}` is refused *before* 0092's trigger is consulted: `authenticated` holds no
-SELECT on `products`, and PostgREST needs SELECT to target the row. The view path is closed
-too — `products_v` is auto-updatable, but every money column in it is a masking *expression*,
-so Postgres refuses to update it. And `src/` has no product-UPDATE path at all; the only write
-is `createEquipment`'s INSERT, gated to Owner/Admin/Manager.
+Worth reading as a sequence, because the lesson is sharper than either finding.
 
-So 0092 did **not** close an active live hole. It is defence in depth — the layer that says
-"no" for a stated reason, and the one that still holds if a later migration grants SELECT on
-the base table. The migration's own header now says exactly this. The "60% under-bill" and
-the anonymous audit forgery (0091) stand as verified; this one is re-scoped, not withdrawn.
+**First**, stating the grants appeared to show that my 0092 reproduction had run on an
+over-granted local: under `0093`'s draft shape the same `PATCH /products {"daily_rate": 1}`
+returned 403, so I recorded 0092 as defence in depth rather than a live hole.
+
+**Then that draft turned out to be wrong.** Live does not revoke SELECT on those ten tables
+outright — it revokes the **table** and grants back **every column except the money ones**.
+So `authenticated` reads a booking and simply cannot see `deposit_required`; reads a product
+and cannot see `daily_rate`. My draft had wiped those column grants, which would have broken
+the application on contact: `src/` reads `bookings` directly in **13 places**, `booking_lines`
+in 5, `products` in 3. `0093` was fixed to reproduce the per-column mask exactly, and now
+asserts it in both directions.
+
+**Re-tested under the corrected shape**, with 0092's trigger disabled and then enabled:
+
+| trigger | request | result |
+|---|---|---|
+| disabled | `PATCH /products?id=eq.X {"daily_rate": 1}` as Warehouse | **204 — rate 6500.00 → 1.00** |
+| enabled | same request | 400, rate unchanged, named Law 6 refusal |
+
+**So BUG-015 stands as originally filed: a live hole, and 0092 is what closes it.** PostgREST
+needs SELECT on `id` to target a row and live grants exactly that; UPDATE is not masked per
+column at all, so a money-blind role may write every figure it may not read. That is why Law 6
+needs a guard on the write verb rather than another revoke.
+
+The withdrawal is left in the record rather than deleted. Both times I measured against a local
+that did not match production — which is the actual finding, and why `0093` now encodes live's
+shape rather than an approximation of it.
 
 ### BUG-006 is fixed — and the gate now proves it
 

@@ -2,6 +2,61 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-06 (cont.) — 0093 would have broken live, and fixing it reversed yesterday's correction
+
+**Phase:** Phase 0 · **Status:** `0093` corrected before it ever reached live · BUG-015
+reinstated as an active live hole · nothing applied to live
+
+### `0093`'s first draft was wrong, and wrong in the dangerous direction
+
+It revoked SELECT on the ten Law 6 tables **outright**. Live does not do that. Live revokes the
+**table** and grants back **every column except the money ones** — so staff read a booking and
+simply cannot see `deposit_required`; read a product and cannot see `daily_rate`.
+
+My draft wiped those column grants and restored nothing at column level. `src/` reads `bookings`
+directly in **13 places**, `booking_lines` in 5, `products` in 3 — every one of those would have
+started returning 403 the moment the migration was applied. It was committed and would have gone
+to live behind the Step 0 dump.
+
+`0093` now reproduces the per-column mask exactly, read off live table by table:
+
+| table | withheld from `authenticated` |
+|---|---|
+| bookings | `deposit_required` |
+| booking_lines | `rate`, `discount_amount`, `supplier_cost`, `markup_amount` |
+| products | the five rate columns, `purchase_price`, `replacement_value`, `deposit_percent`, `deposit_fixed` |
+| product_units | `purchase_price`, `replacement_value` |
+| daily_closings | the ten cash/variance/receivable columns |
+| accessories · maintenance_records · booking_transport · vehicle_fuel_logs | `replacement_cost` · `cost` · `delivery_charge`+`fuel_charge` · `cost_amount` |
+
+The post-conditions now assert the mask **in both directions** — that `bookings.stage` and
+`products.name` remain readable, and that `deposit_required` and `daily_rate` do not. A draft
+that only checked "the table is closed" passed while breaking the app.
+
+### That correction reversed yesterday's correction
+
+Yesterday I withdrew BUG-015, on the grounds that 0092's reproduction had run on an
+over-granted local. That withdrawal was itself measured against the broken draft: with the
+column grants wiped there was no SELECT on `id`, so PostgREST refused for the wrong reason.
+
+Re-tested under live's real shape, trigger off and then on:
+
+    disabled -> PATCH /products?id=eq.X {"daily_rate": 1} as Warehouse  =>  204, 6500.00 -> 1.00
+    enabled  -> same request                                            =>  400, rate unchanged
+
+**BUG-015 stands as originally filed: an active hole on production, and `0092` closes it.**
+Live grants column SELECT on `id`, which is exactly what PostgREST needs to target a row; and
+UPDATE is not masked per column at all, so a money-blind role may write every figure it may not
+read. That asymmetry is the whole reason Law 6 needs a guard on the write verb.
+
+Both withdrawals are left in the record. Twice I measured against a local that did not match
+production — that is the real finding, and why `0093` now encodes live's shape rather than an
+approximation of it.
+
+### Verified
+`0093` re-applied locally; column probes match live exactly (`bookings.stage` S, `bookings.id` S,
+`deposit_required` masked, `products.name` S, `daily_rate` masked, `booking_lines.rate` masked,
+`qty` S) · the 0092 disable/enable pair above · trigger confirmed re-enabled afterwards.
 ## 2026-09-06 — Clients: a label, a rescinded cap, and a feature switched off by a stale comment
 
 **Phase:** Phase 0 · **Status:** 7 register items closed · 1 closed as already-fixed · 4 filed

@@ -15,9 +15,9 @@ production**, and nothing should be before the two gates below.
 | FIX-3 crew/transport billing | **done** — plus the line-kind map made exhaustive; new test pins a 60% under-bill |
 | FIX-4 the four reported money/lifecycle P0s | **done** for three (`0090`, R-06) · BUG-010 **deliberately not fixed**, see §9 |
 | FIX-12 anonymous audit forgery | **done** — `0091`. **Not applied to live.** |
-| *new* Law 6 for the write verb | **done, re-scoped 6 Sep** — `0092`. My reproduction ran on an over-granted local; under live's real grants the PATCH is refused by the grant layer, the view's money columns are expressions, and the app has no product-UPDATE path. Defence in depth, not a closed active hole. **Not applied to live.** |
+| *new* Law 6 for the write verb (BUG-015) | **done — closes an ACTIVE live hole.** `0092`. Re-tested 6 Sep under live's real per-column grant shape: trigger off → `PATCH /products` as Warehouse returns 204 and rewrites the rate; trigger on → 400, rate holds. An interim note calling this defence-in-depth was measured against a wrong local and is withdrawn. **Not applied to live.** |
 | FIX-5 double-booking | open — and re-scoped: the DB hole is real but no app path reaches it (see the report's 5 Sep update) |
-| FIX-9 state the grants (BUG-006) | **done** — `0093` encodes live's shaped grants (Law 3/4/6 revokes intact, 0091 intact) and converges from any state; `check:rebuild` now asserts the shape. **91 applied, 0 failed, grants verified.** |
+| FIX-9 state the grants (BUG-006) | **done** — `0093` encodes live's shape, including Law 6 as a **per-column** SELECT mask (its first draft revoked the whole table and would have broken 13 booking reads on contact). Converges from any state; `check:rebuild` asserts it. |
 | FIX-6 … FIX-8, FIX-10 … FIX-11, FIX-13 … FIX-17 | open |
 
 **Five migrations now wait on the dump: `0089`, `0090`, `0091`, `0092`, `0093`.** All five are verified

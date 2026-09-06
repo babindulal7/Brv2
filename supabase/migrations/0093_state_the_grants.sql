@@ -86,13 +86,54 @@ alter default privileges for role postgres in schema public
 revoke all on all tables in schema public from anon, authenticated;
 grant all on all tables in schema public to service_role;
 
--- SELECT — Law 6: the money base tables stay behind their `_v` views.
+-- SELECT — Law 6, and it is a COLUMN mask, not a table one.
+--
+-- ⚠ Corrected 6 Sep 2026, before this file ever reached live. It first revoked
+-- SELECT on these ten tables outright, which is NOT what live does and would
+-- have broken the application: `src/` reads `bookings` directly in 13 places,
+-- `booking_lines` in 5, `products` in 3. Live revokes the TABLE and then grants
+-- back every column except the money ones — so staff read a booking, and simply
+-- cannot see `deposit_required`. That per-column list IS Law 6, restated below
+-- exactly as live holds it.
 grant select on all tables in schema public to anon, authenticated;
 revoke select on
   accessories, booking_lines, booking_transport, bookings, daily_closings,
   maintenance_records, product_units, products, staff_auth_pins, vehicle_fuel_logs
 from authenticated;
 revoke select on staff_auth_pins from anon;
+
+do $$
+declare
+  masked constant jsonb := jsonb_build_object(
+    'accessories',         jsonb_build_array('replacement_cost'),
+    'booking_lines',       jsonb_build_array('rate','discount_amount','supplier_cost','markup_amount'),
+    'booking_transport',   jsonb_build_array('delivery_charge','fuel_charge'),
+    'bookings',            jsonb_build_array('deposit_required'),
+    'daily_closings',      jsonb_build_array('counted_cash','expected_cash','variance','variance_reason',
+                                             'collected_cash','collected_bank','collected_card','collected_other',
+                                             'receivables','deposits_held'),
+    'maintenance_records', jsonb_build_array('cost'),
+    'product_units',       jsonb_build_array('purchase_price','replacement_value'),
+    'products',            jsonb_build_array('purchase_price','replacement_value','daily_rate','weekly_rate',
+                                             'monthly_rate','hourly_rate','weekend_rate','deposit_percent','deposit_fixed'),
+    'vehicle_fuel_logs',   jsonb_build_array('cost_amount')
+  );
+  tbl  text;
+  cols text;
+begin
+  for tbl in select jsonb_object_keys(masked) loop
+    select string_agg(quote_ident(a.attname), ', ' order by a.attnum) into cols
+    from pg_attribute a
+    where a.attrelid = format('public.%I', tbl)::regclass
+      and a.attnum > 0 and not a.attisdropped
+      and not (masked -> tbl) ? a.attname;
+
+    if cols is null then
+      raise exception 'POST-CONDITION FAILED (0093): % has no unmasked columns to grant.', tbl;
+    end if;
+    execute format('grant select (%s) on public.%I to authenticated', cols, tbl);
+  end loop;
+end $$;
 
 -- INSERT — everything except the PIN table (and, for anon, the audit trail: 0091).
 grant insert on all tables in schema public to anon, authenticated;
@@ -151,12 +192,28 @@ declare
   v_bad text[] := '{}';
   t     text;
 begin
-  -- Law 6: authenticated must NOT read the money base tables …
+  -- Law 6 is a COLUMN mask: the table is closed, the money columns stay closed,
+  -- and everything else must remain readable or the app cannot render a booking.
   foreach t in array array['bookings','booking_lines','products','product_units','daily_closings'] loop
     if has_table_privilege('authenticated', format('public.%I', t), 'SELECT') then
-      v_bad := v_bad || format('authenticated can SELECT %s (Law 6)', t)::text;
+      v_bad := v_bad || format('authenticated can SELECT all of %s (Law 6)', t)::text;
     end if;
   end loop;
+  if not has_column_privilege('authenticated', 'public.bookings', 'stage', 'SELECT') then
+    v_bad := v_bad || 'authenticated cannot SELECT bookings.stage (the app reads it in 13 places)'::text;
+  end if;
+  if not has_column_privilege('authenticated', 'public.bookings', 'id', 'SELECT') then
+    v_bad := v_bad || 'authenticated cannot SELECT bookings.id'::text;
+  end if;
+  if has_column_privilege('authenticated', 'public.bookings', 'deposit_required', 'SELECT') then
+    v_bad := v_bad || 'authenticated can SELECT bookings.deposit_required (Law 6)'::text;
+  end if;
+  if not has_column_privilege('authenticated', 'public.products', 'name', 'SELECT') then
+    v_bad := v_bad || 'authenticated cannot SELECT products.name'::text;
+  end if;
+  if has_column_privilege('authenticated', 'public.products', 'daily_rate', 'SELECT') then
+    v_bad := v_bad || 'authenticated can SELECT products.daily_rate (Law 6)'::text;
+  end if;
   -- … but must read the ordinary ones, and the views that mask the money.
   foreach t in array array['clients','users','invoices','payments','client_directory_v'] loop
     if not has_table_privilege('authenticated', format('public.%I', t), 'SELECT') then
