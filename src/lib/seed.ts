@@ -43,10 +43,14 @@
  * `Sample Data.md`'s "what good seed data must contain" list is longer than
  * this corpus. Not modelled here, each for a stated reason:
  *
- *   - **A booking crossing a BS month boundary.** `bs.ts` carries the length
- *     of exactly one month (Shrawan 2083) and returns `null` outside it, so
- *     the Date Engine cannot currently *verify* such a booking. Emitting one
- *     it cannot check would be hand-typed data wearing a generator's clothes.
+ *   - **A booking crossing a BS month boundary.** The reason changed on 5 Sep
+ *     2026 and the gap did not: `bs.ts` used to carry one month (Shrawan 2083)
+ *     and return `null` outside it, so the engine could not *verify* such a
+ *     booking. It now carries the published 2078-2095 table, so it could. The
+ *     corpus still has none — that is now an omission rather than a limit, and
+ *     adding one is a corpus change, not a comment change. TODO(corpus): a
+ *     booking spanning 31 Ashadh -> 1 Shrawan 2083 would exercise the boundary
+ *     the old note said was unreachable.
  *   - **A reversed payment.** `payment_reversals` rows never flow back into
  *     `invoices.paid_amount` (PLAN.md §6.8 records this, unfixed and blocked
  *     on a flooring/reversal formula ruling). A seeded reversal would make
@@ -1260,7 +1264,8 @@ export function buildCorpus(): SeedCorpus {
 
     /* Date Engine — Law 7. BS never reaches a column; it is derived here only
      * so the generator can prove the stored UTC instant is the day the spec
-     * names. `bs.ts` vouches for Shrawan 2083 and returns null elsewhere. */
+     * names. Since 5 Sep 2026 `bs.ts` vouches for BS 2078-2095 (14 Apr 2021 to
+     * 2039) and returns null only outside that range. */
     const bs = toBs(spec.pickupAt)
 
     bookings.push({

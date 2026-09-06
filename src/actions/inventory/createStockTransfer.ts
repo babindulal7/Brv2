@@ -104,11 +104,26 @@ export type CreateStockTransferInput = {
   /** Law 8 — the line's own key: one per ROW, not per action. */
   lineClientUuid: string
   transferType: StockTransferTypeLabel
-  /** `warehouses.name` — resolved to warehouse + branch uuids by SELECT. */
-  sourceWarehouse: string
-  destinationWarehouse: string
-  /** `products.name`, exactly as catalogued — resolved to `product_id` by SELECT. */
-  assetName: string
+  /**
+   * `warehouses.id` — how the screen identifies a facility now.
+   *
+   * It used to send only the NAME, taken from `data/warehouse.ts`'s four seed
+   * facilities, and not one of those is a row in `warehouses` (which holds
+   * 'Central Camera Vault' and 'Lakeside Equipment Hub'). Every transfer was
+   * refused by the lookup below. Same defect `createEquipment` carried.
+   */
+  sourceWarehouseId?: string | undefined
+  destinationWarehouseId?: string | undefined
+  /** `warehouses.name` — the fallback for callers that still name a facility. */
+  sourceWarehouse?: string | undefined
+  destinationWarehouse?: string | undefined
+  /** `products.id` — sent when the asset was picked from the catalogue. */
+  productId?: string | undefined
+  /**
+   * `products.name`, exactly as catalogued — the fallback when no id is sent.
+   * Exact-match only, which is why the screen no longer asks an operator to type it.
+   */
+  assetName?: string | undefined
   /** `product_units.serial_no` — optional; when given it must resolve, and to a unit of the named product. */
   serial?: string | undefined
   /** The operator's reason/notes — `stock_transfers.notes`. */
@@ -173,16 +188,21 @@ export const createStockTransferConfig: ActionConfig<CreateStockTransferInput, C
     if (!(input.transferType in TRANSFER_KIND_OF)) {
       throw new Error(`"${String(input.transferType)}" is not a transfer type — transfer_kind has no such member.`)
     }
-    if (!input.sourceWarehouse || input.sourceWarehouse.trim() === '') {
+    /* An id identifies a facility; a name is accepted but is only a fallback.
+       The two are compared like with like — comparing an id to a name would
+       call every transfer valid. */
+    const sourceKey = input.sourceWarehouseId?.trim() || input.sourceWarehouse?.trim() || ''
+    const destinationKey = input.destinationWarehouseId?.trim() || input.destinationWarehouse?.trim() || ''
+    if (sourceKey === '') {
       throw new Error('Source warehouse is required for new transfers.')
     }
-    if (!input.destinationWarehouse || input.destinationWarehouse.trim() === '') {
+    if (destinationKey === '') {
       throw new Error('Destination warehouse is required for new transfers.')
     }
-    if (input.sourceWarehouse.trim() === input.destinationWarehouse.trim()) {
+    if (sourceKey === destinationKey) {
       throw new Error('Source and destination must be different warehouses.')
     }
-    if (!input.assetName || input.assetName.trim() === '') {
+    if (!(input.productId?.trim() || input.assetName?.trim())) {
       throw new Error('Name the asset being moved — stock_transfer_lines.product_id is NOT NULL, a transfer cannot move nothing.')
     }
   },
@@ -199,41 +219,62 @@ export const createStockTransferConfig: ActionConfig<CreateStockTransferInput, C
     }
 
     /* Natural keys → uuids, all BEFORE the first insert. */
-    const lookupWarehouse = async (name: string, roleInSentence: string): Promise<WarehouseRow> => {
-      const { data, error } = await supabase
-        .from('warehouses')
-        .select('id, branch_id, name')
-        .eq('name', name.trim())
-        .maybeSingle()
+    const lookupWarehouse = async (
+      id: string | undefined,
+      name: string | undefined,
+      roleInSentence: string,
+    ): Promise<WarehouseRow> => {
+      const byId = typeof id === 'string' && id.trim() !== ''
+      const base = supabase.from('warehouses').select('id, branch_id, name')
+      const { data, error } = await (byId ? base.eq('id', id.trim()) : base.eq('name', name?.trim() ?? '')).maybeSingle()
       if (error) {
         throw new Error(`Could not look up the ${roleInSentence} warehouse, so nothing was saved: ${error.message}`)
       }
       if (!data) {
         throw new Error(
-          `"${name}" is not a warehouse the database knows, so nothing was saved. The facility list on this ` +
-            `screen is seed data; only a name matching a warehouses row can move stock.`,
+          `"${(byId ? id : name) ?? ''}" is not a warehouse the database knows, so nothing was saved. ` +
+            `Stock moves between real facilities — stock_transfers.source_warehouse_id is NOT NULL.`,
         )
       }
       return data as WarehouseRow
     }
 
-    const source = await lookupWarehouse(input.sourceWarehouse, 'source')
-    const destination = await lookupWarehouse(input.destinationWarehouse, 'destination')
+    const source = await lookupWarehouse(input.sourceWarehouseId, input.sourceWarehouse, 'source')
+    const destination = await lookupWarehouse(input.destinationWarehouseId, input.destinationWarehouse, 'destination')
 
-    const assetName = input.assetName.trim()
-    const { data: productRow, error: productError } = await supabase
-      .from('products')
-      .select('id, name')
-      .eq('name', assetName)
-      .maybeSingle()
+    /*
+     * `validate` compares whatever keys the caller sent, and it cannot see that
+     * an ID and a NAME denote the same facility — so a transfer identifying its
+     * source by uuid and its destination by that same warehouse's name passes
+     * there. Only the resolved rows settle it, and stock moving from a facility
+     * to itself is not a transfer.
+     */
+    if (source.id === destination.id) {
+      throw new Error(
+        `Source and destination are both ${source.name}, so nothing was saved. A transfer moves stock ` +
+          `between two different facilities.`,
+      )
+    }
+
+    /* By uuid when the screen picked from the catalogue; by exact name otherwise. */
+    const assetName = input.assetName?.trim() ?? ''
+    const productId = input.productId?.trim() ?? ''
+    const productBase = supabase.from('products').select('id, name')
+    const { data: productRow, error: productError } = await (productId !== ''
+      ? productBase.eq('id', productId)
+      : productBase.eq('name', assetName)
+    ).maybeSingle()
     if (productError) {
       throw new Error(`Could not look up the asset, so nothing was saved: ${productError.message}`)
     }
     if (!productRow) {
       throw new Error(
-        `"${assetName}" matches no product in the catalogue, so nothing was saved. The name must match the ` +
-          `products row exactly — a transfer recorded against a name the system cannot resolve would move ` +
-          `nothing anyone can find.`,
+        productId !== ''
+          ? `No product has id ${productId}, so nothing was saved. The catalogue changed under the ` +
+            `form — reopen it and pick the asset again.`
+          : `"${assetName}" matches no product in the catalogue, so nothing was saved. A typed name has ` +
+            `to match the products row exactly — a transfer recorded against a name the system cannot ` +
+            `resolve would move nothing anyone can find.`,
       )
     }
     const product = productRow as { id: string; name: string }
@@ -257,7 +298,7 @@ export const createStockTransferConfig: ActionConfig<CreateStockTransferInput, C
       }
       const unit = unitRow as { id: string; product_id: string }
       if (unit.product_id !== product.id) {
-        throw new Error(`Serial ${serial} belongs to a different product than "${assetName}", so nothing was saved.`)
+        throw new Error(`Serial ${serial} belongs to a different product than "${product.name}", so nothing was saved.`)
       }
       productUnitId = unit.id
     }

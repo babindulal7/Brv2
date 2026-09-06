@@ -59,6 +59,21 @@
 -- direct `UPDATE bookings SET stage='On Rent'` that bypasses the transition table
 -- carries no reason and is therefore still refused — the override is available
 -- only through the recorded path.
+--
+-- ## Patched 6 Sep 2026 — the search_path pins (DB-13 d)
+--
+-- Both functions above are re-stated with `create or replace`, and that statement
+-- replaces the function's SET clauses too. `0050_function_hardening` pinned BOTH
+-- to `search_path = public, pg_temp` (0050:102, 0050:113) — `pg_temp` named LAST
+-- on purpose, because when it is not named Postgres searches the temporary schema
+-- FIRST for relations, so a caller could shadow `bookings` or `invoices` with a
+-- temp table. The 4 Sep draft restated `apply_booking_stage_transition` (SECURITY
+-- DEFINER, owned by postgres — the escalation shape 0050 names) with
+-- `set search_path = public`, dropping `pg_temp`, and restated
+-- `validate_booking_gates` with no SET at all, wiping its pin entirely. Live holds
+-- `public, pg_temp` on both (read-only, 6 Sep). Both pins are now restated, and
+-- the post-condition block asserts them so a later restatement cannot lose them
+-- quietly again.
 -- =============================================================================
 
 begin;
@@ -69,6 +84,7 @@ begin;
 create or replace function validate_booking_gates()
 returns trigger
 language plpgsql
+set search_path = public, pg_temp
 as $$
 declare
   v_deposit_pending    numeric(14,2) := 0;
@@ -172,7 +188,7 @@ create or replace function apply_booking_stage_transition()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 declare
   v_current_stage    booking_stage;
@@ -252,7 +268,30 @@ end;
 $$;
 
 -- -----------------------------------------------------------------------------
--- 3 · Post-conditions. Both halves of R-06, and R-07 left intact.
+-- 3 · Post-condition — the 0050 pins survived the restatement (DB-13 d).
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_fn  text;
+  v_pin text;
+begin
+  foreach v_fn in array array['apply_booking_stage_transition', 'validate_booking_gates'] loop
+    select array_to_string(p.proconfig, ',') into v_pin
+      from pg_proc p
+     where p.pronamespace = 'public'::regnamespace and p.proname = v_fn;
+    if coalesce(v_pin, '') not like '%search_path=public, pg_temp%' then
+      raise exception 'POST-CONDITION FAILED: % lost its 0050 search_path pin (public, pg_temp); proconfig = %.',
+        v_fn, coalesce(v_pin, '<null>');
+    end if;
+  end loop;
+  if not (select prosecdef from pg_proc where pronamespace = 'public'::regnamespace and proname = 'apply_booking_stage_transition') then
+    raise exception 'POST-CONDITION FAILED: apply_booking_stage_transition is no longer SECURITY DEFINER.';
+  end if;
+  raise notice '0090 verified: apply_booking_stage_transition and validate_booking_gates keep search_path = public, pg_temp.';
+end $$;
+
+-- -----------------------------------------------------------------------------
+-- 4 · Post-conditions. Both halves of R-06, and R-07 left intact.
 -- -----------------------------------------------------------------------------
 do $$
 declare

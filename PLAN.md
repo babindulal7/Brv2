@@ -613,6 +613,63 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
+## 4.48 ⬅ OPEN ×2 — two numbering choices `0085`/`0089` implement conservatively, filed 6 Sep 2026
+
+**Raised 6 Sep 2026** while patching the numbering drafts for the 5 Sep remediation audit
+(DB-01, DB-13, DB-06). Neither was invented: each is implemented as the narrowest reading the
+rulings and `docs/SPEC-P0-3-NUMBERING.md` allow, and each is a one-line change once ruled.
+
+### ⬅ (a) May the OS mint booking numbers 900–945 while Booqable is still issuing?
+
+**What is settled.** R-10: bare `#<n>`, never reset, "the counter continues Booqable's order
+numbers … the next real order is #946", and at bridge end `next_document_number` takes over
+"continuing from the last imported number". R-11: the 46 seed bookings at #900–#945 move to
+#90000+, "freeing the range for real orders". SPEC-P0-3 §3.4 sets the counter to the highest
+real number (**899** on live — the 200 imported bookings are 700–899, `external_refs` holds no
+`orders` row above that) and §7 accepts "`next_document_number('booking')` returns `900`".
+
+**What is not.** SPEC-P0-3 §6 names it: *"During the bridge, Booqable owns the numbering. What
+number does a booking created in the OS take, when Booqable has not issued one?"* — and
+§4.43(a) carries the offline half of the same question. The 5 Sep audit (DB-01 option B)
+recommended re-pointing to 945 so the OS resumes at 946; its refuter (DB-13) found that is a
+ruling, not a bug fix.
+
+| Option | Counter after `0085` | First OS booking | Consequence |
+|---|---|---|---|
+| **(1) Spec literal — IMPLEMENTED** | 899 | #900 | Freed range consumed by the OS first. If Booqable has issued #900–#945 and those orders are later back-filled (SPEC §5.1), an OS #900 and a Booqable #900 cannot both keep their number. |
+| (2) Reserve the band | 945 | #946 | Matches R-10's "next real order is #946" literally; leaves #900–#945 for the back-fill. Cost: `greatest(…, 945)` in `0085` step 7. Numbers 900–945 are then never OS-issued. |
+| (3) No OS mint during the bridge | 899 | none | SPEC §6's other two shapes — create in Booqable first and let the number flow back, or a reserved OS band. Blocks the first OS booking until built. |
+
+**Recommendation: (2)** — R-10's own sentence says #946 is the next *real* order, which only
+makes sense if Booqable has already issued up to #945; data safety (a number is never re-issued
+or contested) outranks the tidiness of consuming the freed range. **Not implemented**: `0085`
+step 7 follows the spec as written (899 → next mint 900), and its step 8 proves the property
+that holds under any ruling — the next two mints are bare, untruncated, above every real
+number, below the parked band, and absent from `bookings`. Ruling (2) is a one-token change in
+step 7; the post-condition does not need touching.
+
+### ⬅ (b) The stock-transfer number prefix
+
+`createStockTransfer` is `implemented: true` and dispatched from the Transfer Center, and it
+mints `next_document_number('transfer')`. No migration ever seeded that key, so on live every
+transfer create ends in *"Number sequence transfer does not exist"* (DB-06). R-12 lists the nine
+unchanged prefixes and says nothing about transfers; the registry enum
+`default_system_sequence_prefix` (0001) carries `TRF`; the retired seed data used `TR-2026-00xx`.
+
+| Option | Shape | Note |
+|---|---|---|
+| **`TRF-` — IMPLEMENTED (0089 §2)** | `TRF-1`, year-less, unpadded | Registry enum's value; prefix carries its own separator like `INV-`/`BND-`; never resets (R-00, 15 Aug). |
+| `TR-` | `TR-1` | The retired seed's letters, without its year segment. |
+| Keep the year | `TRF-2026-0001` | Contradicts the never-reset ruling for every other document. |
+
+**Recommendation: `TRF-`.** Implemented with `on conflict (sequence_key) do nothing`, so a ruling
+that prefers another prefix seeds its row first and `0089`'s insert steps aside; no transfer
+row exists anywhere (live or rebuild), so nothing would be renumbered. The other seventeen
+`NOT NULL UNIQUE *_no` columns without a sequence (DB-06's census) have no writer at HEAD and
+are **not** touched here.
+
+---
+
 ## 4.45 ⬅ OPEN ×3 — the rulings the remaining read-frozen screens need
 
 **Raised 4 Sep 2026 after §4.44 closed the Bundles list.** Filed together because ruling

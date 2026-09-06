@@ -2,6 +2,125 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-07 — Phase 1 of the remediation audit: the views stop accepting writes, and the numbering drafts stop truncating
+
+**Phase:** Phase 0 · **Status:** 2 of 7 Phase 1 items drafted · nothing applied to live · `check:rebuild` BLOCKED on Docker
+
+First implementation pass against `REMEDIATION_AUDIT_2026-09-05.md`. Two of the seven Phase 1
+items are in the tree; both are migrations, so both are queued behind Step 0 like everything
+else since 2 Sep.
+
+### `0095_views_are_read_only.sql` — SEC-01 (P0)
+
+Every `_v` masking view is owner-privilege (`postgres`, which bypasses RLS), 24 of 26 are
+auto-updatable, none carries a CHECK OPTION, and the platform default ACL grants `anon` and
+`authenticated` full DML on every relation — views included. So `POST /rest/v1/clients_v` with
+the key that ships in the browser bundle inserted a row with no policy consulted, and any staff
+session could `PATCH` or `DELETE` every row of 23 base tables past RLS and past Law 3 (18 of
+them have no delete backstop).
+
+**`0093` restated that hole rather than closing it**: `grant insert on all tables in schema
+public` includes views, which is what "all tables" means to Postgres, while `0093`'s own header
+says "views: SELECT for all three". `0095` revokes INSERT/UPDATE/DELETE/TRUNCATE on every public
+view from `anon`, `authenticated` and PUBLIC, keeps SELECT, revokes `anon`'s base-table DML, and
+corrects the default privileges. The views stay definer-rights on purpose — the masking depends
+on it to read column-armed base tables.
+
+Its post-conditions do not settle for "the write was refused": they assert the refusal came from
+the **grant** (42501) and not from something else, because a zero result and an enforced rule
+look identical from a screen. They also prove the read path still works in both directions — an
+Owner reads `products_v` with `daily_rate` visible, a Warehouse user reads the same rows with it
+masked — then raise to roll the whole probe back.
+
+### The numbering drafts — DB-01 (P0), DB-06, DB-13
+
+`next_document_number` formats with `lpad(n, padding, '0')` and the booking and client rows carry
+`padding = 1`, so `lpad('918', 1, '0')` is `'9'`: the first live booking mints `B-9` and
+succeeds, and the second mints `B-9` again and collides. Creation works exactly once. `0089` now
+never narrows below the number itself, `0085` puts `booking_no_migration_map` under RLS and
+revokes it from `anon`, and the post-conditions **mint** through the function for every sequence
+inside a subtransaction rather than asserting a counter value — a counter assertion cannot catch
+a formatting fault.
+
+`0089` also seeds the missing `transfer` sequence with `on conflict do nothing`, because
+`createStockTransfer` is `implemented: true`, is dispatched from the Transfer Center, and mints
+from a key no migration ever created — every transfer on live fails with *"Number sequence
+transfer does not exist"*.
+
+**Two choices are recorded as open, not invented** — `PLAN.md §4.48`. (a) May the OS mint
+booking numbers 900–945 while Booqable is still issuing? `0085` implements SPEC-P0-3 §3.4
+literally (counter 899, next mint 900); the recommendation is to reserve the band and resume at
+946, which is a one-token change, and the post-condition proves the property that holds under
+either ruling. (b) The stock-transfer prefix: `TRF-` from the registry enum is implemented, and
+a ruling preferring another prefix seeds its row first and the insert steps aside. No transfer
+row exists anywhere, so nothing would be renumbered.
+
+`createStockTransfer` now accepts warehouse and product **ids** with the old names kept as a
+fallback — the same defect `createEquipment` carried, where the picker offered four seed
+facilities that are not rows in `warehouses`. The Transfer Center's own change to send ids was
+in flight in another session at the same time; the two fit together, and the action stays
+backward compatible so either can land first.
+
+### Corrections to my own earlier work
+
+`src/lib/seed.ts` still said `bs.ts` "carries the length of exactly one month (Shrawan 2083) and
+returns `null` outside it" and used that to explain why the corpus has no booking crossing a BS
+month boundary. That stopped being true on 5 Sep when the published 2078–2095 table was ported.
+The reason is now an omission rather than a limit, and it is marked `TODO(corpus)` rather than
+quietly fixed.
+
+Outside the repo, five spec-pack documents carried the old anchor and are corrected
+(`Date Engine.md`, `Calendar.md`, `Sample Data.md`, `Foundation Specification.md`,
+`Changelog.md`). That sweep turned up a **second, independent transcription error** in
+`Date Engine.md` §2.4 — Mangsir 2083 as 30 days and Poush as 29, where the published table has
+29 and 30 — which the anchor correction did not cause and would not have found. Roughly 28 more
+pack files carry a one-day-ahead BS/AD pair without declaring the anchor; they are listed and
+not yet swept.
+
+`Sample Data.md` was corrected twice: the first pass kept the BS label and moved the instant,
+which contradicts `seed.ts`, whose guard keeps the 16 Jul instant and moves the label to
+`32 Ashadh 2083`, citing Law 7. The file itself says "Stored AD, in UTC. Rendered
+Asia/Kathmandu" two lines below the block, so the seed is right and the doc now matches it.
+
+### Two findings added to the audit after the run
+
+Both measured directly against live, neither refuted, both now in the report (149 issues):
+
+- **SEC-12** — `TRUNCATE` is granted to `anon` and `authenticated` on **123 of 124** tables.
+  RLS does not govern TRUNCATE and it fires no row-level trigger, so every Law 3 backstop in this
+  schema is blind to it. Rated P2 rather than P0 because nothing reaches it today: both roles are
+  NOLOGIN, none of the 26 anon-executable functions contains dynamic SQL, and PostgREST exposes
+  no TRUNCATE verb. `0093` drops it as a side effect of its convergent shape; the recommendation
+  is to make that a named statement instead.
+- **DATA-17** — the live corpus is hollow past Packed: **200 of 246** bookings carry no
+  `booking_lines`, and `operation_sessions`, `packing_lines`, `handover_lines`, `return_lines`
+  and `booking_line_units` are all empty. Return and Reset have nothing to render for any
+  historical booking. **Pack is the exception and is genuinely runnable** — 30 Booked bookings
+  with 60 lines — so it is the right first floor verb to exercise after Step 0.
+
+One claim in this report's own auth-security cluster is corrected: 91 tables carry a policy that
+would admit a DELETE, but the grant layer holds DELETE for `authenticated` on only **10**, so
+Law 3 is enforced today — by the grant, not by the policies.
+
+### Verified
+
+- `npx eslint src/actions/inventory/createStockTransfer.ts src/lib/queries/__tests__/numbering.test.ts --max-warnings 0` — exit 0.
+- `npx tsc --noEmit` — caught a real defect in this work (`input.productId` possibly undefined at
+  the id/name ternary: TypeScript narrows an aliased condition over a local, not over a property
+  access). Fixed in the tree before this commit.
+- **`npm run check:rebuild` did NOT run.** Docker Desktop's engine is returning 500 on `exec` and
+  `docker exec … psql` hangs to a timeout, so the scratch build could not start. **These
+  migrations are therefore unproven against a rebuild** and must not be applied until that gate
+  is green. Re-run it before Step 0.
+
+### Still not done, and not ours to do
+
+Step 0 (live `pg_dump`, restore drill, Booqable token rotation) gates every migration here. The
+token has still never been rotated. Correcting one record: the token is **not** in the repo — at
+HEAD and across all 114 commits in its ancestry a fingerprint scan finds no token-shaped literal
+in `scripts/` or `supabase/`, and the two stale agent worktrees hold a 23-character placeholder,
+not a secret. The 2 Sep scrub held; rotation is still required because the token was live before it.
+
 ## 2026-09-06 (cont. 2) — Packing: the floor stops recording what did not happen
 
 **Phase:** Phase 0 · **Status:** 7 register items closed · 2 register claims corrected · 4 filed
