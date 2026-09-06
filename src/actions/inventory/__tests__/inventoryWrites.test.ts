@@ -106,7 +106,7 @@ const EQ_INPUT: CreateEquipmentInput = {
     { serial: ' SN-FX6-001 ', condition: 'Excellent', purchaseDateIso: '2026-08-01', clientUuid: '22222222-2222-4222-8222-222222222221' },
     { serial: 'SN-FX6-002', condition: 'Good', purchaseDateIso: '2026-08-01', clientUuid: '22222222-2222-4222-8222-222222222222' },
   ],
-  warehouseName: 'Kathmandu Main Hub (HQ)',
+  warehouseId: 'wh-vault-uuid',
   location: { rack: 'Rack 01', shelf: 'Shelf 02', bin: 'Bin A-1' },
   status: 'Active',
   dailyRatePaisa: rupees(4500),
@@ -118,8 +118,8 @@ const TR_INPUT: CreateStockTransferInput = {
   clientUuid: '33333333-3333-4333-8333-333333333331',
   lineClientUuid: '33333333-3333-4333-8333-333333333332',
   transferType: 'Branch Transfer',
-  sourceWarehouse: 'Kathmandu Main Hub (HQ)',
-  destinationWarehouse: 'Pokhara Regional Hub',
+  sourceWarehouse: 'Central Camera Vault',
+  destinationWarehouse: 'Lakeside Equipment Hub',
   assetName: 'Sony FX3 Cinema Camera',
   serial: 'SN-FX3-003',
   notes: 'Lakeside shoot, back Friday',
@@ -184,8 +184,11 @@ beforeEach(() => {
   db.state.tables = {
     inventory_categories: [{ id: 'cat-camera-uuid', name: 'Camera' }],
     warehouses: [
-      { id: 'wh-ktm-uuid', branch_id: 'br-ktm-uuid', name: 'Kathmandu Main Hub (HQ)' },
-      { id: 'wh-pkr-uuid', branch_id: 'br-pkr-uuid', name: 'Pokhara Regional Hub' },
+      /* The two rows `warehouses` actually holds. They were the four seed
+         facility names until 6 Sep, which let this suite certify a picker
+         whose every option was unresolvable in production. */
+      { id: 'wh-vault-uuid', branch_id: 'br-ktm-uuid', name: 'Central Camera Vault' },
+      { id: 'wh-lakeside-uuid', branch_id: 'br-pkr-uuid', name: 'Lakeside Equipment Hub' },
     ],
     products: [
       { id: 'prod-fx3-uuid', name: 'Sony FX3 Cinema Camera' },
@@ -234,7 +237,9 @@ describe('CREATE_EQUIPMENT — validate', () => {
   })
 
   it('refuses serialised units with no warehouse — product_units.warehouse_id is NOT NULL, a draft included', () => {
-    expect(() => check({ warehouseName: undefined, location: undefined })).toThrow(/warehouse/i)
+    expect(() => check({ warehouseId: undefined, warehouseName: undefined, location: undefined })).toThrow(
+      /warehouse/i,
+    )
   })
 
   it('refuses a quantity record with no quantity', () => {
@@ -280,7 +285,7 @@ describe('CREATE_EQUIPMENT — the write', () => {
     expect(units.map((u) => u.payload['asset_tag'])).toEqual(['EQ000123-01', 'EQ000123-02'])
     expect(units[0]?.payload['serial_no']).toBe('SN-FX6-001')
     expect(units[0]?.payload['client_uuid']).toBe('22222222-2222-4222-8222-222222222221')
-    expect(units[0]?.payload['warehouse_id']).toBe('wh-ktm-uuid')
+    expect(units[0]?.payload['warehouse_id']).toBe('wh-vault-uuid')
     expect(units[0]?.payload['branch_id']).toBe('br-ktm-uuid')
   })
 
@@ -302,8 +307,37 @@ describe('CREATE_EQUIPMENT — the write', () => {
     expect(access.inserts.length).toBe(0)
   })
 
-  it('refuses a warehouse the database does not hold BEFORE anything is written', async () => {
-    await expect(run({ warehouseName: 'Bhaktapur Heavy Grip & Rigging' })).rejects.toThrow(/not a warehouse/i)
+  it('refuses a warehouse id the database does not hold BEFORE anything is written', async () => {
+    await expect(run({ warehouseId: 'wh-decommissioned-uuid' })).rejects.toThrow(/not a warehouse/i)
+    expect(access.inserts.length).toBe(0)
+  })
+
+  it('still resolves a NAME when the caller sends no id — the fallback the transfer screen uses', async () => {
+    await run({ warehouseId: undefined, warehouseName: 'Lakeside Equipment Hub' })
+    const units = insertsInto('product_units')
+    expect(units[0]?.payload['warehouse_id']).toBe('wh-lakeside-uuid')
+    expect(units[0]?.payload['branch_id']).toBe('br-pkr-uuid')
+  })
+
+  /*
+   * The regression this whole change exists for. Add Equipment's picker was
+   * built from `data/warehouse.ts`'s four seed facilities, and NOT ONE of them
+   * is a row in `warehouses`. `product_units.warehouse_id` is NOT NULL, so
+   * every serialised save was refused here — after the form had already
+   * reported "Ready to Rent — all gates clear". The picker now reads the table
+   * (`lib/queries/warehouses.ts`), and these four names must stay unresolvable
+   * so that reverting the picker to the seed list fails loudly.
+   */
+  it('refuses every one of the four seed facility names the picker used to offer', async () => {
+    const seedFacilities = [
+      'Kathmandu Main Hub (HQ)',
+      'Patan Studio Depository',
+      'Pokhara Regional Hub',
+      'Bhaktapur Heavy Grip & Rigging',
+    ]
+    for (const name of seedFacilities) {
+      await expect(run({ warehouseId: undefined, warehouseName: name })).rejects.toThrow(/not a warehouse/i)
+    }
     expect(access.inserts.length).toBe(0)
   })
 
@@ -370,9 +404,9 @@ describe('CREATE_STOCK_TRANSFER — the write', () => {
   it('resolves both facilities to uuids and translates the UI label onto the plural enum member', async () => {
     await run()
     const [header] = insertsInto('stock_transfers')
-    expect(header?.payload['source_warehouse_id']).toBe('wh-ktm-uuid')
+    expect(header?.payload['source_warehouse_id']).toBe('wh-vault-uuid')
     expect(header?.payload['source_branch_id']).toBe('br-ktm-uuid')
-    expect(header?.payload['destination_warehouse_id']).toBe('wh-pkr-uuid')
+    expect(header?.payload['destination_warehouse_id']).toBe('wh-lakeside-uuid')
     expect(header?.payload['transfer_type']).toBe('Branch Transfers')
     expect(header?.payload['requested_by']).toBe(CTX.userId)
     expect(header?.payload['notes']).toBe('Lakeside shoot, back Friday')

@@ -23,7 +23,6 @@ import { newClientUuid } from '../../lib/supabase'
 import { parseMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { SEED_ERRORS, PREVIEW_UNAVAILABLE_REASON } from '../../data/addEquipment'
-import { WAREHOUSES } from '../../data/warehouse'
 import type { CreateEquipmentInput } from '../../actions/inventory/createEquipment'
 
 
@@ -121,7 +120,12 @@ function AddEquipmentLayout() {
       quantity: serialised ? undefined : ctx.quantity,
       reorderLevel: serialised ? undefined : ctx.reorderLevel,
       quantityUnit: serialised ? undefined : (ctx.quantityUnit as 'piece' | 'metre' | 'roll' | 'pack'),
-      warehouseName: WAREHOUSES.find((w) => w.id === ctx.warehouseId)?.name,
+      /*
+       * The uuid, not a name. `ctx.warehouseId` is now a real `warehouses.id`
+       * (SectionLocation reads the table), so the action resolves it directly
+       * instead of matching a seed label that existed in no row.
+       */
+      warehouseId: ctx.warehouseId || undefined,
       location: chosenLocation
         ? { rack: chosenLocation.rack, shelf: chosenLocation.shelf, bin: chosenLocation.bin }
         : undefined,

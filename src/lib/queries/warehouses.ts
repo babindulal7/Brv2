@@ -34,6 +34,68 @@ import type { StockTransfer, TransferStatus, TransferType } from '../../data/war
  * mean deleting most of what the screen shows, which is a product decision.
  */
 
+/* ── the facility list ─────────────────────────────────────────────────── */
+
+/**
+ * The warehouses themselves — id and name, nothing more.
+ *
+ * The table above explains why this module cannot wire the warehouse CARDS:
+ * capacity, occupancy and the rack map have no columns. The **list** is a
+ * different matter, and it had a live consequence: Add Equipment's warehouse
+ * picker was built from `data/warehouse.ts`'s four seed names
+ * ('Kathmandu Main Hub (HQ)', 'Patan Studio Depository', 'Pokhara Regional Hub',
+ * 'Bhaktapur Heavy Grip & Rigging'), and **none of them is a row in
+ * `warehouses`** — which holds 'Central Camera Vault' and 'Lakeside Equipment
+ * Hub'. `product_units.warehouse_id` is NOT NULL, so `createEquipment` resolves
+ * the chosen name against the table and refuses when it is absent: every attempt
+ * to register serialised equipment failed after the form had reported
+ * "Ready to Rent — all gates clear".
+ *
+ * So the picker reads this instead. `is_active` is filtered here rather than by
+ * the caller: a decommissioned warehouse is not somewhere new stock can be put.
+ */
+export interface WarehouseOption {
+  id: string
+  name: string
+  code: string
+  branchId: string
+}
+
+interface WarehouseOptionRow {
+  id: string
+  name: string
+  warehouse_code: string | null
+  branch_id: string
+}
+
+export async function listWarehouses(): Promise<WarehouseOption[]> {
+  const { data, error } = await supabase
+    .from('warehouses')
+    .select('id, name, warehouse_code, branch_id')
+    .eq('is_active', true)
+    .order('name', { ascending: true })
+
+  if (error) {
+    throw new Error(`Could not read the warehouse list: ${error.message}`)
+  }
+
+  return ((data ?? []) as unknown as WarehouseOptionRow[]).map((r) => ({
+    id: r.id,
+    name: r.name,
+    code: r.warehouse_code ?? '',
+    branchId: r.branch_id,
+  }))
+}
+
+async function fetchWarehouses(): Promise<ListQueryResult<WarehouseOption>> {
+  const rows = await listWarehouses()
+  return { rows, total: rows.length }
+}
+
+export function useWarehouses(): ListResult<WarehouseOption> {
+  return useList<WarehouseOption>(fetchWarehouses, {}, { isFilteredOverride: false })
+}
+
 /* ── transfers ─────────────────────────────────────────────────────────── */
 
 interface TransferRow {

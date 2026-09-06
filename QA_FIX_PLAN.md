@@ -18,6 +18,8 @@ production**, and nothing should be before the two gates below.
 | *new* Law 6 for the write verb (BUG-015) | **done — closes an ACTIVE live hole.** `0092`. Re-tested 6 Sep under live's real per-column grant shape: trigger off → `PATCH /products` as Warehouse returns 204 and rewrites the rate; trigger on → 400, rate holds. An interim note calling this defence-in-depth was measured against a wrong local and is withdrawn. **Not applied to live.** |
 | FIX-5 double-booking | open — and re-scoped: the DB hole is real but no app path reaches it (see the report's 5 Sep update) |
 | FIX-9 state the grants (BUG-006) | **done** — `0093` encodes live's shape, including Law 6 as a **per-column** SELECT mask (its first draft revoked the whole table and would have broken 13 booking reads on contact). Converges from any state; `check:rebuild` asserts it. |
+| *new* Add Equipment could not create serialised gear (BUG-026) | **done — closed an ACTIVE defect, no migration.** The picker offered four facilities that do not exist in `warehouses`; every serialised save was refused. Driven end to end against real Postgres. The unit mock and `lib/mock/corpus.ts` both held one of the fictional rows, which is why the suite stayed green — both now carry `0012`'s real rows. |
+| *new* Stock transfers, same defect (BUG-027) | open — `Warehouses.tsx` hands the same four seed names to `createStockTransfer`, which resolves by name. Every transfer save fails. **Recommended next.** |
 | FIX-6 … FIX-8, FIX-10 … FIX-11, FIX-13 … FIX-17 | open |
 
 **Five migrations now wait on the dump: `0089`, `0090`, `0091`, `0092`, `0093`.** All five are verified
@@ -153,6 +155,18 @@ check reads a hardcoded 34-serial seed map instead of the database. Make it quer
 unique constraint so the database is the authority.
 
 ---
+
+**FIX-18 · Point the stock-transfer form at real warehouses (BUG-027).**
+`Warehouses.tsx:740-741` defaults the transfer endpoints to `WAREHOUSES[0].name` /
+`[1].name`, and the Source / Destination Facility dropdowns at `:2239` / `:2249` render the same seed list; `createStockTransfer:202-217`
+resolves by name and refuses. 0 of the 4 names exist, so no transfer can be saved. The read
+half already exists — `useWarehouses()` in `lib/queries/warehouses.ts`, added for
+Add Equipment. Note the product question this raises: that screen's warehouse CARDS
+(capacity, occupancy, rack map) are seed data with no columns behind them, so a dropdown of
+real facilities will name places the cards above do not show.
+*Regression test:* saving a transfer between the two real warehouses writes a
+`stock_transfers` row; a seed facility name is refused before anything is written.
+
 
 ## 5 · FRONTEND
 

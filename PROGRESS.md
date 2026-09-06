@@ -2,6 +2,88 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-06 (cont. 3) — Add Equipment could not register a serialised item at all
+
+**Phase:** Phase 0 — **Status:** fixed, driven end to end against real Postgres — no migration
+involved, so this needs no dump gate
+
+### The defect
+
+Add Equipment's warehouse picker was built from `data/warehouse.ts`'s `WAREHOUSES` — four seed
+facilities. **Not one of them is a row in `warehouses`:**
+
+    Kathmandu Main Hub (HQ)          0 rows
+    Patan Studio Depository          0 rows
+    Pokhara Regional Hub             0 rows
+    Bhaktapur Heavy Grip & Rigging   0 rows
+
+The table holds `Central Camera Vault` (WH-KTM-MAIN) and `Lakeside Equipment Hub` (WH-PKR-MAIN),
+seeded by `0012_seed_data.sql:47`. `product_units.warehouse_id` is NOT NULL, so `createEquipment`
+resolved the chosen name against the table and refused. **Every serialised save failed** — after
+the form had already printed "All gates clear", including "Location set". The record is the whole
+point of the screen, so the screen did nothing.
+
+### What changed
+
+- `lib/queries/warehouses.ts` gains `listWarehouses()` / `useWarehouses()` — `id, name,
+  warehouse_code, branch_id` where `is_active`. The column is `warehouse_code`, not `code`.
+- `SectionLocation` reads that instead of the seed list; each option's **value is the uuid**.
+- `createEquipment` takes `warehouseId` and resolves by id, keeping the name as a fallback for
+  callers that still send one.
+- `AddEquipmentContext` stops partitioning bins by warehouse. `locationsIn` keys the seed bins off
+  the SEED warehouse ids, so filtering by a real uuid returned nothing — the required bin field
+  would have become unfillable, trading one blocker for another. `storage_zones` has no room,
+  rack, shelf, bin or capacity column, so there is nothing to read; the field's hint now says the
+  list is seed.
+
+### Verified by driving it, not by reading it
+
+Signed in on `--mode localdb` against the real local Postgres, filled the form, saved:
+
+    select p.asset_code, u.serial_no, u.asset_tag, w.name, w.warehouse_code, b.name, u.status ...
+    EQ000290 | QA-SN-LOCALDB-0906 | EQ000290-01 | Central Camera Vault | WH-KTM-MAIN |
+    Kathmandu Main HQ | In Stock
+
+The picker offered exactly the two real facilities, the option value was
+`00000000-0000-0000-0000-000000000011`, choosing it enabled the bin list (9 bins), and the save
+landed. Also run in mock mode with the same result.
+
+### Two lies that let this survive testing
+
+Both are corrected in this commit, and they matter more than the fix:
+
+1. **The unit tests mocked a `warehouses` row named `Kathmandu Main Hub (HQ)`** — so the suite
+   certified a picker whose every option was unresolvable in production. The mock corpus now
+   carries 0012's two real rows, and a new test asserts all four seed names are **refused**, so
+   reverting the picker to the seed list fails loudly.
+2. **`lib/mock/corpus.ts` invented its warehouse** — one row, that same name, with a `code`
+   column the schema does not have. Its section header claims to mirror migration 0012. It now
+   does: both warehouses, both branches, 0012's uuids.
+
+### Found on the way, NOT fixed — the same bug in a second screen
+
+`Warehouses.tsx` builds its stock-transfer form from the same four seed names
+(`:740-741` default to `WAREHOUSES[0].name` / `[1].name`; the Source and Destination Facility
+dropdowns at `:2239` / `:2249` render the same list with `value={w.name}`)
+and hands them to `createStockTransfer`, which resolves **by name** at `:202-217`. Since 0 of 4
+resolve, **every stock transfer save fails** with "is not a warehouse the database knows". The
+action's own comment at `:213` already says the screen's list is seed data. Same fix shape as
+this one; left for its own change because the warehouse CARDS on that screen are seed too, so
+wiring the dropdown to live rows is a visible product change, not a silent repair.
+
+Filed alongside it, unfixed and lower: `EquipmentShared.tsx:267` — `BsAbove` calls setState
+while `Header` renders, which React logs on every Add Equipment load.
+
+### Local scratch DB, for the next session
+
+The three seeded local accounts have passwords nobody recorded and `docs/LOCAL_DATABASE.md:18`
+("fake, any password") is wrong — GoTrue validates. I set
+`owner@babinrentals.com` to `qa-local-2026` on the LOCAL database only to drive the form; a
+`db:rebuild` resets it. The corpus also now holds one probe row, `QA Probe Camera LocalDB`
+(EQ000290) — Law 3 forbids deleting it.
+
+---
+
 ## 2026-09-06 (cont. 2) — forward-only stage transitions enforced, and an adversarial pass found the door I left open
 
 **Phase:** Phase 0 · **Status:** `0094` written and verified · BUG-014/016 closed · BUG-017 filed

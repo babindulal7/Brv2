@@ -17,10 +17,10 @@ import {
   modelName,
   bundlesUsing,
   suggestedChildrenFor,
-  locationsIn,
   locationLabel,
   LABEL_PRINT_UNAVAILABLE_REASON,
   PACKING_PREVIEW_UNAVAILABLE_REASON,
+  LOCATIONS as ALL_LOCATIONS,
 } from '../../../data/addEquipment'
 import type { TrackingMode, LocationChoice } from '../../../data/addEquipment'
 import { Chip, DraftStatusBadge, countOf, formatBytes } from './EquipmentShared'
@@ -255,8 +255,25 @@ export function useEquipmentFormState() {
 
   const usedInBundles = useMemo(() => bundlesUsing(name), [name])
 
-  const warehouseLocations: LocationChoice[] = useMemo(
-    () => (warehouseId ? locationsIn(warehouseId) : []),
+  /*
+   * The bin list is seed data and is no longer partitioned by warehouse.
+   *
+   * `warehouseId` is now a real `warehouses.id` (the picker reads the table,
+   * because `product_units.warehouse_id` is NOT NULL and every save against a
+   * seed name was refused). `locationsIn` keys `data/addEquipment.ts`'s LOCATIONS
+   * off the SEED warehouse ids, so filtering by the real uuid returns nothing and
+   * the required bin field could never be filled — trading one blocker for
+   * another.
+   *
+   * These labels cannot be read from the database either: `storage_zones` has no
+   * room, rack, shelf, bin or capacity column. The chosen bin is stored as free
+   * text on the unit with `storage_zone_id` null, which `createEquipment` already
+   * documents. So the list is shown whole, and the field's hint says it is seed —
+   * rather than implying a relationship to the chosen facility that no schema
+   * supports.
+   */
+  const warehouseLocations: readonly LocationChoice[] = useMemo(
+    () => (warehouseId ? ALL_LOCATIONS : []),
     [warehouseId],
   )
   const chosenLocation = useMemo(

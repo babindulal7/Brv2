@@ -170,6 +170,53 @@ over-granted local (DELETE on `clients` went `t → f` on apply).
 
 ---
 
+## UPDATE {D} 6 September 2026: a P0 the audit missed entirely
+
+**BUG-026 (P0, FIXED) {D} Add Equipment could not create serialised equipment.**
+
+The audit walked this screen and passed it, because the form's own gate panel says
+"All gates clear {D} Location set" before the save is attempted. It was wrong. The warehouse
+picker was built from `data/warehouse.ts`'s four seed facilities and **none of them is a row in
+`warehouses`**:
+
+| offered by the picker | rows in `warehouses` |
+|---|---|
+| Kathmandu Main Hub (HQ) | 0 |
+| Patan Studio Depository | 0 |
+| Pokhara Regional Hub | 0 |
+| Bhaktapur Heavy Grip & Rigging | 0 |
+
+The table holds `Central Camera Vault` and `Lakeside Equipment Hub` (`0012_seed_data.sql:47`).
+`product_units.warehouse_id` is NOT NULL, so `createEquipment` resolved the name and refused.
+Every serialised save failed. Fixed: the picker reads the table, the option value is the uuid,
+and `createEquipment` resolves by id. Verified by driving the form against real Postgres {D}
+`EQ000290` / `EQ000290-01` now sits in `Central Camera Vault`.
+
+**Why the audit missed it, which matters more than the bug.** The unit suite mocked a
+`warehouses` row named `Kathmandu Main Hub (HQ)`, and `lib/mock/corpus.ts` invented the same
+row with a `code` column the schema does not have. Both test surfaces agreed with the screen
+and disagreed with the database. This is the same lesson as the inert column revokes:
+**measure against the shape production actually has.** Both fixtures now carry 0012's real rows,
+and a test asserts the four seed names are refused.
+
+**BUG-027 (P1, NOT FIXED) {D} the identical defect in stock transfers.**
+`Warehouses.tsx` builds its transfer form from the same four seed names (`:740-741` for the defaults;
+the Source / Destination Facility dropdowns at `:2239` / `:2249`, whose option value is the name) and `createStockTransfer` resolves **by name** (`:202-217`). 0 of 4 resolve, so every
+stock transfer save fails with "is not a warehouse the database knows". The action's comment at
+`:213` already admits the screen's list is seed data. Not fixed here because that screen's
+warehouse cards are seed as well, so pointing the dropdown at live rows is a visible product
+change rather than a silent repair.
+
+**BUG-028 (P4, NOT FIXED)** {D} `EquipmentShared.tsx:267`: `BsAbove` calls setState during
+`Header`'s render; React logs the warning on every Add Equipment load.
+
+**Correction to this report's scope.** "Inventory {D} Add Equipment" should not have been
+recorded as covered. A form that reports every gate green and then throws on save is exactly
+what the brief asked for {D} UI state agreeing with itself while disagreeing with the database
+{D} and it was reachable in one click.
+
+---
+
 ## APP HEALTH
 
 Full detail in [`QA_APP_HEALTH_REPORT.md`](QA_APP_HEALTH_REPORT.md). Summary at HEAD:

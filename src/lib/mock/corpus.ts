@@ -50,8 +50,17 @@ const day = (d: Date) => iso(d).slice(0, 10)
 
 /* ── Reference data (migration 0012) ───────────────────────────────────── */
 
-const BRANCH_ID = id('branch:BR-KTM-01')
-const WAREHOUSE_ID = id('warehouse:WH-KTM-01')
+/*
+ * 0012's uuids literally, not derived ones. The warehouse rows below were
+ * invented until 6 Sep — one row, named 'Kathmandu Main Hub (HQ)' with a
+ * `code` column — and the database has neither that name nor that column. Mock
+ * mode therefore resolved a facility the real schema refuses, which is how
+ * Add Equipment's unresolvable warehouse picker survived testing.
+ */
+const BRANCH_ID = '00000000-0000-0000-0000-000000000001'
+const BRANCH_PKR_ID = '00000000-0000-0000-0000-000000000002'
+const WAREHOUSE_ID = '00000000-0000-0000-0000-000000000011'
+const WAREHOUSE_PKR_ID = '00000000-0000-0000-0000-000000000012'
 
 /**
  * `users` is not in the corpus but auth cannot boot without it: `loadProfile`
@@ -66,11 +75,13 @@ const USERS: Row[] = [
 ]
 
 const BRANCHES: Row[] = [
-  { id: BRANCH_ID, client_uuid: seedUuid('branch:BR-KTM-01'), branch_code: 'BR-KTM-01', name: 'Kathmandu Main', city: 'Kathmandu', is_active: true, created_at: iso(new Date('2026-01-01T00:00:00Z')) },
+  { id: BRANCH_ID, client_uuid: 'a0000000-0000-0000-0000-000000000001', branch_code: 'BR-KTM-01', name: 'Kathmandu Main HQ', city: 'Kathmandu', is_active: true, created_at: iso(new Date('2026-01-01T00:00:00Z')) },
+  { id: BRANCH_PKR_ID, client_uuid: 'a0000000-0000-0000-0000-000000000002', branch_code: 'BR-PKR-01', name: 'Pokhara Branch', city: 'Pokhara', is_active: true, created_at: iso(new Date('2026-01-01T00:00:00Z')) },
 ]
 
 const WAREHOUSES: Row[] = [
-  { id: WAREHOUSE_ID, client_uuid: seedUuid('warehouse:WH-KTM-01'), code: 'WH-KTM-01', name: 'Kathmandu Main Hub (HQ)', branch_id: BRANCH_ID, is_active: true },
+  { id: WAREHOUSE_ID, client_uuid: 'b0000000-0000-0000-0000-000000000011', warehouse_code: 'WH-KTM-MAIN', name: 'Central Camera Vault', branch_id: BRANCH_ID, address: 'Anamnagar, Kathmandu', status: 'Active', is_primary: true, is_active: true },
+  { id: WAREHOUSE_PKR_ID, client_uuid: 'b0000000-0000-0000-0000-000000000012', warehouse_code: 'WH-PKR-MAIN', name: 'Lakeside Equipment Hub', branch_id: BRANCH_PKR_ID, address: 'Lakeside, Pokhara', status: 'Active', is_primary: true, is_active: true },
 ]
 
 /**

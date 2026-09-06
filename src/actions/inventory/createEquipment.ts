@@ -122,7 +122,18 @@ export type CreateEquipmentInput = {
   quantity?: number | undefined
   reorderLevel?: number | undefined
   quantityUnit?: 'piece' | 'metre' | 'roll' | 'pack' | undefined
-  /** `warehouses.name` — resolved to warehouse + branch uuids by SELECT. Required when `units` are sent. */
+  /**
+   * `warehouses.id`. Required when `units` are sent, unless `warehouseName` is.
+   *
+   * How the form identifies a facility now, because
+   * `product_units.warehouse_id` is a NOT NULL FK and the old name lookup
+   * matched nothing: the picker offered four seed labels ('Kathmandu Main Hub
+   * (HQ)' and friends) against a table holding 'Central Camera Vault' and
+   * 'Lakeside Equipment Hub'. Every serialised save failed here, after the form
+   * had reported all gates clear.
+   */
+  warehouseId?: string | undefined
+  /** `warehouses.name`. Retained for callers that still identify a facility by name. */
   warehouseName?: string | undefined
   /** Free-text position of the chosen bin. `storage_zone_id` stays null: the
    *  form's zone labels are seed strings, not `storage_zones` rows. */
@@ -313,7 +324,7 @@ export const createEquipmentConfig: ActionConfig<CreateEquipmentInput, CreateEqu
           throw new Error(`Unit ${i + 1} carries no idempotency key — Law 8 wants one per row, minted where the operator acted. Nothing was sent.`)
         }
       }
-      if (units.length > 0 && (!input.warehouseName || !input.location)) {
+      if (units.length > 0 && (!(input.warehouseId || input.warehouseName) || !input.location)) {
         throw new Error(
           'Serialised units need a warehouse and storage bin — product_units.warehouse_id is NOT NULL ' +
             '(0004:203). Pick the location in Section 4, or remove the serials before saving a draft.',
@@ -372,18 +383,20 @@ export const createEquipmentConfig: ActionConfig<CreateEquipmentInput, CreateEqu
 
     let warehouse: { id: string; branch_id: string; name: string } | null = null
     if (units.length > 0) {
-      const { data: warehouseRow, error: warehouseError } = await supabase
-        .from('warehouses')
-        .select('id, branch_id, name')
-        .eq('name', input.warehouseName?.trim() ?? '')
-        .maybeSingle()
+      /* By uuid when the caller has one (the form does); by name otherwise. */
+      const byId = typeof input.warehouseId === 'string' && input.warehouseId.trim() !== ''
+      const base = supabase.from('warehouses').select('id, branch_id, name')
+      const { data: warehouseRow, error: warehouseError } = await (byId
+        ? base.eq('id', (input.warehouseId as string).trim())
+        : base.eq('name', input.warehouseName?.trim() ?? '')
+      ).maybeSingle()
       if (warehouseError) {
         throw new Error(`Could not look up the warehouse, so nothing was saved: ${warehouseError.message}`)
       }
       if (!warehouseRow) {
         throw new Error(
-          `"${input.warehouseName ?? ''}" is not a warehouse the database knows, so nothing was saved. The ` +
-            `form's warehouse list is seed data; only a name that matches a warehouses row can hold units.`,
+          `"${input.warehouseId ?? input.warehouseName ?? ''}" is not a warehouse the database knows, so ` +
+            `nothing was saved. A unit must live in a real facility — product_units.warehouse_id is NOT NULL.`,
         )
       }
       warehouse = warehouseRow as { id: string; branch_id: string; name: string }
