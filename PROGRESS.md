@@ -2,6 +2,95 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-06 (cont. 2) — Packing: the floor stops recording what did not happen
+
+**Phase:** Phase 0 · **Status:** 7 register items closed · 2 register claims corrected · 4 filed
+
+PK-05, 06, 07, 08, 09, 12, 17. All three review lenses returned **ship** — the first clean
+verdict this session — with four minor findings, all fixed below.
+
+### PK-05 could brick a booking permanently
+
+The session was sealed `Completed` at step 7 and the stage transition attempted at step 8.
+`operation_sessions_one_packing_per_booking` allows **one packing session per booking, ever**, and
+the resume path resumes only an `'In Progress'` one. So a refused transition left a sealed session
+that could not be resumed and a second one the unique index refuses — **that booking could never be
+packed again**, and the refusal an operator eventually saw was a constraint name.
+
+This got more likely today, not less: the other session's `0094` made
+`booking_stage_transitions` the sole door, tightening exactly the transition that can refuse.
+
+The order is inverted — stage first, seal conditional on it landing. A refusal now leaves the
+session open and the next attempt resumes it. Three things I care about in how it was done:
+
+- The refusal is **caught** before being rethrown, so the §4.36 audit row still records that the
+  pass happened, reporting `In Progress` — the state the session is actually in.
+- The file header's write-order argument is **overturned in writing**, including the *new* reverse
+  failure the reorder creates (stage moves, seal write throws) and why it is survivable. That rests
+  on one load-bearing claim — nothing in `src/` reads `operation_sessions` outside that file —
+  which I re-grepped myself rather than take on trust.
+- A **positive control** was run: restoring the old seal condition fails 3 of the 7 new tests. The
+  assertions discriminate.
+
+A new step 4a also refuses an already-spent session *by name* instead of letting Postgres answer
+with a constraint name.
+
+### The rest of the theme
+
+**"Bulk Scan" did not scan.** One press marked every row Packed with no scan and no serial read.
+It is now *Mark Pending Packed*, moves only Pending rows, and the test-scan chips are behind
+`import.meta.env.DEV` so a production build folds them out. **A duplicate scan** beeped success
+while the log behind the modal said "already packed" — the modal now reports the consumer's verdict
+verbatim. **"Print Packing List"** had no `onClick`. And **"All items packed successfully"** in
+success green, before any dispatch, is gone.
+
+**PK-06 is disclosed, not silently fixed** — and that is the honest outcome. The engine cannot
+express a mixed line: `FloorLineInput` carries one outcome per booking line and `validateFloorVerb`
+refuses the same line twice. Rather than invent a field, the page now names each mixed line and
+says plainly that the packed units are recorded and the missing ones are not.
+
+### What the review caught
+
+Four minors, all real:
+
+- **A green tick beside a danger box.** The PK-17 chip fix overcorrected: every row resolved with
+  some MISSING answered `'Complete'`, painted `--success-text` with a checklist — directly beside
+  the danger-bordered box warning about those same missing units. `JobState` is a shared union in
+  `lib/workflow.ts`, so the *state* is right and stays; `packJobChip` now paints it `--warn-text`
+  with the count in the label. Extracted as a pure exported helper and pinned by 4 tests.
+- **A note asserting a negative the data cannot support.** `pack()` returns early on an
+  already-packed row, so scanning a row that was hand-ticked first never upgrades its `via` — such
+  a row *was* scanned and still counted as hand-marked. The note now says what `via` records: how
+  the row was **first** marked.
+- Two comments claiming more than they changed — one presenting unchanged behaviour as part of the
+  fix, and the header's reverse-failure argument being incomplete.
+
+### Register corrections
+
+- **PK-07 was mis-described.** The test-scan chips did not let a unit be "scanned by tapping it" —
+  tapping filled the scan field and the operator still pressed Scan. Same class of defect, one step
+  longer than filed.
+- **PK-08's "only dead enabled button on the page"** was true per-page; the identical control exists
+  on the Return floor (filed as PK-22).
+
+### Filed
+
+**PK-21 is the one worth reading:** `scan_events` and `session_line_movements.scan_event_id` exist
+in the schema *for exactly this purpose* — recording how a unit was verified — and nothing in `src/`
+writes either. So PK-07's provenance lives in session notes, which is prose, not a queryable fact.
+Also PK-20 (the engine cannot express a mixed line, and such a pack has no terminal path), PK-22,
+and PK-23 (PK-12's prop has no caller — deliberately half-wired, and the honest reading until it
+lands).
+
+### Verified
+
+tsc clean; eslint clean; **full suite 124 files / 2634 tests**. Driven in the mock on B-716: the
+control reads "Mark Pending Packed", Print Packing List renders disabled, the false success banner
+is gone, and marking all three units reads "Pack job: Complete · 3/3". Console clean.
+
+**Not driven:** the mixed-line chip (`Complete · N missing`) — the per-unit Missing action sits
+deeper in the row UI than I reached. It is pinned by 4 unit tests over the extracted helper.
+
 ## 2026-09-06 (cont. 3) — Add Equipment could not register a serialised item at all
 
 **Phase:** Phase 0 — **Status:** fixed, driven end to end against real Postgres — no migration

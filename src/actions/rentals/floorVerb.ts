@@ -57,8 +57,18 @@ type CleaningQueueUpdate = Database['public']['Tables']['cleaning_queue_entries'
  *     `cleaning_queue_entries` rows, because Reset has no session at all.
  *  4. **Advance the stage** through `applyBookingTransition`, i.e. an INSERT
  *     into `booking_stage_transitions`, whose trigger (`0021`) is the only
- *     writer of `bookings.stage` — `0021:199` revokes that column from
- *     `authenticated`, so a hand-written UPDATE would be rejected anyway.
+ *     writer of `bookings.stage`.
+ *
+ *     ⚠ Corrected 6 Sep 2026. This said `0021:199` revokes that column from
+ *     `authenticated` "so a hand-written UPDATE would be rejected anyway".
+ *     That revoke is **inert** — `0094`'s header reproduces it: a column-level
+ *     REVOKE cannot subtract from a table-level GRANT, every signed-in user is
+ *     the same Postgres role, and a `PATCH /bookings {stage}` returned 204 and
+ *     skipped three stages. `0094`'s `trg_bookings_stage_write_guard` is what
+ *     actually shuts that door, and it was written today — check
+ *     `schema_migrations` before assuming it is live. Going through the
+ *     transition row was never merely tidy; it was the only thing keeping this
+ *     file honest.
  *
  * ## Law 6 — nothing here reads or writes money
  *
@@ -67,24 +77,68 @@ type CleaningQueueUpdate = Database['public']['Tables']['cleaning_queue_entries'
  * `booking_lines.rate`, `discount_amount`, `supplier_cost` and `markup_amount`
  * are never selected, so a later `select('*')` cannot leak one by accident.
  *
- * ## Why the session is opened, filled, then closed — in that order
+ * ## Why the session is opened, filled, moved, then closed — in that order
  *
  * `0003_operations.sql:174` wants session close to be one transaction, and
  * PostgREST offers no client-side transaction to put it in. Rather than pretend,
  * the write order is chosen so that **every partial failure leaves a truthful
  * residue**: the session is inserted `'In Progress'`, its lines and movements
  * are written into it — which is also what `0003:235` requires, movements may
- * only be written while the parent session is In Progress — and only then is it
- * marked `'Completed'` and the stage moved. A failure half-way leaves an open
- * session someone can see and finish. It never leaves a booking that changed
- * stage on work that was not recorded.
+ * only be written while the parent session is In Progress — then the stage is
+ * moved, and the session is sealed `'Completed'` **last**. A failure half-way
+ * leaves an open session someone can see and finish. It never leaves a booking
+ * that changed stage on work that was not recorded.
+ *
+ * ### The seal moved behind the stage on 6 Sep 2026 (PK-05)
+ *
+ * This deliberately overturns the earlier order, which sealed first and moved
+ * the stage after, on the reading that a sealed-but-unmoved session was the
+ * safer residue. It is not, and for Pack it is unrecoverable.
+ * `operation_sessions_one_packing_per_booking` (`0003:152`) is a unique index
+ * on `booking_id where operation = 'Packing'` — one Packing session per
+ * booking, ever — and step 4 resumes only a session whose state is still
+ * `'In Progress'`. So a transition refused *after* the seal left a `'Completed'`
+ * session that cannot be resumed, a booking still at `Booked`, and a second
+ * session the unique index refuses: the booking could never be packed again,
+ * and the refusal an operator eventually saw was a constraint name.
+ *
+ * Sealing last inverts that. A refused transition now leaves the session open,
+ * the next attempt resumes it, and nothing has been spent.
+ *
+ * The reverse failure is NEW and worth stating precisely, because the old order
+ * could not produce it: `safeUpdate` throws, so if the stage moves and the seal
+ * write then fails, the verb throws on a booking that HAS advanced, leaving its
+ * session `'In Progress'` for a stage the job is finished with. Two questions
+ * follow, and both were checked rather than assumed:
+ *
+ *   - Is the session recoverable? It is not spent — the unique index counts
+ *     rows, not states, and step 4 will resume it. But the retry re-enters at
+ *     the new stage, so whether `runFloorVerb` accepts it depends on the job's
+ *     own gate; for Pack it will not, and the session simply stays open.
+ *   - Does an open session harm anything? No, and this is the load-bearing
+ *     claim: **nothing in `src/` reads `operation_sessions` outside this
+ *     file** — verified by grep on 6 Sep 2026; every other mention is a comment
+ *     naming the table, not a query. So an orphaned open session gates no
+ *     screen, blocks no verb, and is visible to whoever looks at the row.
+ *     `operation_sessions_one_in_progress` would refuse a SECOND open session
+ *     for the same booking and operation, and nothing needs one.
+ *
+ * That is a strictly better trade than the one it replaced — an orphaned open
+ * row against a permanently unpackable booking — but it is a trade, not a free
+ * win, and the day something starts reading `operation_sessions` it needs
+ * re-checking.
+ *
+ * What did **not** change is the half of the order the residue argument is
+ * really about: lines and movements are still written before either the stage
+ * or the seal, so no booking advances on work that was not recorded.
  *
  * That residue is only useful if the next attempt picks it up, so step 4 resumes
  * an `'In Progress'` session instead of opening a second one —
  * `operation_sessions_one_in_progress` (`0003:150`) would refuse a second one
- * anyway. And a session is closed only when the verb's own close gate is met,
- * except where the operation is explicitly multi-session; see
- * `CLOSES_WHILE_INCOMPLETE`, which is where the Pack case is argued.
+ * anyway. And a session is closed only when the verb's own close gate is met
+ * *and* the stage move it belongs to actually landed, except where the operation
+ * is explicitly multi-session; see `CLOSES_WHILE_INCOMPLETE`, which is where the
+ * Pack case is argued.
  *
  * ## What this file deliberately does NOT do
  *
@@ -368,16 +422,21 @@ const TERMINAL_LINE_STATES: Record<keyof typeof LINE_TABLE, readonly string[]> =
 /**
  * May this verb's session close while lines are still short of the states above?
  *
- * **Pack: no, and this is not a preference.** `0003:174` — "a Packing session
+ * **Pack: no, and this is not a preference.** `0003:170` — "a Packing session
  * may not close unless every required `packing_lines` row is Packed,
  * Missing-with-reason, or Replaced" — and `operation_sessions_one_packing_per_booking`
- * (`0003:156`) is a unique index allowing a booking exactly **one** Packing
- * session, ever. Closing a partial pack therefore spends the only session the
- * booking is allowed and leaves it permanently unpackable: the next Complete
- * Packing is refused by a unique-constraint violation, not by any rule an
- * operator can read. The session stays `'In Progress'` and the next pack resumes
- * it — which is also what `0003:235` requires, since movements may only be
- * written while the parent session is In Progress.
+ * (`0003:152`, corrected 6 Sep 2026 from `:156`, which is the unrelated
+ * forward-only-session comment) is a unique index allowing a booking exactly
+ * **one** Packing session, ever. Closing a partial pack therefore spends the
+ * only session the booking is allowed and leaves it permanently unpackable: the
+ * next Complete Packing is refused by a unique-constraint violation, not by any
+ * rule an operator can read. The session stays `'In Progress'` and the next pack
+ * resumes it — which is also what `0003:235` requires, since movements may only
+ * be written while the parent session is In Progress.
+ *
+ * That same index is why the stage move is now attempted **before** the seal
+ * rather than after it — this constant closed one route to a spent Packing
+ * session and PK-05 closed the other. See the header.
  *
  * **Handover and Return: yes.** They are multi-session by design — `0003:129`,
  * the morning collection is 1 and the evening collection is 2 — so a collection
@@ -787,6 +846,37 @@ export async function runFloorVerb(
    *     returns the payload instead of a server-assigned row. */
   const latest = await readLatestSession(booking.id, operation)
   const resumed = latest !== null && latest.state === 'In Progress' ? latest : null
+
+  /* 4a — a Packing session that cannot be resumed is the only one this booking
+   *      will ever get, already spent.
+   *
+   *      `operation_sessions_one_packing_per_booking` (`0003:152`) is a unique
+   *      index on `booking_id where operation = 'Packing'`, so the insert below
+   *      would be refused by Postgres with a constraint name and nothing an
+   *      operator can act on. Refused here by name instead — Law 12: a floor
+   *      that cannot pack a booking must be told which fact stops it.
+   *
+   *      The way this codebase produced the state is an earlier pack that sealed
+   *      its session and then failed to move the stage — the failure PK-05
+   *      closed by sealing last. A session written out of band (a seed, an
+   *      import) reaches it too, which is the other reason the message has to
+   *      say what it found rather than assume how it got there.
+   *
+   *      Either way the booking stays stranded: `0003:156-158`
+   *      makes `session_state` forward-only and admits a reversal only through a
+   *      Manager `override_records` row, and nothing in `src/` writes that table
+   *      (it appears only in the generated types). `TODO(decision)` — how a
+   *      booking already in this state is recovered, and by whom. */
+  if (job === 'Pack' && latest !== null && resumed === null) {
+    throw new Error(
+      `${booking.booking_no} already holds a Packing session (no. ${latest.session_no}, ${latest.state}), and a ` +
+        'booking is allowed exactly one, ever (0003:152). Only an In Progress session can be resumed, and a ' +
+        'second one would be refused by the database. Nothing was written. Reopening that session is a ' +
+        'backwards move on session_state, which 0003:156 allows only as a Manager override — a path this ' +
+        'application does not yet have.',
+    )
+  }
+
   const sessionId = resumed?.id ?? generateClientUuid()
 
   if (resumed === null) {
@@ -886,11 +976,56 @@ export async function runFloorVerb(
   const heldBy = await linesShortOfTerminal(job, live)
   const complete = heldBy.length === 0
 
-  /* 7 — close the session, unless this is the verb that may not close short.
-   *     See `CLOSES_WHILE_INCOMPLETE`: sealing a partial pack would spend the
-   *     one Packing session the booking is allowed. Only a closed session is a
-   *     completed fact; an open one is work someone can still see and finish. */
-  const closed = complete || CLOSES_WHILE_INCOMPLETE[job]
+  /* 7 — the stage, through the transition trigger and nothing else — and
+   *     BEFORE the session is sealed. The header argues the order (PK-05); the
+   *     short version is that a transition refused after the seal spends the one
+   *     Packing session a booking is allowed (`0003:152`) and the booking can
+   *     never be packed again.
+   *
+   *     A refusal arrives two ways and both land in this catch: `advanceStage`
+   *     throws when `planTransition` refuses, and `idempotentInsert` throws when
+   *     the database does — `0021`'s from_stage / no-skip / causal-order checks,
+   *     `0090`'s R-06 money gate on the move to On Rent, or the insert policy
+   *     `0021` gave the table.
+   *
+   *     `0094` (6 Sep 2026) does not make this call more likely to be refused:
+   *     it guards *direct* writes to `bookings.stage`, and exempts
+   *     `apply_booking_stage_transition`, which is SECURITY DEFINER and so
+   *     arrives as `postgres`. What it removes is the workaround. Before it, a
+   *     refused transition could still be papered over with a PATCH on
+   *     `bookings.stage`, because `0021`'s column REVOKE was inert against the
+   *     table-level GRANT. It is not any more, so a refusal here is now simply a
+   *     booking that did not move — which is exactly why what it costs matters.
+   *
+   *     It is caught rather than thrown straight out because two things must
+   *     still happen first: the session must not be sealed on a move that did not
+   *     land, and the pass that DID happen must still leave its audit row. It is
+   *     rethrown at 8b, once both are true. */
+  let stage: { from: BookingStatus; to: BookingStatus } | null = null
+  let stageMoved = false
+  let stageRefusal: Error | null = null
+  if (complete) {
+    try {
+      stage = await advanceStage(job, booking, ctx, actionUuid, occurredAt, input.overrideReason)
+      stageMoved = true
+    } catch (err) {
+      stageRefusal = err instanceof Error ? err : new Error(String(err))
+    }
+  }
+
+  /* 8 — seal the session, and only for a reason that is true of it.
+   *
+   *     Two reasons, never conflated. A verb whose every line is terminal seals
+   *     because the stage it sets has landed. A verb that may close short seals
+   *     because a partial collection is a finished collection — Handover and
+   *     Return only, which `0003:129` makes multi-session; see
+   *     `CLOSES_WHILE_INCOMPLETE`, where the Pack case is argued.
+   *
+   *     A complete verb whose transition was refused qualifies under neither, so
+   *     it stays `'In Progress'` and the next attempt resumes it. Only a closed
+   *     session is a completed fact; an open one is work someone can still see
+   *     and finish. */
+  const closed = complete ? stageMoved : CLOSES_WHILE_INCOMPLETE[job]
   if (closed) {
     await safeUpdate(
       'operation_sessions',
@@ -938,10 +1073,21 @@ export async function runFloorVerb(
     })
   }
 
-  /* 8 — the stage, through the transition trigger and nothing else. */
-  const stage = complete
-    ? await advanceStage(job, booking, ctx, actionUuid, occurredAt, input.overrideReason)
-    : null
+  /* 8b — the refused transition, rethrown now that the session sits in its
+   *      truthful state and the pass it recorded has its audit row.
+   *
+   *      This is still a failure and the caller still sees one — `success: true`
+   *      on a booking that did not move would be the "success announced before
+   *      dispatch" this file exists to prevent. What the message adds is the one
+   *      fact the floor needs next: the session is open, so pressing Complete
+   *      again resumes it. */
+  if (stageRefusal !== null) {
+    throw new Error(
+      `${stageRefusal.message} The ${operation} session is still open, so the next ${job} on ` +
+        `${booking.booking_no} resumes it rather than opening a second one — nothing has been spent.`,
+      { cause: stageRefusal },
+    )
+  }
 
   /* 9 — `bookings.actual_return_at` (0002:33,86): set once, by the session
      that moved the booking to Returned, to the instant that session recorded.

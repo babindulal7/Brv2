@@ -335,6 +335,61 @@ describe('Rulings §3 — OperationsShell is a launcher, not a modal host', () =
 })
 
 /**
+ * **PK-12 — the launcher may not report a count it never made.**
+ *
+ * `stepDotState`'s open answers (not-started / in-progress / done) are all
+ * counts. The launcher passed `{ done: 0, total: 1 }` into it, so the step the
+ * booking was actually AT read "Not started" unconditionally — including on a
+ * booking with a Packing session half-scanned. Law 12: never render a
+ * fabricated fact.
+ */
+describe('PK-12 — the entry step reports progress it was given, and nothing more', () => {
+  const packRow = () => buttons().find((b) => (b.textContent ?? '').includes('Packing'))
+
+  it('says the step is Open, not Not started, when no progress was supplied', async () => {
+    await mount(<OperationsShell bookingNo="B-715" bookingStatus="Booked" isOpen onClose={() => {}} />)
+    expect(packRow()?.textContent).toContain('Open')
+    expect(packRow()?.textContent).not.toContain('Not started')
+  })
+
+  it('reports In progress once the caller supplies a real part-done count', async () => {
+    await mount(
+      <OperationsShell
+        bookingNo="B-715"
+        bookingStatus="Booked"
+        isOpen
+        onClose={() => {}}
+        progress={{ Pack: { done: 3, total: 8 } }}
+      />,
+    )
+    expect(packRow()?.textContent).toContain('In progress')
+  })
+
+  it('reports Not started only when the caller counted zero of something', async () => {
+    await mount(
+      <OperationsShell
+        bookingNo="B-715"
+        bookingStatus="Booked"
+        isOpen
+        onClose={() => {}}
+        progress={{ Pack: { done: 0, total: 8 } }}
+      />,
+    )
+    expect(packRow()?.textContent).toContain('Not started')
+  })
+
+  it('leaves the blocked and already-past rows alone — neither answer reads a count', async () => {
+    // At Packed: Pack is behind the booking (done), Return is ahead of it
+    // (blocked). Neither is affected by the absence of a progress map.
+    await mount(<OperationsShell bookingNo="B-715" bookingStatus="Packed" isOpen onClose={() => {}} />)
+    expect(packRow()?.textContent).toContain('Done')
+    const ret = buttons().find((b) => (b.textContent ?? '').includes('Return & Inspection'))
+    expect(ret?.disabled).toBe(true)
+    expect(ret?.textContent).toContain('Not open yet')
+  })
+})
+
+/**
  * These five used to assert only that the route's booking number appeared
  * somewhere on the page. It did — in the title — while the body rendered the
  * FX3 Documentary Package's 18 seeded items underneath it, so a second booking

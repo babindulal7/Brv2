@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
+import type { IconName } from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
 import { FloorAside, floorPlacements } from '../operations/FloorAside'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
@@ -8,7 +9,8 @@ import { PageBody } from '../../components/ui/PageBody'
 import { STATUS } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
 import type { BookingStatus, JobState } from '../../lib/workflow'
-import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
+import { BarcodeScannerModal, type ScanOutcome } from '../../components/ui/BarcodeScannerModal'
+import { Unavailable } from '../../components/ui/Unavailable'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
 import { captureError } from '../../lib/monitoring'
@@ -108,7 +110,7 @@ const td = { height: 'var(--row-min-h)', padding: '8px 9px', fontSize: 'var(--t-
  * onto; `assetId` is `product_units.id`, what `session_line_movements.unit_id`
  * needs (null on quantity rows — a movement row is never invented for them).
  */
-interface PackRow {
+export interface PackRow {
   key: string
   lineId: string
   assetId: string | null
@@ -121,9 +123,31 @@ interface PackRow {
   group: string
 }
 
-interface Mark {
+export interface Mark {
   state: 'Packed' | 'Missing'
   packedAtIso?: string
+  /**
+   * PK-07 — how this row reached Packed: a scan through the scanner modal, or
+   * a hand mark (the row checkbox, or Mark Pending Packed).
+   *
+   * **Local to this screen**, and that is the defect rather than the design.
+   * The schema has the place for it: `scan_events` (`0003:573`) takes a
+   * `context 'packing'` scan with its code, code type, resolved unit, device
+   * and result, and `session_line_movements.scan_event_id` (`0003:200`) exists
+   * to point a movement at the scan that produced it. **Nothing writes one.**
+   * The string `scan_events` appears nowhere in `src/` outside `src/types/`,
+   * and `FloorLineInput` carries no channel for a scan event, so this screen
+   * has nothing to send even if it minted one. `writePackingLine` says as much about its own
+   * stand-in: "the caller named units" is read as "the line was scanned", and
+   * its comment admits that is "wrong for a serialised line packed without
+   * scanning" — which is exactly the row this flag marks.
+   *
+   * So the difference is kept where it can be: on this screen, and in the
+   * session notes at dispatch. `TODO(decision)`, reported with this batch —
+   * who writes `scan_events`, and whether the floor verbs should take the
+   * scan event id alongside `unitIds`.
+   */
+  via?: 'scan' | 'manual'
   reason?: string
 }
 
@@ -155,7 +179,7 @@ function packableLines(lines: readonly FloorLine[]): FloorLine[] {
   return lines.filter((l) => !NON_PACKABLE_LINE_TYPES.has(l.lineType) && !(l.lineType === 'Bundle' && parentIds.has(l.id)))
 }
 
-function buildRows(floor: FloorBooking): PackRow[] {
+export function buildRows(floor: FloorBooking): PackRow[] {
   const lineById = new Map(floor.lines.map((l) => [l.id, l]))
   const groupOf = (line: FloorLine): string => {
     const parent = line.parentLineId !== null ? lineById.get(line.parentLineId) : undefined
@@ -202,6 +226,20 @@ function buildRows(floor: FloorBooking): PackRow[] {
 }
 
 /**
+ * One line the operator resolved BOTH ways — some units packed, some missing.
+ *
+ * PK-06's shape, kept so the screen can say so before the dispatch rather than
+ * only in a note nobody reads afterwards.
+ */
+interface MixedLine {
+  /** `booking_lines.id` — the stable key; two lines can share a product name. */
+  lineId: string
+  lineName: string
+  missing: number
+  total: number
+}
+
+/**
  * Collapse the operator's marks back onto booking lines — the dispatch payload.
  *
  * One entry per line (`validateFloorVerb` refuses duplicates), and a line
@@ -212,19 +250,66 @@ function buildRows(floor: FloorBooking): PackRow[] {
  *    joined (each already ≥ 10 chars by the gate, so the join is too);
  *  - any Packed marks → `outcome: 'done'` carrying the scanned
  *    `product_units.id`s (one movement row each) and the moved quantity.
- *    A MIXED line (some packed, some missing) lands as 'done' short of its
- *    required qty — `packing_lines.state = 'Partial'` per 0003:289 — because
- *    `FloorLineInput` carries one outcome per line and dropping the packed
- *    units' movements would claim less happened than did. The missing units'
- *    reasons ride the session notes so they are not dropped; the line stays
- *    non-terminal, the session stays In Progress, and the stage is held —
- *    all of which `runFloorVerb` reports truthfully in `stageHeldBy`.
+ *
+ * ## PK-06 — a mixed line cannot be told to the engine, and this says so
+ *
+ * `FloorLineInput` carries **one** `outcome` for the whole line, and
+ * `validateFloorVerb` refuses the same `bookingLineId` twice ("Each line table
+ * holds one row per booking line"), so a line with three units packed and one
+ * missing has no truthful encoding today:
+ *
+ *  - as `'done'` (what this does) `writePackingLine` derives the line's state
+ *    from the packed count alone — `'Partial'` wherever that count is short of
+ *    `qty_required` (0003:289) — and writes **no** `missing_reason`, while
+ *    `writeUnitStates` patches only the units named in `unitIds`, so the
+ *    missing unit is left exactly as it was and is never written
+ *    `unit_state 'Missing'`. The shortage exists nowhere but the notes.
+ *  - as `'missing'` it would be worse: `writeUnitStates`' missing branch takes
+ *    the same `unitIds` and would stamp `'Missing'` on the units that were
+ *    **packed**, and the movements for them would not be written at all.
+ *
+ * So the packed units are recorded (they were really packed), the missing ones
+ * ride `mixedNotes` where they can at least be read, and `mixed` is returned so
+ * the rail can state the gap before the operator dispatches. `TODO(decision)`,
+ * reported with this batch: `FloorLineInput` needs a per-unit missing channel
+ * (e.g. `missingUnits?: { unitId, reason }[]`) for Pack. Until it exists this
+ * page must not pretend the shortage was recorded — and a mixed line left short
+ * of its required quantity is `'Partial'`, which is not one of
+ * `TERMINAL_LINE_STATES.Pack`, so the booking stays at Booked.
  */
-function buildPackLines(
+/**
+ * How a `JobState` is PAINTED on the Pack header — which is not the same
+ * question as what the state IS.
+ *
+ * `JobState` lives in `lib/workflow.ts` and is shared with Handover, Return and
+ * the case list, so "finished with exceptions" is not a member to add for one
+ * screen (Law 1). But a pack where every row is resolved and some are MISSING
+ * is `'Complete'` by that union — and painting it `--success-text` with a
+ * checklist put a green tick in the header directly beside the danger-bordered
+ * box this same screen renders to say units are missing. Two answers to one
+ * question, in one glance.
+ *
+ * The state is unchanged; the chip stops calling it a success. Word, icon and
+ * tone move together and the count is in the LABEL (Law 11), so nothing here
+ * asks the reader to decode a colour.
+ */
+export function packJobChip(
+  state: JobState,
+  missingCount: number,
+): { tone: string; icon: IconName; label: string } {
+  if (state === 'Complete' && missingCount > 0) {
+    return { tone: 'var(--warn-text)', icon: 'alert_triangle', label: `Complete · ${missingCount} missing` }
+  }
+  if (state === 'Complete') return { tone: 'var(--success-text)', icon: 'checklist', label: state }
+  if (state === 'In Progress') return { tone: 'var(--progress-text)', icon: 'refresh', label: state }
+  return { tone: 'var(--text2)', icon: 'dot', label: state }
+}
+
+export function buildPackLines(
   lines: readonly FloorLine[],
   rows: readonly PackRow[],
   marks: Record<string, Mark>,
-): { payload: FloorLineInput[]; mixedNotes: string[] } {
+): { payload: FloorLineInput[]; mixedNotes: string[]; mixed: MixedLine[] } {
   const byLine = new Map<string, PackRow[]>()
   for (const r of rows) {
     const bucket = byLine.get(r.lineId)
@@ -234,6 +319,7 @@ function buildPackLines(
 
   const payload: FloorLineInput[] = []
   const mixedNotes: string[] = []
+  const mixed: MixedLine[] = []
 
   for (const line of lines) {
     const lineRows = byLine.get(line.id) ?? []
@@ -254,27 +340,58 @@ function buildPackLines(
     }
 
     const scanned = packed.filter((r) => r.assetId !== null)
+    /*
+     * PK-17 — `serials` used to be `r.serial ?? ''`, writing an EMPTY STRING
+     * into `session_line_movements.serial` for a unit that has none. An empty
+     * string is not a serial; it is a serial-shaped hole that reads as data.
+     *
+     * `scannedUnits` pairs the two arrays positionally, so a per-row null is
+     * not expressible — the array is sent only when every scanned row has a
+     * real serial, and omitted otherwise. Nothing identifying is lost either
+     * way: `unitIds` carries `product_units.id`, which is the identity the
+     * movement row is keyed on, and the serial is a convenience beside it.
+     */
+    const serials = scanned.map((r) => r.serial).filter((s): s is string => s !== null && s.trim() !== '')
+    const everySerialKnown = serials.length === scanned.length
+
+    /*
+     * PK-17 — `location` was read onto every row by `buildRows` and then never
+     * sent, so `packing_lines.warehouse_location` was null on every pack this
+     * screen has ever dispatched. It is one text column for the whole line, so
+     * it is sent only when the packed rows agree on one shelf; two shelves on
+     * one line is not a fact this column can hold, and joining them would
+     * invent a location string nobody typed.
+     */
+    const locations = [
+      ...new Set(packed.map((r) => r.location).filter((l): l is string => l !== null && l.trim() !== '')),
+    ]
+    const [onlyLocation] = locations
+
     payload.push({
       bookingLineId: line.id,
       ...(scanned.length > 0
         ? {
             unitIds: scanned.map((r) => r.assetId as string),
-            serials: scanned.map((r) => r.serial ?? ''),
+            ...(everySerialKnown ? { serials } : {}),
           }
         : {}),
       qty: packed.reduce((n, r) => n + r.qty, 0),
+      ...(locations.length === 1 && onlyLocation !== undefined ? { warehouseLocation: onlyLocation } : {}),
     })
 
     if (missing.length > 0) {
       const lineName = line.productName ?? line.description ?? line.id
+      mixed.push({ lineId: line.id, lineName, missing: missing.length, total: lineRows.length })
       mixedNotes.push(
-        `${lineName}: ${missing.length} of ${lineRows.length} unit(s) missing — ` +
+        `${lineName}: ${missing.length} of ${lineRows.length} unit(s) reported missing on the floor. ` +
+          'They are NOT recorded as missing — one outcome per booking line, so this line is written ' +
+          'from the packed units only. Units and reasons — ' +
           missing.map((r) => `${r.serial ?? r.name}: ${(marks[r.key]?.reason ?? '').trim()}`).join('; '),
       )
     }
   }
 
-  return { payload, mixedNotes }
+  return { payload, mixedNotes, mixed }
 }
 
 /** The AD span between two instants in whole days, floored at 1 (Law 9's days-explicit floor). */
@@ -399,13 +516,42 @@ export default function PackingWorkspace() {
   const pct = totalUnits > 0 ? Math.round((packedUnits / totalUnits) * 100) : 0
 
   /*
+   * PK-07 — how the packed rows got there. The two tallies are the only place
+   * this distinction survives: see the note on `Mark.via` for why the database
+   * cannot tell a scanned unit from a hand-ticked one.
+   */
+  const scannedRows = packedRows.filter((r) => marks[r.key]?.via === 'scan')
+  const handMarkedRows = packedRows.filter((r) => marks[r.key]?.via !== 'scan')
+  const handMarkedUnits = handMarkedRows.reduce((n, r) => n + r.qty, 0)
+
+  /*
    * §1.5 — Pack runs at status **Booked**; the badge shows the CANONICAL stage
    * (never a seventh name like "Preparing"). Mid-pack is the Pack *job* being
    * In Progress — a separate axis, a separate chip.
    */
   const stage = (floor?.stage ?? 'Booked') as BookingStatus
+  /*
+   * PK-17 — this chip states THE CHECKLIST ON THIS SCREEN, and the three §1.5
+   * names are used for it: nothing resolved, some rows still pending, every row
+   * resolved. It is not read from `operation_sessions`; nothing is recorded
+   * until Complete Packing, which the line beneath the chip and the footer both
+   * say.
+   *
+   * Two readings were wrong before. `packedRows.length === 0` answered "Not
+   * Started" for a booking where every single unit had been marked MISSING —
+   * the operator's whole shift, reported as untouched. And a booking with every
+   * row resolved but one of them missing answered "In Progress", because the
+   * Complete branch required `missingRows.length === 0` — and it stayed there
+   * however the operator resolved the rest of the checklist.
+   */
   const jobState: JobState =
-    packedRows.length === 0 ? 'Not Started' : pendingRows.length === 0 && missingRows.length === 0 ? 'Complete' : 'In Progress'
+    packedRows.length === 0 && missingRows.length === 0
+      ? 'Not Started'
+      : pendingRows.length > 0
+        ? 'In Progress'
+        : 'Complete'
+
+  const jobChip = packJobChip(jobState, missingRows.length)
 
   /* ── the completion gate — a checklist, every condition named ────────────
    * The same conditions `runFloorVerb` and the 0003 close gates enforce,
@@ -476,9 +622,21 @@ export default function PackingWorkspace() {
     return [...byGroup.entries()].map(([name, groupRows]) => ({ name, rows: groupRows }))
   }, [rows])
 
+  /**
+   * The exact payload Complete Packing would send, computed as the operator
+   * marks rather than only at dispatch — so the rail can state what will and
+   * will not be recorded (PK-06) *before* the write, not in a note discovered
+   * afterwards. `completePacking` sends this same value; there is one
+   * derivation, so the disclosure and the dispatch cannot disagree.
+   */
+  const dispatchPlan = useMemo(
+    () => (floor ? buildPackLines(floor.lines, rows, marks) : { payload: [], mixedNotes: [], mixed: [] }),
+    [floor, rows, marks],
+  )
+
   /* ── mark helpers ────────────────────────────────────────────────────── */
-  const markPacked = (key: string) =>
-    setMarks((p) => ({ ...p, [key]: { state: 'Packed', packedAtIso: new Date().toISOString() } }))
+  const markPacked = (key: string, via: 'scan' | 'manual') =>
+    setMarks((p) => ({ ...p, [key]: { state: 'Packed', packedAtIso: new Date().toISOString(), via } }))
   const markMissing = (key: string) => setMarks((p) => ({ ...p, [key]: { state: 'Missing', reason: '' } }))
   const clearMark = (key: string) =>
     setMarks((p) => {
@@ -489,26 +647,82 @@ export default function PackingWorkspace() {
   const setReason = (key: string, reason: string) =>
     setMarks((p) => ({ ...p, [key]: { ...(p[key] ?? { state: 'Missing' as const }), reason } }))
 
-  const pack = (key: string) => {
+  /**
+   * Tick one row Packed and say what that did — the SAME answer to the scanner
+   * modal and to the log in the rail.
+   *
+   * PK-09: this used to return nothing, and the modal assumed every identity
+   * match was a fresh mark. On a second scan of an already-ticked unit the
+   * modal beeped success and said "marked", while this function wrote "already
+   * packed" into the rail the modal was covering — the operator was told the
+   * opposite of what was recorded, and the record was the one they could not
+   * see. The verdict now leaves here once and is rendered wherever it is
+   * needed.
+   */
+  const pack = (key: string, via: 'scan' | 'manual'): ScanOutcome => {
     const row = rows.find((r) => r.key === key)
-    if (!row) return
-    if (stateOf(key) === 'Packed') {
-      setScanLog((p) => [`• ${row.name} already packed`, ...p].slice(0, 5))
-      return
+    if (!row) {
+      setScanLog((p) => [`✕ ${key} is not on this checklist`, ...p].slice(0, 5))
+      return { ok: false, message: 'is not on this booking checklist — nothing was ticked.' }
     }
-    markPacked(key)
-    setScanLog((p) => [`✓ ${row.name} packed`, ...p].slice(0, 5))
+    const current = stateOf(key)
+    if (current === 'Packed') {
+      setScanLog((p) => [`• ${row.name} was already ticked — nothing changed`, ...p].slice(0, 5))
+      return { ok: false, message: 'was already ticked packed — nothing changed.' }
+    }
+
+    markPacked(key, via)
+    const how = via === 'scan' ? 'scanned and ticked packed' : 'ticked packed by hand'
+
+    if (current === 'Missing') {
+      // The unit turned up. Say that the reason is gone rather than losing it
+      // silently — `markPacked` replaces the whole mark.
+      setScanLog((p) => [`✓ ${row.name} ${how} — it was marked missing, so that reason is dropped`, ...p].slice(0, 5))
+      return {
+        ok: true,
+        message: `${how}. It was marked missing, so that reason is dropped. Nothing is recorded until Complete Packing.`,
+      }
+    }
+
+    setScanLog((p) => [`✓ ${row.name} ${how}`, ...p].slice(0, 5))
+    return { ok: true, message: `${how} — nothing is recorded until Complete Packing.` }
   }
 
-  const packAll = () => {
+  /**
+   * PK-07 — this is what the button labelled **"Bulk Scan"** did: mark every
+   * row Packed, with no scan, no serial read and no verification of any kind.
+   * A control named for scanning that does not scan is a claim about *how* the
+   * units were checked, and it was false for every unit it touched.
+   *
+   * The capability survives — a rack of forty identical cables is a real floor
+   * case — under a name that says what it does, and it no longer overwrites a
+   * scanned mark: a row someone scanned keeps `via: 'scan'` and its own packed
+   * time. Only Pending rows move.
+   *
+   * Be exact about which half of that is new: leaving a MISSING row alone is
+   * not a change, the old `packAll` skipped those too. What changed is the
+   * name, and that an existing `'scan'` mark is no longer overwritten with a
+   * hand mark.
+   */
+  const markPendingPacked = () => {
     const at = new Date().toISOString()
+    const pending = rows.filter((r) => marks[r.key] === undefined)
+    if (pending.length === 0) {
+      // Say so rather than doing nothing quietly — a press with no visible
+      // effect reads as a control that failed.
+      setScanLog((p) => ['• Nothing is pending — no rows changed', ...p].slice(0, 5))
+      return
+    }
     setMarks((p) => {
       const next = { ...p }
       for (const r of rows) {
-        if (next[r.key]?.state !== 'Missing') next[r.key] = { state: 'Packed', packedAtIso: at }
+        if (next[r.key] === undefined) next[r.key] = { state: 'Packed', packedAtIso: at, via: 'manual' }
       }
       return next
     })
+    setScanLog((p) =>
+      [`• ${pending.length} row${pending.length === 1 ? '' : 's'} ticked packed by hand — no scan`, ...p].slice(0, 5),
+    )
   }
 
   const scannableUnits = rows.map((r) => ({
@@ -531,8 +745,29 @@ export default function PackingWorkspace() {
     setDispatchError(null)
     setDispatching(true)
 
-    const { payload, mixedNotes } = buildPackLines(floor.lines, rows, marks)
-    const notes = [sessionNotes.trim(), ...mixedNotes].filter((n) => n !== '').join('\n')
+    const { payload, mixedNotes } = dispatchPlan
+    /*
+     * PK-07 — the session notes are the only column that can hold how the
+     * units were verified, so the count goes there rather than nowhere. It is
+     * a statement about this session, in the same free-text field the mixed-line
+     * shortages already ride (`operation_sessions.notes`, 0003:80).
+     * `TODO(decision)`: a real column on `packing_lines` or
+     * `session_line_movements` would make it queryable; a note is not.
+     */
+    const verificationNotes =
+      handMarkedRows.length === 0
+        ? []
+        : [
+            /* "without a scan" would be a claim this data cannot make. `pack()`
+               returns early on a row that is already Packed, so scanning a row
+               that was hand-ticked first never upgrades its `via` to 'scan' —
+               such a row WAS scanned and still counts here. The wording says
+               what `via` actually records: how the row was FIRST marked. */
+            `Verification: ${scannedRows.length} of ${packedRows.length} packed row(s) were first marked by scan; ` +
+              `${handMarkedRows.length} row(s) (${handMarkedUnits} unit(s)) were first ticked by hand. ` +
+              'A later scan of an already-packed row is not recorded — see Mark.via.',
+          ]
+    const notes = [sessionNotes.trim(), ...mixedNotes, ...verificationNotes].filter((n) => n !== '').join('\n')
 
     /*
      * ⚠ `navigate` is INSIDE `.then`, and only when the STAGE MOVED. It used
@@ -680,13 +915,13 @@ export default function PackingWorkspace() {
                       borderRadius: 'var(--r-badge)',
                       border: '1px solid var(--border)',
                       background: 'var(--card2)',
-                      color: jobState === 'Complete' ? 'var(--success-text)' : jobState === 'In Progress' ? 'var(--progress-text)' : 'var(--text2)',
+                      color: jobChip.tone,
                       fontSize: 'var(--t-meta)',
                       fontWeight: 700,
                     }}
                   >
-                    <Icon name={jobState === 'Complete' ? 'checklist' : jobState === 'In Progress' ? 'refresh' : 'dot'} size={11} />
-                    Pack job: {jobState}
+                    <Icon name={jobChip.icon} size={11} />
+                    Pack job: {jobChip.label}
                   </span>
                 </div>
                 <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
@@ -716,7 +951,22 @@ export default function PackingWorkspace() {
               </div>
 
               <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
-                <Button icon="file">Print Packing List</Button>
+                {/*
+                  PK-08 — this carried no `onClick` at all. It painted as a live
+                  secondary button, depressed under the `press` class, and did
+                  nothing: an operator who pressed it and walked to the printer
+                  had no way to tell it from a print that failed.
+                  `Unavailable` + `disabled` is the house treatment for an
+                  unbuilt control (`Header.tsx`'s Notifications and Help,
+                  `Warehouses.tsx`'s Print Labels), and it states the reason on
+                  hover AND on a long-press, which is what the warehouse tablet
+                  has.
+                */}
+                <Unavailable reason="Printing a packing list is not built. Nothing in the app generates a packing-list document, and there is no print stylesheet, so this would send the whole workspace — filters, rails and buttons — to the printer instead of a list.">
+                  <Button icon="file" disabled>
+                    Print Packing List
+                  </Button>
+                </Unavailable>
                 {/*
                  * The identity is the signed-in operator or there is no dispatch.
                  * `saveDraft` is still an unimplemented stub the dispatcher
@@ -873,7 +1123,16 @@ export default function PackingWorkspace() {
                   bodyStyle={{ padding: 0 }}
                   action={
                     <>
-                      <Button icon="search" onClick={packAll}>Bulk Scan</Button>
+                      {/*
+                        PK-07 — was `Bulk Scan`, wearing the search glyph and
+                        running `packAll`. It scanned nothing, read no serial
+                        and checked nothing: one press took 0/3 to 3/3. The
+                        name now matches the act, and the act is narrower —
+                        only Pending rows move, so a scan is never overwritten
+                        by a hand mark. What it does is counted under Packing
+                        Summary, where the split is visible before dispatch.
+                      */}
+                      <Button icon="checklist" onClick={markPendingPacked}>Mark Pending Packed</Button>
                       <Button icon="queues" onClick={() => setShowScanner(true)}>Scan Barcode</Button>
                       <Button icon="queues" onClick={() => setShowScanner(true)}>Scan QR</Button>
                     </>
@@ -934,7 +1193,10 @@ export default function PackingWorkspace() {
                                 checked={s === 'Packed'}
                                 aria-label={`Pack ${r.name}`}
                                 style={{ width: 22, height: 22, marginTop: 2, flexShrink: 0 }}
-                                onChange={() => (s === 'Packed' ? clearMark(r.key) : pack(r.key))}
+                                onChange={() => {
+                                  if (s === 'Packed') clearMark(r.key)
+                                  else pack(r.key, 'manual')
+                                }}
                               />
                               <span style={{ minWidth: 0, flex: 1 }}>
                                 <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -1004,7 +1266,10 @@ export default function PackingWorkspace() {
                                     type="checkbox"
                                     checked={s === 'Packed'}
                                     aria-label={`Pack ${r.name}`}
-                                    onChange={() => (s === 'Packed' ? clearMark(r.key) : pack(r.key))}
+                                    onChange={() => {
+                                      if (s === 'Packed') clearMark(r.key)
+                                      else pack(r.key, 'manual')
+                                    }}
                                   />
                                 </td>
                                 <td style={td}>
@@ -1064,10 +1329,23 @@ export default function PackingWorkspace() {
                     </div>
                   )}
 
+                  {/*
+                    PK-17 — this read "All items packed successfully. Ready for
+                    Pickup / Delivery." while every tick was still local state:
+                    no session existed, no line row had been written, and the
+                    booking was still at Booked, where no handover can happen.
+                    It announced the outcome of a dispatch that had not been
+                    attempted — in the success green, on the screen whose whole
+                    job is telling recorded from not-recorded.
+
+                    It now states the checklist, in the neutral tone, and names
+                    what is still outstanding.
+                  */}
                   {pendingRows.length === 0 && missingRows.length === 0 && rows.length > 0 && (
-                    <div style={{ margin: 12, padding: '10px 12px', borderRadius: 'var(--r-btn)', background: 'var(--st-in-bg)', color: 'var(--st-in-fg)', fontSize: 'var(--t-meta)', fontWeight: 600, display: 'flex', gap: 7, alignItems: 'center' }}>
+                    <div style={{ margin: 12, padding: '10px 12px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, display: 'flex', gap: 7, alignItems: 'center' }}>
                       <Icon name="checklist" size={13} />
-                      All items packed successfully. Ready for Pickup / Delivery.
+                      Every item on this checklist is ticked packed. Nothing is recorded yet — Complete Packing writes
+                      the session, and only then does {floor.bookingNo} move to Packed.
                     </div>
                   )}
                 </Card>
@@ -1084,6 +1362,12 @@ export default function PackingWorkspace() {
                       </div>
                       <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 2 }}>
                         Pack job: {jobState}
+                      </div>
+                      {/* PK-17 — the chip counts ticks on this screen. It is
+                          not read back from the session, and no session exists
+                          until the dispatch lands. */}
+                      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2, lineHeight: 1.4 }}>
+                        Ticks on this screen — nothing is recorded until Complete Packing.
                       </div>
                     </div>
                   </div>
@@ -1114,6 +1398,54 @@ export default function PackingWorkspace() {
                     ))}
                   </div>
                 </Card>
+
+                {/*
+                  PK-06 — the shortage this dispatch CANNOT record, said before
+                  the operator presses the button rather than in a note found
+                  afterwards.
+
+                  A `FloorLineInput` carries one outcome for the whole booking
+                  line and `validateFloorVerb` refuses the same line id twice,
+                  so a line with some units packed and some missing has no
+                  truthful encoding: sent as 'done' it records the packed units
+                  and writes no `missing_reason` and no `unit_state 'Missing'`;
+                  sent as 'missing' it would stamp Missing on the units that
+                  were packed. See `buildPackLines` for the full argument.
+
+                  Not a gate — the packed units really were packed and refusing
+                  the whole dispatch would lose that. A statement, inline and
+                  persistent (Law 12), never a toast.
+                */}
+                {dispatchPlan.mixed.length > 0 && (
+                  <div
+                    role="status"
+                    style={{ ...cardStyle, padding: 12, border: '1px solid var(--danger)', display: 'flex', flexDirection: 'column', gap: 6 }}
+                  >
+                    <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
+                      <Icon name="alert_triangle" size={15} style={{ color: 'var(--danger-text)', flexShrink: 0 }} />
+                      <span style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                        Missing units on {dispatchPlan.mixed.length} line
+                        {dispatchPlan.mixed.length === 1 ? '' : 's'} will not be recorded as missing
+                      </span>
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: 18, fontSize: 'var(--t-meta)', color: 'var(--text)', lineHeight: 1.45 }}>
+                      {dispatchPlan.mixed.map((m) => (
+                        <li key={m.lineId}>
+                          {m.lineName} — {m.missing} of {m.total} unit{m.total === 1 ? '' : 's'} missing
+                        </li>
+                      ))}
+                    </ul>
+                    <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.45 }}>
+                      A booking line is recorded with one outcome. On these lines the packed units are recorded and the
+                      missing ones are not: no unit is marked Missing and no missing reason is stored against them. The
+                      reasons you typed are written to the session notes, where they can be read but not counted.
+                    </p>
+                    <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
+                      {floor.bookingNo} will stay at {floor.stage} until each of these lines is resolved one way for all
+                      of its units — every unit packed, or the whole line marked missing.
+                    </p>
+                  </div>
+                )}
 
                 <button
                   type="button"
@@ -1201,6 +1533,37 @@ export default function PackingWorkspace() {
                       </div>
                     ))}
                   </div>
+
+                  {/*
+                    PK-07 — how the packed rows were verified, which the record
+                    itself will not say. See the note on `Mark.via`: the schema
+                    has `scan_events` and `session_line_movements.scan_event_id`
+                    for exactly this, nothing in the app writes one, and the
+                    payload is identical either way. So the split is shown here
+                    while the operator can still act on it, and stated in the
+                    session notes at dispatch.
+                  */}
+                  {packedRows.length > 0 && (
+                    <div style={{ marginTop: 11, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>
+                        How the packed rows were verified
+                      </div>
+                      {([
+                        ['Scanned', scannedRows.length, 'queues'],
+                        ['Ticked by hand, no scan', handMarkedRows.length, 'checklist'],
+                      ] as const).map(([l, v, iconName]) => (
+                        <div key={l} style={{ display: 'flex', gap: 'var(--sp-sm)', padding: '3px 0', fontSize: 'var(--t-meta)', alignItems: 'center' }}>
+                          <Icon name={iconName} size={12} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+                          <span style={{ flex: 1, color: 'var(--text2)' }}>{l}</span>
+                          <span className="figure" style={{ fontWeight: 700 }}>{v}</span>
+                        </div>
+                      ))}
+                      <p style={{ margin: '7px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
+                        Both are written as packed units — the record does not say which were scanned, so this split
+                        goes into the session notes.
+                      </p>
+                    </div>
+                  )}
                 </Card>
 
                 <Card title="Missing Items">
@@ -1264,7 +1627,11 @@ export default function PackingWorkspace() {
 
                 {scanLog.length > 0 && (
                   <div style={{ ...cardStyle, padding: 11 }}>
-                    <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Scan log</div>
+                    {/* Not "Scan log": most entries come from `pack`, which is
+                        reached from the row checkbox as well as from the
+                        scanner, and Mark Pending Packed writes one of its own.
+                        Each entry names which it was. */}
+                    <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Checklist log</div>
                     {/* §8.3 — results are announced to screen readers. */}
                     <div role="status" aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
                       {scanLog.map((l, i) => (
@@ -1301,9 +1668,11 @@ export default function PackingWorkspace() {
               mode="pack"
               bookingId={id}
               items={scannableUnits}
-              onItemScanned={(item) => {
-                pack(item.id)
-              }}
+              /* PK-09 — the modal shows THIS answer: one scan, one verdict,
+                 in the place the operator is looking. Returning it is what
+                 stops the modal beeping success over a "already packed" the
+                 rail behind it recorded. */
+              onItemScanned={(item) => pack(item.id, 'scan')}
             />
           </div>
         )}

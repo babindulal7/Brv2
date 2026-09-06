@@ -25,9 +25,12 @@ import { JOBS, JOB_ORDER, type JobName } from '../../../lib/workflow'
  *     write payload is scanned for a money column, because "we didn't select
  *     `rate`" is exactly the kind of claim that quietly stops being true.
  *  4. **The write ORDER.** Session opened `In Progress` → lines and movements →
- *     session `Completed` → stage. That order is what makes a partial failure
+ *     stage → session `Completed`. That order is what makes a partial failure
  *     leave a truthful residue instead of a booking that moved on unrecorded
- *     work, and nothing else in the codebase can check it.
+ *     work, and nothing else in the codebase can check it. The last two swapped
+ *     on 6 Sep 2026 (PK-05): sealing before the stage moved meant a refused
+ *     transition spent the one Packing session `0003:152` allows a booking, and
+ *     the booking could never be packed again.
  *  5. **The refusals.** Every `throw` below stands in for a row Postgres would
  *     reject — a reason under ten characters, a Not Returned line with no
  *     decision, a line that belongs to another booking.
@@ -124,10 +127,21 @@ const writes = vi.hoisted(() => {
   const state = {
     ops: [] as Array<{ kind: 'insert' | 'update'; table: string; id: string | null; payload: Record<string, unknown>; clientUuid?: string }>,
     seq: 0,
+    /**
+     * One table whose INSERT the database refuses.
+     *
+     * `idempotentInsert` rethrows every error that is not a `client_uuid`
+     * duplicate (`dataAccess.ts`), so this is exactly what a rejected
+     * `booking_stage_transitions` row looks like from inside `floorVerb` — a
+     * gate raised by `0090`, a stage-order or causal-order check from `0021`,
+     * or the table's own RLS. It is the only way to reach the PK-05 path.
+     */
+    refuseInsertOn: null as string | null,
   }
   function reset(): void {
     state.ops = []
     state.seq = 0
+    state.refuseInsertOn = null
   }
   return { state, reset }
 })
@@ -135,6 +149,9 @@ const writes = vi.hoisted(() => {
 vi.mock('../../../lib/dataAccess', () => ({
   generateClientUuid: () => `gen-${String(++writes.state.seq).padStart(4, '0')}`,
   idempotentInsert: async (table: string, payload: Record<string, unknown>) => {
+    if (writes.state.refuseInsertOn === table) {
+      throw new Error(`[DataAccess] Insert failed on ${table}: Gate Check Failure (simulated).`)
+    }
     writes.state.ops.push({ kind: 'insert', table, id: null, payload })
     return { data: { id: payload['id'] ?? `${table}-row`, ...payload }, error: null }
   },
@@ -266,7 +283,7 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
     ]
   })
 
-  it('opens the session In Progress, fills it, closes it, and only then moves the stage', async () => {
+  it('opens the session In Progress, fills it, moves the stage, and seals it last', async () => {
     const result = await packRental(
       {
         id: 'B-715',
@@ -280,13 +297,16 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
       .filter((o) => o.table !== 'audit_events')
       .map((o) => `${o.kind}:${o.table}:${String(o.payload['state'] ?? '')}`)
 
+    /* PK-05 — the seal is LAST. Everything above it can be re-attempted; a seal
+       that lands before the stage cannot be taken back, and on Pack it costs the
+       booking the only Packing session `0003:152` allows it. */
     expect(sequence).toEqual([
       'insert:operation_sessions:In Progress',
       'insert:packing_lines:Packed',
       'insert:session_line_movements:',
       'insert:session_line_movements:',
-      'update:operation_sessions:Completed',
       'insert:booking_stage_transitions:',
+      'update:operation_sessions:Completed',
     ])
 
     expect(result.sessionId).not.toBeNull()
@@ -434,6 +454,121 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
     await packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] }, OWNER)
     const lineRead = db.state.calls.find((c) => c.table === 'booking_lines')
     expect(lineRead?.ops).toContainEqual(['is', 'voided_at', null])
+  })
+})
+
+/* ── 2b · PK-05 — a refused transition must not cost the one Packing session ─ */
+
+/**
+ * `operation_sessions_one_packing_per_booking` (`0003:152`) gives a booking
+ * exactly one Packing session, ever, and only an `'In Progress'` session is
+ * resumable. So the pair of facts below is the whole bug: seal, then fail to
+ * move the stage, and the booking is unpackable forever with no rule an
+ * operator can read.
+ *
+ * `0094` (written 6 Sep 2026) does not make the refusal itself more likely — it
+ * guards *direct* writes to `bookings.stage` and exempts the SECURITY DEFINER
+ * transition function. What it removes is the escape hatch: `0021`'s column
+ * REVOKE was inert, so until now a refused transition could be papered over
+ * with a PATCH. From here, a refusal is simply a booking that did not move.
+ */
+describe('PK-05 — a refused stage transition leaves the session resumable', () => {
+  beforeEach(() => {
+    db.state.responses['bookings'] = [[bookingAt('Booked')]]
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 2 }]]
+    db.state.responses['operation_sessions'] = [[]]
+    db.state.responses['packing_lines'] = [[], [{ id: 'pl-1', booking_line_id: LINE_A, state: 'Packed' }]]
+  })
+
+  it('does not seal the Packing session when the transition is refused', async () => {
+    writes.state.refuseInsertOn = 'booking_stage_transitions'
+
+    await expect(
+      packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] }, OWNER),
+    ).rejects.toThrow(/still open/)
+
+    // Opened, never sealed: the update to 'Completed' is the write that would
+    // have spent the session.
+    expect(opsOn('operation_sessions').map((o) => o.kind)).toEqual(['insert'])
+    expect(insertsOn('operation_sessions')[0]?.payload['state']).toBe('In Progress')
+  })
+
+  it('still records the pass that happened — lines, movements and an audit row', async () => {
+    writes.state.refuseInsertOn = 'booking_stage_transitions'
+
+    await expect(
+      packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] }, OWNER),
+    ).rejects.toThrow()
+
+    expect(insertsOn('packing_lines')).toHaveLength(1)
+    expect(insertsOn('session_line_movements')).toHaveLength(2)
+    // The audit row states the state the session is ACTUALLY in — not the one
+    // the verb was aiming at. A row saying 'Completed' here would be the lie.
+    const audit = insertsOn('audit_events').find((o) => o.payload['table_name'] === 'operation_sessions')
+    expect((audit?.payload['new_values'] as Record<string, unknown>)['state']).toBe('In Progress')
+  })
+
+  it('the next pack resumes that open session instead of opening a second one', async () => {
+    // What the refused pass left behind, read back on the retry.
+    db.state.responses['operation_sessions'] = [[{ id: 'sess-1', session_no: 1, state: 'In Progress' }]]
+    db.state.responses['packing_lines'] = [
+      [{ id: 'pl-1', booking_line_id: LINE_A, state: 'Packed' }],
+      [{ id: 'pl-1', booking_line_id: LINE_A, state: 'Packed' }],
+    ]
+
+    const result = await packRental(
+      { id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] },
+      OWNER,
+    )
+
+    expect(insertsOn('operation_sessions')).toHaveLength(0)
+    expect(result.sessionId).toBe('sess-1')
+    expect(result.sessionClosed).toBe(true)
+    expect(result.stage).toEqual({ from: 'Booked', to: 'Packed' })
+  })
+
+  it('refuses by name when the booking has already spent its one Packing session', async () => {
+    // The state the OLD order could strand a booking in, and which no code path
+    // in this repo can undo. It must read as a sentence, not as a unique-index
+    // violation from Postgres.
+    db.state.responses['operation_sessions'] = [[{ id: 'sess-1', session_no: 1, state: 'Completed' }]]
+
+    await expect(
+      packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] }, OWNER),
+    ).rejects.toThrow(/exactly one, ever/)
+
+    expect(writes.state.ops).toHaveLength(0)
+  })
+
+  it('a Handover whose transition is refused also stays open, rather than sealing a handover that did not happen', async () => {
+    // Handover may close short (0003:129 — staggered collection), so it would
+    // have sealed on the old order and left a Completed session claiming a
+    // pickup the client never took.
+    db.state.responses['bookings'] = [[bookingAt('Packed')]]
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
+    db.state.responses['handover_lines'] = [[], [{ id: 'hl-1', booking_line_id: LINE_A, state: 'Picked Up' }]]
+    writes.state.refuseInsertOn = 'booking_stage_transitions'
+
+    await expect(
+      handoverRental({ bookingId: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] }, OWNER),
+    ).rejects.toThrow(/still open/)
+
+    expect(opsOn('operation_sessions').map((o) => o.kind)).toEqual(['insert'])
+  })
+
+  it('a Handover that leaves lines Remaining still seals — the refusal changes nothing there', async () => {
+    db.state.responses['bookings'] = [[bookingAt('Packed')]]
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 2 }]]
+    db.state.responses['handover_lines'] = [[], [{ id: 'hl-1', booking_line_id: LINE_A, state: 'Remaining' }]]
+
+    const result = await handoverRental(
+      { bookingId: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }] },
+      OWNER,
+    )
+
+    expect(result.stage).toBeNull()
+    expect(result.sessionClosed).toBe(true)
+    expect(opsOn('operation_sessions')[1]?.payload['state']).toBe('Completed')
   })
 })
 

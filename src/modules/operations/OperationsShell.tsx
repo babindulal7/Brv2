@@ -77,6 +77,40 @@ const DOT_META: Record<StepDotState, { icon: IconName; label: string; tone: stri
 }
 
 /**
+ * **The step the booking is at, when nobody told this launcher how far into it
+ * the floor has got** (PK-12).
+ *
+ * `stepDotState`'s three open answers — not-started / in-progress / done — are
+ * all counts, and this file counts nothing. Until 6 Sep 2026 it passed
+ * `{ done: 0, total: 1 }` and therefore printed **"Not started" on every open
+ * step, always**, including a booking with a Packing session half-scanned. That
+ * is Law 12: a fabricated fact, rendered with an icon and a word so it read as
+ * observed rather than assumed.
+ *
+ * So an open step with no progress supplied says only what is true of it — it is
+ * the step now open — and the count is left to a caller that has one. `Open` is
+ * not a fifth `StepDotState`: `stepDotState` is the shared engine (Law 1) and
+ * "we were not told" is a fact about this screen, not about the step.
+ */
+const OPEN_META: { icon: IconName; label: string; tone: string } = {
+  icon: 'arrow_right',
+  label: 'Open',
+  tone: 'var(--text2)',
+}
+
+/**
+ * Fed to `stepDotState` only where it is provably not read.
+ *
+ * The function reads `progress` on exactly one branch — the split between
+ * not-started / in-progress / done for a step whose writes are allowed — and
+ * every other answer (`blocked`, and the `done` that comes from the booking
+ * having moved past the step) is decided by the stage order alone. On that one
+ * branch this file uses the caller's real count when it has one and `OPEN_META`
+ * when it does not, so this placeholder never reaches the screen as a claim.
+ */
+const NOT_COUNTED_HERE = { done: 0, total: 1 } as const
+
+/**
  * The step a booking at this status is *at*. A lookup against the existing
  * `JOBS` table, not a new rule. `Closed` has no job of its own; Reset is the
  * last one that ran, so it is the sensible landing row — and `stepWriteGate`
@@ -94,9 +128,33 @@ export interface OperationsShellProps {
   bookingStatus: BookingStatus
   isOpen: boolean
   onClose: () => void
+  /**
+   * How far the floor has got on each step, from the caller that already read
+   * it — **`Partial` on purpose**. A step this map does not mention is a step
+   * whose progress the caller does not know, and the row says `Open` rather
+   * than guessing at a count (PK-12, and `OPEN_META` above).
+   *
+   * No query is added here to fill it (Law 2, and this file's own header): the
+   * launcher takes what the booking page already has.
+   *
+   * ⚠ **No caller passes it yet.** `BookingDetail` is the only screen that
+   * mounts this launcher, and it already holds the counts in the
+   * `fetchFloorBooking` read it makes for its own item tree:
+   * `booking_line_units` carries `packed`, `unit_state`, `is_required` and
+   * `released_at` per unit — which is Pack, Handover and Return progress, and
+   * is what `floorVerb.writeUnitStates` puts there. Passing it is a change to
+   * that file, not to this one, and until it lands every open step reads
+   * `Open`. That is the honest reading, not the fixed one.
+   *
+   * Reset has no source at all here: its progress lives in
+   * `cleaning_queue_entries`, which the floor read does not embed, so Reset
+   * stays `Open` until it is ruled whether that query grows or the launcher
+   * gets a second one. `TODO(decision)`.
+   */
+  progress?: Partial<Record<JobName, { done: number; total: number }>>
 }
 
-export default function OperationsShell({ bookingNo, bookingStatus, isOpen, onClose }: OperationsShellProps) {
+export default function OperationsShell({ bookingNo, bookingStatus, isOpen, onClose, progress }: OperationsShellProps) {
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -177,16 +235,22 @@ export default function OperationsShell({ bookingNo, bookingStatus, isOpen, onCl
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', padding: 'var(--sp-md)' }}>
           {JOB_ORDER.map((job) => {
             /*
-             * The canonical gate. `stepDotState` only reads `progress` on the
-             * branch that distinguishes not-started / in-progress / done for a
-             * step whose writes are ALLOWED — this launcher tracks no item
-             * state, so a placeholder goes in and the blocked/done answer,
-             * which does not read it, is what gets used.
+             * The canonical gate, and the canonical dot — both still decided by
+             * `stepDotState` (Law 1), never re-derived here.
+             *
+             * `counted` is the caller's real progress for this step, or
+             * `undefined` where it has none. Where it is present the engine
+             * answers not-started / in-progress / done off it. Where it is
+             * absent, the engine's answer for an OPEN step would be a count
+             * this screen never made, so `OPEN_META` is shown instead — see
+             * `NOT_COUNTED_HERE`. Blocked and past-this-step rows are unaffected:
+             * those answers do not read `progress` at all.
              */
             const gate = stepWriteGate(job, bookingStatus)
-            const dot = stepDotState(job, bookingStatus, { done: 0, total: 1 })
-            const meta = DOT_META[dot]
+            const counted = progress?.[job]
+            const dot = stepDotState(job, bookingStatus, counted ?? NOT_COUNTED_HERE)
             const blocked = dot === 'blocked'
+            const meta = gate.allowed && counted === undefined ? OPEN_META : DOT_META[dot]
             const isEntry = job === entryStep
 
             const row = (
