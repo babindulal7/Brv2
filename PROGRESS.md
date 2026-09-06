@@ -342,6 +342,58 @@ REST after the reshape: owner reads `users` 200, anon `audit_events` **401**, ow
 
 ⚠ `tsc` and one test still fail from another session's in-flight warehouse and Today-segment
 edits; nothing I touched is in `src/`. **Five migrations wait on the Step 0 dump: 0089–0093.**
+## 2026-09-06 — Remediation audit (Spec v1.0): 147 issues, 7 P0, NOT READY; nothing fixed
+
+**Phase:** Phase 0 · **Status:** audit delivered · 0 fixes applied (by rule) · report at `REMEDIATION_AUDIT_2026-09-05.md`
+
+Twelve-cluster read-only discovery under the *Issue Detection + Fix Options* spec, measured at
+HEAD `467e7f1` and against the live project (SELECT only). 12 auditors, 11 adversarial refuters
+(every P0/P1 re-measured independently at HEAD and on live), 1 cross-cluster critic. 170 filed →
+23 merged → **147: 7 P0 · 41 P1 · 68 P2 · 25 P3 · 6 P4**. Refutation: 44 confirmed, 14 restated,
+9 downgraded, 0 refuted. Current status: 134 untouched, 12 drafted-unapplied. Artifact:
+https://claude.ai/code/artifact/e9468676-451c-4e10-936a-e140f066118b
+
+### The seven P0s, in dependency order
+
+1. **DEL-01** — Step 0 (dump, restore drill, token rotation) undone; root of 38 issues in ten clusters.
+2. **SEC-01** — every `_v` masking view is owner-privilege and auto-updatable with INSERT/UPDATE/DELETE
+   granted to `anon` and `authenticated`: the public anon key inserts into 23 tables, any staff JWT
+   updates or deletes every row of them, past RLS and Law 3. New finding; no draft touches it.
+3. **DB-01** — `lpad` with padding 1 mints `B-9` first, so booking creation works exactly once and
+   then collides (corrects the 3 Sep P0-4 mechanism); same defect on client, invoice, deposit.
+4. **DB-03** — `invoice_lines` SELECT-only; `invoices` NOT NULLs and role set contradict R-05/R-15.
+5. **MONEY-01** — no invoice can be raised (modal refuses, policy refuses, `createInvoice` reads
+   money columns the column grants refuse — DATA-01, a third independent blocker).
+6. **MONEY-02** — payment sync counts refunds as receipts, never hears about reversals, ejects a Draft.
+7. **INV-02** — Confirm is impossible for 204 of 204 live products: all Quantity-tracked, no
+   product-level hold is ever written; the engine was built for the serialised half only.
+
+### What this changes about earlier records
+
+- "Security Deposit counts as revenue" (3 Sep Addendum G) is **withdrawn**: a live CHECK forbids the
+  row. The refund half stands (MONEY-02).
+- Close is **wired** (BookingDetail dispatches `closeRental`), but all three gates test the wrong
+  predicate: `outstanding = 0` is vacuous when nothing was billed (MONEY-13), "deposit resolved"
+  means collected (RL-05), the damage gate is hardcoded to 0 (RL-06).
+- Closed is not final on live: all 60 Closed bookings have `closed_at` NULL (imported by direct
+  write), and the 0021 successor comparison refuses nothing out of Closed (RL-03, P2).
+- 33 prior findings retracted or corrected with evidence (listed in the report under "Prior
+  Findings That No Longer Stand"), including P2-3 lint, the 27/16/19 action counts, and the
+  `external_refs` DELETE claim (grant exists, no policy, so zero rows match).
+
+### Verified by direct probe while closing the critic's gaps
+
+- `anon` holds table-level SELECT and INSERT on all ten sampled tables, including the five 0062/0077
+  "armed" (they revoked from `authenticated` only); 235 of 246 policies are declared `TO public`.
+  Bounded by the role predicates on base tables; closed by SEC-01's Option B.
+- `inventory_reservations` carries `EXCLUDE USING gist (asset_id WITH =, period WITH &&)` — the
+  serialised half of §11 is proven at the constraint. The quantity half has only a GiST index and
+  rests on the capacity trigger, unreachable until INV-02 lands (0 live rows).
+- 7 live Quote bookings, none with `quote_expires_at`; `locked_at` never set; no lapse mechanism.
+
+**Not done, by rule:** nothing edited, applied or deployed. **Left out:** the critic's eight
+standalone severity upgrades are reported inline, not applied (no refuter measured them);
+P2–P4 are single-auditor findings. **Next:** approve the roadmap, then Step 0.
 ## 2026-09-05 (cont. 2) — New Rental stops claiming work it did not do
 
 **Phase:** Phase 0 · **Status:** 8 register items closed · 2 filed · 3 rulings raised
