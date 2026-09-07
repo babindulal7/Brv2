@@ -625,13 +625,29 @@ export interface Availability {
  * against a required quantity of 1: it was measuring units *not available*
  * instead of units *short*.
  */
-export function availabilityOf(lines: DraftLine[]): Availability {
+/**
+ * The model lookup these derivations resolve a line against.
+ *
+ * It defaults to `MODEL_BY_ID`, the SEED catalogue, which is what every caller
+ * used until 7 Sep. Add Bundle now passes a map built from `products` instead,
+ * because `bundle_items.product_id` is a uuid FK and 19 of the 20 seed model
+ * names match no row — so a line keyed on a seed id could never be saved.
+ *
+ * The parameter exists rather than a module swap because a miss here is
+ * SILENT: every one of these functions does `lookup.get(...)` and skips the
+ * line. Put a real product uuid in `DraftLine.modelId` while these still read
+ * the seed map and the screen empties itself — no error, no line, a 0/0 donut
+ * and a Create button that goes Unavailable.
+ */
+export type ModelLookup = ReadonlyMap<string, InventoryModel>
+
+export function availabilityOf(lines: DraftLine[], lookup: ModelLookup = MODEL_BY_ID): Availability {
   let readyItems = 0
   let totalItems = 0
   const blocked: BlockedLine[] = []
 
   for (const l of lines) {
-    const m = MODEL_BY_ID.get(l.modelId)
+    const m = lookup.get(l.modelId)
     if (!m) continue
     totalItems += l.qty
     readyItems += Math.min(m.available, l.qty)
@@ -677,11 +693,16 @@ export interface ItemBreakdown {
   totalWeightKg: number | null
 }
 
-export function breakdownOf(lines: DraftLine[], crew: CrewPick[], vehicle: VehicleType | null): ItemBreakdown {
+export function breakdownOf(
+  lines: DraftLine[],
+  crew: CrewPick[],
+  vehicle: VehicleType | null,
+  lookup: ModelLookup = MODEL_BY_ID,
+): ItemBreakdown {
   let equipment = 0
   let boxes = 0
   for (const l of lines) {
-    const m = MODEL_BY_ID.get(l.modelId)
+    const m = lookup.get(l.modelId)
     if (!m) continue
     if (BOX_CATEGORIES.has(m.category)) boxes += l.qty
     else equipment += l.qty
@@ -689,9 +710,9 @@ export function breakdownOf(lines: DraftLine[], crew: CrewPick[], vehicle: Vehic
   const crewCount = crew.reduce((s, c) => s + c.headcount, 0)
   const vehicleCount = vehicle ? 1 : 0
 
-  const models = lines.map((l) => MODEL_BY_ID.get(l.modelId)).filter((m): m is InventoryModel => !!m)
+  const models = lines.map((l) => lookup.get(l.modelId)).filter((m): m is InventoryModel => !!m)
   const totalWeightKg = models.every((m) => typeof m.weightKg === 'number')
-    ? lines.reduce((s, l) => s + (MODEL_BY_ID.get(l.modelId)?.weightKg ?? 0) * l.qty, 0)
+    ? lines.reduce((s, l) => s + (lookup.get(l.modelId)?.weightKg ?? 0) * l.qty, 0)
     : null
 
   return {
@@ -709,10 +730,13 @@ export function breakdownOf(lines: DraftLine[], crew: CrewPick[], vehicle: Vehic
  * rate. Nothing is refreshed silently; the screen offers the choice and states
  * the difference.
  */
-export function rateDriftOf(lines: DraftLine[]): Array<{ key: string; model: InventoryModel; from: Paisa; to: Paisa }> {
+export function rateDriftOf(
+  lines: DraftLine[],
+  lookup: ModelLookup = MODEL_BY_ID,
+): Array<{ key: string; model: InventoryModel; from: Paisa; to: Paisa }> {
   const out: Array<{ key: string; model: InventoryModel; from: Paisa; to: Paisa }> = []
   for (const l of lines) {
-    const m = MODEL_BY_ID.get(l.modelId)
+    const m = lookup.get(l.modelId)
     if (m && m.unitRatePaisa !== l.originalRatePaisa) {
       out.push({ key: l.key, model: m, from: l.originalRatePaisa, to: m.unitRatePaisa })
     }

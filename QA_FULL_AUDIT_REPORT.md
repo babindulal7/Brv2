@@ -317,6 +317,36 @@ not applied to live.
 
 ---
 
+## UPDATE — 7 September 2026 (3): BUG-030 fixed, and the silent skip with it
+
+Add Bundle builds from `products` now. The tree, the "+ Add a case or bag" select and both
+filter lists (category, brand) read the catalogue; `DraftLine.modelId` carries a real
+`products.id`; the payload sends `productId`.
+
+**The part that mattered was not the picker.** `modelId` is the join key for `availabilityOf`,
+`breakdownOf`, `rateDriftOf` and `LineRow`, each doing `MODEL_BY_ID.get(...)` and **skipping
+silently** on a miss. A uuid in `modelId` while those still read the seed map would have emptied
+the screen with no error — every row gone, a 0/0 donut, Create Bundle Unavailable. So the three
+derivations now take an **injected lookup** (defaulting to the seed map, and they are called from
+this screen only), and `LineRow` takes it as a prop.
+
+**A silent failure removed on the way.** `LineRow` did `if (!m) return null`: a line the
+catalogue could not resolve **vanished from the table while the totals below still counted it**.
+It now renders an explicit row naming the missing item, with a Remove action.
+
+**Honesty in the mapping.** Serialised products get their real per-unit split from `unitsByState`;
+quantity-tracked ones report the whole quantity free, because this build commits no units — that
+is genuinely zero, not unknown shown as zero. `children` has no column anywhere, so a live model
+carries none and the child affordances have nothing to show. The form no longer boots
+pre-populated: `INITIAL_LINES`' ten lines carried seed ids, which is why the first Create press
+always failed on line 1.
+
+**Verified by driving it:** the tree reads "56 shown of 56 products" with real asset codes, a line
+added from it resolves, and Create Bundle **saved** — navigating to a real bundle record. That
+path had never worked.
+
+---
+
 ## APP HEALTH
 
 Full detail in [`QA_APP_HEALTH_REPORT.md`](QA_APP_HEALTH_REPORT.md). Summary at HEAD:

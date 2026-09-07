@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { newClientUuid } from '../../lib/supabase'
-import { useInventoryCategories } from '../../lib/queries/inventory'
+import { useInventoryCategories, listInventory } from '../../lib/queries/inventory'
 import type { CSSProperties, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -20,20 +20,14 @@ import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
 import {
-  INVENTORY_MODELS,
-  ROOT_MODELS,
-  USED_CATEGORIES,
-  ALL_BRANDS,
   BOX_CATEGORIES,
   CREW_ROLES,
   VEHICLE_TYPES,
   TAG_OPTIONS,
   TEMPLATE_BUNDLES,
-  INITIAL_LINES,
   INITIAL_CREW,
   INITIAL_VEHICLE,
   SEED_ERRORS,
-  modelOf,
   iconForCategory,
   totalsOf,
   pricingOf,
@@ -436,13 +430,16 @@ export function AddBundle() {
   const [overrideReason, setOverrideReason] = useState('')
 
   /* §5 / §6 — the tree and the lines */
-  const [lines, setLines] = useState<DraftLine[]>(INITIAL_LINES)
+  /* Empty, not `INITIAL_LINES`. Those ten lines carry SEED model ids, so on
+     a live catalogue every one is unresolvable — the screen used to boot
+     pre-populated and refuse on line 1 the moment Create was pressed. */
+  const [lines, setLines] = useState<DraftLine[]>([])
   const [search, setSearch] = useState('')
   const [fCategory, setFCategory] = useState<'All' | InventoryCategory>('All')
   const [fBrand, setFBrand] = useState('All')
   const [fAvailability, setFAvailability] = useState<'Any' | 'Free now' | 'Nothing free'>('Any')
   const [fChildren, setFChildren] = useState<'Any' | 'Yes' | 'No'>('Any')
-  const [treeOpen, setTreeOpen] = useState<Set<string>>(new Set(['M-FX3-BODY']))
+  const [treeOpen, setTreeOpen] = useState<Set<string>>(new Set())
   const [childrenOpen, setChildrenOpen] = useState<Set<string>>(new Set())
 
   /* §10 — crew, vehicle, boxes */
@@ -450,6 +447,96 @@ export function AddBundle() {
   const [vehicle, setVehicle] = useState<VehicleType | null>(INITIAL_VEHICLE)
 
   const [notes, setNotes] = useState('')
+
+  /*
+   * ── The catalogue this screen builds a bundle FROM ─────────────────────
+   *
+   * `products`, not `data/addBundle.ts`'s twenty seed models. `bundle_items`
+   * .product_id is a uuid FK, and 19 of those 20 model NAMES match no products
+   * row — the real catalogue is Booqable-shaped ('Sony FX3 Full-Frame Camera',
+   * not 'Sony FX3 Cinema Camera'), so `createBundle` refused on line 1 and every
+   * Create Bundle and Save Draft failed after the form reported every gate green.
+   *
+   * `DraftLine.modelId` therefore now carries a real `products.id`. That id is
+   * the join key for `availabilityOf`, `breakdownOf`, `rateDriftOf` and
+   * `LineRow`, every one of which resolves it through a map and SKIPS SILENTLY
+   * on a miss — which is why each of them is now handed `liveById` explicitly
+   * rather than falling back to the seed map. Miss that and the screen empties
+   * itself with no error at all.
+   *
+   * What is honestly available and what is not: `unitsByState` is per-UNIT, and
+   * a quantity-tracked product has no units, so its stock is `totalQuantity` and
+   * the state split is unknown rather than zero. Nothing here invents a
+   * reservation. `children` has no schema behind it at all, so a live model
+   * carries none and the child affordances simply have nothing to show.
+   */
+  const [catalogue, setCatalogue] = useState<InventoryModel[]>([])
+  const [catalogueError, setCatalogueError] = useState<string | null>(null)
+  const [catalogueLoading, setCatalogueLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        /* The same read New Rental's equipment picker uses
+           (`rentals/NewRental.tsx:1731`). `withMoney` is true because this
+           screen is Law 6-gated to money-visible roles already — it returns
+           above for anyone else — and a bundle line stores the unit rate. */
+        const inv = await listInventory({ page: { index: 0, size: 500 }, withMoney: true })
+        if (cancelled) return
+        setCatalogue(
+          inv.rows
+            .filter((r) => r.isActive)
+            .map((r): InventoryModel => {
+              const serialised = r.trackingMode === 'Serialised'
+              const byState = r.unitsByState
+              const stock = serialised ? r.unitCountExcludingRetired : r.totalQuantity
+              return {
+                id: r.id,
+                sku: r.assetCode,
+                name: r.name,
+                brand: r.brand,
+                category: (r.category ?? 'Other') as InventoryCategory,
+                stock,
+                /* Serialised: the real per-unit split. Quantity-tracked: this
+                   build commits no units, so the whole quantity is free and the
+                   other three pools are genuinely zero, not unknown-shown-as-0. */
+                available: serialised ? (byState['In Stock'] ?? 0) : stock,
+                reserved: serialised ? (byState['Reserved'] ?? 0) : 0,
+                onRent: serialised ? (byState['On Rent'] ?? 0) : 0,
+                maintenance: serialised ? (byState['Maintenance'] ?? 0) : 0,
+                unitRatePaisa: r.dailyRate ?? (0 as Paisa),
+              }
+            }),
+        )
+      } catch (e) {
+        if (cancelled) return
+        setCatalogueError(e instanceof Error ? e.message : String(e))
+      } finally {
+        if (!cancelled) setCatalogueLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const liveById: ReadonlyMap<string, InventoryModel> = useMemo(
+    () => new Map(catalogue.map((m) => [m.id, m])),
+    [catalogue],
+  )
+  /* Shadows the seed `modelOf` this file used to import. Every lookup in this
+     component resolves against the live catalogue. */
+  const modelOf = (id: string): InventoryModel | undefined => liveById.get(id)
+
+  const liveCategories2 = useMemo(
+    () => [...new Set(catalogue.map((m) => m.category))].sort((a, b) => a.localeCompare(b)),
+    [catalogue],
+  )
+  const liveBrands = useMemo(
+    () => [...new Set(catalogue.map((m) => m.brand))].sort((a, b) => a.localeCompare(b)),
+    [catalogue],
+  )
 
   /* prompts */
   const [askParent, setAskParent] = useState<InventoryModel | null>(null)
@@ -512,9 +599,9 @@ export function AddBundle() {
    * exactly as it covers one anywhere else.
    */
   const pricing = useMemo(() => pricingOf(lines), [lines])
-  const availability = useMemo(() => availabilityOf(lines), [lines])
-  const breakdown = useMemo(() => breakdownOf(lines, crew, vehicle), [lines, crew, vehicle])
-  const drift = useMemo(() => rateDriftOf(lines), [lines])
+  const availability = useMemo(() => availabilityOf(lines, liveById), [lines, liveById])
+  const breakdown = useMemo(() => breakdownOf(lines, crew, vehicle, liveById), [lines, crew, vehicle, liveById])
+  const drift = useMemo(() => rateDriftOf(lines, liveById), [lines, liveById])
 
   /* ── §13 · this page sets prices, so the floor does not get it ────────── */
   if (!money) {
@@ -638,9 +725,10 @@ export function AddBundle() {
       }
       return {
         modelId: l.modelId,
-        /* The action resolves this to `bundle_items.product_id` by SELECT and
-           refuses by name when no products row matches — the seed id must
-           never reach a uuid column. */
+        /* `l.modelId` IS `products.id` now, so the action resolves it directly
+           instead of matching a name that existed in no row. The name still
+           rides along so a refusal can say which line it was about. */
+        productId: l.modelId,
         productName: modelOf(l.modelId)?.name ?? l.modelId,
         qty: l.qty,
         discountPct: l.discountPct,
@@ -823,7 +911,7 @@ export function AddBundle() {
   }
 
   const resetDraft = () => {
-    setLines(INITIAL_LINES)
+    setLines([])
     setCrew(INITIAL_CREW)
     setVehicle(INITIAL_VEHICLE)
     setOverride(false)
@@ -877,7 +965,9 @@ export function AddBundle() {
     search.trim() !== '' || fCategory !== 'All' || fBrand !== 'All' || fAvailability !== 'Any' || fChildren !== 'Any'
 
   /* Roots only while unfiltered — an accessory belongs under its parent, not beside it. */
-  const treeRows = (filtersOn ? INVENTORY_MODELS : ROOT_MODELS).filter((m) => {
+  /* Every row is a root: `children` is a seed-only relationship with no
+     column behind it, so a live catalogue has no parents to nest under. */
+  const treeRows = catalogue.filter((m) => {
     const q = search.trim().toLowerCase()
     if (q && !`${m.name} ${m.sku} ${m.brand} ${m.category}`.toLowerCase().includes(q)) return false
     if (fCategory !== 'All' && m.category !== fCategory) return false
@@ -1310,7 +1400,7 @@ export function AddBundle() {
               action={
                 <button
                   type="button"
-                  onClick={() => setTreeOpen(treeOpen.size === 0 ? new Set(ROOT_MODELS.filter((m) => m.children).map((m) => m.id)) : new Set())}
+                  onClick={() => setTreeOpen(treeOpen.size === 0 ? new Set(catalogue.filter((m) => m.children).map((m) => m.id)) : new Set())}
                   style={{ border: 'none', background: 'transparent', color: 'var(--link)', fontSize: 'var(--t-th)', fontFamily: 'inherit', cursor: 'pointer', padding: 0 }}
                 >
                   {treeOpen.size === 0 ? 'Expand all' : 'Collapse all'}
@@ -1348,10 +1438,29 @@ export function AddBundle() {
                     </tr>
                   </thead>
                   <tbody>
-                    {treeRows.length === 0 ? (
+                    {catalogueError !== null ? (
+                      <tr>
+                        <td colSpan={5} style={{ ...td, textAlign: 'center', color: 'var(--danger)', padding: '22px 12px' }}>
+                          The catalogue could not be read, so there is nothing to build a bundle from:{' '}
+                          {catalogueError}
+                        </td>
+                      </tr>
+                    ) : catalogueLoading ? (
                       <tr>
                         <td colSpan={5} style={{ ...td, textAlign: 'center', color: 'var(--text2)', padding: '22px 12px' }}>
-                          No model matches this search.
+                          Reading the equipment catalogue…
+                        </td>
+                      </tr>
+                    ) : catalogue.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} style={{ ...td, textAlign: 'center', color: 'var(--text2)', padding: '22px 12px' }}>
+                          No active equipment exists yet, so a bundle has nothing to contain.
+                        </td>
+                      </tr>
+                    ) : treeRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} style={{ ...td, textAlign: 'center', color: 'var(--text2)', padding: '22px 12px' }}>
+                          No product matches this search.
                           <span style={{ display: 'block', marginTop: 'var(--sp-sm)' }}>
                             <Button icon="refresh" onClick={clearFilters}>
                               Clear filters
@@ -1397,7 +1506,7 @@ export function AddBundle() {
                   Category
                   <Select value={fCategory} onChange={(e) => setFCategory(e.target.value as 'All' | InventoryCategory)} style={filterSelect}>
                     <option value="All">All</option>
-                    {USED_CATEGORIES.map((c) => (
+                    {liveCategories2.map((c) => (
                       <option key={c} value={c}>
                         {c}
                       </option>
@@ -1408,7 +1517,7 @@ export function AddBundle() {
                   Brand
                   <Select value={fBrand} onChange={(e) => setFBrand(e.target.value)} style={filterSelect}>
                     <option value="All">All</option>
-                    {ALL_BRANDS.map((b) => (
+                    {liveBrands.map((b) => (
                       <option key={b} value={b}>
                         {b}
                       </option>
@@ -1447,7 +1556,7 @@ export function AddBundle() {
                   </Unavailable>
                 )}
                 <span className="figure" style={{ marginLeft: 'auto', ...subtle }}>
-                  {treeRows.length} shown of {INVENTORY_MODELS.length} models
+                  {treeRows.length} shown of {catalogue.length} products
                 </span>
               </div>
 
@@ -1538,6 +1647,7 @@ export function AddBundle() {
                             onRemove={() => removeLine(l.key)}
                             onToggleChild={(childId, required, on) => toggleChild(l.key, childId, required, on)}
                             childIsLine={(id) => lines.some((o) => o.modelId === id)}
+                            lookup={liveById}
                           />
                         ))}
                       </tbody>
@@ -1702,7 +1812,7 @@ export function AddBundle() {
                   style={{ ...selectStyle, marginTop: 'var(--sp-sm)', height: 30 }}
                 >
                   <option value="">+ Add a case or bag</option>
-                  {INVENTORY_MODELS.filter((m) => BOX_CATEGORIES.has(m.category)).map((m) => (
+                  {catalogue.filter((m) => BOX_CATEGORIES.has(m.category)).map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.name}
                     </option>
@@ -2384,6 +2494,7 @@ function LineRow({
   onRemove,
   onToggleChild,
   childIsLine,
+  lookup,
 }: {
   line: DraftLine
   childrenOpen: boolean
@@ -2392,9 +2503,29 @@ function LineRow({
   onRemove: () => void
   onToggleChild: (childId: string, required: boolean, on: boolean) => void
   childIsLine: (id: string) => boolean
+  lookup: ReadonlyMap<string, InventoryModel>
 }) {
-  const m = modelOf(line.modelId)
-  if (!m) return null
+  const m = lookup.get(line.modelId)
+  /*
+   * ⛔ Was `if (!m) return null` against the SEED map: a line the catalogue
+   * could not resolve simply vanished from the table, with the totals below
+   * still counting it. That silent skip is the failure mode this whole change
+   * exists to remove — so an unresolvable line now SAYS so and offers the one
+   * action that helps, instead of disappearing.
+   */
+  if (!m) {
+    return (
+      <tr>
+        <td colSpan={9} style={{ padding: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--danger)' }}>
+          This line points at an item the catalogue no longer holds
+          (<code>{line.modelId}</code>), so the bundle cannot be saved with it.{' '}
+          <button type="button" onClick={onRemove} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--danger)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit' }}>
+            Remove this line
+          </button>
+        </td>
+      </tr>
+    )
+  }
 
   const t = totalsOf(line)
   const short = Math.max(0, line.qty - m.available)
@@ -2615,7 +2746,7 @@ function LineRow({
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
               {kids.map((c) => {
-                const child = modelOf(c.id)
+                const child = lookup.get(c.id)
                 if (!child) return null
                 const isLine = childIsLine(c.id)
                 return (

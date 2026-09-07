@@ -3,6 +3,79 @@
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
 
+## 2026-09-07 (cont.) — Return and Reset: the last two stages, and a booking that could not receive its own item
+
+**Phase:** Phase 0 · **Status:** 6 items closed + 2 stale entries closed · 2 filed · lifecycle sweep complete
+
+RT-03, RT-06, RT-08, RS-09, RS-10, RS-12. Two reviews returned **ship**, the third **fix-first**;
+everything they found is fixed below.
+
+### RT-03 — the trap
+
+A return line was terminal on its **state** alone, so a line declared Not Returned with the
+decision **"Still expected"** — which means the item is coming back — counted as finished. The
+booking advanced to Returned, `actual_return_at` was stamped on gear still with the client, and
+every later Return was refused. The item could never be received.
+
+The grounding is the part worth keeping. The engine's own comment claimed all three terminal lists
+came "straight out of `0003`'s close gates". **Only Pack's does** — `:340` and `:399` are *stage*
+conditions, and `0003:172` says so verbatim. That false comment is corrected in the code, and it is
+why the defect looked principled.
+
+**Positive control run in both directions**: restoring the state-only rule fails 3 tests; flipping
+`'Still expected'` back to `true` fails 3. And the fix deliberately does not create a new trap —
+the booking stays On Rent, the workspace still opens, and there are two exits: receive the item, or
+re-declare it with a decision that ends the line.
+
+### What the reviews caught
+
+- **The recovery path left a row contradicting itself.** `not_returned_reason` and
+  `not_returned_decision` were written on the missing path and never cleared on its twin, so a
+  line that finally arrived read `state: 'Returned'` while still carrying "Still expected".
+  `0003:378` only *requires* the pair when the state is Not Returned — it never forbids it — so the
+  database accepts the contradiction silently. Clearing is the writer's job and is now explicit.
+- **A green tick beside its own contradiction, again.** The Return pill read "Complete" in success
+  green for a session whose every line was "Still expected". This is the *second* screen with that
+  defect, so rather than write a third copy the rule moved to `lib/status.ts` as `jobStateChip`,
+  with the exception word as a parameter; Packing's `packJobChip` now delegates to it.
+- **A disclosure was lost while the counts were being fixed.** The Maintenance footer went from
+  "Showing 3 of 3 **seeded** jobs" to "…3 jobs" — the only place that screen admits the list is
+  fabricated, on a page whose CSV Export is live. Restored, and the assertions now pin the
+  disclosure rather than just the arithmetic.
+- Plus a header that overpromised ("the two can never drift apart" — false for a mixed booking), a
+  copy branch that called an undecided row "ended", a third un-swept copy site, a citation off by
+  two lines, and a comment that outlived the input it described.
+
+### The question the fix answered without being asked
+
+Filed as **RT-09**, and it is a real trade-off: holding the booking at On Rent also holds every
+unit that *did* come back. Their `cleaning_queue_entries` rows are written, but Reset runs at stage
+`Returned`, so with 9 of 10 lines received **all 9 sit in the cleaning queue, out of stock**, until
+the tenth arrives. "Still expected" is the everyday case — the client is bringing it tomorrow — so
+this trades one late item against a booking's whole returned inventory. `0003:399` rules the stage
+and says nothing about cleaning. Marked `TODO(decision)` at the engine site rather than decided.
+
+### Register corrections
+
+- **RS-10 was stale** — already fixed at HEAD (reads `useParams`, filters, banner, route present).
+  Fourth stale entry this session, after NR-07, BD-20 and CL-05.
+- **RS-09's framing was wrong.** No INSERT is attempted on either path: both modals emit an event
+  and call `onSuccess`, and both handlers only append to local state, with the action
+  `implemented: false`. So Law 8's duplicate rejection is not failing — it is *unreachable*, and the
+  "row written twice" was two appends to a list in memory. The counts half was real and is fixed.
+  Its `useMemo` bullet was also stale.
+- **PK-22 closed by RT-06** — same dead control, filed by the packing batch, fixed here.
+- **RT-10 filed**: Packing still ships the duplicate Scan Barcode / Scan QR pair, and neither
+  button can select a real mode because the modal's `scanType` only styles the control.
+
+### Verified
+
+tsc clean in scope; eslint clean; the affected suites pass — **24 files / 532 tests**, including
+the maintenance suite once its assertions followed the restored disclosure.
+
+**Not driven.** No browser probe: RT-06's disabled control and RT-08's single button rest on code,
+types and tests. Live cannot exercise either path anyway — production has nothing past Packed.
+
 ## 2026-09-07 (cont. 5) — PERMISSIONS.md filed, then corrected against the database it describes
 
 **Phase:** governance · **Status:** filed + amended to v1.2; UNCOMMITTED at time of writing · no code changed
@@ -759,6 +832,44 @@ is gone, and marking all three units reads "Pack job: Complete · 3/3". Console 
 
 **Not driven:** the mixed-line chip (`Complete · N missing`) — the per-unit Missing action sits
 deeper in the row UI than I reached. It is pinned by 4 unit tests over the extracted helper.
+
+## 2026-09-07 (cont. 5) — Add Bundle builds from the real catalogue (BUG-030)
+
+**Phase:** Phase 0 — **Status:** done, driven end to end
+
+### Did
+
+The tree, the box/case select and both filter lists read `products` via `listInventory`;
+`DraftLine.modelId` carries a real `products.id`; the payload sends `productId`.
+
+`availabilityOf`, `breakdownOf` and `rateDriftOf` gained an **injected lookup** parameter
+(defaulting to the seed map, so no other caller changes — and they are called from this screen
+only), and `LineRow` takes the lookup as a prop. Without that, a uuid in `modelId` would have made
+every line vanish silently: those functions `.get()` the map and skip on a miss, so the screen
+would have emptied itself with a 0/0 donut and an Unavailable Create button — a worse failure
+than the one being fixed.
+
+`LineRow`'s `if (!m) return null` is gone. A line the catalogue cannot resolve now renders a row
+that says so, with a Remove action, instead of disappearing while the totals still count it.
+
+### Verified
+
+Driven in mock mode: tree reads **"56 shown of 56 products"** with real asset codes (EQ000267),
+**"Bundle Items (0)"** on load (the ten fictional prefilled lines are gone), a line added from the
+tree resolves with no warning, and **Create Bundle saved** — navigated to a real bundle record.
+
+tsc clean. eslint clean. **2810 tests passed.** 3 failed, all in
+`src/modules/inventory/__tests__/maintenanceQueue.test.tsx` — an **untracked** file that does not
+exist at HEAD, testing a `Maintenance.tsx` another session has open. Neither it nor its subject
+imports anything I touched. Not mine; not fixed by me.
+
+### Left as it is, deliberately
+
+Availability is mapped, not invented: serialised products get the real `unitsByState` split;
+quantity-tracked ones report their whole quantity free because this build commits no units.
+`children` has no column anywhere, so live models carry none.
+
+---
 
 ## 2026-09-07 (LIVE) — 0089 applied to PRODUCTION
 
