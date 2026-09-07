@@ -163,6 +163,99 @@ invariant is added in their working diff, so it is their in-flight state, not th
 means nobody can run the app right now, and these four fixes rest on tests and code reading rather
 than on a browser.
 
+## 2026-09-07 (cont. 4) — The Booqable spec bundle is labelled honestly, and has a build shortlist
+
+**Phase:** documentation · **Status:** applied to the tree, UNCOMMITTED · no code touched
+
+### Did
+Acted on the 5 Sep five-lens review of the Booqable bundle (22 files from Downloads; artifact at
+`claude.ai/code/artifact/5d207045-937e-4a5a-8ad9-5809537790c1`). The review's verdict was "good
+reference, not a build spec": Layers A/B/C hold, the repo-side layer is 28% verified, and the two
+companion specs would fork the codebase if built as written. Seven files changed, no code:
+
+- **`REFERENCE_SPEC_v2.5.md`** — a "read this first" banner; §0's *"do not re-derive the repo
+  contracts"* reversed to *verify before building*; §2.4 marked superseded by
+  `LAYER-D-VERIFICATION.md` §5 with its contract list kept verbatim beneath; **seven** discount
+  passages marked ⛔ (the gate was reversed 31 Aug and the body never caught up); seven law-number
+  citations corrected (PLAN §0: 7 = AD in UTC, 14 = width, 15 = 44×44).
+- **`RAIL_AND_QUICK_ACTIONS_SPEC_v1.0.md`** — the struck `1180` breakpoint corrected to **1280**
+  with the original wording recorded; a mapping table at the head of §3 so its six "new" components
+  build as deltas into `FilterDrawer` / `FilterButton` / `ActiveFilterChips` / `FilterOptionList` /
+  `SideRail` / `useCollapsed`, five of which already exist.
+- **`DATE_TIME_PICKER_SPEC_v1.1.md`** — do not build `ui/DatePicker/`; `DateField` is the one ruled
+  picker (14 importers).
+- **`ADOPTIONS.md`** (new) — nine checkboxed build items with a cost band and the engine each lands
+  in, one "already correct, no work", six deferrals with reasons, four open rulings. Explicitly
+  behind the P0 register's Phase 1 chain.
+- **`RUN_PROMPT_2026-08-30.md`** (new) — the 30 Aug handoff prompt filed as a historical record with
+  each of its five tasks' real outcome (1 done · 2 partial · 3 done · 4 confirmed-then-reversed ·
+  5 unexecutable).
+- **`00-INDEX.md`** — points at both new files; without it `ADOPTIONS.md` is undiscoverable.
+- **`REMEDIATION_AUDIT_2026-09-05.md`** — one line: its `REFERENCE_SPEC_v2.5.md:1411-1412` citation
+  was broken by my own +56-line insertion, so it now cites *Appendix A0, ruling D5* instead. Edits
+  to a shared doc that shift line numbers break other documents' citations; prefer section refs.
+  **That one line is not in this commit** — the other session committed the file whole at 15:09
+  (`fc52513`), carrying my fix under their message. Recorded here so the blame is not a mystery.
+
+### Found — nine of my own first-draft claims were wrong
+A three-lens verification pass (read-only refuters, then re-counted by hand) found the amendments
+mostly true but the new `ADOPTIONS.md` materially wrong in nine places. All corrected the same day:
+
+- **`lib/csv.ts` is imported by three files, not "exactly one screen"** — and `ReportToolbar`
+  carries it across the reports family. The item was framed as adoption; it is placement.
+- **Item 5 was wrong three ways.** `periodRange` already has `Tomorrow` and `Next Month`; it is
+  *entirely forward-looking* with no past range at all (so "add forward-looking presets" was
+  inverted); and the Shrawan fiscal presets already exist in a **second** engine, `PERIODS`
+  (`data/pulse.ts:583`), which the file never named. Rewritten as "one date engine, both
+  directions", `L`.
+- **Item 4's premise was false.** `/rentals` already renders a visible `Cancelled` chip that flips
+  `cancelled_at`; the exclusion is not invisible. Only the *count* is missing. "Archived" is not a
+  booking concept at HEAD (0 hits in `data/rentals.ts` and `queries/bookings.ts`).
+- **Item 10 was already done** — `BookingDetail` renders `Deposit Required` after the rental totals
+  and never sums it in. Moved to an "already correct" note.
+- **`DateField` has 14 importers, not 18**; `IntelCard`'s keyboard path is **already closed**; the
+  duplicate stage lookups number **two**, not three; `lateFee()` lives in `money.ts:310`, not
+  `lib/lateFee.ts`; the KPI tile has **no info icon** to hang a definition off.
+- **The banner pointed builders at a stale destination.** `LAYER-D-VERIFICATION` §5.5 still lists
+  `facetCounts.ts` and `queries/bundles.ts` as "ZERO callers" — both wired days later. The banner
+  now carries that correction forward rather than sending readers into it blind.
+
+Two defects were in the editing itself: a §10.6 "verbatim" quote that was actually a paraphrase,
+and a §10.7 strikethrough that stopped one sentence early and left the *false* instruction standing
+under a VOID label. Both fixed.
+
+### Found — the CRLF detector in this shell is broken
+`grep -c $'
+$' <file>` returns the same number as `wc -l` for **pure-LF files too**, so it
+"confirms CRLF" for anything. It cost one failed edit run: `docs/booqable/*.md` are LF, not CRLF as
+measured. Detect from bytes instead. Also worth knowing: **`PROGRESS.md` is now pure LF** — it was
+pure CRLF on 5 Sep; the conversion happened in the last two days.
+
+### Verified
+- 25 amendments + 14 corrections applied by anchored replacement, every anchor asserted to match
+  exactly once; line endings detected per file and preserved (all seven files LF, confirmed by byte
+  count before and after).
+- Structure: code fences balanced (52 / 4 / 2), no blockquote leakage, heading sets byte-identical
+  to HEAD apart from one intended law-number fix, and `git grep` finds **no** `#`-anchor links into
+  these files, so nothing was orphaned.
+- Nothing deleted: §2.4's contract list, the §10.6 discount block and §16.1's coupon analysis all
+  survive verbatim under their markers. The single outright deletion is §0's "do not re-derive"
+  instruction — the one line the review existed to reverse.
+- Every file and symbol named in `ADOPTIONS.md` was confirmed to exist at HEAD with a positive
+  control (`DateField` 14 / `IntelCard` 31 non-zero; `DatePicker`, `ClickableRow`, `RailToggle` 0).
+- **No gates run — no code changed.** `tsc`/`vitest` untouched by this work.
+
+### Blocked / next
+- Four rulings for Babin, unchanged from the review: **B3** (keep the Dashboard KPI strip?),
+  **B5** (is the excluded-Cancelled count worth showing?), **D1 re-posed** (purchase cost is
+  OS-mastered — the bridge mapper cannot carry it; deposits can be backfilled either side), and
+  whether **`operationalDayStart`** is an organisation setting or a device preference — it is
+  per-browser localStorage today and Daily Closing reads it.
+- `AUDIT_VERIFICATION_2026-09-06.md` is **untracked** at the repo root; `ADOPTIONS.md` cites the
+  register, so commit it or the citation dangles on a clean clone.
+- Not committed. `REMEDIATION_AUDIT_2026-09-05.md` and `PROGRESS.md` are shared with the other
+  session's live work — stage those by hunk, never whole.
+
 ## 2026-09-07 (cont. 2) — An invoice can exist: one transaction writes it, and the modal shows what it will write
 
 **Phase:** Phase 0 · **Status:** DB-03 (P0), DATA-01 (P1), MONEY-01 (P0), MONEY-05 (P1) implemented · `PLAN.md §4.46` derived and closed · `check:rebuild` still BLOCKED

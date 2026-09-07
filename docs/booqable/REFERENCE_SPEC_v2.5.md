@@ -5,6 +5,35 @@
 **Deliverable:** a spec for Claude Code, not code
 **Status of the reference:** STRUCTURAL ONLY (29 Aug ruling stands — see §1)
 
+> ## ⛔ READ THIS FIRST — what in this document is trustworthy
+>
+> Amended 7 Sep 2026 after an independent five-lens review (5 Sep, against HEAD `467e7f1`).
+> **The capture itself is unchanged.** What changed is the labelling around it.
+>
+> **Layers A, B and C are trusted.** Every Booqable-side observation in this file was
+> re-checked and held. That capture is the reason to keep the document.
+>
+> **Layer D is 28% verified — do not build from it.** The repo's own audit confirmed 93 of
+> 329 repo-side claims; 110 are GAP, 85 MISLEADING, 34 WRONG-NAME. Read
+> [`CORRECTIONS.md`](CORRECTIONS.md) first, and read **§5 of**
+> [`LAYER-D-VERIFICATION.md`](LAYER-D-VERIFICATION.md) **in place of §2.4** — that file
+> states outright that its §5 replaces §2.4. **Carry one correction forward into it:** §5.5's
+> "ZERO callers" rows for `facetCounts.ts` and `queries/bundles.ts` went stale within days —
+> `useFacetCounts` has been wired to /rentals since 1 Sep (`RentalsList.tsx:27,:559`) and
+> `bundles.ts` is live via `bundleRecords.ts`. Re-grep any dead-module claim before trusting it.
+>
+> **The body is older than its own appendix on discounts.** Appendix A0 (D3) reversed the
+> Law 10 gate on 30 Aug; PLAN.md §0 Law 10 now reads **UNGATED** and migrations 0074/0075
+> dropped the constraints. Every gate passage below carries a ⛔ marker.
+>
+> **Law numbers in the original text were off by one** (width, 44×44 and the AD/UTC law).
+> They are corrected in place below and marked where corrected.
+>
+> **Both companion specs were reviewed and amended the same day** —
+> [`RAIL_AND_QUICK_ACTIONS_SPEC_v1.0.md`](RAIL_AND_QUICK_ACTIONS_SPEC_v1.0.md) and
+> [`DATE_TIME_PICKER_SPEC_v1.1.md`](DATE_TIME_PICKER_SPEC_v1.1.md). The build shortlist
+> drawn from all three is [`ADOPTIONS.md`](ADOPTIONS.md).
+
 ---
 
 ## 0. How to use this document
@@ -15,7 +44,12 @@ Feed this whole file to Claude Code inside the `babin-rentals-os` repo. It does 
 2. **§3–§5** are a finished worked example — the Dashboard — at full depth. Use it as the quality bar.
 3. **§6–§7** are the template and the run instructions for the remaining ~50 screens, which Claude Code generates itself from `docs/booqable/` and the local archive.
 
-Do **not** re-derive the repo contracts in §2.4. They are measured, not guessed.
+**Verify every Layer D line before building.** §2.4's contract list was written without repo
+access and later measured at **28% correct** — read `LAYER-D-VERIFICATION.md` §5 instead, then
+`CORRECTIONS.md`. Note that §8 is not the corrective it looks like: it disclaims only the *live
+database*, and in the same breath repeats §2.4's claim that the table, engine and route names
+"come from the repo's measured state". The audit showed those were not measured either, so
+neither section's assurance survives. Verify each line yourself.
 
 ---
 
@@ -30,7 +64,7 @@ These are already decided. A generated screen spec that contradicts one of them 
 | R3 | Status: map **ours down to theirs**, never theirs up to ours. Booqable has nothing between Reserved and Started. | 19 Aug |
 | R4 | Sub-rental: Booqable's `Allow shortage` is permission to oversell, not a record. Our external-gear tracking has **no counterpart** and must never be overwritten by a sync. | 19 Aug |
 | R5 | RBAC: Booqable's four levels cannot express our nine roles. Do not narrow ours to fit. | 19 Aug |
-| R6 | Dates: Booqable is AD-only DD-MM-YYYY. We store AD in UTC and render BS. Never store BS. | Law 9 |
+| R6 | Dates: Booqable is AD-only DD-MM-YYYY. We store AD in UTC and render BS. Never store BS. | Law 7 *(cited as Law 9 in the original)* |
 | R7 | The word **"customer" appears nowhere** — they are clients. Booqable's nav says "Customers"; ours says Clients. | Law 17 |
 | R8 | Booking-as-hub is law: no booking-related create action outside Booking Detail. | 29 Aug adoption |
 
@@ -58,7 +92,14 @@ Hover affordance · focus behaviour · tab stops per row · what appears on hove
 ### 2.4 Layer D — BACKEND DATA LINK
 For every panel and every column: the **table or view**, the **filter**, the **engine** that computes it, and the **action** that writes it. Named against the real repo, not invented.
 
-**The contracts to name (measured, do not re-derive):**
+> ⛔ **SUPERSEDED — §5 of [`LAYER-D-VERIFICATION.md`](LAYER-D-VERIFICATION.md) replaces this
+> list.** It was written on 30 Aug in a session with **no repo access**, then labelled
+> "measured". Measured afterwards: **28% correct** (93 of 329 claims). It names 19 engines
+> against the ~50 top-level modules `src/lib` holds today, so it omits roughly 31 — and its
+> errors were copied forward verbatim into six later sections.
+> The list is kept below unchanged as the historical record — it is not a contract.
+
+**The contracts as named on 30 Aug — historical, 28% verified, do not build from this:**
 
 *Tables / views the app already reaches:* `bookings` · `booking_lines` · `booking_line_units` · `clients` · `clients_v` · `client_directory_v` · `client_flags` · `membership_plans_v` · `products_v` · `product_units_v` · `invoices` · `payments` · `payment_reversals` · `security_deposits` · `expenses` · `expense_categories` · `branches` · `operation_sessions` · `cleaning_queue_entries` · `users` · `audit_events` · `number_sequences` · bridge tables `external_refs` · `external_invoices` · `sync_outbox` · `sync_conflicts`
 
@@ -119,7 +160,7 @@ This is worth stating plainly because our `/dashboard` currently carries a KPI s
 
 > **CORRECTED IN v1.1 by the live session.** v1.0 read the three panels as a vertical stack. They are not.
 
-**Layout:** a **two-column page** — a main column carrying *Going out* then *Coming back*, and a **fixed right rail** carrying *Latest notes*. A toggle button in the page header shows/hides the rail. Ours must decide rail-vs-stack deliberately; on a 768px bench the rail has nowhere to go (Law 15 — width decides).
+**Layout:** a **two-column page** — a main column carrying *Going out* then *Coming back*, and a **fixed right rail** carrying *Latest notes*. A toggle button in the page header shows/hides the rail. Ours must decide rail-vs-stack deliberately; on a 768px bench the rail has nowhere to go (Law 14 — width decides).
 
 **Right rail — Latest notes**
 - 10 rows, newest first, `Load 10 more` pagination (no infinite scroll, no "view all").
@@ -199,10 +240,10 @@ It also confirms tax at 13% (2,000 → 260) and, again, the 06:00 rental day.
 
 `[ruled]` — what ours must do:
 - **Adopt the preview card** — it answers "what is in this booking" without leaving the floor screen, which is the most common question at the bench.
-- **Bind it to tap as well as hover.** Hover-only fails the packing bench, which is touch. A long-press or an explicit chevron control, 44×44 (Law 16).
+- **Bind it to tap as well as hover.** Hover-only fails the packing bench, which is touch. A long-press or an explicit chevron control, 44×44 (Law 15).
 - **Gate the money block by role, not by CSS.** For money-blind roles the four figure rows are *not built*, and the card still renders with client, period and lines.
 - **One row = one link = one tab stop.** Build on the `ClickableRow` component already named as item 3 in the 11 Aug improvement order. Cells inside it are not separately focusable.
-- **Hover reveals nothing that matters.** No data may be hover-only — it fails touch, which is the packing bench's only input. Anything worth showing on hover belongs in the row or behind an explicit control (Law 16, 44×44).
+- **Hover reveals nothing that matters.** No data may be hover-only — it fails touch, which is the packing bench's only input. Anything worth showing on hover belongs in the row or behind an explicit control (Law 15, 44×44).
 - **Row hover = background token shift only.** No lift, no shadow, no border colour change alone (Law 11 — never colour alone).
 - **Focus-visible ring is mandatory** and must not be the same treatment as hover.
 - **Booking ref is the affordance.** `#906` reads as the link; the rest of the row is the hit area.
@@ -492,7 +533,7 @@ It does two things at once: states the **rule**, then names **the specific input
 - `[observed]` The line's **remove `×` and the product thumbnail appear only on row hover.** A destructive control that exists only on hover fails touch entirely — and the packing bench is touch. Do not copy.
 - `[observed]` `Charge` shows `1 day  Rs.2,000.00 ⌃` — the chevron expands the pricing breakdown in place.
 - `[observed]` Dates and times are inline inputs; there is no save button visible, so it commits on blur/change. Any adoption needs an explicit optimistic-update and failure path (Law 12 — errors inline, toasts carry successes only).
-- `[ruled]` Ours puts line removal behind a visible 44×44 control (Law 16), and confirms it if the booking is past Packed.
+- `[ruled]` Ours puts line removal behind a visible 44×44 control (Law 15), and confirms it if the booking is past Packed.
 
 ### 10.5 The order sidebar, open
 
@@ -531,9 +572,13 @@ deposit   security_deposits table (its own table, with the
           payments_no_security_deposit check). Resolution chain global → product
           → client is the 29 Aug F2 spec addition; the exclusion rule captured in
           §10.3 belongs in that engine, not in the screen.
-discount  lib/discount — Law 10: >10% needs reason ≥10 chars + named approver,
-          25% cap, DB constraint, no role bypass including Owner.
-          Booqable's "Add a discount" has NO such gate. Do not copy its freedom.
+discount  ⛔ SUPERSEDED 31 Aug — Law 10 is now UNGATED (A0 D3; PLAN.md §0 Law 10).
+          No reason, no approver, no cap below 100%, no role tier; 0074 and 0075
+          dropped the DB constraints. Booqable's freedom IS the rule now.
+          Captured 30 Aug, when the gate stood — verbatim: "lib/discount — Law 10:
+          >10% needs reason ≥10 chars + named approver, 25% cap, DB constraint, no
+          role bypass including Owner. / Booqable's 'Add a discount' has NO such
+          gate. Do not copy its freedom."
 writes    createRental → create_booking(jsonb) RPC (0059, NOT YET APPLIED)
           the four floor verbs: packRental · handoverRental · returnRental
           · completeReset  (all implemented)
@@ -544,7 +589,7 @@ docs      next_document_number(kind) mints refs; per-prefix sequences (F5, law)
 ### 10.7 Open decisions
 
 1. **B4 — serial allocation at creation or at Pack.** §10.2 informs it; it does not settle it.
-2. **Discount gate.** Booqable lets anyone discount freely. Law 10 does not. Confirm the floor understands that a >10% discount now needs a reason and a named approver — this is a workflow change for staff, not just a code rule.
+2. ⛔ **VOID (ruled 31 Aug: no gate).** ~~**Discount gate.** Booqable lets anyone discount freely. Law 10 does not. Confirm the floor understands that a >10% discount now needs a reason and a named approver — this is a workflow change for staff, not just a code rule.~~ **Nothing to confirm — there is no ceremony to explain.** The floor briefing that survives is the opposite one: discounts are ungated.
 3. **Availability on the line.** `0 left` is genuinely useful at the bench and we have no local source for it. Either the Booqable bridge feeds it during the 7-month window, or the line shows nothing rather than a wrong number.
 
 ---
@@ -598,7 +643,7 @@ Our Calendar module has to serve both. The schema already reflects that: **GiST 
 
 `[observed]` **No preview card.** Hovering a bar gives nothing — no tooltip, no card. That is now three screens (Bookings list, Booking detail lines, Calendar) confirming the rich preview exists **only** on the Dashboard.
 
-`[ruled]` If we build the preview card, the calendar bar is the single place it pays off most — a bar carries less information than a list row, so the hover has more work to do. Bind it to tap as well (Law 16).
+`[ruled]` If we build the preview card, the calendar bar is the single place it pays off most — a bar carries less information than a list row, so the hover has more work to do. Bind it to tap as well (Law 15).
 
 ### 11.5 Backend data link
 
@@ -608,7 +653,7 @@ bars      bookings ⨝ booking_lines filtered to the row's product,
           spanning starts_at → ends_at
 scale     Day/Week/Month → the same periodRange engine already reused by
           /operations and the Dashboard panels. One date engine, three screens.
-today     lib/bs — marker position is AD/UTC derived, rendered BS (Law 9)
+today     lib/bs — marker position is AD/UTC derived, rendered BS (Law 7)
 crew axis crew assignments + the GiST exclusion constraints.  OURS ONLY.
 avail     "Check availability" hits the same availability source as the line's
           "0 left" — Booqable-mastered today.  GAP (see §10.6).
@@ -810,6 +855,13 @@ Opt-in feature, off for this product: *"Enable variations if this product comes 
 - Right rail: `Tags` · `Barcode` (**a barcode per client** — check-in by scan) · `Notes` · `Activity logs`
 
 ### 13.5 The find: a standing per-client discount, and what it does to Law 10
+
+> ⛔ **MOOT since 31 Aug.** This section reasons about a Law 10 ceremony that no longer
+> exists — discounts are UNGATED, so a standing 15% needs no approver and breaches no
+> threshold. `standing_discount_pct` exists on no table. What survives is a data-model
+> question with no ceremony attached: *should a standing client discount be a membership
+> plan or a column on `clients`?* Filed that way in §13.7 #1. The observation below —
+> that live clients #371 and #363 carry standing discounts — is real and worth keeping.
 
 `Discount percentage` on the client is a **standing discount applied to every booking**. Law 10 gates *a* discount: >10% needs a reason ≥10 chars + a named approver, 25% cap, DB constraint, no role bypass.
 
@@ -1047,7 +1099,11 @@ Captured live. Read-only.
 
 **What a coupon actually is here:** a **pre-authorised discount policy** — percentage + minimum spend + product scoping + usage limit (`0/1 used`) + validity window + active toggle. And the codes are *policies with names*: `WOMENINFILM`, `STUDENT10`, and `Student with college letter` — that last one has spaces in it, so it is not a marketing code typed at checkout; it is a policy a staff member applies at the counter when shown a college letter.
 
-**This resolves the Law 10 question §13.5 opened, and in Booqable's favour of the same shape:**
+> ⛔ **The Law 10 question this resolves was itself closed on 31 Aug — no gate at all.**
+> The coupon *mechanism* below (pre-authorised policy: scope, expiry, usage limit) stays
+> interesting as a product idea; the ceremony arithmetic around it no longer applies.
+
+~~**This resolves the Law 10 question §13.5 opened, and in Booqable's favour of the same shape:**~~
 
 Two of these coupons (−25%, −20%) exceed the >10% threshold — but a coupon is authorised **once, at creation**, with scope, expiry and usage limits attached, then *referenced* per booking. Booqable therefore runs two discount mechanisms with two authorisation models:
 
@@ -1090,6 +1146,9 @@ coupons    proposal: discount_policies table {code, pct, scope(product/client),
            window, usage_limit, authorised_by, reason} + applications counted
            via booking_discounts referencing the policy. lib/discount owns the
            combined-cap rule. Creation writes the Law 10 audit_events row.
+           ⛔ 31 Aug: BOTH lines above are now false. lib/discount validates
+           arithmetic only (0–100); there is no combined cap and no Law 10
+           ceremony, so creation writes no approval audit row. See §16.1.
 activity   audit_events (already triggered on 6 tables) + a sentence-template
            registry per event type; actor filter = users join; per-entity
            scoping already exists (booking sidebar "View activity logs").
@@ -1397,6 +1456,13 @@ Babin answered four of the five blockers. These are his rulings; each is recorde
 Default 06:00, changeable in Settings. *(v2.4: observed in Booqable at Settings ▸ Rental period ▸ Default booking times as a Pick up/Return pair, both 06:00 — §20.2; and codified in the client contract clause २.१ — §19.3.)* Implementation: `bookings.ts` named filters take the day boundary from settingsStore (new key `operationalDayStart`, default "06:00"), not a literal — the same pattern as `quoteValidityDays`. The TODO(decision) closes; Dashboard, Operations and the pickups report all read the same setting.
 
 ### D3 — RULED: **no discount gate** ("copy Booqable")
+
+> ✅ **All three consequences below were discharged on 31 Aug 2026** — PLAN.md §0 Law 10
+> now reads "Discounts are UNGATED", migration **0074** dropped the `booking_discounts`
+> constraint and **0075** the `invoice_lines` one, and `lib/discount` carries no approval
+> path. The "until a migration drops it" hazard and the standing policies offer are both
+> spent. Treat any re-added gate as a regression.
+
 Recorded as Babin's ruling, with the consequences stated plainly, because this **reverses Law 10** — one of PLAN.md's 17 non-negotiable laws — and collides with schema already applied:
 
 1. The DB constraint on `booking_discounts` (>10% requires reason ≥10 chars + named approver; 25% cap) is **live in the applied migrations**. Until a migration drops it, an ungated UI will write discounts the database rejects — the screen says yes, Postgres says no.
@@ -1423,7 +1489,7 @@ Everything this capture raised that needs Babin's answer, consolidated. Ordered 
 |---|---|---|---|---|
 | D1 | **Backfill purchase costs + deposit values** — in Booqable now, or at import? | §12.4: both unset on sampled product; deposits not being charged; ROI model has no input | Backfill in Booqable during the bridge (data stays mastered where operations run); one query across 178 products sizes the job first | Every depreciation / ROI / asset-value report; correct deposits on live bookings |
 | D2 | ~~Portal binding~~ **RULED — see A0** | §14.1 | self-registration, bound ONLY by verified control of the client's stored email | closed |
-| D3 | ~~Discount policies~~ **RULED — see A0** | §13.5, §16.1, §17.4 | no gate (Law 10 reversal — A0 lists what that requires and costs) | closed, consequences pending |
+| D3 | ~~Discount policies~~ ✅ **CLOSED — no gate; every consequence discharged 31 Aug (PLAN Law 10 · 0074 · 0075)** | §13.5, §16.1, §17.4 | no gate (Law 10 reversal — A0 lists what that requires and costs) | closed — all consequences discharged 31 Aug |
 | D4 | ~~The operational day~~ **RULED — see A0** | §4.6 | 06:00→06:00 as a setting | closed |
 | D5 | ~~B4~~ **RULED — see A0** | §10.2 | at creation; 27 Jul lock stands | closed |
 

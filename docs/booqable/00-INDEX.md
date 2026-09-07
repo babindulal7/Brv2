@@ -60,10 +60,18 @@ PLAN.md Law 10 carries the final text; PROGRESS.md 31 Aug is the record.
 
 ## 1. What the reference actually is
 
+> **Amended 7 Sep 2026.** All three specs below now carry a review banner: the capture is
+> trusted, the repo-side layer is not (28% verified — read [`CORRECTIONS.md`](CORRECTIONS.md)
+> and §5 of [`LAYER-D-VERIFICATION.md`](LAYER-D-VERIFICATION.md) in place of §2.4), the discount
+> passages are marked superseded, the struck 1180 breakpoint is corrected to 1280, and the law
+> numbers are fixed. The build shortlist drawn from all three is [`ADOPTIONS.md`](ADOPTIONS.md).
+
 | Artifact | Exists? | Where | What it holds |
 |---|---|---|---|
 | **`REFERENCE_SPEC_v2.5.md`** — the complete capture | **Yes** | [`REFERENCE_SPEC_v2.5.md`](REFERENCE_SPEC_v2.5.md) | **13 screens + the 17-page Settings compendium + Appendix A0 (rulings) + Appendix A (decision sheet).** Arrived 01:57, 31 Aug. **The authority.** Its Layer D is unverified — see [`CORRECTIONS.md`](CORRECTIONS.md). |
 | `DATE_TIME_PICKER_SPEC_v1.1.md`, `RAIL_AND_QUICK_ACTIONS_SPEC_v1.0.md` | **Yes** | this directory | Two component specs from the same concurrent session, 02:03–02:07. Picker spec bumped to v1.1 on 1 Sep (§4.4 corrected to BS-primary cells; v1.0 kept in place with a superseded banner). Not reviewed by this pack. |
+| **`ADOPTIONS.md`** — the build shortlist | **Yes** | [`ADOPTIONS.md`](ADOPTIONS.md) | **Start here if you intend to build anything from this pack.** Ten checkboxed items, each with a cost band and the engine it lands in; six deferrals with the reason; the four rulings they wait on. Written 7 Sep 2026 from a five-lens review. Everything in it sits behind the P0 register in `REMEDIATION_AUDIT_2026-09-05.md`. |
+| `RUN_PROMPT_2026-08-30.md` | **Yes** | [`RUN_PROMPT_2026-08-30.md`](RUN_PROMPT_2026-08-30.md) | The 30 Aug handoff prompt that carried the A0 rulings into the repo, filed 7 Sep as a historical record with each of its five tasks' real outcome. Do not run it again. |
 | `docs/booqable/` 19 Aug capture — 00-INDEX + 14 page docs + PARITY.md | **No** | — | Never present. The §7 instruction to "extend" it is unexecutable **as written in both v1.1 and v2.5** — but v2.5 makes it moot by containing the capture itself. |
 | Saved Booqable DOM archive (HTML/MHTML) | **No** | — | No `.html`/`.mhtml` under the workspace is a Booqable save. The only saved pages are our own design-pack exports and mockups. |
 | `BOOQABLE_DESIGN_PRINCIPLES` v1.2 | **Yes** | [`../BOOQABLE_DESIGN_PRINCIPLES.md`](../BOOQABLE_DESIGN_PRINCIPLES.md) | 10 principles, 8 anti-patterns, 3 further passes (§4 E1–E8, §5 F1–F9). Prose analysis; no columns, filters, routes or destinations. |

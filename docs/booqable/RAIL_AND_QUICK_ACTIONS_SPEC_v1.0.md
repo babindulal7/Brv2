@@ -3,6 +3,19 @@
 **For:** Babin Rentals OS · **Source:** live Booqable admin, 30–31 Aug 2026, read-only, incl. three interaction probes (section collapse · whole-rail toggle · split-button caret)
 **Companion to:** BOOQABLE_REFERENCE_SPEC v2.5 (structural capture). This file answers one question in depth: *where do filters and quick actions live, and how do they open?*
 
+> ## ⛔ AMENDED 7 Sep 2026 — read before building §3
+>
+> Reviewed 5 Sep against the repo. **§1 and §2 (the observed placement grammar) hold.**
+> Two corrections were applied to §3–§6:
+>
+> 1. **The 1180 breakpoint was struck by PLAN §4.38a on 31 Aug** — Law 14 is now 768 / **1280**
+>    (`src/lib/breakpoints.ts`, test-guarded). A column at ≥1180 would land a layout rail on
+>    the 1180–1279 iPad-Pro-landscape band that 1280 exists to protect.
+> 2. **Five of the six components in §3 already exist under other names.** Build them as
+>    deltas, never as new files — see the mapping at the head of §3.
+>
+> Law numbers were off by one throughout (width is **14**, 44×44 is **15**); corrected in place.
+
 ---
 
 ## 1. THE SIDE RAIL — placement grammar, observed
@@ -72,6 +85,27 @@ Booking Detail header: breadcrumb · status pill · **one amber NEXT-verb button
 
 ## 3. OUR COMPONENTS — the build spec
 
+> ⛔ **These are deltas, not new components.** Measured at HEAD 5 Sep with a positive control;
+> re-confirmed 7 Sep. Build into the file named on the right — a parallel set is the one
+> failure mode this section can cause.
+>
+> | §3 name | What actually exists | File |
+> |---|---|---|
+> | `<FilterRail>` | `FilterDrawer` — an overlay panel, not a column (its header says why the column was abandoned) | `components/ui/FilterDrawer.tsx` |
+> | `<RailSection>` | a disclosure inside `FilterDrawer`; per-route collapse already exists as `useCollapsed` | `FilterDrawer.tsx` · `lib/collapse.ts` |
+> | `<RailToggle>` | `FilterButton` — already carries the count badge and `aria-expanded` | `FilterDrawer.tsx:380` |
+> | `<FacetGroup>` | `FilterOptionList` + `useFacetCounts` (wired to /rentals on 1 Sep) | `FilterDrawer.tsx:676` · `lib/queries/facetCounts.ts` |
+> | the chip × pattern | `ActiveFilterChips` | `FilterDrawer.tsx:468` |
+> | the column form | `SideRail` / `CollapsibleAside` — used in 9 files across the module tree (clients, documents, finance, inventory ×2, operations ×2, rentals, reports), so it is not a /clients remnant | `components/ui/Page.tsx:403` |
+> | `<BulkBar>` | **not built** — needs a server-side id endpoint and a ruled verb list first (see §3.4) | — |
+>
+> Two further corrections inside §3: the counts source is **`facetCounts.ts`**, not the
+> unbuilt `booking_facets()` RPC (§9.2 of the reference spec is stale on this); and
+> `<RailSection>` collides only with a file-local helper in the unrouted
+> `src/archive/operations/CasesQueue.tsx` (`:913`) — no export, no route, so the name is free.
+> **`periodRange`** is not a `lib/` engine — it is a six-case helper in `src/data/today.ts`,
+> so "one date engine, they cannot disagree" is an aspiration, not a fact, until it moves.
+
 Six components, all in `src/components/ui/`, engine-fed, no business logic (Law 1).
 
 ### 3.1 `<FilterRail>` + `<RailSection>`
@@ -89,7 +123,7 @@ Six components, all in `src/components/ui/`, engine-fed, no business logic (Law 
 </FilterRail>
 ```
 
-- Section header = full-width button, chevron right, `aria-expanded`, 44px min height (Law 16). Collapse per-section, persisted per screen (localStorage-class convenience, not server state).
+- Section header = full-width button, chevron right, `aria-expanded`, 44px min height (Law 15). Collapse per-section, persisted per screen (localStorage-class convenience, not server state).
 - **Counts from `booking_facets(filters)`** (one RPC, §9.2) — render label-first, counts async, exactly as observed. A checked facet with count 0 stays visible (the opt-in census, §9.2).
 - Facet checkboxes ALWAYS carry counts; we do not build the dropdown idiom for filterable enums at all (one idiom everywhere — L4). Dropdowns are reserved for single-choice display options (`Show revenue by`).
 - **Default scope is rendered as pre-checked boxes** — adopting Downtime's honesty, refusing the Bookings list's invisible exclusion. Cancelled/Archived show unchecked with their counts.
@@ -99,7 +133,7 @@ Six components, all in `src/components/ui/`, engine-fed, no business logic (Law 
 ### 3.2 `<RailToggle>` + responsive law
 
 - One icon button LEFT OF THE PAGE TITLE (PageHeader gains an optional `railToggle` slot). Toggles the rail wholesale; filled state when hidden; rail state survives.
-- **Law 15 (width decides):** ≥1180 rail is a column, default open. 768–1180 rail defaults CLOSED, toggle opens it as an overlay column. <768 (bench/phone) there is no rail column at all — the toggle opens a **full-height bottom sheet** with the same `<RailSection>` children, an sticky Apply row showing the would-be result count (from the same facets RPC), and 44×44 targets throughout. One component tree, three presentations.
+- **Law 14 (width decides — 768 / 1280):** ≥1280 the filter panel is persistent and default open. 768–1279 the same panel, default CLOSED, opened by `FilterButton`. *(As captured on 31 Aug this line read: "**Law 15 (width decides):** ≥1180 rail is a column, default open. 768–1180 rail defaults CLOSED, toggle opens it as an overlay column." Three things changed: the breakpoint 1180 was struck by PLAN §4.38a, the law is 14 not 15, and the ≥1280 presentation is a persistent panel rather than a layout column — `FilterDrawer` was written to remove that column.)* <768 (bench/phone) there is no rail column at all — the toggle opens a **full-height bottom sheet** with the same `<RailSection>` children, an sticky Apply row showing the would-be result count (from the same facets RPC), and 44×44 targets throughout. One component tree, three presentations.
 - The Dashboard/Detail right rail (notes feed, order sidebar) uses the same toggle mechanic mirrored top-right.
 
 ### 3.3 `<QuickCreate>` (header primary)
@@ -148,6 +182,6 @@ Three filter idioms in one product → one (L4) · invisible default exclusions 
 
 ## 6. OPEN DECISIONS
 
-1. **Rail width token** — Booqable ≈183px; ours must fit the 1180 breakpoint math with the nav. Propose 216px at ≥1180, sheet below.
+1. **Rail width token** — Booqable ≈183px; ours must fit the **1280** breakpoint math with the nav. Propose 216px at ≥1280, sheet below.
 2. **Collapse-state persistence scope** — per screen per device (localStorage) proposed; server-side per user is more work for little gain.
 3. **`Select all {query}` + bulk verbs** — needs the server-side id-list endpoint before BulkBar ships; sequence it with the Wave 1 list conversions.
