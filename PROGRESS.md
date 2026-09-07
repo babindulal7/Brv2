@@ -3,6 +3,84 @@
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
 
+## 2026-09-07 (cont. 5) — PERMISSIONS.md filed, then corrected against the database it describes
+
+**Phase:** governance · **Status:** filed + amended to v1.2; UNCOMMITTED at time of writing · no code changed
+
+### Did
+- Filed `docs/PERMISSIONS.md` verbatim as handed over (620 lines, 16 sections) — the single
+  authority for who may do what, superseding the role tables in eight module specs.
+- Copied §15 into `CLAUDE.md` under **"Authority to resolve conflicts"**, which §15.5 requires,
+  with a pointer back for the matrix rather than restating §3–§6.
+- Verified it against code, repo migrations and the live database, then amended it to **v1.2**:
+  a verification banner, seven ⛔ in-place corrections, and a new **§16** carrying 20 findings
+  with evidence. Logged as **R-21** in `RULINGS-2026-09-07.md`.
+
+### Ruled (R-21) — the schema won every disagreement
+Per §0's own precedence rule and §15.1 B-1, four cells were corrected toward the stricter side.
+**No code changed** — in each case the code and the database were already stricter, so the
+correction belonged in the document alone:
+
+- Damage approval is **Owner · Manager** below Rs 25,000, Owner at or above — not `M+`.
+  `auth_can_approve_damage()` refuses Admin at every amount, in repo 0057 and on live alike.
+- `purchase.approve` is **Owner · Manager** — Admin is refused by `canApprovePurchase` and by
+  live `auth_can_approve_purchase()`, and no Rs 50,000 branch exists in the capability path.
+- `auth_is_finance_or_admin()` is **five roles including Coordinator**. The doc hedged the wrong
+  member: Manager is in; Coordinator was the undocumented one, and it makes the helper
+  set-identical to `auth_can_view_money()`.
+- `settings.manage` is `Owner` in code, and **there is no `settings` table in `public`** —
+  settings are localStorage, so the row has no DB enforcement to mirror and D-9 is untestable.
+
+### Found — §4 is 26% accurate, and three findings are live defects rather than doc errors
+- Of §4's **31 ✓ rows** ("string already declared in the repo"): **7 name a string that exists
+  nowhere**, 16 name a real string with a different role set, 8 are right on both. **14 capability
+  strings that live in the code appear nowhere in §4**, including `operations.perform`, declared
+  by four implemented floor actions. Actions declare `permissions:`, not `capability:` — the
+  field name in §4's premise and in R-1/R-2 is wrong.
+- **`case.resolve` resolves to `isStaff()`** — Warehouse, Technician and Driver can set a damage
+  disposition *and cost* today. `canApproveDamage` exists in `rbac.ts` and is called from
+  nowhere. A money write by a money-blind role: P4 and N-1, a bug to fix.
+- **Law 6's database half is not on production.** Live runs …0077, 0078, then **0089**; 0092 —
+  the money-column write trigger §5 cites in the present tense — is unapplied, and **26 of 26**
+  `_v` views are INSERT-able by `anon`, so the column masking is writable-through.
+- **No role can be assigned at all.** `public.users` has one policy (`users_select_own`, SELECT);
+  with RLS on there is no INSERT/UPDATE path for Owner either, so D-8 cannot pass as written.
+- Smaller: `inspection.record` (✓) has never existed while the three real `inspection.*` strings
+  are deliberately unmapped and therefore denied to everyone — the document's one job, on the
+  only three capabilities actually open; `inventory.create` maps to `canCreateBundle` so W6's
+  Warehouse Quick Add raises today; Technician *can* complete Pack and Handover while Coordinator
+  cannot, exactly inverting §4.2; only `portal_auth_challenges` is deny-all, not all three;
+  Floor and Driver can neither insert nor read their own expenses; one `0074` exists, the
+  duplicate prefixes are 0056 and 0076 and both are applied live, so R-4's "renumber first"
+  would desynchronise the ledger.
+
+### Found — a security finding I nearly published, withdrawn
+The verification pass reported `settings` and `expenses` carrying `allow_anon USING(true) WITH
+CHECK(true)` — an anon read/write hole. I reproduced it, then chased the contradiction when a
+schema-filtered re-query returned nothing: those policies are real but sit in **`bakery_archive`**,
+an unrelated project sharing the Supabase instance. `public.expenses` carries only its three
+restrictive policies and `public.settings` does not exist. My first query had no schema filter.
+**Always qualify the schema before calling something a live hole.**
+
+### Verified
+- Every load-bearing claim re-counted or re-queried by hand before being written: the ✓/○ diff,
+  the four helper definitions (live `pg_get_functiondef`), the migration ledger tail, the 26/26
+  view privilege count, the policy sets on `users`, `expenses` and the three portal tables, and
+  the duplicate migration prefixes.
+- Amendments applied by anchored replacement, each asserted to match exactly once; LF preserved
+  (709 lines); §16.1's table is uniform at five columns; markdown structure intact.
+- **No gates run — no code changed.** `tsc`/`vitest` untouched by this work.
+
+### Blocked / next
+- §16.3 orders the three live defects: **V-2** (money-blind roles can price damage), **V-5** (Law 6
+  write trigger and view masking absent from production), **V-14** (no role assignment path).
+  All three are code/migration work, none of it done here.
+- §12's D-suite cannot run until nine auth identities exist or the `app.current_user_id`
+  impersonation harness is documented — live `auth.users` is still 1.
+- Unresolved and left to Babin: whether Admin *should* approve damage and purchases (the DB says
+  no today, and §2.1's "Admin = Manager + system config" says yes — the document now follows the
+  DB, which is the reversible direction).
+
 ## 2026-09-07 (cont. 3) — The three close gates stop passing on the wrong question
 
 **Phase:** Phase 0 → Phase 2 · **Status:** MONEY-13, RL-05, RL-06 fixed app-side · `PLAN.md §4.51` filed · the database half is still absent
