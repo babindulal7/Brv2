@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { newClientUuid } from '../../lib/supabase'
+import { useInventoryCategories } from '../../lib/queries/inventory'
 import type { CSSProperties, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -19,7 +20,6 @@ import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
 import {
-  INVENTORY_CATEGORIES,
   INVENTORY_MODELS,
   ROOT_MODELS,
   USED_CATEGORIES,
@@ -473,6 +473,16 @@ export function AddBundle() {
    * `saving` disables both buttons while a dispatch is in flight, so a second
    * click cannot start a second write.
    */
+  /*
+   * The categories that EXIST. This offered `data/addBundle.ts`'s
+   * `INVENTORY_CATEGORIES` — sixteen labels off the `product_category` enum —
+   * under a hint reading "From the Inventory category list", which was exactly
+   * the false claim: `inventory_categories` holds SIX rows
+   * (`0012_seed_data.sql:115-123`, the only insert into it in any migration).
+   * `bundles.category_id` is a uuid FK, so ten of the sixteen refused the save.
+   */
+  const { rows: liveCategories } = useInventoryCategories()
+
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -651,7 +661,13 @@ export function AddBundle() {
                the payload, never the empty string, which would reach the action
                as a category nobody picked. Create Bundle cannot reach here with
                one unset (`blockingReason`); a draft can. */
+            /* The uuid when this screen can resolve it, the name as the fallback —
+               same shape as the equipment and transfer pickers. */
             ...(category ? { category } : {}),
+            ...(() => {
+              const hit = liveCategories.find((c) => c.name === category)
+              return hit ? { categoryId: hit.id } : {}
+            })(),
             ...(description.trim() ? { description: description.trim() } : {}),
             items,
             itemCount: isDraft ? lines.length : breakdown.totalItems,
@@ -1018,12 +1034,18 @@ export function AddBundle() {
                   Assigned on save
                 </span>
               </FieldBlock>
-              <Field label="Primary Category" required hint="From the Inventory category list">
+              <Field
+                label="Primary Category"
+                required
+                hint="The categories `inventory_categories` actually holds."
+              >
                 <select value={category} onChange={(e) => setCategory(e.target.value as InventoryCategory | '')} style={selectStyle}>
-                  <option value="">Select category…</option>
-                  {INVENTORY_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
+                  <option value="">
+                    {liveCategories.length === 0 ? 'No category exists to file this under' : 'Select category…'}
+                  </option>
+                  {liveCategories.map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name}
                     </option>
                   ))}
                 </select>

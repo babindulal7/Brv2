@@ -429,6 +429,48 @@ is gone, and marking all three units reads "Pack job: Complete · 3/3". Console 
 **Not driven:** the mixed-line chip (`Complete · N missing`) — the per-unit Missing action sits
 deeper in the row UI than I reached. It is pinned by 4 unit tests over the extracted helper.
 
+## 2026-09-07 (cont.) — Add Bundle: the category picker fixed, the tree scoped rather than half-migrated
+
+**Phase:** Phase 0 — **Status:** BUG-031 fixed and tested; BUG-030 deliberately left open with its
+real size written down; three new findings filed
+
+### Fixed
+
+`createBundle` now takes `categoryId` and a per-line `productId`, resolving uuid-first with the
+name path kept as a fallback, and **refuses a line that identifies no product at all** — `validate`
+let that through to the lookup even though `bundle_items.product_id` is NOT NULL.
+
+Add Bundle's **Primary Category** picker reads `inventory_categories` instead of the sixteen enum
+labels, under a hint that used to read "From the Inventory category list" — which was the false
+claim itself. The payload carries `categoryId`; `category` deliberately still carries the NAME,
+because `applyDuplicate()` feeds `setCategory()` a name validated against the seed list and a uuid
+there would have broken Duplicate Existing.
+
+### Not fixed, and why — BUG-030 is a rebuild
+
+`DraftLine.modelId` is not just a payload field, it is the **join key for five derivations**
+(`availabilityOf`, `breakdownOf`, `rateDriftOf`, `parentsHolding`, `LineRow`), every one doing
+`MODEL_BY_ID.get(...)` and failing **silently**. Put a product uuid there without changing all
+five and every line vanishes, the donut reads 0/0, and Create Bundle goes Unavailable — a worse
+failure than the one being fixed. There is also a **third** seed-fed control feeding the same
+lines array (the "+ Add a case or bag" select), and the screen boots pre-populated with ten seeded
+lines, so the first Create press fails on line 1 with every gate green.
+
+I stopped at that seam on purpose rather than half-migrating a 2,641-line screen with no component
+tests behind it.
+
+### Three findings that came out of mapping the action
+
+- **BUG-032** every bundle-line discount is validated (and an over-10% one is *approved*) and then
+  discarded — `bundle_items` has no column for `discountPct`, `discountReason` or `approvedBy`.
+- **BUG-033** `isDraft` is not a status: it becomes `is_active: !isDraft`, so a saved draft is an
+  inactive row that a list filtered on `is_active` will not show.
+- **BUG-034** bundle numbering bricks after nine on live TODAY: the `bundle` sequence has
+  `padding = 1` (read directly off production) and `lpad` truncates, so the tenth mint collides
+  with the first. Same root cause as the booking numbers; `0089` fixes it and is not applied.
+
+---
+
 ## 2026-09-07 — the stock-transfer form could not save either, for three reasons
 
 **Phase:** Phase 0 — **Status:** two of the three fixed in the repo; the third is `0089`, which

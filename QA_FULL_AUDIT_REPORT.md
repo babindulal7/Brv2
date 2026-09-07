@@ -262,6 +262,61 @@ change. But *whether* they should exist is a data decision, not an engineering o
 
 ---
 
+## UPDATE — 7 September 2026 (2): Add Bundle mapped, and it is a rebuild not a picker fix
+
+BUG-031 (Primary Category) is **fixed** — same shape as the other pickers: it now reads
+`inventory_categories`, and the payload carries `categoryId` while `category` keeps the NAME.
+Keeping the name mattered: `applyDuplicate()` feeds `setCategory()` a name validated against the
+seed list, so putting a uuid in `category` would have broken Duplicate Existing.
+
+`createBundle` now takes `categoryId` and a per-line `productId`, resolving uuid-first with the
+name path as fallback, and **refuses a line that identifies no product at all** — `validate` used
+to let that through to the lookup even though `bundle_items.product_id` is NOT NULL.
+
+### BUG-030 stays open, deliberately, and here is its real size
+
+Swapping the seed model id for a product uuid in `DraftLine.modelId` looks like a two-line change
+and is not. `modelId` is a **join key for five derivations** — `availabilityOf`, `breakdownOf`,
+`rateDriftOf`, `parentsHolding` and `LineRow`'s own lookup — each doing `MODEL_BY_ID.get(...)` and
+failing **silently** on a miss. Put a uuid in there without changing all five and: every table row
+disappears (`LineRow` returns null), the donut reads 0/0, `breakdown.equipment` becomes 0, and
+`blockingReason` flips to "A bundle needs at least one equipment line". The screen would look
+empty and Create Bundle would go Unavailable — a worse failure than the one being fixed.
+
+There is also a **third** seed-fed control feeding the same `lines` array: the "+ Add a case or
+bag" select (`AddBundle.tsx:1674-1688`), whose option value is a seed model id. Fix the tree and
+miss this one and the screen still cannot save.
+
+And the screen **boots already populated** — name 'Sony FX3 Documentary Kit', category 'Camera',
+ten seeded lines — so the very first Create Bundle press reaches the action and refuses on line 1,
+after every gate has reported green.
+
+So BUG-030 is: replace the catalogue behind the tree, the box picker, the two filter lists and the
+five derivations, and decide what the screen does about `children` and availability, neither of
+which has a column. That is a scoped piece of work, not a picker swap, and it is filed as such
+rather than half-landed.
+
+### Three further findings, from mapping the action
+
+**BUG-032 (P2) — every discount on a bundle line is validated and then discarded.**
+`discountPct`, `discountReason` and `approvedBy` are accepted per line, `discountPct` goes through
+`validateDiscount` (including the negative-percent hole closed 31 Aug) — and then none of the three
+is written: `bundle_items` has no column for them. The screen runs a full approval ceremony for an
+over-10% discount and the approval reaches no row.
+
+**BUG-033 (P2) — a saved draft is an inactive bundle.** `isDraft` is not a status column; it
+becomes `is_active: !isDraft`. Any list filtered on `is_active` will not show drafts, so Save Draft
+writes a bundle the Bundles screen cannot show.
+
+**BUG-034 (P1) — bundle numbering bricks after nine, on live, today.** The `bundle` sequence has
+`padding = 1` (confirmed by direct read of production: prefix `BND-`, `current_value` 0), and
+`next_document_number` formats with `lpad(v::text, padding, '0')`, which TRUNCATES when the value
+is longer than the padding. So BND-1 through BND-9 mint, and the tenth mints `BND-1` again and
+collides. Same root cause as the booking-number defect; `0089` fixes the function, and `0089` is
+not applied to live.
+
+---
+
 ## APP HEALTH
 
 Full detail in [`QA_APP_HEALTH_REPORT.md`](QA_APP_HEALTH_REPORT.md). Summary at HEAD:

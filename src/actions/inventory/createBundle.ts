@@ -90,8 +90,18 @@ export type CreateBundleItemInput = {
   /** The seed-catalogue model id (`'M-FX3-BODY'`) — carried so a refusal can
    *  name the line; NEVER written. `bundle_items.product_id` is a uuid FK. */
   modelId: string;
-  /** `products.name` — resolved to the `products.id` uuid by SELECT. */
-  productName: string;
+  /**
+   * `products.id` — how the screen identifies a line now.
+   *
+   * It used to send only the NAME, taken from `data/addBundle.ts`'s
+   * `INVENTORY_MODELS`, and **19 of those 20 names match no `products` row** (the
+   * real catalogue is Booqable-shaped: 'Sony FX3 Full-Frame Camera', not
+   * 'Sony FX3 Cinema Camera'). `bundle_items.product_id` is a uuid FK, so every
+   * Create Bundle and every Save Draft was refused here.
+   */
+  productId?: string | undefined;
+  /** `products.name` — the fallback when no id is sent. Exact-match only. */
+  productName?: string;
   qty: number;
   discountPct?: number;
   discountReason?: string;
@@ -104,8 +114,13 @@ export type CreateBundleInput = {
   /** Law 8 — the `bundles` row key, minted at the call site, stable across retries. */
   clientUuid: string;
   name: string;
-  /** `inventory_categories.name` — resolved to `category_id` by SELECT.
-   *  Absent (a draft may lack one) → `category_id` stays NULL. */
+  /**
+   * `inventory_categories.id`. The picker offered the `product_category` enum's
+   * sixteen labels while the table holds SIX rows, so ten of them refused the
+   * save. Absent (a draft may lack one) → `category_id` stays NULL.
+   */
+  categoryId?: string | undefined;
+  /** `inventory_categories.name` — the fallback when no id is sent. */
   category?: string;
   description?: string;
   items?: CreateBundleItemInput[];
@@ -214,6 +229,15 @@ export const createBundleConfig: ActionConfig<CreateBundleInput, CreateBundleRes
             `Line ${i + 1} has a quantity below 1 — bundle_items_qty_positive refuses it (0004:420).`,
           );
         }
+        /* One identifier or the other. `bundle_items.product_id` is a NOT NULL
+           uuid FK, so a line naming nothing can only fail at the lookup — and
+           it should fail here, before a single row is written. */
+        if (!(item.productId?.trim() || item.productName?.trim())) {
+          throw new Error(
+            `Line ${i + 1} names no product — bundle_items.product_id is a uuid FK to products, so a ` +
+              `bundle cannot contain a line that points at nothing. Nothing was sent.`,
+          );
+        }
         /* ⛔ Was `item.discountPct && item.discountPct > 0` — which SKIPPED
            validation for a negative percent, silently accepting a price rise
            dressed as a discount (the exact R3-1 hole, in a fourth place).
@@ -244,22 +268,26 @@ export const createBundleConfig: ActionConfig<CreateBundleInput, CreateBundleRes
     /* Natural keys → uuids, all BEFORE the first insert so a resolution
        failure writes nothing at all. */
     let categoryId: string | null = null;
+    const categoryKeyId = input.categoryId?.trim() ?? '';
     const categoryName = input.category?.trim() ?? '';
-    if (categoryName) {
-      const { data: categoryRow, error: categoryError } = await supabase
-        .from('inventory_categories')
-        .select('id, name')
-        .eq('name', categoryName)
-        .maybeSingle();
+    if (categoryKeyId || categoryName) {
+      /* By uuid when the picker supplied one; by exact name otherwise. */
+      const base = supabase.from('inventory_categories').select('id, name');
+      const { data: categoryRow, error: categoryError } = await (categoryKeyId
+        ? base.eq('id', categoryKeyId)
+        : base.eq('name', categoryName)
+      ).maybeSingle();
       if (categoryError) {
         throw new Error(`Could not look up the category, so nothing was saved: ${categoryError.message}`);
       }
       if (!categoryRow) {
         throw new Error(
-          `"${categoryName}" is not a category in inventory_categories, so nothing was saved. ` +
-            `bundles.category_id is a uuid FK (0004:386), and the Add Bundle category list is a seed ` +
-            `constant — the two catalogues are different universes (docs/pages/22_add_bundle.md gap 3). ` +
-            `Pick a category that exists in the database.`,
+          categoryKeyId
+            ? `No category has id ${categoryKeyId}, so nothing was saved. The category list changed under ` +
+              `the form — reopen it and choose again.`
+            : `"${categoryName}" is not a category in inventory_categories, so nothing was saved. ` +
+              `bundles.category_id is a uuid FK (0004:386) and the table holds six rows, while the enum ` +
+              `product_category has seventeen labels — a label is not a row.`,
         );
       }
       categoryId = (categoryRow as { id: string }).id;
@@ -269,22 +297,26 @@ export const createBundleConfig: ActionConfig<CreateBundleInput, CreateBundleRes
     const resolvedItems: Array<{ productId: string; qty: number; clientUuid: string }> = [];
     for (const item of items) {
       const productName = item.productName?.trim() ?? '';
-      const { data: productRow, error: productError } = await supabase
-        .from('products')
-        .select('id, name')
-        .eq('name', productName)
-        .maybeSingle();
+      const productId = item.productId?.trim() ?? '';
+      /* By uuid when the line was picked from the catalogue; by exact name otherwise. */
+      const productBase = supabase.from('products').select('id, name');
+      const { data: productRow, error: productError } = await (productId
+        ? productBase.eq('id', productId)
+        : productBase.eq('name', productName)
+      ).maybeSingle();
       if (productError) {
         throw new Error(
-          `Could not look up "${productName || item.modelId}" in products, so nothing was saved: ${productError.message}`,
+          `Could not look up "${productName || productId || item.modelId}" in products, so nothing was saved: ${productError.message}`,
         );
       }
       if (!productRow) {
         throw new Error(
-          `"${productName || item.modelId}" (${item.modelId}) is not a product in the products table, so ` +
-            `nothing was saved. bundle_items.product_id is a uuid FK to products (0004:411), and the Add ` +
-            `Bundle inventory tree is a seed catalogue — the two are different universes ` +
-            `(docs/pages/22_add_bundle.md gap 2). Only lines that match a real product can be saved.`,
+          productId
+            ? `No product has id ${productId}, so nothing was saved. The catalogue changed under the form ` +
+              `— reopen it and pick the line again.`
+            : `"${productName || item.modelId}" (${item.modelId}) is not a product in the products table, ` +
+              `so nothing was saved. bundle_items.product_id is a uuid FK to products (0004:411); a typed ` +
+              `or seeded model name has to match a products row exactly.`,
         );
       }
       resolvedItems.push({

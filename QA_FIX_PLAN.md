@@ -21,8 +21,11 @@ production**, and nothing should be before the two gates below.
 | *new* Add Equipment could not create serialised gear (BUG-026) | **done — closed an ACTIVE defect, no migration.** The picker offered four facilities that do not exist in `warehouses`; every serialised save was refused. Driven end to end against real Postgres. The unit mock and `lib/mock/corpus.ts` both held one of the fictional rows, which is why the suite stayed green — both now carry `0012`'s real rows. |
 | *new* Stock transfers (BUG-027) | **done** — and it was three bugs: seed facility names, a free-text asset field whose own placeholder matches no product, AND `next_document_number('transfer')` having no row. The third is `0089`, so **live stays broken until `0089` applies**. |
 | *new* Add Equipment Category picker (BUG-029) | **done** — offered 17, the table holds 6, so 11 refused the save. Found by the sweep, in the screen fixed yesterday. |
-| *new* Add Bundle component lines (BUG-030) | open — 19 of 20 seed model names match no `products` row. **Recommended next.** |
-| *new* Add Bundle Primary Category (BUG-031) | open — same 6-row table; 10 of 16 refuse. Fix with BUG-030, same screen. |
+| *new* Add Bundle component lines (BUG-030) | open — **a rebuild, not a picker swap.** `modelId` is the join key for five derivations that fail silently; a naive uuid swap empties the screen. Plus a third seed-fed control (the case/bag select) feeds the same lines. Scoped in the audit report. |
+| *new* Add Bundle Primary Category (BUG-031) | **done** — reads `inventory_categories`; payload carries `categoryId` while `category` keeps the NAME so Duplicate Existing still works. |
+| *new* Bundle line discounts discarded (BUG-032) | open — validated, approved, then written nowhere. |
+| *new* A saved draft is an inactive bundle (BUG-033) | open — `isDraft` becomes `is_active: false`. |
+| *new* Bundle numbering bricks after nine (BUG-034) | open — `padding = 1` + lpad truncation, confirmed on live. `0089` fixes the function and is not applied. |
 | FIX-6 … FIX-8, FIX-10 … FIX-11, FIX-13 … FIX-17 | open |
 
 **Five migrations now wait on the dump: `0089`, `0090`, `0091`, `0092`, `0093`.** All five are verified

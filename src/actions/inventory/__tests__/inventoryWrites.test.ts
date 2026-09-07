@@ -134,19 +134,19 @@ const PR_INPUT: ApprovePurchaseRequestInput = {
 const BND_INPUT: CreateBundleInput = {
   clientUuid: '55555555-5555-4555-8555-555555555551',
   name: '  Sony FX3 Documentary Kit  ',
-  category: 'Camera',
+  categoryId: 'cat-camera-uuid',
   description: 'Camera, lenses and support in one kit.',
   items: [
     {
       modelId: 'M-FX3-BODY',
-      productName: 'Sony FX3 Full-Frame Camera',
+      productId: 'prod-fx3-uuid',
       qty: 1,
       discountPct: 10,
       clientUuid: '55555555-5555-4555-8555-555555555552',
     },
     {
       modelId: 'M-NISI-35',
-      productName: 'NISI Athena 35mm',
+      productId: 'prod-nisi35-uuid',
       qty: 2,
       discountPct: 0,
       clientUuid: '55555555-5555-4555-8555-555555555553',
@@ -642,7 +642,7 @@ describe('CREATE_BUNDLE — the write', () => {
 
   it('omits category_id entirely when a draft has no category — never an empty string', async () => {
     // `exactOptionalPropertyTypes` — an absent category is ABSENT, not undefined.
-    const { category: _dropped, ...noCategory } = BND_INPUT
+    const { categoryId: _droppedId, category: _dropped, ...noCategory } = BND_INPUT
     const { result } = await createBundleConfig.execute({ ...noCategory, isDraft: true }, CTX)
     const [row] = insertsInto('bundles')
     expect(row?.payload).not.toHaveProperty('category_id')
@@ -672,14 +672,40 @@ describe('CREATE_BUNDLE — the write', () => {
     for (const r of rows) expect(String(r.payload['product_id'])).not.toMatch(/^M-/)
   })
 
-  it('refuses a line the products table cannot resolve, naming the two-universes gap, writing nothing', async () => {
+  it('refuses a line the products table cannot resolve, naming the line and the FK, writing nothing', async () => {
     const items = [{ modelId: 'M-GHOST', productName: 'Phantom Rig 3000', qty: 1, clientUuid: 'k1' }]
-    await expect(run({ items })).rejects.toThrow(/Phantom Rig 3000[\s\S]*(M-GHOST)[\s\S]*different universes/i)
+    await expect(run({ items })).rejects.toThrow(
+      /Phantom Rig 3000[\s\S]*M-GHOST[\s\S]*match a products row exactly/i,
+    )
     expect(access.inserts.length).toBe(0)
   })
 
+  it('refuses a product id the catalogue no longer holds, and says the catalogue moved', async () => {
+    const items = [{ modelId: 'M-X', productId: 'prod-deleted-uuid', qty: 1, clientUuid: 'k1' }]
+    await expect(run({ items })).rejects.toThrow(/no product has id/i)
+    expect(access.inserts.length).toBe(0)
+  })
+
+  it('refuses a line that names no product at all — bundle_items.product_id is NOT NULL', () => {
+    expect(() =>
+      createBundleConfig.validate({ ...BND_INPUT, items: [{ modelId: 'M-X', qty: 1, clientUuid: 'k1' }] }),
+    ).toThrow(/names no product/i)
+  })
+
+  it('still resolves a category and a line by NAME when no ids are sent', async () => {
+    await run({
+      categoryId: undefined,
+      category: 'Camera',
+      items: [{ modelId: 'M-FX3-BODY', productName: 'Sony FX3 Full-Frame Camera', qty: 1, clientUuid: 'k1' }],
+    })
+    const [row] = insertsInto('bundles')
+    expect(row?.payload['category_id']).toBe('cat-camera-uuid')
+    const lines = insertsInto('bundle_items')
+    expect(lines[0]?.payload['product_id']).toBe('prod-fx3-uuid')
+  })
+
   it('refuses a category the database does not hold BEFORE anything is written', async () => {
-    await expect(run({ category: 'DIT' })).rejects.toThrow(/not a category/i)
+    await expect(run({ categoryId: undefined, category: 'DIT' })).rejects.toThrow(/not a category/i)
     expect(access.inserts.length).toBe(0)
   })
 
