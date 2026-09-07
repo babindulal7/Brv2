@@ -682,6 +682,63 @@ is gone, and marking all three units reads "Pack job: Complete · 3/3". Console 
 **Not driven:** the mixed-line chip (`Complete · N missing`) — the per-unit Missing action sits
 deeper in the row UI than I reached. It is pinned by 4 unit tests over the extracted helper.
 
+## 2026-09-07 (LIVE) — 0089 applied to PRODUCTION
+
+**Phase:** Phase 0 — **Status:** live numbering fixed; live is now at `0089` (previous applied
+migration was `0078`)
+
+### Did
+
+Applied `0089_next_document_number_never_truncates` to the live project
+`sxguwvgoserhdolewibb`, recorded as `20260907103035`. Before it: replaced the `booking`
+counter 917 -> 945. Captured production's pre-change function definition verbatim into
+[`supabase/rollback/0089_rollback.sql`](supabase/rollback/0089_rollback.sql) first — that file
+is the ONLY restore point, because no dump exists.
+
+### Ruled
+
+Two decisions, both in [`RULINGS-2026-09-07.md`](RULINGS-2026-09-07.md):
+
+- **R-19** — re-point the booking counter rather than renumber the seed rows. 0089's own
+  post-condition refuses to apply while an owning column already holds the number its key would
+  mint, and `B-918`/`B-919` **already exist**, so 0089 could not be applied at all until this was
+  resolved. Re-pointing is the non-destructive half of 0085; the one-way renumber of 246 live
+  rows was rejected.
+- **R-20** — `CLAUDE.md` §15 N-5 fixes "apply a migration to live" as needing Babin's explicit
+  word. It was given explicitly for this migration, after being shown there is no dump and no
+  rollback path. The boundary was honoured by obtaining the word, not bypassed.
+
+### Verified
+
+By **minting, not by inspecting counters** — the lesson this repo has already paid for once.
+All 11 sequences each minted two distinct, untruncated, ruled-shape numbers whose trailing
+digits read back as the counter value, with no collision against the owning column, inside a
+probe that was rolled back; every counter unchanged afterwards. The `search_path` pin is present
+(production had none).
+
+| key | was minting | now mints |
+|---|---|---|
+| booking | `B-9` | `B-946` |
+| client | `C-7` | `C-751` |
+| invoice | `INV-1` | `INV-121` |
+| deposit | `DEP-9` | `DEP-90` |
+
+`equipment` and `payment` are unchanged — their padding is wider than the number, so `lpad` was
+padding, not truncating. A first pass of mine labelled those two "WAS TRUNCATED"; that was my
+expression comparing padded output to raw text, and it is wrong. Four sequences were broken, not
+six.
+
+### What this unblocks, and what it does not
+
+Unblocked: booking creation (was: one wrong number then permanently collided), client, invoice
+and deposit numbering, and `next_document_number('transfer')`, which had **no registry row at
+all** — so the Transfer Center could not have saved even with yesterday's UI fix. BUG-034
+(bundle numbering bricking after nine) is fixed by the same formatter.
+
+Not unblocked: `0085`, `0088`, `0090`-`0096` are still repo-only. Live is not at repo HEAD.
+
+---
+
 ## 2026-09-07 (cont.) — Add Bundle: the category picker fixed, the tree scoped rather than half-migrated
 
 **Phase:** Phase 0 — **Status:** BUG-031 fixed and tested; BUG-030 deliberately left open with its
