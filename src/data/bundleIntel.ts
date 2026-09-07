@@ -88,9 +88,19 @@ export function bundleGlance(b: BundleRecord, gctx: GateContext): IntelGlance {
     subtitle: b.category,
     badges,
     lines,
-    // No primaryAction — Bundles.tsx itself states bundle detail has no
-    // screen yet ("only the New Bundle route is built"); linking to a route
-    // that does not exist would be worse than no button at all.
+    /*
+     * The detail page exists as of 7 Sep 2026, so this card gets its door back.
+     * The comment here used to say the opposite — "linking to a route that does
+     * not exist would be worse than no button at all" — which was right at the
+     * time and is why the field was absent rather than broken.
+     *
+     * No window is appended: this is a pure function of a record and has no
+     * access to the caller's `?from=`/`?to=`, and the detail page defaults to
+     * today→tomorrow. A hover card is a glance, not a measurement; the links
+     * that carry a measured window are the row menu and the preview footer,
+     * both built by the pane that owns the dates.
+     */
+    primaryAction: { label: 'Open bundle', to: `/inventory/bundles/${b.id}` },
   }
 }
 

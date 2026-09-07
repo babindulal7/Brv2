@@ -678,8 +678,14 @@ export function AddBundle() {
           )
           /* Only a landed write leaves the page. Navigating on the failing path
              would discard everything the operator typed to show them a list
-             their bundle is not in. */
-          navigate('/inventory')
+             their bundle is not in.
+
+             Lands on the new bundle's own page, not `/inventory` — which was the
+             EQUIPMENT tab, so the operator was sent somewhere their bundle could
+             not appear even in principle. `result.bundleCode` is the same string
+             the toast above quotes, so the URL and the confirmation agree at the
+             one moment someone is checking them against each other. */
+          navigate(`/inventory/bundles/${result.bundleCode}`)
         }
       })
       .catch((err: unknown) => {

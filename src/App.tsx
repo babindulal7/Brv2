@@ -49,6 +49,7 @@ const CashFlowReport    = lazy(() => import('./modules/reports/CashFlowReport'))
 const WorkingCapital    = lazy(() => import('./modules/reports/WorkingCapitalReport'))
 const Inventory         = lazy(() => import('./modules/inventory/Inventory'))
 const AddBundle         = lazy(() => import('./modules/inventory/AddBundle').then(m => ({ default: m.AddBundle })))
+const BundleDetail      = lazy(() => import('./modules/inventory/BundleDetail'))
 /* 06 Inventory renders — these screens existed but were unreachable. */
 const AddEquipment      = lazy(() => import('./modules/inventory/AddEquipment'))
 const AssetDetail       = lazy(() => import('./modules/inventory/AssetDetail'))
@@ -347,6 +348,28 @@ export default function App() {
           element={
             <Shell crumbs={[{ label: 'Inventory' }, { label: 'Bundles' }, { label: 'New Bundle' }]} search="Search inventory, category…">
               <AddBundle />
+            </Shell>
+          }
+        />
+
+        {/*
+          Declared after `/inventory/bundles/new` to match this file's grouping
+          convention, NOT to protect it: react-router 7 ranks by specificity
+          (static segment 10, dynamic 3), so `/inventory/bundles/new` (35) beats
+          `/inventory/bundles/:bundleRef` (28) whatever the declaration order,
+          and `/inventory/:assetId` is a two-segment pattern that cannot match a
+          three-segment path at all.
+
+          The param is a REF, not an id: `queries/bundleRecords.ts` maps
+          `id: b.bundleCode` and drops the uuid, so every link carries `BND-…`.
+          The query dispatches on shape anyway, per the 4 Sep ruling that a
+          uuid-only lookup for a code-only caller is a P0 waiting to happen.
+        */}
+        <Route
+          path="/inventory/bundles/:bundleRef"
+          element={
+            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Bundles' }, { label: 'Bundle' }]} search="Search inventory, category…">
+              <BundleDetail />
             </Shell>
           }
         />

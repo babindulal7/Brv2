@@ -215,6 +215,8 @@ async function readBundleBookings(bundleIds: readonly string[], now: number): Pr
 }
 
 export interface ListBundleRecordsOptions {
+  /** One bundle only, by code or uuid — see `ListBundlesOptions.bundleRef`. */
+  bundleRef?: string
   /**
    * Include each component's `daily_rate`. **Money.** Pass the caller's own
    * money gate — never a literal `true`.
@@ -246,6 +248,7 @@ export async function listBundleRecords(
   const listOpts: ListBundlesOptions = { includeArchived: true }
   if (opts.withMoney !== undefined) listOpts.withMoney = opts.withMoney
   if (opts.limit !== undefined) listOpts.limit = opts.limit
+  if (opts.bundleRef !== undefined) listOpts.bundleRef = opts.bundleRef
 
   const bundles: BundleWithItems[] = await listBundlesWithItems(listOpts)
   if (bundles.length === 0) return []
@@ -292,4 +295,23 @@ export async function listBundleRecords(
       lines,
     }
   })
+}
+
+/**
+ * One bundle, for a stated window, or `null` when the reference matches nothing.
+ *
+ * The narrowing happens in the SQL (`bundleRef` reaches `listBundlesWithItems`'s
+ * `.eq`), not by fetching every bundle and filtering in memory — so the detail
+ * page reads one row and only the units and holds its own components need.
+ *
+ * `null` is "no such bundle", never "the read failed": a failure throws, and the
+ * screen tells those apart because `PageBody` ranks error above empty.
+ */
+export async function getBundleRecord(
+  ref: string,
+  window: RentalWindow,
+  opts: ListBundleRecordsOptions = {},
+): Promise<BundleRecord | null> {
+  const rows = await listBundleRecords(window, { ...opts, bundleRef: ref })
+  return rows[0] ?? null
 }

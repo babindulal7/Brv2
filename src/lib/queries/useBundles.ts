@@ -1,4 +1,4 @@
-import { listBundleRecords } from './bundleRecords'
+import { listBundleRecords, getBundleRecord } from './bundleRecords'
 import type { ListFilters } from './listQuery'
 import { useList, type ListQueryResult, type ListResult } from './useList'
 import type { BundleRecord } from '../../data/bundles'
@@ -52,6 +52,57 @@ export function useBundleRecords(window: RentalWindow | null, withMoney: boolean
     },
     // A catalogue is addressed, not filtered. Without this an empty result would
     // offer "Clear filters" for a window that genuinely has no bundles in it.
+    { isFilteredOverride: false },
+  )
+}
+
+/**
+ * One bundle, addressed rather than filtered.
+ *
+ * `rows[0]` rather than a bespoke single-record hook, matching
+ * `useClientProfile`: "no such bundle" arrives as `isEmpty` — a successful query
+ * that matched nothing — and a failed read arrives as `error`. Collapsing both
+ * into one "not found" screen would tell an operator their link was wrong when
+ * the database was merely unreachable.
+ *
+ * The chip key is `bundle_ref`, NOT `bundle_code`: the value may be either a code
+ * or a uuid, and `listQuery.ts:152` treats chip keys as column names everywhere
+ * else, so claiming the narrower of the two would be the mistake `useClients.ts`
+ * documents.
+ */
+async function fetchBundleRecord(filters: ListFilters): Promise<ListQueryResult<BundleRecord>> {
+  const ref = filters.chips?.['bundle_ref']?.[0]
+  const fromAd = filters.chips?.['window_from']?.[0]
+  const toAd = filters.chips?.['window_to']?.[0]
+  if (ref === undefined || fromAd === undefined || toAd === undefined) return { rows: [], total: 0 }
+
+  const record = await getBundleRecord(ref, { fromAd, toAd }, {
+    withMoney: filters.chips?.['with_money']?.[0] === 'yes',
+  })
+  return { rows: record ? [record] : [], total: record ? 1 : 0 }
+}
+
+/**
+ * @param ref a `bundle_code` (`BND-23`) or a `bundles.id` uuid — either resolves.
+ * @param window the rental window availability is measured against (§4.44).
+ * @param withMoney the caller's own money gate. **Never a literal `true`.**
+ */
+export function useBundleRecord(
+  ref: string | undefined,
+  window: RentalWindow | null,
+  withMoney: boolean,
+): ListResult<BundleRecord> {
+  return useList<BundleRecord>(
+    fetchBundleRecord,
+    {
+      chips: {
+        bundle_ref: ref ? [ref] : [],
+        window_from: window ? [window.fromAd] : [],
+        window_to: window ? [window.toAd] : [],
+        with_money: [withMoney ? 'yes' : 'no'],
+      },
+    },
+    // A bundle is addressed, not filtered — no "Clear filters" for a bad address.
     { isFilteredOverride: false },
   )
 }

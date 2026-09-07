@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Select } from '../../components/ui/Select'
@@ -31,6 +31,7 @@ import {
   isPriced,
 } from '../../data/bundles'
 import { useBundleRecords } from '../../lib/queries/useBundles'
+import { useRentalWindowParams, dayValue } from '../../lib/rentalWindowParams'
 import type { BundleRecord, BundleState, BundleLine, BundleFacts } from '../../data/bundles'
 import { DateField } from '../../components/ui/DateField'
 
@@ -356,27 +357,6 @@ const SORT_OPTIONS: Array<{ value: string; label: string; money?: boolean }> = [
 const ROWS_PER_PAGE = [10, 25, 50]
 
 
-/* ── the window availability is measured against ───────────────────────── */
-
-/** `yyyy-mm-dd` in UTC — what a `<input type="date">` reads and writes. */
-function dayValue(iso: string): string {
-  return iso.slice(0, 10)
-}
-
-/**
- * A day string back to a full UTC instant. **Law — store AD in UTC**; the BS
- * line is rendered from this, never stored.
- */
-function startOfDayUtc(day: string): string {
-  return new Date(`${day}T00:00:00.000Z`).toISOString()
-}
-
-function addDaysUtc(iso: string, days: number): string {
-  const d = new Date(iso)
-  d.setUTCDate(d.getUTCDate() + days)
-  return d.toISOString()
-}
-
 /* ── the screen ────────────────────────────────────────────────────────── */
 
 export function Bundles() {
@@ -395,29 +375,12 @@ export function Bundles() {
    * linked and shared, and defaults to today→tomorrow: one day, half-open,
    * matching `RENTAL_WINDOW_BOUNDS`.
    */
-  const [params, setParams] = useSearchParams()
-  const todayIso = useMemo(() => startOfDayUtc(new Date().toISOString().slice(0, 10)), [])
-  const fromAd = params.get('from') ? startOfDayUtc(params.get('from') as string) : todayIso
-  const toAdRaw = params.get('to') ? startOfDayUtc(params.get('to') as string) : addDaysUtc(todayIso, 1)
-  /* A window must have width. `half-open` means [from, to), so from === to holds
-     nothing and every line would read as free — the exact wrong green §4.44
-     exists to prevent. A backwards or empty range is pushed to one day. */
-  const toAd = Date.parse(toAdRaw) > Date.parse(fromAd) ? toAdRaw : addDaysUtc(fromAd, 1)
+  const { window: availabilityWindow, setWindow, search: windowSearch } = useRentalWindowParams(
+    () => setPage(1),
+  )
+  const { fromAd, toAd } = availabilityWindow
 
-  const setWindow = (which: 'from' | 'to', day: string) => {
-    setParams(
-      (p) => {
-        const next = new URLSearchParams(p)
-        if (day) next.set(which, day)
-        else next.delete(which)
-        return next
-      },
-      { replace: true },
-    )
-    setPage(1)
-  }
-
-  const bundles = useBundleRecords({ fromAd, toAd }, money)
+  const bundles = useBundleRecords(availabilityWindow, money)
 
   const activeBundles = useMemo(() => bundles.rows.filter((b) => !b.archived), [bundles.rows])
   const archivedBundles = useMemo(() => bundles.rows.filter((b) => b.archived), [bundles.rows])
@@ -1235,7 +1198,10 @@ export function Bundles() {
                                 {
                                   key: 'detail',
                                   label: 'Open bundle detail',
-                                  reason: 'Bundle detail has no screen yet — only the New Bundle route is built.',
+                                  /* The window travels with the link (§4.44): the
+                                     detail page must answer availability for the
+                                     same dates this row was measured against. */
+                                  onSelect: () => navigate(`/inventory/bundles/${b.id}${windowSearch}`),
                                 },
                               ]}
                             />
@@ -1338,6 +1304,7 @@ export function Bundles() {
               <PreviewCard
                 bundle={preview}
                 facts={previewFacts}
+                detailTo={`/inventory/bundles/${preview.id}${windowSearch}`}
                 closed={groupsClosed}
                 onToggleGroup={(g) => toggleIn(groupsClosed, setGroupsClosed, g)}
                 serialsOpen={serialsOpen}
@@ -1377,6 +1344,7 @@ export function Bundles() {
 function PreviewCard({
   bundle,
   facts,
+  detailTo,
   closed,
   onToggleGroup,
   serialsOpen,
@@ -1384,6 +1352,8 @@ function PreviewCard({
 }: {
   bundle: BundleRecord
   facts: BundleFacts
+  /** Built by the pane so the caller's window rides along — see §4.44. */
+  detailTo: string
   closed: Set<string>
   onToggleGroup: (g: string) => void
   serialsOpen: Set<string>
@@ -1499,11 +1469,11 @@ function PreviewCard({
       </div>
 
       <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border)' }}>
-        <Unavailable reason="Bundle detail has no screen yet — only the New Bundle route is built.">
-          <Button icon="external_link" disabled>
+        <Link to={detailTo} style={{ textDecoration: 'none' }}>
+          <Button icon="external_link">
             View full breakdown ({facts.totalItems} items)
           </Button>
-        </Unavailable>
+        </Link>
       </div>
     </Card>
   )

@@ -2,6 +2,72 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+
+## 2026-09-07 — BN-P1: the bundle detail page exists
+**Phase:** inventory · **Status:** built, tested, driven
+
+`/inventory/bundles/:bundleRef`. The 4 Sep audit filed this P1 as missing entirely, and it was
+the odd one out in that list: `data/bundleIntel.ts:97 bundleDetailGroups` had already been
+written to describe a bundle in full — Identity, Availability, Components, Substitutes,
+Current booking, Money, each already gated — and **nothing rendered it**. Two controls said so
+in the same words: a row-menu item and a disabled "View full breakdown" button, both carrying
+*"Bundle detail has no screen yet."*
+
+### What it is, given no spec exists
+There is no spec and no approved render for this screen — the library has `Bundles.md` (list)
+and `Add Bundle.md` (create) and nothing else. So the LAYOUT follows `ClientDetail.tsx`
+(`PageHeader` → `KpiStrip` → `Card`s → `FooterNote`) and the CONTENT is `bundleDetailGroups`,
+which is not invention: it is the field set the intel layer already settled, cited to
+`Bundles.md` §4/§7/§8/§10 in its own comments. Rendering it also means the hover card and the
+page cannot disagree. `IntelCard`'s own `DetailGroups` is module-local and unexported, hence a
+small renderer in the page rather than an import.
+
+### The window is the reason this is not just a table
+**§4.44.** A bundle is not available in the abstract. `useRentalWindowParams` (new,
+`lib/rentalWindowParams.ts`) was extracted from `Bundles.tsx` because the half-open guard —
+*"from === to holds nothing and every line would read as free"* — is a correctness rule, and
+two copies of it drift. Both screens now read the same `?from=`/`?to=`, and every link between
+them carries the window, so the list and the page cannot answer different questions about the
+same bundle.
+
+### Also wired
+- Row menu and "View full breakdown" — the two stubs, both now real links carrying the window.
+- `bundleGlance` gains the `primaryAction` its own comment said it could not have while the
+  route did not exist; every bundle hover card is now a door. No window on that one, and the
+  comment says why: a glance has no access to the caller's dates.
+- **`AddBundle` landed on `/inventory` after a successful create — the EQUIPMENT tab**, where a
+  new bundle cannot appear even in principle. Now lands on the bundle's own page, using the
+  same `result.bundleCode` the success toast quotes.
+- `queries/bundles.ts` gained `bundleRef`, dispatching `UUID_RE.test(ref) ? 'id' : 'bundle_code'`
+  — the ruled pattern from `getClientRecord`. Nothing produces a bundle uuid today
+  (`bundleRecords.ts` maps `id: b.bundleCode` and drops it), so this closes the 4 Sep P0 class
+  before it can open. `getBundleRecord` narrows in SQL rather than filtering a full list.
+
+### How it was verified — driven, not read
+Mock build, Owner:
+- `/inventory/bundles/BND-001` renders **Documentary Camera Kit**, `PARTIALLY AVAILABLE`, KPIs
+  `3 / 5 Ready · 3 components · 2 blocked · Rs 18,000`, the donut, the components table and
+  all six intel groups.
+- **Round trip with a November window**: list shows BND-001 at `3/5`; "View full breakdown"
+  href is `/inventory/bundles/BND-001?from=2026-11-11&to=2026-11-14`; the page shows `3/5` for
+  `11 Nov 2026 → 14 Nov 2026`; Back returns to `/inventory?tab=bundles&from=…&to=…`.
+- `/inventory/bundles/BND-999` → "Bundle not found", the sibling wording and shape.
+- Zero console errors. `tsc` and eslint clean. **523 tests pass**.
+
+### A defect driving it caught in my own render
+Two short lines both read *"Short — reason not recorded"*. Only one deserved it. **FX6 needs 2
+and only 1 is owned** — that reason IS recorded, and no amount of waiting frees it; the cell now
+reads **"Only 1 owned"**. The other (FX9: 1 owned, 0 free) is the genuine case `BlockedBy`
+cannot name, since it has no member for Missing or Retired. Reading the code would not have
+shown this; both branches were "correct".
+
+### Still open
+§4.45(a) still blocks CREATING a bundle through the UI — the Add Bundle picker reads the seed
+catalogue, so `createBundle` refuses a product that is not in `products`. The detail page is
+reachable from the list, the hover card and a successful create, but the create itself still
+fails. Bundle EDIT (`/inventory/bundles/:id/edit`) remains absent — no route, no `updateBundle`.
+
+
 ## 2026-09-07 (cont.) — Confirm can work on the live catalogue: the availability engine grows its quantity half
 
 **Phase:** Phase 0 · **Status:** INV-02 (P0) and INV-05 (P1) implemented · app-side only, no migration · `check:rebuild` still BLOCKED

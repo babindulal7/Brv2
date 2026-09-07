@@ -133,7 +133,24 @@ export interface ListBundlesOptions {
    * only bundles that can actually be sold.
    */
   includeArchived?: boolean
+  /**
+   * Narrow to ONE bundle, by `bundle_code` (`BND-23`) **or** `bundles.id` (a uuid).
+   *
+   * Dispatching on the shape of the reference is this codebase's ruled answer to
+   * "the caller may hold either" — `queries/clients.ts:getClientRecord`,
+   * `queries/availability.ts:147` and `queries/bookings.ts:1021` all do it, and
+   * the 4 Sep P0 (eight links passing a uuid into a code-only lookup) is why.
+   *
+   * Nothing produces a bundle uuid for the UI today: `bundleRecords.ts` maps
+   * `id: b.bundleCode` and drops the uuid, so every link carries a code. The
+   * uuid branch costs one regex and means a future caller holding the uuid
+   * cannot reintroduce that bug.
+   */
+  bundleRef?: string
 }
+
+/** `bundles.id` is a uuid; `bundle_code` is `^BND-[0-9]+$`. They cannot collide. */
+const BUNDLE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
  * Active bundles with their components resolved to real products.
@@ -148,6 +165,9 @@ export async function listBundlesWithItems(opts: ListBundlesOptions = {}): Promi
      here rather than expected to be absent. `includeArchived` lifts the filter
      for the Bundles pane, which has a shelf for exactly these. */
   if (opts.includeArchived !== true) query = query.eq('is_active', true)
+  if (opts.bundleRef !== undefined) {
+    query = query.eq(BUNDLE_UUID_RE.test(opts.bundleRef) ? 'id' : 'bundle_code', opts.bundleRef)
+  }
 
   const { data, error } = await query
     .order('name', { ascending: true })
