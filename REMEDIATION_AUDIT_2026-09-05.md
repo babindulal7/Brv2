@@ -20,7 +20,7 @@ Clusters run: architecture, frontend-design, data-connection, database, rental-l
 
 1. **Step 0** (DEL-01, Option B): live `pg_dump` to a path outside the repo, restore drill into a scratch database with row-count assertions, Booqable token rotated (DEL-05). Nothing below may run before this.
 2. **Close the public write hole** (SEC-01, Option B): revoke INSERT/UPDATE/DELETE on every `_v` view from anon and authenticated, then revoke the platform default privileges from anon and re-grant only what login and the portal need. One migration, no application change.
-3. **Numbering** (DB-01, Option B, patched per DB-13): apply 0089, 0085 with step 7 set so the next mint is 946 and the map table under RLS, then 0088. Mint a booking to verify, do not assert the counter.
+3. **Numbering** (DB-01, patched per DB-13). **Corrected 7 September — the order and the value this report first gave were both wrong, proven by a per-migration dry run and re-verified here.** Apply in filename order: **0085, then 0088, then 0089**, with 0085 committing in its own earlier transaction. 0088 raises unless 0085 ran first (it guards on `bookings_booking_no_is_digits`, which 0085 creates), and 0089 applied alone computes its next mints as `B-918`/`B-919`, finds both already in `bookings`, and raises. 0085 must commit separately because a non-concurrent `CREATE INDEX` scans with SnapshotAny and would index 0085's own recently-dead rows. **The next mint is 900, not 946**: 0085 moves the 46 seed bookings out of the 900-945 band first, then points the counter at 899, the highest real imported booking. Whether the OS should instead resume at 946 while Booqable is still issuing is open as PLAN §4.48 and is a one-token change if ruled. Mint a booking to verify, never assert the counter. **Note before pressing it:** 0085 renumbers all 246 live bookings from `B-<n>` to bare digits, changing the identity already printed on client paper — that is irreversible in the way that matters, so get §4.48 ruled and the dump taken first.
 4. **Invoice write contract** (DB-03 Option B and DATA-01 Option B agree): apply 0086, then add `create_invoice(payload)` as an invoker-rights RPC in the `create_booking` mould so the draft snapshot reads the money columns server-side and lands header and lines in one transaction.
 5. **Payment state** (MONEY-02, Option A): apply 0080 then 0087, with the pgTAP scenario that a refund lowers nothing, a reversal lowers `paid_amount`, and a Draft stays Draft.
 6. **Wire invoicing** (MONEY-01, Option A): rule PLAN §4.46 as "the invoice bills the booking" (R-03 already says so), turn CreateInvoiceModal into a preview of what `createInvoice` will write, dispatch it.
@@ -40,24 +40,24 @@ Then Phase 2 in the roadmap's order, starting with the gates (MONEY-13, RL-05, R
 |---|---|
 | P0 | 7 |
 | P1 | 41 |
-| P2 | 68 |
+| P2 | 70 |
 | P3 | 25 |
 | P4 | 6 |
-| **Total** | **147** |
+| **Total** | **149** |
 
-Filed before refutation: 170 - refuted and withdrawn: 0 - merged as duplicates: 23
+Filed before refutation: 172 - refuted and withdrawn: 0 - merged as duplicates: 23
 
-**By status:** CONFIRMED BUG 25 - PARTIAL IMPLEMENTATION 16 - DISCONNECTED IMPLEMENTATION 12 - SECURITY RISK 12 - DATA INTEGRITY RISK 12 - ARCHITECTURAL PROBLEM 11 - MISSING FEATURE 11 - MOCK IMPLEMENTATION 9 - TECHNICAL DEBT 9 - UX PROBLEM 9 - DEPLOYMENT PROBLEM 7 - TESTING GAP 4 - ACCESSIBILITY PROBLEM 4 - DUPLICATED IMPLEMENTATION 3 - PERFORMANCE PROBLEM 3
+**By status:** CONFIRMED BUG 25 - PARTIAL IMPLEMENTATION 16 - DATA INTEGRITY RISK 14 - DISCONNECTED IMPLEMENTATION 12 - SECURITY RISK 12 - ARCHITECTURAL PROBLEM 11 - MISSING FEATURE 11 - MOCK IMPLEMENTATION 9 - TECHNICAL DEBT 9 - UX PROBLEM 9 - DEPLOYMENT PROBLEM 7 - TESTING GAP 4 - ACCESSIBILITY PROBLEM 4 - DUPLICATED IMPLEMENTATION 3 - PERFORMANCE PROBLEM 3
 
-**By cluster:** architecture 14 - auth-security 8 - data-connection 12 - database 13 - delivery 11 - forms-interactions 18 - frontend-design 13 - inventory-availability 12 - money 15 - operations-ux 7 - rental-lifecycle 12 - resilience 12
+**By cluster:** architecture 14 - auth-security 9 - data-connection 13 - database 13 - delivery 11 - forms-interactions 18 - frontend-design 13 - inventory-availability 12 - money 15 - operations-ux 7 - rental-lifecycle 12 - resilience 12
 
-**By current status:** UNTOUCHED 134 - DRAFTED_UNAPPLIED 12 - UNKNOWN 1
+**By current status:** UNTOUCHED 125 - DRAFTED_UNAPPLIED 15 - FIXED_IN_TREE 8 - UNKNOWN 1
 
 ## Top 10 Issues (Spec 35)
 
 1. **DEL-01 - Written but not applied; Step 0 undone.** Why it matters: 38 issues in ten clusters depend on it and twelve drafted fixes cannot land; a mistaken write or a Free-tier pause has no recovery. Fix: Option B, Step 0 plus a mechanical pre-apply gate (dump, restore drill, row counts). Effort: MEDIUM. Production impact: nothing else in this report can reach live until it is done.
 2. **SEC-01 - Every masking view is writable by anon and authenticated.** Why: the public anon key in the bundle inserts into 23 tables and any staff JWT updates or deletes every row of them, bypassing RLS and Law 3. Fix: Option B, revoke view DML then the platform defaults from anon. Effort: MEDIUM. Impact: a live write-integrity hole today, independent of transactions.
-3. **DB-01 - next_document_number truncates and the counter sits in the seed block.** Why: the first live booking is minted `B-9`, the second collides; clients, invoices and deposits share the defect. Fix: Option B, 0089 then 0085 (step 7 corrected, map table under RLS) then 0088; mint to verify. Effort: MEDIUM. Impact: booking creation is unusable.
+3. **DB-01 - next_document_number truncates and the counter sits in the seed block.** Why: the first live booking is minted `B-9`, the second collides; clients, invoices and deposits share the defect. Fix: apply **0085, 0088, 0089 in that order** (corrected 7 Sep — this report first gave the reverse, which raises), 0085 committing separately; the next mint is 900, and 946 is an open question in PLAN §4.48, not a fix. Mint to verify, never assert the counter. Effort: MEDIUM. Impact: booking creation is unusable — and 0085 renumbers all 246 live bookings to bare digits, so the dump and the §4.48 ruling come first.
 4. **INV-02 - Confirm impossible for every live product.** Why: all 204 are quantity-tracked and no product hold is ever written, so Confirm refuses every booking once numbering works. Fix: Option A, plan and write product-level holds in the existing app path. Effort: MEDIUM. Impact: no booking can be confirmed on live.
 5. **MONEY-01 with DB-03 and DATA-01 - No invoice can be raised.** Why: the modal refuses, the policy refuses, and the action's money reads are refused by column grants; three independent blockers on one path. Fix: 0086, a `create_invoice` RPC, and the modal wired as a preview. Effort: MEDIUM. Impact: no billing at all.
 6. **MONEY-02 with MONEY-04 - Payment state derived wrongly.** Why: a refund raises `paid_amount`, a reversal never re-syncs, the first payment ejects a Draft, and two live formulas disagree about overpayment. Fix: 0080 then 0087 with pgTAP, and one owning function for outstanding. Effort: LOW then MEDIUM. Impact: what a client owes is wrong after the first correction.
@@ -72,12 +72,12 @@ Filed before refutation: 170 - refuted and withdrawn: 0 - merged as duplicates: 
 
 | # | ID | Issue | Sev | Status | Current | Business Impact | Root Cause | Recommended Fix | Effort | Blocker |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 1 | INV-02 | Confirm is impossible for every Quantity- or Consumable-tracked produc... | P0 | PARTIAL IMPLEMENTATION | UNTOUCHED | Cine Sewa's live catalogue is entirely quantity-tracked today (cables, stands, gels, every bulk SKU), so no bo... | SYMPTOM: once P0-4 is unblocked, every Confirm on live fails with 'cannot be confirmed: not every line has uni... | A: Plan and write product-level holds in the existing app path | MEDIUM | YES |
+| 1 | INV-02 | Confirm is impossible for every Quantity- or Consumable-tracked produc... | P0 | PARTIAL IMPLEMENTATION | FIXED_IN_TREE | Cine Sewa's live catalogue is entirely quantity-tracked today (cables, stands, gels, every bulk SKU), so no bo... | SYMPTOM: once P0-4 is unblocked, every Confirm on live fails with 'cannot be confirmed: not every line has uni... | A: Plan and write product-level holds in the existing app path | MEDIUM | YES |
 | 2 | DEL-01 | Written but not applied — PHASE-0 Step 0 (live dump, restore drill, to... | P0 | DEPLOYMENT PROBLEM | UNTOUCHED | On a rental day at Cine Sewa the OS cannot create a booking (B-918 collides), cannot raise or pay an invoice, ... | SYMPTOM: every cluster reports DRAFTED_UNAPPLIED; booking creation on live has been bricked since the seed blo... | B: Step 0 plus a mechanical pre-apply gate | MEDIUM | YES |
 | 3 | DB-03 | invoice_lines has only a SELECT policy and invoices' NOT NULLs and rol... | P0 | CONFIRMED BUG | DRAFTED_UNAPPLIED | No rental can be billed; the day ends with rental value uncollected and no tax invoice. When 0086 lands withou... | SYMPTOM: no invoice can be written. TRACE: 0011 wrote a SELECT-only policy set for invoice_lines when no write... | B: 0086 plus a create_invoice RPC in the create_booking mould | MEDIUM | YES |
-| 4 | MONEY-01 | No invoice can be raised: createInvoice is drafted but unwired (PLAN §... | P0 | DISCONNECTED IMPLEMENTATION | DRAFTED_UNAPPLIED | Cine Sewa cannot bill a single rental from this system; every rupee of revenue is tracked outside it; nothing ... | SYMPTOM: Finance offers Create Invoice, pressing it refuses; live holds 0 invoices. TRACE: the modal was built... | A: Rule §4.46(a) and wire the modal as a preview of the booking... | MEDIUM | YES |
+| 4 | MONEY-01 | No invoice can be raised: createInvoice is drafted but unwired (PLAN §... | P0 | DISCONNECTED IMPLEMENTATION | FIXED_IN_TREE | Cine Sewa cannot bill a single rental from this system; every rupee of revenue is tracked outside it; nothing ... | SYMPTOM: Finance offers Create Invoice, pressing it refuses; live holds 0 invoices. TRACE: the modal was built... | A: Rule §4.46(a) and wire the modal as a preview of the booking... | MEDIUM | YES |
 | 5 | MONEY-02 | sync_payment_to_invoice: a Refund raises paid_amount, a reversal never... | P0 | CONFIRMED BUG | DRAFTED_UNAPPLIED | After the first refund or reversal Finance says the client has paid more than they have; the close gate (which... | SYMPTOM: an invoice would read Paid after a refund, or after its only payment was reversed. TRACE: 0010 wrote ... | A: Apply 0080 then 0087 (or 0087 alone) after Step 0, with a pg... | LOW | YES |
-| 6 | SEC-01 | Every `_v` masking view is an owner-privilege, auto-updatable view wit... | P0 | SECURITY RISK | UNTOUCHED | Anyone who opens the app and copies the anon key from the bundle can insert products, clients, cases, purchase... | SYMPTOM: the masking views accept writes from the public API roles. TRACE: 0019 chose definer-rights views so ... | B: A plus platform-grant discipline | MEDIUM | YES |
+| 6 | SEC-01 | Every `_v` masking view is an owner-privilege, auto-updatable view wit... | P0 | SECURITY RISK | DRAFTED_UNAPPLIED | Anyone who opens the app and copies the anon key from the bundle can insert products, clients, cases, purchase... | SYMPTOM: the masking views accept writes from the public API roles. TRACE: 0019 chose definer-rights views so ... | B: A plus platform-grant discipline | MEDIUM | YES |
 | 7 | DB-01 | next_document_number truncates every padding-1 sequence through lpad, ... | P0 | CONFIRMED BUG | DRAFTED_UNAPPLIED | On a rental day the first walk-in client saves as C-7 and the next Add Client fails; the first OS-created book... | SYMPTOM: the first new client or booking saves under a one-digit number and every one after fails with a uniqu... | B: 0085 + 0088 as ruled, with step 7 corrected | MEDIUM | YES |
 | 8 | DATA-01 | createInvoice reads money columns from column-armed base tables and is... | P1 | CONFIRMED BUG | DRAFTED_UNAPPLIED | On the day §4.46 is answered and the Create Invoice button is wired, the Owner's first invoice at Cine Sewa fa... | SYMPTOM: an invoice action that would fail with a permissions error the first time it is wired. TRACE: migrati... | B: Server-side draft snapshot RPC | MEDIUM | YES |
 | 9 | DATA-04 | Write-live inventory forms pick warehouses, categories and models from... | P1 | CONFIRMED BUG | UNTOUCHED | On the live project no serialised equipment can be added (a warehouse is required and none of the offered ones... | SYMPTOM: every inventory create on live ends in an honest refusal naming a fixture string. TRACE: the forms we... | B: One reference-data module, fixtures reduced to types | HIGH | YES |
@@ -86,12 +86,12 @@ Filed before refutation: 170 - refuted and withdrawn: 0 - merged as duplicates: 
 | 12 | FE-01 | Global scanner fabricates a ticked item on every scan | P1 | MOCK IMPLEMENTATION | UNTOUCHED | On a rental day a packer working from the FAB scanner can 'tick' every item on the list, including one that is... | SYMPTOM: a packer scanning a serial that belongs to another booking hears the success tone and reads '— ticked... | B: Build the scan resolver and give the FAB the workspace contr... | HIGH | YES |
 | 13 | FORMS-01 | Money modals can be dismissed mid-submit by Escape, backdrop or ×, and... | P1 | DATA INTEGRITY RISK | UNTOUCHED | On a rental day at the desk, a Coordinator taking an advance on a slow connection who presses Escape (or taps ... | SYMPTOM: a payment or expense can be recorded twice after a dismissed submit. TRACE: the busy state lives in e... | B: Undismissable while busy plus attempt-scoped key owned by th... | MEDIUM | YES |
 | 14 | INV-01 | Reservation and floor assignment are two unlinked tables: Confirm writ... | P1 | ARCHITECTURAL PROBLEM | UNTOUCHED | On a shoot day at Cine Sewa the coordinator confirms the job and the database genuinely holds the camera bodie... | SYMPTOM: a booking the app confirms is 'Booked — gear reserved, serials assigned' (workflow.ts:45) yet arrives... | B: Server-side confirm_booking function plus a reservation link... | HIGH | YES |
-| 15 | INV-05 | reserveAssignedUnits reports success on the two insert branches that w... | P1 | CONFIRMED BUG | UNTOUCHED | A confirmed job sits on the calendar with no body actually held; a second coordinator's Confirm takes the unit... | SYMPTOM: a Booked booking with fewer live holds than lines. TRACE: the reserve loop trusts a null error from a... | A: Exact-count and read-back check in the reservation writer | LOW | YES |
+| 15 | INV-05 | reserveAssignedUnits reports success on the two insert branches that w... | P1 | CONFIRMED BUG | FIXED_IN_TREE | A confirmed job sits on the calendar with no body actually held; a second coordinator's Confirm takes the unit... | SYMPTOM: a Booked booking with fewer live holds than lines. TRACE: the reserve loop trusts a null error from a... | A: Exact-count and read-back check in the reservation writer | LOW | YES |
 | 16 | INV-07 | A hold has exactly one lifecycle verb: nothing releases inventory_rese... | P1 | MISSING FEATURE | UNTOUCHED | When a client cancels, the bodies stay held for the whole window and the next coordinator is told they are tak... | SYMPTOM: gear stays blocked after a cancel or an early return. TRACE: no caller of releaseReservations outside... | A: Database triggers on bookings.cancelled_at and actual_return... | MEDIUM | YES |
 | 17 | MONEY-03 | The invoice trigger and the pricing engine disagree: 2 dp + hardcoded ... | P1 | CONFIRMED BUG | DRAFTED_UNAPPLIED | Every tax invoice's VAT line on the IRD return is off by paisa against what the client was shown; totals do no... | SYMPTOM: the printed invoice (engine) and the stored row (trigger) differ by up to a rupee and the VAT line by... | A: Write 0081_invoice_totals_match_engine per SPEC-P0-1 §2.2, a... | MEDIUM | YES |
 | 18 | MONEY-04 | Eleven independent 'outstanding' formulas, and the two in the database... | P1 | DATA INTEGRITY RISK | UNTOUCHED | A client who overpays by a round amount loses the credit from every screen and, at return, the damage charge c... | SYMPTOM: an overpayment is invisible on one path and a hard error on another; a void or a refund distorts the ... | A: Rule overpayment as a visible client credit and make one fun... | MEDIUM | YES |
-| 19 | MONEY-05 | A Draft invoice cannot receive a payment from the Record Payment modal... | P1 | PARTIAL IMPLEMENTATION | UNTOUCHED | An advance at booking or handover — R-06's whole premise — cannot be posted; the handover warning would fire o... | SYMPTOM: the advance SPEC-P0-1 §5 expects against a Draft cannot be recorded. TRACE: recordPayment was widened... | A: Pass the uuid through and dispatch invoiceId | LOW | YES |
-| 20 | MONEY-13 | 'Outstanding = 0' is vacuously true for a rental that was never billed... | P1 | DATA INTEGRITY RISK | UNTOUCHED | A rental can be handed over, returned and closed with nothing ever invoiced — revenue lost silently, and Close... | SYMPTOM: rentals can close unbilled. TRACE: the gates were written as sums with coalesce, assuming an invoice ... | A: Require an issued invoice before 'outstanding = 0' counts, w... | LOW | YES |
+| 19 | MONEY-05 | A Draft invoice cannot receive a payment from the Record Payment modal... | P1 | PARTIAL IMPLEMENTATION | FIXED_IN_TREE | An advance at booking or handover — R-06's whole premise — cannot be posted; the handover warning would fire o... | SYMPTOM: the advance SPEC-P0-1 §5 expects against a Draft cannot be recorded. TRACE: recordPayment was widened... | A: Pass the uuid through and dispatch invoiceId | LOW | YES |
+| 20 | MONEY-13 | 'Outstanding = 0' is vacuously true for a rental that was never billed... | P1 | DATA INTEGRITY RISK | FIXED_IN_TREE | A rental can be handed over, returned and closed with nothing ever invoiced — revenue lost silently, and Close... | SYMPTOM: rentals can close unbilled. TRACE: the gates were written as sums with coalesce, assuming an invoice ... | A: Require an issued invoice before 'outstanding = 0' counts, w... | LOW | YES |
 | 21 | OPS-02 | No evidence path exists end to end: no storage bucket on live, no uplo... | P1 | PARTIAL IMPLEMENTATION | UNTOUCHED | A camera goes out in worse condition than it came back and Cine Sewa has no photo to show the client; a Rs 25,... | SYMPTOM: gates go green with no photo; disputes have no evidence; the Evidence page is dead for every real boo... | B: Capture-first sessions: open the operation session at worksp... | HIGH | YES |
 | 22 | OPS-04 | Damage recorded at Return on live becomes prose in operation_sessions.... | P1 | PARTIAL IMPLEMENTATION | UNTOUCHED | On today's live data a returned lens marked Damaged with a written description cannot be charged: the descript... | SYMPTOM: a Damaged return on live produces no finding and no charge. TRACE: the writer exists and is unit-keye... | A: Make quantity-line damage representable and write it | MEDIUM | YES |
 | 23 | RES-01 | One floor action updating N rows offline queues only the first row and... | P1 | CONFIRMED BUG | UNTOUCHED | On a tablet that drops signal mid-return, a 6-unit return records one unit back; the other five stay 'out' on ... | SYMPTOM: a multi-unit Return or Reset captured offline lands with one unit changed. TRACE: the outbox's unit o... | A: Per-row envelope key and propagated result | LOW | YES |
@@ -100,7 +100,7 @@ Filed before refutation: 170 - refuted and withdrawn: 0 - merged as duplicates: 
 | 26 | RES-06 | With a persisted session but no signal the app routes to /login, and n... | P1 | PARTIAL IMPLEMENTATION | UNTOUCHED | The single premise of the product — floor work with no signal — does not hold: an operator in the dead zone se... | SYMPTOM: the warehouse tablet cannot open the app in the dead zone. TRACE: identity resolution is a network re... | B: On-device database with role-projected pull | HIGH | YES |
 | 27 | RES-11 | A queued mutation replays under whichever operator is signed in: live ... | P1 | DATA INTEGRITY RISK | UNTOUCHED | Gear that physically came back is recorded as still out on every desk surface, the deposit conversation cannot... | SYMPTOM: after a shift handover on a shared tablet, a return recorded before the handover leaves the booking O... | A: Author on every envelope, drain only the author's rows, show... | LOW | YES |
 | 28 | RL-01 | No cancel path: cancelRental is a stub, nothing writes cancelled_at, a... | P1 | MISSING FEATURE | UNTOUCHED | On a rental day at Cine Sewa a client who calls off a shoot cannot be cancelled: the booking keeps its stage, ... | SYMPTOM: an operator cannot cancel a booking anywhere in the product, and a confirmed booking's units stay hel... | B: cancel_booking() server function plus the two missing trigge... | MEDIUM | YES |
-| 29 | RL-05 | The Close gate's 'deposit resolved' tests uncollected deposit (pending... | P1 | CONFIRMED BUG | UNTOUCHED | Law 5: the deposit is the client's money. A rental closed with the deposit still held disappears from every op... | SYMPTOM: Close will pass on a booking whose deposit is still held. TRACE: the deposit table exposes one derive... | A: Correct the predicate in both gates | LOW | YES |
+| 29 | RL-05 | The Close gate's 'deposit resolved' tests uncollected deposit (pending... | P1 | CONFIRMED BUG | FIXED_IN_TREE | Law 5: the deposit is the client's money. A rental closed with the deposit still held disappears from every op... | SYMPTOM: Close will pass on a booking whose deposit is still held. TRACE: the deposit table exposes one derive... | A: Correct the predicate in both gates | LOW | YES |
 | 30 | RL-08 | The live handover gate is the pre-R-06 hard block; 0090 (warn with a n... | P1 | DEPLOYMENT PROBLEM | DRAFTED_UNAPPLIED | On the day invoicing goes live, every booking that receives a Draft invoice before pickup cannot be handed ove... | SYMPTOM: R-06 is unimplemented on production and the app's override plumbing is dead against it. TRACE: 0090 w... | B: Evaluate the money gates inside apply_booking_stage_transiti... | MEDIUM | YES |
 | 31 | RL-09 | Floor verbs seal the session and flip unit states before the stage mov... | P1 | ARCHITECTURAL PROBLEM | UNTOUCHED | A Warehouse operator completes a handover on a tablet whose clock is two minutes behind the desk that confirme... | SYMPTOM: the operator is told gear is On Rent (or the booking Packed) while bookings.stage did not move, and a... | B: complete_floor_session() server function | VERY HIGH | YES |
 | 32 | RL-10 | No extend, reschedule or edit-after-Booked path: extendRental is a stu... | P1 | MISSING FEATURE | UNTOUCHED | A shoot overruns by two days: the desk cannot extend, so either the booking is left On Rent past return_at (Ov... | SYMPTOM: a rental cannot be extended, moved or amended after Confirm. TRACE: the correction verbs were scaffol... | B: amend_booking_window() server function shared by extend and ... | HIGH | YES |
@@ -108,9 +108,9 @@ Filed before refutation: 170 - refuted and withdrawn: 0 - merged as duplicates: 
 | 34 | SEC-02 | `audit_events_insert` is `WITH CHECK (true)` to PUBLIC and `anon` hold... | P1 | SECURITY RISK | DRAFTED_UNAPPLIED | A dispute over who approved a discount, who released a deposit or who overrode a handover gate rests on `audit... | SYMPTOM: forged audit rows from an unauthenticated caller. TRACE: 0011 created the policy with no `TO` clause ... | A: Apply 0091 as drafted | LOW | YES |
 | 35 | SEC-03 | Law 6 governs SELECT only — a Warehouse session can rewrite `products.... | P1 | SECURITY RISK | DRAFTED_UNAPPLIED | Every future quote for that product prices at Rs 1 a day and no screen says so, because the pricing engine rea... | SYMPTOM: money-blind role writes money. TRACE: every browser session is the same Postgres role `authenticated`... | A: Apply 0092 amended per X-10 | LOW | YES |
 | 36 | SEC-07 | Staff administration has no database path and only one identity can si... | P1 | MISSING FEATURE | UNTOUCHED | A warehouse tablet cannot be given its own login without someone running SQL as postgres and creating the auth... | SYMPTOM: nobody but the Owner can sign in and no one can be added. TRACE: 0020 added the self-scoped SELECT as... | B: `users_manage` policy plus a `staff-invite` Edge Function | HIGH | YES |
-| 37 | DB-02 | bookings.stage, closed_at and booking_no remain directly writable by e... | P1 | DATA INTEGRITY RISK | UNTOUCHED | A warehouse tablet can close a booking with money owing, reopen a Closed booking by clearing closed_at without... | SYMPTOM: forward-only transitions can be bypassed and a booking can be inserted Closed. TRACE: 0021 issued a c... | A: Revoke table-level UPDATE/INSERT and re-grant column lists (... | LOW | YES |
+| 37 | DB-02 | bookings.stage, closed_at and booking_no remain directly writable by e... | P1 | DATA INTEGRITY RISK | DRAFTED_UNAPPLIED | A warehouse tablet can close a booking with money owing, reopen a Closed booking by clearing closed_at without... | SYMPTOM: forward-only transitions can be bypassed and a booking can be inserted Closed. TRACE: 0021 issued a c... | A: Revoke table-level UPDATE/INSERT and re-grant column lists (... | LOW | YES |
 | 38 | SEC-04 | Law 6 read masking is armed on 9 tables; 15 view-backed money tables s... | P1 | SECURITY RISK | UNTOUCHED | On a warehouse tablet the raw REST endpoint shows a Warehouse or Driver user the crew day rates, client credit... | SYMPTOM: a money-blind role can read money from the base table. TRACE: 0019 revoked SELECT on money columns; 0... | B: A plus an invariant and a lint | MEDIUM | YES |
-| 39 | RL-06 | The damage-charge close gate is hardcoded to 0 while damage_findings a... | P1 | PARTIAL IMPLEMENTATION | UNTOUCHED | A camera comes back damaged at Return, the finding is recorded, the Manager has not yet approved the Rs charge... | SYMPTOM: a rental with an unapproved damage finding can be closed and the charge is never raised. TRACE: close... | A: Read the findings through their parents, and add both branch... | LOW | YES |
+| 39 | RL-06 | The damage-charge close gate is hardcoded to 0 while damage_findings a... | P1 | PARTIAL IMPLEMENTATION | FIXED_IN_TREE | A camera comes back damaged at Return, the finding is recorded, the Manager has not yet approved the Rs charge... | SYMPTOM: a rental with an unapproved damage finding can be closed and the charge is never raised. TRACE: close... | A: Read the findings through their parents, and add both branch... | LOW | YES |
 | 40 | MONEY-09 | The refund path is a stub with two contradictory schema homes and no r... | P1 | PARTIAL IMPLEMENTATION | UNTOUCHED | A client refund is off-book; a wrong payment cannot be corrected; if the bridge writes a Refund row, paid_amou... | SYMPTOM: money cannot leave the till through the system. TRACE: the schema offers two representations (0006's ... | A: Rule 'a refund is a payment_reversals row', retire payments.... | MEDIUM | YES |
 | 41 | MONEY-10 | Security deposits (Law 5) have no write path, and 'deposit resolved' m... | P1 | MISSING FEATURE | UNTOUCHED | The only cover against damage and non-return is never recorded; a client's Rs 50,000 deposit is either held fo... | SYMPTOM: deposits exist only as bookings.deposit_required; nothing is ever received, applied or refunded, and ... | A: Build the deposit lifecycle on the existing schema and defin... | HIGH | YES |
 | 42 | MONEY-08 | Return-time charges have no way onto the Draft (R-03): no addInvoiceLi... | P1 | MISSING FEATURE | UNTOUCHED | Every damaged, missing or late return is billed at zero; because the deposit cannot be applied either (MONEY-1... | SYMPTOM: damage and late fees never reach the bill. TRACE: the schema models finding → charge → line; the floo... | A: Complete finding → charge → line on the existing model | HIGH | YES |
@@ -134,91 +134,93 @@ Filed before refutation: 170 - refuted and withdrawn: 0 - merged as duplicates: 
 | 60 | DATA-08 | All 25 settings persist to localStorage only; the VAT rate that prices... | P2 | DATA INTEGRITY RISK | UNTOUCHED | A second desk (or a cleared browser) silently prices at the default 13 % or at whatever was last typed there; ... | SYMPTOM: two laptops can quote the same booking at different VAT. TRACE: settingsStore was written as a localS... | B: A plus VAT owned by the database | HIGH | NO |
 | 61 | DATA-09 | Writers living in the read layer bypass the dispatcher, capability che... | P2 | ARCHITECTURAL PROBLEM | UNTOUCHED | Expense approval rights are whatever the expenses policy says, not what rbac says, and a Coordinator's expense... | SYMPTOM: an expense can be created by any role RLS admits, with no event and no queue entry. TRACE: the Expens... | B: A plus a lint gate | MEDIUM | NO |
 | 62 | DATA-12 | booqable-webhook is not deployed, would be rejected by the gateway's J... | P2 | DISCONNECTED IMPLEMENTATION | UNTOUCHED | While staff keep taking orders in Booqable, none reach the OS; every count, availability check and report is s... | SYMPTOM: orders after #899 never arrive. TRACE: the webhook was scaffolded with a deliberate TODO(decision) fo... | B: A plus a ruled drain | HIGH | NO |
-| 63 | DB-06 | number_sequences has no 'transfer' row while createStockTransfer (impl... | P2 | MISSING FEATURE | UNTOUCHED | Moving gear between warehouses cannot be recorded; the Transfer Center ends in an error sentence on every atte... | SYMPTOM: stock transfers fail on live. TRACE: 0012 seeded seven keys and 0056 three more; the action deliberat... | A: Seed the missing sequences under ruled prefixes | LOW | NO |
-| 64 | DB-07 | src/types/supabase.ts is the 11 Aug schema — 3 tables, 6 views, 7 colu... | P2 | TECHNICAL DEBT | UNTOUCHED | A column change on a money table (0086 nulling invoice_no, 0085 changing booking_no's shape) compiles green an... | SYMPTOM: writes to daily_closings, clients and client_flags need 'as never'. TRACE: the file was generated onc... | A: Repoint the script, regenerate, remove the casts, gate on dr... | LOW | NO |
-| 65 | ARCH-02 | Status vocabularies are hand-declared in four layers with no conforman... | P2 | ARCHITECTURAL PROBLEM | UNTOUCHED | Today nothing visible: product_units and damage_findings are empty live. On the first stock import or the firs... | SYMPTOM: 'Available' / 'In Stock', 'In Maintenance' / 'Maintenance', 'Complete' / 'Completed', 'Awaiting Appro... | B: Generate the enum layer from the database and re-export | HIGH | NO |
-| 66 | DB-08 | The live ledger and the migrations directory cannot be reconciled mech... | P2 | DEPLOYMENT PROBLEM | UNTOUCHED | In a restore the rebuilt database differs from production in ways nobody has listed; recovery time becomes inv... | SYMPTOM: nobody can state from the repo what live ran. TRACE: applies went through MCP apply_migration with fr... | B: Adopt CLI-timestamped filenames and supabase db push as the ... | HIGH | NO |
-| 67 | DB-09 | Any staff role can rewrite the document counters (number_sequences ALL... | P2 | SECURITY RISK | UNTOUCHED | A mis-tap on a warehouse tablet or one unhappy employee makes the next tax invoice a duplicate number or leave... | SYMPTOM: the floor can edit the counters. TRACE: the function runs as the caller, so RLS on number_sequences h... | A: Definer minting function, staff read-only counters, Owner/Ad... | LOW | NO |
-| 68 | DB-10 | 194 TRIGGER REQUIRED invariants in the migrations, 40 triggers live (t... | P2 | ARCHITECTURAL PROBLEM | UNTOUCHED | A booking can be cancelled with gear still out; a session can be closed with units unaccounted for; a movement... | SYMPTOM: engine and workspaces hold the gates in local state. TRACE: the schema was written with intent commen... | A: Build the load-bearing seven as BEFORE triggers with pgTAP | MEDIUM | NO |
-| 69 | DB-11 | No migration states base-table grants for authenticated, anon or servi... | P2 | DEPLOYMENT PROBLEM | UNTOUCHED | None on live today; a restore into a self-hosted or differently provisioned project would be unreadable, and e... | SYMPTOM: rebuilt database unreadable by the app. TRACE: platform defaults hid the omission; 0062/0077 assume a... | A: State the grants and default privileges in a migration, and ... | LOW | NO |
-| 70 | DB-12 | anon holds INSERT/UPDATE/SELECT grants on every public table by defaul... | P2 | SECURITY RISK | UNTOUCHED | Any future table or policy written the ordinary way is anonymously writable until its predicate is right; 0085... | SYMPTOM: an anonymous caller forges audit rows. TRACE: default ACL grants anon everything, policies are TO pub... | A: anon has nothing in public | LOW | NO |
-| 71 | DEL-03 | CI has never run — the repository has no remote — and the workflow omi... | P2 | DEPLOYMENT PROBLEM | UNTOUCHED | Indirect: regressions in pricing, dates or gates reach the tree with no independent check, and the DR gate (ch... | SYMPTOM: 'CI green' appears in no PROGRESS entry; lint drift was measured wrongly once already (P2-3 withdrawn... | B: A plus branch protection and a nightly database job | MEDIUM | NO |
-| 72 | DEL-04 | No hosting target — three deploy configs coexist and disagree on shell... | P2 | DEPLOYMENT PROBLEM | UNTOUCHED | The OS cannot be used from a phone or a warehouse tablet outside a developer's machine; once it is, the wrong ... | SYMPTOM: nothing is reachable for the business, and a tablet that once cached index.html on Vercel would be pi... | B: A plus a deploy job in CI | MEDIUM | NO |
-| 73 | DEL-06 | The Booqable SQL importer hazard regenerates itself — the quarantine s... | P2 | DATA INTEGRITY RISK | UNTOUCHED | One `node scripts/sync-all-booqable-data.mjs` followed by running its output rewrites the client and the dates... | SYMPTOM: P1-7 was closed by a quarantine, and the tree still holds a script that will attach 100+ bookings to ... | B: Retire the generators; one importer on the typed bridge, bac... | MEDIUM | NO |
-| 74 | FE-03 | Service-worker runtime cache: half the patterns are inert, the other h... | P2 | SECURITY RISK | UNTOUCHED | A floor tablet handed from a Manager to a Warehouse hand shows the last week's client credit limits and bundle... | SYMPTOM: a Warehouse login on the shared floor tablet renders a client list carrying credit limits that were f... | B: Remove REST runtime caching from the SW; the Dexie store is ... | MEDIUM | NO |
-| 75 | FE-04 | Contrast fails on the surfaces the gate does not measure: muted ink on... | P2 | ACCESSIBILITY PROBLEM | UNTOUCHED | Operators on a bright warehouse floor or a dimmed night desk lose the secondary text (dates, counts, notes) fi... | SYMPTOM: 13px muted metadata on a card footer or table header reads faint, and a keyboard user cannot see wher... | B: Retune as in A and replace the gate with a resolver-based pa... | MEDIUM | NO |
-| 76 | FE-05 | Responsive layer has no adopters and eight screens render 720-1020px t... | P2 | PARTIAL IMPLEMENTATION | UNTOUCHED | Warehouses and Stock Units are floor screens; on a phone the transfer table and the unit list are unreadable w... | SYMPTOM: Warehouses on a phone is a 1010px grid in a 390px window. TRACE: the responsive layer was added 25 Au... | B: Card-row fallback on the eight screens plus a guard test | MEDIUM | NO |
-| 77 | FE-06 | All five installable icons are one 470 KB JPEG declared as PNG/ICO, an... | P2 | DEPLOYMENT PROBLEM | UNTOUCHED | The warehouse tablet downloads 2.3 MB of identical JPEG on first install over a weak connection; the home-scre... | SYMPTOM: an installed app with a cropped, blurry icon and a 2.3 MB heavier first load. TRACE: the manifest was... | B: A plus an icon build script and a byte-level guard test | MEDIUM | NO |
-| 78 | FE-07 | Two scanner implementations with different contracts, and a demo 'test... | P2 | DUPLICATED IMPLEMENTATION | UNTOUCHED | A tap on 'Sony FX3 (SN-FX3-102)' is recorded as a scan of the physical unit; the count reconciles while the un... | SYMPTOM: a packer can 'scan' every unit by tapping names, and the floor modal cannot use the camera while the ... | B: Extract useBarcodeDecoder and make the modal the one UI the ... | MEDIUM | NO |
-| 79 | FORMS-03 | Six full forms sit in front of implemented:false actions and fail on e... | P2 | PARTIAL IMPLEMENTATION | UNTOUCHED | An operator on a Booked rental fills a five-field Extend form, or types a reversal amount and reason, and lear... | SYMPTOM: enabled primary buttons that always end in 'is not connected to the database yet' (§37), and one disa... | B: Expose `implemented` from createAction and gate mechanically | MEDIUM | NO |
-| 80 | FORMS-04 | Create Purchase Request fabricates a PR number, an equipment id and a ... | P2 | MOCK IMPLEMENTATION | UNTOUCHED | A Warehouse lead documents a turnaway-backed capex case, sees it listed as Draft, and it is gone the next morn... | SYMPTOM: a request the operator just 'submitted' is refused on approve and is gone after reload. TRACE: the mo... | B: createPurchaseRequest action and a product picker | MEDIUM | NO |
-| 81 | FORMS-05 | Damage approval form approves and rejects in component state over a se... | P2 | MOCK IMPLEMENTATION | UNTOUCHED | On a return with a cracked lens, a Manager can 'approve' a Rs 25,000 charge and see it move to Settled; nothin... | SYMPTOM: an approval with a rupee charge 'records' nothing. TRACE: the money half of the damage flow was built... | B: approveDamageFinding action mirroring damage_findings_approv... | MEDIUM | NO |
-| 82 | FORMS-06 | Client inline edit saves to component state only; updateClient has no ... | P2 | PARTIAL IMPLEMENTATION | UNTOUCHED | The desk corrects a client's phone or PAN before confirming a booking, the change looks saved, and the next sc... | SYMPTOM: edits die on reload. TRACE: the edit UI (useEditMode) and the capability are done; the action body wa... | A: Implement updateClient with an explicit key→column map | MEDIUM | NO |
-| 83 | FORMS-10 | Settings ▸ Branches ▸ Add Branch appends to local state and reports su... | P2 | MOCK IMPLEMENTATION | UNTOUCHED | The Owner sets up a fourth branch for a Pokhara season, sees it listed, and every booking, transfer and closin... | SYMPTOM: a new branch appears, then vanishes on reload. TRACE: the whole tab reads data/settings BRANCHES; the... | B: Read branches, write through createBranch | MEDIUM | NO |
-| 84 | FORMS-11 | The stock-transfer form cannot succeed on live: its warehouse pickers ... | P2 | PARTIAL IMPLEMENTATION | UNTOUCHED | Moving a camera body between the vault and the lakeside hub — the only two facilities the business has — is im... | SYMPTOM: an honest refusal on every transfer. TRACE: the write was connected before the read; the facility lis... | B: A plus seed number_sequences.transfer | MEDIUM | NO |
-| 85 | FORMS-12 | Daily Closing never reads its own closing back: after reload Approve i... | P2 | PARTIAL IMPLEMENTATION | UNTOUCHED | At 21:00 the accountant signs the day; at 21:05 on another tablet the Owner sees an unsigned day and signs aga... | SYMPTOM: a signed day looks unsigned. TRACE: the write was added (0078 + action) without a reader; §4.40's ope... | A: Read-back, reason field, variance in the engine | LOW | NO |
-| 86 | FORMS-15 | Nine dead enabled controls survive: seven Evidence bulk actions render... | P2 | CONFIRMED BUG | UNTOUCHED | On the floor a packer presses Print Packing List and nothing happens; in Evidence a reviewer presses Remove on... | SYMPTOM: pressing Print or Remove does nothing. TRACE: the bulk bar maps labels straight to Buttons; the print... | B: A plus a dead-control lint rule | MEDIUM | NO |
-| 87 | FORMS-20 | Create Invoice and Void Invoice are full forms whose primary buttons a... | P2 | PARTIAL IMPLEMENTATION | UNTOUCHED | Accounts cannot void a wrong invoice from the app (R-04's only correction path), and a Manager permitted by R-... | SYMPTOM: two finance forms that cannot succeed. TRACE: Create is blocked on §4.46; Void has no action because ... | B: voidInvoice to the trigger contract | MEDIUM | NO |
-| 88 | INV-04 | booking_line_units accepts the same physical unit on two overlapping b... | P2 | DATA INTEGRITY RISK | UNTOUCHED | When D5 is wired (INV-03) two coordinators can both promise Camera body 01 to two shoots on the same day and b... | SYMPTOM: one serial promised to two overlapping bookings. TRACE: 0071 chose booking_line_units for D5 chips 'a... | A: Overlap trigger on booking_line_units | MEDIUM | NO |
-| 89 | INV-06 | planAssignment reports complete for a booking whose every line is prod... | P2 | DATA INTEGRITY RISK | UNTOUCHED | A booking imported from Booqable as a bundle line, or created by any future caller with a Bundle line, confirm... | SYMPTOM: Booked with zero holds. TRACE: the skipped/assignable split followed by a vacuous every. ROOT CAUSE: ... | A: Expand bundles and make complete honest | LOW | NO |
-| 90 | INV-08 | readHolds reads every live reservation in the database with no window ... | P2 | PERFORMANCE PROBLEM | UNTOUCHED | Not today; after roughly a thousand unit-bookings it becomes 'the system said free, the database said no' on t... | SYMPTOM: stale free/held answers at scale. TRACE: readHolds selects every live hold. ROOT CAUSE: the read was ... | A: Window predicate, named cap and exact count | LOW | NO |
-| 91 | INV-09 | The New Rental picker answers availability from a present-tense produc... | P2 | CONFIRMED BUG | UNTOUCHED | Coordinators are blocked from confirming a future job because a body is out today, or promised a cable count n... | SYMPTOM: wrong availability and wrong blocking on the one screen that sells the job. TRACE: the catalogue deri... | A: One product read through the engine for the booking window | MEDIUM | NO |
-| 92 | INV-10 | product_units.status is never written by any OS verb, yet Product deta... | P2 | DISCONNECTED IMPLEMENTATION | UNTOUCHED | The screen a warehouse lead opens to answer 'do we have a spare 24-70?' is wrong in the optimistic direction. | SYMPTOM: Product detail says 3 of 3 available while all three are on a shoot. TRACE: the status column is neve... | B: Derive 'free now' from the engine and relabel the enum | MEDIUM | NO |
-| 93 | INV-11 | The availability rules (disqualifying states, half-open vs closed brac... | P2 | DATA INTEGRITY RISK | UNTOUCHED | Nobody can explain from the data why one back-to-back booking was refused and another accepted; the turnaround... | SYMPTOM: back-to-back bookings behave differently depending on whose laptop confirmed them. TRACE: the bracket... | B: Server-held business settings read by both layers | MEDIUM | NO |
-| 94 | INV-12 | No test exercises the double-booking defence: the exclusion constraint... | P2 | TESTING GAP | UNTOUCHED | Every fix above ships on inspection alone; a regression in the arbiter would reach the floor unnoticed. | Tests were written where the engine is pure (Law 1) and stopped at the IO boundary; the database-side defence ... | B: Dockerised Postgres in CI with a two-session concurrency tes... | HIGH | NO |
-| 95 | MONEY-15 | Crew is billed at cost on the invoice, and folding per-engagement extr... | P2 | CONFIRMED BUG | UNTOUCHED | Every crew day is invoiced with zero margin; Rs 0.01 lines fail the 'reconcile exactly' rule on a tax document... | SYMPTOM: crew revenue equals crew cost; a line that does not multiply. TRACE: the spec's fee has no storage; e... | A: Extras as their own lines; bill a bill rate, not the payout | MEDIUM | NO |
-| 96 | MONEY-16 | Money-document numbering: payment numbers reset every January (R-18) a... | P2 | DATA INTEGRITY RISK | DRAFTED_UNAPPLIED | Latent until MONEY-07/08/09 are built, then blocking; a January reset would duplicate receipt numbers across y... | SYMPTOM: three correction/charge documents are unnumberable and receipts would restart yearly. TRACE: 0007 see... | A: Apply 0085's payment fix and 0089; add the three registry ro... | LOW | NO |
-| 97 | MONEY-17 | Daily Closing's expected cash is structurally zero: no Cash bank accou... | P2 | CONFIRMED BUG | UNTOUCHED | The daily ritual reports a variance equal to the day's cash every day; staff stop trusting it or sign it anywa... | SYMPTOM: the drawer never reconciles. TRACE: the method label was deliberately not mapped to an account; the s... | A: Seed a Cash account per branch and preselect it for cash; la... | LOW | NO |
-| 98 | OPS-01 | Three definitions of "today" on the floor: Operations scopes use civil... | P2 | ARCHITECTURAL PROBLEM | UNTOUCHED | At Cine Sewa a 05:45 pickup shows on the Operation page's Today list but not on the Dashboard's Today column, ... | SYMPTOM: two screens can list a different set of bookings under the same word "Today", and the night shift (00... | B: One floor-day hook in the query layer consumed by every floo... | MEDIUM | NO |
-| 99 | OPS-05 | Past-due floor work drops out of every day scope: 26 uncollected picku... | P2 | UX PROBLEM | UNTOUCHED | A kit packed for a shoot that did not collect on time is the single most expensive thing on the floor (gear re... | SYMPTOM: late jobs vanish from the default view. TRACE: spec 03 §3.1 draws chips filtering one time-ordered li... | A: A late-pickup exception set surfaced in Alerts and as a stic... | LOW | NO |
-| 100 | OPS-06 | Handover money gates are attestations: "Payment Verified" and "Deposit... | P2 | DISCONNECTED IMPLEMENTATION | DRAFTED_UNAPPLIED | Every handover at Cine Sewa needs a Manager or Accounts person to press Mark Cleared twice for facts they did ... | SYMPTOM: a Manager certifies a payment nobody checked; on a corpus with deposits (mock) the DB then refuses wh... | A: Money-free gate status RPC + R-06 override wired end to end | MEDIUM | NO |
-| 101 | OPS-07 | Signatures are dropped or written as prose: the signatures table exist... | P2 | PARTIAL IMPLEMENTATION | UNTOUCHED | When a client disputes what left the warehouse, Cine Sewa has the receiver's name only in a notes blob (Return... | SYMPTOM: no signature record survives a handover; a return's signatures are unqueryable text. TRACE: the schem... | A: Typed attestations written as signatures rows at dispatch | MEDIUM | NO |
-| 102 | RES-03 | The queue-on-network-failure branch in dataAccess can never fire: it m... | P2 | CONFIRMED BUG | UNTOUCHED | The common warehouse failure (signal drops during the request, not before it) produces a raw error on the floo... | SYMPTOM: mid-flight failures never queue and surface as raw 'TypeError: Failed to fetch'. TRACE: the branch wa... | B: One typed network error, one classifier, opt-in queueing | MEDIUM | NO |
-| 103 | RES-07 | captureError is a no-op without a DSN nobody has set, and the 3 Sep sw... | P2 | DISCONNECTED IMPLEMENTATION | UNTOUCHED | The failures this cluster documents — dead-lettered returns, refused replays, a failed audit row after a compl... | SYMPTOM: failures that used to appear in the console vanish; the audit trail's own failure path is unobservabl... | A: Local visibility regardless of sink, and install the handler... | LOW | NO |
-| 104 | RES-08 | The 25-second pull reads a revoked table with select('*'), maps column... | P2 | DISCONNECTED IMPLEMENTATION | UNTOUCHED | No direct business loss today (nothing reads the cache), but the shell tells operators the local cache is in s... | SYMPTOM: a 403 every 25 seconds in the Network panel, an empty products cache, and a header that says Synced. ... | A: Remove the pull and the claim | LOW | NO |
-| 105 | RES-12 | Four write paths bypass dataAccess: no queue, no network handling, and... | P2 | ARCHITECTURAL PROBLEM | UNTOUCHED | An expense approved offline fails with a raw error rather than a refusal the operator understands; a Confirm t... | SYMPTOM: expense writes behave differently offline from every action, and a failed rollback of reservations is... | B: A plus a lint boundary | MEDIUM | NO |
-| 106 | RES-13 | The offline stack has no behavioural test: nothing pins dedupe, replay... | P2 | TESTING GAP | UNTOUCHED | Every fix in this cluster will regress silently without tests; the floor's offline promise cannot be certified... | SYMPTOM: a two-line dedupe key and a strict string compare shipped and stayed broken for weeks. TRACE: the mod... | A: fake-indexeddb harness and the six behaviour tests | LOW | NO |
-| 107 | RL-03 | Closed-is-final rests on closed_at, which is NULL on all 60 live Close... | P2 | CONFIRMED BUG | UNTOUCHED | Any of the 60 closed-and-cancelled Booqable orders can be walked to Booked, Packed or On Rent by one transitio... | SYMPTOM: 'Closed is final' (0002:96) is not true for any Closed booking on live. TRACE: 0021 made closed_at th... | B: Make closed_at a generated fact of stage | MEDIUM | NO |
-| 108 | RL-07 | R-07's auto-suggest is missing: Booking Detail shows a Close button at... | P2 | PARTIAL IMPLEMENTATION | UNTOUCHED | The auto-suggest is the mechanism R-07 relies on to get rentals closed without a queue: without it, Returned b... | SYMPTOM: an Accounts user sees an inviting primary button on every Returned booking and learns only after pres... | A: Move readCloseGates to the query layer and render closeGates... | LOW | NO |
-| 109 | RL-12 | The §1.9 flag registry is never fed: no caller passes flags, booking_f... | P2 | DISCONNECTED IMPLEMENTATION | UNTOUCHED | Overdue, Missing and Damaged bookings can be closed by the engine's own rules (the DB has no such gate either ... | SYMPTOM: the engine's flag layer decides nothing. TRACE: the registry was built as a pure table (Law 1) and th... | A: Derive flags at the call site and re-express the two money f... | MEDIUM | NO |
-| 110 | RL-14 | A second pass of a staggered handover or return reuses the first pass'... | P2 | CONFIRMED BUG | UNTOUCHED | Partial pickups are normal at Cine Sewa (lights on day one, camera on day two). The second collection fails wi... | SYMPTOM: the second collection of a split pickup cannot be recorded. TRACE: the key is scoped to the mount bec... | A: Re-mint the key after every landed pass; make the session ke... | LOW | NO |
-| 111 | SEC-05 | RBAC mirror has four unsafe-direction gaps: Accounts is offered Close ... | P2 | SECURITY RISK | UNTOUCHED | The role the owner ruled should confirm a Close (Accounts) cannot; the warehouse floor can close a rental with... | SYMPTOM: controls offered then refused, and roles the ruling excludes able to close. TRACE: R-05/R-08 (4 Sep) ... | B: A plus a generated mirror test | MEDIUM | NO |
-| 112 | SEC-08 | Auth hardening is unverified on the hosted project and weak in the tra... | P2 | SECURITY RISK | UNKNOWN | The Owner account is the only key to the business record and may be protected by a six-character password with... | SYMPTOM: weak or unknown auth posture. TRACE: config.toml is the CLI default with the project id filled in; ho... | A: Harden and record the hosted settings | LOW | NO |
-| 113 | DATA-11 | booqable-proxy authorizes by JWT only: its six write-back paths and th... | P2 | SECURITY RISK | UNTOUCHED | If the function secrets are set, any account that can obtain a session — the portal self-registration path exi... | SYMPTOM: an external write surface gated by identity, not by role. TRACE: the proxy was written with role reso... | A: Role-gate the allowlist and pin CORS | LOW | NO |
-| 114 | DB-13 | Apply-safety review of the ten drafts: all apply on today's catalogue,... | P2 | CONFIRMED BUG | DRAFTED_UNAPPLIED | (b) the first real order back-filled at #900 collides with an OS booking and one of them loses its identity; (... | The drafts were verified on a scratch build whose default ACL is empty (DB-11), so the RLS/grant exposure of a... | A: Patch the drafts before apply | LOW | NO |
-| 115 | DEL-07 | The Booqable bridge is built but disconnected — zero importers, webhoo... | P2 | DISCONNECTED IMPLEMENTATION | UNTOUCHED | Cine Sewa runs two order books: Booqable holds the real ones since 12 Aug, the OS holds a frozen copy plus a s... | SYMPTOM: orders after #899 never reach the OS and the app shows a corpus frozen at 12 Aug. TRACE: the pull bri... | A: Rule import-once; import the tail; retire the bridge surface | MEDIUM | NO |
-| 116 | FORMS-02 | New Rental's Save Draft and Cancel dispatch stub actions on every pres... | P2 | PARTIAL IMPLEMENTATION | UNTOUCHED | A Coordinator building a large booking over a phone call cannot park it; leaving the page or reloading discard... | SYMPTOM: Save Draft fails 100% of the time with an honest message. TRACE: the button is wired to a dispatcher ... | B: Save Draft is createRental without confirmRental | MEDIUM | NO |
-| 117 | ARCH-06 | About 4,700 lines of built-but-unreferenced code sit inside the compil... | P3 | TECHNICAL DEBT | UNTOUCHED | None directly; the risk is the one the 3 Sep audit named — a reader trusts a module because it exists (the Ope... | SYMPTOM: engines and a whole workspace tree compile for no caller, and a page re-implements one of them inline... | A: Quarantine or delete, route the branch read, and gate unused... | LOW | NO |
-| 118 | ARCH-10 | Phone normalisation exists five times with three different keys (+977 ... | P3 | DUPLICATED IMPLEMENTATION | UNTOUCHED | A client stored as +9779812345678 is matched by the nine-digit tail search and the ten-digit import key in the... | SYMPTOM: five normalisers. TRACE: each consumer (store, WhatsApp, import dedupe, live tail search, form warnin... | A: One module, one tail | LOW | NO |
-| 119 | ARCH-11 | Money formatting is reimplemented beside the engine: a second grouped(... | P3 | DUPLICATED IMPLEMENTATION | UNTOUCHED | None proven today; the exposure is a KPI axis or a hover card printing a figure grouped or rounded differently... | SYMPTOM: two grouping implementations and three ad-hoc formatters. TRACE: format.ts predates money.ts; callers... | A: Delete the duplicate and route the three sites | LOW | NO |
-| 120 | DATA-10 | users_select_own empties every cross-user name lookup: 'raised by' on ... | P3 | CONFIRMED BUG | UNTOUCHED | A Manager reviewing purchase requests cannot see who raised them unless it was themselves. | SYMPTOM: blank names. TRACE: the two lookups were written before 0020 narrowed users to self-only; staff_direc... | A: Read staff_directory_v through one helper | LOW | NO |
-| 121 | DATA-14 | The mock backend serves 8 store keys against 48 tables and views the a... | P3 | TESTING GAP | UNTOUCHED | QA signs off screens that fail on the live project (Add Equipment is the proven case). | SYMPTOM: mock-mode passes that live contradicts. TRACE: the mock was built for the booking spine and never wid... | A: Fail loud and register the missing relations | LOW | NO |
-| 122 | DATA-15 | create_booking trusts created_by and branch_id from the payload, valid... | P3 | SECURITY RISK | UNTOUCHED | A Coordinator can file a booking as the Owner or under the other branch; a booking with return before pickup i... | SYMPTOM: attribution and branch are caller-asserted. TRACE: the RPC was written to accept the shape createRent... | B: A plus a uniform response shape | LOW | NO |
-| 123 | DB-14 | Catalogue hygiene: two NOT VALID CHECKs with zero violators, a dead pr... | P3 | TECHNICAL DEBT | UNTOUCHED | Cosmetic today; a client list sorted by code will interleave C-0366 and C-751 oddly and the banned word surviv... | Hand edits and generated enums that were never reconciled with the ruled registry; the client sequence was see... | A: One hygiene migration after a ruling on the client-code shap... | LOW | NO |
-| 124 | DB-15 | The Booqable bridge's app-side writers target tables with SELECT-only ... | P3 | DISCONNECTED IMPLEMENTATION | UNTOUCHED | None today; on the day the bridge is switched on, every conflict and outbox row is silently refused and the im... | The bridge was written against tables whose policies were designed for an Edge Function writer; the browser-si... | A: Move bridge writes behind the service-role Edge Function | MEDIUM | NO |
-| 125 | DEL-10 | Bundle and PWA weight — the 453 KB scanner is preloaded on every page,... | P3 | PERFORMANCE PROBLEM | UNTOUCHED | Slower first load and update on mobile data in Kathmandu; fabricated names and emails shipped to every visitor... | SYMPTOM: a warehouse tablet downloads a barcode decoder and fabricated client names before the Dashboard paint... | A: Lazy scanner, runtime-cached fonts, mode-gated mock import | LOW | NO |
-| 126 | DEL-11 | Two spec-pack documents still anchor 1 Shrawan 2083 at 16 Jul 2026, on... | P3 | TECHNICAL DEBT | UNTOUCHED | A printed sample or a hand-checked date from the spec disagrees with the app by a day; on a fiscal boundary th... | SYMPTOM: anyone building a fixture, a test or a sample invoice from the spec pack will place every BS date one... | A: Correct the lines and stamp the source | LOW | NO |
-| 127 | DEL-12 | Dependency advisories unchanged since 3 Sep — three high, one moderate... | P3 | TECHNICAL DEBT | UNTOUCHED | Minimal today (build toolchain only); becomes a hosting-provider blocker if the host scans dependencies. | Dev-side transitive advisories; vite's fix is a major bump held by vite-plugin-pwa/vitest alignment. ROOT CAUS... | A: npm audit fix for the three non-major advisories | LOW | NO |
-| 128 | FE-09 | Toasts cover the phone bar and the FAB, live-region semantics are ad h... | P3 | ACCESSIBILITY PROBLEM | UNTOUCHED | After recording a payment on a phone the operator's next tap on Scan or More hits the toast's dismiss target i... | SYMPTOM: on a phone the 'Note Added' toast lands on the More slot and the FAB. TRACE: Toast.tsx predates Botto... | B: A plus a shared LiveAnnouncer used by toasts, banners, scann... | MEDIUM | NO |
-| 129 | FE-10 | Token discipline drift: literal font sizes ignore the text-size settin... | P3 | TECHNICAL DEBT | UNTOUCHED | The accessibility setting the product advertises (compact/large text) is silently partial on two operations sc... | SYMPTOM: an operator who chose Large text in Settings sees Cases and Sub-Rental unchanged, and the BS day in t... | B: A plus an ESLint guard | MEDIUM | NO |
-| 130 | FE-11 | DateField: visible label not associated, grid without rows, Escape han... | P3 | ACCESSIBILITY PROBLEM | UNTOUCHED | Every date in the app now goes through this one picker; a screen-reader user picking a return date cannot tell... | SYMPTOM: clicking the label does nothing; a screen reader reads day numbers without weekdays. TRACE: the compo... | A: Associate the label, add rows and column headers, consume Es... | LOW | NO |
-| 131 | FE-12 | Scanner entry points on a phone: the manifest 'Scan' shortcut 404s and... | P3 | UX PROBLEM | UNTOUCHED | The one OS-level entry point built for the warehouse (scan from the home screen) fails; two adjacent scanner b... | SYMPTOM: long-press the home icon, tap Scan, land on a 404. TRACE: the shortcut was written when a /scan scree... | A: Point the shortcut at a real route with a scan query and hid... | LOW | NO |
-| 132 | FE-13 | Header search advertises entity search but only opens a navigation pal... | P3 | UX PROBLEM | UNTOUCHED | A coordinator with a serial in hand wastes the ⌘K path and falls back to page filters. | SYMPTOM: typing a serial in the header finds nothing. TRACE: the header's copy was written from the spec's sea... | A: Make the copy true | LOW | NO |
-| 133 | FORMS-08 | Validation rules are re-invented per form and per action and disagree:... | P3 | UX PROBLEM | UNTOUCHED | The desk creating a client mid-call types a PAN, presses Save, reads a banner at the top, and has to find the ... | SYMPTOM: refusals arrive late and unlocated. TRACE: each form and each action carries its own validate; nothin... | B: Actions export field rules; forms consume them | MEDIUM | NO |
-| 134 | FORMS-09 | No unsaved-changes guard on navigation or reload anywhere, and the rou... | P3 | MISSING FEATURE | UNTOUCHED | Combined with FORMS-02 (no draft), a Coordinator who taps Rentals in the sidebar mid-booking loses ten minutes... | SYMPTOM: a sidebar click or F5 discards a half-built New Rental. TRACE: the guards were built per-button, neve... | B: Data router plus useBlocker | MEDIUM | NO |
-| 135 | FORMS-14 | Six Settings ▸ System switches (incl. Two-factor authentication) are b... | P3 | MOCK IMPLEMENTATION | UNTOUCHED | The Owner believes two-factor and the shared-device lock are on; neither exists in the app. | SYMPTOM: 2FA 'turns on' and turns itself off. TRACE: rows that describe absent features were given a live-look... | A: Read-only rows with NotBuilt | LOW | NO |
-| 136 | FORMS-16 | DateField's Today is the UTC calendar day, not the Kathmandu day, so b... | P3 | CONFIRMED BUG | UNTOUCHED | A night-shift return recorded at 01:00 with Today lands on the previous day's ledger and VAT period; a pickup ... | SYMPTOM: Today picks yesterday at night. TRACE: the helper uses the UTC getters. ROOT CAUSE: the picker comput... | A: Delegate to the Date Engine | LOW | NO |
-| 137 | FORMS-17 | Modal form fields are unlabelled to assistive tech, asterisks carry no... | P3 | ACCESSIBILITY PROBLEM | UNTOUCHED | Keyboard and screen-reader operators cannot complete a payment or a purchase request reliably; sighted operato... | SYMPTOM: a screen-reader user hears 'edit text' with no name and never hears the refusal. TRACE: nine modals w... | A: Fix Input.tsx and migrate the nine modals to Input/Select | MEDIUM | NO |
-| 138 | FORMS-18 | Add Client collects Contact Person, Designation, Website, Government I... | P3 | UX PROBLEM | UNTOUCHED | The desk records 'Ramesh, Line Producer, 98…' as the contact for a production house; the booking page later sh... | SYMPTOM: a typed contact person is gone after save. TRACE: the notice was written when the form's dropped set ... | B: Write the contact and client_since; derive the notice | MEDIUM | NO |
-| 139 | FORMS-19 | Expense Reports' disabled New Expense and Import carry a false reason:... | P3 | UX PROBLEM | UNTOUCHED | An Accounts user on the report page is told to keep expenses in their books; the app has had a working expense... | SYMPTOM: an operator is told expenses cannot be recorded. TRACE: the reason was written when it was true (BUG-... | A: Route New Expense to the sheet; fix Import's reason | LOW | NO |
-| 140 | RES-14 | Mock and live modes share one Dexie outbox per origin and the boot dra... | P3 | CONFIRMED BUG | UNTOUCHED | Developer-only today (a production origin never runs mock); the risk is losing real queued work during verific... | SYMPTOM: queued live writes vanish after switching a dev machine to mock. TRACE: dataAccess correctly refuses ... | A: Guard the drain and the pull on IS_MOCK | LOW | NO |
-| 141 | RES-15 | Raw data-layer and read-layer messages reach the floor, and the offlin... | P3 | UX PROBLEM | UNTOUCHED | On the floor a raw fetch error gives no instruction (retry? walk to signal? was it saved?), and the banner tel... | SYMPTOM: operators see 'TypeError: Failed to fetch' and a banner that contradicts the refusal beside it. TRACE... | B: Typed errors from the data layer, translator keyed on class | MEDIUM | NO |
-| 142 | ARCH-12 | Runtime import cycle ScannerFab ↔ BottomBar in the app shell | P4 | TECHNICAL DEBT | UNTOUCHED | None today. | SYMPTOM: mutual imports. TRACE: the bar's height constant was declared in the bar and the scanner toggle in th... | A: Move the shared constant | LOW | NO |
-| 143 | ARCH-14 | Two query files carry literal NUL bytes that hide them from plain grep... | P4 | TECHNICAL DEBT | UNTOUCHED | None. | SYMPTOM: files invisible to grep. TRACE: a past editor or generator inserted NULs (likely a truncated write); ... | A: Strip and guard | LOW | NO |
-| 144 | DEL-13 | Reservation and inventory writes issue one awaited request per unit in... | P4 | PERFORMANCE PROBLEM | UNTOUCHED | None measurable today; on a 40-unit lighting booking over mobile data it becomes 40 sequential round trips, an... | Convenience loop over a helper that takes one row; at 246 bookings and small lines the cost is invisible, so n... | B: Reserve inside create_booking / the confirm RPC | MEDIUM | NO |
-| 145 | FE-14 | Static cream theme-color under the dark theme | P4 | UX PROBLEM | UNTOUCHED | Cosmetic; installed dark-mode users see mismatched chrome. | The v4.2 light-default fix set the pre-paint value correctly and left the runtime side undone. | A: Set the meta from ThemeProvider | LOW | NO |
-| 146 | FE-15 | Membership tiers still painted with status hues on Client Detail and t... | P4 | UX PROBLEM | UNTOUCHED | On the intel card an Elite client wears the same orange the floor reads as gear out on rent. | The tier→StatusKey map lives in src/data where the presentation fix could not reach it; the consumers were lef... | A: Promote TIER_ACCENT to a shared UI module and retire TIER_TO... | LOW | NO |
-| 147 | SEC-11 | `.env.example` still documents `VITE_DEV_AUTH_BYPASS` as a working Own... | P4 | TECHNICAL DEBT | UNTOUCHED | A developer or auditor reading the template believes an Owner bypass exists and either wastes time or, worse, ... | SYMPTOM: stale template. TRACE: the bypass was deleted from code; the template that advertised it was not upda... | A: Delete the block and point to mock mode | LOW | NO |
+| 63 | DATA-17 | The live corpus is hollow past Packed: 200 of 246 bookings carry no li... | P2 | DATA INTEGRITY RISK | UNTOUCHED | Opening any of the 190 Returned or Closed bookings shows a rental with no equipment on it, so no past job can ... | SYMPTOM: a production database whose history is stages without substance. TRACE: the import mapped Booqable or... | A: State it, and stop reading stage as history | LOW | NO |
+| 64 | DB-06 | number_sequences has no 'transfer' row while createStockTransfer (impl... | P2 | MISSING FEATURE | DRAFTED_UNAPPLIED | Moving gear between warehouses cannot be recorded; the Transfer Center ends in an error sentence on every atte... | SYMPTOM: stock transfers fail on live. TRACE: 0012 seeded seven keys and 0056 three more; the action deliberat... | A: Seed the missing sequences under ruled prefixes | LOW | NO |
+| 65 | DB-07 | src/types/supabase.ts is the 11 Aug schema — 3 tables, 6 views, 7 colu... | P2 | TECHNICAL DEBT | UNTOUCHED | A column change on a money table (0086 nulling invoice_no, 0085 changing booking_no's shape) compiles green an... | SYMPTOM: writes to daily_closings, clients and client_flags need 'as never'. TRACE: the file was generated onc... | A: Repoint the script, regenerate, remove the casts, gate on dr... | LOW | NO |
+| 66 | ARCH-02 | Status vocabularies are hand-declared in four layers with no conforman... | P2 | ARCHITECTURAL PROBLEM | UNTOUCHED | Today nothing visible: product_units and damage_findings are empty live. On the first stock import or the firs... | SYMPTOM: 'Available' / 'In Stock', 'In Maintenance' / 'Maintenance', 'Complete' / 'Completed', 'Awaiting Appro... | B: Generate the enum layer from the database and re-export | HIGH | NO |
+| 67 | DB-08 | The live ledger and the migrations directory cannot be reconciled mech... | P2 | DEPLOYMENT PROBLEM | UNTOUCHED | In a restore the rebuilt database differs from production in ways nobody has listed; recovery time becomes inv... | SYMPTOM: nobody can state from the repo what live ran. TRACE: applies went through MCP apply_migration with fr... | B: Adopt CLI-timestamped filenames and supabase db push as the ... | HIGH | NO |
+| 68 | DB-09 | Any staff role can rewrite the document counters (number_sequences ALL... | P2 | SECURITY RISK | UNTOUCHED | A mis-tap on a warehouse tablet or one unhappy employee makes the next tax invoice a duplicate number or leave... | SYMPTOM: the floor can edit the counters. TRACE: the function runs as the caller, so RLS on number_sequences h... | A: Definer minting function, staff read-only counters, Owner/Ad... | LOW | NO |
+| 69 | DB-10 | 194 TRIGGER REQUIRED invariants in the migrations, 40 triggers live (t... | P2 | ARCHITECTURAL PROBLEM | UNTOUCHED | A booking can be cancelled with gear still out; a session can be closed with units unaccounted for; a movement... | SYMPTOM: engine and workspaces hold the gates in local state. TRACE: the schema was written with intent commen... | A: Build the load-bearing seven as BEFORE triggers with pgTAP | MEDIUM | NO |
+| 70 | DB-11 | No migration states base-table grants for authenticated, anon or servi... | P2 | DEPLOYMENT PROBLEM | UNTOUCHED | None on live today; a restore into a self-hosted or differently provisioned project would be unreadable, and e... | SYMPTOM: rebuilt database unreadable by the app. TRACE: platform defaults hid the omission; 0062/0077 assume a... | A: State the grants and default privileges in a migration, and ... | LOW | NO |
+| 71 | DB-12 | anon holds INSERT/UPDATE/SELECT grants on every public table by defaul... | P2 | SECURITY RISK | UNTOUCHED | Any future table or policy written the ordinary way is anonymously writable until its predicate is right; 0085... | SYMPTOM: an anonymous caller forges audit rows. TRACE: default ACL grants anon everything, policies are TO pub... | A: anon has nothing in public | LOW | NO |
+| 72 | DEL-03 | CI has never run — the repository has no remote — and the workflow omi... | P2 | DEPLOYMENT PROBLEM | UNTOUCHED | Indirect: regressions in pricing, dates or gates reach the tree with no independent check, and the DR gate (ch... | SYMPTOM: 'CI green' appears in no PROGRESS entry; lint drift was measured wrongly once already (P2-3 withdrawn... | B: A plus branch protection and a nightly database job | MEDIUM | NO |
+| 73 | DEL-04 | No hosting target — three deploy configs coexist and disagree on shell... | P2 | DEPLOYMENT PROBLEM | UNTOUCHED | The OS cannot be used from a phone or a warehouse tablet outside a developer's machine; once it is, the wrong ... | SYMPTOM: nothing is reachable for the business, and a tablet that once cached index.html on Vercel would be pi... | B: A plus a deploy job in CI | MEDIUM | NO |
+| 74 | DEL-06 | The Booqable SQL importer hazard regenerates itself — the quarantine s... | P2 | DATA INTEGRITY RISK | UNTOUCHED | One `node scripts/sync-all-booqable-data.mjs` followed by running its output rewrites the client and the dates... | SYMPTOM: P1-7 was closed by a quarantine, and the tree still holds a script that will attach 100+ bookings to ... | B: Retire the generators; one importer on the typed bridge, bac... | MEDIUM | NO |
+| 75 | FE-03 | Service-worker runtime cache: half the patterns are inert, the other h... | P2 | SECURITY RISK | UNTOUCHED | A floor tablet handed from a Manager to a Warehouse hand shows the last week's client credit limits and bundle... | SYMPTOM: a Warehouse login on the shared floor tablet renders a client list carrying credit limits that were f... | B: Remove REST runtime caching from the SW; the Dexie store is ... | MEDIUM | NO |
+| 76 | FE-04 | Contrast fails on the surfaces the gate does not measure: muted ink on... | P2 | ACCESSIBILITY PROBLEM | UNTOUCHED | Operators on a bright warehouse floor or a dimmed night desk lose the secondary text (dates, counts, notes) fi... | SYMPTOM: 13px muted metadata on a card footer or table header reads faint, and a keyboard user cannot see wher... | B: Retune as in A and replace the gate with a resolver-based pa... | MEDIUM | NO |
+| 77 | FE-05 | Responsive layer has no adopters and eight screens render 720-1020px t... | P2 | PARTIAL IMPLEMENTATION | UNTOUCHED | Warehouses and Stock Units are floor screens; on a phone the transfer table and the unit list are unreadable w... | SYMPTOM: Warehouses on a phone is a 1010px grid in a 390px window. TRACE: the responsive layer was added 25 Au... | B: Card-row fallback on the eight screens plus a guard test | MEDIUM | NO |
+| 78 | FE-06 | All five installable icons are one 470 KB JPEG declared as PNG/ICO, an... | P2 | DEPLOYMENT PROBLEM | UNTOUCHED | The warehouse tablet downloads 2.3 MB of identical JPEG on first install over a weak connection; the home-scre... | SYMPTOM: an installed app with a cropped, blurry icon and a 2.3 MB heavier first load. TRACE: the manifest was... | B: A plus an icon build script and a byte-level guard test | MEDIUM | NO |
+| 79 | FE-07 | Two scanner implementations with different contracts, and a demo 'test... | P2 | DUPLICATED IMPLEMENTATION | UNTOUCHED | A tap on 'Sony FX3 (SN-FX3-102)' is recorded as a scan of the physical unit; the count reconciles while the un... | SYMPTOM: a packer can 'scan' every unit by tapping names, and the floor modal cannot use the camera while the ... | B: Extract useBarcodeDecoder and make the modal the one UI the ... | MEDIUM | NO |
+| 80 | FORMS-03 | Six full forms sit in front of implemented:false actions and fail on e... | P2 | PARTIAL IMPLEMENTATION | UNTOUCHED | An operator on a Booked rental fills a five-field Extend form, or types a reversal amount and reason, and lear... | SYMPTOM: enabled primary buttons that always end in 'is not connected to the database yet' (§37), and one disa... | B: Expose `implemented` from createAction and gate mechanically | MEDIUM | NO |
+| 81 | FORMS-04 | Create Purchase Request fabricates a PR number, an equipment id and a ... | P2 | MOCK IMPLEMENTATION | UNTOUCHED | A Warehouse lead documents a turnaway-backed capex case, sees it listed as Draft, and it is gone the next morn... | SYMPTOM: a request the operator just 'submitted' is refused on approve and is gone after reload. TRACE: the mo... | B: createPurchaseRequest action and a product picker | MEDIUM | NO |
+| 82 | FORMS-05 | Damage approval form approves and rejects in component state over a se... | P2 | MOCK IMPLEMENTATION | UNTOUCHED | On a return with a cracked lens, a Manager can 'approve' a Rs 25,000 charge and see it move to Settled; nothin... | SYMPTOM: an approval with a rupee charge 'records' nothing. TRACE: the money half of the damage flow was built... | B: approveDamageFinding action mirroring damage_findings_approv... | MEDIUM | NO |
+| 83 | FORMS-06 | Client inline edit saves to component state only; updateClient has no ... | P2 | PARTIAL IMPLEMENTATION | UNTOUCHED | The desk corrects a client's phone or PAN before confirming a booking, the change looks saved, and the next sc... | SYMPTOM: edits die on reload. TRACE: the edit UI (useEditMode) and the capability are done; the action body wa... | A: Implement updateClient with an explicit key→column map | MEDIUM | NO |
+| 84 | FORMS-10 | Settings ▸ Branches ▸ Add Branch appends to local state and reports su... | P2 | MOCK IMPLEMENTATION | UNTOUCHED | The Owner sets up a fourth branch for a Pokhara season, sees it listed, and every booking, transfer and closin... | SYMPTOM: a new branch appears, then vanishes on reload. TRACE: the whole tab reads data/settings BRANCHES; the... | B: Read branches, write through createBranch | MEDIUM | NO |
+| 85 | FORMS-11 | The stock-transfer form cannot succeed on live: its warehouse pickers ... | P2 | PARTIAL IMPLEMENTATION | UNTOUCHED | Moving a camera body between the vault and the lakeside hub — the only two facilities the business has — is im... | SYMPTOM: an honest refusal on every transfer. TRACE: the write was connected before the read; the facility lis... | B: A plus seed number_sequences.transfer | MEDIUM | NO |
+| 86 | FORMS-12 | Daily Closing never reads its own closing back: after reload Approve i... | P2 | PARTIAL IMPLEMENTATION | UNTOUCHED | At 21:00 the accountant signs the day; at 21:05 on another tablet the Owner sees an unsigned day and signs aga... | SYMPTOM: a signed day looks unsigned. TRACE: the write was added (0078 + action) without a reader; §4.40's ope... | A: Read-back, reason field, variance in the engine | LOW | NO |
+| 87 | FORMS-15 | Nine dead enabled controls survive: seven Evidence bulk actions render... | P2 | CONFIRMED BUG | UNTOUCHED | On the floor a packer presses Print Packing List and nothing happens; in Evidence a reviewer presses Remove on... | SYMPTOM: pressing Print or Remove does nothing. TRACE: the bulk bar maps labels straight to Buttons; the print... | B: A plus a dead-control lint rule | MEDIUM | NO |
+| 88 | FORMS-20 | Create Invoice and Void Invoice are full forms whose primary buttons a... | P2 | PARTIAL IMPLEMENTATION | UNTOUCHED | Accounts cannot void a wrong invoice from the app (R-04's only correction path), and a Manager permitted by R-... | SYMPTOM: two finance forms that cannot succeed. TRACE: Create is blocked on §4.46; Void has no action because ... | B: voidInvoice to the trigger contract | MEDIUM | NO |
+| 89 | INV-04 | booking_line_units accepts the same physical unit on two overlapping b... | P2 | DATA INTEGRITY RISK | UNTOUCHED | When D5 is wired (INV-03) two coordinators can both promise Camera body 01 to two shoots on the same day and b... | SYMPTOM: one serial promised to two overlapping bookings. TRACE: 0071 chose booking_line_units for D5 chips 'a... | A: Overlap trigger on booking_line_units | MEDIUM | NO |
+| 90 | INV-06 | planAssignment reports complete for a booking whose every line is prod... | P2 | DATA INTEGRITY RISK | UNTOUCHED | A booking imported from Booqable as a bundle line, or created by any future caller with a Bundle line, confirm... | SYMPTOM: Booked with zero holds. TRACE: the skipped/assignable split followed by a vacuous every. ROOT CAUSE: ... | A: Expand bundles and make complete honest | LOW | NO |
+| 91 | INV-08 | readHolds reads every live reservation in the database with no window ... | P2 | PERFORMANCE PROBLEM | UNTOUCHED | Not today; after roughly a thousand unit-bookings it becomes 'the system said free, the database said no' on t... | SYMPTOM: stale free/held answers at scale. TRACE: readHolds selects every live hold. ROOT CAUSE: the read was ... | A: Window predicate, named cap and exact count | LOW | NO |
+| 92 | INV-09 | The New Rental picker answers availability from a present-tense produc... | P2 | CONFIRMED BUG | FIXED_IN_TREE | Coordinators are blocked from confirming a future job because a body is out today, or promised a cable count n... | SYMPTOM: wrong availability and wrong blocking on the one screen that sells the job. TRACE: the catalogue deri... | A: One product read through the engine for the booking window | MEDIUM | NO |
+| 93 | INV-10 | product_units.status is never written by any OS verb, yet Product deta... | P2 | DISCONNECTED IMPLEMENTATION | UNTOUCHED | The screen a warehouse lead opens to answer 'do we have a spare 24-70?' is wrong in the optimistic direction. | SYMPTOM: Product detail says 3 of 3 available while all three are on a shoot. TRACE: the status column is neve... | B: Derive 'free now' from the engine and relabel the enum | MEDIUM | NO |
+| 94 | INV-11 | The availability rules (disqualifying states, half-open vs closed brac... | P2 | DATA INTEGRITY RISK | UNTOUCHED | Nobody can explain from the data why one back-to-back booking was refused and another accepted; the turnaround... | SYMPTOM: back-to-back bookings behave differently depending on whose laptop confirmed them. TRACE: the bracket... | B: Server-held business settings read by both layers | MEDIUM | NO |
+| 95 | INV-12 | No test exercises the double-booking defence: the exclusion constraint... | P2 | TESTING GAP | UNTOUCHED | Every fix above ships on inspection alone; a regression in the arbiter would reach the floor unnoticed. | Tests were written where the engine is pure (Law 1) and stopped at the IO boundary; the database-side defence ... | B: Dockerised Postgres in CI with a two-session concurrency tes... | HIGH | NO |
+| 96 | MONEY-15 | Crew is billed at cost on the invoice, and folding per-engagement extr... | P2 | CONFIRMED BUG | UNTOUCHED | Every crew day is invoiced with zero margin; Rs 0.01 lines fail the 'reconcile exactly' rule on a tax document... | SYMPTOM: crew revenue equals crew cost; a line that does not multiply. TRACE: the spec's fee has no storage; e... | A: Extras as their own lines; bill a bill rate, not the payout | MEDIUM | NO |
+| 97 | MONEY-16 | Money-document numbering: payment numbers reset every January (R-18) a... | P2 | DATA INTEGRITY RISK | DRAFTED_UNAPPLIED | Latent until MONEY-07/08/09 are built, then blocking; a January reset would duplicate receipt numbers across y... | SYMPTOM: three correction/charge documents are unnumberable and receipts would restart yearly. TRACE: 0007 see... | A: Apply 0085's payment fix and 0089; add the three registry ro... | LOW | NO |
+| 98 | MONEY-17 | Daily Closing's expected cash is structurally zero: no Cash bank accou... | P2 | CONFIRMED BUG | UNTOUCHED | The daily ritual reports a variance equal to the day's cash every day; staff stop trusting it or sign it anywa... | SYMPTOM: the drawer never reconciles. TRACE: the method label was deliberately not mapped to an account; the s... | A: Seed a Cash account per branch and preselect it for cash; la... | LOW | NO |
+| 99 | OPS-01 | Three definitions of "today" on the floor: Operations scopes use civil... | P2 | ARCHITECTURAL PROBLEM | UNTOUCHED | At Cine Sewa a 05:45 pickup shows on the Operation page's Today list but not on the Dashboard's Today column, ... | SYMPTOM: two screens can list a different set of bookings under the same word "Today", and the night shift (00... | B: One floor-day hook in the query layer consumed by every floo... | MEDIUM | NO |
+| 100 | OPS-05 | Past-due floor work drops out of every day scope: 26 uncollected picku... | P2 | UX PROBLEM | UNTOUCHED | A kit packed for a shoot that did not collect on time is the single most expensive thing on the floor (gear re... | SYMPTOM: late jobs vanish from the default view. TRACE: spec 03 §3.1 draws chips filtering one time-ordered li... | A: A late-pickup exception set surfaced in Alerts and as a stic... | LOW | NO |
+| 101 | OPS-06 | Handover money gates are attestations: "Payment Verified" and "Deposit... | P2 | DISCONNECTED IMPLEMENTATION | DRAFTED_UNAPPLIED | Every handover at Cine Sewa needs a Manager or Accounts person to press Mark Cleared twice for facts they did ... | SYMPTOM: a Manager certifies a payment nobody checked; on a corpus with deposits (mock) the DB then refuses wh... | A: Money-free gate status RPC + R-06 override wired end to end | MEDIUM | NO |
+| 102 | OPS-07 | Signatures are dropped or written as prose: the signatures table exist... | P2 | PARTIAL IMPLEMENTATION | UNTOUCHED | When a client disputes what left the warehouse, Cine Sewa has the receiver's name only in a notes blob (Return... | SYMPTOM: no signature record survives a handover; a return's signatures are unqueryable text. TRACE: the schem... | A: Typed attestations written as signatures rows at dispatch | MEDIUM | NO |
+| 103 | RES-03 | The queue-on-network-failure branch in dataAccess can never fire: it m... | P2 | CONFIRMED BUG | UNTOUCHED | The common warehouse failure (signal drops during the request, not before it) produces a raw error on the floo... | SYMPTOM: mid-flight failures never queue and surface as raw 'TypeError: Failed to fetch'. TRACE: the branch wa... | B: One typed network error, one classifier, opt-in queueing | MEDIUM | NO |
+| 104 | RES-07 | captureError is a no-op without a DSN nobody has set, and the 3 Sep sw... | P2 | DISCONNECTED IMPLEMENTATION | UNTOUCHED | The failures this cluster documents — dead-lettered returns, refused replays, a failed audit row after a compl... | SYMPTOM: failures that used to appear in the console vanish; the audit trail's own failure path is unobservabl... | A: Local visibility regardless of sink, and install the handler... | LOW | NO |
+| 105 | RES-08 | The 25-second pull reads a revoked table with select('*'), maps column... | P2 | DISCONNECTED IMPLEMENTATION | UNTOUCHED | No direct business loss today (nothing reads the cache), but the shell tells operators the local cache is in s... | SYMPTOM: a 403 every 25 seconds in the Network panel, an empty products cache, and a header that says Synced. ... | A: Remove the pull and the claim | LOW | NO |
+| 106 | RES-12 | Four write paths bypass dataAccess: no queue, no network handling, and... | P2 | ARCHITECTURAL PROBLEM | UNTOUCHED | An expense approved offline fails with a raw error rather than a refusal the operator understands; a Confirm t... | SYMPTOM: expense writes behave differently offline from every action, and a failed rollback of reservations is... | B: A plus a lint boundary | MEDIUM | NO |
+| 107 | RES-13 | The offline stack has no behavioural test: nothing pins dedupe, replay... | P2 | TESTING GAP | UNTOUCHED | Every fix in this cluster will regress silently without tests; the floor's offline promise cannot be certified... | SYMPTOM: a two-line dedupe key and a strict string compare shipped and stayed broken for weeks. TRACE: the mod... | A: fake-indexeddb harness and the six behaviour tests | LOW | NO |
+| 108 | RL-03 | Closed-is-final rests on closed_at, which is NULL on all 60 live Close... | P2 | CONFIRMED BUG | UNTOUCHED | Any of the 60 closed-and-cancelled Booqable orders can be walked to Booked, Packed or On Rent by one transitio... | SYMPTOM: 'Closed is final' (0002:96) is not true for any Closed booking on live. TRACE: 0021 made closed_at th... | B: Make closed_at a generated fact of stage | MEDIUM | NO |
+| 109 | RL-07 | R-07's auto-suggest is missing: Booking Detail shows a Close button at... | P2 | PARTIAL IMPLEMENTATION | UNTOUCHED | The auto-suggest is the mechanism R-07 relies on to get rentals closed without a queue: without it, Returned b... | SYMPTOM: an Accounts user sees an inviting primary button on every Returned booking and learns only after pres... | A: Move readCloseGates to the query layer and render closeGates... | LOW | NO |
+| 110 | RL-12 | The §1.9 flag registry is never fed: no caller passes flags, booking_f... | P2 | DISCONNECTED IMPLEMENTATION | UNTOUCHED | Overdue, Missing and Damaged bookings can be closed by the engine's own rules (the DB has no such gate either ... | SYMPTOM: the engine's flag layer decides nothing. TRACE: the registry was built as a pure table (Law 1) and th... | A: Derive flags at the call site and re-express the two money f... | MEDIUM | NO |
+| 111 | RL-14 | A second pass of a staggered handover or return reuses the first pass'... | P2 | CONFIRMED BUG | UNTOUCHED | Partial pickups are normal at Cine Sewa (lights on day one, camera on day two). The second collection fails wi... | SYMPTOM: the second collection of a split pickup cannot be recorded. TRACE: the key is scoped to the mount bec... | A: Re-mint the key after every landed pass; make the session ke... | LOW | NO |
+| 112 | SEC-05 | RBAC mirror has four unsafe-direction gaps: Accounts is offered Close ... | P2 | SECURITY RISK | UNTOUCHED | The role the owner ruled should confirm a Close (Accounts) cannot; the warehouse floor can close a rental with... | SYMPTOM: controls offered then refused, and roles the ruling excludes able to close. TRACE: R-05/R-08 (4 Sep) ... | B: A plus a generated mirror test | MEDIUM | NO |
+| 113 | SEC-08 | Auth hardening is unverified on the hosted project and weak in the tra... | P2 | SECURITY RISK | UNKNOWN | The Owner account is the only key to the business record and may be protected by a six-character password with... | SYMPTOM: weak or unknown auth posture. TRACE: config.toml is the CLI default with the project id filled in; ho... | A: Harden and record the hosted settings | LOW | NO |
+| 114 | DATA-11 | booqable-proxy authorizes by JWT only: its six write-back paths and th... | P2 | SECURITY RISK | UNTOUCHED | If the function secrets are set, any account that can obtain a session — the portal self-registration path exi... | SYMPTOM: an external write surface gated by identity, not by role. TRACE: the proxy was written with role reso... | A: Role-gate the allowlist and pin CORS | LOW | NO |
+| 115 | SEC-12 | TRUNCATE is granted to anon and authenticated on 123 of 124 tables, an... | P2 | DATA INTEGRITY RISK | DRAFTED_UNAPPLIED | Not reachable through the REST API today, so no operator or stranger can trigger it with the public key. It is... | SYMPTOM: a privilege nothing in the design mentions sits on every table. TRACE: Supabase's default ACL for rol... | B: A, plus revoke TRUNCATE explicitly and separately | LOW | NO |
+| 116 | DB-13 | Apply-safety review of the ten drafts: all apply on today's catalogue,... | P2 | CONFIRMED BUG | DRAFTED_UNAPPLIED | (b) the first real order back-filled at #900 collides with an OS booking and one of them loses its identity; (... | The drafts were verified on a scratch build whose default ACL is empty (DB-11), so the RLS/grant exposure of a... | A: Patch the drafts before apply | LOW | NO |
+| 117 | DEL-07 | The Booqable bridge is built but disconnected — zero importers, webhoo... | P2 | DISCONNECTED IMPLEMENTATION | UNTOUCHED | Cine Sewa runs two order books: Booqable holds the real ones since 12 Aug, the OS holds a frozen copy plus a s... | SYMPTOM: orders after #899 never reach the OS and the app shows a corpus frozen at 12 Aug. TRACE: the pull bri... | A: Rule import-once; import the tail; retire the bridge surface | MEDIUM | NO |
+| 118 | FORMS-02 | New Rental's Save Draft and Cancel dispatch stub actions on every pres... | P2 | PARTIAL IMPLEMENTATION | UNTOUCHED | A Coordinator building a large booking over a phone call cannot park it; leaving the page or reloading discard... | SYMPTOM: Save Draft fails 100% of the time with an honest message. TRACE: the button is wired to a dispatcher ... | B: Save Draft is createRental without confirmRental | MEDIUM | NO |
+| 119 | ARCH-06 | About 4,700 lines of built-but-unreferenced code sit inside the compil... | P3 | TECHNICAL DEBT | UNTOUCHED | None directly; the risk is the one the 3 Sep audit named — a reader trusts a module because it exists (the Ope... | SYMPTOM: engines and a whole workspace tree compile for no caller, and a page re-implements one of them inline... | A: Quarantine or delete, route the branch read, and gate unused... | LOW | NO |
+| 120 | ARCH-10 | Phone normalisation exists five times with three different keys (+977 ... | P3 | DUPLICATED IMPLEMENTATION | UNTOUCHED | A client stored as +9779812345678 is matched by the nine-digit tail search and the ten-digit import key in the... | SYMPTOM: five normalisers. TRACE: each consumer (store, WhatsApp, import dedupe, live tail search, form warnin... | A: One module, one tail | LOW | NO |
+| 121 | ARCH-11 | Money formatting is reimplemented beside the engine: a second grouped(... | P3 | DUPLICATED IMPLEMENTATION | UNTOUCHED | None proven today; the exposure is a KPI axis or a hover card printing a figure grouped or rounded differently... | SYMPTOM: two grouping implementations and three ad-hoc formatters. TRACE: format.ts predates money.ts; callers... | A: Delete the duplicate and route the three sites | LOW | NO |
+| 122 | DATA-10 | users_select_own empties every cross-user name lookup: 'raised by' on ... | P3 | CONFIRMED BUG | UNTOUCHED | A Manager reviewing purchase requests cannot see who raised them unless it was themselves. | SYMPTOM: blank names. TRACE: the two lookups were written before 0020 narrowed users to self-only; staff_direc... | A: Read staff_directory_v through one helper | LOW | NO |
+| 123 | DATA-14 | The mock backend serves 8 store keys against 48 tables and views the a... | P3 | TESTING GAP | UNTOUCHED | QA signs off screens that fail on the live project (Add Equipment is the proven case). | SYMPTOM: mock-mode passes that live contradicts. TRACE: the mock was built for the booking spine and never wid... | A: Fail loud and register the missing relations | LOW | NO |
+| 124 | DATA-15 | create_booking trusts created_by and branch_id from the payload, valid... | P3 | SECURITY RISK | UNTOUCHED | A Coordinator can file a booking as the Owner or under the other branch; a booking with return before pickup i... | SYMPTOM: attribution and branch are caller-asserted. TRACE: the RPC was written to accept the shape createRent... | B: A plus a uniform response shape | LOW | NO |
+| 125 | DB-14 | Catalogue hygiene: two NOT VALID CHECKs with zero violators, a dead pr... | P3 | TECHNICAL DEBT | UNTOUCHED | Cosmetic today; a client list sorted by code will interleave C-0366 and C-751 oddly and the banned word surviv... | Hand edits and generated enums that were never reconciled with the ruled registry; the client sequence was see... | A: One hygiene migration after a ruling on the client-code shap... | LOW | NO |
+| 126 | DB-15 | The Booqable bridge's app-side writers target tables with SELECT-only ... | P3 | DISCONNECTED IMPLEMENTATION | UNTOUCHED | None today; on the day the bridge is switched on, every conflict and outbox row is silently refused and the im... | The bridge was written against tables whose policies were designed for an Edge Function writer; the browser-si... | A: Move bridge writes behind the service-role Edge Function | MEDIUM | NO |
+| 127 | DEL-10 | Bundle and PWA weight — the 453 KB scanner is preloaded on every page,... | P3 | PERFORMANCE PROBLEM | UNTOUCHED | Slower first load and update on mobile data in Kathmandu; fabricated names and emails shipped to every visitor... | SYMPTOM: a warehouse tablet downloads a barcode decoder and fabricated client names before the Dashboard paint... | A: Lazy scanner, runtime-cached fonts, mode-gated mock import | LOW | NO |
+| 128 | DEL-11 | Two spec-pack documents still anchor 1 Shrawan 2083 at 16 Jul 2026, on... | P3 | TECHNICAL DEBT | UNTOUCHED | A printed sample or a hand-checked date from the spec disagrees with the app by a day; on a fiscal boundary th... | SYMPTOM: anyone building a fixture, a test or a sample invoice from the spec pack will place every BS date one... | A: Correct the lines and stamp the source | LOW | NO |
+| 129 | DEL-12 | Dependency advisories unchanged since 3 Sep — three high, one moderate... | P3 | TECHNICAL DEBT | UNTOUCHED | Minimal today (build toolchain only); becomes a hosting-provider blocker if the host scans dependencies. | Dev-side transitive advisories; vite's fix is a major bump held by vite-plugin-pwa/vitest alignment. ROOT CAUS... | A: npm audit fix for the three non-major advisories | LOW | NO |
+| 130 | FE-09 | Toasts cover the phone bar and the FAB, live-region semantics are ad h... | P3 | ACCESSIBILITY PROBLEM | UNTOUCHED | After recording a payment on a phone the operator's next tap on Scan or More hits the toast's dismiss target i... | SYMPTOM: on a phone the 'Note Added' toast lands on the More slot and the FAB. TRACE: Toast.tsx predates Botto... | B: A plus a shared LiveAnnouncer used by toasts, banners, scann... | MEDIUM | NO |
+| 131 | FE-10 | Token discipline drift: literal font sizes ignore the text-size settin... | P3 | TECHNICAL DEBT | UNTOUCHED | The accessibility setting the product advertises (compact/large text) is silently partial on two operations sc... | SYMPTOM: an operator who chose Large text in Settings sees Cases and Sub-Rental unchanged, and the BS day in t... | B: A plus an ESLint guard | MEDIUM | NO |
+| 132 | FE-11 | DateField: visible label not associated, grid without rows, Escape han... | P3 | ACCESSIBILITY PROBLEM | UNTOUCHED | Every date in the app now goes through this one picker; a screen-reader user picking a return date cannot tell... | SYMPTOM: clicking the label does nothing; a screen reader reads day numbers without weekdays. TRACE: the compo... | A: Associate the label, add rows and column headers, consume Es... | LOW | NO |
+| 133 | FE-12 | Scanner entry points on a phone: the manifest 'Scan' shortcut 404s and... | P3 | UX PROBLEM | UNTOUCHED | The one OS-level entry point built for the warehouse (scan from the home screen) fails; two adjacent scanner b... | SYMPTOM: long-press the home icon, tap Scan, land on a 404. TRACE: the shortcut was written when a /scan scree... | A: Point the shortcut at a real route with a scan query and hid... | LOW | NO |
+| 134 | FE-13 | Header search advertises entity search but only opens a navigation pal... | P3 | UX PROBLEM | UNTOUCHED | A coordinator with a serial in hand wastes the ⌘K path and falls back to page filters. | SYMPTOM: typing a serial in the header finds nothing. TRACE: the header's copy was written from the spec's sea... | A: Make the copy true | LOW | NO |
+| 135 | FORMS-08 | Validation rules are re-invented per form and per action and disagree:... | P3 | UX PROBLEM | UNTOUCHED | The desk creating a client mid-call types a PAN, presses Save, reads a banner at the top, and has to find the ... | SYMPTOM: refusals arrive late and unlocated. TRACE: each form and each action carries its own validate; nothin... | B: Actions export field rules; forms consume them | MEDIUM | NO |
+| 136 | FORMS-09 | No unsaved-changes guard on navigation or reload anywhere, and the rou... | P3 | MISSING FEATURE | UNTOUCHED | Combined with FORMS-02 (no draft), a Coordinator who taps Rentals in the sidebar mid-booking loses ten minutes... | SYMPTOM: a sidebar click or F5 discards a half-built New Rental. TRACE: the guards were built per-button, neve... | B: Data router plus useBlocker | MEDIUM | NO |
+| 137 | FORMS-14 | Six Settings ▸ System switches (incl. Two-factor authentication) are b... | P3 | MOCK IMPLEMENTATION | UNTOUCHED | The Owner believes two-factor and the shared-device lock are on; neither exists in the app. | SYMPTOM: 2FA 'turns on' and turns itself off. TRACE: rows that describe absent features were given a live-look... | A: Read-only rows with NotBuilt | LOW | NO |
+| 138 | FORMS-16 | DateField's Today is the UTC calendar day, not the Kathmandu day, so b... | P3 | CONFIRMED BUG | UNTOUCHED | A night-shift return recorded at 01:00 with Today lands on the previous day's ledger and VAT period; a pickup ... | SYMPTOM: Today picks yesterday at night. TRACE: the helper uses the UTC getters. ROOT CAUSE: the picker comput... | A: Delegate to the Date Engine | LOW | NO |
+| 139 | FORMS-17 | Modal form fields are unlabelled to assistive tech, asterisks carry no... | P3 | ACCESSIBILITY PROBLEM | UNTOUCHED | Keyboard and screen-reader operators cannot complete a payment or a purchase request reliably; sighted operato... | SYMPTOM: a screen-reader user hears 'edit text' with no name and never hears the refusal. TRACE: nine modals w... | A: Fix Input.tsx and migrate the nine modals to Input/Select | MEDIUM | NO |
+| 140 | FORMS-18 | Add Client collects Contact Person, Designation, Website, Government I... | P3 | UX PROBLEM | UNTOUCHED | The desk records 'Ramesh, Line Producer, 98…' as the contact for a production house; the booking page later sh... | SYMPTOM: a typed contact person is gone after save. TRACE: the notice was written when the form's dropped set ... | B: Write the contact and client_since; derive the notice | MEDIUM | NO |
+| 141 | FORMS-19 | Expense Reports' disabled New Expense and Import carry a false reason:... | P3 | UX PROBLEM | UNTOUCHED | An Accounts user on the report page is told to keep expenses in their books; the app has had a working expense... | SYMPTOM: an operator is told expenses cannot be recorded. TRACE: the reason was written when it was true (BUG-... | A: Route New Expense to the sheet; fix Import's reason | LOW | NO |
+| 142 | RES-14 | Mock and live modes share one Dexie outbox per origin and the boot dra... | P3 | CONFIRMED BUG | UNTOUCHED | Developer-only today (a production origin never runs mock); the risk is losing real queued work during verific... | SYMPTOM: queued live writes vanish after switching a dev machine to mock. TRACE: dataAccess correctly refuses ... | A: Guard the drain and the pull on IS_MOCK | LOW | NO |
+| 143 | RES-15 | Raw data-layer and read-layer messages reach the floor, and the offlin... | P3 | UX PROBLEM | UNTOUCHED | On the floor a raw fetch error gives no instruction (retry? walk to signal? was it saved?), and the banner tel... | SYMPTOM: operators see 'TypeError: Failed to fetch' and a banner that contradicts the refusal beside it. TRACE... | B: Typed errors from the data layer, translator keyed on class | MEDIUM | NO |
+| 144 | ARCH-12 | Runtime import cycle ScannerFab ↔ BottomBar in the app shell | P4 | TECHNICAL DEBT | UNTOUCHED | None today. | SYMPTOM: mutual imports. TRACE: the bar's height constant was declared in the bar and the scanner toggle in th... | A: Move the shared constant | LOW | NO |
+| 145 | ARCH-14 | Two query files carry literal NUL bytes that hide them from plain grep... | P4 | TECHNICAL DEBT | UNTOUCHED | None. | SYMPTOM: files invisible to grep. TRACE: a past editor or generator inserted NULs (likely a truncated write); ... | A: Strip and guard | LOW | NO |
+| 146 | DEL-13 | Reservation and inventory writes issue one awaited request per unit in... | P4 | PERFORMANCE PROBLEM | UNTOUCHED | None measurable today; on a 40-unit lighting booking over mobile data it becomes 40 sequential round trips, an... | Convenience loop over a helper that takes one row; at 246 bookings and small lines the cost is invisible, so n... | B: Reserve inside create_booking / the confirm RPC | MEDIUM | NO |
+| 147 | FE-14 | Static cream theme-color under the dark theme | P4 | UX PROBLEM | UNTOUCHED | Cosmetic; installed dark-mode users see mismatched chrome. | The v4.2 light-default fix set the pre-paint value correctly and left the runtime side undone. | A: Set the meta from ThemeProvider | LOW | NO |
+| 148 | FE-15 | Membership tiers still painted with status hues on Client Detail and t... | P4 | UX PROBLEM | UNTOUCHED | On the intel card an Elite client wears the same orange the floor reads as gear out on rent. | The tier→StatusKey map lives in src/data where the presentation fix could not reach it; the consumers were lef... | A: Promote TIER_ACCENT to a shared UI module and retire TIER_TO... | LOW | NO |
+| 149 | SEC-11 | `.env.example` still documents `VITE_DEV_AUTH_BYPASS` as a working Own... | P4 | TECHNICAL DEBT | UNTOUCHED | A developer or auditor reading the template believes an Owner bypass exists and either wastes time or, worse, ... | SYMPTOM: stale template. TRACE: the bypass was deleted from code; the template that advertised it was not upda... | A: Delete the block and point to mock mode | LOW | NO |
 
 ## Root-Cause Grouping (Spec 23)
 
@@ -594,6 +596,7 @@ graph LR
 | DEL-01 | SEC-04 | dependsOn |
 | DEL-01 | SEC-05 | dependsOn |
 | DEL-01 | SEC-07 | dependsOn |
+| DEL-01 | SEC-12 | dependsOn |
 | DEL-02 | INV-12 | critic: The exclusion-constraint, capacity-trigger and concurrent-Confirm tests cannot exist without the database-reaching lane DEL-02 delivers. |
 | DEL-03 | DEL-12 | critic: Dependency audit runs only in the CI workflow, which has never executed. |
 | DEL-04 | FE-03 | critic: Service-worker cache rules and the host's shell-caching rule must be decided together; vercel.json and nginx.conf disagree on the shell today. |
@@ -660,12 +663,12 @@ graph LR
 
 ### PHASE 1 - P0
 
-1. **INV-02** - Confirm is impossible for every Quantity- or Consumable-tracked product — 204 of 204 products on live — because no product-level hold is ever written; the live capacity ceiling guards rows nothing creates - Option A (MEDIUM), current: UNTOUCHED
+1. **INV-02** - Confirm is impossible for every Quantity- or Consumable-tracked product — 204 of 204 products on live — because no product-level hold is ever written; the live capacity ceiling guards rows nothing creates - Option A (MEDIUM), current: FIXED_IN_TREE
 2. **DEL-01** - Written but not applied — PHASE-0 Step 0 (live dump, restore drill, token rotation) has not been done, so every draft since 2 Sep is frozen in the tree - Option B (MEDIUM), current: UNTOUCHED
 3. **DB-03** - invoice_lines has only a SELECT policy and invoices' NOT NULLs and role set contradict R-05/R-15 — an invoice cannot be created, and after the policy fix a header can exist with zero totals - Option B (MEDIUM), current: DRAFTED_UNAPPLIED, after DEL-01
-4. **MONEY-01** - No invoice can be raised: createInvoice is drafted but unwired (PLAN §4.46) and the live schema refuses it (0086 unapplied) - Option A (MEDIUM), current: DRAFTED_UNAPPLIED, after DEL-01
+4. **MONEY-01** - No invoice can be raised: createInvoice is drafted but unwired (PLAN §4.46) and the live schema refuses it (0086 unapplied) - Option A (MEDIUM), current: FIXED_IN_TREE, after DEL-01
 5. **MONEY-02** - sync_payment_to_invoice: a Refund raises paid_amount, a reversal never re-syncs the invoice, and the first payment ejects a Draft (R-14) - Option A (LOW), current: DRAFTED_UNAPPLIED, after DB-03, DEL-01
-6. **SEC-01** - Every `_v` masking view is an owner-privilege, auto-updatable view with INSERT/UPDATE/DELETE granted to anon and authenticated — an RLS and Law 3 bypass on 23 tables - Option B (MEDIUM), current: UNTOUCHED, after DEL-01
+6. **SEC-01** - Every `_v` masking view is an owner-privilege, auto-updatable view with INSERT/UPDATE/DELETE granted to anon and authenticated — an RLS and Law 3 bypass on 23 tables - Option B (MEDIUM), current: DRAFTED_UNAPPLIED, after DEL-01
 7. **DB-01** - next_document_number truncates every padding-1 sequence through lpad, and the booking counter sits inside the seed block — creating a booking, client, invoice or deposit on live is broken today - Option B (MEDIUM), current: DRAFTED_UNAPPLIED, after DEL-01
 
 ### PHASE 2 - P1
@@ -677,12 +680,12 @@ graph LR
 5. **FE-01** - Global scanner fabricates a ticked item on every scan - Option B (HIGH), current: UNTOUCHED
 6. **FORMS-01** - Money modals can be dismissed mid-submit by Escape, backdrop or ×, and the retry carries a fresh Law 8 key — a duplicate payment or expense - Option B (MEDIUM), current: UNTOUCHED
 7. **INV-01** - Reservation and floor assignment are two unlinked tables: Confirm writes inventory_reservations, the floor reads and writes booking_line_units, and nothing projects one into the other - Option B (HIGH), current: UNTOUCHED
-8. **INV-05** - reserveAssignedUnits reports success on the two insert branches that write nothing, so a Confirm can reach Booked with zero live holds or with holds replayed later after another booking took the unit - Option A (LOW), current: UNTOUCHED
+8. **INV-05** - reserveAssignedUnits reports success on the two insert branches that write nothing, so a Confirm can reach Booked with zero live holds or with holds replayed later after another booking took the unit - Option A (LOW), current: FIXED_IN_TREE
 9. **INV-07** - A hold has exactly one lifecycle verb: nothing releases inventory_reservations on Cancel, early Return or Close, nothing shortens or extends a period, and the 0003 'TRIGGER REQUIRED' release was never built - Option A (MEDIUM), current: UNTOUCHED, after DEL-01
 10. **MONEY-03** - The invoice trigger and the pricing engine disagree: 2 dp + hardcoded 0.13 versus whole-rupee + Settings rate, Rs 0.98 on the reference case, and nothing recomputes when the header's discount changes - Option A (MEDIUM), current: DRAFTED_UNAPPLIED, after DEL-01
 11. **MONEY-04** - Eleven independent 'outstanding' formulas, and the two in the database disagree about overpayment: one floors at 0, the other violates a CHECK so an overpaid Draft can never take another line - Option A (MEDIUM), current: UNTOUCHED, after MONEY-02
-12. **MONEY-05** - A Draft invoice cannot receive a payment from the Record Payment modal: it resolves by number, and a Draft has none - Option A (LOW), current: UNTOUCHED, after MONEY-01
-13. **MONEY-13** - 'Outstanding = 0' is vacuously true for a rental that was never billed, so the money gates on handover and close pass on an un-invoiced booking - Option A (LOW), current: UNTOUCHED, after MONEY-01
+12. **MONEY-05** - A Draft invoice cannot receive a payment from the Record Payment modal: it resolves by number, and a Draft has none - Option A (LOW), current: FIXED_IN_TREE, after MONEY-01
+13. **MONEY-13** - 'Outstanding = 0' is vacuously true for a rental that was never billed, so the money gates on handover and close pass on an un-invoiced booking - Option A (LOW), current: FIXED_IN_TREE, after MONEY-01
 14. **OPS-02** - No evidence path exists end to end: no storage bucket on live, no upload call, no evidence_files writer — the ruled-mandatory photo gates are local counters and the Evidence Workspace is hard-gated to seed B-715 - Option B (HIGH), current: UNTOUCHED, after DEL-01
 15. **OPS-04** - Damage recorded at Return on live becomes prose in operation_sessions.notes: every live floor line is unit-less and damage_findings can only parent a product_units row - Option A (MEDIUM), current: UNTOUCHED, after DEL-01, INV-02
 16. **RES-01** - One floor action updating N rows offline queues only the first row and reports success for all N - Option A (LOW), current: UNTOUCHED
@@ -691,7 +694,7 @@ graph LR
 19. **RES-06** - With a persisted session but no signal the app routes to /login, and no floor read is cached, so the offline premise fails before any queue is reached - Option B (HIGH), current: UNTOUCHED
 20. **RES-11** - A queued mutation replays under whichever operator is signed in: live RLS refuses the stage transition (invisible dead letter) while the line rows land, leaving the booking in a mixed state - Option A (LOW), current: UNTOUCHED, after RES-04
 21. **RL-01** - No cancel path: cancelRental is a stub, nothing writes cancelled_at, and holds are never released - Option B (MEDIUM), current: UNTOUCHED, after DEL-01, INV-07
-22. **RL-05** - The Close gate's 'deposit resolved' tests uncollected deposit (pending_amount), not unreturned deposit, so a closed rental can keep the client's money forever - Option A (LOW), current: UNTOUCHED, after DEL-01
+22. **RL-05** - The Close gate's 'deposit resolved' tests uncollected deposit (pending_amount), not unreturned deposit, so a closed rental can keep the client's money forever - Option A (LOW), current: FIXED_IN_TREE, after DEL-01
 23. **RL-08** - The live handover gate is the pre-R-06 hard block; 0090 (warn with a named reason) is drafted and unapplied while the app already sends the reason it expects - Option B (MEDIUM), current: DRAFTED_UNAPPLIED, after DEL-01
 24. **RL-09** - Floor verbs seal the session and flip unit states before the stage move, never read the stage back, and applyBookingTransition reports success on a queued or refused insert - Option B (VERY HIGH), current: UNTOUCHED
 25. **RL-10** - No extend, reschedule or edit-after-Booked path: extendRental is a stub, and an extension would leave the added days unreserved - Option B (HIGH), current: UNTOUCHED, after DEL-01, INV-07
@@ -699,9 +702,9 @@ graph LR
 27. **SEC-02** - `audit_events_insert` is `WITH CHECK (true)` to PUBLIC and `anon` holds INSERT — anyone with the anon key can write permanent forged audit rows; signed-in forgery and caller-supplied `created_by` remain open - Option A (LOW), current: DRAFTED_UNAPPLIED, after DEL-01
 28. **SEC-03** - Law 6 governs SELECT only — a Warehouse session can rewrite `products.daily_rate` (and every priced column) it cannot read; 0092 is drafted, unapplied, and leaves INSERT and two deposit columns open - Option A (LOW), current: DRAFTED_UNAPPLIED, after DEL-01
 29. **SEC-07** - Staff administration has no database path and only one identity can sign in: `users` has one policy (`users_select_own`), `auth.users` holds 1 account against 5 staff rows, and a self-signup lands as role Client - Option B (HIGH), current: UNTOUCHED, after DEL-01
-30. **DB-02** - bookings.stage, closed_at and booking_no remain directly writable by every bookings_update role — 0021's column REVOKE is inert because the table-level UPDATE grant still stands - Option A (LOW), current: UNTOUCHED, after DEL-01
+30. **DB-02** - bookings.stage, closed_at and booking_no remain directly writable by every bookings_update role — 0021's column REVOKE is inert because the table-level UPDATE grant still stands - Option A (LOW), current: DRAFTED_UNAPPLIED, after DEL-01
 31. **SEC-04** - Law 6 read masking is armed on 9 tables; 15 view-backed money tables still grant blanket SELECT to `authenticated`, so a money-blind role reading the base table over PostgREST bypasses the `_v` view - Option B (MEDIUM), current: UNTOUCHED, after DEL-01, SEC-01
-32. **RL-06** - The damage-charge close gate is hardcoded to 0 while damage_findings are now written at Return and Reset, and the database gate has no case or damage branch at all - Option A (LOW), current: UNTOUCHED, after DEL-01
+32. **RL-06** - The damage-charge close gate is hardcoded to 0 while damage_findings are now written at Return and Reset, and the database gate has no case or damage branch at all - Option A (LOW), current: FIXED_IN_TREE, after DEL-01
 33. **MONEY-09** - The refund path is a stub with two contradictory schema homes and no reversal number: refundPayment takes {id}, the modal passes an invoice id and drops the amount, and reversals are unbounded - Option A (MEDIUM), current: UNTOUCHED, after MONEY-02, MONEY-16
 34. **MONEY-10** - Security deposits (Law 5) have no write path, and 'deposit resolved' means 'collected', so a booking closes with the client's money still held - Option A (HIGH), current: UNTOUCHED, after MONEY-16
 35. **MONEY-08** - Return-time charges have no way onto the Draft (R-03): no addInvoiceLine, no 'Damage' line_kind, no charges writer, and the late fee is computed but never posted - Option A (HIGH), current: UNTOUCHED, after MONEY-01, MONEY-10
@@ -728,60 +731,62 @@ graph LR
 12. **DATA-08** - All 25 settings persist to localStorage only; the VAT rate that prices every booking, invoice and quote is per-browser while system_settings holds 0 rows - Option B (HIGH), current: UNTOUCHED, after DEL-01, MONEY-03
 13. **DATA-09** - Writers living in the read layer bypass the dispatcher, capability check, events and offline queue - Option B (MEDIUM), current: UNTOUCHED
 14. **DATA-12** - booqable-webhook is not deployed, would be rejected by the gateway's JWT check if deployed with defaults, and its drain throws by design - Option B (HIGH), current: UNTOUCHED, after DEL-01
-15. **DB-06** - number_sequences has no 'transfer' row while createStockTransfer (implemented: true, dispatched from the Transfer Center) mints from it — every stock transfer on live fails; five more NOT NULL UNIQUE *_no columns have no sequence - Option A (LOW), current: UNTOUCHED, after DATA-04, DEL-01
-16. **DB-07** - src/types/supabase.ts is the 11 Aug schema — 3 tables, 6 views, 7 columns, 1 nullability and 1 function behind live — 22 write sites cast 'as never' past it, and npm run db:types is pointed at the hand-written vocabulary file - Option A (LOW), current: UNTOUCHED
-17. **ARCH-02** - Status vocabularies are hand-declared in four layers with no conformance check: the unit-status union shares three of ten labels with the live enum, and job, damage and client-facing states have different names per layer - Option B (HIGH), current: UNTOUCHED, after DEL-01
-18. **DB-08** - The live ledger and the migrations directory cannot be reconciled mechanically: seven ledger names differ from filenames, a 20-table bakery_archive schema and two hand-altered NOT VALID checks exist with no file, and the planned 0081–0084 were never written - Option B (HIGH), current: UNTOUCHED, after DEL-01
-19. **DB-09** - Any staff role can rewrite the document counters (number_sequences ALL policy) and burn numbers through next_document_number (EXECUTE for anon and authenticated, invoker rights) — sequence gaps and re-issue against the never-reset ruling - Option A (LOW), current: UNTOUCHED, after DEL-01
-20. **DB-10** - 194 TRIGGER REQUIRED invariants in the migrations, 40 triggers live (the declared set is fully present) — the engine's own comments name the unbuilt ones it depends on - Option A (MEDIUM), current: UNTOUCHED, after DEL-01
-21. **DB-11** - No migration states base-table grants for authenticated, anon or service_role; live runs on Supabase's default ACL, so check:rebuild's scratch database has an app that cannot read - Option A (LOW), current: UNTOUCHED
-22. **DB-12** - anon holds INSERT/UPDATE/SELECT grants on every public table by default ACL and every policy but two is declared TO public — RLS predicates are the only lock, and one 'with check (true)' already admits anonymous audit rows - Option A (LOW), current: UNTOUCHED
-23. **DEL-03** - CI has never run — the repository has no remote — and the workflow omits lint, the ledger check and any database gate - Option B (MEDIUM), current: UNTOUCHED
-24. **DEL-04** - No hosting target — three deploy configs coexist and disagree on shell caching, and the only build on disk cannot reach the live project - Option B (MEDIUM), current: UNTOUCHED
-25. **DEL-06** - The Booqable SQL importer hazard regenerates itself — the quarantine sits on one output file while both generators still emit the LIMIT 1 client and NOW() dates - Option B (MEDIUM), current: UNTOUCHED, after DEL-01
-26. **FE-03** - Service-worker runtime cache: half the patterns are inert, the other half persist user-scoped money data across sign-ins for a week - Option B (MEDIUM), current: UNTOUCHED
-27. **FE-04** - Contrast fails on the surfaces the gate does not measure: muted ink on secondary surfaces and the cream canvas, input borders, placeholders, dark active-nav label - Option B (MEDIUM), current: UNTOUCHED
-28. **FE-05** - Responsive layer has no adopters and eight screens render 720-1020px tables on a phone - Option B (MEDIUM), current: UNTOUCHED
-29. **FE-06** - All five installable icons are one 470 KB JPEG declared as PNG/ICO, and iOS install meta is absent - Option B (MEDIUM), current: UNTOUCHED
-30. **FE-07** - Two scanner implementations with different contracts, and a demo 'test scanning' strip ships in production - Option B (MEDIUM), current: UNTOUCHED, after FE-01
-31. **FORMS-03** - Six full forms sit in front of implemented:false actions and fail on every submit, because no screen consults the action registry's flag - Option B (MEDIUM), current: UNTOUCHED
-32. **FORMS-04** - Create Purchase Request fabricates a PR number, an equipment id and a BS date in local state; the row vanishes on reload and cannot be approved - Option B (MEDIUM), current: UNTOUCHED, after DEL-01
-33. **FORMS-05** - Damage approval form approves and rejects in component state over a seed while damage_findings is live with an approval-rank policy - Option B (MEDIUM), current: UNTOUCHED
-34. **FORMS-06** - Client inline edit saves to component state only; updateClient has no body although clients_update is live and the capability is mapped - Option A (MEDIUM), current: UNTOUCHED, after FORMS-03
-35. **FORMS-10** - Settings ▸ Branches ▸ Add Branch appends to local state and reports success; the branch code is minted on the page and nothing writes branches - Option B (MEDIUM), current: UNTOUCHED
-36. **FORMS-11** - The stock-transfer form cannot succeed on live: its warehouse pickers list four seed names the action resolves against a table holding two different ones, and the transfer sequence does not exist - Option B (MEDIUM), current: UNTOUCHED, after DEL-01
-37. **FORMS-12** - Daily Closing never reads its own closing back: after reload Approve is offered again for a signed day, and the variance reason the action accepts has no field - Option A (LOW), current: UNTOUCHED
-38. **FORMS-15** - Nine dead enabled controls survive: seven Evidence bulk actions rendered from an array and both floor Print buttons - Option B (MEDIUM), current: UNTOUCHED
-39. **FORMS-20** - Create Invoice and Void Invoice are full forms whose primary buttons always refuse, and Finance gates issue rights with the void predicate instead of R-05's canIssueInvoice - Option B (MEDIUM), current: UNTOUCHED, after DEL-01
-40. **INV-04** - booking_line_units accepts the same physical unit on two overlapping bookings: create_booking writes it with no exclusion, no period and no overlap trigger, and Quote-time assignments are never reconciled with the Confirm reservation - Option A (MEDIUM), current: UNTOUCHED, after DEL-01
-41. **INV-06** - planAssignment reports complete for a booking whose every line is product-less (Bundle, Service, Manual item, Sub-rental), so it reaches Booked holding nothing — reachable by RPC and import, not from New Rental at HEAD - Option A (LOW), current: UNTOUCHED
-42. **INV-08** - readHolds reads every live reservation in the database with no window filter and no limit, so PostgREST's silent 1000-row cap will drop holds from every plan once the table grows — and INV-07 means it only grows - Option A (LOW), current: UNTOUCHED
-43. **INV-09** - The New Rental picker answers availability from a present-tense product_units.status count that the OS never writes, raises a Critical that blocks Confirm on today's status for a future window, and paints every quantity product green before INV-02 refuses it - Option A (MEDIUM), current: UNTOUCHED, after INV-02
-44. **INV-10** - product_units.status is never written by any OS verb, yet Product detail ('Live Availability', 'AVAILABLE NOW') and the Inventory list breakdown render it as live availability; every OS-created unit reads In Stock forever, reserved or on rent - Option B (MEDIUM), current: UNTOUCHED
-45. **INV-11** - The availability rules (disqualifying states, half-open vs closed bracket) are read from per-browser localStorage at plan time, so two operators can plan under different rules and write different period brackets into inventory_reservations - Option B (MEDIUM), current: UNTOUCHED
-46. **INV-12** - No test exercises the double-booking defence: the exclusion constraint, the capacity trigger and a concurrent Confirm are untested; queries/availability.test.ts covers only the tstzrange parser and confirmRental.test.ts stubs the entire assignment module - Option B (HIGH), current: UNTOUCHED
-47. **MONEY-15** - Crew is billed at cost on the invoice, and folding per-engagement extras into unit_rate makes quantity × days × unit_rate ≠ line_total at 2 dp - Option A (MEDIUM), current: UNTOUCHED, after MONEY-01
-48. **MONEY-16** - Money-document numbering: payment numbers reset every January (R-18) and reversal, credit-note and charge numbers have no sequence at all - Option A (LOW), current: DRAFTED_UNAPPLIED, after DEL-01
-49. **MONEY-17** - Daily Closing's expected cash is structurally zero: no Cash bank account exists live, account-less cash payments fall into 'other', and receivables exclude every Draft's running balance - Option A (LOW), current: UNTOUCHED, after MONEY-05
-50. **OPS-01** - Three definitions of "today" on the floor: Operations scopes use civil-day bounds, the Dashboard uses operational bounds under a civil-day label, and operationalToday() has one caller - Option B (MEDIUM), current: UNTOUCHED
-51. **OPS-05** - Past-due floor work drops out of every day scope: 26 uncollected pickups on live are invisible under Today/Tomorrow/Week and have no alert - Option A (LOW), current: UNTOUCHED
-52. **OPS-06** - Handover money gates are attestations: "Payment Verified" and "Deposit Received" are local booleans that read nothing, while the real gate lives in a trigger the UI cannot see (and 0090's warn-with-reason is drafted, not applied) - Option A (MEDIUM), current: DRAFTED_UNAPPLIED, after DEL-01
-53. **OPS-07** - Signatures are dropped or written as prose: the signatures table exists on live with zero writers, Handover keeps its two signatures in React state, Return writes them into operation_sessions.notes, and inspector_note is never written - Option A (MEDIUM), current: UNTOUCHED, after OPS-02
-54. **RES-03** - The queue-on-network-failure branch in dataAccess can never fire: it matches a message shape postgrest-js does not produce, and writes get no retry from the client library - Option B (MEDIUM), current: UNTOUCHED, after RES-01, RES-02, RL-09
-55. **RES-07** - captureError is a no-op without a DSN nobody has set, and the 3 Sep sweep replaced console.error with it in 28 files, so those failures now reach nothing at all - Option A (LOW), current: UNTOUCHED
-56. **RES-08** - The 25-second pull reads a revoked table with select('*'), maps columns that do not exist, fills a cache nothing reads, and the header calls it Synced - Option A (LOW), current: UNTOUCHED
-57. **RES-12** - Four write paths bypass dataAccess: no queue, no network handling, and a silent compensation failure that can leave a live inventory hold behind - Option B (MEDIUM), current: UNTOUCHED, after RES-07
-58. **RES-13** - The offline stack has no behavioural test: nothing pins dedupe, replay, dead-lettering, recovery or the network classifier - Option A (LOW), current: UNTOUCHED
-59. **RL-03** - Closed-is-final rests on closed_at, which is NULL on all 60 live Closed bookings, and the trigger refuses nothing out of Closed because its successor comparison evaluates to NULL - Option B (MEDIUM), current: UNTOUCHED, after DB-02, DEL-01
-60. **RL-07** - R-07's auto-suggest is missing: Booking Detail shows a Close button at Returned and lets the action refuse after the press, never naming the failing gate or the vacuous damage gate - Option A (LOW), current: UNTOUCHED, after RL-05, RL-06
-61. **RL-12** - The §1.9 flag registry is never fed: no caller passes flags, booking_flags has no writer, and two of its rules now contradict R-06 - Option A (MEDIUM), current: UNTOUCHED, after RL-08
-62. **RL-14** - A second pass of a staggered handover or return reuses the first pass's Law 8 key, so the new session collides on operation_sessions.client_uuid and the pass cannot land - Option A (LOW), current: UNTOUCHED
-63. **SEC-05** - RBAC mirror has four unsafe-direction gaps: Accounts is offered Close and Void that Postgres refuses, Technician is offered every floor verb but appears in 0 of 246 policies, and Warehouse/Coordinator can insert a Closed transition by direct call — R-08 has no migration at all - Option B (MEDIUM), current: UNTOUCHED, after DB-02, DEL-01
-64. **SEC-08** - Auth hardening is unverified on the hosted project and weak in the tracked config: signups enabled, 6-character minimum, no complexity, no MFA, leaked-password protection off - Option A (LOW), current: UNKNOWN
-65. **DATA-11** - booqable-proxy authorizes by JWT only: its six write-back paths and the client read paths are open to every role, including a portal Client - Option A (LOW), current: UNTOUCHED, after DEL-01, SEC-08
-66. **DB-13** - Apply-safety review of the ten drafts: all apply on today's catalogue, but 0085 creates an RLS-less table and re-points the booking counter onto the range reserved for the real Booqable orders, 0089 alone does not un-brick bookings, 0090 drops pg_temp from a hardened search_path, and 0092 misses two columns and INSERT - Option A (LOW), current: DRAFTED_UNAPPLIED, after DB-01, DEL-01
-67. **DEL-07** - The Booqable bridge is built but disconnected — zero importers, webhook undeployed, corpus half-imported, and its numbering contradicts R-10 and the 0085 draft - Option A (MEDIUM), current: UNTOUCHED, after DEL-01, DEL-06
-68. **FORMS-02** - New Rental's Save Draft and Cancel dispatch stub actions on every press while rendering as live controls - Option B (MEDIUM), current: UNTOUCHED, after DEL-01
+15. **DATA-17** - The live corpus is hollow past Packed: 200 of 246 bookings carry no lines and every floor table is empty, so Return and Reset have nothing to render on production - Option A (LOW), current: UNTOUCHED
+16. **DB-06** - number_sequences has no 'transfer' row while createStockTransfer (implemented: true, dispatched from the Transfer Center) mints from it — every stock transfer on live fails; five more NOT NULL UNIQUE *_no columns have no sequence - Option A (LOW), current: DRAFTED_UNAPPLIED, after DATA-04, DEL-01
+17. **DB-07** - src/types/supabase.ts is the 11 Aug schema — 3 tables, 6 views, 7 columns, 1 nullability and 1 function behind live — 22 write sites cast 'as never' past it, and npm run db:types is pointed at the hand-written vocabulary file - Option A (LOW), current: UNTOUCHED
+18. **ARCH-02** - Status vocabularies are hand-declared in four layers with no conformance check: the unit-status union shares three of ten labels with the live enum, and job, damage and client-facing states have different names per layer - Option B (HIGH), current: UNTOUCHED, after DEL-01
+19. **DB-08** - The live ledger and the migrations directory cannot be reconciled mechanically: seven ledger names differ from filenames, a 20-table bakery_archive schema and two hand-altered NOT VALID checks exist with no file, and the planned 0081–0084 were never written - Option B (HIGH), current: UNTOUCHED, after DEL-01
+20. **DB-09** - Any staff role can rewrite the document counters (number_sequences ALL policy) and burn numbers through next_document_number (EXECUTE for anon and authenticated, invoker rights) — sequence gaps and re-issue against the never-reset ruling - Option A (LOW), current: UNTOUCHED, after DEL-01
+21. **DB-10** - 194 TRIGGER REQUIRED invariants in the migrations, 40 triggers live (the declared set is fully present) — the engine's own comments name the unbuilt ones it depends on - Option A (MEDIUM), current: UNTOUCHED, after DEL-01
+22. **DB-11** - No migration states base-table grants for authenticated, anon or service_role; live runs on Supabase's default ACL, so check:rebuild's scratch database has an app that cannot read - Option A (LOW), current: UNTOUCHED
+23. **DB-12** - anon holds INSERT/UPDATE/SELECT grants on every public table by default ACL and every policy but two is declared TO public — RLS predicates are the only lock, and one 'with check (true)' already admits anonymous audit rows - Option A (LOW), current: UNTOUCHED
+24. **DEL-03** - CI has never run — the repository has no remote — and the workflow omits lint, the ledger check and any database gate - Option B (MEDIUM), current: UNTOUCHED
+25. **DEL-04** - No hosting target — three deploy configs coexist and disagree on shell caching, and the only build on disk cannot reach the live project - Option B (MEDIUM), current: UNTOUCHED
+26. **DEL-06** - The Booqable SQL importer hazard regenerates itself — the quarantine sits on one output file while both generators still emit the LIMIT 1 client and NOW() dates - Option B (MEDIUM), current: UNTOUCHED, after DEL-01
+27. **FE-03** - Service-worker runtime cache: half the patterns are inert, the other half persist user-scoped money data across sign-ins for a week - Option B (MEDIUM), current: UNTOUCHED
+28. **FE-04** - Contrast fails on the surfaces the gate does not measure: muted ink on secondary surfaces and the cream canvas, input borders, placeholders, dark active-nav label - Option B (MEDIUM), current: UNTOUCHED
+29. **FE-05** - Responsive layer has no adopters and eight screens render 720-1020px tables on a phone - Option B (MEDIUM), current: UNTOUCHED
+30. **FE-06** - All five installable icons are one 470 KB JPEG declared as PNG/ICO, and iOS install meta is absent - Option B (MEDIUM), current: UNTOUCHED
+31. **FE-07** - Two scanner implementations with different contracts, and a demo 'test scanning' strip ships in production - Option B (MEDIUM), current: UNTOUCHED, after FE-01
+32. **FORMS-03** - Six full forms sit in front of implemented:false actions and fail on every submit, because no screen consults the action registry's flag - Option B (MEDIUM), current: UNTOUCHED
+33. **FORMS-04** - Create Purchase Request fabricates a PR number, an equipment id and a BS date in local state; the row vanishes on reload and cannot be approved - Option B (MEDIUM), current: UNTOUCHED, after DEL-01
+34. **FORMS-05** - Damage approval form approves and rejects in component state over a seed while damage_findings is live with an approval-rank policy - Option B (MEDIUM), current: UNTOUCHED
+35. **FORMS-06** - Client inline edit saves to component state only; updateClient has no body although clients_update is live and the capability is mapped - Option A (MEDIUM), current: UNTOUCHED, after FORMS-03
+36. **FORMS-10** - Settings ▸ Branches ▸ Add Branch appends to local state and reports success; the branch code is minted on the page and nothing writes branches - Option B (MEDIUM), current: UNTOUCHED
+37. **FORMS-11** - The stock-transfer form cannot succeed on live: its warehouse pickers list four seed names the action resolves against a table holding two different ones, and the transfer sequence does not exist - Option B (MEDIUM), current: UNTOUCHED, after DEL-01
+38. **FORMS-12** - Daily Closing never reads its own closing back: after reload Approve is offered again for a signed day, and the variance reason the action accepts has no field - Option A (LOW), current: UNTOUCHED
+39. **FORMS-15** - Nine dead enabled controls survive: seven Evidence bulk actions rendered from an array and both floor Print buttons - Option B (MEDIUM), current: UNTOUCHED
+40. **FORMS-20** - Create Invoice and Void Invoice are full forms whose primary buttons always refuse, and Finance gates issue rights with the void predicate instead of R-05's canIssueInvoice - Option B (MEDIUM), current: UNTOUCHED, after DEL-01
+41. **INV-04** - booking_line_units accepts the same physical unit on two overlapping bookings: create_booking writes it with no exclusion, no period and no overlap trigger, and Quote-time assignments are never reconciled with the Confirm reservation - Option A (MEDIUM), current: UNTOUCHED, after DEL-01
+42. **INV-06** - planAssignment reports complete for a booking whose every line is product-less (Bundle, Service, Manual item, Sub-rental), so it reaches Booked holding nothing — reachable by RPC and import, not from New Rental at HEAD - Option A (LOW), current: UNTOUCHED
+43. **INV-08** - readHolds reads every live reservation in the database with no window filter and no limit, so PostgREST's silent 1000-row cap will drop holds from every plan once the table grows — and INV-07 means it only grows - Option A (LOW), current: UNTOUCHED
+44. **INV-09** - The New Rental picker answers availability from a present-tense product_units.status count that the OS never writes, raises a Critical that blocks Confirm on today's status for a future window, and paints every quantity product green before INV-02 refuses it - Option A (MEDIUM), current: FIXED_IN_TREE, after INV-02
+45. **INV-10** - product_units.status is never written by any OS verb, yet Product detail ('Live Availability', 'AVAILABLE NOW') and the Inventory list breakdown render it as live availability; every OS-created unit reads In Stock forever, reserved or on rent - Option B (MEDIUM), current: UNTOUCHED
+46. **INV-11** - The availability rules (disqualifying states, half-open vs closed bracket) are read from per-browser localStorage at plan time, so two operators can plan under different rules and write different period brackets into inventory_reservations - Option B (MEDIUM), current: UNTOUCHED
+47. **INV-12** - No test exercises the double-booking defence: the exclusion constraint, the capacity trigger and a concurrent Confirm are untested; queries/availability.test.ts covers only the tstzrange parser and confirmRental.test.ts stubs the entire assignment module - Option B (HIGH), current: UNTOUCHED
+48. **MONEY-15** - Crew is billed at cost on the invoice, and folding per-engagement extras into unit_rate makes quantity × days × unit_rate ≠ line_total at 2 dp - Option A (MEDIUM), current: UNTOUCHED, after MONEY-01
+49. **MONEY-16** - Money-document numbering: payment numbers reset every January (R-18) and reversal, credit-note and charge numbers have no sequence at all - Option A (LOW), current: DRAFTED_UNAPPLIED, after DEL-01
+50. **MONEY-17** - Daily Closing's expected cash is structurally zero: no Cash bank account exists live, account-less cash payments fall into 'other', and receivables exclude every Draft's running balance - Option A (LOW), current: UNTOUCHED, after MONEY-05
+51. **OPS-01** - Three definitions of "today" on the floor: Operations scopes use civil-day bounds, the Dashboard uses operational bounds under a civil-day label, and operationalToday() has one caller - Option B (MEDIUM), current: UNTOUCHED
+52. **OPS-05** - Past-due floor work drops out of every day scope: 26 uncollected pickups on live are invisible under Today/Tomorrow/Week and have no alert - Option A (LOW), current: UNTOUCHED
+53. **OPS-06** - Handover money gates are attestations: "Payment Verified" and "Deposit Received" are local booleans that read nothing, while the real gate lives in a trigger the UI cannot see (and 0090's warn-with-reason is drafted, not applied) - Option A (MEDIUM), current: DRAFTED_UNAPPLIED, after DEL-01
+54. **OPS-07** - Signatures are dropped or written as prose: the signatures table exists on live with zero writers, Handover keeps its two signatures in React state, Return writes them into operation_sessions.notes, and inspector_note is never written - Option A (MEDIUM), current: UNTOUCHED, after OPS-02
+55. **RES-03** - The queue-on-network-failure branch in dataAccess can never fire: it matches a message shape postgrest-js does not produce, and writes get no retry from the client library - Option B (MEDIUM), current: UNTOUCHED, after RES-01, RES-02, RL-09
+56. **RES-07** - captureError is a no-op without a DSN nobody has set, and the 3 Sep sweep replaced console.error with it in 28 files, so those failures now reach nothing at all - Option A (LOW), current: UNTOUCHED
+57. **RES-08** - The 25-second pull reads a revoked table with select('*'), maps columns that do not exist, fills a cache nothing reads, and the header calls it Synced - Option A (LOW), current: UNTOUCHED
+58. **RES-12** - Four write paths bypass dataAccess: no queue, no network handling, and a silent compensation failure that can leave a live inventory hold behind - Option B (MEDIUM), current: UNTOUCHED, after RES-07
+59. **RES-13** - The offline stack has no behavioural test: nothing pins dedupe, replay, dead-lettering, recovery or the network classifier - Option A (LOW), current: UNTOUCHED
+60. **RL-03** - Closed-is-final rests on closed_at, which is NULL on all 60 live Closed bookings, and the trigger refuses nothing out of Closed because its successor comparison evaluates to NULL - Option B (MEDIUM), current: UNTOUCHED, after DB-02, DEL-01
+61. **RL-07** - R-07's auto-suggest is missing: Booking Detail shows a Close button at Returned and lets the action refuse after the press, never naming the failing gate or the vacuous damage gate - Option A (LOW), current: UNTOUCHED, after RL-05, RL-06
+62. **RL-12** - The §1.9 flag registry is never fed: no caller passes flags, booking_flags has no writer, and two of its rules now contradict R-06 - Option A (MEDIUM), current: UNTOUCHED, after RL-08
+63. **RL-14** - A second pass of a staggered handover or return reuses the first pass's Law 8 key, so the new session collides on operation_sessions.client_uuid and the pass cannot land - Option A (LOW), current: UNTOUCHED
+64. **SEC-05** - RBAC mirror has four unsafe-direction gaps: Accounts is offered Close and Void that Postgres refuses, Technician is offered every floor verb but appears in 0 of 246 policies, and Warehouse/Coordinator can insert a Closed transition by direct call — R-08 has no migration at all - Option B (MEDIUM), current: UNTOUCHED, after DB-02, DEL-01
+65. **SEC-08** - Auth hardening is unverified on the hosted project and weak in the tracked config: signups enabled, 6-character minimum, no complexity, no MFA, leaked-password protection off - Option A (LOW), current: UNKNOWN
+66. **DATA-11** - booqable-proxy authorizes by JWT only: its six write-back paths and the client read paths are open to every role, including a portal Client - Option A (LOW), current: UNTOUCHED, after DEL-01, SEC-08
+67. **SEC-12** - TRUNCATE is granted to anon and authenticated on 123 of 124 tables, and neither RLS nor Law 3's row triggers can see it - Option B (LOW), current: DRAFTED_UNAPPLIED, after DEL-01
+68. **DB-13** - Apply-safety review of the ten drafts: all apply on today's catalogue, but 0085 creates an RLS-less table and re-points the booking counter onto the range reserved for the real Booqable orders, 0089 alone does not un-brick bookings, 0090 drops pg_temp from a hardened search_path, and 0092 misses two columns and INSERT - Option A (LOW), current: DRAFTED_UNAPPLIED, after DB-01, DEL-01
+69. **DEL-07** - The Booqable bridge is built but disconnected — zero importers, webhook undeployed, corpus half-imported, and its numbering contradicts R-10 and the 0085 draft - Option A (MEDIUM), current: UNTOUCHED, after DEL-01, DEL-06
+70. **FORMS-02** - New Rental's Save Draft and Cancel dispatch stub actions on every press while rendering as live controls - Option B (MEDIUM), current: UNTOUCHED, after DEL-01
 
 ### PHASE 4 - P3/P4
 
@@ -916,7 +921,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 ## ISSUE-001 - INV-02 - Confirm is impossible for every Quantity- or Consumable-tracked product — 204 of 204 products on live — because no product-level hold is ever written; the live capacity ceiling guards rows nothing creates
 
 **Severity:** P0 _(refuter: CONFIRMED)_
-**Status:** PARTIAL IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** ROOT ISSUE
+**Status:** PARTIAL IMPLEMENTATION  |  **Current status:** FIXED_IN_TREE  |  **Confidence:** HIGH (traced)  |  **Dependency role:** ROOT ISSUE
 **Module:** Inventory & availability _(derived from cluster)_  |  **Feature:** Confirm is impossible for every Quantity- or Consumable-tracked product — 204 of 204 products on live — because no product-level hold is ever written; the live capacity ceiling guards rows nothing creates
 **Affected Layers:** Frontend, Business Logic, Database _(derived from locations)_
 **Prior art:** RL-07
@@ -932,7 +937,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 **Actual Behavior:** readLines treats every product line as needing serial units; readCandidates reads product_units_v, which is empty for a Quantity product; selectUnitsForLine(needed = qty, candidates = []) yields shortfall = qty; complete becomes false and AssignmentIncompleteError is thrown; reserveAssignedUnits can only ever write asset_id holds with qty 1. The catalogue advertises the same product as available with 'N in stock · not unit-tracked' (itemCatalogue.ts:373).
 
-**Evidence:** Code at the cited lines; tracking_mode is not read anywhere on the Confirm path (`git grep tracking_mode HEAD -- src/lib/queries/availability.ts src/actions/rentals/confirmRental.ts` → 0). Live 5 Sep: `select tracking_mode, count(*) from products group by 1` → Quantity = 204, total_quantity = 10 on every row; product_units 0 rows; inventory_reservations 0 rows; enforce_inventory_reservation_capacity exists live and branches on tracking_mode for product_id holds. PLAN.md:120 names the quantity gap at the database only; RULINGS-2026-09-04 and PLAN §4.30 are silent on quantity confirm, so nothing rules that bulk stock may not be confirmed.
+**Evidence:** Code at the cited lines; tracking_mode is not read anywhere on the Confirm path (`git grep tracking_mode HEAD -- src/lib/queries/availability.ts src/actions/rentals/confirmRental.ts` → 0). Live 5 Sep: `select tracking_mode, count(*) from products group by 1` → Quantity = 204, total_quantity = 10 on every row; product_units 0 rows; inventory_reservations 0 rows; enforce_inventory_reservation_capacity exists live and branches on tracking_mode for product_id holds. PLAN.md:120 names the quantity gap at the database only; RULINGS-2026-09-04 and PLAN §4.30 are silent on quantity confirm, so nothing rules that bulk stock may not be confirmed. STATUS UPDATE (2026-09-07): UNTOUCHED -> FIXED_IN_TREE. Commit 2950cc0 implements Option A. lib/availability.ts gains a pure capacityFor that restates 0045's own sweep (candidate instants = window start plus each overlapping hold's lower bound inside the window; occupancy summed at each; free = total - peak) and refuses rather than answers on a non-integer qty, a negative total, an inverted window or an uncountable hold. readLines reads tracking_mode through products_v and splits lines; AssignmentPlanLine is now a discriminated union and planAssignment branches per line; isSerialisedMode mirrors the trigger's own branch. reserveAssignedUnits writes product-level holds with a client_uuid per row. 148 tests pass. IMPORTANT: fixed in the tree, not proven end to end — the arbiters (enforce_inventory_reservation_capacity and the GiST exclusion) live in Postgres and were never exercised; there is no pgTAP, no live insert, check:rebuild cannot run (Docker's privileged service is stopped), and the quantity path has never rendered because the mock corpus makes every product Serialised. mock/client.ts now records that the capacity trigger is not emulated, so a green mock run is not evidence the ceiling holds. Two forks are recorded in PLAN §4.49 rather than decided: Consumable-on-return decrementing total_quantity, and whether D5's planner covers bulk stock.
 
 **Refuter's independent evidence (CONFIRMED):** HEAD availability.ts readLines:187-201 pushes every product_id line to `assignable` with no tracking_mode read; readCandidates:217-255 reads product_units_v only; planAssignment:433-445 pool = candidates for the product, selectUnitsForLine (lib/availability.ts:458-525) returns shortfall = needed - assigned, so an empty pool yields shortfall = qty and complete=false (:453); confirmRental.ts:436 throws AssignmentIncompleteError ('cannot be confirmed: not every line has units free for these dates'). `git grep tracking_mode HEAD -- src/lib/queries/availability.ts src/actions/rentals/confirmRental.ts src/lib/availability.ts` -> exit 1 (0 hits); positive control: tracking_mode found in createEquipment.ts (3), floorVerb.ts (1), map/products.ts (6). `git grep -i quantity|tracking|consumable HEAD -- src/lib/availability.ts` -> 0. reserveAssignedUnits:657-665 writes asset_id holds only, never product_id. Live SQL: products tracking_mode Quantity = 204 (min/max total_quantity 10/10, all created 2026-08-29); product_units 0; inventory_reservations 0; column defaults are tracking_mode 'Serialised' and total_quantity 0, so the Quantity values were written explicitly by the 29 Aug loader (uniform 10 looks like a placeholder, but it is the stored fact). Live enforce_inventory_reservation_capacity branches `if v_tracking_mode = 'Serialised' ... else v_capacity := v_total_quantity` - the product_id hold path is guarded but has no writer. 0003:1457-1459 XOR constraint designs quantity holds explicitly. PLAN.md:119-121 names the quantity gap at the DB ceiling only; §4.30 and RULINGS silent on quantity confirm. - _P0 stands: once P0-4 unblocks creation, no booking on the live catalogue can reach Booked and the app offers no bypass. Latent only because creation is bricked today._
 
@@ -1009,7 +1014,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 **Affected Workflows:** Release; Migration apply; Backup / restore; Booqable import _(derived from cluster)_
 
 **Depends on (fix first):** DEL-05
-**Root for:** ARCH-02, DATA-08, DATA-11, DATA-12, DATA-15, DB-01, DB-02, DB-03, DB-06, DB-07, DB-08, DB-09, DB-10, DB-11, DB-12, DB-13, DEL-06, DEL-07, FORMS-02, FORMS-04, FORMS-11, FORMS-20, INV-01, INV-04, INV-07, MONEY-01, MONEY-02, MONEY-03, MONEY-04, MONEY-06, MONEY-08, MONEY-11, MONEY-15, MONEY-16, MONEY-17, OPS-02, OPS-03, OPS-04, OPS-06, RL-01, RL-03, RL-04, RL-05, RL-06, RL-08, RL-10, SEC-01, SEC-02, SEC-03, SEC-04, SEC-05, SEC-07
+**Root for:** ARCH-02, DATA-08, DATA-11, DATA-12, DATA-15, DB-01, DB-02, DB-03, DB-06, DB-07, DB-08, DB-09, DB-10, DB-11, DB-12, DB-13, DEL-06, DEL-07, FORMS-02, FORMS-04, FORMS-11, FORMS-20, INV-01, INV-04, INV-07, MONEY-01, MONEY-02, MONEY-03, MONEY-04, MONEY-06, MONEY-08, MONEY-11, MONEY-15, MONEY-16, MONEY-17, OPS-02, OPS-03, OPS-04, OPS-06, RL-01, RL-03, RL-04, RL-05, RL-06, RL-08, RL-10, SEC-01, SEC-02, SEC-03, SEC-04, SEC-05, SEC-07, SEC-12
 
 **Reproduction:** 1. Run `select max(name) from supabase_migrations.schema_migrations where name like '00%'` on live → 0078_daily_closings. 2. `git ls-files supabase/migrations | tail -10` → 0079…0092. 3. `ls ../backups` → no file larger than 805 KB with a .sql or .dump extension; `head -c 200 ../backups/local-db-2026-09-02/public-before.sql` shows a pg_dump header; `awk` from `COPY public.clients` to the terminator → zero rows. 4. `git grep -l pg_dump HEAD -- scripts package.json .github` → two files, neither dumps live. 5. Search PROGRESS.md and RULINGS-2026-09-04.md for 'rotated' → nothing.
 
@@ -1068,7 +1073,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 **Actual Behavior:** Live pg_policies for invoice_lines: exactly one row, invoice_lines_select (auth_is_finance_or_admin) — every INSERT/UPDATE is refused for every role with 42501. invoices_insert/invoices_update WITH CHECK Owner/Admin/Manager/Coordinator — Accounts absent, Coordinator present. invoices.invoice_no is NOT NULL and issue_date NOT NULL DEFAULT CURRENT_DATE, so the Draft-without-number payload createInvoice sends (invoice_no: string | null, createInvoice.ts:368) fails on 23502 before the line insert is reached. createInvoice writes the header and the lines as separate PostgREST calls (:528 then :588), so once 0086 admits both, a failure between them leaves a lineless Draft whose outstanding_amount is 0.
 
-**Evidence:** pg_policies query 5 Sep (invoice_lines: 1 policy; invoices write policies with Coordinator); information_schema.columns: invoice_no null=NO, issue_date null=NO def=CURRENT_DATE; pg_constraint invoices_no_key UNIQUE (invoice_no) present (0086's post-condition 4 will pass); 0086 body read at HEAD; live counts invoices 0 / invoice_lines 0.
+**Evidence:** pg_policies query 5 Sep (invoice_lines: 1 policy; invoices write policies with Coordinator); information_schema.columns: invoice_no null=NO, issue_date null=NO def=CURRENT_DATE; pg_constraint invoices_no_key UNIQUE (invoice_no) present (0086's post-condition 4 will pass); 0086 body read at HEAD; live counts invoices 0 / invoice_lines 0. STATUS UPDATE (2026-09-07): DRAFTED_UNAPPLIED -> DRAFTED_UNAPPLIED. Commit 76e277b. 0086 is corrected against R-05 and R-15: invoice_no and issue_date nullable with an invoices_issued_together CHECK that they move together, the write policies realigned from Owner/Admin/Manager/Coordinator to R-05's Owner/Admin/Manager/Accounts, and invoice_lines given INSERT and UPDATE policies at all. 0096 adds create_invoice(jsonb) in the create_booking mould so the header and every line land in one transaction, with post-conditions that build a scratch booking and roll it back. Still unapplied AND unproven: check:rebuild cannot run (Docker's privileged service is stopped), and 0096 cannot apply before 0086 in any case.
 
 **Refuter's independent evidence (CONFIRMED):** Live pg_policies: invoice_lines has exactly one policy (invoice_lines_select, qual auth_is_finance_or_admin()); relrowsecurity true on invoice_lines and invoices -> every INSERT/UPDATE on invoice_lines is refused for every role. invoices_insert with_check and invoices_update qual = Owner, Admin, Manager, Coordinator — Accounts absent although system_role enum contains Accounts (R-05 set is Owner·Admin·Manager·Accounts). information_schema.columns live: invoice_no NOT NULL no default; issue_date NOT NULL default CURRENT_DATE. pg_constraint: invoices_no_key UNIQUE (invoice_no) present. Live counts invoices 0, invoice_lines 0. HEAD 0086 drops both NOT NULLs, adds invoices_issued_together, rewrites the four write policies to the R-05 set and adds invoice_lines_insert/update; ledger stops at 0078. HEAD src/actions/finance/createInvoice.ts:528-545 omits invoice_no/issue_date on the header insert and ~604 states 'Until 0086 applies this is the branch every call takes'. RULINGS R-05 and R-15 confirm the ruled target. - _Stands as filed. The 'header with zero totals after the policy fix' clause is 0086's own observation (nothing forces a line), a minor rider on the P0._
 
@@ -1117,7 +1122,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 ## ISSUE-004 - MONEY-01 - No invoice can be raised: createInvoice is drafted but unwired (PLAN §4.46) and the live schema refuses it (0086 unapplied)
 
 **Severity:** P0 _(refuter: CONFIRMED)_
-**Status:** DISCONNECTED IMPLEMENTATION  |  **Current status:** DRAFTED_UNAPPLIED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
+**Status:** DISCONNECTED IMPLEMENTATION  |  **Current status:** FIXED_IN_TREE  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
 **Module:** Money (pricing, invoices, payments, deposits) _(derived from cluster)_  |  **Feature:** No invoice can be raised: createInvoice is drafted but unwired (PLAN §4.46) and the live schema refuses it (0086 unapplied)
 **Affected Layers:** Frontend, Business Logic, Database _(derived from locations)_
 **Prior art:** P0-1 / P0-5 (FULL_SYSTEM_AUDIT); DATA-01; MONEY-03; MISSING_PAGES 3b
@@ -1135,7 +1140,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 **Actual Behavior:** Finance ▸ Create Invoice → CreateInvoiceModal validates hand-typed lines and refuses inline; createInvoice has no non-test caller from any screen (git grep at HEAD: importers are the action itself, comments in recordPayment.ts/closeRental.ts, and the modal's comment). If it were called on live: the header insert omits invoice_no → 23502 (invoices.invoice_no NOT NULL); an Accounts caller → 42501 (invoices_insert = Owner/Admin/Manager/Coordinator); the first line insert → 42501 (invoice_lines has exactly one policy, invoice_lines_select).
 
-**Evidence:** Live pg_policies 5 Sep: invoice_lines → invoice_lines_select only; invoices_insert WITH CHECK Owner/Admin/Manager/Coordinator. Live information_schema: invoices.invoice_no is_nullable NO, issue_date NOT NULL DEFAULT CURRENT_DATE. schema_migrations high-water 0078_daily_closings; 0086 absent. createInvoice.ts:528-543 omits invoice_no/issue_date, :314 implemented: true. CreateInvoiceModal.tsx:322-341: 'this form collects hand-typed lines, and createInvoice derives its lines from the booking … Do not wire this without that answer' (PLAN.md §4.46 OPEN). Positive control: git grep recordPayment at HEAD finds 10 importers including the Finance modal path.
+**Evidence:** Live pg_policies 5 Sep: invoice_lines → invoice_lines_select only; invoices_insert WITH CHECK Owner/Admin/Manager/Coordinator. Live information_schema: invoices.invoice_no is_nullable NO, issue_date NOT NULL DEFAULT CURRENT_DATE. schema_migrations high-water 0078_daily_closings; 0086 absent. createInvoice.ts:528-543 omits invoice_no/issue_date, :314 implemented: true. CreateInvoiceModal.tsx:322-341: 'this form collects hand-typed lines, and createInvoice derives its lines from the booking … Do not wire this without that answer' (PLAN.md §4.46 OPEN). Positive control: git grep recordPayment at HEAD finds 10 importers including the Finance modal path. STATUS UPDATE (2026-09-07): DRAFTED_UNAPPLIED -> FIXED_IN_TREE. Commit 76e277b. PLAN §4.46 is closed as DERIVED rather than decided: R-03 (append as lines to the Draft, one invoice per rental), SPEC-P0-1 §3.1 (one invoice_lines row per booking_lines row; lines are a snapshot, not a join) and R-02 (Draft for the whole rental, issued once at return) already answered it, and the derivation is quoted in PLAN §4.46 and in the headers of invoicePreview.ts and CreateInvoiceModal.tsx, marked overrule-by-ruling. CreateInvoiceModal is now a read-only preview of exactly what create_invoice will write, priced by lib/money.ts and never by the component, reading the _v views. The mock corpus gained booking_crew_lines_v and booking_transport_v rows because without them the preview showed a bill with no crew while the invoice would have carried it. FIXED_IN_TREE, not on live: the write path it dispatches (0086 + 0096) is still unapplied and unproven against a rebuild.
 
 **Refuter's independent evidence (CONFIRMED):** Live: pg_policies on invoice_lines = invoice_lines_select only (no INSERT/UPDATE); invoices_insert WITH CHECK auth_user_role() in {Owner,Admin,Manager,Coordinator} (Accounts absent); information_schema.columns invoices.invoice_no is_nullable=NO, issue_date is_nullable=NO default CURRENT_DATE; schema_migrations high-water name 0078_daily_closings; invoices count 0. HEAD: src/actions/finance/createInvoice.ts:314 `implemented: true`; :528-542 header idempotentInsert('invoices', {...}) lists no invoice_no and no issue_date (comment :521 says omitted per R-15, relying on 0086); :609-610 admits every call takes the RLS-refusal branch until 0086. supabase/migrations/0086_...sql:75-77 drops the two NOT NULLs, :133-157 adds invoice_lines_insert/update — file exists at HEAD, absent from the ledger. src/modules/finance/modals/CreateInvoiceModal.tsx:326-338 refuses pending PLAN §4.46; Finance.tsx:1141-1143 the only launcher opens that modal; PLAN.md:697-738 §4.46 OPEN ×1. Grep at HEAD: `git grep -n "createInvoice" HEAD -- src` excluding tests and the action file → 0 importers; positive control `git grep -l recordPayment HEAD -- src` (non-test) → 18 files incl. RecordPaymentModal.tsx and Finance.tsx. core.ts:231-232 maps invoice.create → canIssueInvoice (rbac.ts:350-353). `npx vitest run src/actions/finance/__tests__/createInvoice.test.ts` → 6/6 pass (all against a mocked db, totals not asserted). Ruling check: R-01 requires creation from Finance and Booking Detail; SPEC-P0-1 §3.1 already fixes the line source ('one invoice_lines row per booking_lines row … a snapshot, not a join'), so §4.46 re-asks a settled point and nothing makes the refusal deliberate. - _Confirmed as filed. Two additions the fix must carry: (1) §4.46 is answered by SPEC-P0-1 §3.1 + R-03 — option (a), the modal becomes a preview; (2) even after 0086 the createInvoice.ts:346-360 any-invoice precondition blocks re-invoicing after a void (see MONEY-07)._
 
@@ -1255,7 +1260,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 ## ISSUE-006 - SEC-01 - Every `_v` masking view is an owner-privilege, auto-updatable view with INSERT/UPDATE/DELETE granted to anon and authenticated — an RLS and Law 3 bypass on 23 tables
 
 **Severity:** P0 _(refuter: CONFIRMED)_
-**Status:** SECURITY RISK  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
+**Status:** SECURITY RISK  |  **Current status:** DRAFTED_UNAPPLIED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
 **Module:** Auth & security _(derived from cluster)_  |  **Feature:** Every `_v` masking view is an owner-privilege, auto-updatable view with INSERT/UPDATE/DELETE granted to anon and authenticated — an RLS and Law 3 bypass on 23 tables
 **Affected Layers:** Database _(derived from locations)_
 
@@ -1271,7 +1276,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 **Actual Behavior:** Browser → PostgREST `POST/PATCH/DELETE /rest/v1/<table>_v` → Postgres rewrites the DML onto the base table using the view owner's privileges (`postgres`, which owns every table and has `bypassrls=true`) → no RLS policy is evaluated, the view has `check_option = NONE` so its own `WHERE auth_is_staff()` is not applied to inserted rows, and on 18 of the 23 backed tables no `reject_delete` trigger exists → the row lands, is changed, or is deleted.
 
-**Evidence:** Live catalogue (5 Sep): 26 views in `public`, all `reloptions = null` (no `security_invoker`), owner `postgres`; `information_schema.views`: 24 of 26 `is_insertable_into = YES`, `is_updatable = YES`, `check_option = NONE` (only `client_directory_v` and `staff_directory_v` are non-updatable joins); `has_table_privilege('anon', <view>, 'INSERT')` true for 26 of 26 views and `authenticated` holds INSERT/UPDATE/DELETE on every view; `pg_roles`: `postgres super=false, bypassrls=true`; every base table `relforcerowsecurity = false`; `pg_default_acl` for `postgres` in `public`: `anon=arwdDxtm, authenticated=arwdDxtm` on relations; updatable columns include `products_v.total_quantity, status, rental_enabled, tracking_mode` (35 columns), `clients_v.merged_into_client_id, status, deactivated_at` (38), `purchase_requests_v.status, approved_by`, `daily_closings_v.approved_by, voided_at`, `damage_findings_v.approval_state, approved_by`; delete backstop `reject_delete_nothing_is_deleted` exists on only 5 of the 23 backed tables — absent on products, product_units, clients, bundles, cases, damage_findings, purchase_requests, crew_*, membership_plans, client_memberships, maintenance_records, accessories, vehicle_fuel_logs, return_accessory_checks, client_channel_identities. Owner-privilege execution proven read-side under role simulation as the live Warehouse user: `select count(*) from staff_directory_v` succeeds (0 rows, no error) although the view joins `auth.users` and `staff_auth_pins`, while `select count(*) from staff_auth_pins` and `select count(daily_rate) from products` as the same session both fail with 42501. `git grep` at HEAD: 0 migrations revoke DML on any `*_v` view; 0 views carry WITH CHECK OPTION; `authenticator` has `session_preload_libraries=supautils, safeupdate` so a mass DELETE needs only a trivial filter such as `id=not.is.null`. The write itself was not exercised (read-only mandate).
+**Evidence:** Live catalogue (5 Sep): 26 views in `public`, all `reloptions = null` (no `security_invoker`), owner `postgres`; `information_schema.views`: 24 of 26 `is_insertable_into = YES`, `is_updatable = YES`, `check_option = NONE` (only `client_directory_v` and `staff_directory_v` are non-updatable joins); `has_table_privilege('anon', <view>, 'INSERT')` true for 26 of 26 views and `authenticated` holds INSERT/UPDATE/DELETE on every view; `pg_roles`: `postgres super=false, bypassrls=true`; every base table `relforcerowsecurity = false`; `pg_default_acl` for `postgres` in `public`: `anon=arwdDxtm, authenticated=arwdDxtm` on relations; updatable columns include `products_v.total_quantity, status, rental_enabled, tracking_mode` (35 columns), `clients_v.merged_into_client_id, status, deactivated_at` (38), `purchase_requests_v.status, approved_by`, `daily_closings_v.approved_by, voided_at`, `damage_findings_v.approval_state, approved_by`; delete backstop `reject_delete_nothing_is_deleted` exists on only 5 of the 23 backed tables — absent on products, product_units, clients, bundles, cases, damage_findings, purchase_requests, crew_*, membership_plans, client_memberships, maintenance_records, accessories, vehicle_fuel_logs, return_accessory_checks, client_channel_identities. Owner-privilege execution proven read-side under role simulation as the live Warehouse user: `select count(*) from staff_directory_v` succeeds (0 rows, no error) although the view joins `auth.users` and `staff_auth_pins`, while `select count(*) from staff_auth_pins` and `select count(daily_rate) from products` as the same session both fail with 42501. `git grep` at HEAD: 0 migrations revoke DML on any `*_v` view; 0 views carry WITH CHECK OPTION; `authenticator` has `session_preload_libraries=supautils, safeupdate` so a mass DELETE needs only a trivial filter such as `id=not.is.null`. The write itself was not exercised (read-only mandate). STATUS UPDATE (2026-09-06): UNTOUCHED -> DRAFTED_UNAPPLIED. supabase/migrations/0095_views_are_read_only.sql was drafted in this session: it revokes INSERT/UPDATE/DELETE/TRUNCATE on every public view from anon, authenticated and PUBLIC while leaving SELECT, revokes anon's table DML and corrects the default privileges, and proves both in post-conditions that simulate anon and a Warehouse session and distinguish a refusal by grant (42501) from any other refusal. Also records that 0093_state_the_grants.sql restated this hole rather than closing it, because 'grant insert on all tables in schema public' includes views. Unapplied. STATUS UPDATE (2026-09-07): DRAFTED_UNAPPLIED -> DRAFTED_UNAPPLIED. 0095_views_are_read_only.sql is committed at b4c4822 with post-conditions that assert the refusal came from the grant (42501) rather than from any other cause, and that the read path still masks in both directions. Unapplied, and unproven against a rebuild: check:rebuild could not run because Docker's engine returns 500 on exec and docker exec psql hangs. Run that gate before applying.
 
 **Refuter's independent evidence (CONFIRMED):** Live catalogue (my own queries, 6 Sep): information_schema.views ⋈ pg_class for public → 26 views, every reloptions NULL, owner postgres for all; is_updatable/is_insertable_into = YES for 24 (only client_directory_v and staff_directory_v NO); check_option NONE on all 26. has_table_privilege('anon', view, 'INSERT') = true for 26/26; authenticated INSERT/UPDATE/DELETE = true for 26/26. pg_roles: postgres rolsuper=false rolbypassrls=true; service_role bypassrls=true. pg_default_acl (postgres, public, relations): anon=arwdDxtm, authenticated=arwdDxtm. pg_views bodies: products_v and clients_v are `select … from <table> where auth_is_staff()` with CASE-masked money — no CHECK OPTION, so an INSERT never meets the predicate and UPDATE/DELETE reach every row for any staff role. information_schema.columns is_updatable=YES: products_v 35 cols (tracking_mode,status,total_quantity,rental_enabled), clients_v 38 (status,deactivated_at,merged_into_client_id), purchase_requests_v 16 (status,approved_by), daily_closings_v 13 (approved_by,voided_at), damage_findings_v 19 (approval_state,approved_by,voided_at); bookings_deposit_v exposes only `id`. reject_delete triggers on the 23 backed tables: 5 (booking_crew_lines, booking_lines, booking_transport, daily_closings, late_fee_findings). Owner-rights execution proven read-side under role simulation as the live Warehouse row 00000000-…-0103 (auth_user_role() returned Warehouse): `select count(*) from staff_directory_v` → 0 rows, no error, while `select count(*) from staff_auth_pins` → 42501 and `select count(daily_rate) from products` → 42501 in the same simulation. Supabase advisor (get_advisors security): 26 × security_definer_view ERROR (one per view) plus auth_users_exposed on staff_directory_v with exposed_to=[anon]. pg_db_role_setting authenticator: session_preload_libraries=supautils, safeupdate; pgrst.db_pre_request=public.set_request_context, whose body only set_configs app.current_user_id from auth.uid() and refuses nothing. git grep at HEAD over supabase/migrations: zero `with check option`, zero revoke/grant of INSERT/UPDATE/DELETE on any `_v`; the only view-option changes are security_invoker on bookings_deposit_v (0061:78 on, 0065:242 reset). 0019:49-58 and 0048:20-30 at HEAD explicitly choose definer rights and accept the advisor lint read-side. Write path not exercised (read-only mandate); the mechanism rests on the catalogue plus Postgres semantics (auto-updatable view; base-table privileges and RLS evaluated as the view owner, who holds BYPASSRLS). - _Confirmed as filed. Count check: 24 auto-updatable views, of which bookings_deposit_v exposes only `id`, so 23 base tables are meaningfully writable and 18 of them lack a Law 3 delete backstop — the auditor's numbers hold. No draft in 0079-0092 touches view DML, so UNTOUCHED is right. P0 stands under §5 (security risk: any holder of the public anon key can INSERT into 23 tables with no policy consulted; any staff session can UPDATE/DELETE every row of them past RLS)._
 
@@ -1340,7 +1345,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 **Actual Behavior:** The live function body formats prefix || lpad(v_next_val::text, v_rec.padding, '0'); 0056:80 set eight sequences to padding = 1 to mean 'no padding', but Postgres lpad is pad-or-cut to exactly n, so every value of two or more digits is cut to its first digit. Simulated on live 5 Sep: booking 917 → 'B-9', client 750 → 'C-7', invoice 120 → 'INV-1', deposit 89 → 'DEP-9' (equipment EQ001151 and PAY-2026-0094 are unaffected). 'B-9' and 'C-7' do not exist, so the first live create succeeds with a wrong number and advances the counter; the second collides on bookings_booking_no_key / clients client_code UNIQUE. Independently, number_sequences.booking = 917 while the seed occupies B-900…B-945 (B-917 and B-918 both exist), so after 0089 alone the mint is 'B-918' and booking creation still fails.
 
-**Evidence:** Live SQL 5 Sep: select 'B-'||lpad('918',1,'0'), 'C-'||lpad('751',1,'0'), 'INV-'||lpad('121',1,'0'), 'DEP-'||lpad('90',1,'0') → B-9, C-7, INV-1, DEP-9. select booking_no from bookings where booking_no in ('B-9','B-918','B-917','B-1') → B-917, B-918. number_sequences: booking B- pad 1 value 917; client C- pad 1 value 750; invoice INV- pad 1 value 120; deposit DEP- pad 1 value 89; clients max client_code 'C-0366' over 366 rows. pg_get_functiondef(next_document_number) shows the lpad line. 0085 header: 'with padding = 1 every mint came back as the single character 9'. 0089 header table lists the same four sequences.
+**Evidence:** Live SQL 5 Sep: select 'B-'||lpad('918',1,'0'), 'C-'||lpad('751',1,'0'), 'INV-'||lpad('121',1,'0'), 'DEP-'||lpad('90',1,'0') → B-9, C-7, INV-1, DEP-9. select booking_no from bookings where booking_no in ('B-9','B-918','B-917','B-1') → B-917, B-918. number_sequences: booking B- pad 1 value 917; client C- pad 1 value 750; invoice INV- pad 1 value 120; deposit DEP- pad 1 value 89; clients max client_code 'C-0366' over 366 rows. pg_get_functiondef(next_document_number) shows the lpad line. 0085 header: 'with padding = 1 every mint came back as the single character 9'. 0089 header table lists the same four sequences. STATUS UPDATE (2026-09-07): DRAFTED_UNAPPLIED -> DRAFTED_UNAPPLIED. Commit b4c4822 patched the drafts. 0089 no longer narrows below the number itself, so no padding-1 sequence truncates; 0085 puts booking_no_migration_map under RLS and revokes it from anon; the post-conditions now MINT through next_document_number for every sequence inside a subtransaction rather than asserting a counter value, because a counter assertion cannot catch a formatting fault. The two open choices this issue's Option B pre-empted are recorded as PLAN §4.48 rather than decided: whether the OS may mint into the 900-945 band during the bridge (the spec-literal reading is implemented; reserving the band is recommended and is a one-token change) and the transfer prefix. Still unapplied, and now also unproven against a rebuild: check:rebuild could not run because Docker's engine returns 500 on exec. STATUS UPDATE (2026-09-07): DRAFTED_UNAPPLIED -> DRAFTED_UNAPPLIED. CORRECTION to this issue's own Option B, proven by a per-migration dry run and re-verified against the live catalogue on 7 Sep. (1) The apply ORDER is 0085 -> 0088 -> 0089, i.e. filename order, not the 0089-first order Option B gave: 0088 raises unless 0085 ran first because it guards on the constraint bookings_booking_no_is_digits that 0085 creates (0088:50-56 vs 0085:273-275), and 0089 applied alone derives its next mints from current_value + 1 = B-918/B-919, finds both already in bookings, and raises naming 0085. (2) 0085 must COMMIT in its own earlier transaction: a non-concurrent CREATE INDEX scans with SnapshotAny and would index 0085's own recently-dead rows. (3) The next mint is 900, NOT 946 - 0085 frees the 900-945 band by moving the 46 seed bookings to 90000+ and then points the counter at 899, the highest real import. 946 was Option B's recommendation and this issue's own refuter (DB-13) overturned it as a ruling rather than a bug fix; it is open as PLAN 4.48 and is a one-token change if ruled. (4) UNFLAGGED CONSEQUENCE: 0085 renumbers ALL 246 live bookings from B-<n> to bare digits, changing the externally known identity of every booking already printed on client paper. Live confirms the shape: 246 bookings, all B- prefixed, 0 bare, 200 in 700-899, 46 in 900-945, counter 917 with padding 1.
 
 **Refuter's independent evidence (CONFIRMED):** Live: select 'B-'||lpad('918',1,'0'), 'C-'||lpad('751',1,'0'), 'INV-'||lpad('121',1,'0'), 'DEP-'||lpad('90',1,'0') -> B-9, C-7, INV-1, DEP-9. number_sequences live: booking B- pad 1 value 917; client C- pad 1 value 750; invoice INV- pad 1 value 120; deposit DEP- pad 1 value 89. pg_get_functiondef(next_document_number) live formats `prefix || lpad(v_next_val::text, v_rec.padding, '0')` with no greatest(). bookings live: B-900, B-917, B-918, B-945 all exist (46 rows in the 900-945 band, min B-700, max B-945); clients 366, max client_code C-0366 (so C-7 does not exist: first client create lands as C-7, second collides). pg_get_functiondef(create_booking) live: `v_booking_no := next_document_number('booking')` before its insert. HEAD 0055_ruled_identifier_formats.sql:171-190 carries the same lpad body; HEAD 0089 (greatest(padding,length)) and 0085 step 6 are the fix; ledger high-water 0078_daily_closings so neither is applied. HEAD src/actions/clients/createClient.ts:338-340 calls rpc next_document_number p_sequence_key 'client'. Not ruled deliberate anywhere (RULINGS R-10/R-11 rule the target shape). - _One precision: `git grep -o "p_sequence_key: '…'" HEAD -- src` yields client, payment, bundle, equipment, transfer, expense — no writer at HEAD calls the invoice or deposit key, so the INV-/DEP- halves are latent until issueInvoice lands; the booking and client halves are broken on live today. The counter UPDATE runs inside the failing transaction, so the second collision is permanent._
 
@@ -1408,7 +1413,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 **Actual Behavior:** createInvoice → `booking_lines` base table selecting `rate, discount_amount` (:393-394) and `booking_transport` base table selecting `delivery_charge, fuel_charge` (:467-468) → Postgres 42501 for every signed-in user, Owner included, before the header insert at :528 is reached. The action is implemented: true but has no caller (CreateInvoiceModal refuses at :304-338 pending PLAN.md §4.46), so the defect is latent.
 
-**Evidence:** Live, role-simulated as the Owner uuid (begin; set local role authenticated; set_config app.current_user_id; rollback): `select id, client_uuid, line_type, description, qty, days, rate, discount_amount, sort_order, voided_at from booking_lines limit 1` → ERROR 42501 permission denied for table booking_lines. information_schema.column_privileges for grantee authenticated on booking_lines lists 19 SELECT columns and none of rate, discount_amount, markup_amount, supplier_cost; table_privileges shows no table-level SELECT on booking_lines, bookings, products, product_units. has_column_privilege('authenticated','booking_transport','delivery_charge','SELECT') = false while 'vehicle' = true. has_table_privilege on booking_lines_v and booking_transport_v = true and booking_lines_v masks rate/discount_amount/supplier_cost behind auth_can_view_money(). The same probe over the granted columns of booking_lines returns 92 rows, proving the row policy is not the blocker. createInvoice.test.ts:30 and :76 vi.mock lib/dataAccess and lib/supabase, so the 203-line test never meets a grant. Contrast bookingQuery.ts:935-944, which reads booking_lines_v for the same money columns.
+**Evidence:** Live, role-simulated as the Owner uuid (begin; set local role authenticated; set_config app.current_user_id; rollback): `select id, client_uuid, line_type, description, qty, days, rate, discount_amount, sort_order, voided_at from booking_lines limit 1` → ERROR 42501 permission denied for table booking_lines. information_schema.column_privileges for grantee authenticated on booking_lines lists 19 SELECT columns and none of rate, discount_amount, markup_amount, supplier_cost; table_privileges shows no table-level SELECT on booking_lines, bookings, products, product_units. has_column_privilege('authenticated','booking_transport','delivery_charge','SELECT') = false while 'vehicle' = true. has_table_privilege on booking_lines_v and booking_transport_v = true and booking_lines_v masks rate/discount_amount/supplier_cost behind auth_can_view_money(). The same probe over the granted columns of booking_lines returns 92 rows, proving the row policy is not the blocker. createInvoice.test.ts:30 and :76 vi.mock lib/dataAccess and lib/supabase, so the 203-line test never meets a grant. Contrast bookingQuery.ts:935-944, which reads booking_lines_v for the same money columns. STATUS UPDATE (2026-09-07): DRAFTED_UNAPPLIED -> DRAFTED_UNAPPLIED. Commit 76e277b resolves this by moving the read server-side rather than by widening a grant. The probe that decided it: has_column_privilege('authenticated','booking_lines','rate','SELECT') is false for EVERY signed-in session including Owner, because 0062 revoked table SELECT and granted back only the non-money columns. So an invoker-rights function would read NULL money and silently bill zero; create_invoice is SECURITY DEFINER with the R-05 role check inside it, in the same transaction as the write. createInvoice.ts now dispatches one rpc call instead of a header insert plus a loop.
 
 **Refuter's independent evidence (CONFIRMED):** HEAD src/actions/finance/createInvoice.ts:393-394 `.from('booking_lines').select('id, client_uuid, line_type, description, qty, days, rate, discount_amount, sort_order, voided_at')`; :467-468 `.from('booking_transport').select('client_uuid, vehicle, delivery_charge, fuel_charge')`; :314 `implemented: true`. Test __tests__/createInvoice.test.ts:30 `vi.mock('../../../lib/dataAccess')`, :76 `vi.mock('../../../lib/supabase')` — no grant is ever met. Live, role-simulated as the Owner row 00000000-0000-0000-0000-000000000101 (begin; set_config app.current_user_id; set local role authenticated; …; rollback): the :393 projection → `ERROR 42501 permission denied for table booking_lines`; the :467 projection → `42501 permission denied for table booking_transport`. Positive controls inside the same simulation: booking_lines projected on its 19 granted columns → 92 rows; `select id, rate, discount_amount from booking_lines_v` → 92 rows, 92 with rate not null; auth_can_view_money() = true, auth_user_role() = Owner; the :432 booking_crew_lines projection (day_rate, overtime, …) → 0 rows, no error; the :228 bookings projection (id, booking_no, client_id, branch_id, stage, cancelled_at) → 246; clients → 366. has_table_privilege(authenticated, SELECT): booking_lines false, booking_transport false, bookings false, booking_lines_v true, booking_transport_v true, booking_crew_lines true, invoices/clients/booking_discounts true. has_column_privilege: booking_lines.rate false, .discount_amount false, .qty true; booking_transport.delivery_charge false, .fuel_charge false, .vehicle true; booking_crew_lines.day_rate true. information_schema.column_privileges lists 19 SELECT columns on booking_lines for authenticated, none of rate/discount_amount/supplier_cost/markup_amount. pg_get_viewdef(booking_lines_v) wraps rate, discount_amount, supplier_cost, markup_amount in `CASE WHEN auth_can_view_money()`. Contrast HEAD src/lib/bookingQuery.ts:927-944: money on lines read through booking_lines_v, with the comment that a base-table money select "fails for every authenticated session including Owner". No draft 0079–0092 re-grants or re-points: 0086's only booking_lines mention is a comment (:19). Callers at HEAD: `git grep createInvoice HEAD -- src` outside its own file/test → comments only (recordPayment.ts:95, closeRental.ts:40, CreateInvoiceModal.tsx:327 — the modal refuses by design, PLAN §4.46 OPEN). Positive control for that grep: recordPayment matches in six files. createInvoice.ts is identical in tree and HEAD. - _Nothing in RULINGS-2026-09-04.md (R-01…R-18), PLAN §4.46 or SPEC-P0-1 permits a base-table money read; 0062 is in the migration chain so a from-scratch rebuild reproduces it. The mechanism, location and role-independence (every signed-in user is Postgres role `authenticated`) reproduce exactly. currentStatus kept at DRAFTED_UNAPPLIED per the brief's vocabulary (the defect lives in the unapplied createInvoice draft); functionally nothing in tree or drafts corrects it. P1 stands under §5: the first invoice after Phase-0 Step 3.2 wiring fails at the first line read, before 0086's invoice_lines write policy is even reached._
 
@@ -1842,7 +1847,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 ## ISSUE-015 - INV-05 - reserveAssignedUnits reports success on the two insert branches that write nothing, so a Confirm can reach Booked with zero live holds or with holds replayed later after another booking took the unit
 
 **Severity:** P1 _(refuter: CONFIRMED)_
-**Status:** CONFIRMED BUG  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
+**Status:** CONFIRMED BUG  |  **Current status:** FIXED_IN_TREE  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
 **Module:** Inventory & availability _(derived from cluster)_  |  **Feature:** reserveAssignedUnits reports success on the two insert branches that write nothing, so a Confirm can reach Booked with zero live holds or with holds replayed later after another booking took the unit
 **Affected Layers:** Business Logic _(derived from locations)_
 **Prior art:** INV-05
@@ -1859,7 +1864,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 **Actual Behavior:** insertViaSourceSwitch returns `{data: payload, error: null}` on the offline queue and on the 'Failed to fetch' / 408 branches (dataAccess.ts:128, 216); the echoed payload carries no id so `written` silently skips it (availability.ts:673-674); the function returns `{units: written.length}` with no comparison against the plan; confirmRental proceeds to the transition and reports unitsReserved lower than units without acting on it. releaseReservations is best-effort (captureError, :700-702), so a failed compensation leaves live holds behind.
 
-**Evidence:** Code at the cited lines; confirmRental's persistence check (469-501) re-reads bookings.stage only; the test 'reports units reserved separately from qty' asserts unitsReserved 1 for 5 units and passes, pinning the gap as accepted behaviour.
+**Evidence:** Code at the cited lines; confirmRental's persistence check (469-501) re-reads bookings.stage only; the test 'reports units reserved separately from qty' asserts unitsReserved 1 for 5 units and passes, pinning the gap as accepted behaviour. STATUS UPDATE (2026-09-07): UNTOUCHED -> FIXED_IN_TREE. Commit 2950cc0. reserveAssignedUnits now compares the written count against the plan AND reads the rows back live by id; on any mismatch it releases what it wrote (keeping the row, Law 3) and throws a typed ReservationNotPersistedError. Contention is recognised specifically (23P01, 23505, or the capacity trigger's own refusal) and reported inline with a fresh availability read appended rather than as a generic failure. releaseReservations returns the ids it released, and confirmRental names any hold the rollback could not give back instead of stranding it silently. Covered by test: a write that lands fewer rows than planned throws and leaves no live partial holds.
 
 **Refuter's independent evidence (CONFIRMED):** HEAD dataAccess.ts insertViaSourceSwitch:364-375 is idempotentInsert unchanged for os-native tables (inventory_reservations left BOOQABLE_READ_ONLY_TABLES per :294-325). idempotentInsert:115-119 (shouldQueueOffline) and :126-132 ('Failed to fetch' / code 408) both enqueue and return `{ data: finalPayload, error: null }` - finalPayload has no `id`. reserveAssignedUnits:667-674 throws only on `error`, pushes an id only `if (typeof id === 'string')`, and returns `units: written.length`; confirmRental.ts:438 stores it, :443-453 moves the stage, :479-480 re-reads bookings.stage only, :514 reports unitsReserved with no comparison against the plan's assigned count. shouldQueueOffline:40-43 mirrors navigator.onLine and confirmRental:339-346 refuses offline first, so the queue branch is closed; the 'Failed to fetch'/408 branch (which the file itself notes at :473-475 'fires even when navigator.onLine is true') is open. Ran `npx vitest run src/actions/rentals/__tests__/confirmRental.test.ts` -> 47/47 pass; test :637-644 resolves confirm with unitsReserved 1 for units 5 (assign stub returns one id), which demonstrates the absence of a cross-check but its stated purpose is bundle lines, not acceptance of a shortfall. - _Mechanism reproduces at HEAD; severity per §9 (a Booked booking with a missing hold is the double-booking precondition, and the queued replay may later be refused by the GiST silently). Correction to the auditor's framing: the test does not 'pin the gap as accepted behaviour' - it tests bundle-line reporting - but no test asserts reservation.units == planned units either._
 
@@ -2115,7 +2120,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 ## ISSUE-019 - MONEY-05 - A Draft invoice cannot receive a payment from the Record Payment modal: it resolves by number, and a Draft has none
 
 **Severity:** P1 _(refuter: CONFIRMED)_
-**Status:** PARTIAL IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
+**Status:** PARTIAL IMPLEMENTATION  |  **Current status:** FIXED_IN_TREE  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
 **Module:** Money (pricing, invoices, payments, deposits) _(derived from cluster)_  |  **Feature:** A Draft invoice cannot receive a payment from the Record Payment modal: it resolves by number, and a Draft has none
 **Affected Layers:** Frontend, Business Logic _(derived from locations)_
 **Prior art:** BUG-012 (QA_FULL_AUDIT); P0-1 second half
@@ -2131,7 +2136,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 **Actual Behavior:** Finance.tsx:871 hands the modal rows shaped `id: r.invoiceNo`; the modal's `invoiceId` state therefore holds a number and it dispatches `invoiceNo: invoiceId` (RecordPaymentModal.tsx:322). recordPayment.ts:204-219 accepts invoiceId, but no caller passes it (git grep at HEAD: the action and its test only). After 0086 a Draft's invoice_no is NULL, so the row has no key and the resolve fails 'No invoice numbered … exists' for the whole rental; before 0086 createInvoice itself fails (MONEY-01), so the path is closed at both ends. SPEC-P0-1 §3.5's 'RecordPaymentModal — no change needed to recordPayment' is true of the action and false of the modal.
 
-**Evidence:** The three files at the cited lines at HEAD; positive control: recordPayment has 10 importers, RecordPaymentModal among them.
+**Evidence:** The three files at the cited lines at HEAD; positive control: recordPayment has 10 importers, RecordPaymentModal among them. STATUS UPDATE (2026-09-07): UNTOUCHED -> FIXED_IN_TREE. Commit 76e277b. Finance, Payments and Booking Detail now hand RecordPaymentModal {id, invoiceNo}; it dispatches invoiceId and shows 'Draft (no number)' for an unnumbered invoice, so the advance SPEC-P0-1 §5 expects against a Draft can be recorded. Number lookup survives only for a typed reference. Booking Detail also becomes an invoice entry point under R-01, which is a screen-level choice and not part of §4.46.
 
 **Refuter's independent evidence (CONFIRMED):** HEAD Finance.tsx:868-875 `modalInvoices = list.rows.map(r => ({ id: r.invoiceNo, … booking: r.bookingNo }))` with a TODO(decision) admitting the number-vs-uuid mismatch; RecordPaymentModal.tsx:62 seeds state from invoices[].id, :320-322 `recordPayment({ invoiceNo: invoiceId, … })`; recordPayment.ts:86-102 accepts invoiceId OR invoiceNo, :204-219 resolves by id when given, else `.eq('invoice_no', …)`. InvoiceListRow (src/lib/queries/finance.ts:231-232) already carries `id: string` (the uuid) — the material for the fix exists and is unused. Same defect in the two other callers: BookingDetail.tsx:2861 `id: inv.invoiceNo` and Payments.tsx:611 `id: r.invoiceNo`. Live: invoices.invoice_no is NOT NULL today, so a numberless Draft cannot exist until 0086 lands — latent until MONEY-01. Positive control: recordPayment has 18 importers at HEAD. Ruling check: R-15 (no number on a Draft) and R-02 (Draft for the whole rental) make this path the only way to take an advance, so it is contrary to ruling, not deliberate. - _Confirmed and widened: all three RecordPaymentModal callers (Finance, Booking Detail, Payments) pass the invoice number, not only Finance. The action half (invoiceId) is already committed; the modal/caller half is untouched. Depends on MONEY-01/0086 to become reachable; P1 stands because under R-02 every invoice is a Draft for the whole rental._
 
@@ -2172,7 +2177,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 ## ISSUE-020 - MONEY-13 - 'Outstanding = 0' is vacuously true for a rental that was never billed, so the money gates on handover and close pass on an un-invoiced booking
 
 **Severity:** P1 _(refuter: CONFIRMED)_
-**Status:** DATA INTEGRITY RISK  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
+**Status:** DATA INTEGRITY RISK  |  **Current status:** FIXED_IN_TREE  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
 **Module:** Money (pricing, invoices, payments, deposits) _(derived from cluster)_  |  **Feature:** 'Outstanding = 0' is vacuously true for a rental that was never billed, so the money gates on handover and close pass on an un-invoiced booking
 **Affected Layers:** Business Logic, Database _(derived from locations)_
 **Prior art:** P1-14; SPEC-P0-1 §2.3
@@ -2189,7 +2194,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 **Actual Behavior:** Both the trigger and closeRental sum invoices.outstanding_amount over zero rows → 0 → the gate passes; SPEC-P0-1 §2.3 names this for handover and moves the warning into handoverRental (0090 draft), but the Closed branch and closeRental keep the vacuous sum; nothing distinguishes 'paid' from 'never billed'.
 
-**Evidence:** Function body read live; closeRental.ts at the cited lines; live 246 bookings and 0 invoices, so every booking passes today.
+**Evidence:** Function body read live; closeRental.ts at the cited lines; live 246 bookings and 0 invoices, so every booking passes today. STATUS UPDATE (2026-09-07): UNTOUCHED -> FIXED_IN_TREE. Commit b043587, app side only. The first close gate now requires an invoice whose status is neither Draft nor Void, so 'outstanding = 0' can no longer be satisfied by a rental that was never billed. A Draft's balance still counts toward outstanding (a working figure someone must settle or void is not nothing) but a Draft cannot stand in for a bill having been raised. The Owner override this issue's Option A recommended was deliberately NOT built: R-07 keeps the close gate a hard block and names no exception, R-06's named override belongs to the handover gate and explicitly only there, and R-08 rules who may confirm a close rather than what they may waive — so it is filed as PLAN §4.51 with both answers costed. The handover half of this issue is untouched: that money gate exists only in the trigger, and HandoverWorkspace's money checkboxes read nothing (OPS-06).
 
 **Refuter's independent evidence (CONFIRMED):** Live pg_get_functiondef(validate_booking_gates): both the On Rent and Closed branches use `select coalesce(sum(outstanding_amount), 0) … from invoices where booking_id = NEW.id and status not in ('Void')` and `coalesce(pending_amount, 0)` from security_deposits — an empty set reads as settled. Live counts: 246 bookings, 0 invoices, 0 security_deposits; 130 bookings are already at Returned and every one of them passes the money gates today. HEAD closeRental.ts:109-123 sums outstanding_amount over the booking's non-Void invoices with no empty-set check (grep for never-billed/length === 0 → none); its own header :37-41 calls the server half 'vacuous'. handoverRental.ts:38-44 only carries overrideReason through (:73). 0090 (draft, unapplied) turns handover into warn-with-reason and :42-44 leaves the Closed branch untouched. Ruling check: R-07 gates are 'outstanding 0 · deposit resolved · no open case · no pending damage charge' — no 'billed' gate exists in Foundation or the rulings; SPEC-P0-1 §2.3 names the paid-vs-never-billed confusion as a defect for handover and §3.5 prescribes a persistent un-invoiced prompt on Booking Detail rather than a close gate. So the close-side gap is unruled, not deliberate. - _Confirmed as filed; P1 stands under §9 (a rental closed unbilled is uncollected revenue). Note for the fix: the spec's chosen remedy is the §3.5 prompt plus a named refusal in the action, not a new trigger gate — adding 'invoice exists' to validate_booking_gates would need its own ruling since R-07 does not list it._
 
@@ -2754,7 +2759,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 ## ISSUE-029 - RL-05 - The Close gate's 'deposit resolved' tests uncollected deposit (pending_amount), not unreturned deposit, so a closed rental can keep the client's money forever
 
 **Severity:** P1 _(refuter: CONFIRMED)_
-**Status:** CONFIRMED BUG  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
+**Status:** CONFIRMED BUG  |  **Current status:** FIXED_IN_TREE  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
 **Module:** Rental lifecycle _(derived from cluster)_  |  **Feature:** The Close gate's 'deposit resolved' tests uncollected deposit (pending_amount), not unreturned deposit, so a closed rental can keep the client's money forever
 **Affected Layers:** Business Logic, Database _(derived from locations)_
 **Prior art:** QA BUG-010
@@ -2770,7 +2775,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 **Actual Behavior:** sync_deposit_balances sets pending_amount = greatest(0, required_amount − received_amount), i.e. what the client still owes, not what Cine Sewa still holds. Both closeRental.readCloseGates (depositResolved = pending sum === 0) and validate_booking_gates' Closed branch read pending_amount, so a deposit that was received in full and never refunded or applied passes the gate. closeRental's own comment at 126-128 states the correct rule ('refunded, applied, or never required') and the predicate below it tests the wrong column. 0090 restates the same predicate for Close. QA_FIX_PLAN FIX-6 is open and marked 'deliberately not fixed, unruled'; the Foundation text quoted above is the ruling.
 
-**Evidence:** 0010_triggers_functions.sql:230 'v_pending := greatest(0, v_required - v_received)'; live pg_get_functiondef(validate_booking_gates) Closed branch reads pending_amount; HEAD closeRental.ts:142-143,160; Foundation Specification.md:132 (md and photos/Babin Rentals OS/00 Getting Started). Live security_deposits: 0 rows, so latent until the first deposit is recorded.
+**Evidence:** 0010_triggers_functions.sql:230 'v_pending := greatest(0, v_required - v_received)'; live pg_get_functiondef(validate_booking_gates) Closed branch reads pending_amount; HEAD closeRental.ts:142-143,160; Foundation Specification.md:132 (md and photos/Babin Rentals OS/00 Getting Started). Live security_deposits: 0 rows, so latent until the first deposit is recorded. STATUS UPDATE (2026-09-07): UNTOUCHED -> FIXED_IN_TREE. Commit b043587, app side only. The gate read security_deposits.pending_amount, which sync_deposit_balances derives as greatest(required - received, 0) — 'not yet collected', not 'not yet given back'. It now reads received_amount, refunded_amount and applied_amount and gates on held = received - refunded - applied; pending_amount is gone from the file. CloseGateInput renames depositResolved: boolean to depositHeldPaisa: number so every call site faced the changed meaning. On SPEC-P0-2 §1, which lists this gate under 'Already live' and treats it as satisfied: that line is the misreading — Foundation §1.7 gate 2, carried by R-00, is 'refunded, forfeited, or applied', which is what is held. The seed corpus had the same fault and was corrected: 16 Closed demo bookings received deposits and emitted no Released movement. CONSEQUENCE: nothing in the app writes a Released or Applied deposit_movements row, so a held deposit now blocks Close with no exit path until MONEY-10 lands; the refusal string says so explicitly and carries a TODO naming MONEY-10. The trigger still reads pending_amount — this is one of two layers.
 
 **Refuter's independent evidence (CONFIRMED):** Live pg_get_functiondef(sync_deposit_balances): `v_pending := greatest(0, v_required - v_received)` — pending means not-yet-collected; refunded_amount/applied_amount are tracked separately and never enter pending. Live validate_booking_gates Closed branch: `select coalesce(pending_amount,0) ... if v_deposit_pending > 0 then raise`. HEAD closeRental.ts:130-132 selects pending_amount, :142-143 sums it, :160 `depositResolved: depositPendingPaisa === 0`. HEAD 0090:140-146 carries the same Closed branch unchanged. Ruling text: Foundation Specification.md:49 (COMPLETE/01 Spec Pack, also ARCHIVE copy) 'Closed means the invoice is settled and the deposit refunded or applied'; RULINGS R-00 table carries the four close gates forward and R-07 keeps Close a hard block. Live security_deposits: 0 rows; deposit_movements trigger trg_sync_deposit_movements is the only writer of pending_amount. - _Reproduced: a deposit with required = received (pending 0) and refunded = applied = 0 passes both the app gate and the trigger, though Foundation §1.7 defines resolved as refunded-or-applied. Latent on an empty table; §9 'lost deposit' keeps it P1 because the first real deposit triggers it. The auditor's Foundation citation should read line 49 (§1.2 'Completed vs Closed'), not 132._
 
@@ -3277,7 +3282,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 ## ISSUE-037 - DB-02 - bookings.stage, closed_at and booking_no remain directly writable by every bookings_update role — 0021's column REVOKE is inert because the table-level UPDATE grant still stands
 
 **Severity:** P1 _(refuter: CONFIRMED)_
-**Status:** DATA INTEGRITY RISK  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
+**Status:** DATA INTEGRITY RISK  |  **Current status:** DRAFTED_UNAPPLIED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
 **Module:** Database (Supabase/Postgres) _(derived from cluster)_  |  **Feature:** bookings.stage, closed_at and booking_no remain directly writable by every bookings_update role — 0021's column REVOKE is inert because the table-level UPDATE grant still stands
 **Affected Layers:** Business Logic, Database _(derived from locations)_
 **Prior art:** DB-05 / P1-11 (FULL_SYSTEM_AUDIT_2026-09-03); BUG-014, BUG-016 (QA_FULL_AUDIT_REPORT)
@@ -3300,7 +3305,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 **Actual Behavior:** Live: has_column_privilege('authenticated','bookings','stage','UPDATE') = true, likewise closed_at, booking_no, and stage for INSERT; 28 of 28 columns carry an UPDATE grant; bookings_update admits Owner/Admin/Manager/Coordinator/Warehouse with no WITH CHECK and bookings_insert has no WITH CHECK on stage or closed_at. Any of those roles can PATCH /rest/v1/bookings?id=eq.X {"stage":"Closed","closed_at":"now"} or clear closed_at, or POST a booking already Closed, skipping next_booking_stage, the causal-order check, Closed-is-final, the transition row and (once 0090 lands) the R-06 override record. The only trigger in the way, validate_booking_gates, compares 0 > 0 while invoices and security_deposits are empty.
 
-**Evidence:** Role simulation as Warehouse (00000000-…-0103) on live 5 Sep: stage_upd=true, closed_at_upd=true, booking_no_upd=true, stage_ins=true. Grants query: bookings a_upd=true, a_upd_cols=28, ncols=28. pg_policies bookings_update qual only, bookings_insert WITH CHECK role list only. 0021:199 'revoke update (stage, closed_at) on bookings from authenticated'. 0062:47-48 shows the pattern that works ('revoke select on bookings from authenticated; grant select (…)'). pg_default_acl: authenticated=arwdDxtm on every new table.
+**Evidence:** Role simulation as Warehouse (00000000-…-0103) on live 5 Sep: stage_upd=true, closed_at_upd=true, booking_no_upd=true, stage_ins=true. Grants query: bookings a_upd=true, a_upd_cols=28, ncols=28. pg_policies bookings_update qual only, bookings_insert WITH CHECK role list only. 0021:199 'revoke update (stage, closed_at) on bookings from authenticated'. 0062:47-48 shows the pattern that works ('revoke select on bookings from authenticated; grant select (…)'). pg_default_acl: authenticated=arwdDxtm on every new table. STATUS UPDATE (2026-09-06): UNTOUCHED -> DRAFTED_UNAPPLIED. Commit 3194b11 added supabase/migrations/0094_stage_is_written_only_by_its_transition.sql: two guards on bookings exempting only postgres/supabase_admin/service_role, so stage and closed_at may change only from inside apply_booking_stage_transition (SECURITY DEFINER, so current_user is the evidence and no session variable is involved), cancelled_at/cancelled_by/cancellation_reason are equally guarded, and an INSERT must start at Quote with no closed_at and no cancelled_at. An adversarial pass over that file found the closed_at INSERT hole before it shipped. Unapplied like every draft; the live column privilege is unchanged.
 
 **Refuter's independent evidence (CONFIRMED):** Live: has_column_privilege('authenticated','bookings',col,'UPDATE') = true for stage, closed_at, booking_no; stage INSERT = true; information_schema.table_privileges for authenticated on bookings = INSERT,UPDATE,TRUNCATE,REFERENCES,TRIGGER (only SELECT was table-revoked, by 0062); column_privileges UPDATE count 28 = column count 28. pg_policies live: bookings_update qual is the five-role list only; bookings_insert with_check is the five-role list only (no stage predicate). Live triggers on bookings: trg_audit_bookings, trg_booking_gate_check, trg_bookings_reject_delete — no stage-immutability trigger (0002:104-105 'TRIGGER REQUIRED: stage may never be written directly' unbuilt). validate_booking_gates' Closed branch reads only invoices (0 rows) and security_deposits.pending_amount (0 rows > 0 live), so a direct stage='Closed' passes. HEAD 0021:199 `revoke update (stage, closed_at) on bookings from authenticated;` under a comment asserting it is 'enforced by the column REVOKE below'. Drafts 0079-0092 grep: no bookings stage/booking_no guard. Postgres REVOKE semantics: a column-level revoke cannot subtract from a table-level grant. No ruling in RULINGS-2026-09-04 / PHASE-0-PLAN / SPEC-P0-* makes this deliberate. - _Stands as filed; §9 (wrong return status via a booking marked Closed or reopened without a transition row) keeps it P1._
 
@@ -3417,7 +3422,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 ## ISSUE-039 - RL-06 - The damage-charge close gate is hardcoded to 0 while damage_findings are now written at Return and Reset, and the database gate has no case or damage branch at all
 
 **Severity:** P1 _(refuter: CONFIRMED)_
-**Status:** PARTIAL IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
+**Status:** PARTIAL IMPLEMENTATION  |  **Current status:** FIXED_IN_TREE  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
 **Module:** Rental lifecycle _(derived from cluster)_  |  **Feature:** The damage-charge close gate is hardcoded to 0 while damage_findings are now written at Return and Reset, and the database gate has no case or damage branch at all
 **Affected Layers:** Business Logic, Database _(derived from locations)_
 **Prior art:** SPEC-P0-2 §3 / PHASE-0 4.4
@@ -3433,7 +3438,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 **Actual Behavior:** closeRental returns damageChargesPendingApproval: 0 unconditionally, with a comment claiming 'nothing in the app writes it yet' and 'no query could return a real number'. Both claims are stale: floorVerb.writeDamageFindings (Return, since 3 Sep, BUG_AUDIT RT-02) and completeResetQueue (Reset, RS-03) insert damage_findings with approval_state defaulting to 'Pending Approval', and a booking join exists on both parents — return_lines.session_id → operation_sessions.booking_id, and cleaning_queue_entries.booking_id directly. The case gate is read only in the app (cases.linked_booking_id); validate_booking_gates has no branch for either, and 0084 is not written. Live counts are 0 findings / 0 cases, so the gap is latent, but the writer exists at HEAD.
 
-**Evidence:** HEAD closeRental.ts:177 'damageChargesPendingApproval: 0'; floorVerb.ts:1208 idempotentInsert('damage_findings', …) and :1569; live information_schema.columns: return_lines has session_id, cleaning_queue_entries has booking_id, damage_findings has return_line_id/cleaning_queue_entry_id/approval_state; live validate_booking_gates body has only the money branches; ls supabase/migrations shows no 0084.
+**Evidence:** HEAD closeRental.ts:177 'damageChargesPendingApproval: 0'; floorVerb.ts:1208 idempotentInsert('damage_findings', …) and :1569; live information_schema.columns: return_lines has session_id, cleaning_queue_entries has booking_id, damage_findings has return_line_id/cleaning_queue_entry_id/approval_state; live validate_booking_gates body has only the money branches; ls supabase/migrations shows no 0084. STATUS UPDATE (2026-09-07): UNTOUCHED -> FIXED_IN_TREE. Commit b043587, app side only. The hardcoded damageChargesPendingApproval: 0 is replaced by a parent-first read, never an embed: operation_sessions by booking_id -> return_lines by session_id -> damage_findings by return_line_id, and cleaning_queue_entries by booking_id -> damage_findings by cleaning_queue_entry_id, both filtered approval_state = 'Pending Approval' and voided_at is null, with empty parent lists short-circuiting. Every read throws with its table named so a broken read can never read as 'gate passes'. CONSEQUENCE: nothing sets damage_findings.approval_state = 'Approved' (floorVerb only inserts), so a pending finding now blocks Close with no exit path; the refusal says so and carries a TODO naming FORMS-05. The database gate has no damage branch at all — this is one of two layers.
 
 **Refuter's independent evidence (CONFIRMED):** HEAD closeRental.ts:177 `damageChargesPendingApproval: 0`; its justification at :163-165 ('nothing in the app writes it yet') is false at HEAD: floorVerb.ts:1201-1222 writeDamageFindings inserts damage_findings with source 'Return inspection' (fed by ReturnWorkspace.tsx:325-349, which builds `damage` for every serialised unit marked Damaged or Lost) and floorVerb.ts:1568-1579 inserts source 'Cleaning' from Reset. Live damage_findings.approval_state default = 'Pending Approval', so every written finding starts pending; damage_findings has return_line_id/cleaning_queue_entry_id/unit_id (CHECK exactly_one_parent), return_lines.session_id → operation_sessions.booking_id and cleaning_queue_entries.booking_id give a booking path. Live validate_booking_gates body contains only the two money branches (no case, no damage); supabase/migrations at HEAD has no 0084. SPEC-P0-2 §3 and PHASE-0 4.4 both require the gate; RULINGS R-00 lists 'no pending damage charge' as a close gate. closeRental committed 58846c3 (4 Sep), the Return writer landed the same day in a different commit. - _Confirmed as filed: the app gate is a constant and the database gate has no damage/case branch while both writers are live at HEAD. §9 'missing damage charge' → P1; latent only while damage_findings is empty (0 rows live)._
 
@@ -3835,7 +3840,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 **Evidence:** `git grep planCreationUnits HEAD -- src` → the definition at availability.ts:554 and two comments in bundleRecords.ts (positive control: `planAssignment` finds confirmRental.ts:8 and :435); `git grep -E 'units:|planCreationUnits' HEAD -- src/modules/rentals/NewRental.tsx` → 0; live booking_line_units 0 rows although 0071 is applied. QA_FULL_AUDIT_REPORT:79-83 reached the same conclusion on 5 Sep.
 
-**Refuter's independent evidence (CONFIRMED):** `git grep -n planCreationUnits HEAD -- src` -> availability.ts:554 (definition) + bundleRecords.ts:35,:237 (comments only); positive control `git grep planAssignment HEAD -- src` -> confirmRental.ts:8,:435 + test. `git grep -E 'units:|planCreationUnits' HEAD -- src/modules/rentals/NewRental.tsx` -> 0; HEAD NewRental.tsx:2530-2542 maps lines with clientUuid/lineType/productId/qty/days/rate/sortOrder and no units. createRental.ts:145 accepts `units?`, :519-521 forwards `line.units ?? []`, so the RPC branch is reachable but never fed. rankLeastUsed's only call is availability.ts:588 inside planCreationUnits, so the 27 Jul least-used rotation never executes. D5 verified at docs/booqable/REFERENCE_SPEC_v2.5.md:1411-1412: 'create_booking(jsonb) is called WITH units per line ... Pack confirms/swaps what creation assigned' - the unit-less fallback is conditioned on a bridge sync gap, but §4.30(a) made inventory_reservations OS-owned (dataAccess.ts:294-325) so availability IS locally readable, and the fallback's second half (Pack fills) has no code (floorVerb never inserts booking_line_units). createRental.ts:139-142 still cites the stale 'Booqable-mastered' reason. Live: booking_line_units 0 rows with 0071 applied. Tree check: NewRental.tsx:27 now imports readProductAvailability but still has no `units:` (grep 0), so the uncommitted work does not wire D5 either. - _Stands as filed; QA_FULL_AUDIT_REPORT:79-83 reached the same conclusion independently. Sequence with INV-04: wiring units[] without an overlap defence on booking_line_units arms the hole._
+**Refuter's independent evidence (CONFIRMED):** `git grep -n planCreationUnits HEAD -- src` -> availability.ts:554 (definition) + bundleRecords.ts:35,:237 (comments only); positive control `git grep planAssignment HEAD -- src` -> confirmRental.ts:8,:435 + test. `git grep -E 'units:|planCreationUnits' HEAD -- src/modules/rentals/NewRental.tsx` -> 0; HEAD NewRental.tsx:2530-2542 maps lines with clientUuid/lineType/productId/qty/days/rate/sortOrder and no units. createRental.ts:145 accepts `units?`, :519-521 forwards `line.units ?? []`, so the RPC branch is reachable but never fed. rankLeastUsed's only call is availability.ts:588 inside planCreationUnits, so the 27 Jul least-used rotation never executes. D5 verified at docs/booqable/REFERENCE_SPEC_v2.5.md Appendix A0, ruling D5: 'create_booking(jsonb) is called WITH units per line ... Pack confirms/swaps what creation assigned' - the unit-less fallback is conditioned on a bridge sync gap, but §4.30(a) made inventory_reservations OS-owned (dataAccess.ts:294-325) so availability IS locally readable, and the fallback's second half (Pack fills) has no code (floorVerb never inserts booking_line_units). createRental.ts:139-142 still cites the stale 'Booqable-mastered' reason. Live: booking_line_units 0 rows with 0071 applied. Tree check: NewRental.tsx:27 now imports readProductAvailability but still has no `units:` (grep 0), so the uncommitted work does not wire D5 either. - _Stands as filed; QA_FULL_AUDIT_REPORT:79-83 reached the same conclusion independently. Sequence with INV-04: wiring units[] without an overlap defence on booking_line_units arms the hole._
 
 **Business Impact:** The removable serial-chip workflow staff use in Booqable today (spec §10.2) does not exist here; a coordinator cannot promise a specific body at quote time, and the least-used-unit wear rotation the owner locked on 27 Jul never happens.
 
@@ -4075,7 +4080,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-# P2 - 68 issues
+# P2 - 70 issues
 
 ## ISSUE-049 - ARCH-01 - Three private stage-to-colour maps still carry the v4.0 palette: On Rent paints green beside the engine's orange chip on the same row
 
@@ -5008,10 +5013,67 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-063 - DB-06 - number_sequences has no 'transfer' row while createStockTransfer (implemented: true, dispatched from the Transfer Center) mints from it — every stock transfer on live fails; five more NOT NULL UNIQUE *_no columns have no sequence
+## ISSUE-063 - DATA-17 - The live corpus is hollow past Packed: 200 of 246 bookings carry no lines and every floor table is empty, so Return and Reset have nothing to render on production
+
+**Severity:** P2
+**Status:** DATA INTEGRITY RISK  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** INDEPENDENT
+**Module:** Data connection (screen to table) _(derived from cluster)_  |  **Feature:** The live corpus is hollow past Packed: 200 of 246 bookings carry no lines and every floor table is empty, so Return and Reset have nothing to render on production
+**Affected Layers:** Database _(derived from locations)_
+**Prior art:** AUDIT_VERIFICATION_2026-09-06 §2.3 (same measurement, independently reproduced)
+
+**Location:**
+- `live:bookings x booking_lines` 246 bookings, 46 with lines
+- `live:operation_sessions / packing_lines / handover_lines / return_lines / booking_line_units` 0 rows each
+
+**Description / Root Cause:** SYMPTOM: a production database whose history is stages without substance. TRACE: the import mapped Booqable orders to bookings and wrote stage directly (the same direct-write path DB-02/SEC-06 documents), then stopped: it did not create the line rows for fulfilled orders, and the floor verbs that would have produced session rows have never run on production. ROOT CAUSE: the import was built to land the master data and the booking headers, and the audit and the roadmap have both been reading stage as evidence that a lifecycle happened. It did not.
+
+**Expected Behavior:** A booking that reached Returned or Closed carries the lines it was fulfilled from and the session rows that record the floor work, so Return, Reset, Booking Detail and every report can reconstruct what happened.
+
+**Actual Behavior:** Lines exist only for Booked (30 bookings, 60 lines) and Packed (16, 32). Returned (130), Closed (60), On Rent (3) and Quote (7) carry zero booking_lines — 200 of 246 bookings. Every floor table is empty: operation_sessions, packing_lines, handover_lines, return_lines and booking_line_units all hold 0 rows. The stages were written directly by the Booqable import, which is why they exist without the work that produces them.
+
+**Evidence:** Live, 6 Sep 2026 (read-only): per-stage counts of bookings, bookings with at least one booking_lines row, and total lines — Booked 30/30/60, Packed 16/16/32, Returned 130/0/0, Closed 60/0/0, On Rent 3/0/0, Quote 7/0/0; select count(*) on operation_sessions, packing_lines, handover_lines, return_lines, booking_line_units -> 0 each. Independently reproduced from the other session's AUDIT_VERIFICATION_2026-09-06 §2.3, which reports the same six rows.
+
+**Business Impact:** Opening any of the 190 Returned or Closed bookings shows a rental with no equipment on it, so no past job can be inspected, disputed or re-quoted from the system. It also removes the safety net the roadmap assumed: there is no production data against which a Return or Reset fix can be tried, because those screens have nothing to list. Pack is the exception and IS runnable — 30 Booked bookings with 60 lines — which makes it the right first floor verb to exercise after Step 0.
+
+**Technical Impact:** Every claim of the form "the floor loop works on live" is unfalsifiable: the screens render empty for a reason unrelated to the defect being tested. It also means INV-02's quantity-hold work cannot be validated against historical data, and any report that joins bookings to lines silently reports zero for 81% of the corpus.
+
+**Affected Workflows:** Every routed screen _(derived from cluster)_
+
+**Reproduction:** 1. Sign in to production and open any booking at stage Returned or Closed. 2. The lines table is empty and the floor tabs list nothing. 3. Confirm at the database: select b.stage, count(*), count(*) filter (where exists (select 1 from booking_lines where booking_id = b.id)) from bookings b group by 1.
+
+**Fix Options:**
+
+- **Option A - State it, and stop reading stage as history.** Do not backfill. Record in PROGRESS.md and the import documentation that stage on imported bookings is a header fact, not evidence of a lifecycle, and mark the 190 line-less bookings in the UI as imported-without-lines (the NotTracked pattern Calendar and Settings already use) so an operator opening one sees why it is empty rather than assuming data loss.
+  - Scope: `PROGRESS.md`, `docs/booqable/*`, `src/modules/rentals/BookingDetail.tsx`
+  - Pros: No invented data; Honest about what the import did; Cheap
+  - Cons: Past jobs stay uninspectable; Reports still read zero for 81% of bookings
+
+- **Option B - Backfill lines from Booqable through the typed bridge.** Extend the import to fetch each order's line items and write booking_lines for the imported bookings, using external_refs for idempotency (DEL-06 already proposes retiring the SQL generators for the typed bridge — do this as part of that work, not before it). Do not fabricate session rows: the floor work genuinely did not happen in this system, and inventing operation_sessions would be worse than an empty tab.
+  - Scope: `scripts/import-orders.mjs`, `src/lib/booqable/map/orders.ts`, `src/lib/booqable/sync.ts`
+  - Pros: Past jobs become inspectable; Reports reconcile against the real history; Uses the bridge that already exists
+  - Cons: Depends on DEL-06 and on Booqable still serving the order lines; Law 3 makes a wrong backfill permanent; Needs Step 0 first
+
+| Option | Effort | Risk | Long-Term Quality | Performance | Recommended |
+|---|---|---|---|---|---|
+| A | LOW | LOW | MEDIUM | LOW | YES |
+| B | HIGH | MEDIUM | HIGH | MEDIUM |  |
+
+**Recommended:** Option A  |  **Why:** Data safety and business correctness both point away from writing 200 bookings' worth of derived rows into a production database that has no verified backup (DEL-01) and forbids deletion (Law 3). A is honest, immediate and reversible; B is the right end state but belongs after Step 0 and inside DEL-06's bridge work, where the idempotency and the mapping are already being built. Choosing B first would be exactly the "fix the symptom with a script" pattern the importer hazard (DEL-06) already produced once.
+
+**Complexity:** LOW  |  **Risk:** LOW  |  **Estimated Scope:** `PROGRESS.md`, `docs/booqable/*`, `src/modules/rentals/BookingDetail.tsx`
+
+**Regression Risk:** Past jobs stay uninspectable; Reports still read zero for 81% of bookings _(from the recommended option's cons)_
+
+**Verification:** A: opening a Returned booking on production shows an explicit "imported without lines" state naming the import, not an empty table; a report over bookings joins states the same. B (later): after the backfill, count of Returned/Closed bookings with at least one line equals the count Booqable reports order lines for, and a second run of the importer writes nothing (external_refs idempotency).
+
+**Production Blocker:** NO
+
+---
+
+## ISSUE-064 - DB-06 - number_sequences has no 'transfer' row while createStockTransfer (implemented: true, dispatched from the Transfer Center) mints from it — every stock transfer on live fails; five more NOT NULL UNIQUE *_no columns have no sequence
 
 **Severity:** P2 _(filed P1; refuter: RESTATED)_
-**Status:** MISSING FEATURE  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
+**Status:** MISSING FEATURE  |  **Current status:** DRAFTED_UNAPPLIED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
 **Module:** Database (Supabase/Postgres) _(derived from cluster)_  |  **Feature:** number_sequences has no 'transfer' row while createStockTransfer (implemented: true, dispatched from the Transfer Center) mints from it — every stock transfer on live fails; five more NOT NULL UNIQUE *_no columns have no sequence
 **Affected Layers:** Frontend, Business Logic, Database _(derived from locations)_
 **Prior art:** DB-13 (FULL_SYSTEM_AUDIT_2026-09-03, the 'missing transfer key' part)
@@ -5031,7 +5093,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 **Actual Behavior:** Live number_sequences holds ten keys (booking, bundle, client, deposit, equipment, expense, invoice, membership, payment, quote); next_document_number raises 'Number sequence transfer does not exist' on the first call and the action surfaces it inline — no transfer is ever written. Also without a sequence: charges.charge_no (CHECK '^CHG-[0-9]{4}-[0-9]{4}$'), cases.case_no (CHECK '^CASE-[0-9]{4}-[0-9]{4}$'), payment_reversals.reversal_no, expense_reversals.reversal_no, purchase_requests.pr_no — none has a create action at HEAD, so those are latent; the two CHECK formats bake a year into the number, which R-00/R-18 (sequences never reset) cannot honour.
 
-**Evidence:** number_sequences rows on live 5 Sep; git grep -o "p_sequence_key: '…'" HEAD -- src (non-test): client, payment, bundle, equipment, transfer, expense; createStockTransfer.ts:164 implemented: true; Warehouses.tsx:797 dynamic import; positive control: createClient importers in src/modules found; pg_constraint cases_no_format, charges_no_format.
+**Evidence:** number_sequences rows on live 5 Sep; git grep -o "p_sequence_key: '…'" HEAD -- src (non-test): client, payment, bundle, equipment, transfer, expense; createStockTransfer.ts:164 implemented: true; Warehouses.tsx:797 dynamic import; positive control: createClient importers in src/modules found; pg_constraint cases_no_format, charges_no_format. STATUS UPDATE (2026-09-07): UNTOUCHED -> DRAFTED_UNAPPLIED. 0089 (commit b4c4822) seeds the missing 'transfer' sequence with prefix TRF- from the registry enum, using on conflict (sequence_key) do nothing so a ruling that prefers another prefix seeds its row first and this insert steps aside. No stock_transfers row exists on live or in a rebuild, so nothing would be renumbered. The prefix choice is recorded as open in PLAN §4.48(b). The refuter's correction stands: the 'five more sequences missing' half did not survive a census, and only the transfer key is actually minted by a routed action.
 
 **Refuter's independent evidence (RESTATED):** Live number_sequences keys: booking, bundle, client, deposit, equipment, expense, invoice, membership, payment, quote — no transfer. HEAD src/actions/inventory/createStockTransfer.ts:164 `implemented: true`, :269 rpc next_document_number p_sequence_key 'transfer' (the header's own TODO(decision) names the missing row and the TR-vs-TRF prefix); HEAD Warehouses.tsx:797 dynamic-imports it; HEAD App.tsx:305-306 routes Warehouses; live warehouses = 2 active. Positive control: createClient importers in src/modules found (AddClient.tsx, ClientDetail.tsx, ImportCenter.tsx). Live census of NOT NULL + UNIQUE `*_no` columns with no sequence key: 18 (rule_no, backup_no, batch_no, case_no, charge_no, crew_booking_no, movement_no, document_no, expense_reversals.reversal_no, record_no, message_no, notification_no, payment_reversals.reversal_no, pr_no, audit_no, transfer_no, entry_no, timesheet_no). Of those, at HEAD only transfer_no has an app writer; movement_no/reversal_no are minted by the offline Booqable mapper from its own ctx maps (map/payments.ts:938, :1154); cases_no_format (^CASE-[0-9]{4}-[0-9]{4}$) and charges_no_format (^CHG-…) exist with no writer. createStockTransfer writes only stock_transfers + stock_transfer_lines (product_units at :245 is a lookup) — it moves no unit. - _Corrected claim: the transfer half stands — number_sequences has no 'transfer' row while a routed, implemented action mints from it, so every Transfer Center create on live fails with the named error. The 'five more' half does not survive a census: 18 NOT NULL UNIQUE *_no columns lack a sequence and only transfer_no has a writer at HEAD, so the others are schema debt, not broken features. Severity P2 by §5: the refusal is loud and named (Law 12), the action moves no inventory so nothing is mis-recorded, and transfers sit outside the PHASE-0-PLAN path; §9 does not apply._
 
@@ -5071,7 +5133,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-064 - DB-07 - src/types/supabase.ts is the 11 Aug schema — 3 tables, 6 views, 7 columns, 1 nullability and 1 function behind live — 22 write sites cast 'as never' past it, and npm run db:types is pointed at the hand-written vocabulary file
+## ISSUE-065 - DB-07 - src/types/supabase.ts is the 11 Aug schema — 3 tables, 6 views, 7 columns, 1 nullability and 1 function behind live — 22 write sites cast 'as never' past it, and npm run db:types is pointed at the hand-written vocabulary file
 
 **Severity:** P2
 **Status:** TECHNICAL DEBT  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
@@ -5134,7 +5196,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-065 - ARCH-02 - Status vocabularies are hand-declared in four layers with no conformance check: the unit-status union shares three of ten labels with the live enum, and job, damage and client-facing states have different names per layer
+## ISSUE-066 - ARCH-02 - Status vocabularies are hand-declared in four layers with no conformance check: the unit-status union shares three of ten labels with the live enum, and job, damage and client-facing states have different names per layer
 
 **Severity:** P2
 **Status:** ARCHITECTURAL PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
@@ -5199,7 +5261,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-066 - DB-08 - The live ledger and the migrations directory cannot be reconciled mechanically: seven ledger names differ from filenames, a 20-table bakery_archive schema and two hand-altered NOT VALID checks exist with no file, and the planned 0081–0084 were never written
+## ISSUE-067 - DB-08 - The live ledger and the migrations directory cannot be reconciled mechanically: seven ledger names differ from filenames, a 20-table bakery_archive schema and two hand-altered NOT VALID checks exist with no file, and the planned 0081–0084 were never written
 
 **Severity:** P2 _(filed P1; refuter: DOWNGRADED)_
 **Status:** DEPLOYMENT PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
@@ -5270,7 +5332,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-067 - DB-09 - Any staff role can rewrite the document counters (number_sequences ALL policy) and burn numbers through next_document_number (EXECUTE for anon and authenticated, invoker rights) — sequence gaps and re-issue against the never-reset ruling
+## ISSUE-068 - DB-09 - Any staff role can rewrite the document counters (number_sequences ALL policy) and burn numbers through next_document_number (EXECUTE for anon and authenticated, invoker rights) — sequence gaps and re-issue against the never-reset ruling
 
 **Severity:** P2
 **Status:** SECURITY RISK  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
@@ -5346,7 +5408,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-068 - DB-10 - 194 TRIGGER REQUIRED invariants in the migrations, 40 triggers live (the declared set is fully present) — the engine's own comments name the unbuilt ones it depends on
+## ISSUE-069 - DB-10 - 194 TRIGGER REQUIRED invariants in the migrations, 40 triggers live (the declared set is fully present) — the engine's own comments name the unbuilt ones it depends on
 
 **Severity:** P2 _(filed P1; refuter: DOWNGRADED)_
 **Status:** ARCHITECTURAL PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -5413,7 +5475,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-069 - DB-11 - No migration states base-table grants for authenticated, anon or service_role; live runs on Supabase's default ACL, so check:rebuild's scratch database has an app that cannot read
+## ISSUE-070 - DB-11 - No migration states base-table grants for authenticated, anon or service_role; live runs on Supabase's default ACL, so check:rebuild's scratch database has an app that cannot read
 
 **Severity:** P2
 **Critic proposes:** P1 (filed P2) - §38: as the root of DB-02 (P1), SEC-04 (P1) and the DB-13 blind spot, the implicit grant contract cannot be rated below the defects it produces; the P2 downgrade rationale ('a real restore target carries the same default ACL') is exactly the problem. _(not applied: reported per Spec 25, decided in the roadmap notes)_
@@ -5477,7 +5539,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-070 - DB-12 - anon holds INSERT/UPDATE/SELECT grants on every public table by default ACL and every policy but two is declared TO public — RLS predicates are the only lock, and one 'with check (true)' already admits anonymous audit rows
+## ISSUE-071 - DB-12 - anon holds INSERT/UPDATE/SELECT grants on every public table by default ACL and every policy but two is declared TO public — RLS predicates are the only lock, and one 'with check (true)' already admits anonymous audit rows
 
 **Severity:** P2
 **Critic proposes:** P1 (filed P2) - §38 root-carries-severity: DB-12 is filed as rootFor BUG-004 (= SEC-02, P1, anonymous audit forgery); verified live that anon still holds table-level SELECT (anon=arwDxtm) on the tables 0062 armed only for authenticated, so RLS is the sole lock on every money column for the anon key. _(not applied: reported per Spec 25, decided in the roadmap notes)_
@@ -5541,7 +5603,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-071 - DEL-03 - CI has never run — the repository has no remote — and the workflow omits lint, the ledger check and any database gate
+## ISSUE-072 - DEL-03 - CI has never run — the repository has no remote — and the workflow omits lint, the ledger check and any database gate
 
 **Severity:** P2
 **Status:** DEPLOYMENT PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** ROOT ISSUE
@@ -5601,7 +5663,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-072 - DEL-04 - No hosting target — three deploy configs coexist and disagree on shell caching, and the only build on disk cannot reach the live project
+## ISSUE-073 - DEL-04 - No hosting target — three deploy configs coexist and disagree on shell caching, and the only build on disk cannot reach the live project
 
 **Severity:** P2
 **Status:** DEPLOYMENT PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** ROOT ISSUE
@@ -5663,7 +5725,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-073 - DEL-06 - The Booqable SQL importer hazard regenerates itself — the quarantine sits on one output file while both generators still emit the LIMIT 1 client and NOW() dates
+## ISSUE-074 - DEL-06 - The Booqable SQL importer hazard regenerates itself — the quarantine sits on one output file while both generators still emit the LIMIT 1 client and NOW() dates
 
 **Severity:** P2 _(filed P1; refuter: DOWNGRADED)_
 **Status:** DATA INTEGRITY RISK  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
@@ -5730,7 +5792,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-074 - FE-03 - Service-worker runtime cache: half the patterns are inert, the other half persist user-scoped money data across sign-ins for a week
+## ISSUE-075 - FE-03 - Service-worker runtime cache: half the patterns are inert, the other half persist user-scoped money data across sign-ins for a week
 
 **Severity:** P2
 **Status:** SECURITY RISK  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -5796,7 +5858,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-075 - FE-04 - Contrast fails on the surfaces the gate does not measure: muted ink on secondary surfaces and the cream canvas, input borders, placeholders, dark active-nav label
+## ISSUE-076 - FE-04 - Contrast fails on the surfaces the gate does not measure: muted ink on secondary surfaces and the cream canvas, input borders, placeholders, dark active-nav label
 
 **Severity:** P2
 **Status:** ACCESSIBILITY PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** INDEPENDENT
@@ -5856,7 +5918,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-076 - FE-05 - Responsive layer has no adopters and eight screens render 720-1020px tables on a phone
+## ISSUE-077 - FE-05 - Responsive layer has no adopters and eight screens render 720-1020px tables on a phone
 
 **Severity:** P2
 **Status:** PARTIAL IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -5920,7 +5982,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-077 - FE-06 - All five installable icons are one 470 KB JPEG declared as PNG/ICO, and iOS install meta is absent
+## ISSUE-078 - FE-06 - All five installable icons are one 470 KB JPEG declared as PNG/ICO, and iOS install meta is absent
 
 **Severity:** P2
 **Status:** DEPLOYMENT PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** INDEPENDENT
@@ -5979,7 +6041,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-078 - FE-07 - Two scanner implementations with different contracts, and a demo 'test scanning' strip ships in production
+## ISSUE-079 - FE-07 - Two scanner implementations with different contracts, and a demo 'test scanning' strip ships in production
 
 **Severity:** P2
 **Critic proposes:** P1 (filed P2) - §9: the demo 'tap a name to scan' strip in production lets a packer tick every unit without a scan — wrong inventory / return status — the same mechanism FE-01 carries at P1. _(not applied: reported per Spec 25, decided in the roadmap notes)_
@@ -6041,7 +6103,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-079 - FORMS-03 - Six full forms sit in front of implemented:false actions and fail on every submit, because no screen consults the action registry's flag
+## ISSUE-080 - FORMS-03 - Six full forms sit in front of implemented:false actions and fail on every submit, because no screen consults the action registry's flag
 
 **Severity:** P2
 **Status:** PARTIAL IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** ROOT ISSUE
@@ -6126,7 +6188,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-080 - FORMS-04 - Create Purchase Request fabricates a PR number, an equipment id and a BS date in local state; the row vanishes on reload and cannot be approved
+## ISSUE-081 - FORMS-04 - Create Purchase Request fabricates a PR number, an equipment id and a BS date in local state; the row vanishes on reload and cannot be approved
 
 **Severity:** P2
 **Status:** MOCK IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -6194,7 +6256,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-081 - FORMS-05 - Damage approval form approves and rejects in component state over a seed while damage_findings is live with an approval-rank policy
+## ISSUE-082 - FORMS-05 - Damage approval form approves and rejects in component state over a seed while damage_findings is live with an approval-rank policy
 
 **Severity:** P2
 **Status:** MOCK IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** ROOT ISSUE
@@ -6252,7 +6314,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-082 - FORMS-06 - Client inline edit saves to component state only; updateClient has no body although clients_update is live and the capability is mapped
+## ISSUE-083 - FORMS-06 - Client inline edit saves to component state only; updateClient has no body although clients_update is live and the capability is mapped
 
 **Severity:** P2
 **Status:** PARTIAL IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -6312,7 +6374,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-083 - FORMS-10 - Settings ▸ Branches ▸ Add Branch appends to local state and reports success; the branch code is minted on the page and nothing writes branches
+## ISSUE-084 - FORMS-10 - Settings ▸ Branches ▸ Add Branch appends to local state and reports success; the branch code is minted on the page and nothing writes branches
 
 **Severity:** P2
 **Status:** MOCK IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -6368,7 +6430,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-084 - FORMS-11 - The stock-transfer form cannot succeed on live: its warehouse pickers list four seed names the action resolves against a table holding two different ones, and the transfer sequence does not exist
+## ISSUE-085 - FORMS-11 - The stock-transfer form cannot succeed on live: its warehouse pickers list four seed names the action resolves against a table holding two different ones, and the transfer sequence does not exist
 
 **Severity:** P2
 **Critic proposes:** P1 (folded into DATA-04 + DB-06) (filed P2) - Same defect as DATA-16/DB-06 (no transfer can succeed); §4 P1. _(not applied: reported per Spec 25, decided in the roadmap notes)_
@@ -6430,7 +6492,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-085 - FORMS-12 - Daily Closing never reads its own closing back: after reload Approve is offered again for a signed day, and the variance reason the action accepts has no field
+## ISSUE-086 - FORMS-12 - Daily Closing never reads its own closing back: after reload Approve is offered again for a signed day, and the variance reason the action accepts has no field
 
 **Severity:** P2
 **Status:** PARTIAL IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -6489,7 +6551,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-086 - FORMS-15 - Nine dead enabled controls survive: seven Evidence bulk actions rendered from an array and both floor Print buttons
+## ISSUE-087 - FORMS-15 - Nine dead enabled controls survive: seven Evidence bulk actions rendered from an array and both floor Print buttons
 
 **Severity:** P2
 **Status:** CONFIRMED BUG  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -6548,7 +6610,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-087 - FORMS-20 - Create Invoice and Void Invoice are full forms whose primary buttons always refuse, and Finance gates issue rights with the void predicate instead of R-05's canIssueInvoice
+## ISSUE-088 - FORMS-20 - Create Invoice and Void Invoice are full forms whose primary buttons always refuse, and Finance gates issue rights with the void predicate instead of R-05's canIssueInvoice
 
 **Severity:** P2
 **Status:** PARTIAL IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -6611,7 +6673,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-088 - INV-04 - booking_line_units accepts the same physical unit on two overlapping bookings: create_booking writes it with no exclusion, no period and no overlap trigger, and Quote-time assignments are never reconciled with the Confirm reservation
+## ISSUE-089 - INV-04 - booking_line_units accepts the same physical unit on two overlapping bookings: create_booking writes it with no exclusion, no period and no overlap trigger, and Quote-time assignments are never reconciled with the Confirm reservation
 
 **Severity:** P2 _(filed P1; refuter: DOWNGRADED)_
 **Status:** DATA INTEGRITY RISK  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
@@ -6683,7 +6745,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-089 - INV-06 - planAssignment reports complete for a booking whose every line is product-less (Bundle, Service, Manual item, Sub-rental), so it reaches Booked holding nothing — reachable by RPC and import, not from New Rental at HEAD
+## ISSUE-090 - INV-06 - planAssignment reports complete for a booking whose every line is product-less (Bundle, Service, Manual item, Sub-rental), so it reaches Booked holding nothing — reachable by RPC and import, not from New Rental at HEAD
 
 **Severity:** P2
 **Status:** DATA INTEGRITY RISK  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -6741,7 +6803,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-090 - INV-08 - readHolds reads every live reservation in the database with no window filter and no limit, so PostgREST's silent 1000-row cap will drop holds from every plan once the table grows — and INV-07 means it only grows
+## ISSUE-091 - INV-08 - readHolds reads every live reservation in the database with no window filter and no limit, so PostgREST's silent 1000-row cap will drop holds from every plan once the table grows — and INV-07 means it only grows
 
 **Severity:** P2
 **Status:** PERFORMANCE PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -6801,10 +6863,10 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-091 - INV-09 - The New Rental picker answers availability from a present-tense product_units.status count that the OS never writes, raises a Critical that blocks Confirm on today's status for a future window, and paints every quantity product green before INV-02 refuses it
+## ISSUE-092 - INV-09 - The New Rental picker answers availability from a present-tense product_units.status count that the OS never writes, raises a Critical that blocks Confirm on today's status for a future window, and paints every quantity product green before INV-02 refuses it
 
 **Severity:** P2 _(filed P1; refuter: DOWNGRADED)_
-**Status:** CONFIRMED BUG  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
+**Status:** CONFIRMED BUG  |  **Current status:** FIXED_IN_TREE  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
 **Module:** Inventory & availability _(derived from cluster)_  |  **Feature:** The New Rental picker answers availability from a present-tense product_units.status count that the OS never writes, raises a Critical that blocks Confirm on today's status for a future window, and paints every quantity product green before INV-02 refuses it
 **Affected Layers:** Frontend, Business Logic _(derived from locations)_
 **Prior art:** INV-01
@@ -6820,7 +6882,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 **Actual Behavior:** itemCatalogue.equipmentResultsFrom counts unitsByState['In Stock'] and fabricates status 'In Stock' or 'On Rent' (:388); NewRental treats status !== 'In Stock' as an equipment conflict and a Critical that disables Confirm (:2084-2099) for a booking weeks out; a quantity product is always verdict 'available' ('N in stock · not unit-tracked', :373) and then hits INV-02.
 
-**Evidence:** Code at the cited lines; BUG_AUDIT_LIFECYCLE NR-09 is open; the other session's uncommitted src/lib/queries/productAvailability.ts names NR-09 as its reason and NewRental/AddItemPanel/itemCatalogue carry an 863-line uncommitted diff — none of it at HEAD, so at HEAD the defect stands.
+**Evidence:** Code at the cited lines; BUG_AUDIT_LIFECYCLE NR-09 is open; the other session's uncommitted src/lib/queries/productAvailability.ts names NR-09 as its reason and NewRental/AddItemPanel/itemCatalogue carry an 863-line uncommitted diff — none of it at HEAD, so at HEAD the defect stands. STATUS UPDATE (2026-09-06): UNTOUCHED -> FIXED_IN_TREE. Commit b1b74d3 landed lib/queries/productAvailability.ts and routed itemCatalogue.ts through it: the picker now answers for the booking's window through the same engine ('N of M free for these dates') instead of a present-tense product_units.status count. Verified at HEAD: itemCatalogue.ts:63 imports ProductWindowAvailability, :531-542 derive the verdict from unitsFree/unitsOwned. The 'paints every quantity product green' half is fixed differently and better than this issue proposed: productAvailability.ts:41-47 gives a product with no unit rows unitsOwned 0 and deliberately refuses to produce a verdict from products.total_quantity, so bulk stock now reads as 'not unit-tracked' rather than available. INV-02 (no quantity holds exist at all) is untouched and still blocks Confirm.
 
 **Refuter's independent evidence (DOWNGRADED):** HEAD itemCatalogue.ts:336-341 header admits 'Availability is present-tense ... does NOT consult the booking window'; :362-378 verdict from unitsByState['In Stock'] vs unitCountExcludingRetired, with tracked===0 -> 'available' (`${total} in stock · not unit-tracked`); :388 status fabricated as `free > 0 || tracked === 0 ? 'In Stock' : 'On Rent'`. NewRental.tsx:2082-2084 `conflictLines = lines.filter(l => l.status !== 'In Stock')` -> :2097-2101 Critical 'Equipment conflict' -> :2163 `critical` -> blocking notices (:2167-2178, and NR-10's fix makes confirmBlocked = blockingNotices.length > 0). product_units writers at HEAD: `git grep from('product_units') HEAD -- src` -> createStockTransfer.ts:244-248 only, a SELECT; no OS code writes product_units.status (positive control: booking_line_units safeUpdate at floorVerb:1336). Live: product_units 0 rows, so unitsByState is empty for all 204 products -> tracked===0 -> every product 'available'/'In Stock' -> the false-Critical half cannot fire on live today, and the green-then-refused half is INV-02's symptom. Confirm remains the arbiter (planAssignment + live GiST inventory_reservations_no_double_booking), so the picker's wrong verdict cannot itself create a double booking. Prior art: BUG_AUDIT_LIFECYCLE_2026-09-02.md:128 files this as NR-09 at P2, open. Tree: untracked src/lib/queries/productAvailability.ts (header names NR-09) and NewRental.tsx:27 `import { readProductAvailability }` - uncommitted, not at HEAD. - _§9 keys P0/P1 to financial or inventory loss; a wrong picker verdict that Confirm's engine and the GiST still override can refuse or over-promise but cannot double-book, so §5 P2 ('important functional problem') applies - matching the other session's own NR-09 severity. Measured UNTOUCHED at HEAD; the other session's uncommitted fix (productAvailability.ts + 863-line NewRental/itemCatalogue diff) is not a repo finding until it lands._
 
@@ -6863,7 +6925,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-092 - INV-10 - product_units.status is never written by any OS verb, yet Product detail ('Live Availability', 'AVAILABLE NOW') and the Inventory list breakdown render it as live availability; every OS-created unit reads In Stock forever, reserved or on rent
+## ISSUE-093 - INV-10 - product_units.status is never written by any OS verb, yet Product detail ('Live Availability', 'AVAILABLE NOW') and the Inventory list breakdown render it as live availability; every OS-created unit reads In Stock forever, reserved or on rent
 
 **Severity:** P2
 **Status:** DISCONNECTED IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -6923,7 +6985,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-093 - INV-11 - The availability rules (disqualifying states, half-open vs closed bracket) are read from per-browser localStorage at plan time, so two operators can plan under different rules and write different period brackets into inventory_reservations
+## ISSUE-094 - INV-11 - The availability rules (disqualifying states, half-open vs closed bracket) are read from per-browser localStorage at plan time, so two operators can plan under different rules and write different period brackets into inventory_reservations
 
 **Severity:** P2
 **Critic proposes:** P1 (filed P2) - §9: two operators writing different period brackets into inventory_reservations is a double-booking / wrong-availability mechanism, not a settings nicety. _(not applied: reported per Spec 25, decided in the roadmap notes)_
@@ -6986,7 +7048,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-094 - INV-12 - No test exercises the double-booking defence: the exclusion constraint, the capacity trigger and a concurrent Confirm are untested; queries/availability.test.ts covers only the tstzrange parser and confirmRental.test.ts stubs the entire assignment module
+## ISSUE-095 - INV-12 - No test exercises the double-booking defence: the exclusion constraint, the capacity trigger and a concurrent Confirm are untested; queries/availability.test.ts covers only the tstzrange parser and confirmRental.test.ts stubs the entire assignment module
 
 **Severity:** P2
 **Status:** TESTING GAP  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
@@ -7045,7 +7107,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-095 - MONEY-15 - Crew is billed at cost on the invoice, and folding per-engagement extras into unit_rate makes quantity × days × unit_rate ≠ line_total at 2 dp
+## ISSUE-096 - MONEY-15 - Crew is billed at cost on the invoice, and folding per-engagement extras into unit_rate makes quantity × days × unit_rate ≠ line_total at 2 dp
 
 **Severity:** P2
 **Status:** CONFIRMED BUG  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -7109,7 +7171,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-096 - MONEY-16 - Money-document numbering: payment numbers reset every January (R-18) and reversal, credit-note and charge numbers have no sequence at all
+## ISSUE-097 - MONEY-16 - Money-document numbering: payment numbers reset every January (R-18) and reversal, credit-note and charge numbers have no sequence at all
 
 **Severity:** P2
 **Critic proposes:** P1 (filed P2) - §4: MONEY-07 (void + credit note) and MONEY-09 (refund) are P1 and both list MONEY-16 in dependsOn; a P1 cannot be unblocked by a P2. DB-06 files the same registry gap at P1. _(not applied: reported per Spec 25, decided in the roadmap notes)_
@@ -7175,7 +7237,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-097 - MONEY-17 - Daily Closing's expected cash is structurally zero: no Cash bank account exists live, account-less cash payments fall into 'other', and receivables exclude every Draft's running balance
+## ISSUE-098 - MONEY-17 - Daily Closing's expected cash is structurally zero: no Cash bank account exists live, account-less cash payments fall into 'other', and receivables exclude every Draft's running balance
 
 **Severity:** P2
 **Status:** CONFIRMED BUG  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
@@ -7239,7 +7301,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-098 - OPS-01 - Three definitions of "today" on the floor: Operations scopes use civil-day bounds, the Dashboard uses operational bounds under a civil-day label, and operationalToday() has one caller
+## ISSUE-099 - OPS-01 - Three definitions of "today" on the floor: Operations scopes use civil-day bounds, the Dashboard uses operational bounds under a civil-day label, and operationalToday() has one caller
 
 **Severity:** P2
 **Status:** ARCHITECTURAL PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** ROOT ISSUE
@@ -7302,7 +7364,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-099 - OPS-05 - Past-due floor work drops out of every day scope: 26 uncollected pickups on live are invisible under Today/Tomorrow/Week and have no alert
+## ISSUE-100 - OPS-05 - Past-due floor work drops out of every day scope: 26 uncollected pickups on live are invisible under Today/Tomorrow/Week and have no alert
 
 **Severity:** P2
 **Status:** UX PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
@@ -7362,7 +7424,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-100 - OPS-06 - Handover money gates are attestations: "Payment Verified" and "Deposit Received" are local booleans that read nothing, while the real gate lives in a trigger the UI cannot see (and 0090's warn-with-reason is drafted, not applied)
+## ISSUE-101 - OPS-06 - Handover money gates are attestations: "Payment Verified" and "Deposit Received" are local booleans that read nothing, while the real gate lives in a trigger the UI cannot see (and 0090's warn-with-reason is drafted, not applied)
 
 **Severity:** P2
 **Critic proposes:** P1 (filed P2) - §9: gear leaves the warehouse against a 'Payment Verified' boolean that reads nothing — financial loss on a real handover day; RL-08 (the migration half of the same gate) is P1. _(not applied: reported per Spec 25, decided in the roadmap notes)_
@@ -7426,7 +7488,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-101 - OPS-07 - Signatures are dropped or written as prose: the signatures table exists on live with zero writers, Handover keeps its two signatures in React state, Return writes them into operation_sessions.notes, and inspector_note is never written
+## ISSUE-102 - OPS-07 - Signatures are dropped or written as prose: the signatures table exists on live with zero writers, Handover keeps its two signatures in React state, Return writes them into operation_sessions.notes, and inspector_note is never written
 
 **Severity:** P2
 **Status:** PARTIAL IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -7487,7 +7549,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-102 - RES-03 - The queue-on-network-failure branch in dataAccess can never fire: it matches a message shape postgrest-js does not produce, and writes get no retry from the client library
+## ISSUE-103 - RES-03 - The queue-on-network-failure branch in dataAccess can never fire: it matches a message shape postgrest-js does not produce, and writes get no retry from the client library
 
 **Severity:** P2
 **Status:** CONFIRMED BUG  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -7547,7 +7609,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-103 - RES-07 - captureError is a no-op without a DSN nobody has set, and the 3 Sep sweep replaced console.error with it in 28 files, so those failures now reach nothing at all
+## ISSUE-104 - RES-07 - captureError is a no-op without a DSN nobody has set, and the 3 Sep sweep replaced console.error with it in 28 files, so those failures now reach nothing at all
 
 **Severity:** P2
 **Status:** DISCONNECTED IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** ROOT ISSUE
@@ -7609,7 +7671,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-104 - RES-08 - The 25-second pull reads a revoked table with select('*'), maps columns that do not exist, fills a cache nothing reads, and the header calls it Synced
+## ISSUE-105 - RES-08 - The 25-second pull reads a revoked table with select('*'), maps columns that do not exist, fills a cache nothing reads, and the header calls it Synced
 
 **Severity:** P2
 **Critic proposes:** P3 (filed P2) - §4 P3 = minor: the failing pull fills a cache nothing reads and no user-visible function depends on it; DATA-02 files the identical defect at P3. The header 'Synced' copy is a separate honesty fix at P3. _(not applied: reported per Spec 25, decided in the roadmap notes)_
@@ -7676,7 +7738,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-105 - RES-12 - Four write paths bypass dataAccess: no queue, no network handling, and a silent compensation failure that can leave a live inventory hold behind
+## ISSUE-106 - RES-12 - Four write paths bypass dataAccess: no queue, no network handling, and a silent compensation failure that can leave a live inventory hold behind
 
 **Severity:** P2
 **Status:** ARCHITECTURAL PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -7736,7 +7798,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-106 - RES-13 - The offline stack has no behavioural test: nothing pins dedupe, replay, dead-lettering, recovery or the network classifier
+## ISSUE-107 - RES-13 - The offline stack has no behavioural test: nothing pins dedupe, replay, dead-lettering, recovery or the network classifier
 
 **Severity:** P2
 **Status:** TESTING GAP  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -7793,7 +7855,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-107 - RL-03 - Closed-is-final rests on closed_at, which is NULL on all 60 live Closed bookings, and the trigger refuses nothing out of Closed because its successor comparison evaluates to NULL
+## ISSUE-108 - RL-03 - Closed-is-final rests on closed_at, which is NULL on all 60 live Closed bookings, and the trigger refuses nothing out of Closed because its successor comparison evaluates to NULL
 
 **Severity:** P2 _(filed P1; refuter: DOWNGRADED)_
 **Status:** CONFIRMED BUG  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
@@ -7857,7 +7919,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-108 - RL-07 - R-07's auto-suggest is missing: Booking Detail shows a Close button at Returned and lets the action refuse after the press, never naming the failing gate or the vacuous damage gate
+## ISSUE-109 - RL-07 - R-07's auto-suggest is missing: Booking Detail shows a Close button at Returned and lets the action refuse after the press, never naming the failing gate or the vacuous damage gate
 
 **Severity:** P2
 **Status:** PARTIAL IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -7917,7 +7979,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-109 - RL-12 - The §1.9 flag registry is never fed: no caller passes flags, booking_flags has no writer, and two of its rules now contradict R-06
+## ISSUE-110 - RL-12 - The §1.9 flag registry is never fed: no caller passes flags, booking_flags has no writer, and two of its rules now contradict R-06
 
 **Severity:** P2
 **Status:** DISCONNECTED IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -7977,7 +8039,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-110 - RL-14 - A second pass of a staggered handover or return reuses the first pass's Law 8 key, so the new session collides on operation_sessions.client_uuid and the pass cannot land
+## ISSUE-111 - RL-14 - A second pass of a staggered handover or return reuses the first pass's Law 8 key, so the new session collides on operation_sessions.client_uuid and the pass cannot land
 
 **Severity:** P2 _(filed P1; refuter: RESTATED)_
 **Status:** CONFIRMED BUG  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -8038,7 +8100,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-111 - SEC-05 - RBAC mirror has four unsafe-direction gaps: Accounts is offered Close and Void that Postgres refuses, Technician is offered every floor verb but appears in 0 of 246 policies, and Warehouse/Coordinator can insert a Closed transition by direct call — R-08 has no migration at all
+## ISSUE-112 - SEC-05 - RBAC mirror has four unsafe-direction gaps: Accounts is offered Close and Void that Postgres refuses, Technician is offered every floor verb but appears in 0 of 246 policies, and Warehouse/Coordinator can insert a Closed transition by direct call — R-08 has no migration at all
 
 **Severity:** P2 _(filed P1; refuter: RESTATED)_
 **Status:** SECURITY RISK  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -8107,7 +8169,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-112 - SEC-08 - Auth hardening is unverified on the hosted project and weak in the tracked config: signups enabled, 6-character minimum, no complexity, no MFA, leaked-password protection off
+## ISSUE-113 - SEC-08 - Auth hardening is unverified on the hosted project and weak in the tracked config: signups enabled, 6-character minimum, no complexity, no MFA, leaked-password protection off
 
 **Severity:** P2
 **Critic proposes:** P1 (filed P2) - §4 security risk: open signups are the entry step of SEC-01's exploit chain (any self-registered account is `authenticated` and can write through the 23 owner-privilege auto-updatable views); a P0's precondition cannot sit at P2 with status UNKNOWN. _(not applied: reported per Spec 25, decided in the roadmap notes)_
@@ -8168,7 +8230,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-113 - DATA-11 - booqable-proxy authorizes by JWT only: its six write-back paths and the client read paths are open to every role, including a portal Client
+## ISSUE-114 - DATA-11 - booqable-proxy authorizes by JWT only: its six write-back paths and the client read paths are open to every role, including a portal Client
 
 **Severity:** P2
 **Status:** SECURITY RISK  |  **Current status:** UNTOUCHED  |  **Confidence:** MEDIUM (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -8235,7 +8297,70 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-114 - DB-13 - Apply-safety review of the ten drafts: all apply on today's catalogue, but 0085 creates an RLS-less table and re-points the booking counter onto the range reserved for the real Booqable orders, 0089 alone does not un-brick bookings, 0090 drops pg_temp from a hardened search_path, and 0092 misses two columns and INSERT
+## ISSUE-115 - SEC-12 - TRUNCATE is granted to anon and authenticated on 123 of 124 tables, and neither RLS nor Law 3's row triggers can see it
+
+**Severity:** P2
+**Status:** DATA INTEGRITY RISK  |  **Current status:** DRAFTED_UNAPPLIED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
+**Module:** Auth & security _(derived from cluster)_  |  **Feature:** TRUNCATE is granted to anon and authenticated on 123 of 124 tables, and neither RLS nor Law 3's row triggers can see it
+**Affected Layers:** Database _(derived from locations)_
+**Prior art:** AUDIT_VERIFICATION_2026-09-06 §2.4 (audit_events half only, and overstated as reachable)
+
+**Location:**
+- `live:pg_class + has_table_privilege` 123 of 124 public tables
+- `supabase/migrations/0093_state_the_grants.sql` 86-165 (revoke all, then re-grant without TRUNCATE)
+
+**Description / Root Cause:** SYMPTOM: a privilege nothing in the design mentions sits on every table. TRACE: Supabase's default ACL for role postgres grants anon/authenticated/service_role ALL on every new relation, and ALL includes TRUNCATE; every migration since then subtracted privileges selectively (DELETE for Law 3, UPDATE for Law 4, SELECT for Law 6) and none subtracted TRUNCATE, because nobody enumerated what ALL contained. ROOT CAUSE: the same implicit grant contract as SEC-01 — the schema inherits the platform baseline and narrows it by exception, so any privilege nobody thought to name stays granted.
+
+**Expected Behavior:** A role that may not delete a row may not erase a table. Law 3 ("nothing is deleted") is enforced by narrow DELETE grants (live holds DELETE for authenticated on only 10 scratch tables) plus row-level triggers, so every destructive path is either refused or audited.
+
+**Actual Behavior:** has_table_privilege(anon | authenticated, <table>, 'TRUNCATE') is true for 123 of the 124 public tables (all but staff_auth_pins). TRUNCATE is not governed by row level security at all, and it fires only statement-level triggers, so every Law 3 backstop in this schema (row-level, append-only) is blind to it. The single privilege that can erase the business is the one the design never states.
+
+**Evidence:** Live, 6 Sep 2026 (read-only): select count(*) over public relkind='r' where has_table_privilege(role, oid, 'TRUNCATE') -> anon 123, authenticated 123, of 124 tables; audit_events specifically anon TRUNCATE true while anon DELETE is false. Reachability probed the same session: anon and authenticated are NOLOGIN (pg_roles.rolcanlogin false; only authenticator logs in and is granted all three), no public function is EXECUTE-able by anon and contains dynamic SQL (0 of 26), and no function in the schema issues TRUNCATE at all (0). PostgREST exposes no TRUNCATE verb. STATUS UPDATE (2026-09-07): DRAFTED_UNAPPLIED -> DRAFTED_UNAPPLIED. Two drafts now bear on this. 0093 drops TRUNCATE from anon and authenticated as a side effect of its convergent revoke-then-grant shape, and 0095 (commit b4c4822) revokes TRUNCATE explicitly on every public view and on every base table for anon, which is the named-statement half this issue recommends. What remains for Option B is the explicit revoke of TRUNCATE from authenticated on base tables and the check:rebuild assertion that no table grants it, so a future migration re-granting ALL fails the gate instead of the next restore.
+
+**Business Impact:** Not reachable through the REST API today, so no operator or stranger can trigger it with the public key. It is the blast radius that matters: if the authenticator connection string ever leaks, or any future RPC runs dynamic SQL, one statement erases bookings, clients or the audit log itself, with no policy consulted, no trigger fired and no audit row written — and on the Free tier there is no PITR and no verified dump to restore from.
+
+**Technical Impact:** Law 3 is enforced at a layer that cannot see the operation. Any future SECURITY INVOKER function doing dynamic SQL silently becomes a destructive endpoint. The audit trail is the worst case: 5,424 rows, forgeable by INSERT (SEC-02) and erasable by TRUNCATE, so it can be neither trusted nor relied on as a record.
+
+**Affected Workflows:** Login; Role-gated actions; Money visibility; Audit trail _(derived from cluster)_
+
+**Depends on (fix first):** DEL-01
+
+**Reproduction:** 1. As a privileged session: select has_table_privilege('anon','public.bookings','TRUNCATE'); -> true. 2. Confirm RLS cannot help: TRUNCATE is absent from the commands pg_policies can express. 3. Confirm the backstops are row-level: select tgtype from pg_trigger on any Law 3 table — all row-level, so a TRUNCATE fires none of them. 4. Confirm it is not reachable today: anon is NOLOGIN and no anon-executable function contains dynamic SQL.
+
+**Fix Options:**
+
+- **Option A - Let 0093 close it, and assert it in the gate.** 0093_state_the_grants.sql already revokes ALL from anon and authenticated and then re-grants only SELECT/INSERT/UPDATE/DELETE on the stated sets, so TRUNCATE is dropped as a side effect of its convergent shape. Make that deliberate rather than incidental: add a sentence to its header naming TRUNCATE, and add an assertion to scripts/check-rebuild.mjs that no public table grants TRUNCATE to anon or authenticated.
+  - Scope: `supabase/migrations/0093_state_the_grants.sql`, `scripts/check-rebuild.mjs`
+  - Pros: No new migration; The fix is already written and queued; The gate stops it coming back
+  - Cons: Still gated behind Step 0 like every other draft; Leaves the privilege live until then
+
+- **Option B - A, plus revoke TRUNCATE explicitly and separately.** Everything in A, plus a standalone revoke of TRUNCATE from anon and authenticated at the top of 0093 so the intent survives any future edit that rewrites the grant lists, and a post-condition in the same file asserting it. Costs one statement and makes the destructive privilege a named decision rather than a consequence of statement ordering.
+  - Scope: `supabase/migrations/0093_state_the_grants.sql`, `scripts/check-rebuild.mjs`
+  - Pros: The intent is explicit and survives refactoring; Reads as a decision in the diff
+  - Cons: Marginally redundant while 0093 keeps its current shape
+
+| Option | Effort | Risk | Long-Term Quality | Performance | Recommended |
+|---|---|---|---|---|---|
+| A | LOW | LOW | MEDIUM | LOW |  |
+| B | LOW | LOW | HIGH | LOW | YES |
+
+**Recommended:** Option B  |  **Why:** Data safety first (Spec 8): the privilege that can erase the business should be refused by a statement that says so, not by the ordering of two others. The cost difference between the options is one line, and B keeps the protection when someone later rewrites the grant lists — which is exactly how this privilege survived twelve migrations of narrowing in the first place.
+
+**Complexity:** LOW  |  **Risk:** LOW  |  **Estimated Scope:** `supabase/migrations/0093_state_the_grants.sql`, `scripts/check-rebuild.mjs`
+
+**Regression Risk:** Marginally redundant while 0093 keeps its current shape _(from the recommended option's cons)_
+
+**Database change (Spec 29):** Current: platform default ACL grants ALL (TRUNCATE included) on all 124 public tables to anon and authenticated. Required: TRUNCATE revoked from both roles on every public table, and not re-granted by ALTER DEFAULT PRIVILEGES. Strategy: already inside 0093 (revoke all, re-grant by name); add the explicit revoke and the post-condition. Existing data: none touched, privileges only. Rollback: re-grant, but there is no reason to; service_role and postgres retain it for maintenance.
+
+**Security (Spec 19):** attackSurface: none through PostgREST today (no TRUNCATE verb, anon/authenticated are NOLOGIN, no anon-executable dynamic SQL); the surface is the authenticator connection string and any future dynamic-SQL RPC. exploit: SET ROLE anon; TRUNCATE audit_events; — no policy consulted, no row trigger fired. dataExposed: none read; integrity of 123 tables. authRequired: a direct database connection or a future dynamic-SQL RPC. authzRequired: none beyond the role. mitigation: 0093 as written, made explicit per Option B.
+
+**Verification:** After 0093: select count(*) from public tables where has_table_privilege('anon'|'authenticated', oid, 'TRUNCATE') returns 0, asserted by check:rebuild so a future migration that re-grants ALL fails the gate rather than the next restore.
+
+**Production Blocker:** NO
+
+---
+
+## ISSUE-116 - DB-13 - Apply-safety review of the ten drafts: all apply on today's catalogue, but 0085 creates an RLS-less table and re-points the booking counter onto the range reserved for the real Booqable orders, 0089 alone does not un-brick bookings, 0090 drops pg_temp from a hardened search_path, and 0092 misses two columns and INSERT
 
 **Severity:** P2 _(filed P1; refuter: RESTATED)_
 **Status:** CONFIRMED BUG  |  **Current status:** DRAFTED_UNAPPLIED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -8303,7 +8428,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-115 - DEL-07 - The Booqable bridge is built but disconnected — zero importers, webhook undeployed, corpus half-imported, and its numbering contradicts R-10 and the 0085 draft
+## ISSUE-117 - DEL-07 - The Booqable bridge is built but disconnected — zero importers, webhook undeployed, corpus half-imported, and its numbering contradicts R-10 and the 0085 draft
 
 **Severity:** P2
 **Status:** DISCONNECTED IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
@@ -8364,7 +8489,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-116 - FORMS-02 - New Rental's Save Draft and Cancel dispatch stub actions on every press while rendering as live controls
+## ISSUE-118 - FORMS-02 - New Rental's Save Draft and Cancel dispatch stub actions on every press while rendering as live controls
 
 **Severity:** P2
 **Status:** PARTIAL IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -8426,7 +8551,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 # P3 - 25 issues
 
-## ISSUE-117 - ARCH-06 - About 4,700 lines of built-but-unreferenced code sit inside the compiled tree (second OperationsShell tree, kpiEngine, sessionBranch, sound, printSlip, FilterOptionList, planCreationUnits, format.rs/grouped, workflow.outstanding/clientLabel) while the one engine that has a caller-shaped need (sessionBranch) is bypassed inline
+## ISSUE-119 - ARCH-06 - About 4,700 lines of built-but-unreferenced code sit inside the compiled tree (second OperationsShell tree, kpiEngine, sessionBranch, sound, printSlip, FilterOptionList, planCreationUnits, format.rs/grouped, workflow.outstanding/clientLabel) while the one engine that has a caller-shaped need (sessionBranch) is bypassed inline
 
 **Severity:** P3
 **Status:** TECHNICAL DEBT  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -8494,7 +8619,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-118 - ARCH-10 - Phone normalisation exists five times with three different keys (+977 canonical, last-10, last-9), so duplicate detection, import matching and WhatsApp addressing can each answer differently for one number
+## ISSUE-120 - ARCH-10 - Phone normalisation exists five times with three different keys (+977 canonical, last-10, last-9), so duplicate detection, import matching and WhatsApp addressing can each answer differently for one number
 
 **Severity:** P3
 **Status:** DUPLICATED IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -8554,7 +8679,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-119 - ARCH-11 - Money formatting is reimplemented beside the engine: a second grouped()/rs() in lib/format.ts with different negative rounding and rupee input, and three inline formatters on pages and intel
+## ISSUE-121 - ARCH-11 - Money formatting is reimplemented beside the engine: a second grouped()/rs() in lib/format.ts with different negative rounding and rupee input, and three inline formatters on pages and intel
 
 **Severity:** P3
 **Status:** DUPLICATED IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -8614,7 +8739,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-120 - DATA-10 - users_select_own empties every cross-user name lookup: 'raised by' on Purchase Requests and Transfers resolves only for the viewer
+## ISSUE-122 - DATA-10 - users_select_own empties every cross-user name lookup: 'raised by' on Purchase Requests and Transfers resolves only for the viewer
 
 **Severity:** P3
 **Status:** CONFIRMED BUG  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** INDEPENDENT
@@ -8670,7 +8795,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-121 - DATA-14 - The mock backend serves 8 store keys against 48 tables and views the app reads, answering the rest with [] and a console warning
+## ISSUE-123 - DATA-14 - The mock backend serves 8 store keys against 48 tables and views the app reads, answering the rest with [] and a console warning
 
 **Severity:** P3
 **Status:** TESTING GAP  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -8727,7 +8852,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-122 - DATA-15 - create_booking trusts created_by and branch_id from the payload, validates no date order, and is executable by anon
+## ISSUE-124 - DATA-15 - create_booking trusts created_by and branch_id from the payload, validates no date order, and is executable by anon
 
 **Severity:** P3
 **Status:** SECURITY RISK  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -8789,7 +8914,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-123 - DB-14 - Catalogue hygiene: two NOT VALID CHECKs with zero violators, a dead prefix enum, duplicate enum labels, a banned word in delivery_type, and client codes whose stored shape (C-0366) differs from what the sequence will mint (C-751)
+## ISSUE-125 - DB-14 - Catalogue hygiene: two NOT VALID CHECKs with zero violators, a dead prefix enum, duplicate enum labels, a banned word in delivery_type, and client codes whose stored shape (C-0366) differs from what the sequence will mint (C-751)
 
 **Severity:** P3
 **Status:** TECHNICAL DEBT  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** INDEPENDENT
@@ -8843,7 +8968,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-124 - DB-15 - The Booqable bridge's app-side writers target tables with SELECT-only policies (sync_conflicts, sync_outbox, external_refs upsert, external_invoices update) — latent while the bridge is offline
+## ISSUE-126 - DB-15 - The Booqable bridge's app-side writers target tables with SELECT-only policies (sync_conflicts, sync_outbox, external_refs upsert, external_invoices update) — latent while the bridge is offline
 
 **Severity:** P3
 **Status:** DISCONNECTED IMPLEMENTATION  |  **Current status:** UNTOUCHED  |  **Confidence:** MEDIUM (traced)  |  **Dependency role:** INDEPENDENT
@@ -8899,7 +9024,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-125 - DEL-10 - Bundle and PWA weight — the 453 KB scanner is preloaded on every page, the service worker precaches 9.5 MB including fonts, and the mock corpus ships in the live main chunk
+## ISSUE-127 - DEL-10 - Bundle and PWA weight — the 453 KB scanner is preloaded on every page, the service worker precaches 9.5 MB including fonts, and the mock corpus ships in the live main chunk
 
 **Severity:** P3
 **Status:** PERFORMANCE PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** INDEPENDENT
@@ -8960,7 +9085,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-126 - DEL-11 - Two spec-pack documents still anchor 1 Shrawan 2083 at 16 Jul 2026, one day ahead of the corrected engine
+## ISSUE-128 - DEL-11 - Two spec-pack documents still anchor 1 Shrawan 2083 at 16 Jul 2026, one day ahead of the corrected engine
 
 **Severity:** P3
 **Status:** TECHNICAL DEBT  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** INDEPENDENT
@@ -9017,7 +9142,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-127 - DEL-12 - Dependency advisories unchanged since 3 Sep — three high, one moderate, fixes available
+## ISSUE-129 - DEL-12 - Dependency advisories unchanged since 3 Sep — three high, one moderate, fixes available
 
 **Severity:** P3
 **Status:** TECHNICAL DEBT  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** DEPENDENT ISSUE
@@ -9076,7 +9201,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-128 - FE-09 - Toasts cover the phone bar and the FAB, live-region semantics are ad hoc, and route changes are silent
+## ISSUE-130 - FE-09 - Toasts cover the phone bar and the FAB, live-region semantics are ad hoc, and route changes are silent
 
 **Severity:** P3
 **Status:** ACCESSIBILITY PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** MEDIUM (traced)  |  **Dependency role:** INDEPENDENT
@@ -9137,7 +9262,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-129 - FE-10 - Token discipline drift: literal font sizes ignore the text-size setting, the BS day renders at 9px below the type floor, z-index and scrim literals bypass the scale
+## ISSUE-131 - FE-10 - Token discipline drift: literal font sizes ignore the text-size setting, the BS day renders at 9px below the type floor, z-index and scrim literals bypass the scale
 
 **Severity:** P3
 **Status:** TECHNICAL DEBT  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** INDEPENDENT
@@ -9199,7 +9324,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-130 - FE-11 - DateField: visible label not associated, grid without rows, Escape handled at window scope
+## ISSUE-132 - FE-11 - DateField: visible label not associated, grid without rows, Escape handled at window scope
 
 **Severity:** P3
 **Status:** ACCESSIBILITY PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -9251,7 +9376,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-131 - FE-12 - Scanner entry points on a phone: the manifest 'Scan' shortcut 404s and two triggers render 16px apart
+## ISSUE-133 - FE-12 - Scanner entry points on a phone: the manifest 'Scan' shortcut 404s and two triggers render 16px apart
 
 **Severity:** P3
 **Status:** UX PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -9312,7 +9437,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-132 - FE-13 - Header search advertises entity search but only opens a navigation palette
+## ISSUE-134 - FE-13 - Header search advertises entity search but only opens a navigation palette
 
 **Severity:** P3
 **Status:** UX PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -9370,7 +9495,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-133 - FORMS-08 - Validation rules are re-invented per form and per action and disagree: PAN and negative counts are refused only after submit as a banner
+## ISSUE-135 - FORMS-08 - Validation rules are re-invented per form and per action and disagree: PAN and negative counts are refused only after submit as a banner
 
 **Severity:** P3
 **Status:** UX PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -9430,7 +9555,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-134 - FORMS-09 - No unsaved-changes guard on navigation or reload anywhere, and the router cannot host one
+## ISSUE-136 - FORMS-09 - No unsaved-changes guard on navigation or reload anywhere, and the router cannot host one
 
 **Severity:** P3
 **Status:** MISSING FEATURE  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -9490,7 +9615,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-135 - FORMS-14 - Six Settings ▸ System switches (incl. Two-factor authentication) are bare component state and silently revert
+## ISSUE-137 - FORMS-14 - Six Settings ▸ System switches (incl. Two-factor authentication) are bare component state and silently revert
 
 **Severity:** P3
 **Critic proposes:** P2 (filed P3) - Same class as FORMS-10 and ARCH-13 (MOCK IMPLEMENTATION fabricating success, both P2): a 'Two-factor authentication' switch that turns on and silently reverts is a fabricated security control, §37 honesty. _(not applied: reported per Spec 25, decided in the roadmap notes)_
@@ -9548,7 +9673,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-136 - FORMS-16 - DateField's Today is the UTC calendar day, not the Kathmandu day, so between midnight and 05:44 NPT the picker offers yesterday
+## ISSUE-138 - FORMS-16 - DateField's Today is the UTC calendar day, not the Kathmandu day, so between midnight and 05:44 NPT the picker offers yesterday
 
 **Severity:** P3
 **Status:** CONFIRMED BUG  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -9600,7 +9725,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-137 - FORMS-17 - Modal form fields are unlabelled to assistive tech, asterisks carry no aria-required, error banners are not announced, and Enter never submits
+## ISSUE-139 - FORMS-17 - Modal form fields are unlabelled to assistive tech, asterisks carry no aria-required, error banners are not announced, and Enter never submits
 
 **Severity:** P3
 **Status:** ACCESSIBILITY PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -9667,7 +9792,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-138 - FORMS-18 - Add Client collects Contact Person, Designation, Website, Government ID type and Client Since and drops all five silently; they are missing from the NOT_SAVED_YET notice it promises is complete
+## ISSUE-140 - FORMS-18 - Add Client collects Contact Person, Designation, Website, Government ID type and Client Since and drops all five silently; they are missing from the NOT_SAVED_YET notice it promises is complete
 
 **Severity:** P3
 **Status:** UX PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -9723,7 +9848,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-139 - FORMS-19 - Expense Reports' disabled New Expense and Import carry a false reason: they say no action writes expenses while /finance/expenses does
+## ISSUE-141 - FORMS-19 - Expense Reports' disabled New Expense and Import carry a false reason: they say no action writes expenses while /finance/expenses does
 
 **Severity:** P3
 **Status:** UX PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -9774,7 +9899,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-140 - RES-14 - Mock and live modes share one Dexie outbox per origin and the boot drain has no mode guard, so live-queued rows can replay into the mock overlay and be deleted
+## ISSUE-142 - RES-14 - Mock and live modes share one Dexie outbox per origin and the boot drain has no mode guard, so live-queued rows can replay into the mock overlay and be deleted
 
 **Severity:** P3
 **Status:** CONFIRMED BUG  |  **Current status:** UNTOUCHED  |  **Confidence:** MEDIUM (traced)  |  **Dependency role:** INDEPENDENT
@@ -9831,7 +9956,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-141 - RES-15 - Raw data-layer and read-layer messages reach the floor, and the offline banner promises local saving that most of the app refuses
+## ISSUE-143 - RES-15 - Raw data-layer and read-layer messages reach the floor, and the offline banner promises local saving that most of the app refuses
 
 **Severity:** P3
 **Status:** UX PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** DEPENDENT ISSUE
@@ -9895,7 +10020,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 # P4 - 6 issues
 
-## ISSUE-142 - ARCH-12 - Runtime import cycle ScannerFab ↔ BottomBar in the app shell
+## ISSUE-144 - ARCH-12 - Runtime import cycle ScannerFab ↔ BottomBar in the app shell
 
 **Severity:** P4
 **Status:** TECHNICAL DEBT  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -9952,7 +10077,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-143 - ARCH-14 - Two query files carry literal NUL bytes that hide them from plain grep and can corrupt diffs
+## ISSUE-145 - ARCH-14 - Two query files carry literal NUL bytes that hide them from plain grep and can corrupt diffs
 
 **Severity:** P4
 **Status:** TECHNICAL DEBT  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** INDEPENDENT
@@ -10003,7 +10128,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-144 - DEL-13 - Reservation and inventory writes issue one awaited request per unit inside loops — unmeasured today, non-atomic by construction
+## ISSUE-146 - DEL-13 - Reservation and inventory writes issue one awaited request per unit inside loops — unmeasured today, non-atomic by construction
 
 **Severity:** P4
 **Status:** PERFORMANCE PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** MEDIUM (traced)  |  **Dependency role:** INDEPENDENT
@@ -10063,7 +10188,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-145 - FE-14 - Static cream theme-color under the dark theme
+## ISSUE-147 - FE-14 - Static cream theme-color under the dark theme
 
 **Severity:** P4
 **Status:** UX PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -10114,7 +10239,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-146 - FE-15 - Membership tiers still painted with status hues on Client Detail and the intel card
+## ISSUE-148 - FE-15 - Membership tiers still painted with status hues on Client Detail and the intel card
 
 **Severity:** P4
 **Status:** UX PROBLEM  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (traced)  |  **Dependency role:** INDEPENDENT
@@ -10166,7 +10291,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 ---
 
-## ISSUE-147 - SEC-11 - `.env.example` still documents `VITE_DEV_AUTH_BYPASS` as a working Owner login bypass that was removed on 12 Aug
+## ISSUE-149 - SEC-11 - `.env.example` still documents `VITE_DEV_AUTH_BYPASS` as a working Owner login bypass that was removed on 12 Aug
 
 **Severity:** P4
 **Status:** TECHNICAL DEBT  |  **Current status:** UNTOUCHED  |  **Confidence:** HIGH (ran)  |  **Dependency role:** INDEPENDENT
@@ -10278,6 +10403,8 @@ Separate from the bugs; each is supported by code that already exists in the tre
 - **auth-security / Session persistence, re-read demotion, logout purge, PIN re-lock** - Traced auth.tsx: `persistSession: true, autoRefreshToken: true, detectSessionInUrl: true` (supabase.ts:54-63; browser default storage, documented as browser-only); role comes from `users.primary_role`, never JWT metadata (:146-149); a failed staff-row re-read keeps the previous identity instead of demoting to Client (:184-187); an auth user with no staff row becomes `Client` with an empty name so attribution guards refuse (:189-203); `logout` clears state, signs out and purges Workbox read caches (:540-560); the idle lock only ever locks and never signs out, and only when a PIN exists (:638-673). `verify_staff_pin` (live body read) requires `auth_user_id()`, refuses when locked without touching the hash, enforces 5 attempts / 15 minutes, and the PIN table has no API-role grants and no policies (definer-only). Password reset uses `resetPasswordForEmail` with `redirectTo` and the screen wording avoids the enumeration claim (:347-367); `updatePassword` is gated by `isPasswordRecovery` at the screen (not driven).
 - **auth-security / SECURITY DEFINER functions callable via RPC by anon/authenticated (advisor 0028/0029)** - Read the bodies: `auth_user_id`, `auth_user_role`, `auth_can_approve_*` return only the caller's own facts (`Client`/null for anon); `portal_claim_by_verified_email` raises without `auth.uid()` and binds only to a single client whose email equals the caller's confirmed email; `record_password_reset_request` and `revoke_staff_pin_for` check `auth_user_role() = 'Owner'` before acting and write an audit row; `set_staff_pin` requires a password-method AMR claim within 15 minutes; `enforce_*`/`reject_*`/`validate_*` are trigger functions that Postgres refuses to run outside a trigger. No exploitable path found; the advisor warnings are noise for these, and `staff_directory_v`'s `auth.users` exposure (advisor ERROR) is gated by `WHERE auth_user_role() = 'Owner'` inside the view (0 rows as Warehouse, measured).
 - **auth-security / anon reach on base tables** - Parsed all 246 live policies: only three carry a predicate without an `auth_*`/`auth.uid` reference — `audit_events_insert` (`true`, SEC-02), `portal_auth_challenges_service_only` (`false`), `timesheets_insert` (GUC-bound). Every other policy names staff roles or `auth_is_staff()`, and `auth_user_role()` returns `Client` for anon, so despite `anon` holding INSERT/UPDATE grants on 123 of 124 base tables (default ACL) no base-table write is reachable anonymously today except `audit_events`. The grant surface itself is folded into SEC-01's root cause and fix B.
+- **auth-security / TRUNCATE reachability through the API (SEC-12)** - Probed live: anon and authenticated are NOLOGIN roles (only authenticator logs in, holding all three by grant); 26 functions are EXECUTE-able by anon and none contains dynamic SQL; no function in the schema issues TRUNCATE; PostgREST exposes no TRUNCATE verb. So the privilege is real and the blast radius is total, but there is no path from the public key to it today. Rated P2 on that basis rather than P0.
+- **auth-security / Client (external) role surface (critic gap)** - Counted policies naming the Client role on live: 0 of 246. No policy admits Client to any table, so a Client JWT reads nothing through RLS and any portal must run through definer-rights functions. The gap the critic named is therefore narrower than feared: there is no Client row surface to enumerate, only the portal RPCs, which SEC-10 and DATA-11 already cover.
 - **resilience / Law 8 constraints exist live for every table the queue writes** - pg_constraint probe (conname ilike '%client_uuid%'): 112 UNIQUE (client_uuid) constraints; pg_attribute probe: client_uuid NOT NULL on all 112. Cross-checked against the write-site inventory: 23 idempotentInsert targets (bundles, session_line_movements, invoice_lines, damage_findings, clients, cleaning_queue_entries, bundle_items, stock_transfers, stock_transfer_lines, return_lines, products, product_units, payments, packing_lines, operation_sessions, invoices, inventory_reservations, handover_lines, client_flags, booking_stage_transitions, booking_notes, booking_lines, audit_events) and 11 safeUpdate targets are all in the constrained set. The 10 live tables without the column (booking_client_state_map, external_invoices, external_refs, number_sequences, staff_auth_pins, sync_conflicts, sync_inbox, sync_log, sync_outbox, sync_state) are written only by the Booqable bridge scripts or RPCs, never by the queue.
 - **resilience / Insert replay idempotency** - offlineQueue.ts:195-201 replays with the stored client_uuid and resolves a 23505 whose message names client_uuid as already-landed; dataAccess.ts:135-146 does the same on the direct path and re-reads the existing row by client_uuid; the mock client mirrors the constraint (mock/client.ts:152-163). QA_FULL_AUDIT_REPORT.md:176 drove a same-key second call against a real database and observed replayed:true with exactly one row.
 - **resilience / Money and approval writes refuse offline before any queue** - Read recordPayment.ts:333-336, approveDailyClosing.ts:101-103, createInvoice.ts:337, closeRental.ts:211, confirmRental.ts:339-343, approvePurchaseRequest.ts:128, blockClient.ts:228, createClient.ts:323, createBundle.ts:237, createEquipment.ts:344, createStockTransfer.ts:194, addBookingNote.ts:118, releaseBookingLineUnit.ts:77: each throws a three-part refusal before calling dataAccess, so no payment, closing, invoice, close or confirm can ever sit in the outbox.
@@ -10347,6 +10474,7 @@ Separate from the bugs; each is supported by code that already exists in the tre
 - **QA_FULL_AUDIT refutation of BUG-012 ('recordPayment accepts invoiceId, so a Draft can be settled') and SPEC-P0-1 §3.5 ('RecordPaymentModal — no change needed')** (money) - No caller passes invoiceId: Finance.tsx:871 shapes rows as `id: r.invoiceNo` and RecordPaymentModal.tsx:322 dispatches `invoiceNo: invoiceId`; git grep at HEAD finds invoiceId only in the action and its test. A Draft (invoice_no NULL after 0086) is unpayable from every screen — filed as MONEY-05.
 - **FULL_SYSTEM_AUDIT_2026-09-03.md §12 'Unverified: booqable-proxy edge-function auth (what stops anon)'** (auth-security) - Verified 5 Sep: `list_edge_functions` reports `verify_jwt: true` on the deployed booqable-proxy (gateway rejects a missing/invalid JWT before the function runs) and the deployed source's `verifyCaller` calls `admin.auth.getUser(jwt)` and returns envelope 401 on failure (HEAD :635-643, :803-808; deployed body fetched with get_edge_function and read). Anon is stopped. The residual gap is that a valid JWT with no staff row (role Client) is not refused — filed as SEC-10, not as an unverified auth.
 - **src/lib/rbac.ts:370-374 (closeRental comment: 'the policy is wider than this predicate, which is the safe direction')** (auth-security) - Live `booking_stage_transitions_insert` WITH CHECK is Owner/Admin/Manager/Coordinator/Warehouse; `canCloseRental` admits Accounts, which that policy does not. The divergence is in BOTH directions — Accounts is offered Close and refused at the row (unsafe direction), while Warehouse/Coordinator are admitted by the row and refused by the UI. Filed as SEC-05.
+- **This report, auth-security cluster ("26 tables carry a PERMISSIVE FOR ALL policy, which grants DELETE") and FULL_SYSTEM_AUDIT_2026-09-03 §12** (auth-security) - Corrected 6 Sep 2026 against live: 91 public tables carry a DELETE or ALL policy, so the policy layer would admit a delete on most of the schema — but the grant layer stops it. has_table_privilege('authenticated', <table>, 'DELETE') is true for only 10 of 124 tables (the sync, external-ref and portal scratch tables 0093's header names). Law 3 is therefore enforced today, by the grant rather than by the policies, and the alarm as filed overstated the exposure. What survives: the enforcement is implicit (the same root as SEC-01 and SEC-12), and 0093 is what states it.
 - **RES-12** (resilience) - The fabricated 'Offline · N queued' chip (queuedCount incremented per press, zeroed by a 600 ms timer) lives at HEAD in src/modules/operations/shell/OperationsShell.tsx:109,121-126,150-152,297, and that file has zero importers: BookingDetail.tsx:16 imports '../operations/OperationsShell', which resolves to src/modules/operations/OperationsShell.tsx, a different component that does not reference the shell/ directory; grep for 'operations/shell/' or "from './shell" across src returns nothing outside that directory. Positive control: OperationsQueues has two importers (App.tsx, ReportToolbar.tsx). No routed screen renders the chip, so there is no fabricated count in the live UI; the file is dead code (noted for the architecture cluster).
 - **RES-15** (resilience) - The core claim (sign-out purges nothing, so an Owner's cached bookings body is served to the next money-blind login) no longer stands: commit 2c3a680 (4 Sep) added src/lib/devicePurge.ts, which deletes the two Workbox data caches named in vite.config.ts (supabase-reference-data, supabase-operational-data) and clears the Dexie domain tables, and auth.tsx:558 calls it from logout(); devicePurge.test.ts pins both and guards the cache names. The residual — purge runs only on explicit logout, not on the onAuthStateChange '!session' path, and the cache stays URL-keyed — is filed as RES-10 (P3).
 - **RES-16** (resilience) - The money-leak half ('daily_rate_paisa lands in IndexedDB on every role's device') does not stand: live products has no daily_rate_paisa column at all (information_schema, 5 Sep) and has_table_privilege('authenticated','public.products','SELECT') is false, so syncEngine.ts:162's select('*') returns 42501 and writes nothing — the products cache is empty, not leaky. The other half ('or the pull is silently swallowed on 42501') stands and is folded into RES-08 together with RES-10/DATA-04/BUG-022.
@@ -10370,29 +10498,29 @@ Separate from the bugs; each is supported by code that already exists in the tre
 
 # Merged as Duplicates (Spec 24)
 
-- DB-05 (database) - The payment→invoice sync trigger sums every Received payment regardless of payment_type and nothing on payment_reversals re-syncs the invoice; the 'Security Deposit counts as revenue' half of the prior finding is already refused by a live CHECK
-- SEC-09 (auth-security) - `next_document_number` is an EXECUTE-to-PUBLIC RPC gated only by `auth_is_staff()` — any staff JWT can burn invoice, payment, booking and client numbers, and every browser caller mints before it inserts
-- DEL-08 (delivery) - No Supabase Storage bucket and no upload path exist, so the ruled-mandatory evidence photo has nowhere to go
-- RL-02 (rental-lifecycle) - bookings.stage, closed_at and cancelled_at are directly writable by every desk role; 0021's revoke never took and live already carries 336 bypass writes
-- RES-10 (resilience) - Device read caches are purged only on explicit logout, not when the session ends any other way, and remain keyed by URL
-- OPS-08 (operations-ux) - Cases on the floor are a seed over an empty table, and two floor links dead-end: the Operations Cases chip reads 12 open seed cases while live cases has 0 rows, Log Case writes nothing, ?queue=cases links are silently discarded, and Alerts' "View all" 404s
-- DB-04 (database) - users has a single self-scoped SELECT policy — no session can create, deactivate or re-role staff, and no action exists to try
-- RES-05 (resilience) - Floor verbs report success and a stage move for writes that are sitting in IndexedDB, and never read the stage back
-- FORMS-13 (forms-interactions) - Expense Approve/Reject bypasses the action layer: a raw status UPDATE with no attempt key, no recorded decider and no audit event
-- DATA-13 (data-connection) - Seven read-live screens expose enabled controls whose action bodies are refused at dispatch
-- DATA-03 (data-connection) - next_document_number is a browser-callable RPC: every staff role can mint any sequence, and every app create mints in one transaction and inserts in another
-- DATA-16 (data-connection) - Stock transfer creation mints from a 'transfer' sequence that does not exist on live and that no draft migration seeds
-- SEC-10 (auth-security) - `booqable-proxy` verifies the JWT but never refuses the Client role, and the deployed copy (v1, 12 Aug) masks fewer money fields than HEAD
-- OPS-09 (operations-ux) - New Purchase Request fabricates a row in front of a now-live list: the modal invents an EQ- id, a UTC date and a hardcoded BS date, writes nothing, and the phantom vanishes on the next refetch (or fails when approved)
-- RL-13 (rental-lifecycle) - Reservations have no release lifecycle: only Confirm's own compensation ever releases a hold, and the state column never changes
-- FE-08 (frontend-design) - 72 of 194 form labels have no programmatic association; Input derives ids from label text
-- DEL-09 (delivery) - The live migration ledger and the repo directory disagree in nine places and nothing reconciles them; the local apply script builds a database quieter than live
-- FORMS-07 (forms-interactions) - Settings validate inline but persist to localStorage only; the VAT rate that prices every quote is a per-browser value while system_settings holds zero rows
-- SEC-06 (auth-security) - `bookings.stage` and `closed_at` are directly writable by the desk five because 0021's column REVOKE cannot subtract from the table-level UPDATE grant — forward-only transitions are bypassable
-- FE-02 (frontend-design) - Seven enabled controls dispatch actions the dispatcher refuses every time
 - MONEY-14 (money) - The reports leg of §13 is fixtures: 8 of 13 report screens read src/data seed ('Outstanding Receivables Rs 5,42,000' is a literal) and no VAT report exists
+- FORMS-07 (forms-interactions) - Settings validate inline but persist to localStorage only; the VAT rate that prices every quote is a per-browser value while system_settings holds zero rows
+- DEL-09 (delivery) - The live migration ledger and the repo directory disagree in nine places and nothing reconciles them; the local apply script builds a database quieter than live
+- DATA-16 (data-connection) - Stock transfer creation mints from a 'transfer' sequence that does not exist on live and that no draft migration seeds
+- SEC-09 (auth-security) - `next_document_number` is an EXECUTE-to-PUBLIC RPC gated only by `auth_is_staff()` — any staff JWT can burn invoice, payment, booking and client numbers, and every browser caller mints before it inserts
 - DATA-02 (data-connection) - syncEngine's 25-second pull is refused by the products column grants and its Dexie mirror has no reader
+- FORMS-13 (forms-interactions) - Expense Approve/Reject bypasses the action layer: a raw status UPDATE with no attempt key, no recorded decider and no audit event
+- RL-13 (rental-lifecycle) - Reservations have no release lifecycle: only Confirm's own compensation ever releases a hold, and the state column never changes
+- DATA-13 (data-connection) - Seven read-live screens expose enabled controls whose action bodies are refused at dispatch
+- RES-10 (resilience) - Device read caches are purged only on explicit logout, not when the session ends any other way, and remain keyed by URL
+- DEL-08 (delivery) - No Supabase Storage bucket and no upload path exist, so the ruled-mandatory evidence photo has nowhere to go
+- FE-02 (frontend-design) - Seven enabled controls dispatch actions the dispatcher refuses every time
+- OPS-09 (operations-ux) - New Purchase Request fabricates a row in front of a now-live list: the modal invents an EQ- id, a UTC date and a hardcoded BS date, writes nothing, and the phantom vanishes on the next refetch (or fails when approved)
+- DB-05 (database) - The payment→invoice sync trigger sums every Received payment regardless of payment_type and nothing on payment_reversals re-syncs the invoice; the 'Security Deposit counts as revenue' half of the prior finding is already refused by a live CHECK
+- SEC-10 (auth-security) - `booqable-proxy` verifies the JWT but never refuses the Client role, and the deployed copy (v1, 12 Aug) masks fewer money fields than HEAD
+- RES-05 (resilience) - Floor verbs report success and a stage move for writes that are sitting in IndexedDB, and never read the stage back
+- DATA-03 (data-connection) - next_document_number is a browser-callable RPC: every staff role can mint any sequence, and every app create mints in one transaction and inserts in another
+- FE-08 (frontend-design) - 72 of 194 form labels have no programmatic association; Input derives ids from label text
+- RL-02 (rental-lifecycle) - bookings.stage, closed_at and cancelled_at are directly writable by every desk role; 0021's revoke never took and live already carries 336 bypass writes
+- OPS-08 (operations-ux) - Cases on the floor are a seed over an empty table, and two floor links dead-end: the Operations Cases chip reads 12 open seed cases while live cases has 0 rows, Log Case writes nothing, ?queue=cases links are silently discarded, and Alerts' "View all" 404s
+- SEC-06 (auth-security) - `bookings.stage` and `closed_at` are directly writable by the desk five because 0021's column REVOKE cannot subtract from the table-level UPDATE grant — forward-only transitions are bypassable
 - MONEY-12 (money) - The VAT rate has no server authority: system_settings is empty, the rate is per-browser localStorage (0 when unset), the live trigger ignores the pinned column, and after 0079 the per-browser value decides the tax invoice
+- DB-04 (database) - users has a single self-scoped SELECT policy — no session can create, deactivate or re-role staff, and no action exists to try
 
 ## Partial overlaps the critic noted (both issues kept)
 
@@ -10534,6 +10662,10 @@ Separate from the bugs; each is supported by code that already exists in the tre
 - *Quote lifecycle.* Verified: 7 live bookings are at stage Quote, none carries `quote_expires_at`, `locked_at` is never set, and the app has readers for expiry but no writer beyond an optional input and no lapse mechanism. Unfiled; belongs with RL-10.
 - *Staff PINs.* Verified: five definer-rights functions and a hash table nobody can read; the auth cluster's no-issue evidence covers it.
 - Left open, in the critic's words: the inventory of base-table money readers that must move to `_v` before more tables are armed; the per-table, per-command RLS matrix; the Client role's full surface; the lost-equipment charge path; client-facing documents as a capability; Free-tier auto-pause as an outage; Edge Function deploy drift; the missing lint rule set; Log Maintenance; Reset semantics; the one-file discrepancy between 18 and 19 implemented actions.
+
+**Added after the run (6-7 September).** Two issues in this report were not produced by the twelve auditors. Both were found while closing the critic's coverage gaps and both were measured directly against live, read-only: **SEC-12**, TRUNCATE granted to `anon` and `authenticated` on 123 of the 124 public tables, a privilege that row level security cannot see and that every Law 3 backstop in this schema is blind to (rated P2, not P0, because the probe showed no path to it from the public key: both roles are NOLOGIN, no anon-executable function contains dynamic SQL, and PostgREST exposes no TRUNCATE verb); and **DATA-17**, the live corpus is hollow past Packed, with 200 of 246 bookings carrying no lines and every floor table empty, independently reproducing a measurement the other session's own verification document had made the same day. Neither has been through a refuter. One claim of the auditors' was also corrected here: the alarm that 26 tables carry a FOR ALL policy admitting DELETE is true of the policy layer but bounded by the grant layer, which holds DELETE for `authenticated` on only 10 tables.
+
+**Status updates since the run.** Issue status lines carry a dated STATUS UPDATE where the tree has moved: INV-09 is fixed in the tree (the New Rental picker now answers for the booking's window through the engine, and bulk stock reads as "not unit-tracked" rather than available), and DB-02 and SEC-01 are drafted-unapplied (migrations 0094 and 0095). Nothing has reached the live project; the ledger still stops at 0078.
 
 **Limits.** Agents had no browser: frontend and forms findings are traced from source and tests, not rendered, and are marked `traced` or `inferred` accordingly. No build was run. The other session edited the tree throughout; every measurement is at HEAD `467e7f1` and tree-only states are named where they differ. The live project holds no transactions, so every money defect is latent and severities follow Spec 9's rule that the first real transaction would trigger them. Effort and risk ratings are the auditors' judgement, not measurements.
 
