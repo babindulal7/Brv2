@@ -3,6 +3,95 @@
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
 
+## 2026-09-07 (cont. 3) — The three close gates stop passing on the wrong question
+
+**Phase:** Phase 0 → Phase 2 · **Status:** MONEY-13, RL-05, RL-06 fixed app-side · `PLAN.md §4.51` filed · the database half is still absent
+
+Three of the audit's issues are one shape: **a gate that passes because its predicate is vacuous
+or measures the wrong column**, so a rental closes with money owed, a deposit still held, or
+damage uncharged.
+
+- **MONEY-13** — `Σ outstanding = 0` over **zero invoices** means *never billed*, not *settled*.
+  R-01 makes invoicing manual, so a rental could be handed over, returned and closed with nothing
+  ever invoiced. The gate now requires an invoice whose status is neither Draft nor Void. A
+  Draft's balance still counts toward outstanding — a working figure someone must settle or void
+  is not nothing — but a Draft cannot stand in for a bill having been raised.
+- **RL-05** — the deposit gate read `security_deposits.pending_amount`, which
+  `sync_deposit_balances` derives as `greatest(required − received, 0)`: that is **"not yet
+  collected"**, not "not yet given back". It now computes `held = received − refunded − applied`.
+  `pending_amount` is gone from the file.
+- **RL-06** — the damage gate was the literal `0` with a TODO, while findings are now genuinely
+  written at Return and Reset. It reads them parent-first, never through an embed:
+  `operation_sessions` → `return_lines` → `damage_findings`, and `cleaning_queue_entries` →
+  `damage_findings`, both filtered to pending approval and not voided. Every read throws with its
+  table named, so a broken read can never read as "gate passes".
+
+`CloseGateInput` renames `depositResolved: boolean` to `depositHeldPaisa: number` deliberately:
+the rename forces every call site to face the changed meaning rather than keeping a field whose
+name **was** the bug. Blocking values are rupees now, not raw paisa.
+
+### It found a fault in the seed corpus, not just in the gate
+
+Sixteen `Closed` demo bookings received their deposits and emitted no `Released` movement, so
+under the corrected predicate they hold the client's money. Rather than feed the gate a number the
+SQL would not produce, the corpus now emits the matching `'Released'` `deposit_movements` row so
+`sync_deposit_balances` actually sets `refunded_amount`. That row has **never executed** —
+`db:rebuild` cannot run — so its column list was copied verbatim from the adjacent working
+`Received` block and checked against the live constraints.
+
+### Which gate lives where — read live, not from migration headers
+
+| Gate | Engine (app) | Trigger `validate_booking_gates` |
+|---|---|---|
+| Invoiced | **fixed** | **absent** |
+| Outstanding = 0 | fixed (rupee message) | present, but the vacuous sum, and names no amount |
+| Deposit resolved | **fixed** (held, not pending) | present, but reads `pending_amount` |
+| No open Case | present (always app-only) | **absent** |
+| No damage pending | **fixed** | **absent** |
+
+So this fixes **one of the two layers**. `0084_close_gates_complete` is not written, live stops at
+`0078`, and with the stage column still directly writable (DB-02/SEC-06) and the `_v` views still
+writable (SEC-01) every gate remains bypassable by a direct write, a script or an offline replay.
+
+### The dependency this creates — recorded because an operator should not discover it
+
+Gates 2 and 4 now convert a silent loss into a **hard block with no exit path in the app**.
+Verified by grep with a positive control: nothing in `src/actions` or `src/lib/queries` writes a
+`Released` or `Applied` `deposit_movements` row, and nothing sets
+`damage_findings.approval_state = 'Approved'` — `floorVerb` only inserts.
+
+Latent today (0 deposits, 0 findings live), but the first real deposit or Return finding strands
+that booking at `Returned` until MONEY-10 and a damage-approval writer exist. That is the correct
+failure direction — blocking beats losing the client's money quietly — but it is a dependency, so
+**both refusal strings now say so in as many words** and each carries a `TODO` naming the issue
+that should delete the clause. A message telling an operator to "refund or apply it" when no
+screen records either is the same dishonesty the floor verbs were just cleared of.
+
+### §4.51 filed, and the override deliberately not built
+
+R-07 keeps the close gate a hard block and names no exception; R-06's named override belongs to
+the **handover** gate and explicitly only there; R-08 rules who may confirm a close, not what they
+may waive. So no override was implemented — reading R-06 across to Close would extend a ruling.
+`PLAN.md §4.51` puts the zero-value-job question to Babin with both answers costed.
+
+On `SPEC-P0-2 §1` versus the audit: §1 lists *"enforces deposit resolved —
+`security_deposits.pending_amount`"* under **"Already live"**, and that line is precisely the
+misreading. Foundation §1.7 gate 2, carried by R-00, is *"refunded, forfeited, or applied"* — what
+is **held**, not what is uncollected. R-00 makes the newer ruling win over a spec's description of
+existing behaviour, so the audit is followed.
+
+### Verified
+
+`npx tsc --noEmit` exit 0. `npx eslint` on all five files exit 0. `npx vitest run` on the
+closeRental and workflow suites — **74 passed**, re-run after the refusal strings changed (the
+first re-run failed on one pinned message, which is the test doing its job; the assertion was
+updated to the new text).
+
+**Not verified:** nothing here was exercised against production and nothing could be — 0 invoices,
+0 deposits, 0 findings, 0 sessions, and 200 of 246 bookings carry no `booking_lines` (DATA-17).
+The corrected reads have never met a real PostgREST; their `.in()` and `.is()` shapes are asserted
+against a mock. No refusal string has been seen rendered.
+
 ## 2026-09-07 — Handover and Evidence: a screen that steered toward a false certification
 
 **Phase:** Phase 0 · **Status:** 4 register items closed · 4 filed · 1 new defect CLASS found

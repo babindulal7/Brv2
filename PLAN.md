@@ -751,6 +751,50 @@ extend that pattern further without ruling this.
 
 ---
 
+## 4.51 ⬅ OPEN ×1 — may a rental that was never invoiced be closed, and by whom?
+
+**Raised 7 Sep 2026** while correcting the three close gates (audit MONEY-13, RL-05, RL-06).
+
+**Context.** `closeRental`'s first §1.7 gate now reads *"billed and settled"*: it refuses unless an
+invoice exists whose status is neither `Draft` nor `Void`. R-01 makes invoicing manual and R-02
+issues at return, so `Σ outstanding = 0` over zero invoices means **"never billed"**, not
+"settled". On live today that is every booking — 246 bookings, 0 invoices, 130 already at
+`Returned`.
+
+**Implemented: the conservative reading — no override.** An un-invoiced rental cannot be closed by
+anyone, Owner included. R-07 keeps the close gate a hard block and names no exception; R-06 grants
+a named override to the *handover* gate and explicitly only there; R-08 rules **who may confirm** a
+close, not **what they may waive**. Reading R-06 across to Close would extend a ruling, so it was
+not done.
+
+**The question.** A genuine zero-value job — a goodwill loan, an internal shoot, a booking billed
+on another company's paperwork — has nothing to invoice and therefore cannot leave `Returned`.
+
+| Option | Mechanism | Cost |
+|---|---|---|
+| **(a)** No override; raise and issue a **Rs 0 invoice** | Close then passes on the ordinary path, and the job leaves a document behind | Nothing — it is what ships today |
+| **(b)** An Owner/Admin *"close without billing"* override | Reason of at least 10 characters, written to `audit_events` with all four gate values as they stood, surfaced on the booking | The audit's recommended Option A for MONEY-13 |
+
+**Needed from Babin:** (a) or (b). If (b): Owner/Admin only is **narrower than R-08's four** —
+confirm that; and does the same override clear the deposit and damage gates too, or only the
+billing one?
+
+### The dependency this created, recorded so it is not discovered by an operator
+
+Gates 2 and 4 now convert a silent loss into a **hard block with no exit path in the app**,
+verified by grep with a positive control:
+
+- **Nothing writes a `Released` or `Applied` `deposit_movements` row.** The table appears in
+  `src/actions` and `src/lib/queries` only in comments. So a held deposit cannot be resolved.
+- **Nothing sets `damage_findings.approval_state = 'Approved'`.** `floorVerb` only inserts.
+
+Latent today (0 deposits, 0 findings on live), but **the first real deposit or Return-inspection
+finding strands that booking at `Returned`** until MONEY-10 (the deposit lifecycle) and a
+damage-approval writer exist. That is the correct failure direction — blocking beats losing the
+client's money quietly — but it is a dependency, not a detail. Both refusal strings say so in as
+many words, and both carry a `TODO` naming the issue that should delete the clause.
+
+---
 ## 4.49 ⬅ OPEN ×2 — two questions the quantity-hold work (INV-02) could not answer for itself
 
 **Raised 7 Sep 2026** while building product-level holds so `Confirm` can succeed on the live

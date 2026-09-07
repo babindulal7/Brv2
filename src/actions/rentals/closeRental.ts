@@ -34,11 +34,21 @@ import type { SystemRole } from '../../types/database'
  *  2. In `validate_booking_gates` on the row, which is the one that cannot be
  *     talked past by a stale read, an offline replay or a script.
  *
- * ⚠ Today the server-side half is **vacuous** for a different reason: it reads
- * `invoices` and `security_deposits`, and nothing in the app writes either, so
- * both sums are NULL and `coalesce(...,0)` reads zero (audit P1-14, SPEC-P0-1
- * §2.3). It becomes real the moment `createInvoice` lands — which is precisely
- * why PHASE-0-PLAN sequences Close (Step 4) after invoicing (Step 3).
+ * ⚠ **The server-side half is still wrong, and this file can no longer fix
+ * that.** Read live on 7 Sep 2026 with `pg_get_functiondef`, the deployed
+ * `validate_booking_gates` has exactly two branches in its `Closed` arm:
+ * `coalesce(sum(outstanding_amount), 0)` over non-Void invoices, and
+ * `coalesce(pending_amount, 0)` from `security_deposits`. So on the database:
+ *
+ *  - **MONEY-13 stands** — the sum is over zero rows for an un-invoiced rental.
+ *  - **RL-05 stands** — `pending_amount` means *not yet collected*.
+ *  - **RL-06 has no branch at all** — no damage gate, and no case gate either.
+ *
+ * The corrections below therefore live in ONE of the two layers. Anything that
+ * writes `bookings.stage` without going through this action — a script, an
+ * offline replay, a direct PostgREST call (audit DB-02, SEC-06) — still closes
+ * past all three. Migration `0084_close_gates_complete` is the other half and
+ * is **not written**; PHASE-0 Step 0 gates every migration and has not run.
  *
  * ## R-07 · a hard block, and never automatic
  *
@@ -47,6 +57,28 @@ import type { SystemRole } from '../../types/database'
  * 28 Jul note about auto-closing when an invoice is marked Paid is superseded —
  * auto-firing would close rentals carrying an open case or an unapproved damage
  * charge, because those two gates sit outside the invoice entirely.
+ *
+ * ## TODO(decision) · PLAN.md §4.51 — may an un-invoiced rental ever close?
+ *
+ * MONEY-13's recommended fix pairs the "must be invoiced" predicate with an
+ * **Owner/Admin override carrying a reason to `audit_events`**, for genuine
+ * zero-value jobs (a goodwill loan, an internal shoot, a booking billed on
+ * another company's paperwork). That override is **not implemented here**, and
+ * deliberately:
+ *
+ *  - **R-07** says the close gate "stays a hard block" and names no exception.
+ *  - **R-06** grants a named override to the *handover* money gate, explicitly
+ *    and only there. Reading it across to Close would be extending a ruling.
+ *  - **R-08** rules who may *confirm* a close, not what they may waive.
+ *
+ * So the conservative reading is implemented: an unbilled rental cannot close,
+ * for anyone. A zero-value job is unblocked today by raising a Rs 0 invoice and
+ * issuing it, which is also the only path that leaves a document behind.
+ *
+ * If Babin rules the override in, it belongs here as an `override: { reason }`
+ * input gated on `Owner | Admin`, refused below 10 characters, written to
+ * `audit_events` with all four gate values as they stood, and surfaced on the
+ * booking — never as a silent bypass.
  */
 
 export type CloseRentalInput = {
@@ -68,7 +100,11 @@ export type CloseRentalResult = {
   bookingNo: string
   /** Always `'Closed'` when this resolves. */
   stage: 'Closed'
-  /** The four §1.7 gates as they stood, so a caller can render what was true at close. */
+  /**
+   * What the four §1.7 gates were reading at the moment of the close, so a
+   * caller can render what was true — including `rentalInvoiced`, which is the
+   * fact that separates "paid in full" from "never billed" (MONEY-13).
+   */
   gates: CloseGateInput
 }
 
@@ -78,6 +114,24 @@ export type CloseRentalResult = {
  * Cancelled` — the first four are open, the last three are not.
  */
 const OPEN_CASE_STATES = ['Open', 'Under Review', 'Awaiting Decision', 'In Progress']
+
+/**
+ * The one `damage_approval_state` that is not yet a charge. The live enum is
+ * `Pending Approval | Approved` — two members, so "not approved" and "pending"
+ * are the same set today, and naming the member rather than negating `Approved`
+ * keeps that true if a third (`Rejected`, say) is ever added.
+ */
+const DAMAGE_PENDING_APPROVAL = 'Pending Approval'
+
+/**
+ * Invoice statuses that mean **no bill has been issued**. The live
+ * `invoice_status` enum is `Draft | Sent | Partially Paid | Paid | Overdue |
+ * Void`; R-02 keeps an invoice in `Draft` for the whole rental and issues it
+ * once, at return, so `Draft` is a working figure and not a bill. `Void` is
+ * already excluded from the read below because a voided invoice carries no
+ * balance (R-04 settles it by credit note).
+ */
+const UNISSUED_INVOICE_STATUSES = ['Draft', 'Void']
 
 type BookingRow = {
   id: string
@@ -91,20 +145,30 @@ type BookingRow = {
 /** Rupees (numeric, which postgrest-js may hand back as a string) → paisa. */
 const paisa = (v: number | string | null | undefined): number => Math.round(Number(v ?? 0) * 100)
 
+/** The `id` column off a `select('id')`, which postgrest-js hands back untyped. */
+const idsOf = (rows: unknown[] | null): string[] =>
+  ((rows ?? []) as Array<{ id: string }>).map((row) => row.id)
+
 /**
  * Read the four §1.7 gates for one booking, from the tables that own them.
  *
- * Four reads rather than one embed: each gate lives on a different table, and a
- * failed embed surfaces as a null column rather than an error — which would
- * read as "gate passes". A gate that passes because its read broke is the one
- * failure mode this function must not have, so each read is separate and each
- * failure throws with the table named.
+ * Separate reads rather than one embed: each gate lives on a different table,
+ * and a failed embed surfaces as a null column rather than an error — which
+ * would read as "gate passes". A gate that passes because its read broke is the
+ * one failure mode this function must not have, so each read is separate and
+ * each failure throws with the table named.
  */
 async function readCloseGates(bookingId: string, bookingNo: string): Promise<CloseGateInput> {
   /*
-   * Outstanding across every invoice that is not Void — the same expression the
-   * server-side gate uses, so the two cannot disagree about what "settled"
-   * means. A voided invoice is settled by credit note and carries no balance.
+   * ── Gate 1 · MONEY-13 ────────────────────────────────────────────────────
+   *
+   * `status` is selected and USED now. It used to be selected and ignored,
+   * which is how "outstanding = 0" came to mean two different things: an
+   * invoice paid in full, and a booking nobody ever billed. R-01 makes
+   * invoicing manual and R-02 issues it at return, so the second case is
+   * ordinary rather than exotic — on the live project today there are 246
+   * bookings and 0 invoices, and every one of the 130 already at `Returned`
+   * would pass this gate on an empty sum.
    */
   const { data: invoiceRows, error: invoiceError } = await supabase
     .from('invoices')
@@ -119,17 +183,35 @@ async function readCloseGates(bookingId: string, bookingNo: string): Promise<Clo
     )
   }
 
-  const rentalOutstandingPaisa = ((invoiceRows ?? []) as unknown as Array<{ outstanding_amount: number | string }>)
-    .reduce((sum, row) => sum + paisa(row.outstanding_amount), 0)
+  const invoices = (invoiceRows ?? []) as unknown as Array<{ outstanding_amount: number | string; status: string }>
+
+  /* Outstanding still counts a Draft's balance — a working figure someone has
+     to settle or void is not nothing. What a Draft cannot do is stand in for a
+     bill having been raised. */
+  const rentalOutstandingPaisa = invoices.reduce((sum, row) => sum + paisa(row.outstanding_amount), 0)
+  const rentalInvoiced = invoices.some((row) => !UNISSUED_INVOICE_STATUSES.includes(row.status))
 
   /*
-   * Law 5 — the deposit is a liability, held separately from the rental total.
-   * "Resolved" means nothing is still pending: refunded, applied, or never
-   * required. A booking with no deposit row required no deposit.
+   * ── Gate 2 · RL-05 ───────────────────────────────────────────────────────
+   *
+   * Law 5 — the deposit is the client's money, a liability held separately from
+   * the rental total. "Resolved" is Foundation §1.7's word and it means
+   * *returned*: refunded, forfeited or applied.
+   *
+   * This used to read `pending_amount`, which `sync_deposit_balances` derives
+   * as `greatest(required − received, 0)` — what the client still OWES US.
+   * A deposit collected in full and never given back read as `0` there, so
+   * Close passed and Rs 25,000–50,000 of somebody else's money stayed with
+   * Cine Sewa with no step left in the lifecycle that would return it. The
+   * three columns below are the ones `sync_deposit_balances` actually
+   * maintains from `deposit_movements` (`Received` / `Released` / `Applied`).
+   *
+   * A booking with no deposit row required no deposit: Σ over zero rows is 0,
+   * and here that genuinely means nothing is held.
    */
   const { data: depositRows, error: depositError } = await supabase
     .from('security_deposits')
-    .select('pending_amount')
+    .select('received_amount, refunded_amount, applied_amount')
     .eq('booking_id', bookingId)
 
   if (depositError) {
@@ -139,9 +221,18 @@ async function readCloseGates(bookingId: string, bookingNo: string): Promise<Clo
     )
   }
 
-  const depositPendingPaisa = ((depositRows ?? []) as unknown as Array<{ pending_amount: number | string }>)
-    .reduce((sum, row) => sum + paisa(row.pending_amount), 0)
+  const depositHeldPaisa = (
+    (depositRows ?? []) as unknown as Array<{
+      received_amount: number | string
+      refunded_amount: number | string
+      applied_amount: number | string
+    }>
+  ).reduce(
+    (sum, row) => sum + paisa(row.received_amount) - paisa(row.refunded_amount) - paisa(row.applied_amount),
+    0,
+  )
 
+  /* ── Gate 3 · the open case ─────────────────────────────────────────────── */
   const { data: caseRows, error: caseError } = await supabase
     .from('cases')
     .select('id, status')
@@ -155,26 +246,108 @@ async function readCloseGates(bookingId: string, bookingNo: string): Promise<Clo
     )
   }
 
+  /*
+   * ── Gate 4 · RL-06 ───────────────────────────────────────────────────────
+   *
+   * This was the literal `0` with a comment explaining that no query could
+   * return a real number. Both halves of that explanation are now false:
+   * `floorVerb` inserts `damage_findings` from Return (`writeDamageFindings`,
+   * `source = 'Return inspection'`) and from Reset (`source = 'Cleaning'`) —
+   * both landed in `e6c306e`, on the same day as this file's own `58846c3` —
+   * and a booking path exists through each of the two parents that
+   * `damage_findings_exactly_one_parent` allows:
+   * `return_lines.session_id → operation_sessions.booking_id`, and
+   * `cleaning_queue_entries.booking_id` directly.
+   *
+   * Read parent-first rather than as one `or()` over an embed: an embed that
+   * fails to resolve returns nulls rather than an error, and this is the gate
+   * that must never pass because its read broke. Every step names its table on
+   * failure, and a booking with no sessions and no cleaning entries skips
+   * straight to zero without asking `damage_findings` about an empty list.
+   *
+   * ⚠ Still invisible to this gate: damage recorded against a **quantity**
+   * line, which RT-02 leaves in the session notes with no `damage_findings`
+   * row to count. On live that is every line — all 204 products are
+   * quantity-tracked (audit INV-02) — so this gate is armed but unreachable
+   * there until a finding can parent to something other than a `product_units`
+   * row. Filed, not papered over.
+   */
+  const { data: sessionRows, error: sessionError } = await supabase
+    .from('operation_sessions')
+    .select('id')
+    .eq('booking_id', bookingId)
+
+  if (sessionError) {
+    throw new Error(
+      `Could not read the operation sessions for ${bookingNo}, so whether any damage finding is awaiting approval ` +
+        `is unknown and it was not closed: ${sessionError.message}`,
+    )
+  }
+
+  const sessionIds = idsOf(sessionRows)
+  let returnLineIds: string[] = []
+
+  if (sessionIds.length > 0) {
+    const { data: returnLineRows, error: returnLineError } = await supabase
+      .from('return_lines')
+      .select('id')
+      .in('session_id', sessionIds)
+
+    if (returnLineError) {
+      throw new Error(
+        `Could not read the return lines for ${bookingNo}, so whether any damage finding is awaiting approval is ` +
+          `unknown and it was not closed: ${returnLineError.message}`,
+      )
+    }
+    returnLineIds = idsOf(returnLineRows)
+  }
+
+  const { data: cleaningRows, error: cleaningError } = await supabase
+    .from('cleaning_queue_entries')
+    .select('id')
+    .eq('booking_id', bookingId)
+
+  if (cleaningError) {
+    throw new Error(
+      `Could not read the cleaning queue for ${bookingNo}, so whether any damage finding is awaiting approval is ` +
+        `unknown and it was not closed: ${cleaningError.message}`,
+    )
+  }
+
+  /**
+   * Findings awaiting approval under one parent column. `exactly_one_parent`
+   * means a finding hangs off `return_line_id` or `cleaning_queue_entry_id` but
+   * never both, so the two counts add without double-counting.
+   */
+  const countPending = async (parentColumn: string, parentIds: readonly string[]): Promise<number> => {
+    if (parentIds.length === 0) return 0
+
+    const { data, error } = await supabase
+      .from('damage_findings')
+      .select('id')
+      .in(parentColumn, parentIds)
+      .eq('approval_state', DAMAGE_PENDING_APPROVAL)
+      .is('voided_at', null)
+
+    if (error) {
+      throw new Error(
+        `Could not read the damage findings for ${bookingNo}, so whether a charge is awaiting approval is unknown ` +
+          `and it was not closed: ${error.message}`,
+      )
+    }
+    return (data ?? []).length
+  }
+
+  const damageChargesPendingApproval =
+    (await countPending('return_line_id', returnLineIds)) +
+    (await countPending('cleaning_queue_entry_id', idsOf(cleaningRows)))
+
   return {
+    rentalInvoiced,
     rentalOutstandingPaisa,
-    depositResolved: depositPendingPaisa === 0,
+    depositHeldPaisa,
     openCases: (caseRows ?? []).length,
-    /*
-     * ⚠ Vacuously zero, and honestly so. `damage_findings` carries no booking
-     * FK at all — it points at `return_line_id`, `cleaning_queue_entry_id` and
-     * `unit_id` — and nothing in the app writes it yet (audit P1-3, SPEC-P1-3).
-     * So there is no query that could return a real number here today.
-     *
-     * Reporting 0 is therefore accurate about the DATA and misleading about the
-     * WORLD: a damaged item can exist with no finding to count. SPEC-P0-2 §3
-     * says exactly this — "until findings are written this gate is vacuously
-     * true, which is honest but weak. Note it in the UI." The Booking Detail
-     * prompt must say the damage gate is not yet enforced rather than showing a
-     * green tick.
-     * TODO(P1-3): count `damage_findings` in `Pending Approval` for the booking
-     * once the writer and the booking link exist.
-     */
-    damageChargesPendingApproval: 0,
+    damageChargesPendingApproval,
   }
 }
 
@@ -203,15 +376,15 @@ export const closeRental = createAction<CloseRentalInput, CloseRentalResult>({
 
   execute: async (input, ctx: ActionContext) => {
     /*
-     * OFFLINE — refused. Closing evaluates live money on three tables; a queued
-     * close would be checked against a stage and a balance that may be hours
-     * old by the time it drains. `confirmRental` refuses offline for the same
-     * reason and says so in the same words.
+     * OFFLINE — refused. Closing evaluates live money and live findings; a
+     * queued close would be checked against a stage, a balance and an approval
+     * state that may be hours old by the time it drains. `confirmRental`
+     * refuses offline for the same reason and says so in the same words.
      */
     if (ctx.isOnline === false) {
       throw new Error(
-        'Closing a rental needs a connection — the close gates are read from live invoices, deposits and cases. ' +
-          'Nothing was closed.',
+        'Closing a rental needs a connection — the close gates are read from live invoices, deposits, cases and ' +
+          'damage findings. Nothing was closed.',
       )
     }
 
@@ -321,9 +494,11 @@ export const closeRental = createAction<CloseRentalInput, CloseRentalResult>({
         payload: {
           bookingId: booking.id,
           bookingNo: booking.booking_no,
+          rentalInvoiced: gates.rentalInvoiced,
           rentalOutstandingPaisa: gates.rentalOutstandingPaisa,
-          depositResolved: gates.depositResolved,
+          depositHeldPaisa: gates.depositHeldPaisa,
           openCases: gates.openCases,
+          damageChargesPendingApproval: gates.damageChargesPendingApproval,
           reason: input.reason ?? null,
           userId: ctx.userId,
         },

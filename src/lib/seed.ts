@@ -415,6 +415,16 @@ interface BookingSpec {
   paymentShare?: number
   depositRequiredRupees: number
   depositReceivedRupees: number
+  /**
+   * How much of the deposit was given back — a `Released` `deposit_movements`
+   * row, which `sync_deposit_balances` sums into `refunded_amount`.
+   *
+   * Added 7 Sep 2026 with RL-05. §1.7 gate 2 asks what is still HELD
+   * (`received − refunded − applied`), not what is still owed, so a `Closed`
+   * booking that received a deposit and never released it is not closeable —
+   * correctly. Absent means `0`: the deposit is still held.
+   */
+  depositRefundedRupees?: number
   /** Whether the packed units are recorded on `booking_line_units`. */
   unitsAssigned: boolean
 }
@@ -789,11 +799,18 @@ function demoBookings(): readonly BookingSpec[] {
 
       /* Closed is not a label here — `closeGates` decides it. A booking may only
          be Closed with nothing outstanding and its deposit resolved, so these
-         two lines are what make the stage above legal rather than asserted. */
+         lines are what make the stage above legal rather than asserted.
+
+         RL-05 (7 Sep) added the fourth: "resolved" means the deposit was given
+         BACK, so a Closed booking releases everything it took. Before that fix
+         the corpus could leave a Closed rental holding Rs 20,000 of a client's
+         money and the gate called it settled, because it was reading what the
+         client still owed instead. */
       const closed = plan.stage === 'Closed'
       const paymentShare = closed ? 1 : cycle([0, 0.25, 0.5, 0.4], i)
       const depositRequiredRupees = i % 4 === 0 ? 0 : 5000 * (1 + (i % 4))
       const depositReceivedRupees = closed ? depositRequiredRupees : i % 3 === 0 ? 0 : depositRequiredRupees / 2
+      const depositRefundedRupees = closed ? depositReceivedRupees : 0
 
       out.push({
         seq: 800 + i,
@@ -811,6 +828,7 @@ function demoBookings(): readonly BookingSpec[] {
         paymentShare,
         depositRequiredRupees,
         depositReceivedRupees,
+        depositRefundedRupees,
         /* ⚠ Deliberately false on every generated booking.
          *
          * `booking_line_units` names a specific physical unit, and this
@@ -1232,9 +1250,23 @@ export function buildCorpus(): SeedCorpus {
      * close gates would wave through. */
     const depositPending = (rupees(spec.depositRequiredRupees) - rupees(spec.depositReceivedRupees)) as Paisa
     if (depositPending < 0) fail(`${bookingNo}: deposit received exceeds deposit required`)
+    /* RL-05, 7 Sep — the gate asks what is still HELD, not what is still owed.
+     * `depositPending` (required − received) answers the second question and is
+     * kept for the Law 5 assertion in the emitted SQL, which checks exactly
+     * that column. The gate needs the other one: received − refunded, since
+     * this corpus never applies a deposit to a charge. A Closed rental returns
+     * the deposit — {@link BookingSpec.depositRefundedRupees} says so, and the
+     * `Released` movement emitted below is what makes it true in the database
+     * as well as here. */
+    const depositHeld = (rupees(spec.depositReceivedRupees) -
+      rupees(spec.depositRefundedRupees ?? 0)) as Paisa
+    if (depositHeld < 0) fail(`${bookingNo}: deposit refunded exceeds deposit received`)
     const gates = closeGates({
+      /* Every booking in this corpus is invoiced and the invoice is issued —
+         `INVOICE_ISSUED_STATUS` ('Sent'), set once the figures are final. */
+      rentalInvoiced: true,
       rentalOutstandingPaisa: breakdown.outstanding,
-      depositResolved: depositPending === 0,
+      depositHeldPaisa: depositHeld,
       openCases: 0,
       damageChargesPendingApproval: 0,
     })
@@ -1958,6 +1990,32 @@ on conflict (deposit_no) do nothing;
   ${deposit(b.depositNo)},
   'Received'::deposit_movement_type,
   ${money(rupees(s.depositReceivedRupees))},
+  ${BANK},
+  ${BILLING}
+)
+on conflict (movement_no) do nothing;
+`)
+      }
+      /* RL-05 — a Closed rental has given the deposit back, and the corpus has
+         to SAY so rather than let the gate assume it. `sync_deposit_balances`
+         sums `Released` into `security_deposits.refunded_amount`; without this
+         row the trigger leaves `refunded_amount` at 0, `received − refunded`
+         stays positive, and the §1.7 deposit gate refuses to close a booking
+         this corpus emits as Closed. `pending_amount` is untouched by it — that
+         column is `greatest(required − received, 0)` and the Law 5 assertion at
+         the foot of this file still checks exactly that. */
+      const depositRefundedRupees = s.depositRefundedRupees ?? 0
+      if (depositRefundedRupees > 0) {
+        const movementNo = `${b.depositNo}-M2`
+        out.push(`-- Law 5: the deposit is the client's money, and on ${b.bookingNo} it has gone back to them.
+insert into deposit_movements (
+  client_uuid, movement_no, security_deposit_id, movement_type, amount, bank_account_id, handled_by
+) values (
+  ${uuid(seedUuid(`deposit_movement:${movementNo}`))},
+  ${txt(movementNo)},
+  ${deposit(b.depositNo)},
+  'Released'::deposit_movement_type,
+  ${money(rupees(depositRefundedRupees))},
   ${BANK},
   ${BILLING}
 )

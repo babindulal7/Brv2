@@ -4,6 +4,7 @@ import {
   type Flag,
   type JobName,
   type JobState,
+  type CloseGateInput,
   BOOKING_STATUS,
   STATUS_ORDER,
   statusToken,
@@ -23,9 +24,18 @@ import {
 
 const SIX: readonly BookingStatus[] = ['Quote', 'Booked', 'Packed', 'On Rent', 'Returned', 'Closed']
 
-const PASSING_GATES = {
+/**
+ * A booking that is genuinely finished: billed, settled, deposit returned, no
+ * case, no unapproved damage.
+ *
+ * `rentalInvoiced: true` is the load-bearing member (MONEY-13). Before 7 Sep
+ * the fixture had no such field, so "all four gates pass" was reachable by a
+ * rental nobody had ever billed — the sum was over zero rows.
+ */
+const PASSING_GATES: CloseGateInput = {
+  rentalInvoiced: true,
   rentalOutstandingPaisa: 0,
-  depositResolved: true,
+  depositHeldPaisa: 0,
   openCases: 0,
   damageChargesPendingApproval: 0,
 }
@@ -241,9 +251,68 @@ describe('closeGates — §1.7', () => {
     const gates = closeGates({ ...PASSING_GATES, rentalOutstandingPaisa: 50_000, openCases: 2 })
     const money = gates.find((g) => g.label === 'Rental Outstanding settled')
     expect(money?.passing).toBe(false)
-    expect(money?.blocking).toBe('50000')
+    /* Was the paisa integer `'50000'`. Law 12 wants the figure an operator can
+       act on, in the rupees every other screen shows. */
+    expect(money?.blocking).toBe('Rs 500 still outstanding')
     const cases = gates.find((g) => g.label === 'No open Case')
     expect(cases?.blocking).toBe('2 open')
+  })
+
+  /* ── MONEY-13 · "outstanding = 0" on a rental nobody billed ─────────────── */
+
+  it('refuses a rental that was never invoiced, though its outstanding reads zero', () => {
+    const gates = closeGates({ ...PASSING_GATES, rentalInvoiced: false })
+    const money = gates.find((g) => g.label === 'Rental Outstanding settled')
+    expect(money?.passing).toBe(false)
+    // The refusal has to say WHY zero is not settlement, or it reads as a bug.
+    expect(money?.blocking).toMatch(/nothing has been invoiced/i)
+    expect(money?.blocking).toMatch(/empty sum/i)
+  })
+
+  it('separates "never billed" from "paid in full" — the same zero, two verdicts', () => {
+    const unbilled = closeGates({ ...PASSING_GATES, rentalInvoiced: false })[0]
+    const settled = closeGates(PASSING_GATES)[0]
+    expect(unbilled?.passing).toBe(false)
+    expect(settled?.passing).toBe(true)
+  })
+
+  it('names an overpayment as an overpayment rather than as an outstanding balance', () => {
+    const gates = closeGates({ ...PASSING_GATES, rentalOutstandingPaisa: -25_000 })
+    expect(gates[0]?.passing).toBe(false)
+    expect(gates[0]?.blocking).toBe('Rs 250 overpaid — the invoice does not reconcile')
+  })
+
+  /* ── RL-05 · held, not uncollected ──────────────────────────────────────── */
+
+  it('refuses a close while the deposit is still held, and names the amount', () => {
+    const gates = closeGates({ ...PASSING_GATES, depositHeldPaisa: 2_500_000 })
+    const deposit = gates.find((g) => g.label === 'Deposit resolved')
+    expect(deposit?.passing).toBe(false)
+    expect(deposit?.blocking).toContain('Rs 25,000')
+    expect(deposit?.blocking).toMatch(/still held/i)
+  })
+
+  it('passes the deposit gate once everything received has been refunded or applied', () => {
+    expect(closeGates({ ...PASSING_GATES, depositHeldPaisa: 0 }).every((g) => g.passing)).toBe(true)
+  })
+
+  it('refuses, rather than passes, when more was refunded than was ever received', () => {
+    const deposit = closeGates({ ...PASSING_GATES, depositHeldPaisa: -100 }).find(
+      (g) => g.label === 'Deposit resolved',
+    )
+    expect(deposit?.passing).toBe(false)
+    expect(deposit?.blocking).toMatch(/more deposit has been refunded or applied/i)
+  })
+
+  /* ── RL-06 · the count that used to be a constant ───────────────────────── */
+
+  it('refuses on an unapproved damage finding and counts it in words, singular and plural', () => {
+    const one = closeGates({ ...PASSING_GATES, damageChargesPendingApproval: 1 })[3]
+    expect(one?.passing).toBe(false)
+    expect(one?.blocking).toBe('1 damage finding awaiting approval, and approving one is not built yet')
+
+    const three = closeGates({ ...PASSING_GATES, damageChargesPendingApproval: 3 })[3]
+    expect(three?.blocking).toBe('3 damage findings awaiting approval, and approving one is not built yet')
   })
 })
 
@@ -302,7 +371,13 @@ describe('planTransition — §1.2 + §1.7 + §1.9 in one call', () => {
       from: 'Booked',
       to: 'Closed',
       flags: ['Overdue', 'Missing'],
-      gates: { rentalOutstandingPaisa: 500, depositResolved: false, openCases: 1, damageChargesPendingApproval: 1 },
+      gates: {
+        rentalInvoiced: true,
+        rentalOutstandingPaisa: 500,
+        depositHeldPaisa: 500_000,
+        openCases: 1,
+        damageChargesPendingApproval: 1,
+      },
     })
     expect(p.allowed).toBe(false)
     // 1 forward-only + 2 flags + 4 close gates
