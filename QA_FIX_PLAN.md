@@ -19,7 +19,10 @@ production**, and nothing should be before the two gates below.
 | FIX-5 double-booking | open — and re-scoped: the DB hole is real but no app path reaches it (see the report's 5 Sep update) |
 | FIX-9 state the grants (BUG-006) | **done** — `0093` encodes live's shape, including Law 6 as a **per-column** SELECT mask (its first draft revoked the whole table and would have broken 13 booking reads on contact). Converges from any state; `check:rebuild` asserts it. |
 | *new* Add Equipment could not create serialised gear (BUG-026) | **done — closed an ACTIVE defect, no migration.** The picker offered four facilities that do not exist in `warehouses`; every serialised save was refused. Driven end to end against real Postgres. The unit mock and `lib/mock/corpus.ts` both held one of the fictional rows, which is why the suite stayed green — both now carry `0012`'s real rows. |
-| *new* Stock transfers, same defect (BUG-027) | open — `Warehouses.tsx` hands the same four seed names to `createStockTransfer`, which resolves by name. Every transfer save fails. **Recommended next.** |
+| *new* Stock transfers (BUG-027) | **done** — and it was three bugs: seed facility names, a free-text asset field whose own placeholder matches no product, AND `next_document_number('transfer')` having no row. The third is `0089`, so **live stays broken until `0089` applies**. |
+| *new* Add Equipment Category picker (BUG-029) | **done** — offered 17, the table holds 6, so 11 refused the save. Found by the sweep, in the screen fixed yesterday. |
+| *new* Add Bundle component lines (BUG-030) | open — 19 of 20 seed model names match no `products` row. **Recommended next.** |
+| *new* Add Bundle Primary Category (BUG-031) | open — same 6-row table; 10 of 16 refuse. Fix with BUG-030, same screen. |
 | FIX-6 … FIX-8, FIX-10 … FIX-11, FIX-13 … FIX-17 | open |
 
 **Five migrations now wait on the dump: `0089`, `0090`, `0091`, `0092`, `0093`.** All five are verified
@@ -166,6 +169,24 @@ Add Equipment. Note the product question this raises: that screen's warehouse CA
 real facilities will name places the cards above do not show.
 *Regression test:* saving a transfer between the two real warehouses writes a
 `stock_transfers` row; a seed facility name is refused before anything is written.
+
+
+**FIX-19 · Point Add Bundle at the database (BUG-030, BUG-031).**
+Both of that screen's entity pickers offer hand-written labels the database does not hold:
+component lines come from `data/addBundle.ts`'s `INVENTORY_MODELS` (19 of 20 match no
+`products` row — the real catalogue is Booqable-shaped, e.g. 'Sony FX3 Cinema Line Camera
+(Body Only)'), and Primary Category offers 16 against the same six `inventory_categories`
+rows. `createBundle` resolves both by name (`:252`, `:275`), so Create Bundle and Save Draft
+both refuse. Reachable from two controls at `/inventory/bundles/new`.
+The read halves already exist: `listInventory` for products, `listInventoryCategories` for
+categories (added for BUG-029).
+*Regression test:* a bundle built from picker choices saves; a seed model name is refused
+before anything is written.
+
+**FIX-20 · Rule whether the other eleven categories should exist (decision, not work).**
+`product_category` has seventeen members; `inventory_categories` has six rows. The pickers now
+read the table, which is right either way — but if the missing eleven are intended, they need
+a migration, and every table-reading picker picks them up for free.
 
 
 ## 5 · FRONTEND

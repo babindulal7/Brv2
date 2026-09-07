@@ -1,7 +1,7 @@
 import { supabase } from '../supabase'
 import { rupees, type Paisa } from '../money'
 import { applyListFilters, type ListFilters } from './listQuery'
-import type { ListQueryResult } from './useList'
+import { useList, type ListQueryResult, type ListResult } from './useList'
 import type { Database } from '../../types/supabase'
 import type { SortKey } from '../../data/inventory'
 
@@ -1128,4 +1128,66 @@ export function inventorySort(key: SortKey): { column: string; ascending: boolea
     case 'Needs attention first':
       return null
   }
+}
+
+/* ── the category list ─────────────────────────────────────────────────── */
+
+/**
+ * The categories that EXIST, which is not the list the forms were offering.
+ *
+ * `data/addBundle.ts`'s `INVENTORY_CATEGORIES` (sixteen) and
+ * `data/addEquipment.ts`'s `EQUIPMENT_CATEGORIES` (those plus 'Consumable',
+ * seventeen) are the `product_category` enum's members. `inventory_categories`
+ * holds **six** rows — Camera, Lens, Lighting, Audio, Grip, Support — seeded by
+ * `0012_seed_data.sql:115-123`, which is the ONLY insert into that table in any
+ * migration.
+ *
+ * `products.category_id` is NOT NULL against that table and `createEquipment`
+ * resolves the chosen label by name, so eleven of the seventeen offered
+ * categories refused the save **after** Add Equipment had reported every gate
+ * clear. Its error even names the gap ("a different universe"). Add Bundle's
+ * Primary Category picker fails the same way, under a hint that reads "From the
+ * Inventory category list".
+ *
+ * Reading the table is right whichever way the open question is ruled: if the
+ * other eleven enum members are later seeded as rows, a picker built from this
+ * shows them the day the migration lands, with no code change.
+ */
+export interface CategoryOption {
+  id: string
+  name: string
+  code: string
+}
+
+interface CategoryOptionRow {
+  id: string
+  name: string
+  code: string | null
+}
+
+export async function listInventoryCategories(): Promise<CategoryOption[]> {
+  const { data, error } = await supabase
+    .from('inventory_categories')
+    .select('id, name, code')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    throw new Error(`Could not read the category list: ${error.message}`)
+  }
+
+  return ((data ?? []) as unknown as CategoryOptionRow[]).map((r) => ({
+    id: r.id,
+    name: r.name,
+    code: r.code ?? '',
+  }))
+}
+
+async function fetchCategories(): Promise<ListQueryResult<CategoryOption>> {
+  const rows = await listInventoryCategories()
+  return { rows, total: rows.length }
+}
+
+export function useInventoryCategories(): ListResult<CategoryOption> {
+  return useList<CategoryOption>(fetchCategories, {}, { isFilteredOverride: false })
 }

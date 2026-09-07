@@ -217,6 +217,51 @@ what the brief asked for {D} UI state agreeing with itself while disagreeing wit
 
 ---
 
+## UPDATE — 7 September 2026: the seed-label bug class, swept and verified
+
+Yesterday's BUG-026 (Add Equipment's warehouse picker) turned out to be one instance of a
+class. A three-angle sweep — from the seed constants forward, from the actions backward, and
+from the UI controls forward — found five candidates; each went to an independent verifier
+prompted to REFUTE it. **Three confirmed, one refuted, one cleared by the sweeper itself.**
+
+The shape: a screen builds a picker from a hand-written constant in `src/data/`, passes the
+chosen LABEL to an action, and the action resolves that label against a real table and refuses.
+The UI reports itself healthy; the write always fails.
+
+| # | Finding | Verdict |
+|---|---|---|
+| BUG-027 | Stock transfer form — seed facility names, and a free-text asset field whose placeholder matches no product | **CONFIRMED P1 — FIXED** |
+| BUG-029 | Add Equipment Category — picker offers 17, `inventory_categories` holds 6 | **CONFIRMED P1 — FIXED** |
+| BUG-030 | Add Bundle component lines — 19 of 20 seed model names match no `products` row | **CONFIRMED P1 — open** |
+| BUG-031 | Add Bundle Primary Category — 10 of 16 offered categories are not rows | **CONFIRMED P1 — open** |
+| — | New Rental crew roles vs the `crew_role` enum | **REFUTED — P3, do not file** |
+| — | Purchase Requests resolving by `pr_no` | cleared by the sweeper; the screen no longer feeds it seed numbers |
+
+**BUG-029 — Add Equipment's Category picker.** `inventory_categories` holds exactly six rows
+(Camera, Lens, Lighting, Audio, Grip, Support) from `0012_seed_data.sql:115-123`, the only
+insert into that table in any migration, 0001-0093. The picker offered the `product_category`
+enum's seventeen. `products.category_id` is NOT NULL against the table, so **eleven of the
+seventeen refused the save** after the form reported every gate clear. This sat in the screen
+this report called fixed yesterday: that fix was real but it was one control, and I verified it
+with 'Camera' — one of the six that work. The picker now reads the table.
+
+**BUG-030 / BUG-031 — Add Bundle, not fixed.** Reachable from two clickable Inventory
+controls at `/inventory/bundles/new`. The verifier's one correction: "always fails" is slightly
+overstated, because 'Sony NP-FZ100 Battery' does resolve — a bundle reduced to that single
+line could save.
+
+**The refutation is worth as much as the confirmations.** The New Rental crew-role mismatch is
+real as a vocabulary split but is NOT this bug: the roles are checked in-process against the
+action's own list, the UI does not look healthy, and the write never runs. Filed at P3 with the
+reasoning, so nobody re-derives it as a P1.
+
+**Open question this raises, unruled:** the `product_category` enum has seventeen members and
+the table has six rows. Reading the table is correct either way — if the other eleven are
+meant to exist, a migration seeds them and every table-reading picker shows them with no code
+change. But *whether* they should exist is a data decision, not an engineering one.
+
+---
+
 ## APP HEALTH
 
 Full detail in [`QA_APP_HEALTH_REPORT.md`](QA_APP_HEALTH_REPORT.md). Summary at HEAD:

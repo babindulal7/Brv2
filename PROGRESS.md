@@ -292,6 +292,72 @@ is gone, and marking all three units reads "Pack job: Complete · 3/3". Console 
 **Not driven:** the mixed-line chip (`Complete · N missing`) — the per-unit Missing action sits
 deeper in the row UI than I reached. It is pinned by 4 unit tests over the extracted helper.
 
+## 2026-09-07 — the stock-transfer form could not save either, for three reasons
+
+**Phase:** Phase 0 — **Status:** two of the three fixed in the repo; the third is `0089`, which
+is written and waits on the Step 0 dump — **the form still cannot save on live until `0089`
+is applied**
+
+BUG-027, filed yesterday as "the same bug in a second screen". It was three bugs, and the
+warehouse one was only the first to fire.
+
+### 1 — the facilities (the filed defect)
+
+`Warehouses.tsx:738-745` defaulted the endpoints to `WAREHOUSES[0].name` / `[1].name` —
+'Kathmandu Main Hub (HQ)' and 'Patan Studio Depository' — and the Source / Destination
+dropdowns submitted the NAME. `createStockTransfer` resolves a facility against `warehouses`,
+where none of the four seed names is a row. Every save died on the source lookup.
+
+### 2 — the asset, which nothing had reported
+
+The Asset field was a free-text `Input` whose value had to match `products.name` EXACTLY. Its
+own placeholder was **'Sony FX3 Cinema Camera'**, and the catalogue has no such product — it
+is called 'Sony FX3 Full-Frame Camera'. An operator typing the example they were shown got
+"matches no product in the catalogue". Fixing only the warehouses would have moved the failure
+one line down.
+
+Both are pickers reading the database now: facilities from `useWarehouses()`, assets from
+`listInventory({ page: { index: 0, size: 500 } })` — the same read the New Rental equipment
+picker uses. The action takes `sourceWarehouseId` / `destinationWarehouseId` / `productId` and
+resolves by uuid, keeping the name path as a fallback.
+
+### 3 — the number sequence, which blocks live regardless
+
+`next_document_number('transfer')` has **no row in `number_sequences`**: `0012` seeded seven
+keys, `0056` three, and neither is `transfer`. **Confirmed on production itself** (read-only,
+7 Sep) — live holds exactly ten keys: booking, bundle, client, deposit, equipment,
+expense, invoice, membership, payment, quote. No `transfer`. This is measured, not inferred. The only migration that seeds it is `0089`
+(as DB-06 — its header already says "Every Transfer Center create on live ends in *Number
+sequence transfer does not exist*"), and **live stops at `0078`**. So on production today a
+transfer fails at the allocator even with this commit. Stated rather than buried: this screen
+is not fixed on live until `0089` is applied.
+
+### A hole my own failing test found
+
+I wrote a validate test asserting an id is never mistaken for a name. It failed — and it was
+the test that was wrong, not the code. But writing it exposed a real gap: `validate` compares
+whatever keys the caller sent, so identifying the SAME facility once by uuid and once by name
+passes it. `validate` has no database and cannot know the two denote one warehouse. `execute`
+now re-checks `source.id === destination.id` after both rows resolve, and the test asserts the
+refusal instead of asserting a comparison that never held.
+
+### More fixture corrections, same lesson as yesterday
+
+The unit mock's products were **'Sony FX3 Cinema Camera'** and **'NISI Athena Prime 35mm'**.
+Neither exists; the catalogue holds 'Sony FX3 Full-Frame Camera' and 'NISI Athena 35mm' (the
+second conflated the name with the model, 'Athena Prime 35mm T1.9'). Renamed to what `0047`
+actually seeds. A fixture that invents its reference data cannot fail when the screen does.
+
+### The warehouse CARDS stay on seed data, deliberately
+
+Capacity, occupancy, accuracy and the rack map have no columns behind them — `storage_zones`
+has no room, rack, shelf, bin or capacity column. Wiring them would mean deleting most of what
+the screen shows, which is a product decision, not this fix. The visible consequence, now
+stated in the code: the cards list four seeded facilities while the transfer form offers the
+two real ones.
+
+---
+
 ## 2026-09-06 (cont. 3) — Add Equipment could not register a serialised item at all
 
 **Phase:** Phase 0 — **Status:** fixed, driven end to end against real Postgres — no migration
@@ -363,6 +429,18 @@ wiring the dropdown to live rows is a visible product change, not a silent repai
 
 Filed alongside it, unfixed and lower: `EquipmentShared.tsx:267` — `BsAbove` calls setState
 while `Header` renders, which React logs on every Add Equipment load.
+
+### Gates, honestly
+
+`tsc` clean, `eslint` clean on every changed file, the inventory suites green. **`check:rebuild`
+was NOT RUN** — `com.docker.service` is Stopped and an unelevated shell cannot start it, so
+the local Postgres is unreachable. Recorded as not run rather than assumed passing.
+
+The browser verification of the transfer form was done in **mock mode**, not against real
+Postgres: GoTrue hung on every localdb sign-in. So the pickers and the form's success path are
+driven and proven; a transfer row landing in Postgres is **not** proven by me.
+
+---
 
 ### Local scratch DB, for the next session
 

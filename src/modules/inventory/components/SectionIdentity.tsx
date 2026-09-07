@@ -1,9 +1,27 @@
 import Icon from '../../../components/ui/Icon'
 import { Field, SectionCard, inputStyle, fieldRow } from './EquipmentShared'
 import { useEquipmentContext } from './AddEquipmentContext'
-import { EQUIPMENT_CATEGORIES } from '../../../data/addEquipment'
+import { useInventoryCategories } from '../../../lib/queries/inventory'
 
 export function SectionIdentity() {
+  /*
+   * The categories that EXIST, read from `inventory_categories`.
+   *
+   * This offered `data/addEquipment.ts`'s `EQUIPMENT_CATEGORIES` — the
+   * seventeen members of the `product_category` ENUM. The TABLE holds six rows
+   * (Camera, Lens, Lighting, Audio, Grip, Support, seeded by
+   * `0012_seed_data.sql:115-123`, the only insert into it in any migration), and
+   * `products.category_id` is NOT NULL against it. `createEquipment` resolves the
+   * chosen label by name, so **eleven of the seventeen refused the save** after
+   * this form had reported every gate clear — the same shape as the warehouse
+   * picker below it, and the action's own error already named the gap.
+   *
+   * The NAME is still what the action resolves; only the list changed. Reading
+   * the table also means that if the other eleven enum members are ever seeded,
+   * they appear here with no code change.
+   */
+  const { rows: categories, loading: categoriesLoading } = useInventoryCategories()
+
   const {
     assetCode,
     name,
@@ -68,10 +86,16 @@ export function SectionIdentity() {
                   }}
                   style={inputStyle(Boolean(errors.category))}
                 >
-                  <option value="">Select a category</option>
-                  {EQUIPMENT_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
+                  <option value="">
+                    {categoriesLoading
+                      ? 'Loading categories…'
+                      : categories.length === 0
+                        ? 'No category exists to file this under'
+                        : 'Select a category'}
+                  </option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name}
                     </option>
                   ))}
                 </select>

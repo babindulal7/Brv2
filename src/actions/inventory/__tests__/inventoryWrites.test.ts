@@ -118,9 +118,9 @@ const TR_INPUT: CreateStockTransferInput = {
   clientUuid: '33333333-3333-4333-8333-333333333331',
   lineClientUuid: '33333333-3333-4333-8333-333333333332',
   transferType: 'Branch Transfer',
-  sourceWarehouse: 'Central Camera Vault',
-  destinationWarehouse: 'Lakeside Equipment Hub',
-  assetName: 'Sony FX3 Cinema Camera',
+  sourceWarehouseId: 'wh-vault-uuid',
+  destinationWarehouseId: 'wh-lakeside-uuid',
+  productId: 'prod-fx3-uuid',
   serial: 'SN-FX3-003',
   notes: 'Lakeside shoot, back Friday',
 }
@@ -139,14 +139,14 @@ const BND_INPUT: CreateBundleInput = {
   items: [
     {
       modelId: 'M-FX3-BODY',
-      productName: 'Sony FX3 Cinema Camera',
+      productName: 'Sony FX3 Full-Frame Camera',
       qty: 1,
       discountPct: 10,
       clientUuid: '55555555-5555-4555-8555-555555555552',
     },
     {
       modelId: 'M-NISI-35',
-      productName: 'NISI Athena Prime 35mm',
+      productName: 'NISI Athena 35mm',
       qty: 2,
       discountPct: 0,
       clientUuid: '55555555-5555-4555-8555-555555555553',
@@ -191,8 +191,8 @@ beforeEach(() => {
       { id: 'wh-lakeside-uuid', branch_id: 'br-pkr-uuid', name: 'Lakeside Equipment Hub' },
     ],
     products: [
-      { id: 'prod-fx3-uuid', name: 'Sony FX3 Cinema Camera' },
-      { id: 'prod-nisi35-uuid', name: 'NISI Athena Prime 35mm' },
+      { id: 'prod-fx3-uuid', name: 'Sony FX3 Full-Frame Camera' },
+      { id: 'prod-nisi35-uuid', name: 'NISI Athena 35mm' },
     ],
     product_units: [{ id: 'unit-fx3-uuid', product_id: 'prod-fx3-uuid', serial_no: 'SN-FX3-003' }],
     purchase_requests: [{ id: 'pr-row-uuid', pr_no: 'PR-2026-0012', status: 'Submitted' }],
@@ -370,11 +370,26 @@ describe('CREATE_STOCK_TRANSFER — validate', () => {
   const check = (patch: Partial<CreateStockTransferInput> = {}) => createStockTransferConfig.validate({ ...TR_INPUT, ...patch })
 
   it('refuses a transfer from a warehouse to itself', () => {
-    expect(() => check({ destinationWarehouse: TR_INPUT.sourceWarehouse })).toThrow(/different warehouses/i)
+    expect(() => check({ destinationWarehouseId: TR_INPUT.sourceWarehouseId })).toThrow(/different warehouses/i)
+  })
+
+  it('refuses a facility named but not identified, and vice versa — one of each pair is required', () => {
+    expect(() => check({ sourceWarehouseId: undefined })).toThrow(/source warehouse is required/i)
+    expect(() => check({ destinationWarehouseId: undefined })).toThrow(/destination warehouse is required/i)
+  })
+
+  it('cannot tell an id from a name here — which is why execute re-checks after resolving', () => {
+    /* Endpoints are compared like with like, so identifying the SAME facility
+       once by uuid and once by name gets past this gate. `validate` has no
+       database, so it cannot know the two denote one warehouse; the write
+       refuses it after both rows resolve (see the execute test below). */
+    expect(() =>
+      check({ destinationWarehouseId: undefined, destinationWarehouse: 'Central Camera Vault' }),
+    ).not.toThrow()
   })
 
   it('refuses a transfer that moves nothing — stock_transfer_lines.product_id is NOT NULL', () => {
-    expect(() => check({ assetName: '  ' })).toThrow(/cannot move nothing/i)
+    expect(() => check({ productId: undefined, assetName: '  ' })).toThrow(/cannot move nothing/i)
   })
 
   it('refuses missing Law 8 keys, header and line separately', () => {
@@ -424,7 +439,54 @@ describe('CREATE_STOCK_TRANSFER — the write', () => {
   })
 
   it('refuses an asset name the catalogue cannot resolve, writing nothing', async () => {
-    await expect(run({ assetName: 'Mystery Box' })).rejects.toThrow(/matches no product/i)
+    await expect(run({ productId: undefined, assetName: 'Mystery Box' })).rejects.toThrow(/matches no product/i)
+    expect(access.inserts.length).toBe(0)
+  })
+
+  it('refuses a product id the catalogue no longer holds, and says the catalogue moved', async () => {
+    await expect(run({ productId: 'prod-deleted-uuid' })).rejects.toThrow(/no product has id/i)
+    expect(access.inserts.length).toBe(0)
+  })
+
+  it('still resolves facilities and asset by NAME when no ids are sent', async () => {
+    await run({
+      sourceWarehouseId: undefined,
+      destinationWarehouseId: undefined,
+      productId: undefined,
+      sourceWarehouse: 'Central Camera Vault',
+      destinationWarehouse: 'Lakeside Equipment Hub',
+      assetName: 'Sony FX3 Full-Frame Camera',
+    })
+    const [header] = insertsInto('stock_transfers')
+    expect(header?.payload['source_warehouse_id']).toBe('wh-vault-uuid')
+    expect(header?.payload['destination_warehouse_id']).toBe('wh-lakeside-uuid')
+  })
+
+  /*
+   * The regression this change exists for. The transfer form defaulted its
+   * endpoints to `data/warehouse.ts`'s seed facilities and sent the NAME, and
+   * none of the four is a row in `warehouses` — so every transfer save was
+   * refused on the source lookup. These names must stay unresolvable.
+   */
+  it('refuses every one of the four seed facility names the form used to send', async () => {
+    const seedFacilities = [
+      'Kathmandu Main Hub (HQ)',
+      'Patan Studio Depository',
+      'Pokhara Regional Hub',
+      'Bhaktapur Heavy Grip & Rigging',
+    ]
+    for (const name of seedFacilities) {
+      await expect(
+        run({ sourceWarehouseId: undefined, sourceWarehouse: name }),
+      ).rejects.toThrow(/is not a warehouse the database knows/i)
+    }
+    expect(access.inserts.length).toBe(0)
+  })
+
+  it('refuses a transfer whose endpoints RESOLVE to one facility, however they were named', async () => {
+    await expect(
+      run({ destinationWarehouseId: undefined, destinationWarehouse: 'Central Camera Vault' }),
+    ).rejects.toThrow(/both Central Camera Vault/i)
     expect(access.inserts.length).toBe(0)
   })
 

@@ -18,7 +18,8 @@ import { getBusinessToday, toBs, formatBs, formatAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
 import { newClientUuid } from '../../lib/supabase'
-import { useStockTransfers } from '../../lib/queries/warehouses'
+import { useStockTransfers, useWarehouses } from '../../lib/queries/warehouses'
+import { listInventory } from '../../lib/queries/inventory'
 import { gateContext } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
 import { rackGlance, rackDetailGroups } from '../../data/rackIntel'
@@ -569,6 +570,46 @@ export default function Warehouses() {
    * `client_uuid` and resolves to what already landed instead of raising the
    * transfer twice.
    */
+  /*
+   * The transfer form's two pickers read the DATABASE. The warehouse CARDS on
+   * this screen stay on `data/warehouse.ts` deliberately — their capacity,
+   * occupancy and rack map have no columns behind them (`storage_zones` has no
+   * room/rack/shelf/bin/capacity), so wiring them would mean deleting most of
+   * what this screen shows, which is a product decision and not this fix.
+   *
+   * The visible consequence, stated rather than hidden: the cards list four
+   * seeded facilities while the transfer form offers the two real ones.
+   */
+  const { rows: liveWarehouses } = useWarehouses()
+  const [transferProducts, setTransferProducts] = useState<Array<{ id: string; name: string; assetCode: string }>>([])
+  const [catalogueError, setCatalogueError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        /* Same read the New Rental screen uses for its equipment picker
+           (`rentals/NewRental.tsx:1731`) — `products_v`, active rows only, no
+           money columns: moving stock between facilities prices nothing, so a
+           money-blind operator must still see the whole catalogue (Law 6). */
+        const inventory = await listInventory({ page: { index: 0, size: 500 } })
+        if (cancelled) return
+        setTransferProducts(
+          inventory.rows
+            .filter((r) => r.isActive)
+            .map((r) => ({ id: r.id, name: r.name, assetCode: r.assetCode })),
+        )
+      } catch (e) {
+        if (cancelled) return
+        captureError(e)
+        setCatalogueError(e instanceof Error ? e.message : String(e))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const transferKeys = useRef<{ header: string; line: string } | null>(null)
   const openTransferModal = () => {
     setTransferError(null)
@@ -735,20 +776,37 @@ export default function Warehouses() {
    * not a create either.
    */
 
+  /*
+   * `source` / `destination` are `warehouses.id`, and `item` is `products.id` —
+   * identifiers, not labels.
+   *
+   * They used to be NAMES defaulted from `data/warehouse.ts`'s seed facilities
+   * (`WAREHOUSES[0].name` / `[1].name`), and `createStockTransfer` resolves a
+   * facility against the `warehouses` table. Not one of the four seed names is a
+   * row there, so **every transfer save failed** on the source lookup. The asset
+   * was free text needing an exact `products.name` match — and even the field's
+   * own placeholder ('Sony FX3 Cinema Camera') matches no product; the catalogue
+   * calls it 'Sony FX3 Full-Frame Camera'. Both are pickers reading the database
+   * now, so an operator cannot choose something that does not exist.
+   */
   const [form, setForm] = useState({
     type: 'Branch Transfer' as TransferType,
-    source: WAREHOUSES[0]?.name ?? '',
-    destination: WAREHOUSES[1]?.name ?? '',
+    source: '',
+    destination: '',
     item: '',
     serial: '',
     notes: '',
   })
   const formError =
-    form.source === form.destination
-      ? 'Source and destination must be different warehouses.'
-      : form.item.trim() === ''
-        ? 'Name the asset being moved.'
-        : null
+    form.source === ''
+      ? 'Choose the facility the stock is leaving.'
+      : form.destination === ''
+        ? 'Choose the facility it is going to.'
+        : form.source === form.destination
+          ? 'Source and destination must be different warehouses.'
+          : form.item === ''
+            ? 'Choose the asset being moved.'
+            : null
 
   /**
    * Create is the one transfer operation this build has a real action for
@@ -791,8 +849,9 @@ export default function Warehouses() {
     }
     const keys = transferKeys.current ?? { header: newClientUuid(), line: newClientUuid() }
     transferKeys.current = keys
-    const from = WAREHOUSES.find((w) => w.name === form.source)
-    const to = WAREHOUSES.find((w) => w.name === form.destination)
+    const from = liveWarehouses.find((w) => w.id === form.source)
+    const to = liveWarehouses.find((w) => w.id === form.destination)
+    const movedProduct = transferProducts.find((pr) => pr.id === form.item)
     setTransferError(null)
     void import('../../actions/inventory/createStockTransfer')
       .then((m) =>
@@ -801,9 +860,9 @@ export default function Warehouses() {
             clientUuid: keys.header,
             lineClientUuid: keys.line,
             transferType: form.type,
-            sourceWarehouse: form.source,
-            destinationWarehouse: form.destination,
-            assetName: form.item.trim(),
+            sourceWarehouseId: form.source,
+            destinationWarehouseId: form.destination,
+            productId: form.item,
             serial: form.serial.trim() || undefined,
             notes: form.notes.trim() || undefined,
           },
@@ -819,15 +878,19 @@ export default function Warehouses() {
              used to warn about is gone with the stub. */
           transferNo: res.transferNo,
           type: form.type,
-          sourceWarehouse: form.source,
-          sourceZone: zonesOf(from?.id ?? '')[0]?.zone ?? 'Unassigned',
-          destinationWarehouse: form.destination,
-          destinationZone: zonesOf(to?.id ?? '')[0]?.zone ?? 'Unassigned',
+          sourceWarehouse: from?.name ?? 'Unreadable warehouse',
+          /* A dash, not a seeded zone name. `zonesOf` keys off the SEED warehouse
+             ids and the endpoints are real uuids now, so it returns nothing — and
+             the row is honest anyway: this form sends no zone, and
+             `stock_transfers.source_zone_id` is left null. */
+          sourceZone: '—',
+          destinationWarehouse: to?.name ?? 'Unreadable warehouse',
+          destinationZone: '—',
           assetCount: 1,
           items: [
             {
               assetCode: '—',
-              name: form.item.trim(),
+              name: movedProduct?.name ?? 'Unreadable product',
               serial: form.serial.trim() || '—',
               category: '—',
               condition: '—',
@@ -860,9 +923,21 @@ export default function Warehouses() {
         /* This transfer landed — the next modal-open mints fresh Law 8 keys. */
         transferKeys.current = null
         setModalOpen(false)
-        /* Land on a profile the new row is actually visible in — the Transfer Center
-           lists transfers touching the selected warehouse, so open the source. */
-        if (from) setSelectedId(from.id)
+        /*
+         * ⛔ Was `if (from) setSelectedId(from.id)`, to "land on a profile the new
+         * row is actually visible in". It cannot: `selectedId` indexes the SEED
+         * warehouses, so a real `warehouses.id` matches none and the screen
+         * silently falls back to `WAREHOUSES[0]` — showing a facility the operator
+         * did not choose.
+         *
+         * The row is not visible in the Transfer Center either, and that is a
+         * REAL GAP, not something this line can paper over: `profileTransfers`
+         * filters the live rows by `selected.name`, one of the four seeded
+         * facility names, while a real transfer names 'Central Camera Vault' or
+         * 'Lakeside Equipment Hub'. Scoping that panel to something real means
+         * deciding what a warehouse profile is, which is the same product
+         * decision the seeded cards raise. Filed, not faked.
+         */
         openTransferCentre()
       })
       .catch((err: unknown) => {
@@ -2236,19 +2311,29 @@ export default function Warehouses() {
               <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
                 Source Facility
                 <Select value={form.source} onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))} style={selectStyle}>
-                  {WAREHOUSES.map((w) => (
-                    <option key={w.id} value={w.name}>
-                      {w.name}
+                  <option value="">
+                    {liveWarehouses.length === 0 ? 'No active warehouse exists' : 'Select a facility'}
+                  </option>
+                  {liveWarehouses.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.code ? `${w.name} (${w.code})` : w.name}
                     </option>
                   ))}
                 </Select>
               </label>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
                 Destination Facility
-                <Select value={form.destination} onChange={(e) => setForm((f) => ({ ...f, destination: e.target.value }))} style={selectStyle}>
-                  {WAREHOUSES.map((w) => (
-                    <option key={w.id} value={w.name}>
-                      {w.name}
+                <Select
+                  value={form.destination}
+                  onChange={(e) => setForm((f) => ({ ...f, destination: e.target.value }))}
+                  style={selectStyle}
+                >
+                  <option value="">
+                    {liveWarehouses.length === 0 ? 'No active warehouse exists' : 'Select a facility'}
+                  </option>
+                  {liveWarehouses.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.code ? `${w.name} (${w.code})` : w.name}
                     </option>
                   ))}
                 </Select>
@@ -2258,7 +2343,20 @@ export default function Warehouses() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
                 Asset
-                <Input value={form.item} onChange={(e) => setForm((f) => ({ ...f, item: e.target.value }))} placeholder="Sony FX3 Cinema Camera" style={inputStyle} />
+                <Select value={form.item} onChange={(e) => setForm((f) => ({ ...f, item: e.target.value }))} style={selectStyle}>
+                  <option value="">
+                    {catalogueError !== null
+                      ? 'Catalogue unavailable'
+                      : transferProducts.length === 0
+                        ? 'Loading the catalogue…'
+                        : 'Select an asset'}
+                  </option>
+                  {transferProducts.map((pr) => (
+                    <option key={pr.id} value={pr.id}>
+                      {pr.name} ({pr.assetCode})
+                    </option>
+                  ))}
+                </Select>
               </label>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
                 Serial
