@@ -140,6 +140,42 @@ type CleaningQueueUpdate = Database['public']['Tables']['cleaning_queue_entries'
  * is explicitly multi-session; see `CLOSES_WHILE_INCOMPLETE`, which is where the
  * Pack case is argued.
  *
+ * ### A booking does not reach Returned on an item that is still expected (RT-03)
+ *
+ * Added 7 Sep 2026, and the same family as PK-05: a booking could reach a state
+ * it could not leave. `TERMINAL_LINE_STATES.Return` answered terminality from
+ * the line's STATE alone, so a line declared Not Returned carrying the decision
+ * `'Still expected'` — the one member of `not_returned_decision` (`0001:96`)
+ * that says the item is coming back later — counted as finished. The booking
+ * advanced to Returned, `bookings.actual_return_at` was stamped on gear that was
+ * still out, and every later Return was refused at step 1 by the stage guard
+ * ("Return runs at stage On Rent"). The item the operator had just said was
+ * still expected then had no verb left that could receive it.
+ *
+ * The rule is `0003:399`, not a preference: *"any unresolved Not Returned blocks
+ * Stage 10 Completed"*. `Stage 10 Completed` is a retired 12-stage name;
+ * `0015:116` maps `'Completed'` onto `'Returned'` and `workflow.ts`'s §1.4 table
+ * (`Completed: { status: 'Returned' }`) says the same, so on the canonical six
+ * it reads: an unresolved Not Returned line blocks the booking reaching
+ * **Returned**. Terminality therefore reads the decision as well as the state —
+ * `NOT_RETURNED_DECISION_ENDS_LINE`, asked through `lineIsTerminal`.
+ *
+ * ⚠ **What the DATABASE does about this today: nothing, in either direction.**
+ * This matters because changing an engine gate that the database also enforces
+ * would leave the two disagreeing. It does not, because the database enforces
+ * neither half: `0003:161-171`'s close gates and `:340` / `:399`'s stage
+ * conditions are all `TRIGGER REQUIRED` notes that no migration has ever
+ * implemented, and `return_lines` is named in no migration outside `0003`
+ * itself, a comment in `0016`, `0026`'s policies and `0042`'s FK additions
+ * (grepped 7 Sep 2026). So this engine is not overruling a live rule; it is the
+ * only place the rule exists at all.
+ *
+ * The exit is the screen the operator is already on. The booking stays On Rent,
+ * so the Return workspace still opens, and a later session either receives the
+ * line (`writeReturnLine` UPDATEs the row it already wrote) or re-declares it
+ * with one of the three decisions that do end it. That is the difference from
+ * the trap this replaces: unfinished, not unreachable.
+ *
  * ## What this file deliberately does NOT do
  *
  * - **It does not evaluate the six session gates** (`0003:161-171`). Receiver
@@ -409,14 +445,103 @@ const LINE_TABLE = {
 } as const
 
 /**
- * The line states that satisfy this verb, straight out of `0003`'s own close
- * gates: Packing `:170`, Handover `:340`, Return `:399`. A line short of one of
- * these is why a stage does not move.
+ * The line states that satisfy this verb. A line short of one of these is why a
+ * stage does not move — and, for Pack alone, why its session also stays open.
+ *
+ * ⚠ Corrected 7 Sep 2026. This said all three came "straight out of `0003`'s own
+ * **close gates**". Only Pack's did. `0003:170` is a close gate — "a Packing
+ * session may not close unless every required `packing_lines` row is Packed,
+ * Missing-with-reason, or Replaced". The other two citations are STAGE
+ * conditions, and `0003:172` says so in as many words: *"'Items Handed Over' /
+ * 'Items Returned' must never block a close - they are booking conditions
+ * deciding the stage, not session gates."* `:340` is "the booking reaches Stage
+ * 6 On Rent only when every line is Picked Up or Missing-with-reason"; `:399` is
+ * "any unresolved Not Returned blocks Stage 10 Completed". The behaviour was
+ * already right — `CLOSES_WHILE_INCOMPLETE` is what keeps the two questions
+ * apart — but the prose named the wrong rule, which is how the Return entry came
+ * to be read as a complete answer when it is not one.
+ *
+ * ⚠ **Necessary, not sufficient — RT-03, 7 Sep 2026.** `:399` blocks the stage
+ * on an *unresolved* Not Returned line, and a line's state cannot say whether it
+ * is resolved; `not_returned_decision` says that. Membership in this list is now
+ * the first half of the question and `lineIsTerminal` is the whole of it. Ask it
+ * through that function, never by testing this list directly.
  */
 const TERMINAL_LINE_STATES: Record<keyof typeof LINE_TABLE, readonly string[]> = {
   Pack: ['Packed', 'Missing', 'Not Required', 'Replaced'],
   Handover: ['Picked Up', 'Missing'],
   Return: ['Returned', 'Not Returned'],
+}
+
+/**
+ * Which `not_returned_decision` ENDS a line, and which leaves it open.
+ *
+ * `0001:96`'s enum has four members and only one of them resolves nothing:
+ * `'Still expected'` states, in words, that the item is coming back later. The
+ * other three each end the line's return by naming what happens instead of a
+ * return. That reading is what `0003:399`'s "unresolved" turns on, and it is the
+ * only part of this the specs settle.
+ *
+ * Written as a `Record` keyed on the enum rather than as a list of the three, so
+ * a fifth member added to `not_returned_decision` fails `tsc` here instead of
+ * quietly defaulting to "finished" — which is the exact shape of the defect this
+ * replaces.
+ *
+ * `TODO(decision)` — what the specs do NOT settle, and this deliberately does not
+ * invent:
+ *   - how long a booking may sit at On Rent on a 'Still expected' line, and what
+ *     surfaces it. Today the only escape is an operator opening the Return
+ *     workspace again and either receiving the line or re-declaring it. There is
+ *     no reminder, and `booking_flags` has no writer in `src/`.
+ *   - whether 'Charge replacement' / 'Insurance claim' / 'Write off' are also
+ *     "unsettled" for the LATER gate — `0003:399`'s second clause, "any unsettled
+ *     Damaged blocks Stage 11 Closed" — which is a Close question, not this one.
+ *     They end the line here because they end the *return*; nothing in this file
+ *     claims the money behind them is settled, and it may not read it (Law 6).
+ */
+const NOT_RETURNED_DECISION_ENDS_LINE: Record<NotReturnedDecision, boolean> = {
+  'Still expected': false,
+  'Charge replacement': true,
+  'Insurance claim': true,
+  'Write off': true,
+}
+
+/**
+ * Does this decision finish the line, or is the item still expected back?
+ *
+ * Exported so `ReturnWorkspace` can tell the operator what completing will do
+ * without answering the question a second time (Law 1 — the engine owns the
+ * rule, the page renders it). A screen that re-listed the three would drift the
+ * day a fifth member is added.
+ *
+ * `null` — a `'Not Returned'` row with no decision, which
+ * `return_lines_not_returned_needs_reason_and_decision` (`0003:378`) does not
+ * allow to exist — answers `false`. Nothing has been decided, so nothing is
+ * resolved, and holding the booking at On Rent is the recoverable side of that
+ * call: the line can still be received or re-declared.
+ */
+/*
+ * ⚠ TODO(decision) — the SECOND question RT-03's fix answers, which nobody ruled.
+ *
+ * Holding the booking at On Rent for one 'Still expected' line also holds every
+ * unit that DID come back. `enqueueReturnedUnits` writes their
+ * `cleaning_queue_entries` rows before the stage decision, but `JOBS.Reset.runsAt`
+ * is `'Returned'` (`lib/workflow.ts`), so Reset refuses the booking by name and
+ * those units sit in the cleaning queue, out of stock, until the last item
+ * physically arrives or its decision is changed.
+ *
+ * 'Still expected' is the everyday case — "the client is bringing it tomorrow" —
+ * so this trades one late item against a whole booking's returned gear. That is
+ * a business call, and it was made HERE, in code, by fixing RT-03: it is not in
+ * `0003:399` (which only says an unresolved Not Returned blocks the stage) and
+ * no ruling covers it.
+ *
+ * The alternative — let Reset run per unit rather than per booking stage — is a
+ * real design, not a tweak, and is filed as RT-09. Recorded rather than decided.
+ */
+export function notReturnedDecisionEndsLine(decision: NotReturnedDecision | null): boolean {
+  if (decision === null) return false
+  return NOT_RETURNED_DECISION_ENDS_LINE[decision]
 }
 
 /**
@@ -554,6 +679,17 @@ async function readBookingLines(bookingId: string): Promise<BookingLineHead[]> {
   return (data ?? []) as BookingLineHead[]
 }
 
+/** One existing row of this verb's line table, as terminality and the writers need it. */
+interface LineRow {
+  id: string
+  state: string
+  /**
+   * Return only — `null` on Pack and Handover, whose tables have no such column
+   * and are not asked for it.
+   */
+  notReturnedDecision: NotReturnedDecision | null
+}
+
 /**
  * The verb's existing line rows, keyed by `booking_line_id`.
  *
@@ -563,20 +699,37 @@ async function readBookingLines(bookingId: string): Promise<BookingLineHead[]> {
  * collection), so the second session must UPDATE the row the first one wrote.
  * Inserting again would hit that unique constraint, and because it is not the
  * `client_uuid` constraint, `idempotentInsert` would throw rather than resolve.
+ *
+ * Return asks for one column more than the other two, and the branch is real
+ * rather than a widened shared list: `not_returned_decision` exists on
+ * `return_lines` only, so naming it against `packing_lines` would be a
+ * PostgREST error at runtime. It is read because `lineIsTerminal` cannot answer
+ * `:399`'s "unresolved" from the state (RT-03). Law 6 — both column lists are
+ * spelled out and neither names a money column, which is the whole reason
+ * `select('*')` never appears in this file.
  */
-async function readLineRows(
-  job: SessionJob,
-  bookingLineIds: readonly string[],
-): Promise<Map<string, { id: string; state: string }>> {
+async function readLineRows(job: SessionJob, bookingLineIds: readonly string[]): Promise<Map<string, LineRow>> {
   if (bookingLineIds.length === 0) return new Map()
-  const { data, error } = await supabase
-    .from(LINE_TABLE[job])
-    .select('id, booking_line_id, state')
-    .in('booking_line_id', [...bookingLineIds])
+  const ids = [...bookingLineIds]
+  const table = supabase.from(LINE_TABLE[job])
+  const { data, error } =
+    job === 'Return'
+      ? await table.select('id, booking_line_id, state, not_returned_decision').in('booking_line_id', ids)
+      : await table.select('id, booking_line_id, state').in('booking_line_id', ids)
 
   if (error) throw new Error(`Could not read existing ${LINE_TABLE[job]}: ${error.message}`)
-  const rows = (data ?? []) as Array<{ id: string; booking_line_id: string; state: string }>
-  return new Map(rows.map((r) => [r.booking_line_id, { id: r.id, state: r.state }]))
+  const rows = (data ?? []) as Array<{
+    id: string
+    booking_line_id: string
+    state: string
+    not_returned_decision?: NotReturnedDecision | null
+  }>
+  return new Map(
+    rows.map((r) => [
+      r.booking_line_id,
+      { id: r.id, state: r.state, notReturnedDecision: r.not_returned_decision ?? null },
+    ]),
+  )
 }
 
 /**
@@ -1244,9 +1397,25 @@ async function writeReturnLine(
           inspected_by: ctx.userId,
           inspected_at: at,
         }),
+    /*
+     * Both directions, not just the missing one.
+     *
+     * ⛔ The `else` branch was `{}`, so these two were written on the missing
+     * path and never cleared on its twin — and `safeUpdate` patches only the
+     * fields it is given. RT-03's whole point is that a 'Still expected' line
+     * COMES BACK: when it does, `priorId` is reused and the row became
+     * `state: 'Returned'` still carrying `not_returned_decision: 'Still expected'`
+     * and a reason saying the item never arrived. The row contradicted itself
+     * about the one fact it exists to record.
+     *
+     * The database does not catch it: `return_lines_not_returned_needs_reason_and_decision`
+     * (`0003:378`) only REQUIRES the pair when `state = 'Not Returned'` — it does
+     * not forbid it on any other state, so the contradiction is legal and silent.
+     * Clearing is therefore the writer's job, and it has to be explicit.
+     */
     ...(outcome === 'missing'
       ? { not_returned_reason: line.reason ?? null, not_returned_decision: line.notReturnedDecision ?? null }
-      : {}),
+      : { not_returned_reason: null, not_returned_decision: null }),
   }
 
   if (priorId !== null) {
@@ -1759,16 +1928,43 @@ async function completeResetQueue(
 /* ── The stage, and the cases where it deliberately does not move ───────── */
 
 /**
- * The verb's close gate: which of the booking's **live** lines have not reached
- * a state this verb calls terminal (`TERMINAL_LINE_STATES`, which is `0003`'s
- * own close-gate list per operation). Empty means the verb is finished.
+ * **Is this line finished, as far as this verb is concerned?**
+ *
+ * The whole of the question `TERMINAL_LINE_STATES` only starts. A row that is
+ * absent has not been written at all, so it is not finished; a row whose state
+ * is not in the list is not finished; and for Return there is a third clause,
+ * because `0003:399` blocks the stage on an *unresolved* Not Returned line and
+ * "unresolved" is a fact about `not_returned_decision`, not about the state
+ * (RT-03 — see the header).
+ *
+ * Written as one predicate rather than inline in the filter below so that every
+ * future caller asks the same question. The bug this replaces was not a wrong
+ * list; it was a second reader of the list that did not know the list was half
+ * an answer.
+ */
+function lineIsTerminal(job: SessionJob, row: LineRow | undefined): boolean {
+  if (row === undefined) return false
+  if (!TERMINAL_LINE_STATES[job].includes(row.state)) return false
+  if (job !== 'Return' || row.state !== 'Not Returned') return true
+  return notReturnedDecisionEndsLine(row.notReturnedDecision)
+}
+
+/**
+ * Which of the booking's **live** lines have not reached a state this verb calls
+ * terminal. Empty means the verb is finished.
+ *
+ * ⚠ Corrected 7 Sep 2026 alongside `TERMINAL_LINE_STATES`: this called itself
+ * "the verb's close gate", and for two of the three verbs it is not one.
+ * `0003:172` is explicit that the Handover and Return conditions cited below
+ * "must never block a close"; they decide the STAGE. Only Pack reads this as a
+ * close gate too, which is exactly what `CLOSES_WHILE_INCOMPLETE` encodes.
  *
  * One rule covering three real situations the specs describe separately: a
  * packing session that could not finish every line, a staggered collection that
  * leaves lines Remaining (`0003:340`), and a return with a line still
- * Outstanding (`0003:399`). None of those is an error — the session records
- * itself in full and the booking simply stays where it is, which the caller
- * reads off `stage: null` plus `stageHeldBy`.
+ * Outstanding or still expected back (`0003:399`). None of those is an error —
+ * the session records itself in full and the booking simply stays where it is,
+ * which the caller reads off `stage: null` plus `stageHeldBy`.
  *
  * Note it asks about every live line of the booking, not only the lines this
  * call named: a second collection finishes what the first one left.
@@ -1776,11 +1972,7 @@ async function completeResetQueue(
 async function linesShortOfTerminal(job: SessionJob, live: readonly BookingLineHead[]): Promise<string[]> {
   const liveIds = live.map((l) => l.id)
   const rows = await readLineRows(job, liveIds)
-  const terminal = TERMINAL_LINE_STATES[job]
-  return liveIds.filter((id) => {
-    const row = rows.get(id)
-    return row === undefined || !terminal.includes(row.state)
-  })
+  return liveIds.filter((id) => !lineIsTerminal(job, rows.get(id)))
 }
 
 /**

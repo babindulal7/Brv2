@@ -61,9 +61,12 @@ import { CompactButton, TouchTarget } from '../../components/ui/TouchTarget'
  *    the honest shared list (`SHARED_CLEAN_TASKS`) plus the one task that IS
  *    the fact this screen records: the configuration reset. The Clean/Reset
  *    mode toggle went with the split it displayed;
- *  · the `STAFF` dropdown of three invented names — QC-by is now a typed name
- *    defaulting to the signed-in operator, so the §10 self-check rule
- *    (`by === cleanedBy`) can actually fire for work attributed this session;
+ *  · the `STAFF` dropdown of three invented names. It first became a typed name
+ *    defaulting to the signed-in operator; RS-12 then removed the typing too,
+ *    because a name is not what `qc_by` stores. QC-by is the signed-in
+ *    operator, stated on the control, so the §10 self-check rule
+ *    (`qcBy === cleanedBy`) fires on exactly the work this session can
+ *    attribute — see `passQc`;
  *  · the batch notes textarea — `completeReset` carries no notes field
  *    (Reset has no session, 0003:855), so a field that persisted nowhere is
  *    gone rather than left looking saved;
@@ -320,7 +323,10 @@ export default function ResetWorkspace() {
   const [filter, setFilter] = useState<(typeof QUEUE_FILTERS)[number]>('All')
   const [query, setQuery] = useState('')
   const [problemDraft, setProblemDraft] = useState<Record<string, ProblemDraft>>({})
-  const [qcByDraft, setQcByDraft] = useState<Record<string, string>>({})
+  /*
+   * RS-12 — there is no `qcByDraft` any more. It held a typed NAME per row, and
+   * a name is not something this screen can record: see `passQc` below.
+   */
   const [qcReason, setQcReason] = useState<Record<string, string>>({})
   /** Law 12 — a dispatch failure is inline and persistent, never a toast. */
   const [dispatchError, setDispatchError] = useState<string | null>(null)
@@ -338,7 +344,6 @@ export default function ResetWorkspace() {
     setMarks({})
     setSelected(new Set())
     setProblemDraft({})
-    setQcByDraft({})
     setQcReason({})
     setDispatchError(null)
     setDispatching(false)
@@ -584,15 +589,48 @@ export default function ResetWorkspace() {
     })
   const undoProblem = (key: string) => setRec(key, { problem: 'No Problems' })
 
-  /* ── §10 — QC, performed by someone other than the cleaner by default ───── */
+  /* ── §10 — QC ─────────────────────────────────────────────────────────────
+   *
+   * **RS-12 — the QC identity is the signed-in operator, because that is the
+   * only one this build can record.**
+   *
+   * This used to be a free-text box defaulting to the operator's name, and the
+   * name it collected went nowhere: `ResetEntryInput.qcBy` in
+   * `actions/rentals/floorVerb.ts` is documented as "`users.id` of whoever
+   * performed QC", under a ⚠ note on the same interface saying a typed name
+   * "has nowhere truthful to go and must not be sent". `selfIdOf` in the
+   * dispatch below can therefore resolve exactly one name — the actor's own —
+   * and OMITS every other. Typing a colleague's name passed QC on screen,
+   * printed "QC by <that name>" on the row, and dispatched an entry with
+   * `qcBy` absent: a QC that looked done and was recorded against nobody. That
+   * is the fabricated identity RS-12 names, and Law 12 ("never render a
+   * fabricated fact") is the law it broke.
+   *
+   * So the box is gone and the row states the identity it can actually write.
+   * The consequence is stated rather than hidden: QC-by then always equals
+   * cleaned-by (both resolve to `user.id`), which the engine accepts ONLY as a
+   * declared skipped QC carrying a reason — `runFloorVerb`'s Reset validation
+   * throws "was checked by the person who cleaned it" for any entry where
+   * `qcBy === cleanedBy` without `qcSkipped` — so the audited reason is now
+   * required on every pass, not only when the operator happened to type their
+   * own name.
+   *
+   * `TODO(decision)`: recording a genuine second pair of eyes needs a staff
+   * picker backed by `users.id`. There is none in this build, and inventing one
+   * would mean inventing the roster it lists. Until it exists this screen can
+   * record a self-QC or nothing, and it says which.
+   */
   const passQc = (key: string) => {
+    if (!actor) {
+      setDispatchError(NO_ACTOR)
+      return
+    }
     const rec = recOf(key)
-    const by = (qcByDraft[key] ?? actor ?? '').trim()
-    if (by === '') return
     const reason = qcReason[key] ?? ''
-    const selfCheck = by === rec.cleanedBy
+    const selfCheck = actor === rec.cleanedBy
     if (selfCheck && reason.trim().length < 5) return
-    setRec(key, { queueState: 'Ready', qcBy: by, ...(selfCheck ? { qcSkipReason: reason } : {}) })
+    setDispatchError(null)
+    setRec(key, { queueState: 'Ready', qcBy: actor, ...(selfCheck ? { qcSkipReason: reason } : {}) })
   }
   const failQc = (key: string) => {
     const reason = qcReason[key] ?? ''
@@ -618,8 +656,10 @@ export default function ResetWorkspace() {
      * identity it can send truthfully is the signed-in operator's own: a stored
      * name equal to the actor's maps to `user.id`; any other name is OMITTED,
      * never guessed at. TODO(decision): a `users.id`-backed staff picker is
-     * needed before a second person's cleaning or QC can be attributed — until
-     * then a typed QC-by name is a screen fact only (the input says so).
+     * needed before a second person's cleaning or QC can be attributed.
+     * (This used to end "until then a typed QC-by name is a screen fact only
+     * (the input says so)" — RS-12 removed that input, so nothing says so and
+     * no name can be typed. The sentence outlived the control it described.)
      * RS-03 — exception rows are dispatched too. They used to be dropped
      * entirely, so a unit marked Damaged, Missing or Needs Repair left NO
      * record anywhere: `problem_state` has always had a writer in
@@ -980,9 +1020,8 @@ export default function ResetWorkspace() {
                               ) : rec.queueState === 'QC' ? (
                                 <QcRowControls
                                   rec={rec}
-                                  by={qcByDraft[r.key] ?? actor ?? ''}
+                                  actor={actor}
                                   reason={qcReason[r.key] ?? ''}
-                                  onByChange={(v) => setQcByDraft((pv) => ({ ...pv, [r.key]: v }))}
                                   onReasonChange={(v) => setQcReason((pv) => ({ ...pv, [r.key]: v }))}
                                   onPass={() => passQc(r.key)}
                                   onFail={() => failQc(r.key)}
@@ -1068,9 +1107,8 @@ export default function ResetWorkspace() {
                                   ) : rec.queueState === 'QC' ? (
                                     <QcRowControls
                                       rec={rec}
-                                      by={qcByDraft[r.key] ?? actor ?? ''}
+                                      actor={actor}
                                       reason={qcReason[r.key] ?? ''}
-                                      onByChange={(v) => setQcByDraft((pv) => ({ ...pv, [r.key]: v }))}
                                       onReasonChange={(v) => setQcReason((pv) => ({ ...pv, [r.key]: v }))}
                                       onPass={() => passQc(r.key)}
                                       onFail={() => failQc(r.key)}
@@ -1412,46 +1450,47 @@ export default function ResetWorkspace() {
 const RowAction = CompactButton
 
 /**
- * §10 — QC by someone other than the cleaner, by default. The name defaults to
- * the signed-in operator; typing the same name as the cleaner reveals the
- * audited self-QC reason, and `Pass` stays disabled until it is filled. (The
- * seed build's three-name `STAFF` dropdown made the self-check unreachable —
- * a real session's name was never in the list.)
+ * §10 — QC.
+ *
+ * **RS-12.** This carried a free-text "QC performed by…" box. It is gone: the
+ * QC identity is the signed-in operator, stated rather than typed, because
+ * `qc_by` is a `users.id` and the actor is the only person this screen can
+ * resolve to one (see `passQc`). A name typed for anyone else was never
+ * dispatched — the row simply claimed a QC that no record would carry, which is
+ * the NR-20 / RS-12 family of defect: an identity the screen invents.
+ *
+ * The self-QC reason is therefore shown whenever the operator is also the
+ * cleaner — which, with no staff picker, is every row they cleaned themselves —
+ * and `Pass` stays disabled until it is filled, because the engine rejects a
+ * self-check without one.
  */
 function QcRowControls({
   rec,
-  by,
+  actor,
   reason,
-  onByChange,
   onReasonChange,
   onPass,
   onFail,
 }: {
   rec: RowRec
-  by: string
+  /** The signed-in operator's name, or `null` when nobody is signed in. */
+  actor: string | null
   reason: string
-  onByChange: (v: string) => void
   onReasonChange: (v: string) => void
   onPass: () => void
   onFail: () => void
 }) {
-  const selfCheck = by.trim() !== '' && by.trim() === rec.cleanedBy
-  const blocked = by.trim() === '' || (selfCheck && reason.trim().length < 5)
+  const selfCheck = actor !== null && actor === rec.cleanedBy
+  const blocked = actor === null || (selfCheck && reason.trim().length < 5)
   const failBlocked = reason.trim().length < 5
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
-      <input
-        value={by}
-        onChange={(e) => onByChange(e.target.value)}
-        placeholder="QC performed by…"
-        aria-label="QC performed by"
-        style={{ height: 24, padding: '0 6px', borderRadius: 'var(--r-xs)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
-      />
-      {/* RS-01 / RS-12 — `qc_by` is a users.id; there is no staff picker yet, so
-          only the signed-in operator can be recorded. Said here, not discovered
-          after dispatch. */}
+      {/* RS-12 — the identity this screen can actually write, named before the
+          verdict is given rather than discovered after dispatch. */}
       <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.3 }}>
-        Only the signed-in operator is recorded as QC. A different name typed here stays on this screen and is not stored.
+        {actor === null
+          ? 'Nobody is signed in, so a QC pass cannot be recorded against anyone.'
+          : `QC will be recorded as ${actor}. Only the signed-in operator can be recorded — there is no staff picker yet, so a check by a second person cannot be attributed here.`}
       </span>
       {selfCheck && (
         <input

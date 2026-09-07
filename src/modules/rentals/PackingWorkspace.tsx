@@ -6,7 +6,7 @@ import { Card, Button, cardStyle } from '../../components/ui/Page'
 import { FloorAside, floorPlacements } from '../operations/FloorAside'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { PageBody } from '../../components/ui/PageBody'
-import { STATUS } from '../../lib/status'
+import { STATUS, jobStateChip } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
 import type { BookingStatus, JobState } from '../../lib/workflow'
 import { BarcodeScannerModal, type ScanOutcome } from '../../components/ui/BarcodeScannerModal'
@@ -293,16 +293,14 @@ interface MixedLine {
  * tone move together and the count is in the LABEL (Law 11), so nothing here
  * asks the reader to decode a colour.
  */
+/** @deprecated Use `jobStateChip` from `lib/status` — kept as this screen's
+ *  named wrapper so its tests and call site read the same as before. Return
+ *  needed the identical rule on 7 Sep, which is what moved it. */
 export function packJobChip(
   state: JobState,
   missingCount: number,
 ): { tone: string; icon: IconName; label: string } {
-  if (state === 'Complete' && missingCount > 0) {
-    return { tone: 'var(--warn-text)', icon: 'alert_triangle', label: `Complete · ${missingCount} missing` }
-  }
-  if (state === 'Complete') return { tone: 'var(--success-text)', icon: 'checklist', label: state }
-  if (state === 'In Progress') return { tone: 'var(--progress-text)', icon: 'refresh', label: state }
-  return { tone: 'var(--text2)', icon: 'dot', label: state }
+  return jobStateChip(state, missingCount, 'missing')
 }
 
 export function buildPackLines(

@@ -5,7 +5,7 @@ import { Card, Button, cardStyle } from '../../components/ui/Page'
 import { FloorAside } from '../operations/FloorAside'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { PageBody } from '../../components/ui/PageBody'
-import { STATUS } from '../../lib/status'
+import { STATUS, jobStateChip } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
 import type { BookingStatus, JobState } from '../../lib/workflow'
@@ -20,7 +20,10 @@ import { formatBsOrAd, formatAd, formatAdDateTime } from '../../lib/bs'
 import { lateBand, formatOverage, bandConsequence } from '../../lib/lateFee'
 import { newClientUuid } from '../../lib/supabase'
 import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/queries/bookings'
-import type { FloorLineInput } from '../../actions/rentals/floorVerb'
+/* Law 1 — the engine owns the rule, this screen only renders it. `0003:399`'s
+   "unresolved Not Returned" is answered in `floorVerb.ts`; re-listing the three
+   decisions here would be a second copy to drift (RT-03). */
+import { notReturnedDecisionEndsLine, type FloorLineInput } from '../../actions/rentals/floorVerb'
 import type { ItemCondition, NotReturnedDecision } from '../../types/database'
 import { CompactButton } from '../../components/ui/TouchTarget'
 import { deliveryTypeLabel } from '../../lib/format'
@@ -43,8 +46,9 @@ import { deliveryTypeLabel } from '../../lib/format'
  *     `booking_lines` (`buildReturnLines`) and dispatches `completeReturn`
  *     with the REAL ids the operator verified — the write that lands
  *     `operation_sessions`, `return_lines` and `session_line_movements`, and
- *     moves the stage to Returned only when every live line is terminal
- *     (`0003:399`). It used to send `lines: []`, which `validateFloorVerb`
+ *     moves the stage to Returned only when every live line is terminal —
+ *     which a Not Returned line is only once its decision ends it (`0003:399`;
+ *     see the RT-03 note below). It used to send `lines: []`, which `validateFloorVerb`
  *     refuses unconditionally, so the one write on this page always failed.
  *     Navigation happens only on the resolved promise.
  *
@@ -65,6 +69,23 @@ import { deliveryTypeLabel } from '../../lib/format'
  * resolved" is NOT a gate here. A session that received three of eighteen
  * items completes honestly, the booking stays On Rent, and `runFloorVerb`
  * reports the holding lines in `stageHeldBy`.
+ *
+ * **"Resolved" is not the same as "finished" (RT-03, 7 Sep 2026.)** A line
+ * declared Not Returned with the decision `'Still expected'` is triaged, but
+ * the item is by definition still out, so `0003:399` — "any unresolved Not
+ * Returned blocks Stage 10 Completed" — keeps the booking at On Rent. The
+ * engine decides that (`notReturnedDecisionEndsLine`); this screen imports the
+ * answer rather than restating the rule, so its completion copy cannot promise
+ * a stage move on the ground the verb will refuse.
+ *
+ * Be exact about the limit of that, because an earlier draft of this paragraph
+ * was not: importing the predicate is NOT a guarantee the two agree. The verb
+ * asks it of every live line of the booking — including lines this session
+ * never saw — while the screen asks it only of the rows in front of the
+ * operator. So a mixed booking can read "completing dispatches the Return" here
+ * and still not move, and nothing on the screen corrects that after dispatch.
+ * The copy is indicative; `runFloorVerb`'s answer is the one that counts, and
+ * `allResolved` is deliberately never a gate.
  *
  * **No money, anywhere.** Foundation §8.3 — this is a warehouse floor screen.
  * `lib/money.ts` is not imported; the overrun renders through `lateBand`,
@@ -513,7 +534,35 @@ export default function ReturnWorkspace() {
   const stage = (floor?.stage ?? 'On Rent') as BookingStatus
   const jobState: JobState =
     returnedRows.length + missingRows.length === 0 ? 'Not Started' : outstandingRows.length === 0 ? 'Complete' : 'In Progress'
-  const allResolved = actionable.length > 0 && outstandingRows.length === 0
+  /**
+   * Rows the operator has triaged as Not Returned whose decision does NOT end
+   * the line — today that is `'Still expected'`, and the engine is what says so
+   * (`notReturnedDecisionEndsLine`, `0003:399`). Their line stays short of
+   * terminal, so the booking stays On Rent however completely this session was
+   * triaged. RT-03: the screen used to call that "all items resolved" and
+   * promise a move to Returned that the verb then made — stranding the item.
+   */
+  const stillExpectedRows = missingRows.filter((r) => {
+    const decision = marks[r.key]?.decision
+    return decision !== undefined && !notReturnedDecisionEndsLine(decision)
+  })
+  /**
+   * Will completing this session move the booking to Returned? Local and
+   * indicative only — `runFloorVerb` asks the same question of every live line
+   * of the booking, including lines this session never saw, and its answer is
+   * the one that counts. So this decides WORDING, never a gate.
+   */
+  const allResolved = actionable.length > 0 && outstandingRows.length === 0 && stillExpectedRows.length === 0
+
+  /*
+   * How that job state is PAINTED. `jobState` above answers `'Complete'` once
+   * nothing is Outstanding — which is right, the triage IS finished — but a
+   * session whose every line is 'Still expected' was then drawn in
+   * `--success-text` with a checklist, two lines above the copy this change
+   * corrected to say the booking is NOT moving. `jobStateChip` is Packing's
+   * fix, shared rather than copied: same rule, the exception word differs.
+   */
+  const jobChip = jobStateChip(jobState, stillExpectedRows.length, 'still expected')
 
   /* ── the session gates — a checklist, every condition named ──────────────
    * The conditions `validateFloorVerb` / the 0003 CHECKs enforce, evaluated
@@ -837,13 +886,13 @@ export default function ReturnWorkspace() {
                       borderRadius: 'var(--r-badge)',
                       border: '1px solid var(--border)',
                       background: 'var(--card2)',
-                      color: jobState === 'Complete' ? 'var(--success-text)' : jobState === 'In Progress' ? 'var(--progress-text)' : 'var(--text2)',
+                      color: jobChip.tone,
                       fontSize: 'var(--t-meta)',
                       fontWeight: 700,
                     }}
                   >
-                    <Icon name={jobState === 'Complete' ? 'checklist' : jobState === 'In Progress' ? 'refresh' : 'dot'} size={11} />
-                    Return job: {jobState}
+                    <Icon name={jobChip.icon} size={11} />
+                    Return job: {jobChip.label}
                   </span>
                 </div>
                 <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
@@ -867,13 +916,47 @@ export default function ReturnWorkspace() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, fontSize: 'var(--t-meta)', color: outstandingUnits ? 'var(--progress-text)' : 'var(--success-text)', fontWeight: 600 }}>
                   <Icon name={outstandingUnits ? 'alert_triangle' : 'checklist'} size={12} />
-                  {outstandingUnits ? `${outstandingUnits} unit${outstandingUnits > 1 ? 's' : ''} still outstanding` : 'All items resolved'}
+                  {/* "Triaged", not "resolved": every row carries a mark, which
+                      is not the same as every line being finished — a Not
+                      Returned line is unresolved while it is still expected
+                      (0003:399, RT-03). The rail's Session Gates card says which
+                      of the two this session is. */}
+                  {outstandingUnits ? `${outstandingUnits} unit${outstandingUnits > 1 ? 's' : ''} still outstanding` : 'Every item triaged'}
                   {missingRows.length > 0 && <span style={{ color: 'var(--danger-text)' }}>· {missingRows.length} not returned</span>}
                 </div>
               </div>
 
               <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
-                <Button icon="file">Print Return Report</Button>
+                {/*
+                  RT-06 / PK-22 — the same dead control PK-08 fixed on Packing,
+                  given the same treatment: `Unavailable` + `disabled`, which is
+                  the house pattern for an unbuilt control (`Header.tsx`'s
+                  Notifications and Help, `Warehouses.tsx`'s Print Labels) and
+                  states its reason on hover AND on a long-press, which is what
+                  the warehouse tablet has.
+
+                  Each clause of the reason was checked before it was written,
+                  on 7 Sep 2026:
+                   · nothing generates a return-report document — `grep -rn
+                     "@media print" src/` is empty, so `window.print()` would
+                     send this workspace's rails, filters and buttons to the
+                     printer rather than a report;
+                   · no PDF library is in `package.json` (dependencies and
+                     devDependencies both scanned for pdf/jspdf/html2canvas/
+                     docx/puppeteer — none);
+                   · the one document generator that does exist,
+                     `lib/printSlip.ts`, is an 80mm thermal RENTAL SLIP that
+                     imports `formatMoney` and prints totals, deposit and
+                     outstanding. It has no caller in `src/` outside its own
+                     test, and wiring it here would put money on a warehouse
+                     floor screen — Law 6, and §8.3 is why this file does not
+                     import `lib/money` at all.
+                */}
+                <Unavailable reason="Printing a return report is not built. Nothing in the app generates a return-report document, and there is no print stylesheet, so this would send the whole workspace — filters, rails and buttons — to the printer instead of a report. The one printable document that exists is a money receipt, which a warehouse floor screen may not show.">
+                  <Button icon="file" disabled>
+                    Print Return Report
+                  </Button>
+                </Unavailable>
                 <Link to={`/rentals/${id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--btn-secondary-border)', background: 'var(--btn-secondary-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none' }}>
                   <Icon name="external_link" size={14} />
                   View Booking
@@ -930,11 +1013,29 @@ export default function ReturnWorkspace() {
             {/* ── §5 scan bar ──────────────────────────────────────────────── */}
             <Card>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {/*
+                  RT-08 — one control, because there was only ever one
+                  behaviour. This was two buttons, `Scan Barcode` and `Scan QR`,
+                  both calling `setShowScanner(true)`: the QR button did not
+                  select QR, so one of the two labels was a promise the app did
+                  not keep.
+
+                  Checked before choosing which way to fix it, 7 Sep 2026:
+                  `BarcodeScannerModalProps` has no initial-mode prop (its
+                  `mode` is the workspace — 'pack' | 'handover' | 'return' |
+                  'reset'), so no prop added by the packing batch is waiting to
+                  be passed; `PackingWorkspace.tsx:1136-1137` still carries the
+                  identical pair. And inside the modal the Serial / Barcode / QR
+                  segmented control changes the input placeholder and nothing
+                  else — `handleScanSubmit` matches on id, serial or asset tag
+                  whichever mode is selected. So a QR button here could not have
+                  selected a real mode even with a prop to pass; it would have
+                  named a distinction that does not exist.
+
+                  One button opens the scanner, where the mode selector lives.
+                */}
                 <button type="button" onClick={() => setShowScanner(true)} style={{ ...bigScanBtn, ...ACCENT_OUTLINE }}>
-                  <Icon name="queues" size={16} /> Scan Barcode
-                </button>
-                <button type="button" onClick={() => setShowScanner(true)} style={{ ...bigScanBtn, background: 'var(--btn-secondary-bg)', color: 'var(--text)', border: '1px solid var(--btn-secondary-border)' }}>
-                  <Icon name="queues" size={16} /> Scan QR
+                  <Icon name="queues" size={16} /> Scan Item
                 </button>
                 <div style={{ flex: 1, minWidth: 180, display: 'flex', alignItems: 'center' }}>
                   <input
@@ -1215,7 +1316,9 @@ export default function ReturnWorkspace() {
                     <span style={{ color: 'var(--muted)' }}>
                       {outstandingRows.length > 0
                         ? `${outstandingRows.length} row(s) still outstanding — the booking stays On Rent until every line is terminal.`
-                        : 'All rows resolved — completing this session dispatches the Return.'}
+                        : stillExpectedRows.length > 0
+                          ? `All rows triaged — but ${stillExpectedRows.length} is still expected, so completing records this session and leaves the booking On Rent.`
+                          : 'All rows resolved — completing this session dispatches the Return.'}
                     </span>
                   </div>
                 </Card>
@@ -1231,7 +1334,7 @@ export default function ReturnWorkspace() {
                         {totalUnits} units · {backUnits} back
                       </div>
                       <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 2 }}>
-                        Return job: {jobState}
+                        Return job: {jobChip.label}
                       </div>
                     </div>
                   </div>
@@ -1260,11 +1363,19 @@ export default function ReturnWorkspace() {
                       </div>
                     ))}
                   </div>
-                  {/* §12.2 — information, not a gate: Return is multi-session. */}
+                  {/* §12.2 — information, not a gate: Return is multi-session.
+                      RT-03 — the middle branch is the one that was missing: a
+                      line declared Not Returned / Still expected is triaged but
+                      not finished, and this used to read "All items resolved"
+                      and promise a move to Returned. */}
                   <p style={{ margin: '9px 0 0', paddingTop: 9, borderTop: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
                     {outstandingRows.length > 0
                       ? `${outstandingRows.length} item(s) still outstanding — this session can complete without them; the booking stays On Rent for a later session.`
-                      : 'All items resolved — completing dispatches the Return and moves the booking to Returned if the write is accepted.'}
+                      : stillExpectedRows.length > 0
+                        ? `${stillExpectedRows.length} item(s) are Not Returned and still expected back — this session completes and records them, and the booking stays On Rent so a later session can receive them. It moves to Returned once they arrive, or once their decision changes to one that ends the line.`
+                        : missingRows.some((r) => marks[r.key]?.decision === undefined)
+                          ? 'Every row is triaged, but a Not Returned row has no decision yet — choose one before completing, or the line cannot be ended.'
+                          : 'Every item is received or its line is ended — completing dispatches the Return and moves the booking to Returned if the write is accepted.'}
                   </p>
                 </Card>
 
@@ -1333,6 +1444,19 @@ export default function ReturnWorkspace() {
                                 <option key={d} value={d}>{d}</option>
                               ))}
                             </select>
+                            {/* RT-03 — what this decision does to the booking,
+                                said where it is chosen. Icon + words, never
+                                colour alone (Law 11). The engine answers it. */}
+                            {mark?.decision !== undefined && !notReturnedDecisionEndsLine(mark.decision) && (
+                              <p style={{ margin: '5px 0 0', display: 'flex', gap: 5, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--progress-text)', lineHeight: 1.45 }}>
+                                <Icon name="timer" size={12} style={{ flexShrink: 0, marginTop: 2 }} />
+                                <span>
+                                  “{mark.decision}” keeps this line open, so the booking stays On Rent and a later
+                                  session can receive the item. Choose a decision that ends the line instead if it
+                                  is not coming back.
+                                </span>
+                              </p>
+                            )}
                           </div>
                         )
                       })}
@@ -1455,9 +1579,11 @@ export default function ReturnWorkspace() {
                   and a false persistence claim beside a completion gate is the
                   worst place for one. */}
               <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                {/* Same correction as the header strip: this counts marks, not
+                    finished lines (RT-03). */}
                 {outstandingRows.length
                   ? `${outstandingRows.length} item${outstandingRows.length > 1 ? 's' : ''} outstanding`
-                  : 'All items resolved'}
+                  : 'Every item triaged'}
                 {' · Nothing is saved until the session completes — cancelling discards this triage'}
               </span>
             </div>

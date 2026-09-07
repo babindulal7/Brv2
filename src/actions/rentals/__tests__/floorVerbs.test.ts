@@ -4,8 +4,10 @@ import { packRental } from '../packRental'
 import { handoverRental } from '../handoverRental'
 import { completeReturn } from '../returnRental'
 import { completeReset } from '../completeReset'
+import { notReturnedDecisionEndsLine } from '../floorVerb'
 import { ActionPermissionError } from '../../core'
 import { JOBS, JOB_ORDER, type JobName } from '../../../lib/workflow'
+import type { NotReturnedDecision } from '../../../types/database'
 
 /**
  * # What this suite pins
@@ -948,7 +950,10 @@ describe('Return', () => {
   })
 
   it('records a Not Returned line with its reason and decision, and moves nothing', async () => {
-    db.state.responses['return_lines'] = [[], [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Not Returned' }]]
+    db.state.responses['return_lines'] = [
+      [],
+      [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Not Returned', not_returned_decision: 'Write off' }],
+    ]
 
     const result = await completeReturn(
       {
@@ -957,8 +962,8 @@ describe('Return', () => {
           {
             bookingLineId: LINE_A,
             outcome: 'missing',
-            reason: 'Client says it is still on the shoot floor',
-            notReturnedDecision: 'Still expected',
+            reason: 'Client confirms it was destroyed on site',
+            notReturnedDecision: 'Write off',
           },
         ],
       },
@@ -967,10 +972,10 @@ describe('Return', () => {
 
     const line = insertsOn('return_lines')[0]?.payload
     expect(line?.['state']).toBe('Not Returned')
-    expect(line?.['not_returned_decision']).toBe('Still expected')
+    expect(line?.['not_returned_decision']).toBe('Write off')
     // Absence is never converted into a state (0003:630) — nothing moved.
     expect(insertsOn('session_line_movements')).toHaveLength(0)
-    // Not Returned is terminal for this verb, so the stage still moves.
+    // 'Write off' ends the line, so the booking's return is finished.
     expect(result.stage).toEqual({ from: 'On Rent', to: 'Returned' })
   })
 
@@ -1013,6 +1018,220 @@ describe('Return', () => {
     const stamps = opsOn('bookings')
     expect(stamps).toHaveLength(1)
     expect(stamps[0]).toMatchObject({ kind: 'update', payload: { actual_return_at: '2026-08-12T05:00:00.000Z' }, clientUuid: 'act-1' })
+  })
+})
+
+/* ── 6b · RT-03 — "Not Returned" is not always finished ─────────────────── */
+
+/**
+ * # The positive control
+ *
+ * Restoring the rule this replaces — terminality read off `return_lines.state`
+ * alone, i.e. `TERMINAL_LINE_STATES.Return.includes(row.state)` as the whole
+ * answer — turns the first two cases below red: the stage moves to Returned,
+ * `stageHeldBy` empties, and `bookings.actual_return_at` is stamped on gear that
+ * is still with the client. That is the defect, and these are the tests that
+ * would have caught it.
+ *
+ * The rule is `0003:399` — "any unresolved Not Returned blocks Stage 10
+ * Completed" — with `0015:116` mapping the retired `'Completed'` onto the
+ * canonical `Returned`. The last case is the half that makes the fix safe rather
+ * than merely correct: the booking is left On Rent, so the Return workspace
+ * still opens and the expected item can actually be received. A booking that
+ * could not leave Returned is what this replaces; a booking that cannot leave On
+ * Rent would be the same bug wearing a different stage.
+ */
+describe('RT-03 — a line that is still expected back is not a finished line', () => {
+  beforeEach(() => {
+    db.state.responses['bookings'] = [[bookingAt('On Rent')]]
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
+    db.state.responses['operation_sessions'] = [[]]
+  })
+
+  it("holds the stage on a Not Returned line whose decision is 'Still expected'", async () => {
+    db.state.responses['return_lines'] = [
+      [],
+      [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Not Returned', not_returned_decision: 'Still expected' }],
+    ]
+
+    const result = await completeReturn(
+      {
+        rentalId: 'B-715',
+        lines: [
+          {
+            bookingLineId: LINE_A,
+            outcome: 'missing',
+            reason: 'Still on the shoot floor, client bringing it tomorrow',
+            notReturnedDecision: 'Still expected',
+          },
+        ],
+      },
+      OWNER,
+    )
+
+    expect(insertsOn('return_lines')[0]?.payload['not_returned_decision']).toBe('Still expected')
+    expect(result.stage).toBeNull()
+    expect(result.stageHeldBy).toEqual([LINE_A])
+    // The gear is still out, so no actual-return instant is stamped (RT-01's rule).
+    expect(opsOn('bookings')).toHaveLength(0)
+    // Return is multi-session (0003:129): this session is a finished session.
+    expect(result.sessionClosed).toBe(true)
+  })
+
+  it('reads the decision off the line table, so an earlier session holds the stage too', async () => {
+    // Nothing about LINE_A is named in THIS call — it was declared Not Returned
+    // / Still expected by an earlier session and the row is still that. The
+    // terminality question asks about every live line, not only the named ones.
+    db.state.responses['booking_lines'] = [
+      [
+        { id: LINE_A, qty: 1 },
+        { id: LINE_B, qty: 1 },
+      ],
+    ]
+    db.state.responses['return_lines'] = [
+      [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Not Returned', not_returned_decision: 'Still expected' }],
+      [
+        { id: 'rl-1', booking_line_id: LINE_A, state: 'Not Returned', not_returned_decision: 'Still expected' },
+        { id: 'rl-2', booking_line_id: LINE_B, state: 'Returned', not_returned_decision: null },
+      ],
+    ]
+
+    const result = await completeReturn(
+      { rentalId: 'B-715', lines: [{ bookingLineId: LINE_B, unitIds: ['u2'], condition: 'Good' }] },
+      OWNER,
+    )
+
+    expect(result.stage).toBeNull()
+    expect(result.stageHeldBy).toEqual([LINE_A])
+    expect(opsOn('bookings')).toHaveLength(0)
+  })
+
+  it('holds the stage on a Not Returned line with no decision at all', async () => {
+    /* `return_lines_not_returned_needs_reason_and_decision` (0003:378) should
+       make this row impossible, so this pins the DIRECTION of the defensive
+       branch rather than a reachable state: nothing has been decided, so nothing
+       is resolved. Holding at On Rent is the recoverable side — the line can
+       still be received or re-declared. */
+    db.state.responses['return_lines'] = [
+      [],
+      [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Not Returned', not_returned_decision: null }],
+    ]
+
+    const result = await completeReturn(
+      {
+        rentalId: 'B-715',
+        lines: [
+          {
+            bookingLineId: LINE_A,
+            outcome: 'missing',
+            reason: 'Not on the van and not on the shelf',
+            notReturnedDecision: 'Still expected',
+          },
+        ],
+      },
+      OWNER,
+    )
+
+    expect(result.stage).toBeNull()
+    expect(result.stageHeldBy).toEqual([LINE_A])
+  })
+
+  it('the three decisions that end the line still move the stage', async () => {
+    for (const decision of ['Charge replacement', 'Insurance claim', 'Write off'] as const) {
+      db.reset()
+      writes.reset()
+      db.state.responses['bookings'] = [[bookingAt('On Rent')]]
+      db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
+      db.state.responses['operation_sessions'] = [[]]
+      db.state.responses['return_lines'] = [
+        [],
+        [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Not Returned', not_returned_decision: decision }],
+      ]
+
+      const result = await completeReturn(
+        {
+          rentalId: 'B-715',
+          lines: [
+            {
+              bookingLineId: LINE_A,
+              outcome: 'missing',
+              reason: `Decision recorded on the floor: ${decision}`,
+              notReturnedDecision: decision,
+            },
+          ],
+        },
+        OWNER,
+      )
+
+      expect(result.stage).toEqual({ from: 'On Rent', to: 'Returned' })
+      expect(result.stageHeldBy).toEqual([])
+    }
+  })
+
+  it('a later session receives the expected item, and THAT session moves the stage', async () => {
+    // The state the first session left: one Return session, Completed, and a
+    // return_lines row still Not Returned / Still expected.
+    db.state.responses['operation_sessions'] = [[{ id: 'sess-1', session_no: 1, state: 'Completed', notes: null }]]
+    db.state.responses['return_lines'] = [
+      [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Not Returned', not_returned_decision: 'Still expected' }],
+      [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Returned', not_returned_decision: 'Still expected' }],
+    ]
+
+    const result = await completeReturn(
+      {
+        rentalId: 'B-715',
+        lines: [{ bookingLineId: LINE_A, unitIds: ['u1'], condition: 'Good' }],
+        occurredAt: '2026-09-07T09:00:00.000Z',
+        clientUuid: 'act-2',
+      },
+      OWNER,
+    )
+
+    // A second session beside the first, not a resumed one (0003:85).
+    expect(insertsOn('operation_sessions')[0]?.payload['session_no']).toBe(2)
+    // The line row is UPDATEd — `unique (booking_line_id)` (0003:376) means
+    // there is one row per line for the whole booking, not one per session.
+    expect(insertsOn('return_lines')).toHaveLength(0)
+    expect(opsOn('return_lines')[0]).toMatchObject({ kind: 'update', id: 'rl-1', payload: { state: 'Returned' } })
+
+    expect(result.stage).toEqual({ from: 'On Rent', to: 'Returned' })
+    expect(opsOn('bookings')).toHaveLength(1)
+    expect(opsOn('bookings')[0]).toMatchObject({ payload: { actual_return_at: '2026-09-07T09:00:00.000Z' } })
+  })
+
+  it('names the decision column in the return_lines read, and no money column with it', async () => {
+    db.state.responses['return_lines'] = [
+      [],
+      [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Returned', not_returned_decision: null }],
+    ]
+    await completeReturn(
+      { rentalId: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'], condition: 'Good' }] },
+      OWNER,
+    )
+
+    const reads = db.state.calls.filter((c) => c.table === 'return_lines')
+    expect(reads.length).toBeGreaterThan(0)
+    for (const read of reads) {
+      const columns = read.columns.split(',').map((c) => c.trim())
+      expect(columns).toContain('not_returned_decision')
+      // Law 6 — the extra column is an enum, and the list is still spelled out.
+      expect(read.columns).not.toContain('*')
+    }
+  })
+
+  it('every member of not_returned_decision has an answer, and only one of them holds the line', () => {
+    /* Keyed on the enum in `floorVerb.ts`, so a fifth member fails `tsc` there.
+       This pins the VALUES: flipping 'Still expected' back to terminal — the
+       whole of RT-03 — fails here as well as in the behaviour tests above. */
+    const decisions: readonly NotReturnedDecision[] = [
+      'Still expected',
+      'Charge replacement',
+      'Insurance claim',
+      'Write off',
+    ]
+    const holds = decisions.filter((d) => !notReturnedDecisionEndsLine(d))
+    expect(holds).toEqual(['Still expected'])
+    expect(notReturnedDecisionEndsLine(null)).toBe(false)
   })
 })
 

@@ -238,3 +238,36 @@ export const PAYMENT_STATUS_TONE: Record<PaymentStatus, StatusKey> = {
 export function paymentStatusTone(status: string): StatusKey {
   return (PAYMENT_STATUS_TONE as Record<string, StatusKey | undefined>)[status] ?? 'neutral'
 }
+
+/* ── A job state, and how it is painted ───────────────────────────────────
+ *
+ * `JobState` lives in `lib/workflow.ts` and is shared by Pack, Handover, Return
+ * and the case list, so **"finished with exceptions" is not a member to add**
+ * for one screen (Law 1). But a job where every row is resolved and some ended
+ * badly IS `'Complete'` by that union — and painting it `--success-text` with a
+ * checklist puts a green tick directly beside the danger-bordered box the same
+ * screen renders to say what went wrong. Two answers to one question, in one
+ * glance.
+ *
+ * The state is unchanged; the chip stops calling it a success. Word, icon and
+ * tone move together and the count is in the LABEL (Law 11), so nothing asks
+ * the reader to decode a colour.
+ *
+ * This lives here rather than on a screen because it is now the SECOND floor
+ * workspace to need it: Packing shipped `packJobChip` on 6 Sep, and Return's
+ * pill had the identical defect — "Complete" in green for a session whose every
+ * line was 'Still expected'. A third copy is how the two drift apart, so the
+ * exception WORD is a parameter and the rule is not.
+ */
+export function jobStateChip(
+  state: 'Not Started' | 'In Progress' | 'Complete',
+  exceptions: number,
+  exceptionWord: string,
+): { tone: string; icon: IconName; label: string } {
+  if (state === 'Complete' && exceptions > 0) {
+    return { tone: 'var(--warn-text)', icon: 'alert_triangle', label: `Complete · ${exceptions} ${exceptionWord}` }
+  }
+  if (state === 'Complete') return { tone: 'var(--success-text)', icon: 'checklist', label: state }
+  if (state === 'In Progress') return { tone: 'var(--progress-text)', icon: 'refresh', label: state }
+  return { tone: 'var(--text2)', icon: 'dot', label: state }
+}

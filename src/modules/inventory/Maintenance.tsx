@@ -200,7 +200,7 @@ const MAINTENANCE_DATA: MaintenanceRecord[] = [
 type FilterKey = MaintenanceStatus | MaintenanceRegistryFlag | MaintenanceCondition | 'All'
 
 /**
- * **Every count on this screen is derived from `MAINTENANCE_DATA` above.**
+ * **Every count on this screen is derived from the list the table renders.**
  *
  * The chips used to be hand-typed — `All 86`, `Completed 54`, `Scheduled 12` —
  * over a seed holding three jobs, and the KPI strip claimed 18 active against
@@ -209,45 +209,62 @@ type FilterKey = MaintenanceStatus | MaintenanceRegistryFlag | MaintenanceCondit
  * default."* A screen that states 86 and shows 3 is the strongest form of that
  * defect, because the contradiction is visible in one glance.
  *
+ * **RS-09** closed the second half of the same defect. Deriving the counts from
+ * `MAINTENANCE_DATA` fixed the typed figures but froze them: the table renders
+ * `recordsList`, which starts as a copy of that seed and then takes every job
+ * logged this session, so a new job appeared in the table while the chips, the
+ * pills and the KPI strip above it all stayed on the seed's three rows. These
+ * are functions of a list now, called with the state the table reads, so the
+ * two can no longer disagree.
+ *
  * The reconciliation guard below is kept — it now checks arithmetic that is
  * derived rather than typed, which is where an invariant belongs.
  */
-const STATUS_CHIPS: Array<{ label: FilterKey; count: number }> = [
-  { label: 'All', count: MAINTENANCE_DATA.length },
-  ...MAINTENANCE_STATUSES.map((s) => ({
-    label: s as FilterKey,
-    count: MAINTENANCE_DATA.filter((m) => m.status === s).length,
-  })),
-]
-
-const CHIP_TOTAL = STATUS_CHIPS.find((c) => c.label === 'All')?.count ?? 0
-const CHIP_SUM = STATUS_CHIPS.filter((c) => c.label !== 'All').reduce((a, c) => a + c.count, 0)
+function statusChipsOf(records: readonly MaintenanceRecord[]): Array<{ label: FilterKey; count: number }> {
+  return [
+    { label: 'All', count: records.length },
+    ...MAINTENANCE_STATUSES.map((s) => ({
+      label: s as FilterKey,
+      count: records.filter((m) => m.status === s).length,
+    })),
+  ]
+}
 
 /**
- * ⛔ This check used to `throw` here, at module scope. A module-evaluation throw
- * is **uncatchable** — the module is evaluated while React is still loading the
+ * ⛔ This check used to `throw` at module scope. A module-evaluation throw is
+ * **uncatchable** — the module is evaluated while React is still loading the
  * lazy route, before anything is mounted, so no boundary catches it and the
  * operator gets a blank white screen with nothing in it. `lib/money.ts` hit
  * exactly this and fixed it by *reporting* the failure instead of throwing.
  *
- * The invariant still runs on every load; the failure is now stated on the
- * screen, above the chips it contradicts, instead of blanking the app.
+ * The invariant still runs — now on every render of the chips it guards rather
+ * than once at import, which is the point of moving it: it can catch a bad
+ * count in a job added this session, not only in the seed. The failure is
+ * stated on the screen, above the chips it contradicts, instead of blanking
+ * the app.
  */
-const CHIP_ERROR: string | null =
-  CHIP_SUM === CHIP_TOTAL
+function chipReconciliationError(chips: Array<{ label: FilterKey; count: number }>): string | null {
+  const total = chips.find((c) => c.label === 'All')?.count ?? 0
+  const sum = chips.filter((c) => c.label !== 'All').reduce((a, c) => a + c.count, 0)
+  return sum === total
     ? null
-    : `The status chips sum to ${CHIP_SUM}, but the All chip reads ${CHIP_TOTAL}. They are required to reconcile, so these counts are wrong — see src/modules/inventory/Maintenance.tsx.`
+    : `The status chips sum to ${sum}, but the All chip reads ${total}. They are required to reconcile, so these counts are wrong — see src/modules/inventory/Maintenance.tsx.`
+}
 
 /**
  * Pill counts, keyed by the same union the pills and the filter use — and, like
- * the status chips above, counted off `MAINTENANCE_DATA` rather than typed. The
+ * the status chips above, counted off the rendered list rather than typed. The
  * pill is a filter: a pill reading 12 that selects 1 row is a broken control,
  * not just a wrong number.
  */
-const PILL_COUNTS: Record<MaintenanceRegistryFlag | MaintenanceCondition, number> = Object.fromEntries([
-  ...MAINTENANCE_REGISTRY_FLAGS.map((f) => [f, MAINTENANCE_DATA.filter((m) => (m.flags as string[]).includes(f)).length]),
-  ...MAINTENANCE_CONDITIONS.map((c) => [c, MAINTENANCE_DATA.filter((m) => (m.conditions as string[]).includes(c)).length]),
-]) as Record<MaintenanceRegistryFlag | MaintenanceCondition, number>
+function pillCountsOf(
+  records: readonly MaintenanceRecord[],
+): Record<MaintenanceRegistryFlag | MaintenanceCondition, number> {
+  return Object.fromEntries([
+    ...MAINTENANCE_REGISTRY_FLAGS.map((f) => [f, records.filter((m) => (m.flags as string[]).includes(f)).length]),
+    ...MAINTENANCE_CONDITIONS.map((c) => [c, records.filter((m) => (m.conditions as string[]).includes(c)).length]),
+  ]) as Record<MaintenanceRegistryFlag | MaintenanceCondition, number>
+}
 
 interface PillChip {
   key: MaintenanceRegistryFlag | MaintenanceCondition
@@ -262,22 +279,25 @@ interface PillChip {
  * registry flag is read out of §1.9; the conditions bring their own, and each
  * carries the tooltip explaining why it is not a registry flag.
  */
-const PILL_CHIPS: PillChip[] = [
-  ...MAINTENANCE_REGISTRY_FLAGS.map<PillChip>((f) => ({
-    key: f,
-    tone: registryFlagTone(f),
-    icon: MAINTENANCE_REGISTRY_FLAG_ICON[f],
-    title: REGISTRY_FLAG_TITLE,
-    count: PILL_COUNTS[f],
-  })),
-  ...MAINTENANCE_CONDITIONS.map<PillChip>((c) => ({
-    key: c,
-    tone: MAINTENANCE_CONDITION_META[c].token,
-    icon: MAINTENANCE_CONDITION_META[c].icon,
-    title: MAINTENANCE_CONDITION_META[c].why,
-    count: PILL_COUNTS[c],
-  })),
-]
+function pillChipsOf(records: readonly MaintenanceRecord[]): PillChip[] {
+  const pillCounts = pillCountsOf(records)
+  return [
+    ...MAINTENANCE_REGISTRY_FLAGS.map<PillChip>((f) => ({
+      key: f,
+      tone: registryFlagTone(f),
+      icon: MAINTENANCE_REGISTRY_FLAG_ICON[f],
+      title: REGISTRY_FLAG_TITLE,
+      count: pillCounts[f],
+    })),
+    ...MAINTENANCE_CONDITIONS.map<PillChip>((c) => ({
+      key: c,
+      tone: MAINTENANCE_CONDITION_META[c].token,
+      icon: MAINTENANCE_CONDITION_META[c].icon,
+      title: MAINTENANCE_CONDITION_META[c].why,
+      count: pillCounts[c],
+    })),
+  ]
+}
 
 /**
  * §4.2 — five hues plus gold. `At Vendor` takes the gold outline: the spec
@@ -498,14 +518,59 @@ function SeedDefectBanner({ message }: { message: string }) {
   return <ErrorBanner title="These counts do not reconcile." message={message} />
 }
 
-/* What `MAINTENANCE_STARTED` is expected to carry. Its only emitter,
-   `actions/maintenance/createMaintenanceJob`, is `implemented: false`, so
-   nothing reaches the handler yet — the shape is the record it builds. */
+/*
+ * What `MAINTENANCE_STARTED` is expected to carry.
+ *
+ * ⛔ This comment used to read "Its only emitter,
+ * `actions/maintenance/createMaintenanceJob`, is `implemented: false`, so
+ * nothing reaches the handler yet." Half of that is true and half is not, and
+ * the false half hid RS-09. The action is indeed a stub — `implemented: false`
+ * at `actions/maintenance/createMaintenanceJob.ts:18`, and `createAction`
+ * throws before `execute` for a stub — but it is **not** the only emitter:
+ * `modals/LogMaintenanceModal.tsx:92` emits `MAINTENANCE_STARTED` directly,
+ * from the very modal this screen mounts, and then calls `onSuccess` with the
+ * same payload. Both reach this screen, which is why the job used to land in
+ * the list twice. (Grepped: those are the only two `DomainEvents.emit` /
+ * event-list sites for this type in `src/`.)
+ */
 type MaintenanceStartedPayload = Pick<MaintenanceRecord, 'equipmentName' | 'type' | 'priority' | 'technician' | 'vendor' | 'bookingImpact'> & {
   id: string
   serialNo: MaintenanceRecord['serialNumber']
   estCompletionAd?: string
   estCostPaisa?: MaintenanceRecord['costEstPaisa']
+}
+
+/**
+ * One job payload → one row.
+ *
+ * Both notification paths built their own copy of this record, and their guards
+ * had already drifted apart: the event handler tested
+ * `payload.vendor !== undefined` where `onSuccess` tested `job.vendor` for
+ * truthiness, and the handler spread `technician` conditionally where
+ * `onSuccess` assigned it outright. For the payload `LogMaintenanceModal`
+ * actually sends, those two happen to agree — so the visible symptom was two
+ * IDENTICAL rows rather than two that disagreed — but two builders for one
+ * shape is how the next divergence gets in. One builder now.
+ */
+function recordFromStartedJob(job: MaintenanceStartedPayload): MaintenanceRecord {
+  return {
+    id: job.id,
+    equipmentName: job.equipmentName,
+    serialNumber: job.serialNo,
+    type: job.type,
+    priority: job.priority,
+    status: 'In Progress',
+    flags: [],
+    conditions: ['Holding a Booking'],
+    /* Optional fields are spread in only when present — under
+       `exactOptionalPropertyTypes` an explicit `undefined` is not a legal
+       value for them. */
+    ...(job.technician === undefined ? {} : { technician: job.technician }),
+    ...(job.vendor === undefined ? {} : { vendor: job.vendor }),
+    estCompletion: job.estCompletionAd ? new Date(job.estCompletionAd) : new Date(),
+    costEstPaisa: job.estCostPaisa ?? (0 as Paisa),
+    ...(job.bookingImpact === undefined ? {} : { bookingImpact: job.bookingImpact }),
+  }
 }
 
 export function Maintenance() {
@@ -533,28 +598,38 @@ export function Maintenance() {
   const [isLogMaintenanceOpen, setIsLogMaintenanceOpen] = useState(false)
   const [recordsList, setRecordsList] = useState<MaintenanceRecord[]>(() => [...MAINTENANCE_DATA])
 
+  /**
+   * **RS-09 — one row per job id, however many times this screen is told about
+   * the job.**
+   *
+   * `LogMaintenanceModal` announces a new job TWICE, from one press: it awaits
+   * `DomainEvents.emit(MAINTENANCE_STARTED, payload)`, which `EventBus.emit`
+   * hands to its subscribers synchronously — it calls every handler in a
+   * `handlers.map(...)` and only then awaits what they returned
+   * (`events/eventBus.ts`) — and then calls `onSuccess(payload)` with the same
+   * object
+   * (`modals/LogMaintenanceModal.tsx:92` and `:93`). Both appended, so one
+   * `Schedule Job` press put two rows in this list under the SAME `m.id` —
+   * duplicate React keys, and a job counted twice in every figure.
+   *
+   * **What actually happens on that second write, since Law 8 is the frame:**
+   * nothing reaches the data layer at all. `createMaintenanceJob` is a stub
+   * (`implemented: false`), the modal never calls it, neither path carries a
+   * `client_uuid` and no INSERT is attempted — so the unique-key rejection Law
+   * 8 relies on never gets the chance to run, and the duplicate is only ever a
+   * screen fact. Rejecting it is this screen's job for as long as the list is
+   * local: both notifications go through `upsertRecord`, and a job already in
+   * the list is replaced rather than repeated.
+   *
+   * The opener is not reachable today — `Log Maintenance` is `disabled` inside
+   * `<Unavailable>` below — so this is a latent defect that arms itself the
+   * moment the action exists, not a live one.
+   */
+  const upsertRecord = (next: MaintenanceRecord) =>
+    setRecordsList((prev) => [next, ...prev.filter((m) => m.id !== next.id)])
+
   useDomainEvent<MaintenanceStartedPayload>(EVENT_TYPES.MAINTENANCE_STARTED, (payload) => {
-    if (payload?.id) {
-      const estDate = payload.estCompletionAd ? new Date(payload.estCompletionAd) : new Date()
-      const newRec: MaintenanceRecord = {
-        id: payload.id,
-        equipmentName: payload.equipmentName,
-        serialNumber: payload.serialNo,
-        type: payload.type,
-        priority: payload.priority,
-        status: 'In Progress',
-        flags: [],
-        conditions: ['Holding a Booking'],
-        /* Optional fields are spread in only when present — an explicit
-           `undefined` is not a legal value for them. */
-        ...(payload.technician !== undefined ? { technician: payload.technician } : {}),
-        ...(payload.vendor !== undefined ? { vendor: payload.vendor } : {}),
-        estCompletion: estDate,
-        costEstPaisa: payload.estCostPaisa ?? (0 as Paisa),
-        ...(payload.bookingImpact !== undefined ? { bookingImpact: payload.bookingImpact } : {}),
-      }
-      setRecordsList((prev) => [newRec, ...prev])
-    }
+    if (payload?.id) upsertRecord(recordFromStartedJob(payload))
   })
 
   /**
@@ -570,27 +645,28 @@ export function Maintenance() {
    * this, and two of the figures were trivially checkable against the rows
    * beside them: Overdue is 1, not 4, and Bookings Held is 1, not 3.
    *
-   * Each is now counted off `MAINTENANCE_DATA`, the same source
-   * `filteredRecords` renders, so the strip and the list cannot disagree.
+   * Each is now counted off `recordsList` — the same array `filteredRecords`
+   * filters and the table renders, not the frozen `MAINTENANCE_DATA` seed it
+   * starts as (RS-09) — so the strip and the list cannot disagree.
    */
   const kpis: Kpi[] = [
     {
       label: 'Active Maintenance',
-      value: String(MAINTENANCE_DATA.filter((m) => ACTIVE_STATUSES.includes(m.status)).length),
+      value: String(recordsList.filter((m) => ACTIVE_STATUSES.includes(m.status)).length),
       icon: 'tool',
       accent: 'progress',
       note: 'In progress, waiting parts, at vendor',
     },
     {
       label: 'Scheduled',
-      value: String(MAINTENANCE_DATA.filter((m) => m.status === 'Scheduled').length),
+      value: String(recordsList.filter((m) => m.status === 'Scheduled').length),
       icon: 'calendar',
       accent: 'primary',
       note: 'Upcoming jobs',
     },
     {
       label: 'Overdue',
-      value: String(MAINTENANCE_DATA.filter(isOverdue).length),
+      value: String(recordsList.filter(isOverdue).length),
       icon: 'timer',
       accent: 'danger',
       note: 'Past estimated completion',
@@ -599,7 +675,7 @@ export function Maintenance() {
     // as §1.9's client-scoped `Blocked` flag.
     {
       label: 'Bookings Held',
-      value: String(MAINTENANCE_DATA.filter((m) => Boolean(m.bookingImpact)).length),
+      value: String(recordsList.filter((m) => Boolean(m.bookingImpact)).length),
       icon: 'alert_triangle',
       accent: 'danger',
       note: 'A booking is waiting on a repair',
@@ -617,6 +693,13 @@ export function Maintenance() {
       note: 'No completion date is recorded, so a monthly actual cannot be selected',
     })
   }
+
+  /* RS-09 — chips, pills and their reconciliation guard all read the state the
+     table reads. Memoized on it so a keystroke in the search box does not
+     recount the whole list three times. */
+  const statusChips = useMemo(() => statusChipsOf(recordsList), [recordsList])
+  const chipError = useMemo(() => chipReconciliationError(statusChips), [statusChips])
+  const pillChips = useMemo(() => pillChipsOf(recordsList), [recordsList])
 
   const filteredRecords = useMemo(() => {
     return recordsList.filter((m) => {
@@ -722,7 +805,7 @@ export function Maintenance() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      {CHIP_ERROR && <SeedDefectBanner message={CHIP_ERROR} />}
+      {chipError && <SeedDefectBanner message={chipError} />}
       {/* §4.1 — the Damage tab the 12 Aug spec asks for. Damage is a different
           question from a repair job (who approves it, what it does to the
           deposit), so it is a tab rather than another status chip on the
@@ -763,7 +846,7 @@ export function Maintenance() {
       <KpiStrip items={kpis} columns={money ? 5 : 4} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-        {STATUS_CHIPS.map((c) => (
+        {statusChips.map((c) => (
           <button key={c.label} type="button" onClick={() => setActiveFilter(c.label)} aria-pressed={activeFilter === c.label} style={chipStyle(activeFilter === c.label)}>
             {c.label}
             <span className="figure" style={{ color: activeFilter === c.label ? 'var(--nav-active-accent)' : 'var(--muted)' }}>
@@ -774,7 +857,7 @@ export function Maintenance() {
 
         <span aria-hidden style={{ width: 1, height: 22, background: 'var(--border)', margin: '0 2px' }} />
 
-        {PILL_CHIPS.map((c) => {
+        {pillChips.map((c) => {
           const on = activeFilter === c.key
           const tone = STATUS[c.tone]
           return (
@@ -1028,7 +1111,13 @@ export function Maintenance() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '10px 14px', borderTop: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--text2)', flexWrap: 'wrap' }}>
           <span>
-            Showing {filteredRecords.length} of {MAINTENANCE_DATA.length} seeded jobs{filtersOn ? ' (filtered)' : ''}
+            {/* ⛔ The word "seeded" was dropped from this line while the counts
+                were being fixed. It is the ONLY place the screen admits these
+                jobs are fabricated, and the CSV Export beside it is live — so an
+                operator can export seed rows into a real spreadsheet with
+                nothing on screen having said so. Restored, and it stays until
+                the list has a real read. */}
+            Showing {filteredRecords.length} of {recordsList.length} seeded job{recordsList.length === 1 ? '' : 's'}{filtersOn ? ' (filtered)' : ''}
           </span>
           {filtersOn && (
             <button
@@ -1052,25 +1141,7 @@ export function Maintenance() {
       <LogMaintenanceModal
         isOpen={isLogMaintenanceOpen}
         onClose={() => setIsLogMaintenanceOpen(false)}
-        onSuccess={(job: MaintenanceJobPayload) => {
-          const estDate = job.estCompletionAd ? new Date(job.estCompletionAd) : new Date()
-          const newRec: MaintenanceRecord = {
-            id: job.id,
-            equipmentName: job.equipmentName,
-            serialNumber: job.serialNo,
-            type: job.type,
-            priority: job.priority,
-            status: 'In Progress',
-            flags: [],
-            conditions: ['Holding a Booking'],
-            technician: job.technician,
-            ...(job.vendor ? { vendor: job.vendor } : {}),
-            estCompletion: estDate,
-            costEstPaisa: job.estCostPaisa,
-            ...(job.bookingImpact ? { bookingImpact: job.bookingImpact } : {}),
-          }
-          setRecordsList((prev) => [newRec, ...prev])
-        }}
+        onSuccess={(job: MaintenanceJobPayload) => upsertRecord(recordFromStartedJob(job))}
       />
     </div>
   )

@@ -17,7 +17,7 @@ import {
   CASE_STATUS_META,
   CASE_PRIORITY_META,
   CASE_WORKSPACE_ROUTE,
-  STATUS_COUNTS,
+  statusCounts,
   openCasesCount,
   awaitingDecisionCount,
   exposurePaisa,
@@ -133,11 +133,39 @@ export function CasesWorkspace() {
   const [isLogCaseOpen, setIsLogCaseOpen] = useState(false)
   const [casesList, setCasesList] = useState<Case[]>(() => [...CASES])
 
+  /**
+   * **RS-09 — one row per case id, however many times this screen is told
+   * about the case.**
+   *
+   * `LogCaseModal` announces a new case TWICE, from one press: it awaits
+   * `DomainEvents.emit(DISCREPANCY_FLAGGED, { case: newCase })`, which
+   * `EventBus.emit` hands to its subscribers synchronously — it calls every
+   * handler in a `handlers.map(...)` and only then awaits what they returned
+   * (`events/eventBus.ts`) — and then calls `onSuccess(newCase)` with the same
+   * object (`modals/LogCaseModal.tsx`, the `emit` and the `onSuccess` in one
+   * `handleSubmit`). The subscriber below rejected the repeat; the `onSuccess`
+   * append did not, so the second copy landed under the SAME `c.id` — two
+   * `<tr>`s sharing one React key, and one extra case in every figure derived
+   * from this list.
+   *
+   * **What actually happens on that second write, since Law 8 is the frame:**
+   * nothing reaches the data layer at all. There is no case-creation action
+   * (`NEW_CASE_UNAVAILABLE_REASON`, `data/cases.ts`), neither path carries a
+   * `client_uuid`, and no INSERT is attempted — so the unique-key rejection
+   * that Law 8 relies on never gets the chance to run, and the duplicate is
+   * only ever a screen fact. Rejecting it is this screen's job for as long as
+   * the list is local, which is what this helper does: both notifications go
+   * through it, and a case already in the list is replaced, not repeated.
+   *
+   * Neither opener is reachable today — both `Log Incident` and `Export` are
+   * `disabled` inside `<Unavailable>` below — so this is a latent defect that
+   * arms itself the moment the action exists, not a live one.
+   */
+  const upsertCase = (next: Case) =>
+    setCasesList((prev) => [next, ...prev.filter((c) => c.id !== next.id)])
+
   useDomainEvent<{ case?: Case }>(EVENT_TYPES.DISCREPANCY_FLAGGED, (payload) => {
-    if (payload?.case) {
-      const flagged = payload.case
-      setCasesList((prev) => [flagged, ...prev.filter((c) => c.id !== flagged.id)])
-    }
+    if (payload?.case) upsertCase(payload.case)
   })
 
   /* Merge-write one or more params; `null` deletes a key. `replace: true`
@@ -185,6 +213,35 @@ export function CasesWorkspace() {
        above landed in state but not on screen until a chip was flicked. */
   }, [casesList, routeCaseId, searchQuery, activeFilter])
 
+  /**
+   * **RS-09 — the strip, the chips and the table now count the same array.**
+   *
+   * The KPIs called `openCasesCount()` / `awaitingDecisionCount()` /
+   * `exposurePaisa()` / `recoveredThisMonthPaisa()` with no argument and the
+   * chips read the module-level `STATUS_COUNTS`, and every one of those closes
+   * over the frozen `CASES` seed — `STATUS_COUNTS` is literally
+   * `statusCounts()` evaluated at import (`data/cases.ts:882`), and each
+   * helper defaults its parameter to `CASES`. So a case added to state
+   * appeared in the table below while every figure above it stayed at the seed
+   * number: the screen contradicted itself in one glance.
+   *
+   * `data/cases.ts` already wrote each of these to take the list to count
+   * (`cases: Case[] = CASES`) for exactly this reason — the default was the
+   * convenience, not the contract. Passing `casesList` is all that was needed;
+   * no formula is restated here (Law 1).
+   */
+  const counts = useMemo(
+    () => ({
+      total: casesList.length,
+      byStatus: statusCounts(casesList),
+      open: openCasesCount(casesList),
+      awaitingDecision: awaitingDecisionCount(casesList),
+      exposure: exposurePaisa(casesList),
+      recoveredThisMonth: recoveredThisMonthPaisa(casesList),
+    }),
+    [casesList],
+  )
+
   const handleSelectAll = (checked: boolean) => {
     if (checked) setSelectedRowIds(new Set(filteredCases.map((c) => c.id)))
     else setSelectedRowIds(new Set())
@@ -226,14 +283,15 @@ export function CasesWorkspace() {
         </Card>
       )}
 
-      {/* KPIs — derived from canonical CASES array, never hand-typed (§3 / AUDIT_FINDINGS P1 #13) */}
+      {/* KPIs — derived from the list the table renders, never hand-typed
+          (§3 / AUDIT_FINDINGS P1 #13) and never from the frozen seed (RS-09). */}
       <div style={{ display: 'grid', gridTemplateColumns: money ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)', gap: 14 }}>
         <Card padding="md">
           <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
             Open Cases
           </span>
           <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--text)', marginTop: 'var(--sp-xs)' }}>
-            {openCasesCount()}
+            {counts.open}
           </div>
           <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
             All active & unresolved
@@ -244,7 +302,7 @@ export function CasesWorkspace() {
             Awaiting Decision
           </span>
           <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--ready-text)', marginTop: 'var(--sp-xs)' }}>
-            {awaitingDecisionCount()}
+            {counts.awaitingDecision}
           </div>
           <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
             Ready for manager review
@@ -256,7 +314,7 @@ export function CasesWorkspace() {
               Exposure
             </span>
             <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--bad)', marginTop: 'var(--sp-xs)' }}>
-              {formatMoney(exposurePaisa())}
+              {formatMoney(counts.exposure)}
             </div>
             <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
               Assessed value of open cases
@@ -269,7 +327,7 @@ export function CasesWorkspace() {
               Recovered This Month
             </span>
             <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--good)', marginTop: 'var(--sp-xs)' }}>
-              {formatMoney(recoveredThisMonthPaisa())}
+              {formatMoney(counts.recoveredThisMonth)}
             </div>
             <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
               Charged, claimed, and settled
@@ -282,13 +340,13 @@ export function CasesWorkspace() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-lg)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
           {([
-            { label: 'All', count: CASES.length },
-            { label: 'Open', count: STATUS_COUNTS['Open'] },
-            { label: 'In Progress', count: STATUS_COUNTS['In Progress'] },
-            { label: 'Under Review', count: STATUS_COUNTS['Under Review'] },
-            { label: 'Awaiting Decision', count: STATUS_COUNTS['Awaiting Decision'] },
-            { label: 'Resolved', count: STATUS_COUNTS['Resolved'] },
-            { label: 'Closed', count: STATUS_COUNTS['Closed'] },
+            { label: 'All', count: counts.total },
+            { label: 'Open', count: counts.byStatus['Open'] },
+            { label: 'In Progress', count: counts.byStatus['In Progress'] },
+            { label: 'Under Review', count: counts.byStatus['Under Review'] },
+            { label: 'Awaiting Decision', count: counts.byStatus['Awaiting Decision'] },
+            { label: 'Resolved', count: counts.byStatus['Resolved'] },
+            { label: 'Closed', count: counts.byStatus['Closed'] },
           ] as const).map((chip) => (
             <button
               key={chip.label}
@@ -468,9 +526,7 @@ export function CasesWorkspace() {
       <LogCaseModal
         isOpen={isLogCaseOpen}
         onClose={() => setIsLogCaseOpen(false)}
-        onSuccess={(newCase: Case) => {
-          setCasesList((prev) => [newCase, ...prev])
-        }}
+        onSuccess={(newCase: Case) => upsertCase(newCase)}
       />
     </div>
   )
