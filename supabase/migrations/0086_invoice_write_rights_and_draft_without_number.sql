@@ -222,8 +222,183 @@ begin
     raise exception 'POST-CONDITION 5 FAILED: RLS is not enabled on invoices and invoice_lines';
   end if;
 
+  -- (6) The totals trigger still fires on an `invoice_lines` write.
+  -- Catalogue half only; the behavioural half is the probe below. Without this
+  -- trigger the new INSERT policy would let a header keep lines and zero totals
+  -- for ever — a silently free invoice, which is worse than the refusal it
+  -- replaces.
+  if not exists (
+    select 1 from pg_trigger
+     where tgrelid = 'public.invoice_lines'::regclass
+       and not tgisinternal
+       and tgname = 'trg_recalc_invoice_lines'
+  ) then
+    raise exception
+      'POST-CONDITION 6 FAILED: trg_recalc_invoice_lines is gone, so a line write would leave the header at zero.';
+  end if;
+
   raise notice '0086 post-conditions passed: R-05 rights applied, invoice_lines writable, Drafts carry no number.';
 end $$;
+
+-- ── Behavioural post-conditions ─────────────────────────────────────────────
+--
+-- The catalogue block above reads pg_policies. `rls-masks-rows-not-columns` is
+-- the standing lesson that a catalogue read is not proof: an inert column
+-- REVOKE and an enforced one look identical in pg_class, and this repo has
+-- shipped three of the inert kind. This migration's own footer already says
+-- "prove it with role simulation, never with a zero-row read" — so it is proved
+-- here rather than left as a paragraph for a human to run by hand.
+--
+-- Everything below is written inside a subtransaction and rolled back by a
+-- sentinel exception, the idiom `0094` uses. PL/pgSQL variables are NOT
+-- transactional, so a failure recorded in `v_fail` survives the rollback and is
+-- re-raised afterwards; the probe therefore leaves no row behind whether it
+-- passes or fails.
+--
+-- Two scratch users are created because neither the live project nor the
+-- migration chain's own seed (`0012`) contains an **Accounts** row — 0012 seeds
+-- Owner, Manager, Warehouse and a `Billing` string — so the role this migration
+-- exists to admit could not otherwise be exercised at all.
+do $$
+declare
+  v_booking  uuid;
+  v_client   uuid;
+  v_branch   uuid;
+  v_accounts uuid := gen_random_uuid();
+  v_coord    uuid := gen_random_uuid();
+  v_invoice  uuid;
+  v_no       text;
+  v_total    numeric;
+  v_refused  boolean;
+  v_err      text;
+  v_fail     text;
+begin
+  select b.id, b.client_id, b.branch_id
+    into v_booking, v_client, v_branch
+    from bookings b
+   where b.cancelled_at is null
+   order by b.created_at
+   limit 1;
+
+  if v_booking is null then
+    raise notice
+      '0086: this database holds no booking, so the behavioural probe was skipped. '
+      'The catalogue post-conditions above still ran.';
+    return;
+  end if;
+
+  begin
+    insert into users (id, client_uuid, employee_code, email, full_name, mobile, primary_role, branch_id)
+    values
+      (v_accounts, gen_random_uuid(), 'PROBE-0086-A', 'probe-0086-accounts@invalid.test',
+       'Probe Accounts', '+977-9700000086', 'Accounts', v_branch),
+      (v_coord, gen_random_uuid(), 'PROBE-0086-C', 'probe-0086-coordinator@invalid.test',
+       'Probe Coordinator', '+977-9700000087', 'Coordinator', v_branch);
+
+    -- ── (A) Accounts — the role R-05 names and the old policy omitted ───────
+    set local role authenticated;
+    perform set_config('app.current_user_id', v_accounts::text, true);
+
+    insert into invoices (client_uuid, booking_id, client_id, branch_id, due_date, discount_percent, vat_rate)
+    values (gen_random_uuid(), v_booking, v_client, v_branch, current_date, 0, 0.1300)
+    returning id, invoice_no into v_invoice, v_no;
+
+    -- R-15: no number, and `invoices_issued_together` means no issue_date either.
+    if v_no is not null then
+      v_fail := format('BEHAVIOURAL 1 FAILED: a Draft was created carrying invoice_no %s; R-15 mints it at issue.', v_no);
+    end if;
+    if v_fail is null and (select issue_date from invoices where id = v_invoice) is not null then
+      v_fail := 'BEHAVIOURAL 1 FAILED: a Draft was dated as though issued; R-15 leaves issue_date null.';
+    end if;
+
+    -- ── (B) the line lands AND the totals trigger fires on it ──────────────
+    insert into invoice_lines (client_uuid, invoice_id, line_kind, description, quantity, days, unit_rate, line_total)
+    values (gen_random_uuid(), v_invoice, 'Equipment Rental', '0086 probe line', 1, 1, 1000, 1000);
+
+    select total_amount into v_total from invoices where id = v_invoice;
+    if v_fail is null and coalesce(v_total, 0) = 0 then
+      v_fail := format(
+        'BEHAVIOURAL 2 FAILED: a line of 1000 landed but total_amount is %s. trg_recalc_invoice_lines did not fire '
+        '(or its own UPDATE was refused by invoices_update), so this policy set ships headers that keep lines and '
+        'stay free.', coalesce(v_total, 0));
+    end if;
+
+    reset role;
+    perform set_config('app.current_user_id', '', true);
+
+    -- ── (C) Coordinator — the role R-05 withdraws ──────────────────────────
+    v_refused := false;
+    begin
+      set local role authenticated;
+      perform set_config('app.current_user_id', v_coord::text, true);
+      insert into invoices (client_uuid, booking_id, client_id, branch_id, due_date)
+      values (gen_random_uuid(), v_booking, v_client, v_branch, current_date);
+    exception when others then
+      v_refused := true;
+      v_err := sqlerrm;
+    end;
+    reset role;
+    perform set_config('app.current_user_id', '', true);
+
+    if v_fail is null and not v_refused then
+      v_fail := 'BEHAVIOURAL 3 FAILED: a Coordinator raised an invoice. R-05 withdrew that right.';
+    end if;
+    if v_fail is null and position('row-level security' in coalesce(v_err, '')) = 0 then
+      v_fail := format('BEHAVIOURAL 3 FAILED: Coordinator was refused, but not by RLS. Postgres said: %s', v_err);
+    end if;
+
+    -- ── (D) Coordinator cannot write a LINE either ─────────────────────────
+    -- Checked separately: the two tables carry two policy sets and an invoice
+    -- whose header is locked but whose lines are open is still a money hole.
+    v_refused := false;
+    begin
+      set local role authenticated;
+      perform set_config('app.current_user_id', v_coord::text, true);
+      insert into invoice_lines (client_uuid, invoice_id, line_kind, description, quantity, days, unit_rate, line_total)
+      values (gen_random_uuid(), v_invoice, 'Equipment Rental', 'coordinator line', 1, 1, 500, 500);
+    exception when others then
+      v_refused := true;
+      v_err := sqlerrm;
+    end;
+    reset role;
+    perform set_config('app.current_user_id', '', true);
+
+    if v_fail is null and not v_refused then
+      v_fail := 'BEHAVIOURAL 4 FAILED: a Coordinator appended a line to an invoice. R-05 withdrew that right.';
+    end if;
+
+    raise exception 'ROLLBACK_0086_PROBE';
+  exception
+    when others then
+      reset role;
+      if sqlerrm <> 'ROLLBACK_0086_PROBE' then
+        raise;
+      end if;
+      perform set_config('app.current_user_id', '', true);
+      if v_fail is not null then
+        raise exception '%', v_fail;
+      end if;
+      raise notice
+        '0086 behavioural probe passed and rolled back: Accounts raised a numberless Draft, the line moved the '
+        'totals, Coordinator was refused on both tables.';
+  end;
+end $$;
+
+/*
+ * ## What is deliberately NOT constrained: a Draft with no lines
+ *
+ * The header note above calls a lineless header "a silently free one", and
+ * nothing here forbids it. That is on purpose. SPEC-P0-1 §3.1 creates the Draft
+ * first and appends to it for the whole rental (R-02, R-03) — damage and late
+ * fees arrive at return through `addInvoiceLine` (§3.2) — so a Draft is empty
+ * between its creation and its first line, and a NOT-NULL-shaped constraint on
+ * "has at least one line" would make the ruled lifecycle impossible.
+ *
+ * The place to refuse a free invoice is `issue_invoice` (SPEC-P0-1 §3.3), which
+ * is where a figure becomes final and a tax number is minted. That function is
+ * not written yet and is out of this migration's scope; when it is, an empty
+ * line set is one of the conditions it must refuse.
+ */
 
 commit;
 
@@ -232,22 +407,19 @@ commit;
 --
 -- `rls-masks-rows-not-columns` is the standing lesson: an empty table and a
 -- perfectly-enforced policy are indistinguishable, and the MCP connection runs
--- privileged and bypasses RLS entirely. Both directions, inside a rollback:
+-- privileged and bypasses RLS entirely.
 --
---   begin;
---     set local role authenticated;
---     select set_config('app.current_user_id', '<an Accounts uuid>', true);
---     insert into invoices (client_uuid, booking_id, client_id, branch_id, due_date)
---     values (gen_random_uuid(), '<booking>', '<client>', '<branch>', current_date);
---     -- expected: 1 row, invoice_no NULL. Before this migration: 42501 (Accounts)
---     --           and 23502 (invoice_no NOT NULL).
---   rollback;
+-- This section used to be two blocks of SQL for a human to paste. It is now the
+-- **behavioural post-condition block above**, which runs both directions —
+-- Accounts admitted, Coordinator refused on the header AND on the line — inside
+-- a rollback, every time this migration is applied. An instruction nobody runs
+-- proves nothing; that is the whole reason the inert REVOKEs elsewhere in this
+-- directory survived three audits.
 --
---   begin;
---     set local role authenticated;
---     select set_config('app.current_user_id', '<a Coordinator uuid>', true);
---     insert into invoices (...);   -- expected: 42501. R-05 withdrew Coordinator.
---   rollback;
+-- What still wants a human, once, after applying: mint an invoice through
+-- `create_invoice` (0096) from the running application as a signed-in Accounts
+-- user, and read the row back on the Finance screen. The block above proves the
+-- policies; only the application proves the wiring.
 --
 -- ## What this migration deliberately leaves alone
 --

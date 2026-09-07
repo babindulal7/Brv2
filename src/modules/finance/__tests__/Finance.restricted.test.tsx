@@ -368,17 +368,30 @@ describe('Finance — money visibility is not permission to record a payment', (
        */
       expect(byText(c, /^Export$/)).toBeDefined()
       /*
-       * Create Invoice USED to stand here too, asserted as "not a payment and
-       * untouched". That was the last ungated money launcher on the screen:
-       * issuing an invoice is how a receivable comes into existence, and it was
-       * offered to every role that could merely READ the ledger. It is now gated
-       * — see `canIssueInvoice` in `Finance.tsx`, including the TODO(decision)
-       * recording that `lib/rbac` has no invoice-creation rule and that
-       * `canVoidInvoice` (Owner / Accounts) is the narrowest money rule standing
-       * in meanwhile. Admin and Manager fall outside it, exactly as they fall
-       * outside Void two assertions below.
+       * Create Invoice is asserted PRESENT here, and the change is deliberate.
+       *
+       * History, because this assertion has now been all three things it could
+       * be. It first stood here as "not a payment and untouched" — the launcher
+       * was ungated, offered to every role that could merely READ the ledger.
+       * It was then gated on `canVoidInvoice` (Owner / Accounts) as the narrowest
+       * money rule available, under a TODO(decision) recording that `lib/rbac`
+       * had no invoice-creation rule at all, and this line became
+       * `toBeUndefined()`.
+       *
+       * That decision is now RULED. `RULINGS-2026-09-04.md` **R-05**: *"Owner ·
+       * Admin · Manager · Accounts may move an invoice out of Draft"*, and
+       * SPEC-P0-1 §3.1 names the same four for creation. `rbac.canIssueInvoice`
+       * encodes it, `actions/core.ts:231` resolves `invoice.create` through that
+       * predicate, and `CreateInvoiceModal` now dispatches `createInvoice` — so
+       * the launcher gate MUST mirror it (§4.20). Withholding the control from a
+       * role the dispatcher would accept is wrong in the safe direction, which is
+       * still wrong.
+       *
+       * Void below is untouched and still `toBeUndefined()` for these two roles:
+       * no 4 Sep ruling restates who may void, and R-00 says silence is not
+       * supersession.
        */
-      expect(byText(c, /^Create Invoice$/)).toBeUndefined()
+      expect(byText(c, /^Create Invoice$/)).toBeDefined()
 
       // Launcher 1 — the header button. Absent, not disabled: a greyed control
       // still tells you the action exists here.
@@ -438,16 +451,14 @@ describe('Finance — money visibility is not permission to record a payment', (
   /*
    * Create Invoice, the fourth launcher, pinned in both directions.
    *
-   * The negative case above (Admin / Manager) would be satisfied by a gate that
-   * hid the button from everybody, and the positive case alone would be
-   * satisfied by leaving it open. Coordinator is the case that pins WHICH rule:
-   * `canRecordPayment` admits Coordinator and `canVoidInvoice` does not, so a
-   * silent switch to `canTakePayment` — the other candidate named in the
-   * TODO(decision) — fails here and nowhere else. If that decision is ever ruled
-   * the other way, this is the assertion that must be changed deliberately
-   * rather than the gate drifting unobserved.
+   * The positive list is R-05's four — Owner · Admin · Manager · Accounts — and
+   * the negative case is Coordinator, which is what pins WHICH rule is in force:
+   * `canRecordPayment` admits Coordinator and `rbac.canIssueInvoice` does not,
+   * so a silent switch to `canTakePayment` fails here and nowhere else. Admin
+   * and Manager are asserted in the money-visibility block above, where their
+   * absence used to be asserted instead.
    */
-  for (const role of ['Owner', 'Accounts']) {
+  for (const role of ['Owner', 'Admin', 'Manager', 'Accounts']) {
     it(`still offers ${role} the Create Invoice launcher`, async () => {
       auth.role = role
       db.tables.set('invoices', { rows: [invoiceRow()], count: 1 })
@@ -456,7 +467,7 @@ describe('Finance — money visibility is not permission to record a payment', (
     })
   }
 
-  it('withholds Create Invoice from Coordinator under the rule currently standing in', async () => {
+  it('withholds Create Invoice from Coordinator, whom R-05 does not name', async () => {
     auth.role = 'Coordinator'
     db.tables.set('invoices', { rows: [invoiceRow()], count: 1 })
     const c = await mount()

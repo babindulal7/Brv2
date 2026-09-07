@@ -853,7 +853,7 @@ forbids, and `0094` deliberately stops at making the door the only way in.
 
 ---
 
-## 4.46 ⬅ OPEN ×1 — does an invoice bill the BOOKING, or the lines typed on the form?
+## 4.46 ✅ DERIVED 7 Sep 2026 — the invoice bills the BOOKING (a), from rulings already binding
 
 **Raised 5 Sep 2026**, while fixing the audit's P0s. This is the last thing standing between
 `createInvoice` and a working invoice path — the two blockers `CreateInvoiceModal` used to
@@ -871,6 +871,32 @@ Accounts. Neither of those is open any more.
   and late fees *append as lines to the Draft invoice*: the invoice is the booking's bill.
 - **`CreateInvoiceModal` collects hand-typed lines** — description and amount rows the
   operator fills in, with no reference to the booking's own lines.
+
+**RESOLVED (a) — derived, not decided.** This was never a new product question; three binding
+documents already answer it, none of them ambiguous, so it is settled by reading rather than by
+ruling. Recorded 7 Sep 2026 while wiring the modal; **overrule by ruling if this reading is wrong.**
+
+- `RULINGS-2026-09-04.md` **R-03** — *"Append as lines to the **Draft** invoice. One invoice per
+  rental (21 Jul ruling, unchanged)."* Damage and late fees append to lines produced by the return
+  session. There is nothing for them to append to on a bill someone typed by hand at creation time.
+- `docs/SPEC-P0-1-INVOICING.md` **§3.1** — *"Then one `invoice_lines` row per `booking_lines`
+  row"*, and *"**Lines are a snapshot, not a join.** The rate card is pinned per booking; the
+  invoice must not silently re-price when a product's rate changes."*
+- `RULINGS-2026-09-04.md` **R-02** — the invoice is Draft for the whole rental and is *"issued
+  once, at return, when the final figure is known"*. A hand-typed bill has no whole rental to be
+  Draft against.
+
+**What was built on it.** `CreateInvoiceModal` is now a read-only **preview** of exactly what
+`createInvoice` will write — the booking's own equipment, crew and transport lines, priced by
+`lib/money.ts` — and Confirm dispatches the action. The free-form editor is gone, because keeping
+it would have discarded every row the operator typed and billed something else. The preview reads
+the `_v` views, since 0062 revoked the money columns on the base tables from every signed-in
+session including Owner. Full derivation with the quoted sources sits in the headers of
+`src/lib/queries/invoicePreview.ts` and `src/modules/finance/modals/CreateInvoiceModal.tsx`.
+
+**Still genuinely open, and not touched here:** *who* may raise an invoice from *where* is a
+screen-level choice, not this question — Booking Detail is now an entry point under R-01. And R-04's
+correction path (void plus credit note) remains unbuilt; see MONEY-07 in the remediation audit.
 
 Wiring the modal to the action as they stand would silently discard everything typed and bill
 the booking instead. That is success fabrication in a new coat, so the modal still refuses.

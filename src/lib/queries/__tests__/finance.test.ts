@@ -832,6 +832,12 @@ describe('Law 4 — payments are immutable, and this module offers no way in', (
       'liveInvoices',
       'outstandingInvoices',
       'overdueInvoices',
+      // MONEY-05 — the set a PAYMENT may be recorded against, which is
+      // `outstandingInvoices` plus 'Draft'. R-02 keeps an invoice in Draft for
+      // the whole rental and R-14 leaves it there when a payment lands, so a
+      // Draft is payable by ruling; it is still not a receivable, which is why
+      // the two sets stayed separate rather than one being widened.
+      'payableInvoices',
       'paymentsForBooking',
       'paymentsForClient',
       'paymentsForInvoice',

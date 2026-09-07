@@ -679,6 +679,21 @@ export const VIEW_OF: Record<string, string> = {
   product_units_v: 'product_units',
   booking_lines_v: 'booking_lines',
   membership_plans_v: 'membership_plans',
+  /*
+   * Added for the Create Invoice preview, which reads the `_v` views because
+   * live REVOKEs the money columns on the base tables from every signed-in
+   * session (0062 — verified on the project 7 Sep 2026). Without these two
+   * entries the mimic answered "no rows for table booking_crew_lines_v" and the
+   * preview showed a bill with no crew on it, while the invoice would carry
+   * them — the exact preview/write divergence the preview exists to prevent.
+   *
+   * `booking_transport` has no corpus rows at all, so its view resolves to an
+   * empty base table; that is the same answer live would give for a booking with
+   * no transport, and it is honest here because mock always signs in as Owner,
+   * for whom `booking_transport_v` genuinely returns everything.
+   */
+  booking_crew_lines_v: 'booking_crew_lines',
+  booking_transport_v: 'booking_transport',
 }
 
 /** `client_directory_v` — 31 columns over `clients` with six aggregates. */

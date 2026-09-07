@@ -18,7 +18,13 @@ import { Unavailable } from '../../components/ui/Unavailable'
 import { useAuth } from '../../lib/auth'
 import { newClientUuid } from '../../lib/supabase'
 import { gateContext, canViewMoneyField } from '../../lib/fieldGating'
-import { canRecordPayment, canPerformOperations, canWriteBookingDesk, canCloseRental } from '../../lib/rbac'
+import {
+  canRecordPayment,
+  canIssueInvoice,
+  canPerformOperations,
+  canWriteBookingDesk,
+  canCloseRental,
+} from '../../lib/rbac'
 import { IntelCard } from '../../components/ui/IntelCard'
 import { useToast } from '../../components/ui/Toast'
 import { formatMoney, grouped, toRupees } from '../../lib/money'
@@ -29,6 +35,7 @@ import { ExtendRentalModal } from './modals/ExtendRentalModal'
 import { AssignCrewModal } from './modals/AssignCrewModal'
 import { CreateSubRentalModal } from './modals/CreateSubRentalModal'
 import { RecordPaymentModal } from '../finance/modals/RecordPaymentModal'
+import { CreateInvoiceModal } from '../finance/modals/CreateInvoiceModal'
 import type { ActionContext } from '../../actions/core'
 import { useList } from '../../lib/queries/useList'
 import { listBookings, fetchFloorBooking } from '../../lib/queries/bookings'
@@ -990,9 +997,15 @@ function NotWiredNote({ children }: { children: React.ReactNode }) {
 
 /* ── Named Unavailable reasons — never a control that silently does nothing ── */
 
+/*
+ * ⚠ This said "raise one from Finance" and cited `invoices.invoice_no`. Both
+ * halves are now out of date: R-01 makes Booking Detail an invoice entry point
+ * in its own right and this screen now carries the launcher, and `recordPayment`
+ * settles by `invoices.id` because R-15 gives a Draft no number at all.
+ */
 const NO_INVOICE_PAYMENT_UNAVAILABLE =
-  'No invoice has been raised for this booking yet. recordPayment settles against an invoice ' +
-  '(invoices.invoice_no), so raise one from Finance before taking money against this booking.'
+  'No invoice has been raised for this booking yet, and a payment settles against an invoice. ' +
+  'Use Create Invoice to raise the Draft first — it stays a Draft, so an advance can be taken against it.'
 const ITEM_EDIT_UNAVAILABLE =
   'Adding, searching or filtering booking lines is not wired yet — booking_lines has no write path from this screen.'
 const CREW_ADD_UNAVAILABLE = 'Crew assignment writes are not wired — the crew.assign action is still a stub.'
@@ -1070,6 +1083,7 @@ export default function BookingDetail() {
   const [showCrewModal, setShowCrewModal] = useState(false)
   const [showSubRentalModal, setShowSubRentalModal] = useState(false)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [showCreateInvoice, setShowCreateInvoice] = useState(false)
   const { showSuccessToast } = useToast()
   const viewport = useViewport()
 
@@ -1089,6 +1103,16 @@ export default function BookingDetail() {
      `rbac.canRecordPayment` (the rule the dispatcher itself resolves
      `payment.create` through). Absent, not disabled. */
   const canTakePayment = user ? canRecordPayment(user.role) : false
+  /*
+   * **R-01** — *"Invoice creation … Manual only, from **Finance** and from
+   * **Booking Detail**. Nothing generates an invoice at Confirm."* This screen
+   * is the second of those two entry points and had no launcher at all.
+   *
+   * `rbac.canIssueInvoice` — R-05's Owner · Admin · Manager · Accounts — is the
+   * predicate `actions/core.ts` itself resolves `invoice.create` through, so the
+   * gate mirrors the rule the dispatcher will apply rather than approximating it.
+   */
+  const canRaiseInvoice = user ? canIssueInvoice(user.role) : false
   const canOperate = user ? canPerformOperations(user.role) : false
 
   /* ── the booking head — `listBookings`, filtered to this one number ──────
@@ -1313,9 +1337,16 @@ export default function BookingDetail() {
   const money = (n: number) => formatMoney(n as Paisa)
 
   /* The invoice a Record Payment settles by default: the first still owed,
-     else the newest (the list arrives issue_date desc). */
+     else the newest (the list arrives issue_date desc).
+
+     'Draft' joined that set with MONEY-05. R-02 keeps an invoice in Draft for
+     the whole rental and R-14 leaves it in Draft when a payment lands, so a
+     Draft is the invoice carrying the running balance for most of a booking's
+     life — preferring an issued one over it would only ever apply to a booking
+     past return. */
   const primaryInvoice =
-    liveInvoices.find((r) => r.status === 'Sent' || r.status === 'Partially Paid') ?? liveInvoices[0]
+    liveInvoices.find((r) => r.status === 'Draft' || r.status === 'Sent' || r.status === 'Partially Paid') ??
+    liveInvoices[0]
 
   /*
    * Payment History rows — live `payments` mapped into the display shape the
@@ -1767,6 +1798,43 @@ export default function BookingDetail() {
     )
   }
 
+  /**
+   * **Create Invoice** — R-01's second entry point.
+   *
+   * Same shape as `recordPaymentButton` above and for the same reason: every
+   * branch that cannot offer the control says WHY, and the three reasons are
+   * kept apart. "This booking already has one" is a fact about the booking;
+   * "still reading" and "the read failed" are facts about the app, and stating
+   * either as the first is the Law 12 defect this file already documents.
+   *
+   * The already-invoiced refusal is R-03 (*"One invoice per rental"*) and it
+   * mirrors `createInvoice`'s own precondition, which refuses on ANY existing
+   * invoice — a voided one included. Offering a control the dispatcher will
+   * refuse is the shape MONEY-01 exists to remove.
+   */
+  const createInvoiceButton = (label: string) => {
+    const reason =
+      cancelledReason ??
+      invoicesUnknownReason ??
+      (hasInvoice
+        ? `${booking.bookingNo} already has an invoice (${
+            liveInvoices[0]?.invoiceNo ?? 'a Draft'
+          }). One invoice per rental — damage and late fees append as lines to it, and a correction after issue is ` +
+          'a Void plus a Credit Note.'
+        : null)
+    return reason === null ? (
+      <Button icon="invoice" onClick={() => setShowCreateInvoice(true)}>
+        {label}
+      </Button>
+    ) : (
+      <Unavailable reason={reason}>
+        <Button icon="invoice" disabled>
+          {label}
+        </Button>
+      </Unavailable>
+    )
+  }
+
   const railBody = (
     <>
       {/* Same booking-money figures as the Facts strip and Block 4 — gated the
@@ -1794,7 +1862,10 @@ export default function BookingDetail() {
             <Icon name="info" size={11} style={{ flexShrink: 0, marginTop: 2 }} />
             <span>Deposit is a liability. It never enters Rental Total and never reduces Outstanding.</span>
           </p>
-          {canTakePayment && <div style={{ marginTop: 12 }}>{recordPaymentButton('Receive Payment')}</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', marginTop: 12 }}>
+            {canRaiseInvoice && createInvoiceButton('Create Invoice')}
+            {canTakePayment && recordPaymentButton('Receive Payment')}
+          </div>
         </Card>
       )}
 
@@ -1809,6 +1880,7 @@ export default function BookingDetail() {
               capability, omitted not disabled. */}
           <Card title="Quick Actions">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
+              {canBookingMoney && canRaiseInvoice && createInvoiceButton('Create Invoice')}
               {canBookingMoney && canTakePayment && recordPaymentButton('Receive Payment')}
               {/* BD-04 — the SAME `operationsUnavailable` the header launcher
                   reads, through the same component. This was a bare live
@@ -2833,6 +2905,35 @@ export default function BookingDetail() {
       <OperationsShell bookingNo={id} bookingStatus={stage} isOpen={shellOpen} onClose={() => setShellOpen(false)} />
 
       {/*
+        Create Invoice — R-01's second entry point, which this screen did not
+        have. The modal is a read-only PREVIEW of the lines `createInvoice` will
+        snapshot off this booking; nothing on it is typed, because nothing on an
+        invoice raised this way is a screen's to choose (§4.46(a), derived from
+        R-03 + SPEC-P0-1 §3.1 — see the modal's header).
+
+        Mounted only while open, like the payment modal beside it: the modal
+        reads the booking's lines when it opens, so a persistent mount would hold
+        one booking's bill across a navigation. `canRaiseInvoice` is repeated on
+        the mount so a mid-session role change cannot leave an orphaned money
+        form.
+
+        After a confirmed create both money lists are refetched. The new Draft
+        appears because the DATABASE returned it — never prepended here, which is
+        what would let a row that was not written stay on screen.
+      */}
+      {canRaiseInvoice && showCreateInvoice && (
+        <CreateInvoiceModal
+          isOpen={showCreateInvoice}
+          onClose={() => setShowCreateInvoice(false)}
+          bookingNo={booking.bookingNo}
+          onSuccess={() => {
+            invoicesList.refetch()
+            paymentsList.refetch()
+          }}
+        />
+      )}
+
+      {/*
         The shared payment modal. RULED 12 Aug 2026: a payment posts against
         the BOOKING and settles against an invoice — but `recordPayment`
         resolves its target by `invoices.invoice_no` and has NO booking-number
@@ -2857,14 +2958,19 @@ export default function BookingDetail() {
         <RecordPaymentModal
           isOpen={showPaymentModal}
           onClose={() => setShowPaymentModal(false)}
+          /* `id` is the invoice's UUID, not its number (MONEY-05): a Draft has
+             no number (R-15) and this screen's invoices are Drafts for most of
+             a booking's life, so the number path could never settle one. The
+             number rides along as the picker's label and is null on a Draft. */
           invoices={liveInvoices.map((inv) => ({
-            id: inv.invoiceNo,
+            id: inv.id,
+            invoiceNo: inv.invoiceNo,
             client: inv.clientName,
             amount: formatMoney(inv.totalAmount),
             status: inv.status,
             booking: inv.bookingNo,
           }))}
-          initialInvoiceId={primaryInvoice.invoiceNo}
+          initialInvoiceId={primaryInvoice.id}
           onSuccess={(p) => {
             paymentsList.refetch()
             invoicesList.refetch()

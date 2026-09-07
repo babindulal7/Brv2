@@ -40,8 +40,33 @@ window.matchMedia = ((q: string) => ({
 
 const { RecordPaymentModal } = await import('../modals/RecordPaymentModal')
 
+/*
+ * ⚠ `id` is the invoice's UUID, `invoiceNo` its number (MONEY-05). The row used
+ * to be `{ id: 'INV-492' }` — the number in the id slot — and the modal resolved
+ * the payment by it. That could never settle a Draft: R-15 gives a Draft no
+ * `invoice_no` at all and R-02 keeps an invoice in Draft for the whole rental,
+ * so every invoice this application creates was unpayable. The second row below
+ * is exactly that case and is the reason it exists.
+ */
+const INVOICE_UUID = '11111111-1111-4111-8111-111111111111'
+const DRAFT_UUID = '44444444-4444-4444-8444-444444444444'
 const INVOICES = [
-  { id: 'INV-492', client: 'ABC Films Pvt. Ltd.', amount: 'Rs 1,39,506', status: 'Sent', booking: 'B-715' },
+  {
+    id: INVOICE_UUID,
+    invoiceNo: 'INV-492',
+    client: 'ABC Films Pvt. Ltd.',
+    amount: 'Rs 1,39,506',
+    status: 'Sent',
+    booking: 'B-715',
+  },
+  {
+    id: DRAFT_UUID,
+    invoiceNo: null,
+    client: 'Manaslu Motion Pictures Pvt. Ltd.',
+    amount: 'Rs 51,867',
+    status: 'Draft',
+    booking: 'B-716',
+  },
 ]
 
 async function mount(onSuccess: (p: unknown) => void) {
@@ -99,21 +124,24 @@ describe('RecordPaymentModal — the amount default', () => {
     const [input, ctx] = recordPaymentSpy.mock.calls[0] as [Record<string, unknown>, Record<string, unknown>]
     expect(input.amountPaisa).toBe(150000)
     /*
-     * UPDATED 12 Aug 2026, when `recordPayment` became a real INSERT.
+     * UPDATED twice, and each time onto the field that now carries the fact.
      *
-     * This line was `expect(input.bookingId).toBe('B-715')`. It was correct for
-     * the stub — the modal genuinely forwarded the selected row's booking
-     * NUMBER — and it is wrong for the write, because `payments.booking_id` is
-     * a `uuid NOT NULL` and `B-715` is not one. The action now resolves the
-     * invoice by its number and reads `booking_id`, `client_id` and `branch_id`
-     * off that row.
+     * 12 Aug 2026 — was `expect(input.bookingId).toBe('B-715')`, correct for the
+     * stub and wrong for the write: `payments.booking_id` is `uuid NOT NULL` and
+     * `B-715` is not one.
      *
-     * Nothing is relaxed: the same fact (the modal forwards the SELECTED
-     * record's identifier, not a placeholder) is asserted on the field that now
-     * carries it, and the old field is pinned as absent so the booking number
-     * cannot quietly reappear in a uuid slot.
+     * MONEY-05 — was `expect(input.invoiceNo).toBe('INV-492')`. Also correct at
+     * the time, and also wrong now: R-15 gives a **Draft no number at all**, so
+     * resolving by number could not settle any invoice this application creates.
+     * The modal sends `invoices.id`.
+     *
+     * Nothing is relaxed. The same fact — the modal forwards the SELECTED
+     * record's identifier, never a placeholder — is asserted on `invoiceId`, and
+     * BOTH retired fields are pinned as absent so neither a booking number nor an
+     * invoice number can quietly reappear in a uuid slot.
      */
-    expect(input.invoiceNo).toBe('INV-492')
+    expect(input.invoiceId).toBe(INVOICE_UUID)
+    expect(input.invoiceNo).toBeUndefined()
     expect(input.bookingId).toBeUndefined()
     // Law 8 — the modal mints the key, the action does not.
     expect(typeof input.clientUuid).toBe('string')
@@ -121,6 +149,37 @@ describe('RecordPaymentModal — the amount default', () => {
     // `isOnline` is what `lib/rbac`'s money rules degrade on; jsdom reports online.
     expect(ctx).toEqual({ userId: 'USR-REAL', role: 'Owner', isOnline: true })
     expect((seen[0] as Record<string, unknown>).amountPaisa).toBe(150000)
+  })
+
+  /*
+   * SPEC-P0-1 §5's acceptance case begins *"Record a 50% advance"* against a
+   * Draft, and R-14 leaves that invoice in Draft when the payment lands. Both of
+   * these were impossible before MONEY-05: the picker resolved by number and a
+   * Draft has none.
+   */
+  it('names an unnumbered Draft in the picker rather than rendering a blank label', async () => {
+    const c = await mount(() => {})
+    const options = Array.from(c.querySelectorAll('option')).map((o) => o.textContent ?? '')
+    expect(options.some((t) => t.includes('INV-492'))).toBe(true)
+    expect(options.some((t) => t.includes('Draft (no number)'))).toBe(true)
+    expect(options.some((t) => t.trim().startsWith('—'))).toBe(false)
+  })
+
+  it('settles a Draft by its uuid — the case the number path could never reach', async () => {
+    recordPaymentSpy.mockClear()
+    const c = await mount(() => {})
+    const picker = c.querySelector('select') as HTMLSelectElement
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!
+    await act(async () => {
+      setter.call(picker, DRAFT_UUID)
+      picker.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await typeAmount(amountInput(c), '25000')
+    await act(async () => { submitButton(c).click() })
+    expect(recordPaymentSpy).toHaveBeenCalledTimes(1)
+    const [input] = recordPaymentSpy.mock.calls[0] as [Record<string, unknown>, unknown]
+    expect(input.invoiceId).toBe(DRAFT_UUID)
+    expect(input.amountPaisa).toBe(2500000)
   })
 
   it('sends the same Law 8 key on a retry, so a replayed submit cannot charge twice', async () => {

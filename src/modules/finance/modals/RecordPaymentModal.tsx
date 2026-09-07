@@ -23,6 +23,7 @@ interface RecordPaymentModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess: (payment: { invoiceId: string; amountPaisa: Paisa; method: string; reference: string }) => void
+  /** `invoices.id` — the UUID of the invoice to preselect. NOT its number. */
   initialInvoiceId?: string
   /**
    * **Rupees, not paisa** — this pre-fills the "Amount (Rs)" field, which the
@@ -34,18 +35,57 @@ interface RecordPaymentModalProps {
   /**
    * The invoices this modal offers.
    *
-   * ⚠ `id` is the invoice **number** (`invoices.invoice_no`), not a uuid — that
-   * is what `Finance.tsx` and `Payments.tsx` map into it, and it is what the
-   * action resolves the payment's `booking_id`/`client_id`/`branch_id` from.
+   * ⚠ **`id` is the invoice's UUID (`invoices.id`), not its number** — changed
+   * for MONEY-05, and the change is the whole fix. It used to be
+   * `invoices.invoice_no`, and this modal resolved the payment by that number,
+   * which made every invoice the application creates **unpayable**:
    *
-   * `booking` is still accepted so the four calling screens keep compiling
-   * unchanged, but it is no longer sent anywhere: it held a booking NUMBER and
-   * was being passed as the action's `bookingId`, where the schema needs a
-   * uuid. The booking a payment belongs to is now read off the invoice row
-   * itself, which is the only place that fact is authoritative.
+   *  · **R-15** — *"a Draft carries no `invoice_no`. It is minted by
+   *    `next_document_number('invoice')` at the moment of issue"*, and
+   *    `createInvoice` omits the column entirely.
+   *  · **R-02** — an invoice *"is created as **Draft** and stays Draft for the
+   *    whole rental"*, issued once at return.
+   *
+   * So for a rental's entire life there was no number to send, and SPEC-P0-1 §5's
+   * acceptance case — *"Record a 50% advance; the invoice **stays Draft**"* —
+   * could not be performed at all. `recordPayment` already accepted an
+   * `invoiceId`; nothing but this prop was in the way.
+   *
+   * `invoiceNo` travels alongside and is **display-only**: `null` on a Draft,
+   * which the picker renders as "Draft (no number)" rather than as a blank
+   * label. The action's own `invoiceNo` path is kept for a caller that genuinely
+   * holds only a typed number and no uuid; this screen is not one.
+   *
+   * `booking` is still accepted so the calling screens keep compiling unchanged,
+   * but it is not sent anywhere: it held a booking NUMBER and was being passed
+   * as the action's `bookingId`, where the schema needs a uuid. The booking a
+   * payment belongs to is read off the invoice row itself, which is the only
+   * place that fact is authoritative.
    */
-  invoices: Array<{ id: string; client: string; amount: string; status: string; booking?: string }>
+  invoices: Array<{
+    id: string
+    invoiceNo: string | null
+    client: string
+    amount: string
+    status: string
+    booking?: string
+  }>
 }
+
+/**
+ * How a Draft is named in the picker. A Draft genuinely has no number (R-15) and
+ * an empty label would read as a rendering fault; this says which state it is.
+ */
+export const DRAFT_NO_NUMBER = 'Draft (no number)'
+
+/**
+ * This read "against an ISSUED invoice", which is now the wrong word. R-02 keeps
+ * an invoice in Draft for the whole rental, R-14 leaves it in Draft when a
+ * payment lands, and SPEC-P0-1 §5's acceptance case is a 50% advance recorded
+ * against exactly that Draft. Telling an operator the form is for issued
+ * invoices would send them away from the only invoice they have.
+ */
+const SUBTITLE = 'Register an incoming payment against an invoice — a Draft included.'
 
 type PaymentMethod = 'Bank Transfer' | 'Cash' | 'eSewa' | 'Khalti' | 'Card' | 'Cheque'
 
@@ -297,29 +337,31 @@ export function RecordPaymentModal({
        *
        * The previous version sent `bookingId: selectedInvoice?.booking` — the
        * booking NUMBER, in a field the schema needs a uuid for — and sent no
-       * invoice at all, so *which bill the money settled* reached nothing. The
-       * action now takes the invoice's number (`invoices.invoice_no` is
-       * `text not null unique`) and reads `booking_id`, `client_id` and
-       * `branch_id` off that invoice row itself. Both TODO(decision)s that
-       * stood here — no `invoiceId`, no `notes` — are closed by that change:
-       * the note the operator types for the receipt is now written to
-       * `payments.notes`.
+       * invoice at all, so *which bill the money settled* reached nothing.
        *
-       * ⚠ `invoiceId` here holds the value of `invoices[].id`, which every
-       * calling screen populates with the invoice NUMBER (`Finance.tsx` and
-       * `Payments.tsx` both map `id: r.invoiceNo`) — not a uuid. That is what
-       * `invoiceNo` is named for. `BookingDetail` and `UnifiedInbox` pass a
-       * BOOKING number instead, and the action answers those with a named
-       * refusal rather than posting the money against nothing; their own
-       * TODO(decision) (may a payment be taken before an invoice exists?)
-       * is the thing that has to be ruled, and it is not ruled here.
+       * ⚠ **`invoiceId`, not `invoiceNo`** (MONEY-05). The intermediate version
+       * sent the invoice NUMBER, which is `text not null unique` and is exactly
+       * what every screen used to hold — but R-15 gives a **Draft no number at
+       * all**, and R-02 keeps an invoice in Draft for the whole rental, so the
+       * number path could never settle an invoice this application had created.
+       * `invoiceId` carries `invoices.id` from the picker, and the action reads
+       * `booking_id`, `client_id` and `branch_id` off that row itself.
        *
-       * `clientUuid` is Law 8's key for THIS attempt; `isOnline` is what
-       * `lib/rbac`'s money rules degrade on.
+       * `recordPayment` accepts either and requires exactly one; its `invoiceNo`
+       * path stays for a caller that genuinely holds only a typed number. A
+       * caller that hands this modal something that is neither — a BOOKING
+       * number, as the archived `UnifiedInbox` does — still gets a named refusal
+       * naming the reference that was not found, rather than money posted against
+       * nothing. Whether a payment may be taken before an invoice exists is
+       * unruled and is not ruled here.
+       *
+       * The note the operator types for the receipt is written to
+       * `payments.notes`; `clientUuid` is Law 8's key for THIS attempt; and
+       * `isOnline` is what `lib/rbac`'s money rules degrade on.
        */
       await recordPayment(
         {
-          invoiceNo: invoiceId,
+          invoiceId,
           amountPaisa: rupees(amount),
           paymentMethod: method,
           // The chosen account's row id, or nothing at all — the action never
@@ -365,7 +407,7 @@ export function RecordPaymentModal({
       isOpen={isOpen}
       onClose={onClose}
       title="Record Payment"
-      subtitle="Register an incoming payment against an issued invoice."
+      subtitle={SUBTITLE}
       size="md"
       footer={
         <>
@@ -427,9 +469,14 @@ export function RecordPaymentModal({
               fontSize: 'var(--t-meta)',
             }}
           >
+            {/* The NUMBER is the label and the UUID is the value. A Draft has
+                no number (R-15), so it is named for the state it is in rather
+                than rendered with an empty label — an operator has to be able to
+                tell "this invoice has not been issued yet" from "this row failed
+                to render". */}
             {invoices.map((inv) => (
               <option key={inv.id} value={inv.id}>
-                {inv.id} — {inv.client} ({inv.amount})
+                {inv.invoiceNo ?? DRAFT_NO_NUMBER} — {inv.client} ({inv.amount})
               </option>
             ))}
           </select>

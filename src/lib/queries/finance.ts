@@ -532,6 +532,45 @@ export function outstandingInvoices(): ListFilters {
 }
 
 /**
+ * The statuses a payment may be recorded against.
+ *
+ * Deliberately a **different set from `UNSETTLED_INVOICE_STATUSES`**, and the
+ * difference is exactly one member: 'Draft'.
+ *
+ * `outstandingInvoices()` answers *"what is the business owed"*, and a Draft is
+ * not a receivable — it has not been issued to anybody, so counting it would
+ * overstate the ledger. That reasoning is correct and is left standing.
+ *
+ * *"What may money be taken against"* is a different question and the 4 September
+ * rulings answer it the other way:
+ *
+ *  · **R-02** — an invoice *"is created as **Draft** and stays Draft for the whole
+ *    rental"*, and is *"issued once, at return, when the final figure is known"*.
+ *  · **R-14** — while `status = 'Draft'`, a payment updates `paid_amount` and
+ *    `outstanding_amount` but **does not change status**, so a Draft carries a
+ *    true running balance through the whole rental. Draft is a payable state by
+ *    ruling, not by accident.
+ *  · **SPEC-P0-1 §5** — the acceptance case is *"Record a 50% advance; the
+ *    invoice **stays Draft**; `outstanding_amount` halves."*
+ *
+ * A payment picker built on the receivables set therefore offered nothing for
+ * every rental in progress. 'Paid' is still excluded (settled) and voided rows
+ * are still excluded by timestamp, for the reasons `outstandingInvoices` gives.
+ *
+ * ⚠ Same limitation as that function: this is a STATUS set, not
+ * `outstanding_amount > 0`, because `ListFilters` cannot express a numeric bound
+ * without lying about a field named `fromAd`. A Draft whose balance is already
+ * zero appears here; the modal's own guards refuse a Rs 0 payment.
+ */
+export function payableInvoices(): ListFilters {
+  return {
+    chips: { status: ['Draft', ...UNSETTLED_INVOICE_STATUSES] },
+    presence: { voided_at: false },
+    sort: { column: 'due_date', ascending: true },
+  }
+}
+
+/**
  * Overdue invoices — issued, unsettled, and past their due date.
  *
  * `todayAd` takes either a `YYYY-MM-DD` Nepal calendar day (what a date picker

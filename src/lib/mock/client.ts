@@ -626,6 +626,341 @@ function createBooking(payload: Record<string, unknown>): { data: Row | null; er
   }
 }
 
+/* ── create_invoice ────────────────────────────────────────────────────── */
+
+/** R-05 — who may raise an invoice. The same four `0086`'s policies name. */
+const INVOICE_WRITE_ROLES = new Set(['Owner', 'Admin', 'Manager', 'Accounts'])
+
+/** `auth_can_view_money()` inverted: the roles that see no money (Law 6). */
+const MONEY_BLIND_ROLES = new Set(['Warehouse', 'Technician', 'Driver', 'Client'])
+
+/** `booking_lines.line_type` → `invoice_lines.line_kind`, as 0096's CASE maps it. */
+const INVOICE_LINE_KIND: Record<string, string> = {
+  Equipment: 'Equipment Rental',
+  Bundle: 'Equipment Rental',
+  Accessory: 'Equipment Rental',
+  'Manual item': 'Equipment Rental',
+  Service: 'Services',
+  'Sub-rental': 'Sub-Rental',
+}
+
+/** `clients.payment_terms` → days. The label IS the rule. */
+const INVOICE_TERM_DAYS: Record<string, number> = { Immediate: 0, '7 days': 7, '15 days': 15, '30 days': 30 }
+
+const pgErr = (code: string, message: string): PgError => ({ code, message, details: '', hint: '' })
+
+/** `round(x, 2)` — half-up, as Postgres rounds `numeric`. */
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
+
+const numberOf = (v: unknown): number => {
+  const n = Number(v ?? 0)
+  return Number.isFinite(n) ? n : 0
+}
+
+/**
+ * `create_invoice(jsonb)` — the local half of migration 0096.
+ *
+ * The real function exists because a browser cannot write an invoice safely:
+ * PostgREST gives it no transaction, so a header could land without its lines
+ * and read as fully paid at both close gates (DB-03); and the money columns of
+ * `booking_lines` and `booking_transport` are ungranted to every signed-in
+ * session, with `booking_transport`'s only SELECT policy omitting Manager and
+ * Accounts outright (DATA-01). Neither reason exists here — there is no network
+ * to half-fail across and no grant to be refused by — but the OUTCOME must be
+ * identical, because `createInvoice` calls one `.rpc('create_invoice')` in both
+ * modes and there must not be two implementations of what an invoice is.
+ *
+ * Kept deliberately in step with `supabase/migrations/0096_create_invoice_rpc.sql`:
+ * same payload shape, same return shape, same refusals in the same order, same
+ * Law 8 replay behaviour. If one changes, both change.
+ *
+ * **The role gate is emulated, and that is the point.** The live function is
+ * SECURITY DEFINER, so its own R-05 check is the gate rather than RLS. A mock
+ * that admitted everybody would let a Coordinator raise invoices all day in
+ * mock mode and be refused on the first live attempt — the class of surprise
+ * this file exists to prevent. The role is read from the ACTOR's `users` row,
+ * which is what `auth_user_role()` resolves from `app.current_user_id`.
+ *
+ * **Totals mirror `recalculate_invoice_totals`, not `lib/money.ts`.** The
+ * trigger owns the stored figures and rounds to 2 dp; `money.ts` rounds to the
+ * whole rupee. They disagree by up to a rupee (MONEY-03) and the fix is
+ * `0081_invoice_totals_match_engine` — when it lands, this changes with it.
+ * `vat_rate` is read from the row rather than hardcoded, which is `0079`'s
+ * change; the live project has not taken 0079 yet, so live still hardcodes 0.13
+ * and this mimics the migration chain a rebuild produces, not the lagging live
+ * catalogue.
+ */
+function createInvoiceRpc(payload: Record<string, unknown>): { data: Row | null; error: PgError | null } {
+  const clientUuid = payload['client_uuid'] as string | undefined
+  const actor = payload['created_by'] as string | undefined
+
+  /* ── Rights, first, before anything is read (R-05) ────────────────────── */
+  const actorRow = (store['users'] ?? []).find((u) => u['id'] === actor)
+  const role = actorRow ? String(actorRow['primary_role']) : null
+
+  if (!role || !INVOICE_WRITE_ROLES.has(role)) {
+    return {
+      data: null,
+      error: pgErr(
+        '42501',
+        `create_invoice: this session (${role ?? 'unidentified'}) may not raise an invoice. R-05 gives that to ` +
+          'Owner, Admin, Manager and Accounts. Nothing was created.',
+      ),
+    }
+  }
+  if (MONEY_BLIND_ROLES.has(role)) {
+    return {
+      data: null,
+      error: pgErr(
+        '42501',
+        'create_invoice: this session cannot read money (Law 6), so the invoice it raised would bill nothing. ' +
+          'Nothing was created.',
+      ),
+    }
+  }
+  if (!clientUuid) {
+    return { data: null, error: pgErr('23502', 'create_invoice: client_uuid is required (Law 8 — every write carries one)') }
+  }
+  if (!actor) {
+    return { data: null, error: pgErr('23502', 'create_invoice: created_by is required; there is no system actor') }
+  }
+
+  const invoices = store['invoices'] ?? []
+
+  /** The return shape, built from whatever the invoice row now holds. */
+  const answer = (invoice: Row, bookingNo: unknown, replayed: boolean): Row =>
+    ({
+      invoice_id: invoice['id'],
+      invoice_no: invoice['invoice_no'] ?? null,
+      status: invoice['status'],
+      booking_id: invoice['booking_id'],
+      booking_no: bookingNo ?? null,
+      client_id: invoice['client_id'],
+      due_date: invoice['due_date'],
+      line_count: (store['invoice_lines'] ?? []).filter((l) => l['invoice_id'] === invoice['id']).length,
+      subtotal: invoice['subtotal'],
+      discount_amount: invoice['discount_amount'],
+      taxable_amount: invoice['taxable_amount'],
+      vat_amount: invoice['vat_amount'],
+      total: invoice['total_amount'],
+      replayed,
+    }) as Row
+
+  /* ── Law 8 replay check, BEFORE anything is written ───────────────────── */
+  const replay = invoices.find((r) => r['client_uuid'] === clientUuid)
+  if (replay) {
+    const its = (store['bookings'] ?? []).find((b) => b['id'] === replay['booking_id'])
+    return { data: answer(replay, its?.['booking_no'], true), error: null }
+  }
+
+  /* ── The booking this bills ───────────────────────────────────────────── */
+  const bookingKey = payload['booking_id'] as string | undefined
+  const bookingNo = typeof payload['booking_no'] === 'string' ? payload['booking_no'].trim() : ''
+  if (!bookingKey && !bookingNo) {
+    return {
+      data: null,
+      error: pgErr('23502', 'create_invoice: an invoice must name the booking it bills (booking_id or booking_no).'),
+    }
+  }
+
+  const booking = (store['bookings'] ?? []).find((b) =>
+    bookingKey ? b['id'] === bookingKey : b['booking_no'] === bookingNo,
+  )
+  if (!booking) {
+    return {
+      data: null,
+      error: pgErr(
+        'P0002',
+        `create_invoice: no booking ${bookingKey ?? bookingNo} exists, so there is nothing to invoice and nothing ` +
+          'was created.',
+      ),
+    }
+  }
+  const bookingId = booking['id']
+  const resolvedNo = booking['booking_no']
+
+  if (booking['cancelled_at']) {
+    return {
+      data: null,
+      error: pgErr(
+        'P0001',
+        `create_invoice: booking ${String(resolvedNo)} was cancelled on ${String(booking['cancelled_at']).slice(0, 10)}. ` +
+          'Whether a cancellation carries a fee is an open ruling (PLAN.md §4.16), so nothing was created.',
+      ),
+    }
+  }
+
+  /* ── R-03 · one invoice per rental ────────────────────────────────────── */
+  const prior = invoices.find((r) => r['booking_id'] === bookingId)
+  if (prior) {
+    return {
+      data: null,
+      error: pgErr(
+        'P0001',
+        `create_invoice: booking ${String(resolvedNo)} already has an invoice (${String(prior['invoice_no'] ?? 'a Draft')}, ` +
+          `${String(prior['status'])}). One invoice per rental — damage and late fees append as lines to the existing ` +
+          'Draft, and corrections after issue are Void + Credit Note. Nothing was created.',
+      ),
+    }
+  }
+
+  /* ── The due date, from the client's payment terms ────────────────────── */
+  const clientRow = (store['clients'] ?? []).find((c) => c['id'] === booking['client_id'])
+  const termDays = INVOICE_TERM_DAYS[String(clientRow?.['payment_terms'] ?? 'Immediate')] ?? 0
+  const due = new Date()
+  due.setUTCDate(due.getUTCDate() + termDays)
+  const dueDate = due.toISOString().slice(0, 10)
+
+  /* ── The booking's discount (R-17 — a percentage, never an amount) ─────── */
+  const discounts = (store['booking_discounts'] ?? []).filter((d) => d['booking_id'] === bookingId)
+  if (discounts.length > 1) {
+    return {
+      data: null,
+      error: pgErr(
+        'P0001',
+        `create_invoice: booking ${String(resolvedNo)} carries ${discounts.length} discount rows and no rule says how ` +
+          'they combine into one invoice percentage. Nothing was created.',
+      ),
+    }
+  }
+  const discountPercent = numberOf(discounts[0]?.['percent'])
+
+  /* ── The header. R-15: no invoice_no, no issue_date. ──────────────────── */
+  const invoiceId = crypto.randomUUID()
+  const now = new Date().toISOString()
+  const vatRate = numberOf(payload['vat_rate'] ?? 0.13)
+
+  const header: Row = {
+    id: invoiceId,
+    client_uuid: clientUuid,
+    invoice_no: null,
+    issue_date: null,
+    booking_id: bookingId,
+    client_id: booking['client_id'] ?? null,
+    branch_id: booking['branch_id'] ?? null,
+    status: 'Draft',
+    due_date: dueDate,
+    currency: 'NPR',
+    discount_percent: discountPercent,
+    vat_rate: vatRate,
+    notes: (payload['notes'] as string | null) ?? null,
+    subtotal: 0,
+    discount_amount: 0,
+    taxable_amount: 0,
+    vat_amount: 0,
+    total_amount: 0,
+    paid_amount: 0,
+    outstanding_amount: 0,
+    voided_at: null,
+    created_at: now,
+    created_by: actor,
+    updated_at: now,
+    updated_by: actor,
+  }
+
+  /* ── The lines: a snapshot, not a join (SPEC-P0-1 §3.1) ───────────────── */
+  const built: Row[] = []
+
+  // (1) Equipment and bundles. Law 3 keeps a voided line; it is not billable.
+  for (const l of (store['booking_lines'] ?? []).filter((r) => r['booking_id'] === bookingId && !r['voided_at'])) {
+    const qty = Math.max(1, numberOf(l['qty']))
+    const days = Math.max(1, numberOf(l['days']))
+    const rate = numberOf(l['rate'])
+    built.push({
+      id: crypto.randomUUID(),
+      client_uuid: l['client_uuid'],
+      invoice_id: invoiceId,
+      // No fallback: an unmapped `line_type` is left undefined so it surfaces,
+      // matching 0096's CASE with no ELSE (which fails the NOT NULL column).
+      line_kind: INVOICE_LINE_KIND[String(l['line_type'])],
+      description: String(l['description'] ?? '').trim() || String(l['line_type']),
+      quantity: qty,
+      days,
+      unit_rate: rate,
+      line_total: Math.max(0, qty * days * rate - numberOf(l['discount_amount'])),
+      discount_percent: 0,
+      sort_order: numberOf(l['sort_order']),
+      created_at: now,
+    })
+  }
+
+  // (2) Crew. Extras are per-engagement totals, folded into the unit rate so
+  // quantity × days × rate is the crew member's true cost; `line_total` is
+  // computed exactly so the division cannot lose paisa.
+  let crewIndex = 0
+  for (const c of (store['booking_crew_lines'] ?? []).filter((r) => r['booking_id'] === bookingId && !r['voided_at'])) {
+    const days = Math.max(1, numberOf(c['days']))
+    const dayRate = numberOf(c['day_rate'])
+    const extras = numberOf(c['overtime']) + numberOf(c['accommodation']) + numberOf(c['meals'])
+    built.push({
+      id: crypto.randomUUID(),
+      client_uuid: c['client_uuid'],
+      invoice_id: invoiceId,
+      line_kind: 'Crew Charges',
+      description: [c['name'], c['crew_role']].filter(Boolean).join(' - ') || 'Crew',
+      quantity: 1,
+      days,
+      unit_rate: dayRate + extras / days,
+      line_total: dayRate * days + extras,
+      discount_percent: 0,
+      sort_order: 1000 + crewIndex,
+      created_at: now,
+    })
+    crewIndex += 1
+  }
+
+  // (3) Transport. A row carrying no charge is a logistics record, not a bill
+  // line, so it is skipped rather than billed at zero.
+  let transportIndex = 0
+  for (const t of (store['booking_transport'] ?? []).filter((r) => r['booking_id'] === bookingId)) {
+    const charge = numberOf(t['delivery_charge']) + numberOf(t['fuel_charge'])
+    if (charge <= 0) continue
+    const vehicle = String(t['vehicle'] ?? '').trim()
+    built.push({
+      id: crypto.randomUUID(),
+      client_uuid: t['client_uuid'],
+      invoice_id: invoiceId,
+      line_kind: 'Transport',
+      description: vehicle ? `Transport - ${vehicle}` : 'Transport',
+      quantity: 1,
+      days: 1,
+      unit_rate: charge,
+      line_total: charge,
+      discount_percent: 0,
+      sort_order: 2000 + transportIndex,
+      created_at: now,
+    })
+    transportIndex += 1
+  }
+
+  /* `recalculate_invoice_totals`, which the engine does not run. A Draft with
+     no lines is permitted (SPEC-P0-1 §3.1) and simply totals zero; refusing to
+     ISSUE such a Draft belongs to `issue_invoice`. */
+  const subtotal = round2(built.reduce((sum, l) => sum + numberOf(l['line_total']), 0))
+  const discountAmount = round2(subtotal * (discountPercent / 100))
+  const taxable = round2(subtotal - discountAmount)
+  const vat = round2(taxable * vatRate)
+  const total = round2(taxable + vat)
+
+  header['subtotal'] = subtotal
+  header['discount_amount'] = discountAmount
+  header['taxable_amount'] = taxable
+  header['vat_amount'] = vat
+  header['total_amount'] = total
+  header['outstanding_amount'] = total
+
+  // One "transaction": the header and every line land together or not at all.
+  ;(store['invoices'] ??= []).push(header)
+  overlay.inserts.push({ table: 'invoices', row: header })
+  for (const row of built) {
+    ;(store['invoice_lines'] ??= []).push(row)
+    overlay.inserts.push({ table: 'invoice_lines', row })
+  }
+  saveOverlay(overlay)
+
+  return { data: answer(header, resolvedNo, false), error: null }
+}
+
 /* ── The client ────────────────────────────────────────────────────────── */
 
 export const mockSupabase = {
@@ -640,6 +975,10 @@ export const mockSupabase = {
     if (name === 'create_booking') {
       const payload = (args?.['p_payload'] ?? {}) as Record<string, unknown>
       return Promise.resolve(createBooking(payload))
+    }
+    if (name === 'create_invoice') {
+      const payload = (args?.['p_payload'] ?? {}) as Record<string, unknown>
+      return Promise.resolve(createInvoiceRpc(payload))
     }
     /* ⛔ Was `{ data: null, error: null }` — a silent null that every caller
      * would read as success with an empty result. That is the

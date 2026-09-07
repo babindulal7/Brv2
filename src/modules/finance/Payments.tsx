@@ -19,7 +19,7 @@ import {
   paymentsInPeriod,
   financeRestriction,
   listInvoices,
-  outstandingInvoices,
+  payableInvoices,
   type PaymentListRow,
 } from '../../lib/queries/finance'
 import type { Database } from '../../types/supabase'
@@ -407,11 +407,13 @@ export function chipFromParam(param: string | null): PaymentChip {
  * near-miss.
  *
  * ⚠ Coverage is partial and the refusal, not a guess, is what covers the rest.
- * That read is `outstandingInvoices()` — 'Sent' and 'Partially Paid' only — so a
- * reversal against a fully settled invoice finds nothing and hands the modal
- * `undefined`, which now refuses and says the figure is unavailable. Refusing is
- * the correct behaviour for "we did not read what was received"; it is not a
- * claim that nothing was received.
+ * That read is `payableInvoices()` — Draft, 'Sent' and 'Partially Paid' — so a
+ * reversal against a fully settled ('Paid') invoice finds nothing and hands the
+ * modal `undefined`, which refuses and says the figure is unavailable. Refusing
+ * is the correct behaviour for "we did not read what was received"; it is not a
+ * claim that nothing was received. (The set gained 'Draft' with MONEY-05, which
+ * narrows the gap rather than widening it: a Draft carrying an advance is now
+ * reversible from here where before it was not readable at all.)
  *
  * TODO(persistence): a single-invoice read (`invoices` by `invoice_no`) would
  * close the gap. `lib/queries/finance.ts` has no such reader — only list sets —
@@ -588,27 +590,48 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
   })
 
   /*
-   * The invoices the Record Payment modal offers. Issued and not yet settled —
-   * a draft has not been sent to anybody and a paid invoice is closed, so
-   * neither is something to take money against. `baseline` is the same set, so
-   * an empty result reads as "nothing outstanding", not as "your filters matched
-   * nothing".
+   * The invoices the Record Payment modal offers.
+   *
+   * ⚠ This was `outstandingInvoices()` — Sent and Partially Paid only — on the
+   * reasoning that *"a draft has not been sent to anybody"*. That reasoning
+   * predates the 4 September rulings and is now the opposite of the truth:
+   *
+   *  · **R-02** — an invoice *"is created as **Draft** and stays Draft for the
+   *    whole rental"*, issued once at return.
+   *  · **R-14** — while `status = 'Draft'`, a payment updates `paid_amount` and
+   *    `outstanding_amount` but does not change the status, so *"the Draft
+   *    carries a true running balance all the way through the rental"*.
+   *  · **SPEC-P0-1 §3.5** — *"`RecordPaymentModal` — reachable once a Draft
+   *    exists."* §5's acceptance case is a 50% advance against that Draft.
+   *
+   * So a Draft is precisely what an advance is taken against, and excluding it
+   * left this screen offering an empty picker for every rental in progress.
+   *
+   * `payableInvoices()` is a NEW set rather than a widening of
+   * `outstandingInvoices()`: that one answers "what is the business owed", which
+   * feeds the receivables figures, and a Draft is deliberately not a receivable.
+   * Two questions, two sets — see `queries/finance.ts`.
    */
-  const invoiceFilters = outstandingInvoices()
+  const invoiceFilters = payableInvoices()
   const invoiceList = useList(fetchInvoices, invoiceFilters, { baseline: invoiceFilters })
 
   /**
    * Narrowed to what `RecordPaymentModal` declares, and mapped exactly as
-   * `Finance.tsx:430-440` maps it, so one modal cannot be fed two different
-   * meanings of the same field. `id` is the invoice NUMBER and `booking` the
-   * booking NUMBER — that file's own `TODO(decision)` records that the action
-   * receives the number in a field named `bookingId`; matching it here keeps the
-   * open question in one place instead of two.
+   * `Finance.tsx` maps it, so one modal cannot be fed two different meanings of
+   * the same field.
+   *
+   * ⚠ **`id` is the invoice's UUID now** (MONEY-05). It was `r.invoiceNo`, and
+   * the modal resolved the payment by that number — which cannot settle a Draft,
+   * because R-15 gives a Draft no number at all. `invoiceNo` travels alongside
+   * as the picker's label and is `null` on a Draft, rendered as
+   * "Draft (no number)". `booking` is still the booking NUMBER and is still
+   * display-only.
    */
   const modalInvoices = useMemo(
     () =>
       invoiceList.rows.map((r) => ({
-        id: r.invoiceNo,
+        id: r.id,
+        invoiceNo: r.invoiceNo,
         client: r.clientName,
         amount: formatMoney(r.totalAmount),
         status: r.status,

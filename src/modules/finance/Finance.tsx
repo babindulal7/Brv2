@@ -14,7 +14,7 @@ import { csvCell } from '../../lib/csv'
 import type { Paisa } from '../../lib/money'
 import { useAuth } from '../../lib/auth'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-import { canRecordPayment, canVoidInvoice } from '../../lib/rbac'
+import { canIssueInvoice as rbacCanIssueInvoice, canRecordPayment, canVoidInvoice } from '../../lib/rbac'
 import { gateContext } from '../../lib/fieldGating'
 import { useViewport, useTabularLayout } from '../../lib/device'
 import { IntelCard } from '../../components/ui/IntelCard'
@@ -39,6 +39,7 @@ import { businessDayAd, businessNowAd, todayDate } from '../../data/today'
 import { SPEC_TABS } from '../../data/nav'
 import { RecordPaymentModal } from './modals/RecordPaymentModal'
 import { CreateInvoiceModal } from './modals/CreateInvoiceModal'
+import type { CreateInvoiceResult } from '../../actions/finance/createInvoice'
 import { RefundPaymentModal } from './modals/RefundPaymentModal'
 import { VoidInvoiceModal } from './modals/VoidInvoiceModal'
 import Payments from './Payments'
@@ -553,25 +554,37 @@ export default function Finance() {
    * comes into existence — so every role that could merely READ the invoice table
    * was being offered the button that raises one.
    *
-   * TODO(decision): **`lib/rbac` has no invoice-creation rule.** `checkCapability`
-   * in `actions/core.ts` maps `invoice.void` and nothing else under `invoice.*`,
-   * and `CreateInvoiceModal` dispatches no action at all, so there is no
-   * dispatcher predicate to mirror — unlike the three gates above, each of which
-   * matches a rule the engine will itself apply. Who may issue an invoice is a
-   * product decision and is not made here; it belongs in `lib/rbac` +
-   * `actions/core.ts` together, and in PLAN.md §4.
+   * ⚠ **The TODO(decision) that stood here is closed, and the gate has moved.**
    *
-   * Chosen meanwhile: **`canVoidInvoice` — Owner and Accounts.** It is the only
-   * rule in `lib/rbac` that names the invoice entity, it is the narrowest money
-   * rule available, and an open money launcher is the worse failure of the two.
-   * Note what that costs: a Coordinator "takes the advance" (see the roll call at
-   * the top of `lib/rbac`) and may record a payment under `canRecordPayment`, but
-   * cannot raise the invoice that payment settles. That asymmetry is the reason
-   * this is a TODO(decision) and not a ruling — if the answer comes back
-   * "Coordinator too", this becomes `canTakePayment` and the rule gets a name of
-   * its own.
+   * It read: *"`lib/rbac` has no invoice-creation rule … `CreateInvoiceModal`
+   * dispatches no action at all, so there is no dispatcher predicate to mirror"*,
+   * and it stood in `canVoidInvoice` (Owner / Accounts) meanwhile as the
+   * narrowest money rule available. Both halves of that are now false:
+   *
+   *  · `rbac.canIssueInvoice` exists and encodes **R-05** — Owner · Admin ·
+   *    Manager · Accounts — the set `RULINGS-2026-09-04.md` names outright.
+   *  · `actions/core.ts:231` resolves `invoice.create` through exactly that
+   *    predicate, and `CreateInvoiceModal` now dispatches `createInvoice`.
+   *
+   * So there IS a dispatcher predicate to mirror, and §4.20's rule ("the launcher
+   * gate mirrors the rule the engine will itself apply") makes mirroring it
+   * mandatory rather than optional. Leaving `canVoidInvoice` here would withhold
+   * from Admin and Manager a control R-05 grants them and the dispatcher would
+   * accept — a gate that is wrong in the safe direction is still wrong, and it
+   * is the direction that makes an operator ask for a role change they do not
+   * need.
+   *
+   * `canVoidInvoice` is deliberately NOT changed: no 4 Sep ruling restates who
+   * may void, and per R-00 silence is not supersession. Its own disagreement with
+   * the live `invoices_update` policy is the remaining half of AUTHSEC-01 and
+   * needs a ruling, not a refactor.
+   *
+   * ⚠ Live still says Owner/Admin/Manager/**Coordinator** on `invoices_insert`;
+   * `0086_invoice_write_rights_and_draft_without_number.sql` realigns it and is
+   * NOT applied. Until it lands, an Accounts user is offered a control Postgres
+   * refuses — the modal surfaces that refusal inline rather than swallowing it.
    */
-  const canIssueInvoice = user ? canVoidInvoice(user.role) : false
+  const canIssueInvoice = user ? rbacCanIssueInvoice(user.role) : false
 
   const [tab, setTab] = useState<FinanceTab>('Dashboard')
   /** §9.2 — the seven chips. Law 3 keeps `Void` among them, never a Delete. */
@@ -618,20 +631,29 @@ export default function Finance() {
   /**
    * Law 12 — an action that changed nothing says so inline and persistently.
    *
-   * Create Invoice and Void Invoice write NOTHING: neither `CreateInvoiceModal`
-   * nor `VoidInvoiceModal` dispatches an action, and the actions that exist are
-   * stubs (`actions/core.ts:131` throws unless `implemented: true`, which
-   * nothing outside a test sets). While this screen held its rows in `useState`
-   * that was invisible — the row appeared, or its badge flipped to Void, and the
-   * operator had every reason to believe it had landed. Reading from Postgres
-   * makes it visible, and the honest thing is to say which half happened rather
-   * than to let a refetch quietly undo the work.
+   * This said *"Create Invoice and Void Invoice write NOTHING"* and that both
+   * modals refused inside themselves, so neither disclosure below could fire.
+   * **Half of that is now out of date.**
    *
-   * ⚠ Both modals now refuse INSIDE themselves and never call `onSuccess`, so
-   * neither disclosure below currently fires. Each says why it is kept. Both
-   * also used to `DomainEvents.emit` from the screen, announcing a create and a
-   * void that never happened; both emits are gone (events follow the write, and
-   * the dispatcher owns them).
+   *  · **Create Invoice writes** (MONEY-01): `CreateInvoiceModal` dispatches
+   *    `createInvoice`, which is `implemented: true`, so
+   *    `handleCreateInvoiceSuccess` fires after a confirmed write and this
+   *    disclosure is live — it covers the window between the write landing and
+   *    the refetch returning the row.
+   *  · **Void still writes nothing**: `VoidInvoiceModal` dispatches no action
+   *    (there is no `voidInvoice`, SPEC-P0-1 §3.4), refuses inside itself and
+   *    never calls `onSuccess`, so `handleVoidSuccess` stays unreachable and says
+   *    so at its own definition.
+   *
+   * Why the disclosure exists at all: while this screen held its rows in
+   * `useState`, a write that never happened was invisible — the row appeared and
+   * the operator had every reason to believe it had landed. The list is read from
+   * Postgres now, so the honest thing is to say which half happened rather than
+   * let a refetch quietly undo the work.
+   *
+   * Both modals also used to `DomainEvents.emit` from the screen, announcing a
+   * create and a void that never happened; both emits are gone — events follow
+   * the write and the dispatcher owns them.
    */
   const [notPersisted, setNotPersisted] = useState<{ title: string; message: string } | null>(null)
 
@@ -855,20 +877,28 @@ export default function Finance() {
   )
 
   /**
-   * What `RecordPaymentModal` needs, and no more — it takes a structural type
-   * (`{ id, client, amount, status, booking }`), so the DB row is narrowed to
-   * it here rather than the modal being taught about `InvoiceListRow`.
+   * What `RecordPaymentModal` needs, and no more — it takes a structural type,
+   * so the DB row is narrowed to it here rather than the modal being taught
+   * about `InvoiceListRow`.
    *
-   * `booking` carries `bookingNo`, not `bookingId`: the modal passes it
-   * straight through to `recordPayment` as `bookingId`, and every other screen
-   * in the app addresses a booking by its number. Correcting that to the uuid
-   * is a change to the action's input contract, which is not this screen's to
-   * make. TODO(decision).
+   * ⚠ **`id` is the invoice's UUID now, not its number** (MONEY-05). It used to
+   * be `r.invoiceNo`, and the modal resolved the payment by that number — which
+   * made every invoice this application creates unpayable: **R-15 gives a Draft
+   * no `invoice_no` at all**, and R-02 keeps an invoice in Draft for the whole
+   * rental, so for a rental's entire life there was no number to send. The
+   * number travels alongside as `invoiceNo` and is display-only; it is `null` on
+   * a Draft, which the picker renders as "Draft (no number)" rather than as a
+   * blank label.
+   *
+   * `booking` still carries `bookingNo` and is still display-only: the booking a
+   * payment belongs to is read off the invoice row by the action, which is the
+   * only place that fact is authoritative.
    */
   const modalInvoices = useMemo(
     () =>
       list.rows.map((r) => ({
-        id: r.invoiceNo,
+        id: r.id,
+        invoiceNo: r.invoiceNo,
         client: r.clientName,
         amount: formatMoney(r.totalAmount),
         status: r.status,
@@ -900,34 +930,33 @@ export default function Finance() {
   }, [refreshAll])
 
   /**
-   * ⚠ **Currently unreachable, on purpose.**
+   * ⚠ **Reachable as of MONEY-01** — the day this comment described has arrived.
    *
-   * `CreateInvoiceModal` no longer calls `onSuccess`. It used to mint a number
-   * client-side, emit `invoice.created` and hand the invoice over as though a
-   * write had happened; it now refuses inline and says nothing was saved, which
-   * is the truth (`src/actions/finance/` has no invoice write, and numbering
-   * belongs to `next_document_number('invoice')` — see that modal's header).
-   * That moves the disclosure from *after* the modal closes to *inside* it,
-   * before any number is handed out.
+   * It read *"currently unreachable, on purpose … `CreateInvoiceModal` no longer
+   * calls `onSuccess`"*, because the modal refused inline and `src/actions/finance/`
+   * had no invoice write. Both are now false: `createInvoice` is dispatched from
+   * the modal and `onSuccess` fires only after it resolves, carrying the ACTION's
+   * own result — so `created.invoiceId` is a uuid Postgres generated, not a
+   * number this screen chose.
    *
-   * The handler and the prop stay wired because the seam is real: the day an
-   * invoice write exists, `created.id` is the number the DATABASE assigned, and
-   * this becomes an ordinary refetch. Until then `setNotPersisted` is the
-   * fallback disclosure for a path that cannot currently fire — deliberately
-   * kept, not dead weight, because a future `onSuccess` that fires before the
-   * list has the row would otherwise be silent again.
+   * There is no number to name here at all. **R-15**: a Draft carries no
+   * `invoice_no`; it is minted by `next_document_number('invoice')` at issue. So
+   * the disclosure names the booking, which is the fact the operator recognises.
    *
-   * Prepending the row locally is still refused either way: the list is read
-   * from Postgres, so an invoice put on screen by hand would vanish at the next
-   * refetch with no explanation.
+   * Prepending the row locally is still refused: the list is read from Postgres,
+   * so an invoice put on screen by hand would vanish at the next refetch with no
+   * explanation. `refreshAll()` is what makes it appear, and the note below says
+   * what it means if it does not.
    */
   const handleCreateInvoiceSuccess = useCallback(
-    (created: { id: string }) => {
+    (created: CreateInvoiceResult) => {
       setNotPersisted({
-        title: `${created.id} is not in the list yet`,
+        title: `${created.bookingNo}’s draft invoice is not in the list yet`,
         message:
-          'The invoice write reported success but the table below is read from the database, so this row appears only once the ' +
-          'refetch returns it. If it does not appear, nothing was saved and no client has been billed — report it rather than retrying.',
+          `The invoice was written (${created.linesWritten} line${created.linesWritten === 1 ? '' : 's'}, ` +
+          `${formatMoney(created.totalPaisa)}) but the table below is read from the database, so the row appears only ` +
+          'once the refetch returns it. It carries no number until it is issued at return — look for the Draft. If it ' +
+          'does not appear at all, report it rather than raising a second one.',
       })
       refreshAll()
     },
@@ -1136,8 +1165,9 @@ export default function Finance() {
       </span>
       {/* Launcher 1 of 2 money launchers. Hidden, not disabled, like its three
           siblings — a greyed button still says an invoice can be raised here.
-          See `canIssueInvoice` for which rule this is and the TODO(decision)
-          about which rule it should be. */}
+          `canIssueInvoice` is `rbac.canIssueInvoice` (R-05: Owner · Admin ·
+          Manager · Accounts), the same predicate `actions/core.ts` resolves
+          `invoice.create` through; its TODO(decision) is closed. */}
       {canIssueInvoice && (
         <Button icon="plus" variant="secondary" onClick={() => setShowCreateInvoice(true)}>
           Create Invoice
@@ -1681,7 +1711,10 @@ export default function Finance() {
                                     canRefund={canRefund}
                                     canVoid={canVoid}
                                     onPay={() => {
-                                      setSelectedInvoiceForRecord(i.invoiceNo)
+                                      // The UUID, not the number: a Draft has no
+                                      // number (R-15) and the modal resolves the
+                                      // payment by `invoices.id`. MONEY-05.
+                                      setSelectedInvoiceForRecord(i.id)
                                       setShowRecordPayment(true)
                                     }}
                                     onRefund={() => setSelectedInvoiceForRefund(i)}
@@ -1757,7 +1790,9 @@ export default function Finance() {
                                 canRefund={canRefund}
                                 canVoid={canVoid}
                                 onPay={() => {
-                                  setSelectedInvoiceForRecord(i.invoiceNo)
+                                  // The UUID, not the number — see the desk table's
+                                  // own `onPay` above. MONEY-05.
+                                  setSelectedInvoiceForRecord(i.id)
                                   setShowRecordPayment(true)
                                 }}
                                 onRefund={() => setSelectedInvoiceForRefund(i)}
@@ -1863,10 +1898,16 @@ export default function Finance() {
       {/* `canIssueInvoice` here as well as on the launcher, for the reason the
           Record Payment mount above states: a role change mid-session must not
           leave an open money form belonging to a session that may no longer
-          submit it. This mount is unconditional on `showCreateInvoice` and is
-          left that way — the modal reads `isOpen` itself, and changing its mount
-          lifecycle is not this pass. */}
-      {money && canIssueInvoice && (
+          submit it.
+
+          ⚠ Now gated on `showCreateInvoice` as well, which the previous pass
+          explicitly deferred. Two reasons it can no longer wait: the modal reads
+          the booking's lines when it opens, and a permanently-mounted modal
+          holds that state across opens; and it raises a success TOAST, so a
+          mounted-but-closed instance would require every screen that renders
+          Finance — including its own suites — to provide a ToastProvider for a
+          modal nobody opened. Same lifecycle as the three mounts around it. */}
+      {money && canIssueInvoice && showCreateInvoice && (
         <CreateInvoiceModal
           isOpen={showCreateInvoice}
           onClose={() => setShowCreateInvoice(false)}

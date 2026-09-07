@@ -3,6 +3,77 @@
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
 
+## 2026-09-07 (cont. 2) — An invoice can exist: one transaction writes it, and the modal shows what it will write
+
+**Phase:** Phase 0 · **Status:** DB-03 (P0), DATA-01 (P1), MONEY-01 (P0), MONEY-05 (P1) implemented · `PLAN.md §4.46` derived and closed · `check:rebuild` still BLOCKED
+
+Four of the audit's issues were one path: nothing could raise an invoice, and the three things
+blocking it were independent. The policy refused the write, the column grants refused the read,
+and the screen refused to dispatch because it disagreed with the action about what an invoice is.
+
+### The write contract — `0086` extended, `0096` written
+
+`0086` (unapplied draft) is corrected against R-05 and R-15: `invoice_no` and `issue_date`
+nullable with a CHECK that they move together, the write policies realigned from
+Owner/Admin/Manager/**Coordinator** to R-05's Owner/Admin/Manager/**Accounts**, and
+`invoice_lines` given INSERT and UPDATE policies at all — on live it has exactly one policy,
+`invoice_lines_select`, so every line write is refused for every role.
+
+`0096_create_invoice_rpc.sql` adds `create_invoice(jsonb)`: one function, one transaction, in the
+shape `create_booking` already established. The old action wrote the header and then looped one
+line insert per booking line, and PostgREST gives a browser no transaction — so a failure between
+the header and the last line left a header with some of its lines, under-billing the job. Its own
+error text told the operator to **void it rather than retry**, which is an admission that the
+shape cannot be made safe from the client. Both close gates read `outstanding_amount`, so a header
+with no lines reads as fully paid and the rental closes unbilled.
+
+**Why `SECURITY DEFINER` and not `INVOKER`, measured rather than assumed.** `create_booking` is
+INVOKER and that is the better default. This function cannot be: 0062 revoked table-level SELECT
+on `booking_lines` and `booking_transport` and granted back only the non-money columns, so
+`has_column_privilege('authenticated','booking_lines','rate','SELECT')` is **false for every
+signed-in session, Owner included** — probed on the live project. An INVOKER function would read
+NULL money and silently bill zero. The role check moves inside the function instead, in the same
+transaction as the write.
+
+### The screen — `PLAN.md §4.46` derived, not decided
+
+The modal was a free-form editor of hand-typed `{description, amount}` rows followed by a refusal
+that dispatched nothing, and the refusal was **correct**: `createInvoice` derives its lines from
+the booking, so calling it from that form would have discarded every row the operator typed and
+billed something else.
+
+§4.46 is now closed as **derived**, because three binding documents already answer it: R-03
+(*"append as lines to the Draft invoice, one invoice per rental"* — damage and late fees have
+nothing to append to on a hand-typed bill), SPEC-P0-1 §3.1 (*"one `invoice_lines` row per
+`booking_lines` row"*, and *"lines are a snapshot, not a join"*), and R-02 (Draft for the whole
+rental, issued once at return). Marked overrule-by-ruling, with the quoted sources in the headers
+of `lib/queries/invoicePreview.ts` and the modal.
+
+So the modal is now a read-only **preview** of exactly what `create_invoice` will write — the
+booking's own equipment, crew and transport lines, priced by `lib/money.ts`, never by the
+component — and Confirm dispatches the action. It reads the `_v` views for the same grant reason
+as the function. The mock corpus gained `booking_crew_lines_v` and `booking_transport_v` entries,
+because without them the preview showed a bill with no crew while the invoice would have carried
+it — the exact preview-versus-write divergence the preview exists to prevent.
+
+**MONEY-05**: `RecordPaymentModal` resolved an invoice by number, and R-15 gives a Draft no
+number, so the advance SPEC-P0-1 §5 expects could not be recorded at all. Finance, Payments and
+Booking Detail now hand it `{ id, invoiceNo }`, it dispatches `invoiceId`, and an unnumbered
+invoice shows as **"Draft (no number)"**. Booking Detail also becomes an invoice entry point under
+R-01, which is a screen-level choice and not part of §4.46.
+
+### Verified
+
+`npx eslint` across all sixteen touched files — exit 0. `npx vitest run` over the finance and
+invoice suites — **289 passed in 13 files**, exit 0, re-run independently after the work landed.
+
+**Not verified, and it matters here more than usual:** `0086` and `0096` have **never been
+applied or rebuilt**. `check:rebuild` cannot run — Docker Desktop's privileged service is stopped,
+so every `docker` command hangs and the database's port accepts connections while nothing answers.
+Both migrations are written so their own post-conditions will prove them when that gate returns;
+until then the SQL is unproven, and `0096` cannot be applied before `0086` in any case. Nothing in
+this entry has reached the live project, where the ledger still stops at `0078`.
+
 ## 2026-09-07 — BN-P1: the bundle detail page exists
 **Phase:** inventory · **Status:** built, tested, driven
 
