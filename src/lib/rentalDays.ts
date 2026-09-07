@@ -12,9 +12,15 @@
  * `Math.max(1, Math.round(ms / 86_400_000))`. Four screens agreeing today is
  * four screens that can disagree tomorrow, which is the whole of Law 1.
  *
- * `BookingDetail.tsx` is routed through this module. The three floor
- * workspaces still hold their copies and are a follow-up, not a claim: they
- * were outside the batch that wrote this file.
+ * `BookingDetail.tsx`, `NewRental.tsx` and — since the 7 Sep handover batch —
+ * `HandoverWorkspace.tsx` are routed through this module. `PackingWorkspace.tsx`
+ * and `ReturnWorkspace.tsx` still hold their own copies: a follow-up, not a
+ * claim.
+ *
+ * This list is the reason the file exists, so it is updated by whoever adopts
+ * it. It said "the three floor workspaces still hold their copies" for a day
+ * after Handover stopped holding one — a reader scoping the follow-up would
+ * have been working from a list that was one item wrong.
  *
  * This module is that calculation, once. It is pure: two instants in, a whole
  * number of days out, no storage and no clock.

@@ -404,8 +404,12 @@ describe('PK-12 — the entry step reports progress it was given, and nothing mo
  * The old `BookingNotLoaded` wording ("… is not loaded yet", naming the seeded
  * booking) died with the seed it described.
  *
- * Evidence is still seed-backed (not yet wired), so it keeps the
- * `BookingNotLoaded` contract the seed build had.
+ * **Evidence joined them on 7 Sep 2026 (HO-09).** Its booking HEAD is the same
+ * `fetchFloorBooking` read, so it belongs in the list below rather than in the
+ * `BookingNotLoaded` exception it used to hold. Its photo GRID is still the
+ * seeded sample set — there is no storage bucket and no `evidence_files`
+ * writer (HO-06) — but the grid renders only inside a resolved booking, so an
+ * unknown number reaches none of it.
  */
 describe('Spec 03 Notes — routes are parameterised, not one seeded booking', () => {
   const SECOND = 'B-9001'
@@ -418,6 +422,7 @@ describe('Spec 03 Notes — routes are parameterised, not one seeded booking', (
     ['Handover', <HandoverWorkspace key="h" />, '/rentals/:bookingNo/handover', 'handover'],
     ['Return', <ReturnWorkspace key="r" />, '/rentals/:bookingNo/return', 'return'],
     ['Reset', <ResetWorkspace key="x" />, '/rentals/:bookingNo/reset', 'reset'],
+    ['Evidence', <EvidenceWorkspace key="e" />, '/rentals/:bookingNo/evidence', 'evidence'],
   ]
 
   for (const [name, element, pattern, segment] of wired) {
@@ -431,18 +436,7 @@ describe('Spec 03 Notes — routes are parameterised, not one seeded booking', (
     })
   }
 
-  it('Evidence (still seed-backed) states the number and the honest gap', async () => {
-    await mountAt(`/rentals/${SECOND}/evidence`, <EvidenceWorkspace />, '/rentals/:bookingNo/evidence')
-    expect(text()).toContain(SECOND)
-    expect(text()).toContain('is not loaded yet')
-    expect(
-      [...container.querySelectorAll('a')].some((a) => a.getAttribute('href') === `/rentals/${SECOND}`),
-    ).toBe(true)
-    // Named only as "floor data exists for …", never as this page's subject.
-    expect(text().indexOf(KNOWN)).toBeGreaterThan(text().indexOf(SECOND))
-  })
-
-  it('Evidence at the seeded booking still links across to its packing workspace', async () => {
+  it('Evidence at the resolved booking still links across to its packing workspace', async () => {
     await mountAt(`/rentals/${KNOWN}/evidence`, <EvidenceWorkspace />, '/rentals/:bookingNo/evidence')
     expect(text()).toContain(KNOWN)
     expect(

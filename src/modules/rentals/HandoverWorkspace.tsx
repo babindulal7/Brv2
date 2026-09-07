@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
@@ -14,8 +14,10 @@ import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { statusToken, FLAGS } from '../../lib/workflow'
 import type { BookingStatus, JobState } from '../../lib/workflow'
-import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
+import { BarcodeScannerModal, type ScanOutcome } from '../../components/ui/BarcodeScannerModal'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { toBs, formatBs, formatAd, formatAdDateTime } from '../../lib/bs'
+import { rentalDaysBetween } from '../../lib/rentalDays'
 import { newClientUuid } from '../../lib/supabase'
 import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/queries/bookings'
 import type { FloorLineInput } from '../../actions/rentals/floorVerb'
@@ -69,7 +71,23 @@ import { deliveryTypeLabel } from '../../lib/format'
  * §11.4's Manager override on gates 1/3/4 stays **refused**, not implemented
  * — no rule says who may override a session gate and no action records the
  * approver. TODO(decision), unchanged from the seed build; see
- * `OVERRIDE_UNAVAILABLE`.
+ * `OVERRIDE_UNAVAILABLE`. That is a different thing from R-06's money
+ * override, which IS real and IS recorded — see `overrideReason`.
+ *
+ * ## HO-12 / HO-14, 7 Sep 2026 — five more places this screen misdescribed itself
+ *
+ *  · `Bulk Scan` scanned nothing and overwrote marks that carried a scan's
+ *    provenance → `Mark Ready Picked Up`, narrowed to Ready rows. PK-07's fix,
+ *    ported rather than re-invented. See `rowsReadyToPickUp`.
+ *  · `Cancel Handover` discarded marks, reasons and both signatures on one tap
+ *    → a `ConfirmDialog` that names what is at stake, and only when there is
+ *    any. See `discardable`.
+ *  · The override reason box was live wiring under a dead label, and rendered
+ *    only at the moments it could not be sent. See `overrideReason`.
+ *  · A dispatch's settlement could speak for whatever booking had arrived
+ *    since. See `settle`.
+ *  · A signature's timestamp was display text, and the rental-day rule was a
+ *    fourth private copy of an engine's. See `Sig.atIso` and `lib/rentalDays`.
  */
 
 /** §13 — the workspace primary is `--primary` in light *and* dark. */
@@ -151,7 +169,7 @@ const td = { height: 'var(--row-min-h)', padding: '8px 9px', fontSize: 'var(--t-
  * `prior` is the state an EARLIER session already recorded, off
  * `booking_line_units.unit_state` — such a row is display-only here.
  */
-interface HandRow {
+export interface HandRow {
   key: string
   lineId: string
   assetId: string | null
@@ -165,16 +183,62 @@ interface HandRow {
   prior: 'Picked Up' | 'Missing' | null
 }
 
-interface Mark {
+export interface Mark {
   state: 'Picked Up' | 'Missing'
   pickedAtIso?: string
+  /**
+   * How this row reached Picked Up: a scan through the scanner modal, or a
+   * hand mark (the row checkbox, or Mark Ready Picked Up).
+   *
+   * ⚠ **Currently written and never read on THIS screen.** `markPicked`, `pick`
+   * and `markReadyPickedUp` all stamp it, but nothing consumes `marks[key].via`:
+   * the "by scan" / "by hand" wording in the checklist log comes from the `via`
+   * ARGUMENT at the moment of the action, not from the stored mark. In
+   * `PackingWorkspace` the field really is read — it builds the scanned /
+   * hand-marked breakdown that Packing renders and sends in the session notes.
+   * Here that breakdown was not ported with it, so the field is dead state
+   * dressed as provenance. Left in place rather than removed because the
+   * breakdown is the thing that is missing, not the field (see HO-17); a
+   * reader should not conclude from its presence that Handover records how a
+   * unit was verified — it does not.
+   *
+   * The same field, for the same reason, as `PackingWorkspace.Mark.via`
+   * (PK-07) — read that one for the schema argument in full. In short: the
+   * place for this exists (`scan_events`, and
+   * `session_line_movements.scan_event_id` to point a movement at the scan
+   * that produced it) and nothing writes it — in `src/` the string
+   * `scan_events` occurs only in `src/types/supabase.ts` and in comments like
+   * this one, and `FloorLineInput`'s ten fields include no scan-event id, so
+   * this screen has nothing to send even if it minted one. The difference is kept where
+   * it CAN be kept — on this screen, in the log — and claimed nowhere else.
+   * `TODO(decision)` remains PK-07's, unchanged and not re-opened here.
+   */
+  via?: 'scan' | 'manual'
   reason?: string
 }
 
 interface Sig {
   name: string
   role: string
-  at: string
+  /**
+   * HO-14 / Law 7 — the capture INSTANT (ISO-8601, UTC), never the string a
+   * screen happened to print.
+   *
+   * This held `formatAdDateTime(...)`'s output — `'16 Jul 2026, 02:25 PM'`,
+   * a `toLocaleString` rendering in Asia/Kathmandu. It is not as lossy as an
+   * unqualified clock time (the date is in there) but it is still a label, not
+   * a moment: no zone is marked, the seconds are gone, two of them cannot be
+   * compared or ordered, and neither can be re-rendered in another format. A
+   * signature's timestamp is the evidence half of the signature, so it is kept
+   * as the thing that can be compared and re-rendered.
+   *
+   * Nothing outside this screen is affected by the change: the `signatures`
+   * table has no writer in this build and the dispatch payload
+   * (`buildHandoverLines` → `handoverRental`) carries no signature field, so
+   * `signatures` is read only by gate 5 and by `SigRow`, which now formats the
+   * instant at render.
+   */
+  atIso: string
 }
 
 interface GateRow {
@@ -254,6 +318,30 @@ function buildRows(floor: FloorBooking): HandRow[] {
 }
 
 /**
+ * The rows **Mark Ready Picked Up** may move — HO-12, following PK-07 exactly.
+ *
+ * The control it serves was `Bulk Scan`: it wore the search glyph, it read no
+ * serial and matched no code, and one press took every row to Picked Up. Two
+ * separate falsehoods, and the second is the one that costs something: it
+ * re-stamped rows that were ALREADY marked, so a unit whose mark came from a
+ * real scan lost that mark's own `pickedAtIso` and `via` to a hand press.
+ *
+ * So the rule is the narrow one PK-07 set on the sibling screen: only a row
+ * that is still **Ready** moves. `Ready` here is the absence of a mark AND the
+ * absence of a prior session's recorded state — a row an earlier session took
+ * out is display-only on this screen and can never be re-dispatched, so it is
+ * not a candidate either.
+ *
+ * Exported for `__tests__/handoverMarks.test.ts`; it is the whole rule.
+ */
+export function rowsReadyToPickUp(
+  rows: readonly HandRow[],
+  marks: Readonly<Record<string, Mark>>,
+): HandRow[] {
+  return rows.filter((r) => r.prior === null && marks[r.key] === undefined)
+}
+
+/**
  * Collapse the operator's marks back onto booking lines — the dispatch payload.
  *
  * One entry per line (`validateFloorVerb` refuses duplicates), and a line
@@ -325,12 +413,23 @@ function buildHandoverLines(
   return { payload, mixedNotes }
 }
 
-/** The AD span between two instants in whole days, floored at 1 (Law 9's days-explicit floor). */
-function rentalDays(pickupIso: string, returnIso: string): number {
-  const ms = Date.parse(returnIso) - Date.parse(pickupIso)
-  if (!Number.isFinite(ms)) return 1
-  return Math.max(1, Math.round(ms / 86_400_000))
-}
+/*
+ * HO-14 — the rental-day rule is NOT computed here any more.
+ *
+ * This file held the third of four byte-identical private copies of
+ * `Math.max(1, Math.round(ms / 86_400_000))`. `lib/rentalDays.ts` now owns it
+ * (Law 1: the engines own the business figures, pages do not), and its header
+ * is worth reading before touching a day count anywhere — it names the THREE
+ * different day rules in this codebase (the priced span, `civilDaysBetween`'s
+ * calendar days, `lateFee`'s overage bands) and records that which one the
+ * priced span should be is still `TODO(decision)`.
+ *
+ * One behaviour changes with the move, deliberately: the deleted copy returned
+ * `1` for an unparseable instant, which printed a one-day hire for a booking
+ * whose dates this screen could not read. `rentalDaysBetween` returns `null`
+ * there, and the strip below renders the dash it already renders for a booking
+ * with no dates at all.
+ */
 
 /** BS above AD, and an honest dash outside `bs.ts`'s vouched range. */
 function bsLabel(iso: string | null): string {
@@ -403,8 +502,29 @@ export default function HandoverWorkspace() {
   /** §9.2 — captured at session close. Names come off real records only. */
   const [signatures, setSignatures] = useState<{ receiver?: Sig; warehouse?: Sig }>({})
   /**
-   * The reason an operator would give for a §11.4 override. Still typed, still
-   * shown back, still consumed by nothing — see `OVERRIDE_UNAVAILABLE`.
+   * **R-06's named reason for handing over with money outstanding.** Not a
+   * §11.4 session-gate override — see `OVERRIDE_UNAVAILABLE` for that one,
+   * which is still refused.
+   *
+   * HO-12 said this field was "consumed by nothing". That was true when it was
+   * written and is **not true now**: the dispatch below sends it as
+   * `handoverRental`'s `overrideReason`, `runFloorVerb` hands it to
+   * `advanceStage` (`floorVerb.ts`), and it lands on the transition row as
+   * `booking_stage_transitions.reason`.
+   * `apply_booking_stage_transition` then publishes it as the transaction-local
+   * GUC `app.stage_override_reason`, and `validate_booking_gates` reads it: if
+   * the booking owes a rental balance or a pending deposit, the move to On Rent
+   * is **refused without it** and, with it, proceeds and writes an
+   * `audit_events` row carrying the reason and both amounts as they stood
+   * (`0090_r06_handover_money_gate_warns.sql`).
+   *
+   * What was wrong was therefore worse than a dead field: it was a live one
+   * wearing a dead label. It rendered ONLY while a gate was failing
+   * (`overridableFailing`), and `canComplete` requires every gate to pass — so
+   * by the moment of dispatch the control was always off the screen, and the
+   * text it still held rode the write as the named justification for a money
+   * decision, under a heading that said overrides were unavailable in this
+   * build. It now has its own block, is always visible, and says where it goes.
    */
   const [overrideReason, setOverrideReason] = useState('')
   /** Law 12 — a dispatch failure is inline and persistent, never a toast. */
@@ -424,10 +544,71 @@ export default function HandoverWorkspace() {
    * double-press replays the same key and resolves to the first write.
    */
   const [completionKey, setCompletionKey] = useState(() => newClientUuid())
+  /** HO-12 — Cancel Handover asks first. See `discardable` and the dialog. */
+  const [confirmingCancel, setConfirmingCancel] = useState(false)
+
+  /**
+   * HO-14 — which booking the in-flight dispatch belongs to, and whether this
+   * screen is still mounted.
+   *
+   * A dispatch is a promise that outlives the render that started it. This
+   * route is `/rentals/:bookingNo/handover`, so an operator who leaves
+   * mid-dispatch — to another booking's handover, or off this screen entirely
+   * — keeps the same component instance and the same `navigate`. The
+   * settlement handlers then ran unconditionally against whatever booking had
+   * arrived since:
+   *
+   *  - `.catch` wrote B-901's failure into `dispatchError` on B-902's screen,
+   *    under the heading "This handover was not recorded" — a fabricated fact
+   *    about the wrong record (Law 12), and the same class as BD-19;
+   *  - `setStageHeld` listed B-901's held lines against B-902's booking number
+   *    (the notice reads `floor.bookingNo` and `floor.lines` from the CURRENT
+   *    booking, so the ids would not even resolve to names);
+   *  - and on success `navigate` used `id`, the route param as it stands when
+   *    the promise settles — so a dispatch for B-901 could throw the operator
+   *    out of B-902 and onto B-901's booking page.
+   *
+   * A ref, not state: it must be readable from a closure minted before the
+   * change, and updating it must not itself re-render. `mounted` is set in the
+   * effect body rather than only cleared in the cleanup so a StrictMode
+   * mount → cleanup → mount cycle does not leave it stuck false.
+   */
+  const settle = useRef<{ mounted: boolean; floorId: string | null; route: string | undefined }>({
+    mounted: true,
+    floorId: null,
+    route: undefined,
+  })
+  /*
+   * ⛔ `floorId` alone could not answer "is this still the screen that dispatched?".
+   * It is set from `floor?.id`, which only changes once the NEW booking's read
+   * resolves — so between the navigation and that read, `floorId` still holds the
+   * OLD uuid and the guard passed for a dispatch that no longer belonged to the
+   * screen. That window is precisely the one HO-14 is about: press Complete on
+   * B-901, navigate to B-902, and if the write settled inside the read window the
+   * operator was thrown off B-902 onto B-901's booking page.
+   *
+   * The route param changes SYNCHRONOUSLY with the navigation, so it closes the
+   * window that `floorId` leaves open. Assigned during render deliberately — an
+   * effect runs after commit and would reopen a smaller version of the same gap.
+   * Both are compared: the route catches the navigation, `floorId` still catches
+   * a booking swapped underneath the same route.
+   */
+  settle.current.route = id
+  useEffect(() => {
+    // Read once into a local: the ref's object identity never changes (only its
+    // fields do), and the cleanup must not re-read `.current` — `exhaustive-deps`
+    // is right to insist, even where this particular ref holds no DOM node.
+    const guard = settle.current
+    guard.mounted = true
+    return () => {
+      guard.mounted = false
+    }
+  }, [])
 
   const floorId = floor?.id ?? null
   useEffect(() => {
     // A different booking arrived: everything verified belonged to the old one.
+    settle.current.floorId = floorId
     setMarks({})
     setPhotoCount(0)
     setScanLog([])
@@ -441,6 +622,7 @@ export default function HandoverWorkspace() {
     setDispatchError(null)
     setDispatching(false)
     setStageHeld(null)
+    setConfirmingCancel(false)
     setCompletionKey(newClientUuid())
   }, [floorId])
 
@@ -459,6 +641,8 @@ export default function HandoverWorkspace() {
   const readyUnits = readyRows.reduce((n, r) => n + r.qty, 0)
   const missingUnits = rows.filter((r) => stateOf(r.key) === 'Missing').reduce((n, r) => n + r.qty, 0)
   const pct = totalUnits > 0 ? Math.round((outUnits / totalUnits) * 100) : 0
+  /** Law 1 — the booking's length comes from the engine, not from this page. */
+  const rentalDays = rentalDaysBetween(floor?.pickupAtAd, floor?.returnAtAd)
 
   /*
    * §1.5 — Handover runs at status **Packed**; the badge shows the CANONICAL
@@ -473,6 +657,44 @@ export default function HandoverWorkspace() {
 
   /** §11.2 — the booking condition, information only: does anything remain after this session? */
   const allResolved = rows.length > 0 && readyRows.length === 0
+
+  /**
+   * HO-12 — everything on this screen that leaving would throw away, named.
+   *
+   * `Cancel Handover` was a bare `navigate` back to the booking. Nothing on
+   * this screen is written until the dispatch — which the footer says, and
+   * which is exactly why the button is dangerous: a stray tap on a warehouse
+   * tablet discarded every mark, every missing-item reason and both signatures
+   * with no question asked and no way back. A signature is a person's name on a
+   * record; re-collecting one means finding that person again.
+   *
+   * Law 3 is NOT engaged — nothing was written, so nothing is deleted — which
+   * is why this is a discard confirmation and not a named terminal transition
+   * with a recorded reason. That is the same split `NewRental` already makes
+   * between its two Cancel behaviours, and this is its "nothing has been
+   * persisted" side.
+   *
+   * The list is built rather than counted so the dialog can say what is at
+   * stake on THIS session instead of a generic warning, and so an untouched
+   * screen — where leaving really does cost nothing — is not made to ask.
+   *
+   * Empty once `stageHeld` is set: at that point the session HAS been written
+   * (HO-05 — the rows landed, only the stage did not move), the same marks are
+   * still in state, and asking whether to discard them would be the screen
+   * describing recorded work as unsaved.
+   */
+  const discardable: string[] = stageHeld !== null ? [] : [
+    touchedCount > 0 ? `${touchedCount} item mark${touchedCount === 1 ? '' : 's'}` : null,
+    missingRows.some((r) => (marks[r.key]?.reason ?? '').trim() !== '') ? 'missing-item reasons' : null,
+    (signatures.receiver ? 1 : 0) + (signatures.warehouse ? 1 : 0) > 0
+      ? `${(signatures.receiver ? 1 : 0) + (signatures.warehouse ? 1 : 0)} signature${signatures.receiver && signatures.warehouse ? 's' : ''}`
+      : null,
+    govIdVerified || bookingAuthVerified ? 'the receiver ID checks' : null,
+    paymentVerified || depositReceived ? 'the payment and deposit gate marks' : null,
+    photoCount > 0 ? 'the evidence tally' : null,
+    sessionNotes.trim() !== '' ? 'the session notes' : null,
+    overrideReason.trim() !== '' ? 'the money-outstanding reason' : null,
+  ].filter((entry): entry is string => entry !== null)
 
   /* ── §11.1 — the six Session Gates, kept intact, over real state ───────── */
   const shortReasons = missingRows.filter((r) => (marks[r.key]?.reason ?? '').trim().length < MIN_REASON)
@@ -578,8 +800,8 @@ export default function HandoverWorkspace() {
   )
 
   /* ── mark helpers — local until dispatch, never a write on their own ───── */
-  const markPicked = (key: string) =>
-    setMarks((p) => ({ ...p, [key]: { state: 'Picked Up', pickedAtIso: new Date().toISOString() } }))
+  const markPicked = (key: string, via: 'scan' | 'manual') =>
+    setMarks((p) => ({ ...p, [key]: { state: 'Picked Up', pickedAtIso: new Date().toISOString(), via } }))
   const markMissing = (key: string) => setMarks((p) => ({ ...p, [key]: { state: 'Missing', reason: '' } }))
   const clearMark = (key: string) =>
     setMarks((p) => {
@@ -595,32 +817,66 @@ export default function HandoverWorkspace() {
    * the seed build dispatched `handoverRental` per unit (and its scanner's
    * modal asserted "handed over" before that dispatch had settled; the scan
    * log here says what is true instead: marked, recorded at session close).
+   *
+   * It returns the verdict rather than swallowing it. `BarcodeScannerModal`
+   * takes a `ScanOutcome` from its consumer and shows exactly those words in
+   * the banner, the log and the beep; a consumer that returns nothing gets the
+   * modal's default, which claims a fresh mark. Two of its three outcomes make
+   * NO mark, so returning nothing meant a second scan of an already-ticked
+   * unit beeped success and read "marked" in the modal while the rail behind it
+   * said "already marked Picked Up" — one scan, two verdicts.
    */
-  const pick = (key: string) => {
+  const pick = (key: string, via: 'scan' | 'manual'): ScanOutcome => {
     const row = rowByKey.get(key)
-    if (!row) return
+    if (!row) return { ok: false, message: 'is not on this booking' }
     if (row.prior !== null) {
-      setScanLog((p) => [`• ${row.name} was recorded ${row.prior} in an earlier session`, ...p].slice(0, 5))
-      return
+      /* Defensive, and today unreachable by design rather than by accident: both
+         checkboxes render `disabled` for a prior row and `scannableUnits` keeps
+         prior rows out of the scanner, so nothing can reach this branch. It
+         stays because it guards the data, not the wording — if a prior row ever
+         becomes tappable, this refuses it rather than re-dispatching a unit an
+         earlier session already took out. */
+      const message = `was recorded ${row.prior} in an earlier session — nothing changed`
+      setScanLog((p) => [`• ${row.name} ${message}`, ...p].slice(0, 5))
+      return { ok: false, message }
     }
     if (stateOf(key) === 'Picked Up') {
-      setScanLog((p) => [`• ${row.name} already marked Picked Up`, ...p].slice(0, 5))
-      return
+      const message = 'was already marked Picked Up — nothing changed'
+      setScanLog((p) => [`• ${row.name} ${message}`, ...p].slice(0, 5))
+      return { ok: false, message }
     }
-    markPicked(key)
-    setScanLog((p) => [`✓ ${row.name} marked Picked Up — recorded at session close`, ...p].slice(0, 5))
+    markPicked(key, via)
+    const message =
+      via === 'scan'
+        ? 'marked Picked Up by scan — recorded at session close'
+        : 'marked Picked Up by hand — recorded at session close'
+    setScanLog((p) => [`✓ ${row.name} ${message}`, ...p].slice(0, 5))
+    return { ok: true, message }
   }
 
-  const pickAllReady = () => {
+  /**
+   * HO-12 — was `pickAllReady`, behind a button labelled **Bulk Scan**. See
+   * `rowsReadyToPickUp` for what it did and why the rule is now the narrow one.
+   * The log entry says by hand, because that is what it is.
+   */
+  const markReadyPickedUp = () => {
     const at = new Date().toISOString()
+    const ready = rowsReadyToPickUp(rows, marks)
+    if (ready.length === 0) {
+      // Say so rather than doing nothing quietly — a press with no visible
+      // effect reads as a control that failed.
+      setScanLog((p) => ['• No item is Ready — no rows changed', ...p].slice(0, 5))
+      return
+    }
+    const keys = new Set(ready.map((r) => r.key))
     setMarks((p) => {
       const next = { ...p }
-      for (const r of rows) {
-        if (r.prior !== null) continue
-        if (next[r.key]?.state !== 'Missing') next[r.key] = { state: 'Picked Up', pickedAtIso: at }
-      }
+      for (const key of keys) next[key] = { state: 'Picked Up', pickedAtIso: at, via: 'manual' }
       return next
     })
+    setScanLog((p) =>
+      [`• ${ready.length} item${ready.length === 1 ? '' : 's'} marked Picked Up by hand — no scan`, ...p].slice(0, 5),
+    )
   }
 
   const scannableUnits = rows
@@ -635,9 +891,13 @@ export default function HandoverWorkspace() {
 
   /**
    * §9.2 — the names come off real records only: the booking's client for the
-   * receiver, the signed-in operator for warehouse staff. The timestamp is the
-   * capture instant, not the literal `'16 Jul 2026, 02:20 PM'` the seed build
-   * stamped on every capture (audit gap #7).
+   * receiver, the signed-in operator for warehouse staff.
+   *
+   * HO-14 / Law 7 — what is STORED is the instant; the label is rendered from
+   * it by `SigRow`. This wrote `formatAdDateTime(...)`'s output into the record
+   * itself. Fixing the seed build's frozen literal (audit gap #7) made the
+   * value live but left it shaped as display text — see `Sig.atIso` for what
+   * that costs.
    *
    * HO-03 — this is a LOCAL mark for gate 5 and nothing more. The `signatures`
    * table has zero writers in this build; nothing captured here travels with
@@ -649,7 +909,7 @@ export default function HandoverWorkspace() {
     const name = role === 'receiver' ? floor?.clientName : user?.name
     if (!name) return
     const roleLabel = role === 'receiver' ? 'Receiver' : 'Warehouse'
-    setSignatures((p) => ({ ...p, [role]: { name, role: roleLabel, at: formatAdDateTime(new Date().toISOString()) } }))
+    setSignatures((p) => ({ ...p, [role]: { name, role: roleLabel, atIso: new Date().toISOString() } }))
   }
 
   /* ── the dispatch — real line ids, once, dispatch-then-commit ──────────── */
@@ -666,6 +926,19 @@ export default function HandoverWorkspace() {
 
     const { payload, mixedNotes } = buildHandoverLines(floor.lines, rows, marks)
     const notes = [sessionNotes.trim(), ...mixedNotes].filter((n) => n !== '').join('\n')
+
+    /*
+     * HO-14 — the booking and the route this dispatch is FOR, captured now.
+     * Everything the settlement handlers below say or do is checked against
+     * these: if the screen has moved on, this session's result belongs to a
+     * booking that is no longer on it, and the only honest thing to do with it
+     * here is nothing. See `settle`. It is not lost — it landed in the
+     * database, and the booking it landed on shows it.
+     */
+    const dispatchedFor = floor.id
+    const dispatchedRoute = id
+    const stillHere = () =>
+      settle.current.mounted && settle.current.floorId === dispatchedFor && settle.current.route === dispatchedRoute
 
     /*
      * ⚠ `navigate` is INSIDE `.then`. Leaving the workspace is the app's "the
@@ -685,9 +958,17 @@ export default function HandoverWorkspace() {
             governmentIdVerified: govIdVerified,
             bookingAuthorizationVerified: bookingAuthVerified,
             /*
-             * R-06 - sent only when something is actually owed. The database asks for
-             * it in exactly that case and ignores it otherwise, so an empty string
-             * would be noise on a booking that owes nothing.
+             * R-06's named reason, sent whenever the operator gave one.
+             *
+             * The comment here used to say "sent only when something is actually
+             * owed", which the condition below does not implement and this screen
+             * could not implement: it is shown no amounts (Law 6), so it cannot
+             * know what is owed. The database is the one that knows. Whatever is
+             * sent is kept on the transition row either way; what the money gate
+             * does with it depends on the balance — it demands one when something
+             * is owed, and does not consult it when nothing is. An empty box
+             * therefore sends no key at all rather than `''`, which is what
+             * "none given" looks like on the other side (`nullif(btrim(…),'')`).
              */
             ...(overrideReason.trim() === '' ? {} : { overrideReason: overrideReason.trim() }),
             ...(notes === '' ? {} : { notes }),
@@ -696,16 +977,21 @@ export default function HandoverWorkspace() {
         ),
       )
       .then((result) => {
+        if (!stillHere()) return
         // HO-05 — leave only when the stage moved; a held stage stays here and says so.
         if (result.stage !== null) {
-          navigate(`/rentals/${id}`)
+          navigate(`/rentals/${dispatchedRoute}`)
           return
         }
         setStageHeld({ lines: result.lines, movements: result.movements, heldBy: result.stageHeldBy })
         setDispatching(false)
       })
       .catch((err: unknown) => {
-        captureError(err, { where: 'HandoverWorkspace.close', bookingId: id })
+        // Reported whatever screen the operator is on — the failure happened,
+        // and `bookingId` names the booking it happened to, not the one in
+        // front of them now. Only the RENDERED consequences are suppressed.
+        captureError(err, { where: 'HandoverWorkspace.close', bookingId: dispatchedRoute })
+        if (!stillHere()) return
         setDispatchError(err instanceof Error ? err.message : String(err))
         setDispatching(false)
       })
@@ -825,8 +1111,15 @@ export default function HandoverWorkspace() {
               <div style={{ minWidth: 260, flex: 1 }}>
                 <div style={{ display: 'flex', gap: 10, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                   <span>Handover Progress</span>
-                  <span className="figure" style={{ marginLeft: 'auto', fontWeight: 700, color: 'var(--text)' }}>
-                    {outUnits} / {totalUnits} ({pct}%)
+                  {/* HO-14 — the bar is UNIT-weighted and the checklist chips below count
+                      ROWS, and a quantity-tracked line is one row standing for several
+                      units, so the two legitimately differ. Each now names what it counts
+                      rather than leaving the reader to find two answers to one question. */}
+                  <span style={{ marginLeft: 'auto', fontWeight: 700, color: 'var(--text)' }}>
+                    <span className="figure">
+                      {outUnits} / {totalUnits}
+                    </span>{' '}
+                    units (<span className="figure">{pct}%</span>)
                   </span>
                 </div>
                 <div aria-hidden style={{ height: 8, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 6, overflow: 'hidden' }}>
@@ -856,11 +1149,7 @@ export default function HandoverWorkspace() {
                 { l: 'Client', v: floor.clientName ?? '—', big: true },
                 { l: 'Pickup', v: bsLabel(floor.pickupAtAd), s: floor.pickupAtAd ? formatAd(new Date(floor.pickupAtAd)) : undefined },
                 { l: 'Return', v: bsLabel(floor.returnAtAd), s: floor.returnAtAd ? formatAd(new Date(floor.returnAtAd)) : undefined },
-                {
-                  l: 'Days',
-                  v: floor.pickupAtAd && floor.returnAtAd ? String(rentalDays(floor.pickupAtAd, floor.returnAtAd)) : '—',
-                  s: 'Rental days',
-                },
+                { l: 'Days', v: rentalDays === null ? '—' : String(rentalDays), s: 'Rental days' },
                 { l: 'Stage', v: floor.stage, big: true },
                 { l: 'Handover job', v: jobState },
                 { l: 'Units', v: String(totalUnits) },
@@ -914,7 +1203,16 @@ export default function HandoverWorkspace() {
                   bodyStyle={{ padding: 0 }}
                   action={
                     <>
-                      <Button icon="search" onClick={pickAllReady}>Bulk Scan</Button>
+                      {/*
+                        HO-12 — was `Bulk Scan`, wearing the search glyph and
+                        running `pickAllReady`. It scanned nothing and read no
+                        serial, and it re-stamped rows that were already marked.
+                        The name now matches the act and the act is narrower:
+                        only Ready rows move, so a scanned mark is never
+                        overwritten by a hand press. Same fix, same shape, as
+                        PK-07 on the Packing floor.
+                      */}
+                      <Button icon="checklist" onClick={markReadyPickedUp}>Mark Ready Picked Up</Button>
                       <Button icon="queues" onClick={() => setShowScanner(true)}>Scan Barcode</Button>
                     </>
                   }
@@ -936,6 +1234,9 @@ export default function HandoverWorkspace() {
                           type="button"
                           onClick={() => setFilter(f)}
                           aria-pressed={on}
+                          /* HO-14 — the count is ROWS, which is what the filter shows.
+                             The header bar counts units; neither figure is now unlabelled. */
+                          aria-label={`${f} — ${count} row${count === 1 ? '' : 's'}`}
                           style={{
                             height: 26,
                             padding: '0 9px',
@@ -953,6 +1254,10 @@ export default function HandoverWorkspace() {
                         </button>
                       )
                     })}
+                    <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                      <span className="figure">{rows.length}</span> row{rows.length === 1 ? '' : 's'} ·{' '}
+                      <span className="figure">{totalUnits}</span> unit{totalUnits === 1 ? '' : 's'}
+                    </span>
                   </div>
 
                   {phone ? (
@@ -974,7 +1279,10 @@ export default function HandoverWorkspace() {
                                 aria-label={`Mark ${r.name} picked up`}
                                 title={recorded ? 'Recorded in an earlier session' : undefined}
                                 style={{ width: 22, height: 22, marginTop: 2, flexShrink: 0 }}
-                                onChange={() => (mark?.state === 'Picked Up' ? clearMark(r.key) : pick(r.key))}
+                                onChange={() => {
+                                  if (mark?.state === 'Picked Up') clearMark(r.key)
+                                  else pick(r.key, 'manual')
+                                }}
                               />
                               <span style={{ minWidth: 0, flex: 1 }}>
                                 <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -1045,7 +1353,10 @@ export default function HandoverWorkspace() {
                                     disabled={recorded}
                                     aria-label={`Mark ${r.name} picked up`}
                                     title={recorded ? 'Recorded in an earlier session' : undefined}
-                                    onChange={() => (mark?.state === 'Picked Up' ? clearMark(r.key) : pick(r.key))}
+                                    onChange={() => {
+                                      if (mark?.state === 'Picked Up') clearMark(r.key)
+                                      else pick(r.key, 'manual')
+                                    }}
                                   />
                                 </td>
                                 <td style={td}>
@@ -1151,7 +1462,10 @@ export default function HandoverWorkspace() {
                   </div>
 
                   {/* §11.4 — Manager override on gates 1, 3, 4 only, and refused until it
-                      has an approver and somewhere to be recorded. See OVERRIDE_UNAVAILABLE. */}
+                      has an approver and somewhere to be recorded. See OVERRIDE_UNAVAILABLE.
+                      HO-12 — the reason box that used to sit here was never this control's:
+                      it belongs to R-06's money override, which is real, and has moved to
+                      its own block below where it is visible at the moment it is sent. */}
                   {overridableFailing && (
                     <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
                       <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Manager Override</div>
@@ -1160,21 +1474,13 @@ export default function HandoverWorkspace() {
                       </p>
                       <p style={{ margin: '0 0 6px', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
                         §11.4 reserves this for Owner / Manager; Warehouse cannot override. Who may override a
-                        session gate is not yet ruled, and no action records the approver — so no override is
-                        recorded here, rather than one recorded against nobody.
+                        session gate is not yet ruled, and no action records the approver — so no session-gate
+                        override is recorded here, rather than one recorded against nobody. Handing over with
+                        money outstanding is a different decision and is recorded: it is below.
                       </p>
-                      <textarea
-                        value={overrideReason}
-                        onChange={(e) => setOverrideReason(e.target.value)}
-                        placeholder="Reason for override (min 10 characters)"
-                        aria-label="Manager override reason"
-                        aria-describedby="override-unavailable"
-                        style={{ width: '100%', minHeight: 44, padding: 7, borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
-                      />
                       <div style={{ marginTop: 6 }}>
                         <Unavailable reason={OVERRIDE_UNAVAILABLE}>
                           <button
-                            id="override-unavailable"
                             type="button"
                             disabled
                             style={{ minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-btn)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', cursor: 'not-allowed', background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }}
@@ -1185,6 +1491,80 @@ export default function HandoverWorkspace() {
                       </div>
                     </div>
                   )}
+
+                  {/*
+                    R-06 — the one override on this screen that IS recorded, in its own
+                    block and always visible (not only while a local gate is failing,
+                    which is exactly when the dispatch is impossible).
+
+                    ⛔⛔ AND it deliberately does not invite a reason as a way THROUGH.
+                    Review caught that the first rewrite still did: it said "write the
+                    reason here and it is recorded with the completion", while gates 3 and
+                    4 (`paymentPassing = paymentVerified`, `depositPassing = depositReceived`)
+                    are part of `firstBlockedGate` and `canComplete` requires ALL gates to
+                    pass. So with money owed the primary is disabled and the reason can
+                    never be dispatched — and the only way past is to tick "Deposit
+                    Received", which is the operator certifying the very fact the reason
+                    exists to explain. The screen was steering a floor operator toward a
+                    false money certification. It now says so in the imperative instead.
+
+                    R-06 rules that the money gate WARNS rather than blocks. Neither half
+                    of this build implements that: the local gates block, and live
+                    `validate_booking_gates()` hard-blocks. Until one of them changes there
+                    is no honest handover against outstanding money, and the copy says that
+                    rather than implying a path.
+
+                    TODO(decision) — R-06 names "a named override reason" but, unlike R-05
+                    and R-08, names no AUTHORITY SET. This box currently renders for every
+                    role, including Warehouse, twelve lines below gates 3/4 which are gated
+                    on `moneyGateClearer` (Law 6). Who may author the R-06 justification is
+                    unruled and is NOT decided here by leaving the box open to all — it is
+                    recorded as open. Today a Warehouse actor cannot send it anyway, because
+                    they cannot clear gates 3/4, so nothing is released by the gap.
+
+                    ⛔ The copy deliberately does NOT say "the database refuses the move
+                    unless a reason is given here". An earlier draft did, describing
+                    `0090_r06_handover_money_gate_warns.sql` in the present indicative —
+                    and 0090 IS NOT LIVE. Checked against production on 7 Sep 2026:
+                    `validate_booking_gates()` exists and its body mentions
+                    `outstanding` but never `override`, i.e. it is still the OLD HARD
+                    BLOCK that R-06 calls a defect. So today an operator who writes a
+                    reason is refused anyway, by a gate that never reads it — and the
+                    screen had just promised the reason was what let them through.
+
+                    What is written instead is true under BOTH gates: the reason is
+                    recorded with the completion, and a refusal explains itself. Revisit
+                    this wording when 0090 reaches live, not before — the repo is many
+                    migrations ahead of production, so "it is in the repo" is not
+                    grounds for a present-tense claim to an operator.
+                  */}
+                  <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+                      Handing Over With Money Outstanding
+                    </div>
+                    <p style={{ margin: '4px 0 6px', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.45 }}>
+                      This screen is shown no amounts (Law 6), so it cannot tell you whether this booking owes
+                      anything. Gates 3 and 4 above are <strong>your certification</strong> that payment and
+                      deposit are cleared — not a reading of the ledger. A reason written here is recorded with
+                      the completion, but it does <strong>not</strong> open those gates and cannot release a
+                      booking whose money is unresolved: this build has no way to hand over against outstanding
+                      money. <strong>Do not tick a money gate you cannot certify in order to get past it.</strong>
+                      If the money is genuinely unresolved, the handover waits.
+                    </p>
+                    <textarea
+                      value={overrideReason}
+                      onChange={(e) => setOverrideReason(e.target.value)}
+                      placeholder="Why this booking is going out with money outstanding…"
+                      aria-label="Reason for handing over with money outstanding"
+                      aria-describedby="r06-destination"
+                      style={{ width: '100%', minHeight: 44, padding: 7, borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
+                    />
+                    <p id="r06-destination" style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
+                      Sent with {primaryLabel} onto{' '}
+                      <span className="identifier">booking_stage_transitions.reason</span>. It does not open any
+                      of the six gates above — those are cleared, never overridden.
+                    </p>
+                  </div>
 
                   {/* §9.1 Evidence — ⭐ RULED, PLAN.md §4.31: one photo per
                       BOOKING, not per case (there is no case model). Honest
@@ -1360,11 +1740,18 @@ export default function HandoverWorkspace() {
 
                 {scanLog.length > 0 && (
                   <div style={{ ...cardStyle, padding: 11 }}>
-                    <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Scan log</div>
+                    {/* Not "Scan log": most entries come from `pick`, which the row
+                        checkbox reaches as well as the scanner, and Mark Ready Picked Up
+                        writes one of its own. Each entry names which it was. */}
+                    <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Checklist log</div>
                     {/* §8.3 — results are announced to screen readers. */}
                     <div role="status" aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
+                      {/* HO-14 — the tone was picked by sniffing for a leading '✕' that
+                          no writer here has ever produced: every entry starts '✓'
+                          (a mark was made) or '•' (nothing changed), and that glyph is
+                          the distinction, in the text, where a screen reader gets it. */}
                       {scanLog.map((l, i) => (
-                        <span key={i} style={{ fontSize: 'var(--t-meta)', color: l.startsWith('✕') ? 'var(--danger-text)' : 'var(--text2)' }}>{l}</span>
+                        <span key={i} style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{l}</span>
                       ))}
                     </div>
                   </div>
@@ -1377,9 +1764,14 @@ export default function HandoverWorkspace() {
                 mark, checkbox and signature here is local until the dispatch
                 lands, and the footer now says exactly that. ── */}
             <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '12px 14px', flexWrap: 'wrap' }}>
+              {/* HO-12 — asks before discarding, and only when there is something to
+                  discard; an untouched session leaves straight away. See `discardable`. */}
               <button
                 type="button"
-                onClick={() => navigate(`/rentals/${id}`)}
+                onClick={() => {
+                  if (discardable.length > 0) setConfirmingCancel(true)
+                  else navigate(`/rentals/${id}`)
+                }}
                 style={{ minHeight: 44, padding: '0 14px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger-text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
               >
                 Cancel Handover
@@ -1429,9 +1821,45 @@ export default function HandoverWorkspace() {
               mode="handover"
               bookingId={id}
               items={scannableUnits}
-              onItemScanned={(item) => {
-                pick(item.id)
+              onItemScanned={(item) => pick(item.id, 'scan')}
+            />
+
+            {/*
+              HO-12 — the confirmation Cancel Handover never had. It names what
+              is on the screen rather than warning in general, and it does not
+              claim a deletion: nothing here has been written, so nothing is
+              deleted (Law 3 is not engaged — contrast `NewRental`'s other
+              Cancel, which cancels a saved draft and takes a recorded reason).
+            */}
+            <ConfirmDialog
+              isOpen={confirmingCancel}
+              onClose={() => setConfirmingCancel(false)}
+              onConfirm={() => {
+                setConfirmingCancel(false)
+                navigate(`/rentals/${id}`)
               }}
+              title="Discard this handover session?"
+              description={
+                <>
+                  {dispatching ? (
+                    <>
+                      <strong style={{ color: 'var(--danger-text)' }}>
+                        A completion is being written right now.
+                      </strong>{' '}
+                      Leaving does not stop it — if it lands, {floor.bookingNo} moves to On Rent whether or not
+                      you stay. Wait for it to finish before deciding.{' '}
+                    </>
+                  ) : (
+                    <>Nothing on this screen has been written yet, so leaving deletes nothing from {floor.bookingNo}. </>
+                  )}
+                  It discards what you have done here:{' '}
+                  <strong style={{ color: 'var(--text)' }}>{discardable.join(', ')}</strong>. None of it can be
+                  recovered, and a signature would have to be collected again in person.
+                </>
+              }
+              confirmLabel="Discard and leave"
+              cancelLabel="Stay on this session"
+              variant="danger"
             />
           </div>
         )}
@@ -1476,7 +1904,7 @@ function SigRow({ label, sig, onCapture, required, disabled, unavailable }: { la
         {sig ? (
           // HO-03 — a gate mark, not a stored signature; the line says exactly that.
           <div style={{ fontSize: 'var(--t-meta)', color: 'var(--success-text)' }}>
-            Signed for this session&apos;s gate only · {sig.name} · {sig.at} — not stored
+            Signed for this session&apos;s gate only · {sig.name} · {formatAdDateTime(sig.atIso)} — not stored
           </div>
         ) : (
           // §9.2 — an uncapturable row renders as "Optional"/absent, never as "Pending".

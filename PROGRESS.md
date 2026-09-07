@@ -3,6 +3,77 @@
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
 
+## 2026-09-07 — Handover and Evidence: a screen that steered toward a false certification
+
+**Phase:** Phase 0 · **Status:** 4 register items closed · 4 filed · 1 new defect CLASS found
+
+HO-09, HO-10, HO-12, HO-14. The run that produced them was **stopped mid-flight** — both builders
+finished and their edits were on disk, but only one of three review lenses had reported. The other
+two were run separately against the same diff, and between them they found more than the batch did.
+
+### What was fixed
+
+- **HO-09** — the Evidence header rendered `{ l: 'Status', v: 'Booked' }` as a **literal** and its
+  dates as `new Date('2026-07-16')`, on *every* booking. It now reads the real booking through
+  `fetchFloorBooking`. The photographs stay seeded and cannot be otherwise — live
+  `storage.buckets` is empty and nothing writes `evidence_files` — so the screen says which half is
+  which rather than letting a real booking number sit silently above sample photographs.
+- **HO-10** — seven bulk actions rendered enabled from an array with no handler. The retention
+  promise was neither deleted nor faked: Law 3's behaviour is still stated, marked unbuilt.
+- **HO-12** — "Bulk Scan" scanned nothing (PK-07's fix ported rather than re-invented); Cancel
+  Handover discarded marks, reasons and **both signatures** on one tap.
+- **HO-14** — `Sig.at` stored *display text* (no date, no timezone, uncomparable) and is now an
+  instant; the page's third copy of the rental-day rule is routed through `lib/rentalDays.ts`.
+
+### What the two late reviews caught — the important half
+
+**The screen steered a floor operator toward a false money certification.** The R-06 block invited
+a reason for handing over with money outstanding, while gates 3 and 4 (`paymentVerified`,
+`depositReceived`) keep `canComplete` false whenever money is owed. So the reason could never be
+dispatched, and the only way through was to tick **"Deposit Received"** — certifying the very fact
+the reason exists to explain. R-06 rules that this gate *warns*; neither the page nor the live
+database does that. The copy now says so in the imperative, and the behaviour is filed as HO-17.
+
+**A new defect CLASS, filed as X-11: UI copy that describes a migration the live database does not
+have.** The Handover block said "the database refuses the move to On Rent unless a reason is given
+here" — that is `0090`, and it is not applied. Verified against production: `validate_booking_gates()`
+exists, its body mentions `outstanding` and never `override`, i.e. still the old hard block. So an
+operator who writes a reason is refused anyway, by a gate that never reads it, having just been told
+the reason is what lets them through. **My first fix of this was itself incomplete** — a second
+instance survived it in the very next element, and the review caught that too.
+
+**A regression the fix introduced.** Making the hide-note optional reopened a hole the mandatory
+version could not reach: `live = PHOTOS.filter(p => !hidden[p.id])` tests the note's *truthiness*,
+so a blank note stored `''` and the rail announced a file hidden while the card stayed in the grid
+and in every count. Now tests presence, pinned by a test with a **positive control** — restoring the
+old predicate fails it.
+
+**Two more, both incomplete in the same direction as their fix:** the cross-booking guard compared
+`floor?.id`, which only updates once the *next* booking's read resolves — so it did not cover the
+window it was written for; it now also compares the route param, which changes synchronously. And
+the discard dialog asserted "Nothing on this screen has been written yet" while a dispatch could be
+in flight, so an operator could walk away believing a handover was not recorded while it committed.
+
+### Filed
+
+**HO-17** (R-06's ruled override is unreachable, and *who may author it* is unruled — R-06 names no
+authority set where R-05 and R-08 do), **HO-18** (`Mark.via` is written by three call sites and read
+by nothing — the PK-07 breakdown it was ported for did not come with it, so it is dead state dressed
+as provenance), **HO-19** (`BookingNotLoaded` is now importerless, while five comments still call it
+a live pattern), and **X-11** for the class above.
+
+### Verified
+
+tsc clean; eslint clean; the batch's four suites pass (56 tests, then 28 after the fixes, plus the
+new gallery case with its positive control).
+
+**Not driven, and worth saying plainly:** the mock app would not boot. The other session's
+uncommitted `seed.ts` work makes the corpus refuse to emit (*"B-902: close gate… more has been
+refunded or applied than was ever received"*). That message does not exist at HEAD and the
+invariant is added in their working diff, so it is their in-flight state, not this batch's — but it
+means nobody can run the app right now, and these four fixes rest on tests and code reading rather
+than on a browser.
+
 ## 2026-09-07 (cont. 2) — An invoice can exist: one transaction writes it, and the modal shows what it will write
 
 **Phase:** Phase 0 · **Status:** DB-03 (P0), DATA-01 (P1), MONEY-01 (P0), MONEY-05 (P1) implemented · `PLAN.md §4.46` derived and closed · `check:rebuild` still BLOCKED
