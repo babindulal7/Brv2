@@ -187,6 +187,33 @@ export function canCreateBundle(role: SystemRole): boolean {
   return role === 'Owner' || role === 'Admin' || role === 'Manager'
 }
 
+/**
+ * Check if role can **edit** a bundle that already exists.
+ *
+ * Same role set as `canCreateBundle`, and named separately anyway — because it
+ * is a different act on the same two tables, and the file's convention is to
+ * name a capability for the act rather than for the role set that happens to
+ * answer it today (see `canBlockClient`, which is narrower than "flagging" for
+ * exactly this reason). If `bundles_manage` is ever narrowed for edits without
+ * being narrowed for creates, this is the line that changes.
+ *
+ * The derivation is unchanged, re-read from the live project 8 Sep 2026:
+ *
+ *   - `bundles_manage`    — Owner, Admin, Manager        (0035:61-65, `for all`)
+ *   - `bundle_items_all`  — Owner, Admin, Manager, **Warehouse** (0033:84-88)
+ *
+ * `updateBundle` writes both, so the intersection is what it can complete.
+ * Warehouse may change the items of a bundle and may not rename or re-rate one;
+ * granting it here would pass the dispatcher and fail at the `bundles` UPDATE,
+ * which is the shape "forbidden is absent, not attempted and refused" exists to
+ * prevent.
+ */
+// RULING 2026-09-08 (R-34): `inventory.update` is named for the act, not the role set;
+// revert = point `case 'inventory.update'` at `canCreateBundle` and delete this function.
+export function canUpdateBundle(role: SystemRole): boolean {
+  return role === 'Owner' || role === 'Admin' || role === 'Manager'
+}
+
 /* ────────────────────────────────────────────────────────────────────────────
  * The remaining capability rules — ruled 16 Aug 2026, same method as the four
  * above. Derivation table: `CAPABILITY_MAPPING_2026-08-16.md` §4.

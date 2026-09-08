@@ -166,6 +166,17 @@ async function checkCapability(capability: string, ctx: ActionContext): Promise<
     case 'inventory.create':
       return rbac.canCreateBundle(ctx.role);
     /*
+     * `inventory.update` — added 8 Sep 2026 with `updateBundle`, by the same
+     * method: the role set is the intersection of the RLS policies on the two
+     * tables the action writes (`bundles_manage` ∩ `bundle_items_all`), re-read
+     * from the live project rather than copied from the line above. It lands on
+     * the same three roles as `inventory.create`; the derivation sits in
+     * `lib/rbac.canUpdateBundle`, next to the policies it mirrors.
+     */
+    // RULING 2026-09-08 (R-34): new capability, Owner/Admin/Manager, mirrored from live RLS.
+    case 'inventory.update':
+      return rbac.canUpdateBundle(ctx.role);
+    /*
      * ── Ruled 16 Aug 2026 — the remaining 24, same method as the four above ──
      *
      * Role sets read from `pg_policies` on the live project, per capability,

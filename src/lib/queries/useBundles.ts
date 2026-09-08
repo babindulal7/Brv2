@@ -1,4 +1,5 @@
 import { listBundleRecords, getBundleRecord } from './bundleRecords'
+import { listBundlesWithItems, type BundleWithItems } from './bundles'
 import type { ListFilters } from './listQuery'
 import { useList, type ListQueryResult, type ListResult } from './useList'
 import type { BundleRecord } from '../../data/bundles'
@@ -103,6 +104,52 @@ export function useBundleRecord(
       },
     },
     // A bundle is addressed, not filtered — no "Clear filters" for a bad address.
+    { isFilteredOverride: false },
+  )
+}
+
+/**
+ * One bundle as its **columns**, for the edit form.
+ *
+ * Deliberately not `useBundleRecord`. That hook returns a `BundleRecord` — the
+ * pane's display shape, whose availability is computed against a window and
+ * whose four-state line pools are derived, not stored. An edit form must post
+ * back exactly the columns it was given, so it reads `BundleWithItems`: the
+ * bundle's own row plus each `bundle_items` row with its `itemId`, which is the
+ * id `updateBundle` writes against. Editing from the display shape would mean
+ * mapping a derived pool back to a column, which is the direction that loses.
+ *
+ * `includeArchived` is on, because an archived bundle is exactly the one an
+ * operator opens the editor to **restore**. Filtering it out would make the
+ * un-archive control unreachable for every bundle that needs it.
+ *
+ * No window is taken. Nothing on this hook's result depends on one — the form
+ * edits what the bundle *is*, not what is free.
+ *
+ * @param ref a `bundle_code` (`BND-23`) or a `bundles.id` uuid — either resolves.
+ * @param withMoney the caller's own money gate. **Never a literal `true`.**
+ */
+async function fetchBundleWithItems(filters: ListFilters): Promise<ListQueryResult<BundleWithItems>> {
+  const ref = filters.chips?.['bundle_ref']?.[0]
+  if (ref === undefined) return { rows: [], total: 0 }
+
+  const rows = await listBundlesWithItems({
+    bundleRef: ref,
+    includeArchived: true,
+    withMoney: filters.chips?.['with_money']?.[0] === 'yes',
+    limit: 1,
+  })
+  return { rows, total: rows.length }
+}
+
+export function useBundleWithItems(
+  ref: string | undefined,
+  withMoney: boolean,
+): ListResult<BundleWithItems> {
+  return useList<BundleWithItems>(
+    fetchBundleWithItems,
+    { chips: { bundle_ref: ref ? [ref] : [], with_money: [withMoney ? 'yes' : 'no'] } },
+    // Addressed, not filtered — no "Clear filters" for a bad address.
     { isFilteredOverride: false },
   )
 }

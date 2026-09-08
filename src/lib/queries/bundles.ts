@@ -78,6 +78,18 @@ export interface BundleWithItems {
   name: string
   description: string | null
   category: string | null
+  /**
+   * `bundles.category_id` — the uuid the NAME above is a display of.
+   *
+   * Both are returned because they answer different questions: a list renders
+   * the name, and an **edit** writes the id (`bundles.category_id` is a uuid FK
+   * to `inventory_categories`, 0004:386). Re-resolving the name back to an id at
+   * save time is what `createBundle` had to do and documented as a hazard —
+   * `inventory_categories` holds six rows while the picker offered sixteen enum
+   * labels, so ten of them resolved to nothing. Carrying the id means an edit
+   * that does not touch the category cannot lose it.
+   */
+  categoryId: string | null
   /** `bundles.daily_rate` — the advertised rate the Bundle parent line carries. Never masked. */
   dailyRate: Paisa
   weeklyRate: Paisa
@@ -99,6 +111,7 @@ interface BundleRow {
   daily_rate: number | null
   weekly_rate: number | null
   is_active: boolean
+  category_id: string | null
   category: { name: string } | null
   items:
     | Array<{
@@ -113,7 +126,7 @@ interface BundleRow {
 }
 
 const BUNDLE_COLUMNS =
-  'id, bundle_code, name, description, daily_rate, weekly_rate, is_active, ' +
+  'id, bundle_code, name, description, daily_rate, weekly_rate, is_active, category_id, ' +
   'category:inventory_categories ( name ), ' +
   'items:bundle_items ( id, product_id, quantity, days, is_mandatory, sort_order )'
 
@@ -193,6 +206,7 @@ export async function listBundlesWithItems(opts: ListBundlesOptions = {}): Promi
     name: b.name,
     description: b.description,
     category: b.category?.name ?? null,
+    categoryId: b.category_id,
     dailyRate: rupees(b.daily_rate ?? 0),
     weeklyRate: rupees(b.weekly_rate ?? 0),
     isActive: b.is_active,

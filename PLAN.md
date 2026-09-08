@@ -826,6 +826,59 @@ client's money quietly — but it is a dependency, not a detail. Both refusal st
 many words, and both carry a `TODO` naming the issue that should delete the clause.
 
 ---
+## 4.52 ⬅ OPEN ×1 — how is a component removed from a bundle?
+
+**Raised 8 Sep 2026** while building `updateBundle` and `/inventory/bundles/:bundleRef/edit`.
+Everything else on that screen shipped; this is the one act it cannot offer.
+
+**The finding.** A saved `bundle_items` row cannot be retired by any path available to the app.
+Three different rules each close one of the three ways it could be done, and they were read off
+the live project, not inferred:
+
+| Way it could be done | Why it is closed |
+|---|---|
+| `DELETE` the row | `authenticated` holds **no DELETE grant** on `bundle_items` (nor on `bundles`) — `information_schema.role_table_grants`, 8 Sep. `bundle_items_all` is `for all`, but a policy cannot grant a privilege the role does not hold. |
+| Soft-delete it | `bundle_items` has no `is_active`, `removed_at` or `deleted_at` column (0004:405-422). It has `created_at`/`created_by` and nothing else. |
+| Set `quantity = 0` | `bundle_items_qty_positive check (quantity >= 1)` (0004:420). |
+
+**Why this is not Claude's to rule.** Both repairs cross a line in `docs/PERMISSIONS.md` §15.2:
+granting DELETE is **N-4** ("add a delete permission" — Babin's explicit word required), and the
+soft-delete column is a migration, which is **N-5** (write it, number it, do not apply it). Either
+way the decision and the apply are Babin's.
+
+**Options:**
+
+  **(i)** Add `removed_at timestamptz` / `removed_by uuid` to `bundle_items` and filter them out of
+  every read. This is the house pattern — `client_flags` already carries exactly this trio
+  (`removed_at`, `removed_by`, `removal_reason`) and `blockClient` retires a flag through it
+  without a single `.delete()` in the file. Law 3 stays intact: nothing is destroyed, and a kit's
+  history stays readable. Cost: one migration, plus a filter in `listBundlesWithItems` and
+  `bundleRecords`.
+
+  **(ii)** Grant DELETE on `bundle_items` to the `bundle_items_all` roles. One line, and it makes
+  a bundle's composition genuinely mutable — but it puts a hard delete into a build whose first
+  law is that nothing is deleted, on a table that priced booking lines can reference by product.
+  N-4 exists for this.
+
+  **(iii)** Rule that a bundle's composition is fixed once saved, and that changing it means
+  archiving the bundle and creating its replacement. Costs nothing and is defensible for a
+  *catalogue template* — but it means a typo in a five-component kit is permanent.
+
+**What ships in the meantime.** The edit screen offers every other change and states this gap in
+plain words where the components are listed, rather than showing a Remove button that would fail
+at the database. A component can be set to **Optional**, which is the nearest honest thing the
+schema already supports. `actions/inventory/updateBundle.ts` carries the same table in its header.
+
+⚠ Do NOT add a removal control to any bundle screen before this is ruled. The failure would be
+silent in the worst way: `authenticated` holding no DELETE grant means Postgres refuses the
+statement, but a `.delete()` matching zero rows returns **no error at all** — the screen would
+report the component gone and the next load would show it still there.
+
+
+
+
+---
+
 ## 4.49 ⬅ OPEN ×2 — two questions the quantity-hold work (INV-02) could not answer for itself
 
 **Raised 7 Sep 2026** while building product-level holds so `Confirm` can succeed on the live

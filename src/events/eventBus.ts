@@ -95,6 +95,7 @@ export const EVENT_TYPES = {
   MAINTENANCE_REQUIRED: 'inventory.maintenance_required',
   EQUIPMENT_CREATED: 'inventory.equipment_created',
   BUNDLE_CREATED: 'inventory.bundle_created',
+  BUNDLE_UPDATED: 'inventory.bundle_updated',
   CLIENT_CREATED: 'client.created',
   CLIENT_UPDATED: 'client.updated',
   CLIENT_STATUS_UPDATED: 'client.status_updated',

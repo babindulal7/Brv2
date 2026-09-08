@@ -50,6 +50,7 @@ const WorkingCapital    = lazy(() => import('./modules/reports/WorkingCapitalRep
 const Inventory         = lazy(() => import('./modules/inventory/Inventory'))
 const AddBundle         = lazy(() => import('./modules/inventory/AddBundle').then(m => ({ default: m.AddBundle })))
 const BundleDetail      = lazy(() => import('./modules/inventory/BundleDetail'))
+const EditBundle        = lazy(() => import('./modules/inventory/EditBundle'))
 /* 06 Inventory renders — these screens existed but were unreachable. */
 const AddEquipment      = lazy(() => import('./modules/inventory/AddEquipment'))
 const AssetDetail       = lazy(() => import('./modules/inventory/AssetDetail'))
@@ -370,6 +371,22 @@ export default function App() {
           element={
             <Shell crumbs={[{ label: 'Inventory' }, { label: 'Bundles' }, { label: 'Bundle' }]} search="Search inventory, category…">
               <BundleDetail />
+            </Shell>
+          }
+        />
+
+        {/*
+          `/inventory/bundles/:bundleRef/edit` — four segments, so it cannot
+          collide with the three-segment detail route above under any ranking.
+          The ref is the same one the detail page was opened with, and the edit
+          screen reads it the same way (code or uuid), so the two never disagree
+          about which bundle is on screen.
+        */}
+        <Route
+          path="/inventory/bundles/:bundleRef/edit"
+          element={
+            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Bundles' }, { label: 'Bundle' }, { label: 'Edit' }]} search="Search inventory, category…">
+              <EditBundle />
             </Shell>
           }
         />

@@ -26,6 +26,7 @@ import type { CreateEquipmentInput } from '../createEquipment'
 import type { CreateStockTransferInput } from '../createStockTransfer'
 import type { ApprovePurchaseRequestInput } from '../approvePurchaseRequest'
 import type { CreateBundleInput } from '../createBundle'
+import type { UpdateBundleInput } from '../updateBundle'
 
 const access = vi.hoisted(() => ({
   inserts: [] as Array<{ table: string; payload: Record<string, unknown> }>,
@@ -65,9 +66,19 @@ const db = vi.hoisted(() => {
           return {
             eq(col: string, val: unknown) {
               const rows = (state.tables[table] ?? []).filter((r) => r[col] === val)
+              /* Both shapes, because the actions use both: `.maybeSingle()` for a
+                 one-row lookup and a bare `await` for a multi-row read
+                 (`updateBundle` reads a bundle's whole component list that way).
+                 Without the thenable the bare await resolves to THIS object, the
+                 caller destructures `{ data, error }` as undefined, and a
+                 populated table reads as empty — a false green of the worst kind,
+                 because "no rows" is a legal answer. */
               return {
                 async maybeSingle() {
                   return { data: rows[0] ?? null, error: null }
+                },
+                then(resolve: (v: { data: unknown; error: unknown }) => void) {
+                  resolve({ data: rows, error: null })
                 },
               }
             },
@@ -93,6 +104,7 @@ const { createEquipmentConfig, createEquipment } = await import('../createEquipm
 const { createStockTransferConfig, createStockTransfer } = await import('../createStockTransfer')
 const { approvePurchaseRequestConfig, approvePurchaseRequest } = await import('../approvePurchaseRequest')
 const { createBundleConfig, createBundle } = await import('../createBundle')
+const { updateBundleConfig, updateBundle } = await import('../updateBundle')
 
 const CTX = { userId: 'aaaaaaaa-0000-4000-8000-000000000001', role: 'Owner' as const, isOnline: true }
 
@@ -198,6 +210,12 @@ beforeEach(() => {
     purchase_requests: [{ id: 'pr-row-uuid', pr_no: 'PR-2026-0012', status: 'Submitted' }],
     /* The row the narrow read-back finds after the (mocked) bundles insert. */
     bundles: [{ id: 'bundle-new-uuid', bundle_code: 'BND-7', client_uuid: BND_INPUT.clientUuid }],
+    /* The components UPDATE_BUNDLE edits, and the sort_order its additions
+       continue from. */
+    bundle_items: [
+      { id: 'bi-fx3', bundle_id: 'bundle-new-uuid', sort_order: 0 },
+      { id: 'bi-nisi', bundle_id: 'bundle-new-uuid', sort_order: 1 },
+    ],
   }
 })
 
@@ -805,5 +823,162 @@ describe('the dispatcher — capability gates, as mapped (never widened here)', 
     expect(result.assetCode).toBe('EQ000123')
     expect(insertsInto('products').length).toBe(1)
     expect(insertsInto('product_units').length).toBe(2)
+  })
+})
+
+/* ═══════════════════════ UPDATE_BUNDLE ═══════════════════════
+ *
+ * Added 8 Sep 2026 with the edit screen (RULING R-34). Each assertion pins a
+ * failure that is invisible on screen: a field nobody touched being rewritten,
+ * an edit applied to a DIFFERENT bundle's row, a rate crossing Paisa→rupees
+ * twice, and an RLS refusal — which returns zero rows and NO error — being
+ * reported as saved.
+ */
+
+const UPD_INPUT: UpdateBundleInput = {
+  clientUuid: '44444444-4444-4444-8444-444444444441',
+  bundleId: 'bundle-new-uuid',
+  patch: { name: 'Documentary Camera Kit' },
+}
+
+describe('UPDATE_BUNDLE — validate', () => {
+  const check = (patch: Partial<UpdateBundleInput> = {}) =>
+    updateBundleConfig.validate({ ...UPD_INPUT, ...patch })
+
+  it('refuses an edit that identifies no bundle', () => {
+    expect(() => check({ bundleId: '  ' })).toThrow(/no bundle/i)
+  })
+
+  it('refuses an edit with no idempotency key — Law 8', () => {
+    expect(() => check({ clientUuid: '' })).toThrow(/idempotency key/i)
+  })
+
+  it('refuses an empty edit rather than sending a no-op write', () => {
+    expect(() => check({ patch: {}, lineEdits: [], lineAdds: [] })).toThrow(/nothing was changed/i)
+  })
+
+  it('refuses a rename to nothing — bundles.name is NOT NULL', () => {
+    expect(() => check({ patch: { name: '   ' } })).toThrow(/name/i)
+  })
+
+  it('refuses a component quantity of 0 AND says why it is not a removal (4.52)', () => {
+    expect(() =>
+      check({ lineEdits: [{ itemId: 'bi-fx3', quantity: 0, clientUuid: 'k1' }] }),
+    ).toThrow(/4\.52/)
+  })
+
+  it('refuses a component edit with no per-row key — Law 8 is one key per ROW', () => {
+    expect(() =>
+      check({ lineEdits: [{ itemId: 'bi-fx3', quantity: 2, clientUuid: '' }] }),
+    ).toThrow(/per row/i)
+  })
+
+  it('refuses a new component that names no product', () => {
+    expect(() => check({ lineAdds: [{ qty: 1, clientUuid: 'k2' }] })).toThrow(/names no product/i)
+  })
+})
+
+describe('UPDATE_BUNDLE — execute', () => {
+  const run = (patch: Partial<UpdateBundleInput> = {}) =>
+    updateBundleConfig.execute({ ...UPD_INPUT, ...patch }, CTX)
+
+  it('sends ONLY the keys the operator changed, plus the attribution stamp', async () => {
+    await run({ patch: { name: 'Renamed Kit' } })
+    const write = access.updates.find((u) => u.table === 'bundles')
+    expect(write).toBeDefined()
+    expect(Object.keys(write?.patch ?? {}).sort()).toEqual(['name', 'updated_at', 'updated_by'])
+    expect(write?.patch['name']).toBe('Renamed Kit')
+    expect(write?.patch['updated_by']).toBe(CTX.userId)
+    // Not `daily_rate: 0` — a rate nobody sent is ABSENT, so the stored figure stands.
+    expect(write?.patch).not.toHaveProperty('daily_rate')
+  })
+
+  it('stamps updated_by even when only components changed — bundle_items has no updated_by', async () => {
+    await run({ patch: {}, lineEdits: [{ itemId: 'bi-fx3', quantity: 3, clientUuid: 'row-key-1' }] })
+    const parent = access.updates.find((u) => u.table === 'bundles')
+    expect(parent?.patch['updated_by']).toBe(CTX.userId)
+    const line = access.updates.find((u) => u.table === 'bundle_items')
+    expect(line?.id).toBe('bi-fx3')
+    expect(line?.patch).toEqual({ quantity: 3 })
+  })
+
+  it('carries each row its OWN envelope key, never the action key — the queue de-dups on it', async () => {
+    await run({
+      patch: {},
+      lineEdits: [
+        { itemId: 'bi-fx3', quantity: 3, clientUuid: 'row-key-1' },
+        { itemId: 'bi-nisi', days: 2, clientUuid: 'row-key-2' },
+      ],
+    })
+    const lines = access.updates.filter((u) => u.table === 'bundle_items')
+    expect(lines.map((l) => l.clientUuid)).toEqual(['row-key-1', 'row-key-2'])
+    expect(new Set(lines.map((l) => l.clientUuid)).size).toBe(2)
+  })
+
+  it('crosses Paisa to rupees exactly once', async () => {
+    await run({ patch: { dailyRatePaisa: rupees(1250) } })
+    const write = access.updates.find((u) => u.table === 'bundles')
+    expect(write?.patch['daily_rate']).toBe(1250)
+  })
+
+  it('refuses an unknown bundle and writes NOTHING', async () => {
+    await expect(run({ bundleId: 'no-such-bundle' })).rejects.toThrow(/no bundle has id/i)
+    expect(access.updates).toHaveLength(0)
+    expect(access.inserts).toHaveLength(0)
+  })
+
+  it('refuses a component that belongs to another bundle, BEFORE any write', async () => {
+    await expect(
+      run({ patch: {}, lineEdits: [{ itemId: 'bi-someone-elses', quantity: 2, clientUuid: 'k' }] }),
+    ).rejects.toThrow(/does not belong to BND-7/i)
+    expect(access.updates).toHaveLength(0)
+    expect(access.inserts).toHaveLength(0)
+  })
+
+  it('refuses an unresolvable category before writing, naming what changed under the form', async () => {
+    await expect(run({ patch: { categoryId: 'cat-gone-uuid' } })).rejects.toThrow(/no category has id/i)
+    expect(access.updates).toHaveLength(0)
+  })
+
+  it('adds a component with the RESOLVED product uuid, continuing sort_order past the existing rows', async () => {
+    await run({
+      patch: {},
+      lineAdds: [{ productId: 'prod-fx3-uuid', qty: 2, clientUuid: 'add-key-1' }],
+    })
+    const insert = access.inserts.find((i) => i.table === 'bundle_items')
+    expect(insert?.payload).toMatchObject({
+      bundle_id: 'bundle-new-uuid',
+      product_id: 'prod-fx3-uuid',
+      quantity: 2,
+      // Law 9 — stated, never left to the column default.
+      days: 1,
+      // The fixture holds sort_order 0 and 1, so the next one is 2.
+      sort_order: 2,
+      client_uuid: 'add-key-1',
+    })
+  })
+
+  it('reports an RLS refusal as NOT SAVED — zero rows come back with no error', async () => {
+    access.updateResult = { data: null, error: null }
+    await expect(run({ patch: { name: 'Renamed Kit' } })).rejects.toThrow(/treat it as not saved/i)
+  })
+
+  it('names the roles when the database changes no row', async () => {
+    access.updateThrows = '[DataAccess] Update failed on bundles: JSON object requested (PGRST116)'
+    await expect(run({ patch: { name: 'Renamed Kit' } })).rejects.toThrow(/Owner, Admin and Manager/i)
+  })
+})
+
+describe('UPDATE_BUNDLE — the role gate', () => {
+  it('denies inventory.update to Warehouse — bundles_manage, not bundle_items_all', async () => {
+    await expect(
+      updateBundle(UPD_INPUT, { userId: 'u-1', role: 'Warehouse', isOnline: true }),
+    ).rejects.toThrow()
+    expect(access.updates).toHaveLength(0)
+  })
+
+  it('allows Owner', async () => {
+    const result = await updateBundle(UPD_INPUT, CTX)
+    expect(result.bundleCode).toBe('BND-7')
   })
 })

@@ -15,6 +15,7 @@ import { formatMoney } from '../../lib/money'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useAuth } from '../../lib/auth'
+import { canUpdateBundle } from '../../lib/rbac'
 import { gateContext } from '../../lib/fieldGating'
 import { useViewport } from '../../lib/device'
 import { useBundleRecord } from '../../lib/queries/useBundles'
@@ -234,6 +235,18 @@ export function BundleDetail() {
         actions={
           <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', flexWrap: 'wrap' }}>
             <Badge tone={STATE_TONE[state]} label={state} />
+            {/*
+              ABSENT, not disabled, for a role that cannot edit — `bundles_manage`
+              is Owner/Admin/Manager and offering the control to anyone else would
+              end at a refused write. The window rides along so the editor's
+              Cancel returns to the same availability question this page is
+              answering (§4.44).
+            */}
+            {user && canUpdateBundle(user.role) && (
+              <Link to={`/inventory/bundles/${bundleRef ?? bundle.id}/edit${windowSearch}`} style={{ textDecoration: 'none' }}>
+                <Button variant="secondary">Edit bundle</Button>
+              </Link>
+            )}
             <Link to={backTo} style={{ textDecoration: 'none' }}>
               <Button icon="chevron_left" variant="secondary">Back to Bundles</Button>
             </Link>

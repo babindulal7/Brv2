@@ -4,6 +4,101 @@
 
 
 
+## 2026-09-08 — A bundle can be modified: the edit screen, the write, and the one act the grants forbid
+
+`createBundle` could mint a bundle and nothing could ever change it again — no route, no
+action, no screen. This is the other half. It also closes the last item on the 4 Sep missing
+pages register that was mine to close.
+
+### Did
+
+- **`actions/inventory/updateBundle.ts`** — UPDATE_BUNDLE, `implemented: true`. Writes the
+  bundle row (name, description, category, both rates, active/archived) and its components
+  (quantity, days, mandatory, order), and inserts new components. Every reference — the
+  category, each added product, the bundle itself, each edited line — is resolved BEFORE the
+  first write, so an unresolvable one refuses with a named sentence and nothing at all is
+  written. Line writes after that point are individually confirmed and a failure is reported
+  as the partial it is.
+- **`modules/inventory/EditBundle.tsx`** at `/inventory/bundles/:bundleRef/edit`, reached from
+  an **Edit bundle** button on the detail page that is absent — not disabled — for a role that
+  cannot use it. The `?from=`/`?to=` window rides along both ways, so Cancel returns to the
+  same availability question the operator left (§4.44).
+- **`inventory.update`** — a new capability, `rbac.canUpdateBundle`, Owner · Admin · Manager.
+  Derived by the §4.20 method from live RLS (`bundles_manage` ∩ `bundle_items_all`), re-read
+  8 Sep rather than copied from `inventory.create`.
+- Supporting: `BUNDLE_UPDATED` on the event bus; `categoryId` on `BundleWithItems` (an edit
+  writes the uuid, and an untouched category must not be lost re-resolving a display name);
+  `useBundleWithItems` — the columns, not the display record, with `includeArchived` so an
+  archived bundle can be reopened to restore it.
+- **21 new tests** in `inventoryWrites.test.ts`, and the shared db mock's filtered select is
+  now awaitable as well as `maybeSingle`-able. Without that, a multi-row read resolved to the
+  builder object, `{ data, error }` destructured as undefined, and a populated table read as
+  empty — a false green, because "no rows" is a legal answer.
+
+### Ruled
+
+- **R-34 — a bundle is editable; a saved component is not removable, and no control pretends
+  otherwise.** `authenticated` holds INSERT and UPDATE on `bundles` and `bundle_items` and
+  **no DELETE** on either; `bundle_items` has no archive column; `bundle_items_qty_positive`
+  refuses zero. Three rules, each closing one of the three ways a component could be retired.
+  Repairing it is Babin's: granting DELETE is §15.2 **N-4**, adding the column is **N-5**.
+  Filed as **PLAN.md §4.52** with three options and a recommendation (the `client_flags`
+  `removed_at`/`removed_by` pattern). The screen says so in plain words where the components
+  are listed. Shipping the button instead would have been worse than it sounds: a delete
+  matching zero rows returns **no error**, so the screen would report the component gone and
+  the next load would show it still there.
+- Two smaller decisions inside R-34: the capability is named for the act, and the component
+  picker draws **no availability** — which is what keeps this screen clear of the still-open
+  §4.45(a). That ruling is about the four count columns and how ten `product_units.status`
+  members collapse into them; this picker renders none of them, so it cannot tell an operator
+  gear is free and cannot tell them wrong.
+
+### Verified
+
+- **Driven in the browser, mock corpus, signed in as Owner.** `BND-001` in the 11-14 Nov
+  window: renamed to *Documentary Camera Kit (Rev B)* and NISI Athena raised 2 → 3; toast read
+  *"BND-001 · 1 field · 1 changed"*; the detail page came back with the new name, **Needs 3**
+  on that line, **5 / 6 Ready** recomputed from 4 / 5, and the money card flipping from *"At
+  or above sum of parts"* to *"Saves 3% on parts"* because the parts sum moved. Then added
+  **DJI Ronin 4D-6K** (EQ000247) through the catalogue search: detail page now reads
+  **4 components · 6 / 7 Ready**, the new line at 1/1, Rs 7,000.
+- `npx tsc --noEmit` exit 0. `inventoryWrites.test.ts` 96/96, `rbac.test.ts` 49/49,
+  `core.test.ts` 70/70.
+- The **3/5 → 4/5 discrepancy** flagged in the previous entry is resolved and was not a build
+  difference: the dev server now reports the same 4 / 5 as the production bundle for the same
+  bundle and window. The corpus moved under both, not the code.
+- **Not** driven against live Supabase. The grant table above was read read-only from
+  `information_schema.role_table_grants`; no migration was written and none was applied.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 20 / 42 (48%) | +0 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 5 / 9 (56%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 9 / 13 (69%) | +0 |
+| Overall | mean of five | ≈ 61% | +0 |
+
+Counted by `npm run completion`, not typed. Migrations 101 files.
+
+⚠ The deltas are **not attributable to this entry**. The counter reads the working tree, which
+carries another session's uncommitted action modules and capability arms alongside this one, so
+its 20 / 42 already contained `updateBundle` when the previous entry was written. UPDATE_BUNDLE
+is one of the 20; `inventory.update` is one of the 35.
+
+### Remaining
+
+- **PLAN.md §4.52** — how a component is removed from a bundle. Blocks nothing else; the edit
+  screen ships without it.
+- **PLAN.md §4.45(a)** — Add Bundle's 10 unit statuses → 4 pools. Still the reason a bundle
+  cannot be **created** through the UI, and untouched by this work.
+- **§4.45(b)** Maintenance's one `cost` column behind two on-screen figures, and **(c)**
+  Warehouses' capacity and manager. Both still open, both still read-frozen.
+- Bundle **components cannot be reordered by drag** — `sort_order` is writable and the action
+  accepts it, but the screen offers no control. Deliberate: it is a UI affordance, not a gap.
+
 ## 2026-09-08 — V-14 closed in the tree: a staff role can be assigned at all, for the first time
 
 **Phase:** Phase 0 · **Status:** 1 P1 fixed (migration + RPCs + UI + 10 tests) · 1 doc row corrected · N-5, not applied
