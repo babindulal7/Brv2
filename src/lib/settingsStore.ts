@@ -29,6 +29,8 @@ import { toRupees } from './money'
 import { captureError } from './monitoring'
 import { FEE_PER_CREW_DAY_PAISA } from '../data/crew'
 
+import { readLocal, writeLocal, removeLocal } from './safeStorage'
+
 export type SettingKey =
   | 'organisationName'
   | 'businessDescription'
@@ -451,7 +453,8 @@ export function readSettings(): SettingsRecord {
   if (typeof window === 'undefined') return { ...SETTINGS_DEFAULTS }
   const out = { ...SETTINGS_DEFAULTS }
   for (const key of Object.keys(SETTING_SPECS) as SettingKey[]) {
-    const raw = window.localStorage.getItem(PREFIX + key)
+    /* Guarded — this sweep runs on the load path and WebKit can throw. */
+    const raw = readLocal(PREFIX + key)
     if (raw === null) continue
     const spec = SETTING_SPECS[key]
     const parsed: SettingValue = spec.kind === 'number' ? Number(raw) : raw
@@ -494,7 +497,7 @@ export function writeSettings(patch: Partial<SettingsRecord>): void {
   for (const [k, v] of Object.entries(patch) as Array<[SettingKey, SettingValue]>) {
     const problem = validateSetting(k, v)
     if (problem) throw new Error(problem)
-    window.localStorage.setItem(PREFIX + k, String(v))
+    writeLocal(PREFIX + k, String(v))
   }
 }
 
@@ -512,6 +515,6 @@ export function formatSetting(key: SettingKey, value: SettingValue): string {
 export function resetSettings(): void {
   if (typeof window === 'undefined') return
   for (const key of Object.keys(SETTING_SPECS) as SettingKey[]) {
-    window.localStorage.removeItem(PREFIX + key)
+    removeLocal(PREFIX + key)
   }
 }

@@ -16,13 +16,128 @@
   <body>
     <div id="root"></div>
     <!--
+      ── Make a white screen impossible ──────────────────────────────────────
+
+      Added 8 Sep 2026, after the app loaded on Android Chrome and failed on
+      every Apple device. Every iOS/iPadOS browser is WebKit — Chrome on iPad is
+      Safari's engine wearing Chrome's UI — so "works in Chrome on the phone,
+      fails in Chrome on the iPad" is not a browser difference at all, it is
+      Blink vs WebKit. Diagnosing that from the device is impossible when the
+      only symptom available to the operator is a blank page.
+
+      So the page reports its own failure. Anything thrown while the module
+      graph evaluates — a missing API, a SecurityError, a chunk that 404s — is
+      painted here, on the device, in words that can be read out over a phone.
+
+      Deliberately ES5: no `const`, no arrow functions, no template literals, no
+      optional chaining. This script must run on an engine too old to parse the
+      bundle it is reporting on, or it reports nothing. It is also FIRST, so it
+      is installed before the three pre-paint scripts below can throw.
+    -->
+    <script>
+      (function () {
+        var shown = false
+        var first = null
+
+        /*
+          ⛔ The first cut of this called show() straight from the handlers, and
+          that was worse than the bug it reported: `vite preview` fails to
+          register the service worker, which surfaces as an unhandled REJECTION
+          during load, so the reporter wiped #root while React was still
+          mounting into it — and React then threw
+          `insertBefore ... not a child of this node` from vendor-react. A
+          perfectly healthy app was blanked by its own error screen.
+
+          So the rule is: this reporter speaks ONLY for a page that never
+          started. It records the first error, waits, and paints only if #root
+          is still empty by then. A failed SW registration, a lazy chunk that
+          404s later, an error inside a mounted app — none of those are its
+          business; the app's own ErrorBoundary owns those.
+        */
+        function paintIfDead() {
+          if (shown || !first) return
+          var root = document.getElementById('root')
+          if (root && root.childElementCount > 0) return /* it started — say nothing */
+          shown = true
+          render(root || document.body, first)
+        }
+
+        function record(kind, msg, where) {
+          if (!first) first = { kind: kind, msg: msg, where: where }
+          /* Give React its chance first; only an empty #root is a failure. */
+          setTimeout(paintIfDead, 2500)
+        }
+
+        function render(root, e) {
+          try {
+            root.innerHTML =
+              '<div style="font:14px/1.55 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;' +
+              'max-width:640px;margin:8vh auto;padding:20px;color:#1b1b1b">' +
+              '<h1 style="font-size:19px;margin:0 0 10px">This browser could not start the app</h1>' +
+              '<p style="margin:0 0 14px;color:#555">' +
+              'The page loaded, so the link and the network are fine — the app itself stopped. ' +
+              'Read this out or screenshot it.</p>' +
+              '<pre style="white-space:pre-wrap;word-break:break-word;background:#f4f2ee;' +
+              'border:1px solid #ddd8cf;border-radius:8px;padding:12px;margin:0 0 12px;' +
+              'font:12px/1.5 ui-monospace,Menlo,monospace">' +
+              esc(e.kind + ': ' + e.msg) + (e.where ? '\n' + esc(e.where) : '') + '</pre>' +
+              '<p style="margin:0;font-size:12px;color:#777">' + esc(navigator.userAgent) + '</p>' +
+              '</div>'
+          } catch (e) {
+            /* Last resort: if even that failed, at least stop showing nothing. */
+            document.title = 'App failed to start'
+          }
+        }
+        function esc(s) {
+          return String(s).replace(/[&<>]/g, function (c) {
+            return c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'
+          })
+        }
+        window.addEventListener('error', function (e) {
+          /* A failed <script>/<link> fires an error event with no `message`;
+             those are the chunk 404s, and they matter as much as a throw. */
+          if (e && e.target && e.target !== window && (e.target.src || e.target.href)) {
+            record('Failed to load', e.target.src || e.target.href, '')
+            return
+          }
+          record('Error', (e && e.message) || 'unknown', e && e.filename ? e.filename + ':' + e.lineno : '')
+        }, true)
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e && e.reason
+          record('Unhandled promise rejection', (r && (r.message || r)) || 'unknown', (r && r.stack) || '')
+        })
+        /* The silent failure: no error at all, just an empty #root — an engine
+           that refused to parse the entry module logs to the console and throws
+           nothing the page can hear. Checked once, late, so a slow tablet is
+           not accused of being broken. */
+        window.addEventListener('load', function () {
+          setTimeout(function () {
+            if (!first) first = { kind: 'The app did not start', msg: 'No error was reported, and nothing rendered.', where: '' }
+            paintIfDead()
+          }, 8000)
+        })
+      })()
+    </script>
+    <!--
       Foundation v2.2 §4.3.11 — "applied before first paint so nothing reflows
       on load." This runs ahead of the bundle for that reason; the same value is
       written by lib/textSize.ts when the user changes it in Settings.
     -->
     <script>
       (function () {
-        var v = localStorage.getItem('br-text-size')
+        /* try/catch, because reading localStorage is not a safe operation on
+           WebKit. Safari THROWS SecurityError on the property access itself
+           under Lockdown Mode, with "Block All Cookies" set, and in some
+           Private Browsing configurations — where Chrome merely returns null.
+           Unguarded, that threw here, before first paint, and took the theme
+           and viewport scripts below with it on exactly the Apple devices the
+           app failed on. The fallback is the same value an unset user gets. */
+        var v = null
+        try {
+          v = localStorage.getItem('br-text-size')
+        } catch (e) {
+          /* No storage: use the default scale rather than no scale. */
+        }
         var s = v === 'compact' ? 0.9 : v === 'large' ? 1.15 : 1
         document.documentElement.style.setProperty('--ui-scale', String(s))
       })()
@@ -38,7 +153,16 @@
     -->
     <script>
       (function () {
-        var mode = localStorage.getItem('br-theme-mode')
+        /* Same guard, same reason as --ui-scale above. An unreadable store
+           resolves to 'light', which is what an unset user already gets, so a
+           Lockdown-Mode iPad opens on the intended default rather than on
+           nothing at all. */
+        var mode = null
+        try {
+          mode = localStorage.getItem('br-theme-mode')
+        } catch (e) {
+          /* No storage — fall through to the 'light' default below. */
+        }
         // DESIGN_DIRECTION_SPEC_v4.2 §2.1 — LIGHT is the in-app default,
         // superseding v4.1's dark-first ruling. The unset branch must agree
         // with lib/theme.tsx (which also resolves an unset user to 'light'),
@@ -81,8 +205,22 @@
         // threshold is actually crossed, not on every pixel of a drag.
         if (window.matchMedia) {
           var sync = function () { el.setAttribute('data-vp', band()) }
-          window.matchMedia('(max-width: 767px)').addEventListener('change', sync)
-          window.matchMedia('(min-width: 1280px)').addEventListener('change', sync)
+          /* `MediaQueryList.addEventListener` is Safari 14+. On 13 and earlier
+             only the deprecated `addListener` exists, and calling the modern
+             one there throws — which, unguarded and before first paint, is a
+             blank page on an older iPad rather than a stale `data-vp`. */
+          var bind = function (q) {
+            var mq = window.matchMedia(q)
+            if (mq.addEventListener) mq.addEventListener('change', sync)
+            else if (mq.addListener) mq.addListener(sync)
+          }
+          try {
+            bind('(max-width: 767px)')
+            bind('(min-width: 1280px)')
+          } catch (e) {
+            /* Band stays at whatever the first paint resolved; device.ts
+               corrects it on mount. Never worth a white screen. */
+          }
         }
       })()
     </script>

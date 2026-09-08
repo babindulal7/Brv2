@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BP, MQ, viewportFor, type Viewport } from './breakpoints'
+import { onMediaChange } from './safeStorage'
 
 /**
  * **Device capability and viewport — the primitive Law 13 requires.**
@@ -76,17 +77,21 @@ export function useViewport(): Viewport {
     // Driven by matchMedia rather than a resize listener: the browser fires
     // these only when a threshold is actually crossed, instead of on every
     // pixel of a drag.
-    const phone = window.matchMedia(MQ.phone)
-    const desktop = window.matchMedia(MQ.desktop)
     const sync = () => setVp(readViewport())
 
-    phone.addEventListener('change', sync)
-    desktop.addEventListener('change', sync)
+    /* `onMediaChange`, not `addEventListener` — `MediaQueryList` did not inherit
+       `EventTarget` in WebKit until Safari 14, so on 13 and earlier this throws
+       a TypeError. It runs in a mount effect ABOVE the app's only ErrorBoundary
+       (App.tsx wraps the routed page only), so React 18 tears down the whole
+       root and the device shows a blank white page. `safeStorage.ts` carries
+       the two-branch bind. */
+    const offPhone = onMediaChange(MQ.phone, sync)
+    const offDesktop = onMediaChange(MQ.desktop, sync)
     sync()
 
     return () => {
-      phone.removeEventListener('change', sync)
-      desktop.removeEventListener('change', sync)
+      offPhone()
+      offDesktop()
     }
   }, [])
 
@@ -127,18 +132,17 @@ export function useCapability(): Capability {
   const [cap, setCap] = useState<Capability>(readCapability)
 
   useEffect(() => {
-    const queries = [
+    const sync = () => setCap(readCapability())
+    /* Same Safari-14 reason as useViewport above. */
+    const offs = [
       '(pointer: coarse)',
       '(hover: hover)',
       '(display-mode: standalone)',
       '(prefers-reduced-motion: reduce)',
-    ].map((q) => window.matchMedia(q))
-
-    const sync = () => setCap(readCapability())
-    queries.forEach((q) => q.addEventListener('change', sync))
+    ].map((q) => onMediaChange(q, sync))
     sync()
 
-    return () => queries.forEach((q) => q.removeEventListener('change', sync))
+    return () => offs.forEach((off) => off())
   }, [])
 
   return cap

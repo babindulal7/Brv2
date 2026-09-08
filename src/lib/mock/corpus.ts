@@ -499,7 +499,13 @@ export function buildStore(): Store {
   const reservations: Row[] = []
   {
     const kitB = bundles.find((b) => b['bundle_code'] === 'BND-002')
-    const lastItem = bundleItems.filter((i) => i['bundle_id'] === kitB?.['id']).at(-1)
+    /* `Array.prototype.at()` is Safari 15.4+ (March 2022), and this line runs
+       at MODULE SCOPE while the mock corpus is built — so on an iPad or iPhone
+       below that, the entry chunk threw `at is not a function` before React
+       could mount, and the app was a blank white page with no error UI. Index
+       arithmetic costs nothing and works on every engine. */
+    const kitBItems = bundleItems.filter((i) => i['bundle_id'] === kitB?.['id'])
+    const lastItem = kitBItems.length > 0 ? kitBItems[kitBItems.length - 1] : undefined
     const held = productUnits.filter((u) => u['product_id'] === lastItem?.['product_id'])
     const booking = bookings[0]
     held.forEach((unit, index) => {
