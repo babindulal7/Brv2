@@ -10,7 +10,13 @@ import { thStyle as th } from '../../../components/ui/TableHeaderCell'
 import { useAuth } from '../../../lib/auth'
 import { canManageSettings } from '../../../lib/rbac'
 import { useTabularLayout } from '../../../lib/device'
-import { fetchStaffDirectory, revokeStaffPinFor, recordPasswordResetRequest } from '../../../lib/queries/staff'
+import {
+  fetchStaffDirectory,
+  revokeStaffPinFor,
+  recordPasswordResetRequest,
+  setStaffRole,
+  setStaffActive,
+} from '../../../lib/queries/staff'
 import type { StaffDirectoryRow } from '../../../lib/queries/staff'
 import type { SystemRole } from '../../../types/database'
 import { ToneChip, td } from './shared'
@@ -54,10 +60,19 @@ import { ToneChip, td } from './shared'
  *
  * ## Scope
  *
- * Read, reset, revoke. **No user creation and no role assignment** — those
- * write `users`, touch branch scoping and the 9-role matrix, and belong with a
- * ruling rather than with this card. `UsersRoles`'s original disclaimer is
- * narrowed to say exactly that rather than deleted.
+ * Read, reset, revoke, **assign a role and deactivate an account**.
+ *
+ * The last two arrived 8 Sep 2026 with `0101` and R-27. The Scope paragraph
+ * here used to say they "belong with a ruling rather than with this card" —
+ * that ruling is now made (Owner only, mirroring this card's own read gate) and
+ * the write path exists, so the sentence would be false if it stayed.
+ *
+ * **User CREATION is still out of scope, and not for want of a ruling.** A
+ * `users` row with no `auth.users` identity behind it cannot sign in, and
+ * minting the identity needs GoTrue's admin API and therefore the service key —
+ * which in a browser is a complete authorization bypass, as the paragraph above
+ * says about passwords. It needs an Edge Function. Until then `0101` opens no
+ * INSERT path at all, so this card cannot half-create anybody.
  */
 
 const ROLE_FILTERS: Array<SystemRole | 'All'> = [
@@ -72,7 +87,30 @@ const ROLE_FILTERS: Array<SystemRole | 'All'> = [
   'Driver',
 ]
 
+/**
+ * The roles this card may assign. `Client` is deliberately absent: it is the
+ * portal role, `auth_user_role()` returns it precisely when the caller has NO
+ * staff row, and `set_staff_role` (0101) refuses it. Offering a value the
+ * database will reject is a button that fails — the UI is narrower than the DB
+ * here, which is the direction P3 allows.
+ */
+const ASSIGNABLE_ROLES: SystemRole[] = [
+  'Owner',
+  'Admin',
+  'Manager',
+  'Coordinator',
+  'Warehouse',
+  'Technician',
+  'Accounts',
+  'Driver',
+]
+
 type StatusFilter = 'active' | 'inactive' | 'all'
+
+/** What the confirm dialog is about to do, once the Owner has agreed to it. */
+type PendingChange =
+  | { kind: 'role'; row: StaffDirectoryRow; role: SystemRole }
+  | { kind: 'active'; row: StaffDirectoryRow; active: boolean }
 
 /**
  * How long before the same person can be sent another reset link.
@@ -144,6 +182,7 @@ export function StaffDirectoryCard() {
   const [status, setStatus] = useState<StatusFilter>('active')
 
   const [confirming, setConfirming] = useState<StaffDirectoryRow | null>(null)
+  const [pending, setPending] = useState<PendingChange | null>(null)
   const [submitting, setSubmitting] = useState(false)
   /**
    * Per-row throttle. Keyed by id, holding the epoch ms of the last request.
@@ -294,6 +333,55 @@ export function StaffDirectoryCard() {
     [showSuccessToast, load],
   )
 
+  /*
+   * The id of the only active Owner, when there is exactly one.
+   *
+   * `set_staff_role` and `set_staff_active` (0101) both refuse to leave the
+   * Owner set empty — role administration is Owner-only, so zero Owners is not
+   * a state anything inside the app could recover from. This recomputes the
+   * same rule from the rows already on screen so the control is disabled with
+   * the reason visible, rather than offered and then refused by the server.
+   *
+   * It is a courtesy, not the control. The database is the control, and this
+   * can only ever be equal to or narrower than it (P3).
+   */
+  const soleActiveOwnerId = useMemo(() => {
+    const owners = rows.filter((r) => r.primaryRole === 'Owner' && r.isActive)
+    return owners.length === 1 ? (owners[0]?.id ?? null) : null
+  }, [rows])
+
+  const applyPending = useCallback(async () => {
+    if (!pending) return
+    setSubmitting(true)
+    const { error } =
+      pending.kind === 'role'
+        ? await setStaffRole(pending.row.id, pending.role)
+        : await setStaffActive(pending.row.id, pending.active)
+    setSubmitting(false)
+
+    if (error) {
+      /* Surfaced inline, never as a toast. Law 11: toasts are for successes,
+         and a refused role change is exactly the case where the operator needs
+         the database's own sentence — 0101's refusals name the reason. */
+      setMessage(error)
+      setState('error')
+      setPending(null)
+      return
+    }
+
+    const who = pending.row.fullName || pending.row.email
+    showSuccessToast(
+      pending.kind === 'role' ? 'Role assigned' : pending.active ? 'Account reactivated' : 'Account deactivated',
+      pending.kind === 'role'
+        ? `${who} is now ${pending.role}. The change is in the audit trail as a Permission Changed event.`
+        : pending.active
+          ? `${who} can use the app again.`
+          : `${who} loses the app immediately. Their sign-in account is untouched — deactivating here does not revoke it.`,
+    )
+    setPending(null)
+    void load()
+  }, [pending, showSuccessToast, load])
+
   // Owner alone, matching the view's inline predicate. Rendered as `restricted`
   // rather than `empty` — a non-Owner gets zero rows from the view, and an
   // empty table would read as "this desk has no staff".
@@ -314,8 +402,43 @@ export function StaffDirectoryCard() {
     return Math.max(0, Math.ceil((THROTTLE_MS - (Date.now() - at)) / 1000))
   }
 
+  /**
+   * The role control. A `select` rather than a menu because it is the same
+   * shape as the filter beside it and the value set is fixed and small.
+   *
+   * RULING 2026-09-08 (R-27): Owner assigns; nobody else reaches this card at
+   * all. Revert: delete this function and render `{row.primaryRole}` again.
+   */
+  const renderRoleControl = (row: StaffDirectoryRow) => {
+    const isSoleOwner = soleActiveOwnerId === row.id
+
+    if (isSoleOwner) {
+      return (
+        <Unavailable reason="This is the last active Owner. Changing their role would leave nobody who can assign roles — that is Owner-only, so the system could not be recovered from inside itself. Promote another Owner first.">
+          <span>{row.primaryRole}</span>
+        </Unavailable>
+      )
+    }
+
+    return (
+      <select
+        value={row.primaryRole}
+        onChange={(e) => setPending({ kind: 'role', row, role: e.target.value as SystemRole })}
+        aria-label={`Role for ${row.fullName || row.email}`}
+        style={{ ...selectStyle, minWidth: 132 }}
+      >
+        {ASSIGNABLE_ROLES.map((r) => (
+          <option key={r} value={r}>
+            {r}
+          </option>
+        ))}
+      </select>
+    )
+  }
+
   const renderActions = (row: StaffDirectoryRow) => {
     const remaining = throttleRemaining(row)
+    const isSoleOwner = soleActiveOwnerId === row.id
 
     return (
       <span style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -346,6 +469,21 @@ export function StaffDirectoryCard() {
         {row.hasPin && (
           <Button variant="ghost" onClick={() => void revokePin(row)}>
             Revoke PIN
+          </Button>
+        )}
+
+        {/* Deactivate is the terminal action for a staff row — Law 3, nothing is
+            deleted. It is last in the group and `ghost`, so it does not read as
+            the primary move on a directory whose everyday job is a reset. */}
+        {isSoleOwner ? (
+          <Unavailable reason="This is the last active Owner. Deactivating them would leave nobody who can reactivate anyone, and that is Owner-only. Promote another Owner first.">
+            <Button variant="ghost" disabled>
+              Deactivate
+            </Button>
+          </Unavailable>
+        ) : (
+          <Button variant="ghost" onClick={() => setPending({ kind: 'active', row, active: !row.isActive })}>
+            {row.isActive ? 'Deactivate' : 'Reactivate'}
           </Button>
         )}
       </span>
@@ -448,7 +586,7 @@ export function StaffDirectoryCard() {
                       {/* Shown because it IS the reset destination — an operator
                           deciding whether to send needs to see where it goes. */}
                       <td style={td}>{r.email}</td>
-                      <td style={td}>{r.primaryRole}</td>
+                      <td style={td}>{renderRoleControl(r)}</td>
                       <td style={td}>{r.branchCode ?? '—'}</td>
                       <td style={td}>
                         <CredentialChip row={r} />
@@ -484,6 +622,7 @@ export function StaffDirectoryCard() {
                     <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--text2)' }}>{r.email}</span>
                   </span>
                   <CredentialChip row={r} />
+                  {renderRoleControl(r)}
                   {renderActions(r)}
                 </div>
               ))}
@@ -519,6 +658,69 @@ export function StaffDirectoryCard() {
               <p style={{ margin: 0, color: 'var(--text2)' }}>
                 Supabase cannot confirm delivery — it answers the same way for an address with an account and one
                 without — so this screen will say the link was requested, never that it arrived.
+              </p>
+            </>
+          )
+        }
+      />
+
+      {/* A role change and a deactivation both get a confirm step. Not ceremony:
+          each writes a Critical-or-High audit row under the operator's name, and
+          a role select is one mis-click away from making somebody an Owner. */}
+      <ConfirmDialog
+        isOpen={pending !== null}
+        onClose={() => setPending(null)}
+        onConfirm={() => void applyPending()}
+        title={
+          pending?.kind === 'role'
+            ? `Assign the ${pending.role} role?`
+            : pending?.active
+              ? 'Reactivate this staff account?'
+              : 'Deactivate this staff account?'
+        }
+        confirmLabel={pending?.kind === 'role' ? 'Assign role' : pending?.active ? 'Reactivate' : 'Deactivate'}
+        isSubmitting={submitting}
+        description={
+          pending && (
+            <>
+              <p style={{ margin: '0 0 8px' }}>
+                <strong>{pending.row.fullName || pending.row.email}</strong>
+                {pending.kind === 'role' ? (
+                  <>
+                    {' '}
+                    moves from <strong>{pending.row.primaryRole}</strong> to <strong>{pending.role}</strong>.
+                  </>
+                ) : pending.active ? (
+                  ' regains access to the app.'
+                ) : (
+                  ' loses access to the app.'
+                )}
+              </p>
+
+              {pending.kind === 'role' && pending.role === 'Owner' && (
+                <p style={{ margin: '0 0 8px' }}>
+                  Owner is the whole system: settings, user administration, and every approval above a threshold.
+                  There is no higher role to undo it from except another Owner.
+                </p>
+              )}
+
+              {pending.kind === 'role' && ['Warehouse', 'Technician', 'Driver'].includes(pending.role) && (
+                <p style={{ margin: '0 0 8px' }}>
+                  {pending.role} is money-blind. Every rupee figure disappears from their screens — not greyed out,
+                  omitted — including on rentals they are working.
+                </p>
+              )}
+
+              {pending.kind === 'active' && !pending.active && (
+                <p style={{ margin: '0 0 8px' }}>
+                  This does <strong>not</strong> revoke their sign-in. The password and any PIN keep working; what
+                  they lose is the app, because an inactive identity resolves to Client in every policy. Revoking the
+                  account itself needs the Supabase admin API, which this screen deliberately cannot reach.
+                </p>
+              )}
+
+              <p style={{ margin: 0, color: 'var(--text2)' }}>
+                Recorded in the audit trail against your name, with the before and after values.
               </p>
             </>
           )

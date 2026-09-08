@@ -150,16 +150,26 @@ export function UsersPane() {
               </div>
             ))}
             {/*
-              Narrowed 24 Aug 2026, not deleted. The first two clauses stopped
-              being true when `Staff Directory` above started reading
-              `staff_directory_v` — there IS a user query now, and the account
-              count is on screen. What is still true is the third clause, so
-              that is all this says.
+              Narrowed twice. 24 Aug 2026: the first two clauses stopped being
+              true when `Staff Directory` above started reading
+              `staff_directory_v`. 8 Sep 2026 (RULING R-27): the third stopped
+              being true as well — the ruling exists (Owner, mirroring this
+              card's own read gate) and `0101` built the write path, so the
+              directory can now assign a role and deactivate an account.
+
+              What survives is the part that was never about a ruling:
+              CREATION. A `users` row with no `auth.users` identity cannot sign
+              in, and minting one needs the admin API and therefore the service
+              key — a complete authorization bypass in a browser. That needs an
+              Edge Function, and `0101` deliberately opens no INSERT path, so
+              nothing here can half-create a person.
             */}
             <p style={{ margin: '4px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.5 }}>
-              These are the managers named on the branch records. Creating a staff account and assigning a role are
-              still unbuilt — both write <span className="identifier">users</span>, and who may do it needs a ruling
-              rather than a form. The directory above reads staff and can recover their access; it cannot add anyone.
+              These are the managers named on the branch records. Assigning a role and deactivating an account are
+              done in the Staff Directory above — Owner only, and every change is written to the audit trail.
+              <strong> Creating</strong> a staff account is still unbuilt: a{' '}
+              <span className="identifier">users</span> row with no sign-in account behind it cannot be used, and
+              minting one needs a server-side key this app deliberately never holds.
             </p>
           </div>
         </Card>

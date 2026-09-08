@@ -212,3 +212,75 @@ export async function recordPasswordResetRequest(userId: string): Promise<{ erro
     return { error: cause instanceof Error ? cause.message : 'The reset request could not be recorded.' }
   }
 }
+
+/**
+ * Assign a staff role. **Owner only**, enforced in `set_staff_role` (0101)
+ * rather than here.
+ *
+ * ## Why this is an RPC and not a `safeUpdate('users', …)`
+ *
+ * `public.users` has no write policy at all — not for the Owner either. That is
+ * `PERMISSIONS.md` §16 V-14, and 0101 fixes it deliberately WITHOUT opening one:
+ * the column grants underneath (`has_column_privilege('authenticated',
+ * 'users', 'primary_role', 'UPDATE')` is already `true`) mean an UPDATE policy
+ * would make `email`, `branch_id` and `employee_code` writable by the same
+ * `PATCH`. The function writes one column and nothing else.
+ *
+ * It also holds an invariant a policy cannot express: **the last active Owner
+ * can be neither demoted nor deactivated.** Role administration is Owner-only,
+ * so an empty Owner set is not a recoverable state — nobody left could grant
+ * the role back. `with check` sees one row and cannot count a set.
+ *
+ * ## Why not an entry under `src/actions/`
+ *
+ * The same reason `revokeStaffPinFor` gives above: the dispatcher exists to
+ * validate, emit domain events and write an audit row for business entities. A
+ * role change emits no domain event any screen subscribes to, and its audit row
+ * is written by the function itself (`Permission Changed`, category `Users`),
+ * so registering it would mean inventing an event nothing consumes.
+ *
+ * ## RULING 2026-09-08 (R-27) — Owner, not "Admin may grant Manager"
+ *
+ * §12.2 D-8 reads *"As Admin: … grant Manager → succeeds"*. That is refused
+ * here, under §15.1 B-1 (stricter wins): `canManageSettings` is Owner-only,
+ * `staff_directory_v` returns an Admin **zero rows** to act on, and §16 V-3/V-4
+ * already caught the same document over-crediting Admin on two other approval
+ * ladders. D-8 was corrected to match rather than the code widened to fit it.
+ * Revert: change the `auth_user_role() <> 'Owner'` line in 0101.
+ */
+export async function setStaffRole(userId: string, role: SystemRole): Promise<{ error: string | null }> {
+  if (IS_MOCK) {
+    return { error: 'Assigning a role needs the live Supabase project (VITE_DATA_SOURCE=mock).' }
+  }
+  try {
+    const { error } = await supabase.rpc('set_staff_role', { p_user_id: userId, p_role: role })
+    return { error: error ? error.message : null }
+  } catch (cause) {
+    return { error: cause instanceof Error ? cause.message : 'The role could not be assigned.' }
+  }
+}
+
+/**
+ * Activate or deactivate a staff account. **Owner only**, enforced in
+ * `set_staff_active` (0101).
+ *
+ * ⚠ **This does not revoke the sign-in.** `is_active` is this schema's flag and
+ * `auth.users` is GoTrue's; the function holds no privilege there and neither
+ * does the browser. A deactivated person can still authenticate — what they
+ * lose is the app, because `auth_user_role()` resolves an inactive identity
+ * the same way it resolves an unknown one. Revoking the account itself needs
+ * the admin API, which is the same wall `StaffDirectory`'s header describes for
+ * setting a password. The screen says so rather than implying an eviction it
+ * cannot perform.
+ */
+export async function setStaffActive(userId: string, active: boolean): Promise<{ error: string | null }> {
+  if (IS_MOCK) {
+    return { error: "Changing a staff account's status needs the live Supabase project (VITE_DATA_SOURCE=mock)." }
+  }
+  try {
+    const { error } = await supabase.rpc('set_staff_active', { p_user_id: userId, p_active: active })
+    return { error: error ? error.message : null }
+  } catch (cause) {
+    return { error: cause instanceof Error ? cause.message : 'The account status could not be changed.' }
+  }
+}

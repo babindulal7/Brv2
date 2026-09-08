@@ -4,6 +4,90 @@
 
 
 
+## 2026-09-08 — V-14 closed in the tree: a staff role can be assigned at all, for the first time
+
+**Phase:** Phase 0 · **Status:** 1 P1 fixed (migration + RPCs + UI + 10 tests) · 1 doc row corrected · N-5, not applied
+
+### Did
+
+- **Verified the in-tree work another session had left unproven** before starting anything new:
+  `check:pglite` **97/97**, `tsc --noEmit` 0, `eslint --max-warnings 0` 0, `vitest` **133 files /
+  2834 tests**, all green — each run twice, once as found and once after that session's edits
+  landed mid-run. Three BEFORE/AFTER proofs executed rather than read: R-25's mapping (exactly 6
+  tests fail when reverted), `0097`'s triggers (a 1999 device timestamp survives without them,
+  is overwritten with them, `version` 1 → 2), and `0098`'s MONEY-03 drift (Rs 0.98 on the total,
+  Rs 0.48 on the VAT line, reproduced on the chain built without it).
+- **`supabase/migrations/0101_staff_roles_are_assignable.sql`** — `set_staff_role(uuid,
+  system_role)` and `set_staff_active(uuid, boolean)`. SECURITY DEFINER, `search_path` pinned,
+  revoked from `public`/`anon`, EXECUTE to `authenticated`. Each writes exactly one column, stamps
+  `updated_by`, and writes an `audit_events` row (`Permission Changed` / category `Users`,
+  Critical when Owner is on either side of the change). **No RLS write policy is added** and no
+  INSERT path exists.
+- **`src/lib/queries/staff.ts`** — `setStaffRole` / `setStaffActive`, following
+  `revokeStaffPinFor`'s shape and its stated reason for not being an `actions/` entry.
+- **`src/modules/settings/sections/StaffDirectory.tsx`** — a role `select` per row, a
+  Deactivate/Reactivate button, and a confirm dialog that names what changes, warns when the
+  target role is money-blind, and states that deactivation does **not** revoke the sign-in.
+- **`src/modules/settings/__tests__/staffDirectory.test.tsx`** — 10 tests added (16 → 26).
+- **`docs/PERMISSIONS.md`** §12.2 D-8, §16 V-14 and §16.3 corrected in the same change (B-3);
+  `UsersRoles.tsx`'s "needs a ruling rather than a form" paragraph rewritten, since the ruling now
+  exists.
+
+### Ruled
+
+- **R-27 — the Owner, and only the Owner, assigns a staff role.** Four sources said Owner
+  (`canManageSettings`, `staff_directory_v`'s inline predicate, §11.2, §12.2 D-8's own Owner
+  clause) and one said Admin (D-8's *"As Admin … grant Manager → succeeds"*). **Stricter wins
+  (B-1)**: D-8 was corrected, not the code widened. An Admin gets zero rows from the directory to
+  act on, and §16 V-3/V-4 already caught the same document over-crediting Admin twice.
+  Revert: widen the `auth_user_role() <> 'Owner'` line in `0101`.
+- **RPCs, not an `UPDATE` policy on `users`.** `authenticated` already holds `UPDATE` on
+  `users.primary_role` at the grant level, so a policy would have made `email`, `branch_id` and
+  `employee_code` writable by the same `PATCH`; and *"at least one active Owner must remain"* is a
+  statement about a set, which a `with check` cannot see. Least code, narrowest surface,
+  reversible (§15.3).
+- **Account creation stays unbuilt, and it is not a ruling gap.** Minting an `auth.users` identity
+  needs the admin API and therefore the service key — a complete authorization bypass in a
+  browser. It needs an Edge Function. `0101` opens no INSERT path so nothing can half-create a
+  person.
+
+### Verified
+
+- **`npm run check:pglite` — 99/99 applied, 0 failed** with `0101` in the chain (and 97/97 before
+  it, twice, checksum-guarded against the other session's concurrent edits).
+- **BEFORE/AFTER on the full chain, executed.** Without `0101`: the RPC does not exist and
+  `pg_policy` on `users` shows `users_select_own/r` alone — **no role is assignable by anyone,
+  Owner included.** With it: **12/12** — Warehouse refused · Owner grants Manager (§12.2 D-8) ·
+  the row changes · `updated_by` is the actor · a `Permission Changed` audit row lands
+  (Coordinator → Manager, severity High) · portal role refused · unknown identity refused ·
+  re-sending the same role is a silent no-op · deactivation applies · the last active Owner
+  refused for demotion · refused for deactivation · a session with no identity refused.
+- **`staffDirectory.test.tsx` 26/26.** Against the HEAD component (restored with `git show HEAD:`
+  and put back, md5 confirmed): **10 failed / 16 passed** — the new controls did not exist.
+- `eslint src --max-warnings 0` exit 0. `tsc --noEmit` reports **no error in any file this change
+  touches**; the three errors it does report are in `src/lib/queries/__tests__/availability.test.ts`,
+  modified by a concurrent session at 17:51 against an `availability.ts` that does not yet export
+  what it imports — their in-flight state, not this change and not HEAD.
+
+### Blocked
+
+- **N-5.** `0101` is written, numbered and proven locally; it is **not applied**. Live stops at
+  `0078` plus `0089` (ledger read 8 Sep: top row `20260907103035`), so `0101` is the sixteenth
+  unapplied migration and V-14 stays a live defect on production until Babin runs the backup step.
+- **`check:rebuild` NOT RUN** — `com.docker.service` is `Stopped` and an unelevated shell cannot
+  start it. So the chain *builds* under PGlite, but **RLS behaviour proven there is not proven for
+  production**, and nothing here is a drift test against live rows.
+- **Four of five staff still cannot sign in** (live `auth.users` = 1). The role a `0101` grant
+  writes is real, but there is still no non-Owner seat to exercise it as. §16 V-15.
+
+### Conflicts resolved this session (§15.4)
+
+| Conflict | Sources that disagreed | Decision | Why | Changed where | Revert |
+|---|---|---|---|---|---|
+| Who may assign a staff role | §12.2 D-8 ("As Admin … grant Manager → succeeds") vs `rbac.canManageSettings` (Owner) vs `staff_directory_v`'s inline `auth_user_role() = 'Owner'` vs §11.2 | **Owner only** | B-1, stricter wins. An Admin gets zero rows from the directory to act on, so D-8 describes an act its own document makes impossible; §16 V-3/V-4 already caught the same over-crediting of Admin | `0101` gate line, `queries/staff.ts`, `StaffDirectory.tsx`, §12.2 D-8, §16 V-14/§16.3 | widen the `auth_user_role() <> 'Owner'` line in `0101` |
+| How the write path is opened | REMEDIATION_AUDIT V-14 ("no INSERT/UPDATE path") implies a policy vs 0066/0068's RPC precedent on the same table | **Two SECURITY DEFINER RPCs, no policy** | The grants underneath are already wide, so a policy would expose every column; and the last-Owner invariant is about a set, which `with check` cannot see | `0101` | drop `0101`; the table returns to SELECT-only |
+| Whether `Client` is assignable to a staff row | `system_role` enum contains it vs `auth_user_role()` returning it for *no* staff row | **Refused, in the DB and absent from the UI** | A staff row whose role is Client is a contradiction the rest of the schema reads as "not staff"; deactivation is the offboarding | `0101`, `ASSIGNABLE_ROLES` in `StaffDirectory.tsx` | delete the `p_role = 'Client'` branch and add it to the array |
+
 ## 2026-09-08 — Stage 0: the token is out of the tree, line endings have an authority, booking money is guarded, and completion is counted
 
 Worked `docs/STAGE_0.md` S0-1, S0-2, S0-5 and S0-8. S0-3, S0-4, S0-6 and S0-7 were being

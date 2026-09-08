@@ -33,6 +33,8 @@ const showSuccessToast = vi.fn()
 const fetchStaffDirectory = vi.fn(async (): Promise<StaffDirectoryResult> => ({ kind: 'ok', rows: [] }))
 const revokeStaffPinFor = vi.fn(async (_id: string) => ({ error: null as string | null }))
 const recordPasswordResetRequest = vi.fn(async (_id: string) => ({ error: null as string | null }))
+const setStaffRole = vi.fn(async (_id: string, _role: string) => ({ error: null as string | null }))
+const setStaffActive = vi.fn(async (_id: string, _active: boolean) => ({ error: null as string | null }))
 
 const authState = { role: 'Owner' as string }
 
@@ -54,6 +56,8 @@ vi.mock('../../../lib/queries/staff', () => ({
   fetchStaffDirectory: () => fetchStaffDirectory(),
   revokeStaffPinFor: (id: string) => revokeStaffPinFor(id),
   recordPasswordResetRequest: (id: string) => recordPasswordResetRequest(id),
+  setStaffRole: (id: string, role: string) => setStaffRole(id, role),
+  setStaffActive: (id: string, active: boolean) => setStaffActive(id, active),
 }))
 
 window.matchMedia = ((q: string) => ({
@@ -115,6 +119,27 @@ function buttons(label: string): HTMLButtonElement[] {
   ) as HTMLButtonElement[]
 }
 
+/**
+ * Change a `select` the way React sees it.
+ *
+ * `.value = x` alone updates the DOM and nothing else — React's onChange is a
+ * delegated `change` listener, so the handler never runs and an assertion would
+ * pass against a control that does nothing.
+ */
+async function choose(el: HTMLSelectElement, value: string) {
+  await act(async () => {
+    el.value = value
+    el.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 20))
+  })
+}
+
+function roleSelect(): HTMLSelectElement | null {
+  return container.querySelector('select[aria-label^="Role for"]')
+}
+
 async function click(el: HTMLElement) {
   await act(async () => {
     el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -129,6 +154,8 @@ beforeEach(() => {
   showSuccessToast.mockClear()
   revokeStaffPinFor.mockClear().mockResolvedValue({ error: null })
   recordPasswordResetRequest.mockClear().mockResolvedValue({ error: null })
+  setStaffRole.mockClear().mockResolvedValue({ error: null })
+  setStaffActive.mockClear().mockResolvedValue({ error: null })
   fetchStaffDirectory.mockClear().mockResolvedValue({ kind: 'ok', rows: [] })
   authState.role = 'Owner'
 })
@@ -322,5 +349,147 @@ describe('Staff Directory — the unhappy paths', () => {
     })
 
     expect(text()).toContain('No staff match this search')
+  })
+})
+
+/**
+ * Role assignment — added 8 Sep 2026 with migration 0101 and R-27.
+ *
+ * What these lock is not "a select renders". It is that the control exists ONLY
+ * where the database would accept the write, and that the two cases where 0101
+ * refuses — the portal role, and the last active Owner — are never offered in
+ * the first place. A button that the server rejects is the failure mode this
+ * card was built to avoid (see the header's note on reset links).
+ */
+describe('Staff Directory — assigning a role (R-27, migration 0101)', () => {
+  it('offers the Owner a role control on a staff row', async () => {
+    fetchStaffDirectory.mockResolvedValue({ kind: 'ok', rows: [row()] })
+    await mount()
+
+    const select = roleSelect()
+    expect(select).not.toBeNull()
+    expect(select?.value).toBe('Warehouse')
+  })
+
+  it('never offers Client — 0101 refuses it, so the UI must not present it', async () => {
+    // `auth_user_role()` returns Client precisely when there is NO staff row, so
+    // "a staff row whose role is Client" is a contradiction the schema reads as
+    // "not staff". Offering it would be a select option that always fails.
+    fetchStaffDirectory.mockResolvedValue({ kind: 'ok', rows: [row()] })
+    await mount()
+
+    const options = Array.from(roleSelect()?.options ?? []).map((o) => o.value)
+    expect(options).not.toContain('Client')
+    expect(options).toContain('Manager')
+  })
+
+  it('confirms before writing, then calls set_staff_role with the chosen role', async () => {
+    fetchStaffDirectory.mockResolvedValue({ kind: 'ok', rows: [row()] })
+    await mount()
+
+    await choose(roleSelect()!, 'Manager')
+    // Nothing is written on selection alone — a role select is one mis-click
+    // away from making somebody an Owner.
+    expect(setStaffRole).not.toHaveBeenCalled()
+    expect(text()).toContain('Assign the Manager role?')
+
+    await click(buttons('Assign role').at(-1)!)
+    expect(setStaffRole).toHaveBeenCalledWith('u-9', 'Manager')
+  })
+
+  it('warns that the target role is money-blind before the Owner commits', async () => {
+    // Law 6 / N-1. Moving someone to Warehouse, Technician or Driver removes
+    // every rupee from their screens; the operator should know that before the
+    // write, not discover it from a support call.
+    fetchStaffDirectory.mockResolvedValue({ kind: 'ok', rows: [row({ primaryRole: 'Manager' })] })
+    await mount()
+
+    await choose(roleSelect()!, 'Driver')
+    expect(text()).toContain('money-blind')
+  })
+
+  it('surfaces a refusal inline and raises no success toast', async () => {
+    setStaffRole.mockResolvedValue({ error: 'Only the Owner may assign a staff role (rbac.canManageSettings).' })
+    fetchStaffDirectory.mockResolvedValue({ kind: 'ok', rows: [row()] })
+    await mount()
+
+    await choose(roleSelect()!, 'Manager')
+    await click(buttons('Assign role').at(-1)!)
+
+    expect(text()).toContain('Only the Owner may assign a staff role')
+    expect(showSuccessToast).not.toHaveBeenCalled()
+  })
+
+  it('will not let the LAST active Owner be re-roled or deactivated', async () => {
+    // 0101 refuses both, because role administration is Owner-only and an empty
+    // Owner set cannot be repaired from inside the app. The UI mirrors it so the
+    // reason is readable rather than arriving as a server error.
+    fetchStaffDirectory.mockResolvedValue({
+      kind: 'ok',
+      rows: [row({ id: 'u-1', primaryRole: 'Owner', fullName: 'Babin Dulal' }), row()],
+    })
+    await mount()
+
+    const selects = Array.from(container.querySelectorAll('select[aria-label^="Role for"]'))
+    // One control, for the Warehouse row — not two.
+    expect(selects.length).toBe(1)
+    expect((selects[0] as HTMLSelectElement).getAttribute('aria-label')).toContain('Ramesh Thapa')
+
+    const deactivate = buttons('Deactivate')
+    expect(deactivate.some((b) => b.disabled)).toBe(true)
+  })
+
+  it('offers the role control on BOTH Owners when there are two', async () => {
+    // The guard is "the last active Owner", not "any Owner". Two Owners means
+    // either can be demoted, which is exactly how a lockout is escaped.
+    fetchStaffDirectory.mockResolvedValue({
+      kind: 'ok',
+      rows: [
+        row({ id: 'u-1', primaryRole: 'Owner', fullName: 'Babin Dulal' }),
+        row({ id: 'u-5', primaryRole: 'Owner', fullName: 'Babin Shrestha' }),
+      ],
+    })
+    await mount()
+
+    expect(container.querySelectorAll('select[aria-label^="Role for"]').length).toBe(2)
+  })
+})
+
+describe('Staff Directory — deactivating an account', () => {
+  it('calls set_staff_active(false) after the confirm', async () => {
+    fetchStaffDirectory.mockResolvedValue({ kind: 'ok', rows: [row()] })
+    await mount()
+
+    await click(buttons('Deactivate')[0]!)
+    expect(setStaffActive).not.toHaveBeenCalled()
+
+    await click(buttons('Deactivate').at(-1)!)
+    expect(setStaffActive).toHaveBeenCalledWith('u-9', false)
+  })
+
+  it('says plainly that the sign-in is NOT revoked', async () => {
+    // The honest boundary: is_active gates the app, auth.users gates the login,
+    // and this screen cannot touch the second. Claiming an eviction it does not
+    // perform would be a fresh entry for the success-fabrication register.
+    fetchStaffDirectory.mockResolvedValue({ kind: 'ok', rows: [row()] })
+    await mount()
+
+    await click(buttons('Deactivate')[0]!)
+    expect(text()).toContain('does')
+    expect(text()).toContain('revoke their sign-in')
+  })
+
+  it('offers Reactivate, not Deactivate, on an inactive row', async () => {
+    fetchStaffDirectory.mockResolvedValue({ kind: 'ok', rows: [row({ isActive: false })] })
+    await mount()
+
+    // The status filter defaults to Active, so an inactive row is not on screen
+    // until it is asked for — the behaviour the reset suite above already pins.
+    await choose(container.querySelector('select[aria-label="Filter by status"]')!, 'inactive')
+
+    expect(buttons('Reactivate').length).toBe(1)
+    await click(buttons('Reactivate')[0]!)
+    await click(buttons('Reactivate').at(-1)!)
+    expect(setStaffActive).toHaveBeenCalledWith('u-9', true)
   })
 })

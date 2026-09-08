@@ -550,7 +550,7 @@ Doing this section is what makes the document "bug-free". None of it is optional
 - **D-5** As Client A: rows of Client B → 0 across bookings, invoices, payments, cases, documents; portal writes limited to the four queues.
 - **D-6** As anon / no `users` row: everything staff-side → 0 rows, role resolves `Client`.
 - **D-7** As Owner: `UPDATE audit_events` and `DELETE FROM audit_events` → refused.
-- **D-8** As Admin: grant Admin role → refused; grant Manager → succeeds. As Owner: both succeed.
+- **D-8** ⛔ **CORRECTED 8 Sep (R-27) — an Admin grants nothing.** As written this row read *"As Admin: grant Admin role → refused; grant Manager → succeeds"*, which disagrees with the rest of this document and with the code: `canManageSettings` is Owner-only, `staff_directory_v` returns an Admin **zero rows** to act on, and §16 V-3/V-4 already caught the same over-crediting of Admin on the damage and purchase ladders. §15.1 B-1 (stricter wins) settles it. **The row now reads:** as Admin, Manager, or any other non-Owner role, `set_staff_role` and `set_staff_active` → refused at every target and every value. As Owner: both succeed, except that the **last active Owner** can be neither demoted nor deactivated (migration `0101`). Executed under PGlite, 12/12.
 - **D-9** As Manager: `settings` UPDATE → refused; SELECT → succeeds.
 
 ### 12.3 Definition of done
@@ -684,7 +684,7 @@ same instance) is real but is not this application's.
 | **V-11** | §4.4, §3.1 W6 | Warehouse may Quick Add equipment | `inventory.create` maps to `canCreateBundle` = Owner · Admin · Manager; **Warehouse is refused**, and `createEquipment.ts` and `createBundle.ts` both declare that one string. W6's Quick Add raises `ActionPermissionError` today. | major |
 | **V-12** | §7 | `portal_users`, `portal_sessions`, `portal_auth_challenges` are deny-all | Only **`portal_auth_challenges`** is deny-all. `portal_users` and `portal_sessions` already carry `auth.uid()` self-read bindings and staff write paths from 0072. R-11 should be re-scoped from "write the binding" to "verify it". | major |
 | **V-13** | §3.1 E2, §4.6 | Floor and Driver submit own expenses | Live `public.expenses` INSERT is gated on `auth_is_finance_or_admin()` and the only SELECT is `auth_can_view_money()` — those three roles can neither insert their own claim nor read it back. E2 is impossible until own-row policies exist. | major |
-| **V-14** | §12.2 D-8 | Owner grants Manager → succeeds | `public.users` has exactly **one** policy (`users_select_own`, SELECT). With RLS on there is no INSERT/UPDATE path, so **no role assignment is possible for anyone**, Owner included. | major |
+| **V-14** | §12.2 D-8 | Owner grants Manager → succeeds | `public.users` had exactly **one** policy (`users_select_own`, SELECT). With RLS on there was no INSERT/UPDATE path, so **no role assignment was possible for anyone**, Owner included. **✅ FIXED 8 Sep — R-27, migration `0101`.** Fixed *without* opening a write policy: `authenticated` already holds `UPDATE` on `users.primary_role` at the grant level, so an UPDATE policy would have made `email`, `branch_id` and `employee_code` writable by the same `PATCH`. Two SECURITY DEFINER RPCs instead — `set_staff_role`, `set_staff_active` — each writing one column, Owner-gated, refusing the portal role and refusing to empty the Owner set. `users` still carries **no** write policy, which POST-CONDITION 3 asserts. **N-5: written and proven under PGlite, NOT applied to live.** | ~~major~~ → fixed in tree |
 | **V-15** | §12.2 D-suite | Nine per-role database tests | Live `auth.users` = 1. There is no Manager, Accounts, Technician, Driver or Client seat to sign in as, so D-3/D-5/D-8/D-9 have no subject. Either provision the identities or document the `app.current_user_id` impersonation harness — `auth_user_role()` supports it. | major |
 | **V-16** | §12.1 R-4 | "two 0074s exist; renumber first" | One `0074`. Duplicated prefixes are **0056** and **0076**, both applied to live. Next free is **0097**. Following R-4 literally would renumber applied migrations. | minor |
 | **V-17** | §14 Keeps | "`canCreateBooking` five roles" | No such symbol. The five-role set is real, named `BOOKING_DESK`, exposed as `canWriteBookingDesk`, and shared by three predicates. | minor |
@@ -707,3 +707,10 @@ The three that are live defects rather than documentation errors, and so outrank
 **V-2** (money-blind roles can price damage), **V-5** (Law 6's write trigger and view masking are
 not on production), **V-14** (no role can be assigned at all). Everything else is a correction to
 this document, and §16.1 is the list.
+
+⛔ **Updated 8 Sep (R-27) — V-14 is written.** `0101_staff_roles_are_assignable.sql` gives
+`users.primary_role` and `users.is_active` an Owner-only write path through two SECURITY DEFINER
+RPCs, proven on the full chain under PGlite with a 12-check behavioural probe. It is **N-5: written,
+tested locally, unapplied** — the same state as V-5. Neither is closed until Babin runs the backup
+step and applies them, so the gap between the repo and production is the risk now, not the absence
+of a fix.
