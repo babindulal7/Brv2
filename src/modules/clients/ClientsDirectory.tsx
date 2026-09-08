@@ -1,9 +1,25 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Card, Button, KpiStrip, cardStyle, Rail, SideRail } from '../../components/ui/Page'
+import { Card, Button, KpiStrip, cardStyle, Rail } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
+import {
+  ActiveFilterChips,
+  FilterButton,
+  FilterDrawer,
+  FilterOptionList,
+  filterGroupStyle,
+} from '../../components/ui/FilterDrawer'
+import type { ActiveFilter } from '../../components/ui/FilterDrawer'
+import {
+  clientFacetsFor,
+  applyFacets,
+  optionsOf,
+  facetCountsOf,
+  selectionCount,
+  type FacetSelection,
+} from './clientFacets'
 import { Modal } from '../../components/ui/Modal'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
@@ -25,7 +41,6 @@ import { clientGlance, clientDetailGroups } from '../../data/clientIntel'
 import {
   TIER_TONE,
   clientMetrics,
-  clientFilterGroupsFor,
   CLIENT_ROWS_PER_PAGE,
   creditStopFactsOf,
   evaluateCreditStop,
@@ -398,6 +413,32 @@ export function ClientsDirectory({
 }) {
   const navigate = useNavigate()
   const money = useCanViewMoney()
+
+  /*
+   * ── the faceted filter panel (P6) ──────────────────────────────────────
+   *
+   * Local state, not a URL param, and deliberately so: the directory's owned
+   * params (`filter`, `blocked`, `stop`, `q`) are each ONE value, while a
+   * selection here is a map of arrays. Encoding that in the query string would
+   * make every checkbox a history entry, so Back would walk the operator out of
+   * a filter one tick at a time instead of leaving the screen. The chips above
+   * keep their param behaviour; the panel is a working surface.
+   */
+  const [facetSel, setFacetSel] = useState<FacetSelection>({})
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const facets = useMemo(() => clientFacetsFor(money), [money])
+
+  const toggleFacet = useCallback((key: string, value: string) => {
+    setFacetSel((prev) => {
+      const cur = prev[key] ?? []
+      const next = cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value]
+      if (next.length === 0) {
+        const { [key]: _dropped, ...rest } = prev
+        return rest
+      }
+      return { ...prev, [key]: next }
+    })
+  }, [])
   const { user } = useAuth()
   const online = useNetwork()
   // `gateContext` builds a fresh object every call — memoized on the one
@@ -492,7 +533,11 @@ export function ClientsDirectory({
   const td = tdFor(density)
 
   const metrics = useMemo(() => clientMetrics(clients), [clients])
-  const filterGroups = useMemo(() => clientFilterGroupsFor(money), [money])
+  /* `clientFilterGroupsFor` is gone from this screen: it returned ten
+     `{label, icon}` pairs with no options and no predicates, which is why the
+     panel it fed could only render an "advanced filters — coming soon" row.
+     `clientFacetsFor(money)` above replaces it and carries the same Law 6 rule
+     (money-shaped groups are dropped, not rendered empty). */
 
   /**
    * **Rulings §11.2 — On Stop, derived, once.**
@@ -569,7 +614,7 @@ export function ClientsDirectory({
   )
 
   const filteredClients = useMemo(() => {
-    const rows = clients.filter((client) => {
+    let rows = clients.filter((client) => {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
         const matches =
@@ -603,6 +648,12 @@ export function ClientsDirectory({
       return true
     })
 
+    /* The panel ANDs with everything above it, exactly as the overlays do:
+       picking "Membership: Elite" narrows whatever the chips already chose, it
+       does not replace it. Applied after the predicate pass so the facet counts
+       and the row count are computed over the same set. */
+    rows = applyFacets(rows, facets, facetSel)
+
     const dir = sort.dir === 'asc' ? 1 : -1
     const value = (c: ClientRecord): string | number => {
       switch (sort.key) {
@@ -635,7 +686,7 @@ export function ClientsDirectory({
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir
       return String(va).localeCompare(String(vb)) * dir
     })
-  }, [clients, searchQuery, activeFilter, overlays, stopVerdicts, sort])
+  }, [clients, searchQuery, activeFilter, overlays, stopVerdicts, sort, facets, facetSel])
 
   const pageCount = Math.max(1, Math.ceil(filteredClients.length / perPage))
   const current = Math.min(page, pageCount)
@@ -719,6 +770,11 @@ export function ClientsDirectory({
     patchParams({ filter: null, blocked: null, stop: null, q: null })
     setSort({ key: 'name', dir: 'asc' })
     setActiveSavedView(null)
+    /* The facet panel is local state, not a URL param, so it is not covered by
+       the single `patchParams` write above and has to be cleared beside it —
+       otherwise "Clear all" leaves the drawer's badge reading "4 active" over
+       an unfiltered list. */
+    setFacetSel({})
   }
 
   /**
@@ -1199,33 +1255,62 @@ export function ClientsDirectory({
               </Button>
             ))}
 
-          <Unavailable reason="Advanced client filters are not built yet — the chips, search and column sort on this screen are the ones that exist">
-            <Button icon="tool" disabled>
-              More Filters
-            </Button>
-          </Unavailable>
+          {/* Was an `Unavailable` reading "Advanced client filters are not
+              built yet". They are now — `clientFacets.ts` carries the options,
+              the predicates and the counts, so the control does the thing its
+              label always claimed. */}
+          <FilterButton
+            onClick={() => setFiltersOpen((v) => !v)}
+            activeCount={selectionCount(facetSel)}
+            controls="clients-filters"
+            expanded={filtersOpen}
+          />
         </span>
       </div>
 
-      {/* ── filter rail + list ────────────────────────────────────────── */}
+      {/*
+        The selection, visible while the drawer is shut.
+
+        Without this the panel is a hidden mode: a list narrowed from 284 rows
+        to 9 by a facet chosen minutes ago looks like a directory that has lost
+        its clients, and the only clue is a small count on a button. Each chip
+        names the facet as well as the value ("Membership: Elite"), because
+        "Elite" alone does not say which of eight groups it came from, and
+        removing one is a single press rather than reopening the panel.
+      */}
+      <ActiveFilterChips
+        filters={facets.flatMap<ActiveFilter>((facet) =>
+          (facetSel[facet.key] ?? []).map((value) => {
+            const label = optionsOf(facet, clients).find((o) => o.value === value)?.label ?? value
+            return {
+              key: `${facet.key}:${value}`,
+              label: `${facet.label}: ${label}`,
+              onRemove: () => toggleFacet(facet.key, value),
+            }
+          }),
+        )}
+        onClearAll={clearAll}
+      />
+
+      {/* ── filters (overlay) + list ──────────────────────────────────── */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: desktop ? 'auto minmax(0,1fr)' : '1fr',
+          gridTemplateColumns: 'minmax(0,1fr)',
           gap: 'var(--sp-md)',
           alignItems: 'start',
         }}
       >
         {/*
-          Rulings §7 — below 1280 this content REFLOWS, it does not hide. The
-          same children go into `SideRail` (which is `CollapsibleAside`, and
-          therefore a 44px handle at tablet/phone) only at desktop; below that
-          they render as a plain column that `order: 2` places beneath the
-          list, so Filters and Saved Views stay reachable on the warehouse
-          tablet and on a phone — where, before this, the whole panel was not
-          rendered at all.
+          The rail is gone — and Rulings §7 ("below 1280 this content REFLOWS,
+          it does not hide") is satisfied better than it was, for the reason
+          RentalsList records at its own drawer: there is no rail left to
+          collapse, and the panel is reachable from the same Filters button at
+          every width. The 210px column it used to hold cost the table 178px at
+          the app's own 1280 baseline; `FilterDrawer` is `position: fixed`, so
+          it costs zero layout and this grid is now one column.
         */}
-        <div style={desktop ? undefined : { order: 2, display: 'grid', gridTemplateColumns: tabular ? 'repeat(2, minmax(0,1fr))' : '1fr', gap: 'var(--sp-md)', alignItems: 'start' }}>
+        <>
         {(() => {
           const filtersContent = (
             <>
@@ -1251,31 +1336,44 @@ export function ClientsDirectory({
             }
             bodyStyle={{ padding: 'var(--sp-sm)' }}
           >
-            {/* Nine dead filter rows (one per `filterGroups` entry) duplicated the
-                header's disabled "More Filters" button for a wall of chrome that
-                did nothing nine times over. Collapsed to the one row that pattern
-                needs — same `Unavailable` reason-on-long-press/hover it always had. */}
-            <Unavailable
-              reason={`Advanced filters (${filterGroups.map((g) => g.label).join(', ')}) are not built yet — use the chips, search or a saved view`}
-            >
-              <span
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 9,
-                  width: '100%',
-                  minHeight: 44,
-                  padding: '0 8px',
-                  borderRadius: 'var(--r-sm)',
-                  color: 'var(--muted)',
-                  fontSize: 'var(--t-meta)',
-                  cursor: 'not-allowed',
-                }}
-              >
-                <Icon name="tool" size={15} style={{ color: 'var(--disabled)', flexShrink: 0 }} />
-                <span style={{ flex: 1, textAlign: 'left' }}>Advanced filters — coming soon</span>
-              </span>
-            </Unavailable>
+            {/*
+              What stood here was one `Unavailable` row reading "Advanced
+              filters — coming soon", standing in for nine dead rows built from
+              `CLIENT_FILTER_GROUPS` — ten `{label, icon}` pairs with no options
+              and no predicates behind them.
+
+              These are those filters. Every option carries a live count
+              (P6: "filters carry live counts on every option"), computed over
+              the rows already in memory rather than by a query per option:
+              this screen loads the directory once and filters in the browser,
+              so a count is a synchronous pass, not a round trip.
+
+              A facet is counted with every OTHER facet applied but not its own
+              — `facetCountsOf`'s contract, and the same rule `FilterDrawer` §10
+              states for the server path. Picking one membership therefore
+              leaves the other memberships answering "and how many instead?"
+              rather than collapsing them all to zero.
+
+              Derived facets (Location, Segment, Organisation Type) read their
+              options off the loaded rows, so the panel can only ever offer a
+              value some client actually has — no dead control, ever.
+            */}
+            <div style={filterGroupStyle}>
+              {facets.map((facet) => {
+                const options = optionsOf(facet, clients)
+                if (options.length === 0) return null
+                const counts = facetCountsOf(facet, clients, facetSel)
+                return (
+                  <FilterOptionList
+                    key={facet.key}
+                    label={facet.label}
+                    options={options.map((o) => ({ value: o.value, label: o.label, count: counts[o.value] ?? 0 }))}
+                    selected={facetSel[facet.key] ?? []}
+                    onToggle={(v) => toggleFacet(facet.key, v)}
+                  />
+                )
+              })}
+            </div>
           </Card>
 
           <Card title="Saved Views" bodyStyle={{ padding: 'var(--sp-sm)' }}>
@@ -1333,9 +1431,24 @@ export function ClientsDirectory({
           </Card>
             </>
           )
-          return desktop ? <SideRail width={210} label="Filters">{filtersContent}</SideRail> : filtersContent
+          return (
+            <FilterDrawer
+              id="clients-filters"
+              open={filtersOpen}
+              onClose={() => setFiltersOpen(false)}
+              /* No `null` branch: `clients` arrives as a prop already resolved
+                 by `Clients.tsx`, so this screen has no in-flight state of its
+                 own to report — unlike RentalsList, which pages server-side. */
+              resultCount={filteredClients.length}
+              noun={filteredClients.length === 1 ? 'client' : 'clients'}
+              activeCount={selectionCount(facetSel)}
+              onClearAll={clearAll}
+            >
+              {filtersContent}
+            </FilterDrawer>
+          )
         })()}
-        </div>
+        </>
 
         <div
           style={{
