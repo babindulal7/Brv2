@@ -102,7 +102,10 @@ describe('derived options come from the rows', () => {
   })
 
   it('falls back to city when district is absent', () => {
-    const rows = [client({ district: undefined, city: 'Biratnagar' })]
+    /* `district` is simply absent, not present-and-undefined —
+       `exactOptionalPropertyTypes` makes those two different types, and the
+       absent one is what a client with no district actually looks like. */
+    const rows = [client({ city: 'Biratnagar' })]
     expect(optionsOf(district, rows).map((o) => o.value)).toEqual(['Biratnagar'])
   })
 

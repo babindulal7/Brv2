@@ -4,7 +4,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Select } from '../../components/ui'
-import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle, SideRail } from '../../components/ui/Page'
+import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
+import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
+import { useFacetCounts } from '../../lib/queries/facetCounts'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { Unavailable } from '../../components/ui/Unavailable'
@@ -47,6 +49,11 @@ import {
   CONDITION_INK,
   CATEGORY_ICON,
   FILTER_RAIL,
+  /* The option lists the two countable facets probe. Same arrays `FILTER_RAIL`
+     renders from, so a count can never be offered for an option the panel does
+     not show, or withheld from one it does. */
+  PRODUCT_CATEGORIES,
+  INV_ORDER,
   SORTS,
   SORT_UNAVAILABLE,
   ROWS_PER_PAGE_OPTIONS,
@@ -928,12 +935,15 @@ function FilterRail({
   onReset,
   money,
   activeCount,
+  counts,
 }: {
   facets: Facets
   onToggle: (key: FacetKey, value: string) => void
   onReset: () => void
   money: boolean
   activeCount: number
+  /** `{ facetKey: { option: rowsRemaining } }`. Absent group = not countable. */
+  counts?: Partial<Record<FacetKey, Record<string, number | null>>>
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set(['Category', 'Status']))
   const toggleGroup = (label: string) =>
@@ -1065,7 +1075,29 @@ function FilterRail({
                       onChange={() => onToggle(r.key, o)}
                       style={{ accentColor: 'var(--nav-active-accent)' }}
                     />
-                    <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{o}</span>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{o}</span>
+                    {/*
+                      P6 — "filters carry live counts on every option". The
+                      group header already showed how many options were TICKED;
+                      this is the different and more useful number: how many
+                      rows each option would leave. `counts` is undefined for a
+                      group whose column the query cannot count, and a value in
+                      flight renders as a dash rather than a stale figure —
+                      `FilterOptionList` §10's rule, applied to this rail.
+                    */}
+                    {r.kind === 'live' && counts?.[r.key] && (
+                      <span
+                        className="figure"
+                        style={{
+                          flexShrink: 0,
+                          fontSize: 'var(--t-th)',
+                          color: 'var(--muted)',
+                          fontVariantNumeric: 'tabular-nums',
+                        }}
+                      >
+                        {counts[r.key]?.[o] ?? '—'}
+                      </span>
+                    )}
                   </label>
                 ))}
               </div>
@@ -1216,6 +1248,8 @@ export default function Inventory() {
     [params, setParams],
   )
   const [facets, setFacets] = useState<Facets>({})
+  /* The rail became an overlay — see the drawer below for why. */
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [sort, setSort] = useState<SortKey>('Equipment A–Z')
   const [view, setView] = useState<'table' | 'grid'>('table')
   const [density, setDensity] = useState<Density>('comfortable')
@@ -1298,6 +1332,35 @@ export default function Inventory() {
   const query = useMemo(
     () => inventoryQuery(statusChip, effectiveFacets, sort),
     [statusChip, effectiveFacets, sort],
+  )
+
+  /*
+   * ── P6 facet counts ────────────────────────────────────────────────────
+   *
+   * The rail already showed a badge per GROUP: how many options are ticked.
+   * That is not the number P6 asks for. This is the other one — how many rows
+   * each option would leave — and it is the difference between reading the
+   * panel and guessing at it.
+   *
+   * `useFacetCounts` drops the counted column from the filter set before
+   * issuing its probes (`countableBase`), so ticking one Category leaves the
+   * other categories reporting what they would give instead of collapsing to
+   * zero. Gated on `filtersOpen`: this is one count query PER OPTION, and a
+   * closed panel must not spend them.
+   */
+  const countRows = useCallback(
+    async (filters: ListFilters): Promise<number | null> => {
+      if (query.impossible) return 0
+      const res = await listInventory({ ...filters, withCount: true, page: { index: 0, size: 1 } })
+      return res.total ?? null
+    },
+    [query.impossible],
+  )
+  const categoryCounts = useFacetCounts(countRows, query.filters, FACET_COLUMN.Category, PRODUCT_CATEGORIES, filtersOpen)
+  const statusCounts = useFacetCounts(countRows, query.filters, FACET_COLUMN.Status, INV_ORDER, filtersOpen)
+  const facetCounts = useMemo(
+    () => ({ Category: categoryCounts.counts, Status: statusCounts.counts }),
+    [categoryCounts.counts, statusCounts.counts],
   )
 
   /*
@@ -1692,22 +1755,38 @@ export default function Inventory() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: viewport === 'desktop' ? 'auto minmax(0, 1fr)' : 'minmax(0, 1fr)',
+              gridTemplateColumns: 'minmax(0, 1fr)',
               gap: 'var(--sp-md)',
               alignItems: 'start',
             }}
           >
-            {viewport === 'desktop' && (
-              <SideRail width={216} label="Categories">
-                <FilterRail
-                  facets={facets}
-                  onToggle={toggleFacet}
-                  onReset={clearFilters}
-                  money={money}
-                  activeCount={activeFacetCount}
-                />
-              </SideRail>
-            )}
+            {/*
+              The 216px rail and its below-1280 reflow copy are both gone, and
+              §7's rule ("collapse means reflow, not hide") is met better than
+              either managed: there is one panel, reachable from one Filters
+              button, identical at every width — so the tablet no longer reads
+              the same fourteen groups in a different place from the desktop.
+              `FilterDrawer` is `position: fixed`, so the grid is one column and
+              the table keeps the width the rail was taking.
+            */}
+            <FilterDrawer
+              id="inventory-filters"
+              open={filtersOpen}
+              onClose={() => setFiltersOpen(false)}
+              resultCount={list.loading ? null : (list.total ?? null)}
+              noun={list.total === 1 ? 'item' : 'items'}
+              activeCount={activeFacetCount}
+              onClearAll={clearFilters}
+            >
+              <FilterRail
+                facets={facets}
+                onToggle={toggleFacet}
+                onReset={clearFilters}
+                money={money}
+                activeCount={activeFacetCount}
+                counts={facetCounts}
+              />
+            </FilterDrawer>
 
             <Card bodyStyle={{ padding: 0 }}>
               {/* toolbar */}
@@ -1744,6 +1823,15 @@ export default function Inventory() {
                 )}
 
                 <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+                  {/* The only way into the filter panel now that the rail is an
+                      overlay — one control, one place, every width. */}
+                  <FilterButton
+                    onClick={() => setFiltersOpen((v) => !v)}
+                    activeCount={activeFacetCount}
+                    controls="inventory-filters"
+                    expanded={filtersOpen}
+                  />
+
                   <Unavailable reason="§4.1 — status is written by the Status Engine, never by hand, so no bulk action is offered. Nothing else is built to act on a selection yet.">
                     <Button icon="chevron_down" disabled>
                       Bulk Actions
@@ -2113,20 +2201,11 @@ export default function Inventory() {
             </Card>
 
             {/*
-              Below 1280 the rail's content renders HERE — inline, beneath the
-              list, still visible. "Collapse" means reflow, not hide
-              (`WIREFRAME_RULINGS_2026-08-12.md` §7); the fourteen groups are the
-              same fourteen, in the same order, with the same reasons.
+              The below-1280 reflow copy of the rail stood here. It is gone
+              because the drawer above serves every width from one place — two
+              copies of fourteen groups meant a tablet operator found them under
+              the list while a desktop operator found them beside it.
             */}
-            {viewport !== 'desktop' && (
-              <FilterRail
-                facets={facets}
-                onToggle={toggleFacet}
-                onReset={clearFilters}
-                money={money}
-                activeCount={activeFacetCount}
-              />
-            )}
           </div>
 
           <p style={{ margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
