@@ -29,7 +29,9 @@
     "check:lifecycle": "node scripts/e2e-lifecycle.mjs",
     "check:dump": "node scripts/check-dump.mjs",
     "completion": "node scripts/completion.mjs",
-    "lint:progress": "node scripts/lint-progress.mjs"
+    "lint:progress": "node scripts/lint-progress.mjs",
+    "db:local": "node scripts/local-db.mjs",
+    "storage:local": "node scripts/local-storage.mjs"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",

@@ -44,3 +44,13 @@ review-receipts/
 # so a tracked copy turns each commit into a snapshot of whatever OTHER sessions
 # happened to be editing at the time. Regenerable bookkeeping, not project history.
 /.impeccable/
+
+# `npm run check:lifecycle` writes this for `npm run completion` (R-29) to read
+# and for the CI job to upload. It is a measurement of one run, not history.
+.lifecycle-result.json
+
+# The Docker-free local database and object store — `npm run db:local` and
+# `npm run storage:local`. Postgres 18 (PGlite) on disk plus the bytes under
+# .localdb/storage/. Rebuildable from supabase/migrations in one command, and
+# it holds a copy of the seed corpus, so it is regenerable state, not history.
+.localdb/
