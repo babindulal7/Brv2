@@ -3,6 +3,47 @@
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
 
+## 2026-09-08 — PERMISSIONS.md is wired in, and its own supersession sweep is scoped down
+
+**Phase:** governance · **Status:** applied; no code changed
+
+### Did
+Put `docs/PERMISSIONS.md` where it is actually read from, having filed it yesterday:
+- **`PLAN.md` §0**, after the seventeen laws — names it the authority for who may do what, says
+  its P1–P10 sit beside the seventeen, and points at §16 for where it is known to be wrong.
+  PLAN.md is step 1 of CLAUDE.md's read order, so this is what makes it findable.
+- **`docs/pages/INDEX.md`** — a two-way cross-reference (see Ruled).
+- **`CLAUDE.md`** already carried §15 verbatim from yesterday (`4c35d98`).
+
+### Ruled (R-23, `RULINGS-2026-09-08.md`)
+**The supersession sweep §0 asks for is not performed.** §0 says every role/permission table in a
+module spec "becomes one line: *Permissions: see PERMISSIONS.md §4*". Checked first:
+- Every spec named by title (Foundation, Administration v3.1, Crew v3.2, Handover v1.1, Finance
+  v2.1, the 22 Jul grid) is in `ARCHIVE/mds and photos/` **outside this repo** — nothing tracked
+  here to rewrite, and `ARCHIVE/` already retires them.
+- The in-repo set that looks like a target, `docs/pages/*.md` (25 of 56 carry a role table), is
+  **not** one. Its INDEX states it records *"what the code does, not what any spec intended"*, and
+  each predicate carries a `file:line`. The sweep would have replaced the repo's most accurate
+  permission information with a pointer to a catalogue §16 measured at **26% accurate against
+  that same code**. §0's Authority cell now carries the scope inline so it is not attempted later.
+
+Numbering: R-22 was in flight in another session's working copy when this was written, so this
+ruling is **R-23** in a new dated file.
+
+### Found
+`docs/pages/*` §5 Gates is the best available source for fixing §4's catalogue — those tables
+already name the real predicates with line numbers, so §16 V-1 is largely transcription rather
+than fresh discovery. Recorded in R-23 so the next session starts there.
+
+### Verified
+Three anchored edits, each asserted to match exactly once; line endings detected per file and
+preserved (**PLAN.md is CRLF**, the other two LF — confirmed by byte count before and after).
+PLAN.md's law table is intact after the insert. No code changed; no gates run.
+
+### Blocked / next
+Unchanged from yesterday: §16.3's three live defects (V-2 money-blind roles can price damage,
+V-5 Law 6's write trigger and view masking absent from production, V-14 no role-assignment path).
+
 ## 2026-09-07 (cont.) — Return and Reset: the last two stages, and a booking that could not receive its own item
 
 **Phase:** Phase 0 · **Status:** 6 items closed + 2 stale entries closed · 2 filed · lifecycle sweep complete

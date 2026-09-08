@@ -35,6 +35,13 @@ Break any of these and the work gets reverted, however good it looks.
 
 **Gate accessibility failures are release blockers**, not backlog items.
 
+**Permissions have their own law file.** [`docs/PERMISSIONS.md`](docs/PERMISSIONS.md) is the
+single authority for *who may do what* — nine roles, the capability catalogue, money visibility
+(Law 6 in detail), the approval gates and the Owner-only list. Its ten laws **P1–P10** sit beside
+the seventeen above and do not replace them. Read it before changing any `rbac.ts` predicate, any
+RLS policy, or any capability string. **Its §16 records where it is wrong**: the rulings hold, but
+its repo-side catalogue was measured at 26% accurate on 7 Sep, so verify a row before building it.
+
 ---
 
 # 1. Where things live
@@ -613,8 +620,32 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
-## 4.48 ⬅ OPEN ×2 — two numbering choices `0085`/`0089` implement conservatively, filed 6 Sep 2026
+## 4.48 ⬅ OPEN ×1, NOW URGENT — (a) is provisionally answered on production by R-19; (b) is closed
 
+> **UPDATE 8 Sep 2026 — this is no longer hypothetical, and the clock is running.**
+>
+> `RULINGS-2026-09-07.md` **R-19** moved `number_sequences.booking.current_value` from **917 to
+> 945 on production**, and `0089` has been **applied to live** (ledger `20260907103035`). Verified
+> read-only: the live formatter now uses `greatest(padding, length(...))`, the counter is 945, and
+> the next mint is **`B-946`**, which does not collide. Every other sequence also mints correctly
+> now — `C-751`, `INV-121`, `DEP-90`, `TRF-1` — and the missing `transfer` key exists. **Booking
+> creation on live works again.**
+>
+> R-19 lands on option **(2)** of (a) below, and is explicit that it did **not** choose 946 on the
+> merits: it chose the only *non-destructive* route, because `0085`'s route renumbers all 246 live
+> bookings from `B-<n>` to bare digits — changing the identity already printed on client paper,
+> irreversibly, with no dump in existence. That reasoning is sound and I agree with it.
+>
+> **Why (a) is now urgent rather than merely open.** Nothing is foreclosed *while no booking is
+> created* — the counter is one reversible `UPDATE`. The moment a booking IS created it takes
+> `B-946`, and every number from 946 upward that Booqable later issues becomes a collision on a
+> UNIQUE column, on rows Law 3 forbids deleting. **So (a) must be ruled before the first live
+> booking, not after.** If it rules 900, the revert is `update number_sequences set current_value
+> = 917 where sequence_key = 'booking'` plus applying `0085` — but only while the count of
+> bookings above 945 is still zero.
+>
+> **(b) the transfer prefix is closed:** `TRF-` is seeded on live and mints `TRF-1`. No
+> `stock_transfers` row exists anywhere, so nothing was renumbered.
 **Raised 6 Sep 2026** while patching the numbering drafts for the 5 Sep remediation audit
 (DB-01, DB-13, DB-06). Neither was invented: each is implemented as the narrowest reading the
 rulings and `docs/SPEC-P0-3-NUMBERING.md` allow, and each is a one-line change once ruled.
