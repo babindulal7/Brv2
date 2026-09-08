@@ -1,0 +1,26 @@
+# Line endings have one authority: this file.
+#
+# Before 8 Sep 2026 there was none, and core.autocrlf=true on the Windows
+# checkout. The index was already all-LF, so the churn never showed in
+# `git status` — it showed the moment anyone flipped autocrlf, and buried
+# every real diff under ~170 files that differed only by a carriage return.
+# See docs/STAGE_0.md S0-1..S0-2 and RULINGS-2026-09-08.md R-30.
+#
+# eol=lf beats core.autocrlf, so this holds regardless of each clone's config.
+
+* text=auto eol=lf
+
+*.sh   text eol=lf
+*.mjs  text eol=lf
+*.sql  text eol=lf
+
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.rar  binary
+*.zip  binary
+*.pdf  binary
