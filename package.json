@@ -26,6 +26,7 @@
     "check:db": "node scripts/check-db.mjs",
     "check:rebuild": "node scripts/check-rebuild.mjs",
     "check:pglite": "node scripts/check-pglite.mjs",
+    "check:lifecycle": "node scripts/e2e-lifecycle.mjs",
     "check:dump": "node scripts/check-dump.mjs",
     "completion": "node scripts/completion.mjs",
     "lint:progress": "node scripts/lint-progress.mjs"
