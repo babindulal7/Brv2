@@ -400,6 +400,12 @@ _Handover Workspace and Evidence — /rentals/:no/handover, /evidence_ — 16 it
   `src/modules/rentals/HandoverWorkspace.tsx` (money-override block) · `supabase/migrations/0090_r06_handover_money_gate_warns.sql`
   ↳ The Handover instance is FIXED — the copy is now true under both the live gate and the post-0090 one, with the divergence written into the file. **The class is open**: every screen written against an unapplied migration is a candidate, and nothing checks for it. A sweep needs the live schema, not the repo's `.sql` files, as the source of truth — cite the deployed function body, not the migration.
 
+- [ ] **X-12 · P2 · BUG** — **Capability strings are COARSER than the permission grid, which is why the code and `PERMISSIONS.md` look “inverted”.** §16's V-8 and V-11 are filed as two wrong-role-set rows; they are one root cause, and it cannot be fixed by editing role lists.  
+  · `operations.perform` is declared by **four** actions — `packRental`, `handoverRental`, `returnRental`, `completeReset` — and maps to one set (`canPerformOperations` = Owner · Admin · Manager · Warehouse · Technician). §3's grid gives those four verbs **four different** role sets: Coordinator is ✅ on all four and is REFUSED by the code; Technician is 👁 view-only on Pack and Handover and is ADMITTED by the code. One string cannot express both.  
+  · `inventory.create` is declared by **both** `createBundle.ts` and `createEquipment.ts` and maps to `canCreateBundle` (Owner · Admin · Manager). §3.1 W6 grants Warehouse equipment Quick Add, so that control raises `ActionPermissionError` today — but widening the string would also hand Warehouse bundle creation, which §3.1 W7 explicitly refuses.  
+  `src/actions/core.ts` (`operations.perform`, `inventory.create`) · `src/lib/rbac.ts` (`canPerformOperations`, `canCreateBundle`) · `docs/PERMISSIONS.md` §3 grid, §3.1 W6/W7, §16 V-8/V-11
+  ↳ **Do not resolve this by editing a role list** — every such edit either refuses a role the grid grants or grants one it refuses, because two verbs share one string. The fix is to split the capabilities so each names one verb (§4's own rule: “every action declares exactly ONE capability” was honoured; what was not is that each capability names one thing). ⚠ §15.2 N-6 forbids renaming a capability string already in a released build, so this is a ruling, not a refactor: **TODO(decision)**.
+
 ## 6 · On Rent → Return
 
 _Return & Inspection Workspace — /rentals/:no/return_ — 8 items (2 P1)
