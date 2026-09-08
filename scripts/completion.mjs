@@ -19,11 +19,12 @@
  *                  modules that exist. Dispatcher plumbing (core/index/types)
  *                  and the shared floor-verb helper are not actions.
  *   Real data      each route lazily imported by App.tsx, classified by what
- *                  its own module and its local imports (depth 2) reach for:
- *                  `.from(`/`.rpc(`/`useList` = the database, an import from
- *                  `src/data/` = the seed fixtures. Score counts db-only whole
- *                  and mixed as half, because a screen that reads one table and
- *                  fakes the other three is not wired.
+ *                  the page and its own parts reach for: `.from('`/`.rpc('`/
+ *                  `useList`/an import of `src/lib/queries/` = the database, an
+ *                  import of `src/data/` = the seed fixtures. Score counts
+ *                  db-only whole and mixed as half, because a screen that reads
+ *                  one table and fakes the other three is not wired. See the
+ *                  note on DEPTH for why the closure is scoped this way.
  *   DB enforcement the nine named gates, read from `.lifecycle-result.json`.
  *                  Not re-derived here: the lifecycle run is the only thing
  *                  entitled to say whether a rule fires.
@@ -190,16 +191,27 @@ const realData = { n: buckets.db + buckets.mixed / 2, d: routes.length, buckets 
  * Normalise rather than insist, so a change of reporter does not silently
  * zero a dimension.
  */
+/*
+ * The nine gates, each mapped to the lifecycle step that decides it. `null`
+ * means NO step asserts it yet, and such a gate counts as not-in-Postgres.
+ *
+ * This mapping is the one place the counter could quietly lie: point two gates
+ * at a step that happens to be green and the score rises without any rule being
+ * added. So a gate is only green when a step actually named it. `invoice
+ * immutable` has no step because `issue_invoice` is not written — the lifecycle
+ * run's own note says a fully paid invoice stays Draft, so there is no issued
+ * invoice to try to rewrite. `client own rows` has no step at all.
+ */
 const GATES = {
   'double booking': 'L3',
   'discount path': 'L1',
   'money write': 'L12',
   'stage rows': 'L6',
   'close gate': 'L11',
-  'invoice immutable': 'L13',
+  'invoice immutable': null,
   'payments immutable': 'L13',
   'audit immutable': 'L13',
-  'client own rows': 'L12',
+  'client own rows': null,
 }
 
 let lifecycle = null
@@ -216,10 +228,12 @@ if (exists('.lifecycle-result.json')) {
     const byId = new Map(rows.map((r) => [r.id, r]))
     lifecycle = { n: rows.filter(isGreen).length, d: rows.length }
     const seenGates = Object.entries(GATES).map(([name, id]) => {
+      if (id === null) return [name, false, 'no lifecycle step asserts this yet']
       const r = byId.get(id)
-      return [name, r ? isGreen(r) : false]
+      if (!r) return [name, false, `${id} is not in this run`]
+      return [name, isGreen(r), isGreen(r) ? '' : `${id} red`]
     })
-    gates = { n: seenGates.filter(([, ok]) => ok).length, d: seenGates.length, rows: seenGates }
+    gates = { n: seenGates.filter((g) => g[1]).length, d: seenGates.length, rows: seenGates }
     const at = raw.at ?? raw.ran_at
     if (at) lifecycleAge = at
     if (rows.length === 0) problems.push('DB enforcement: .lifecycle-result.json listed no steps')
