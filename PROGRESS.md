@@ -3,6 +3,132 @@
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
 
+
+## 2026-09-08 — Stage 0: the token is out of the tree, line endings have an authority, booking money is guarded, and completion is counted
+
+Worked `docs/STAGE_0.md` S0-1, S0-2, S0-5 and S0-8. S0-3, S0-4, S0-6 and S0-7 were being
+built concurrently by another session in the same tree and were left to it; the split and
+the collision are recorded in `docs/STAGE_0.md` §0.
+
+### Did
+
+- **S0-1, the worktree purge (`79f43ac`).** Two dormant `.claude/worktrees/` checkouts still
+  held the Booqable token in plaintext, six days after it was scrubbed from HEAD and all 114
+  ancestor commits — because a worktree is a second checkout and **does not inherit
+  `.gitignore`**. Both branches were at `369b373`, fully merged, dormant since 2 Sep, and
+  their only "uncommitted" changes were four graft config files whose diffs were empty (CRLF
+  phantoms). Removed, branches deleted, `.claude/worktrees/` ignored. The main tree was
+  already clean: zero carriers in `scripts/`, zero in `graft/.cache`.
+- **S0-2, `.gitattributes` (`e57d282`).** `* text=auto eol=lf`, which beats `core.autocrlf` in
+  every clone. 163 non-dirty files converted on disk; 854 LF / 8 CRLF afterwards, the 8 being
+  the other session's live files. Committed alone, one file, 26 lines.
+- **S0-5, the money guard (`aa10bef`).** `0102_law6_money_blind_cannot_write_booking_money.sql`.
+  The last unbuilt P0.
+- **S0-8, the completion counter (`bfe5355`, `6e6d4b5`).** `npm run completion` and
+  `npm run lint:progress`. Also landed the PGlite harness it shells out to
+  (`scripts/check-pglite.mjs`, `supabase/pglite-prelude.sql`), written by the other session on
+  7 Sep and uncommitted for a day, so that every script registered in `package.json` resolves
+  to a tracked file.
+- Exported the live applied-migration list to `docs/live/schema_migrations_2026-09-08.txt`
+  (§1 precondition 2) by read-only query: 87 rows, live tops out at `0078_daily_closings`
+  plus the hand-applied `0089`. `0081` is absent, which settles S0-3's branch as rename.
+- Wrote `docs/STAGE_0.md` into the repo, spec plus an execution record of the nine places it
+  was wrong.
+
+### Ruled
+
+`RULINGS-2026-09-08.md` R-30, R-31, R-32, R-33.
+
+- **R-30** — `.gitattributes` is the authority and `git add --renormalize .` is NOT run: the
+  index is already 100% LF (873 entries, zero non-LF), so it changes no blob and its only
+  effect would be to stage another session's in-flight work inside a line-endings commit.
+- **R-31** — a Law 6 write refusal raises `42501` (HTTP 403), not `0092`'s P0001; `0092` is not
+  edited to match. Guarded columns measured from the schema, not remembered.
+- **R-32** — the completion counter's route mapper: `.from(` must require the quote, and
+  "import tree depth 2" is replaced by a closure scoped to the route's own directory.
+- **R-33** — recorded, not decided: `client_uuid` is an **idempotency key**, not a tenant id.
+
+### Verified
+
+- **The money hole, reproduced before it was closed.** PGlite, full chain, as a Warehouse seat
+  with `0102` absent: `deposit_required` 5000 → 0 ALLOWED; line `rate` 6500 → **1** ALLOWED and
+  it stuck; `qty` → 99 ALLOWED — while the same seat may not *read* those columns, and
+  `authenticated` holds UPDATE on both tables, so it is one PostgREST PATCH. With `0102`: all
+  four refused with `42501`, message begins `Law 6:`, rate unchanged. Controls hold — a
+  Coordinator still writes the deposit, and the same Warehouse seat still writes `updated_at`.
+- `discount_amount → 999999` was already refused **before** the guard — by a CHECK constraint
+  capping the value, not by Law 6. A smaller discount went straight through. Recorded because
+  a probe that only asks "did it fail?" would have marked that column safe.
+- `npm run check:pglite` — **100/100 applied, 0 failed**.
+- `npm run check:lifecycle` (the other session's script, with `0102` in the chain) — **9/13
+  green, 4 known-red, 0 failed**, and L12 "money-blind roles read no money and write none" is
+  green. That step was red before `0102`.
+- `tsc --noEmit` exit 0. `eslint src --max-warnings 0` exit 0.
+- `vitest run` — **133 files / 2848 tests passed**, run after the line-ending conversion, which
+  is the change that could plausibly have moved a snapshot.
+- The 176 files `git status` called modified after the conversion were each proved
+  byte-identical to their HEAD blob before the stat cache was rewritten; `git diff --cached`
+  stayed empty, so nothing was staged.
+
+### Blocked
+
+- **Token rotation is Babin's and has not happened.** The purge makes the old value unreachable
+  from this tree; it does not make it inert. Until Booqable → Settings → API is rotated, the
+  old key still works.
+- **The live backup (§1 precondition 1) has not been taken**, so nothing may be applied.
+  `0098`–`0102` are all N-5 blocked and none is live.
+- `docs/AUDIT_2026-09-08.md` is cited throughout `STAGE_0.md` and does not exist in this repo.
+
+### Conflicts resolved this session (§15.4)
+
+| Conflict | Sources that disagreed | Decision | Why | Changed where | Revert |
+|---|---|---|---|---|---|
+| S0-2 says renormalise the index | STAGE_0.md S0-2 vs the measured index (873/873 LF) | Do not renormalise; commit `.gitattributes` alone and convert the working tree | The churn was never in the index; renormalising would stage another session's 21 in-flight files | `.gitattributes`, R-30 | delete `.gitattributes`, `core.autocrlf=true` |
+| Law 6 write refusal error code | `0092` raises P0001 vs S0-5's draft raising 42501 | 42501, and do not edit `0092` | A permission refusal should render 403, not 400; editing a committed migration to chase consistency is worse than the inconsistency | `0102`, R-31 | change the `using errcode` |
+| Guard `qty`/`days`? | ⭐ S0-a | Guard them | They are the multiplicands of every line total; partial pickup goes through `booking_line_units`, not a line UPDATE | `0102`, R-31 | delete two comparisons |
+| "Import tree depth 2" for the route mapper | STAGE_0.md S0-8 vs the measurement (54 of 55 mixed) | Scope the closure to the route's own directory; count `src/lib/queries/` as a DB signal | A number that says the same thing about every screen is not measuring the screens | `scripts/completion.mjs`, R-32 | set `COMPLETION_DEPTH` and unscope |
+| Which lifecycle step decides each of the nine gates | the gate names vs the script's actual steps | `invoice immutable` and `client own rows` map to null and count red | Pointing a gate at a coincidentally-green step raises the score without adding a rule | `scripts/completion.mjs` | restore the ids |
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 18 / 40 (45%) | — |
+| Real data | DB-only · mixed · seed · none / 55 | 7 · 27 · 20 · 1 | — |
+| DB enforcement | gates in Postgres / 9 | 5 / 9 (56%) | — |
+| Permissions | capabilities mapped / declared | 33 / 36 (92%) | — |
+| Lifecycle | steps green / total | 9 / 13 (69%) | — |
+| Overall | mean of five | ≈ 60% | — |
+
+Migrations 100 files · `check:pglite` 100/100 applied, 0 failed. Suite: 133 files / 2848 tests
+passed. Gates read from `.lifecycle-result.json`. Δ is "—" on every row because this is the
+first counted block; the next entry gets real deltas.
+
+Counted by `npm run completion`, not typed.
+
+### Remaining
+
+**Stage 0 is not complete.** Its exit condition is "P0 #1–#4 closed in PGlite **and on the live
+project**", and nothing has been applied to live.
+
+- **Babin, 2 actions:** rotate the Booqable token; take the live backup. The second blocks
+  applying `0098 → 0099 → 0100 → 0101 → 0102`, in that order.
+- **Not yet in Postgres, 4 of 9 gates:** stage rows (L6), close gate (L11), invoice immutable
+  (no step asserts it — `issue_invoice` is not written, so a fully paid invoice stays Draft),
+  client own rows (no step at all).
+- **3 capabilities an action declares that the dispatcher does not answer:**
+  `inspection.pass`, `inspection.fail`, `inspection.create`. The P3 shape, now counted every
+  run rather than found by an audit.
+- **`booking_lines` INSERT is unguarded** — `booking_lines_all` admits a direct Warehouse
+  INSERT carrying any rate. Real, and Stage 1's: it needs a rule about who may add a line at
+  all, which is a permission question rather than a Law 6 one.
+- 22 of 40 actions still `implemented: false`; 20 of 55 routes still read only the seed
+  fixtures.
+
+**Next session starts with** Stage 1 — the stage-gate trigger requiring the floor rows each
+stage claims (lifecycle L6), which is the first of the four remaining gates and the one the
+other three depend on.
+
 ## 2026-09-08 — PERMISSIONS.md is wired in, and its own supersession sweep is scoped down
 
 **Phase:** governance · **Status:** applied; no code changed

@@ -1,0 +1,95 @@
+# supabase_migrations.schema_migrations — project sxguwvgoserhdolewibb
+# Exported 8 Sep 2026 by read-only query (STAGE_0.md §1 precondition 2).
+# 87 rows. Live tops out at 0078_daily_closings (1 Sep) plus the hand-applied
+# 0089_next_document_number_never_truncates (7 Sep, ledger 20260907103035).
+#
+# NOT APPLIED LIVE (repo has them, production does not):
+#   0079 0080 0081 0082 0083 0084 0085 0086 0087 0088 0090 0091 0092
+#   0093 0094 0095 0096 0097 0098 0099 0100 0101
+#
+# Consequence for S0-3: 0081_invoice_totals_match_engine is ABSENT from this
+# list, so the rename to 0098 is the correct branch and R-31 is not needed.
+#
+# version          name
+20260809220713   archive_bakery_pos_schema
+20260809221656   0001_enums
+20260809222747   0002_bookings
+20260809223332   0003_operations
+20260809223638   0004_inventory
+20260809223938   0005_clients
+20260809224502   0006_finance
+20260809224723   0007_admin_security
+20260809224842   0008_automation_comms
+20260809225038   0009_crew_vehicles
+20260809225134   0010_triggers_functions
+20260809225206   0011_rls_policies
+20260809225250   0012_seed_data
+20260809225322   0013_business_8_roles
+20260809225356   0014_business_8_policies
+20260809225509   0015_canonical_six_stages
+20260809225615   0016_late_fee
+20260809225726   0017_reopen_manager_role
+20260809230144   0018_manager_role_policies
+20260809230336   0019_column_level_money_masking
+20260809230415   0020_role_lookup_and_staff_retrofit
+20260809230518   0021_forward_only_stage_transitions
+20260809230602   0022_branch_zone_role_lookup_policies
+20260809231728   0023_cases_charges
+20260809231808   0024_booking_subtable_policies
+20260809231925   0025_client_subtable_policies
+20260809231953   0026_operation_session_line_policies
+20260809232026   0027_product_catalogue_policies
+20260809232056   0028_inventory_logistics_policies
+20260809232122   0029_system_config_policies
+20260809232151   0030_crew_scheduling_and_document_registry_policies
+20260809232229   0031_cleaning_and_comms_policies
+20260809232307   0032_hr_and_misc_operational_policies
+20260809232332   0033_fleet_bundle_and_sequence_policies
+20260809232421   0034_incident_and_crew_profile_policies
+20260809232507   0035_accessory_bundle_and_ledger_masking
+20260809232555   0036_crew_booking_and_vehicle_expense_policies
+20260809232635   0037_client_commercial_and_coupon_policies
+20260809232716   0038_client_money_masking_corrections
+20260809232742   0039_client_channel_identity_masking
+20260809232836   0040_booqable_sync
+20260809233113   0041_supabase_auth_bridge
+20260809233308   0042_deferred_cross_file_fks
+20260811072810   0048_view_row_predicates
+20260811072838   0049_evidence_and_crew_document_policies
+20260811072903   0050_function_hardening
+20260811075152   0051_audit_trigger_column_safety
+20260811100055   0052_client_directory_view
+20260811120753   0053_client_directory_view_contacts_membership_kyc
+20260811213139   0043_booking_flags_overdue_rename
+20260811213239   0044_law3_delete_backstops
+20260811213329   0045_reservation_capacity_ceiling
+20260811213413   0046_law4_payment_and_audit_immutability_backstops
+20260811214702   0054_rls_backstops_and_directory_block_flag
+20260812150509   0055_ruled_identifier_formats
+20260812155050   0047_seed_tail_b917_equipment_line
+20260812160730   0056_auth_role_falls_back_to_auth_uid
+20260812160830   0056_auth_role_resolves_without_pre_request_hook
+20260812163615   0057_damage_approval_rank
+20260812165503   0058_late_fee_rank_and_approver_is_actor
+20260812170827   0057_users_self_read_accepts_auth_uid
+20260812170856   0058_staff_row_for_babindulal7
+20260815185424   ruled_sequences_completion
+20260815194332   0061_bookings_deposit_masking_view
+20260822195424   0063_create_booking_function
+20260822195501   0064_narrow_purchase_approval
+20260824194129   purchase_approval_owner_manager_only
+20260828070501   0065_arm_0062_prerequisites
+20260828070623   0062_law6_column_grants_arm_the_mask
+20260828071043   0066_staff_auth_pins
+20260828071134   0067_staff_directory_view
+20260828071209   0068_credential_audit
+20260828071315   0070_create_booking_parent_line_linkage
+20260831115743   0071_create_booking_units_at_creation
+20260831120155   0072_portal_email_binding_policies
+20260831124237   0074_drop_discount_gate
+20260831131943   0075_drop_invoice_lines_discount_gate
+20260831141204   0076_seed_operational_stage_corpus
+20260831213343   0076_booking_line_units_release
+20260901050002   0077_law6_arm_the_four_unarmed_tables
+20260901114821   0078_daily_closings
+20260907103035   0089_next_document_number_never_truncates
