@@ -620,7 +620,24 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
-## 4.48 ⬅ OPEN ×1, NOW URGENT — (a) is provisionally answered on production by R-19; (b) is closed
+## 4.48 ✅ CLOSED — (a) ruled 9 Sep 2026 by R-36; (b) was already closed
+
+> **CLOSED 9 Sep 2026 — R-36.** Babin: *"now dont sync with booquable make it complete app in its
+> own."* The Booqable integration is removed entirely, so the premise of (a) is gone: Booqable is
+> not issuing order numbers, there is no band to reserve for a back-fill, and nothing can collide
+> with an OS-issued number.
+>
+> **(a) resolves to option (1), the spec literal** — the OS consumes 900-945 first. That is already
+> the state on production: `0085` is applied, `number_sequences.booking.current_value` is **899**,
+> and the next booking mints **900**. The urgency this section recorded is discharged: it warned the
+> question had to be ruled *before the first live booking*, and no booking has been created since,
+> so nothing was foreclosed.
+>
+> The table below is kept as written. Option (2)'s reasoning — reserve 900-945 because Booqable may
+> have issued them — was sound while a bridge was planned, and it is worth being able to see why it
+> stopped applying rather than only that it did.
+
+## 4.48 — the original entry, kept for its reasoning ⬅ was OPEN ×1
 
 > **UPDATE 8 Sep 2026 — this is no longer hypothetical, and the clock is running.**
 >

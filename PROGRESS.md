@@ -4,6 +4,58 @@
 
 
 
+## 2026-09-09 — Booqable is out: the app masters its own data now (R-36)
+
+**Phase:** Phase 0 · **Status:** integration removed, 20 files and ~11,000 lines gone, no behaviour changed
+
+### Did
+
+- **Removed the Booqable integration entirely**, on Babin's instruction — *"now dont sync with
+  booquable make it complete app in its own."*
+  - `src/lib/booqable/` — 12 files, **8,949 lines**, and **zero importers anywhere in `src/`**.
+    It had never been switched on.
+  - `supabase/functions/booqable-proxy` and `booqable-webhook`.
+  - Seven import/sync scripts, including the already-quarantined `full_sync.sql` and the
+    generated import SQL.
+- **Removed the data-ownership switch in `lib/dataAccess.ts`** — the part that actually mattered.
+  It classified eight tables as Booqable-owned (`products`, `bundles`, `bundle_items`,
+  `product_units`, `external_invoices` read-only; `clients`, `bookings`, `booking_lines` writable
+  only through six push functions) and **threw** for all eight, naming bridge functions that the
+  deletion above would have left non-existent. **Every table is now `os-native`.**
+- `scripts/check-db.mjs` no longer points four tables at a module that is gone, and `law17`'s doc
+  comment no longer cites a deleted file.
+
+### Ruled
+
+- **R-36 — Booqable is out; no table has a second owner.** Full entry in
+  `RULINGS-2026-09-08.md`. Revert is `git revert` of one commit.
+- **PLAN §4.48(a) is CLOSED by it.** It asked *"May the OS mint booking numbers 900-945 while
+  Booqable is still issuing?"* — the premise is gone, so it resolves to option (1), the spec
+  literal, which is already the state on production (counter 899, next booking **900**). §4.48
+  warned the question had to be ruled *before the first live booking*; none has been created
+  since, so nothing was foreclosed. The original entry is kept below the closure for its
+  reasoning.
+- **`external_refs` and `external_invoices` keep every row** (Law 3). `external_refs` is the only
+  record of which Booqable order each of the 200 imported bookings came from. Nothing writes them
+  now, and `check-db.mjs` says exactly that.
+
+### Verified
+
+- `tsc --noEmit` **0**, `eslint --max-warnings 0` **0**, full suite **green** — nothing imported
+  the deleted code, so removing it changed no behaviour. The switch's own comment predicted this:
+  *"deleting it … leaves `idempotentInsert`/`safeUpdate` and every other export above completely
+  unaffected."*
+- No migration was touched, so `check:pglite` and `check:lifecycle` are unchanged from the
+  previous entry.
+
+### Blocked
+
+- **`booqable-proxy` is still ACTIVE on the live project** and still holds the API token as a
+  secret. Deleting a deployed edge function is not something this session can do — it is one
+  action in the Supabase dashboard. Doing it also retires the token the 5 Sep audit found in the
+  working tree, which is better than rotating a credential for an integration that no longer
+  exists.
+
 ## 2026-09-08 — Every unapplied migration is on production: 0079 through 0103, twenty files
 
 **Phase:** Phase 0 · **Status:** the repo and the live database are the same schema for the first time · N-5 lifted by Babin, in writing

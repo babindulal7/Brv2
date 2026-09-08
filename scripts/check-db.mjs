@@ -131,10 +131,15 @@ const TARGETS = [
   ['branches', 'Finance filters · Settings ▸ Branches'],
   ['operation_sessions', 'Packing · Handover · Return · Reset'],
   ['cleaning_queue_entries', 'Reset workspace'],
-  ['external_refs', 'lib/booqable/sync.ts (no screen imports it yet)'],
-  ['external_invoices', 'lib/booqable/sync.ts'],
-  ['sync_outbox', 'lib/booqable/sync.ts'],
-  ['sync_conflicts', 'lib/booqable/sync.ts'],
+  /* R-36 (9 Sep 2026): the Booqable bridge is gone and these four tables have no
+     writer at all now. They are kept because Law 3 keeps rows — `external_refs`
+     still records which Booqable order each of the 200 imported bookings came
+     from, which is the only provenance that import left behind. Nothing reads
+     or writes them at runtime; do not re-point them at a screen. */
+  ['external_refs', 'historical only — Booqable import provenance (R-36, no writer)'],
+  ['external_invoices', 'historical only — no writer since R-36'],
+  ['sync_outbox', 'the offline queue, not a Booqable table — still unused'],
+  ['sync_conflicts', 'the offline queue, not a Booqable table — still unused'],
 ]
 
 /** Law 6 — a money-blind session SHOULD read zero from every one of these. */

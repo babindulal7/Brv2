@@ -225,172 +225,31 @@ export async function safeUpdate<
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- * Booqable source switch — spec §4 ("dataAccess.ts gains a source switch")
- * ADDITIVE ONLY. `idempotentInsert`/`safeUpdate` above are NOT modified.
+ * The Booqable source switch USED TO LIVE HERE. Removed 9 Sep 2026, R-36.
  *
- * Why the switch cannot live inside them: `src/lib/booqable/sync.ts` (the
- * bridge) already calls `idempotentInsert`/`safeUpdate` directly, in BOTH
- * directions —
- *   - pull (Booqable → local mirror): `writeBooqableRow`/`updateBooqableRow`
- *     write `products`/`bundles`/`bundle_items`/`product_units`/
- *     `external_invoices`/`clients`/`bookings`/`booking_lines`/… straight
- *     through these two functions (sync.ts's own header: "Calls the REAL
- *     `idempotentInsert`… so Law 9/offline-queue behaviour is identical,
- *     not reimplemented").
- *   - push (local → Booqable, the 6-op write-back allowlist, sync.ts §11):
- *     `pushClientCreate`/`pushClientContactUpdate`/`pushOrderCreate`/etc.
- *     ALSO call `idempotentInsert`/`safeUpdate` directly for their local
- *     write, then separately enqueue `sync_outbox`.
- * A redirect placed inside `idempotentInsert`/`safeUpdate` themselves would
- * therefore either (a) infinite-loop the instant a push* function's own
- * internal call re-entered the same switch, or (b) break every pull-phase
- * write the instant a read-only table's redirect turned into a guard —
- * `writeBooqableRow('products', …)` calling a guarded `idempotentInsert`
- * would reject the very write that keeps the local mirror in sync. Neither
- * is safe, so the switch lives in NEW, additive, opt-in wrapper functions
- * instead — explicitly permitted by this task's own brief ("or in new thin
- * wrapper functions if that is cleaner"). `idempotentInsert`/`safeUpdate`'s
- * behaviour, and every existing call site (including every one inside
- * `booqable/sync.ts`), is completely untouched — screens and engines do not
- * need to change.
+ * It classified eight tables as Booqable-owned — `products`, `bundles`,
+ * `bundle_items`, `product_units`, `external_invoices` read-only, and
+ * `clients`, `bookings`, `booking_lines` writable only through six push
+ * functions in `src/lib/booqable/sync.ts` — and `insertViaSourceSwitch` /
+ * `updateViaSourceSwitch` THREW for all eight, naming a bridge function to
+ * call instead.
  *
- * A screen or engine NOT yet using the dedicated bridge functions can call
- * `insertViaSourceSwitch`/`updateViaSourceSwitch` below instead of the raw
- * functions above, to get a clear, fail-fast error — instead of a silent
- * local write that never reaches Booqable and is quietly overwritten by the
- * next pull — whenever the table it targets is Booqable-mastered.
+ * Babin ruled the Booqable integration out entirely (R-36): this is a
+ * standalone system, there is no bridge, and no table has a second owner. The
+ * switch's own comment anticipated exactly this removal — *"Deletion at month
+ * 7: everything below this comment is self-contained; deleting it (and
+ * `src/lib/booqable/`) leaves `idempotentInsert`/`safeUpdate` and every other
+ * export above completely unaffected."* That held: nothing in `src/` imported
+ * either function, so this deletion changed no behaviour anywhere.
  *
- * Deletion at month 7: everything below this comment is self-contained;
- * deleting it (and `src/lib/booqable/`) leaves `idempotentInsert`/
- * `safeUpdate` and every other export above completely unaffected.
+ * **Every table is now os-native.** `idempotentInsert` and `safeUpdate` above
+ * are the write path, for every table, with no exceptions and no second
+ * system to defer to. Their own guards are unchanged — `immutableTables`
+ * still refuses `payments`, `deposit_movements`, `audit_events` and
+ * `booking_stage_transitions` (Law 4), and that has nothing to do with
+ * Booqable.
+ *
+ * `external_refs` and `external_invoices` keep their rows: `external_refs`
+ * records which Booqable order each of the 200 imported bookings came from,
+ * and Law 3 does not delete history. Nothing writes them any more.
  * ═══════════════════════════════════════════════════════════════════════ */
-
-export type DataSource = 'os-native' | 'booqable'
-
-/**
- * Spec §5.1 — Booqable-mastered local tables the OS never writes to
- * directly; `booqable/sync.ts`'s pull phases (§3-§9) are the ONLY
- * legitimate writer, via the untouched `idempotentInsert`/`safeUpdate`
- * above. Table names here are the REAL local tables `booqable/sync.ts`
- * writes (its own header: the conceptual spec names like
- * "equipment"/"equipment_models" do not match `database.ts` — documented
- * drift, not this file's to fix).
- *
- * Deliberately excludes the spec's "payments mirror" / "settings mirror"
- * entities (locations/tax_rates/coupons/employees/payment_methods) — no
- * confirmed local table name for any of them exists anywhere in this
- * codebase yet; guessing one would be exactly the invented product decision
- * CLAUDE.md forbids. Also excludes `payments`/`deposit_movements` — already
- * governed by the `immutableTables` guard above, and their Booqable-vs-OS
- * ownership is a live, unresolved tension `booqable/sync.ts`'s own header
- * flags (TODO(decision)), not settled here.
- */
-const BOOQABLE_READ_ONLY_TABLES: ReadonlySet<string> = new Set([
-  'products', // Booqable products/product_groups
-  'bundles', // Booqable bundles/collections
-  'bundle_items',
-  'product_units', // Booqable stock_items/barcodes
-  'external_invoices', // Booqable documents — Booqable is sole issuer, spec §5.3
-  /*
-   * ⚠ `inventory_reservations` WAS here, and was REMOVED 16 Aug 2026 by an
-   * explicit ruling — PLAN.md §4.30(a). Do not restore it without re-reading
-   * that section; its absence is a decision, not an omission.
-   *
-   * Spec §5.1 called it Booqable-mastered, writable "indirectly via order
-   * writes only". Holding to that made Confirm-time serial assignment
-   * unbuildable, and that in turn blocked Packing, Handover, Return, Reset and
-   * Evidence equally — nothing in the app could write an assignment anywhere
-   * safe. The two candidate tables, measured live:
-   *
-   *   - `inventory_reservations` — carries the ONLY double-booking defence in
-   *     the schema, `exclude using gist (asset_id with =, period with &&)
-   *     where (released_at is null and asset_id is not null)` — but was refused
-   *     to the OS by this very set;
-   *   - `booking_line_units` — writable, and has NO overlap protection at all.
-   *
-   * So the protected table could not be written and the writable one was not
-   * protected. The ruling took the option where the DATABASE refuses a
-   * double-booking rather than the app trying not to make one.
-   *
-   * The OS schema was plainly designed for this all along:
-   * `inventory_reservations.reserved_at` is documented as *"Written by the
-   * Confirm transaction, never earlier"* (`0003:1483`), and the table carries
-   * four `TRIGGER REQUIRED` comments describing Confirm-time behaviour. RLS was
-   * already open to it too — `inventory_reservations_all` is the booking-desk
-   * five, the same set as `rental.confirm`.
-   *
-   * This DOES override a written spec, and that is the point of recording it
-   * here rather than quietly deleting a line. If the Booqable bridge is ever
-   * switched on, §5.1 and §4.30(a) must be reconciled deliberately.
-   */
-])
-
-/**
- * Spec §5.1 — Booqable-mastered local tables the OS MAY write to, but only
- * through the six guarded, allowlisted functions `booqable/sync.ts` §11
- * already exports (`pushClientCreate`, `pushClientContactUpdate`,
- * `pushOrderCreate`, `pushOrderReserve`, `pushOrderStart`, `pushOrderStop`)
- * — each carries a guard (duplicate check, discount gate, availability,
- * workspace sign-off) that a generic `(table, payload)` call has no way to
- * evaluate itself, so this switch never attempts to synthesize one; it only
- * refuses the generic call and names the real function to use instead.
- */
-const BOOQABLE_BRIDGE_WRITABLE_TABLES: ReadonlySet<string> = new Set([
-  'clients', // Booqable customers
-  'bookings', // Booqable orders
-  'booking_lines', // Booqable order_lines
-])
-
-/** Looks up which system owns `table`, per the spec §5 ownership map. Any table not named in either set above is `'os-native'` — the default, and the overwhelming majority of `Database['public']['Tables']`. */
-export function resolveDataSource(table: string): DataSource {
-  return BOOQABLE_READ_ONLY_TABLES.has(table) || BOOQABLE_BRIDGE_WRITABLE_TABLES.has(table) ? 'booqable' : 'os-native'
-}
-
-function booqableRedirectMessage(table: string): string {
-  if (BOOQABLE_BRIDGE_WRITABLE_TABLES.has(table)) {
-    return `[DataAccess] Booqable Ownership: '${table}' is Booqable-mastered (spec §5.1) and OS writes to it are only allowed through the guarded push functions in src/lib/booqable/sync.ts (pushClientCreate / pushClientContactUpdate / pushOrderCreate / pushOrderReserve / pushOrderStart / pushOrderStop) — call one of those instead of a generic write.`
-  }
-  return `[DataAccess] Booqable Ownership Violation: '${table}' is Booqable-mastered and read-only from the OS (spec §5.1/§5.3) — only src/lib/booqable/sync.ts's pull phases may write it.`
-}
-
-/**
- * Source-switched insert: an `os-native` table behaves EXACTLY like
- * `idempotentInsert` (it IS `idempotentInsert`, called unchanged, so Law
- * 8/9 and the offline queue behave identically); a Booqable-mastered table
- * throws immediately, naming the correct bridge function, instead of
- * silently writing a row that never reaches Booqable and gets overwritten
- * on the next pull.
- */
-export async function insertViaSourceSwitch<
-  TTable extends keyof Database['public']['Tables'],
-  TInsert extends Database['public']['Tables'][TTable]['Insert']
->(
-  table: TTable,
-  payload: Omit<TInsert, 'client_uuid'> & { client_uuid?: string }
-) {
-  if (resolveDataSource(String(table)) === 'os-native') {
-    return idempotentInsert(table, payload)
-  }
-  throw new Error(booqableRedirectMessage(String(table)))
-}
-
-/**
- * Source-switched update: an `os-native` table behaves EXACTLY like
- * `safeUpdate` (it IS `safeUpdate`, called unchanged — including its
- * `immutableTables` guard); a Booqable-mastered table throws immediately,
- * naming the correct bridge function.
- */
-export async function updateViaSourceSwitch<
-  TTable extends keyof Database['public']['Tables'],
-  TUpdate extends Database['public']['Tables'][TTable]['Update']
->(
-  table: TTable,
-  id: string,
-  payload: TUpdate,
-  clientUuid?: string
-) {
-  if (resolveDataSource(String(table)) === 'os-native') {
-    return safeUpdate(table, id, payload, clientUuid)
-  }
-  throw new Error(booqableRedirectMessage(String(table)))
-}

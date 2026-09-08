@@ -28,8 +28,8 @@ import createRentalSrc from '../../actions/rentals/createRental.ts?raw'
  * It can be that crude because it is already true. The stored `delivery_type`
  * enum really does spell its first member `'Customer Pickup'`
  * (`0001_enums.sql:34,280`), and three files mirror that wire value on purpose —
- * `types/database.ts`, `data/handover.ts`, `booqable/map/orders.ts`. None is in
- * the UI layer. The crossing happens in exactly two places, both outside
+ * `types/database.ts` and `data/handover.ts`. (A third, `booqable/map/orders.ts`,
+ * mirrored it too until R-36 removed the bridge.) Neither is in the UI layer. The crossing happens in exactly two places, both outside
  * `modules/` and `components/`: `deliveryTypeLabel()` maps the enum to "Client
  * Pickup" for display, and `deliveryTypeFromLabel()` maps back on write. So the
  * UI layer needs no exception, and a guard that needs no exception is one that
