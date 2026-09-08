@@ -25,7 +25,10 @@
     "check:contrast": "node scripts/check-contrast.cjs",
     "check:db": "node scripts/check-db.mjs",
     "check:rebuild": "node scripts/check-rebuild.mjs",
-    "check:dump": "node scripts/check-dump.mjs"
+    "check:pglite": "node scripts/check-pglite.mjs",
+    "check:dump": "node scripts/check-dump.mjs",
+    "completion": "node scripts/completion.mjs",
+    "lint:progress": "node scripts/lint-progress.mjs"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
@@ -46,6 +49,7 @@
     "vite-plugin-pwa": "^1.3.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@eslint/js": "^9.39.5",
     "@tailwindcss/vite": "^4.1.11",
     "@types/react": "^18.3.18",
