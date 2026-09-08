@@ -1,0 +1,54 @@
+{
+  "taken": "2026-09-08",
+  "purpose": "Pre-0085 booking_no values for all 246 live bookings, so the renumber is reversible.",
+  "total": 246,
+  "booqable_aligned": {
+    "count": 200,
+    "range": "B-700 .. B-899",
+    "id_rule": "id = '30000000-0000-0000-0000-' || lpad((900 - <number>)::text, 12, '0')  — verified against all 200 rows: B-700 -> ...000000000200, B-899 -> ...000000000001",
+    "note": "0085 keeps these numbers, stripping the 'B-' prefix only (R-10)."
+  },
+  "seed_block": {
+    "count": 46,
+    "range": "B-900 .. B-945",
+    "note": "0085 moves these to the 90000 band (R-11), freeing 900-945 for real Booqable orders. Random uuids, listed in full below as [id, booking_no].",
+    "rows": [
+      ["70633ce1-f878-4540-8042-290c2dc5aff8","B-900"],["98b987da-c3b1-454f-b37a-01947237a515","B-901"],
+      ["61d4ca71-7474-4bbe-9dee-e3c365832bee","B-902"],["38016a5a-d216-4bff-9679-23726247d35a","B-903"],
+      ["b5dcc5ea-a44d-4458-8728-3437c16c45b2","B-904"],["4dcfce70-a62f-4821-a578-4194cb4e4061","B-905"],
+      ["d71b6b34-6891-4274-9a38-f246d512cae6","B-906"],["170a57b9-4f14-4bdf-9077-c29e9a84dd65","B-907"],
+      ["76934a86-5dc9-42c3-b288-74ca9f4bd275","B-908"],["9f50ed85-1313-4472-b267-60567c9c4624","B-909"],
+      ["3c891782-bfd2-4cbe-92a9-c4ce47415fde","B-910"],["556072a8-5880-4387-8dfa-148621b5239a","B-911"],
+      ["b860a9af-58d0-438c-bc3a-f8bec51a5eb4","B-912"],["c980e51b-25d2-427b-a6be-10307dedc410","B-913"],
+      ["d7376857-b744-46ec-a44d-22dca8b330ee","B-914"],["b724dc7b-cbcb-4fa5-bb14-b38c94ff5498","B-915"],
+      ["f1a1da44-ed24-49c6-8c15-f080443e9562","B-916"],["f559ebd9-cd2d-4b79-b050-c0a025c6f06c","B-917"],
+      ["08779bf8-665b-412c-ab98-a012dc6e8b7a","B-918"],["bbf138c5-197d-4cbc-be80-4f8be902e582","B-919"],
+      ["18033a87-f869-48f6-b461-b437d098aedc","B-920"],["1671e5e6-14ec-4bae-9e51-3bcd70e1ce36","B-921"],
+      ["839593ab-c274-47d8-9fa7-687fa1a48c0f","B-922"],["4dabc262-185c-4a2e-9b09-6343a344ce1b","B-923"],
+      ["a6c091e3-bff0-4cff-84a1-3dcfcc752d64","B-924"],["df4f1ee0-c7a5-4ceb-80b6-d75f7d35599a","B-925"],
+      ["d6e5af36-33b4-4496-8b84-adc2cf06a327","B-926"],["51b695e5-45b0-4a5e-82cb-213d5caa18bd","B-927"],
+      ["826fd23c-d488-4ed5-aaf0-76292eac5f5e","B-928"],["bafccee6-d19f-4251-a1ae-3d1e23e47db3","B-929"],
+      ["9454fa78-f7cf-4181-aa0c-ff94963a896d","B-930"],["ff18a190-b1a6-4eac-bb9b-4da39b8fbea8","B-931"],
+      ["31843132-92b7-4a3e-8bcd-1ee84464e0ee","B-932"],["b661ee7d-6ca0-452e-9016-b27bbf54dbb6","B-933"],
+      ["93abc2f6-39d7-47dd-911b-d2ee87761baa","B-934"],["38d7514e-5a83-4557-8488-00302f1c6cc8","B-935"],
+      ["b9abeef3-e37c-4248-86d8-fc2129e198dd","B-936"],["8c57f9f8-762a-4904-9055-d94d55373da5","B-937"],
+      ["8a48edb0-6ad5-4209-9a2a-85ff4dc562be","B-938"],["e4170a43-fa70-4003-a119-6d6b633ef993","B-939"],
+      ["72177fb9-ea5b-4941-8422-01ad3e7b3da1","B-940"],["1b92ab01-b30d-4b29-8099-c326cb525d2d","B-941"],
+      ["21027f6e-d214-49cc-92b7-8e045b363852","B-942"],["77136886-112b-46be-9227-7b1a275a2e00","B-943"],
+      ["5f156069-64ab-4539-afda-e3caa670b484","B-944"],["c79f0313-119e-41de-9df2-ecb456965555","B-945"]
+    ]
+  },
+  "number_sequences_before": [
+    {"sequence_key":"invoice","prefix":"INV-","padding":1,"include_year":false,"current_value":120},
+    {"sequence_key":"payment","prefix":"PAY-","padding":4,"include_year":true,"current_value":93},
+    {"sequence_key":"membership","prefix":"M-","padding":1,"include_year":false,"current_value":0},
+    {"sequence_key":"quote","prefix":"Q-","padding":1,"include_year":false,"current_value":0},
+    {"sequence_key":"bundle","prefix":"BND-","padding":1,"include_year":false,"current_value":0},
+    {"sequence_key":"deposit","prefix":"DEP-","padding":1,"include_year":false,"current_value":89},
+    {"sequence_key":"expense","prefix":"EXP-","padding":1,"include_year":false,"current_value":0},
+    {"sequence_key":"equipment","prefix":"EQ","padding":6,"include_year":false,"current_value":1150},
+    {"sequence_key":"client","prefix":"C-","padding":1,"include_year":false,"current_value":750},
+    {"sequence_key":"booking","prefix":"B-","padding":1,"include_year":false,"current_value":945},
+    {"sequence_key":"transfer","prefix":"TRF-","padding":1,"include_year":false,"current_value":0}
+  ]
+}

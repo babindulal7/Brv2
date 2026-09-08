@@ -4,6 +4,103 @@
 
 
 
+## 2026-09-08 — Every unapplied migration is on production: 0079 through 0103, twenty files
+
+**Phase:** Phase 0 · **Status:** the repo and the live database are the same schema for the first time · N-5 lifted by Babin, in writing
+
+### Did
+
+- **Babin said "now apply everything".** That is the explicit word `§15.2 N-5` requires, so all
+  twenty remaining migrations were applied to `sxguwvgoserhdolewibb` in filename order, through
+  the MCP `apply_migration` channel, each one whole with its own `begin;`/`commit;`:
+
+      0079 0080 0085 0086 0087 0088 0090 0091 0092 0093
+      0094 0095 0096 0097 0098 0099 0100 0101 0102 0103
+
+- **Step 0's backup, as far as this session could perform it.** `pg_dump` needs the database
+  password, which is not available here, so instead: schema `backup_2026_09_08` on the live
+  project holds a row copy of all 15 non-empty public tables (**6,539 rows**), and
+  `backups/live-2026-09-08/bookings_no_map.json` holds the pre-`0085` `id → booking_no` map for
+  all 246 bookings off the database. **It captures rows only** — no schema, functions, policies
+  or grants. A real dump and a restore drill are still owed.
+- **Two operational steps that are not in any file:**
+  - `vacuum (analyze) public.bookings` before `0088`. Its `create index ((booking_no)::bigint)`
+    scans with SnapshotAny and still saw `0085`'s recently-dead `B-918` tuples, which is exactly
+    the failure `0085`'s header predicts. After the vacuum it built.
+  - `0102`'s probe was corrected before it could apply — see *Ruled*.
+
+### Ruled
+
+- **`0102`'s behavioural probe was wrong, not its guard.** It wrote
+  `update bookings set deposit_required = 0`, and **245 of production's 246 bookings already
+  hold 0**, so `is distinct from` was false, the guard correctly ignored a write that changed
+  nothing, and the assertion reported a Law 6 breach that had not happened. Corrected to
+  `coalesce(v_deposit, 0) + 1` (and the line probe to `v_rate + 1`) so the probe moves the value
+  it claims to test. The guard itself was not touched and refuses as written.
+  Revert: restore the two literals.
+- **Applying `0085` after the already-applied `0089` is not a regression.** `0085` re-creates
+  `next_document_number`, and its body carries the same `greatest(padding, length(v))`
+  never-truncate width `0089` introduced — verified by reading `pg_proc` on live after the fact,
+  not by trusting the header that says so.
+
+### Verified
+
+Measured on production after the last file landed, not inferred:
+
+| | Before | After |
+|---|---|---|
+| `booking_no` shape | `B-700` … `B-945` | 246 bare integers; 700-899 kept, 46 parked at 90000+, **900-945 free** |
+| next booking number | `B-9` then a unique violation | **900**, and repeatable |
+| views writable by `anon`/`authenticated` | 26 of 26 | **0** |
+| `anon` can INSERT `audit_events` | yes | **no** |
+| a role can be assigned | by nobody, Owner included | `set_staff_role` / `set_staff_active`, Owner only |
+| an invoice can be raised | by nobody | `create_invoice`, R-05's four roles |
+| invoice arithmetic | trigger 2 dp + hardcoded 0.13 | `money.ts` exactly — §2.8 reads 9293 / 123457 / 16049 / 139506 |
+| a discounted booking | refused outright (22P02) | created, by a Coordinator |
+| double booking | nothing enforced it | 92 live holds backfilled; an overlapping second booking is refused and stays at Quote |
+
+- Every migration's own pre/post-conditions passed **on real production rows**, including the
+  behavioural probes that create scratch actors, act as `authenticated`, and roll back.
+- `npm run check:pglite` **101/101, 0 failed**. `npm run check:lifecycle` **9/13 green, 4
+  known-red, 0 failed** — so R-35's "verified" bar is met for the chain as a whole.
+
+### Blocked
+
+- **The backup is rows only.** If a future migration corrupts structure rather than data,
+  `backup_2026_09_08` cannot restore it. Step 0.1-0.3 (dump, verify, restore drill) is still owed
+  and still needs the database password.
+- **`0092`'s probe has no rollback sentinel**, so it moved `updated_at` on one product row on
+  live. Cosmetic, and now permanent; noted so it is not re-diagnosed later.
+- **Four of five staff still cannot sign in** (`auth.users` = 1). The Owner-only write paths
+  applied today are real, but there is still no non-Owner seat to exercise them from.
+- **Booqable token rotation** (Step 0.5) is untouched — N-8, and it needs the Booqable login.
+- **`storage.buckets` is still empty**, so photos, evidence, KYC and invoice PDFs still have
+  nowhere to land.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 20 / 42 (48%) | +2 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 5 / 9 (56%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +2 |
+| Lifecycle | steps green / total | 9 / 13 (69%) | +0 |
+| Overall | mean of five | ≈ 61% | +1 |
+
+Counted by `npm run completion`, not typed. Migrations 101 files.
+
+### Remaining
+
+- A real `pg_dump` plus a restore drill (PHASE-0-PLAN Step 0.1-0.3).
+- Booqable token rotation (Step 0.5).
+- `issue_invoice`, `void_invoice`, `addInvoiceLine` — a fully paid invoice still stays Draft
+  because nothing sets Sent or Paid (lifecycle L10's note).
+- The four lifecycle steps still red: L6 session rows per stage, L7 partial return, L9 payment
+  refusals, L11 close gate.
+- The four gates not yet in Postgres: stage rows, close gate, invoice immutable, client own rows.
+- Sign-in seats for the other four staff.
+
 ## 2026-09-08 — A bundle can be modified: the edit screen, the write, and the one act the grants forbid
 
 `createBundle` could mint a bundle and nothing could ever change it again — no route, no

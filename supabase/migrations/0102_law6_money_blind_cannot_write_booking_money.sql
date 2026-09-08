@@ -208,7 +208,12 @@ begin
   begin
     set local role authenticated;
     perform set_config('app.current_user_id', v_wh::text, true);
-    update bookings set deposit_required = 0 where id = v_booking;
+    -- ⛔ Corrected 8 Sep 2026, applying to live: this wrote `= 0`, and 245 of
+    --    production's 246 bookings ALREADY hold 0. `is distinct from` is then
+    --    false, the guard correctly ignores a write that changes nothing, and
+    --    the assertion below reported a Law 6 breach that had not happened.
+    --    The probe must move the value, or it proves nothing either way.
+    update bookings set deposit_required = coalesce(v_deposit, 0) + 1 where id = v_booking;
   exception when others then
     v_blocked := true;
     v_err := sqlerrm;
@@ -241,7 +246,8 @@ begin
     begin
       set local role authenticated;
       perform set_config('app.current_user_id', v_wh::text, true);
-      update booking_lines set rate = 1 where id = v_line;
+      -- Same correction: a line already at 1 would make this a no-op.
+      update booking_lines set rate = coalesce(v_rate, 0) + 1 where id = v_line;
     exception when others then
       v_blocked := true;
     end;
