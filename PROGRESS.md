@@ -4,6 +4,53 @@
 
 
 
+## 2026-09-09 — Stage 1: createSubRental action (Backend 79%, Overall 82%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** `createSubRental` action live (+1); Backend 33/42 (79%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 82%.
+
+### Did
+
+- **Implemented `createSubRental` action (`src/actions/subrentals/createSubRental.ts`):**
+  - Marked `implemented: true` with `subrental.create` capability (`canWriteBookingDesk(role)`: Owner, Admin, Manager, Coordinator, Warehouse).
+  - Validates `itemDescription`, `costPaisa >= 0`, `chargePaisa >= 0`, `days >= 1`, `qty >= 1`.
+  - Resolves target booking (by UUID or `booking_no`) and supplier (by UUID or `supplier_code`).
+  - Mints sequential reference code `SR-YYYY-XXXX`.
+  - When associated with a booking, inserts a `booking_lines` record with `line_type: 'Sub-rental'`, `supplier_cost`, `rate`, `markup_amount`, and `client_uuid` (Law 8), using `{ returnRow: false }` to prevent Law 6 column revocation traps on money columns.
+  - Emits domain event `EVENT_TYPES.SUBRENTAL_CREATED`.
+- **Created Comprehensive Unit Tests (`src/actions/subrentals/__tests__/createSubRental.test.ts`):**
+  - 6/6 tests covering validation, standalone subrental reference generation, and booking line insertion with supplier resolution and markup calculations.
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 type errors)**.
+- `node ./node_modules/vitest/vitest.mjs run src/actions/subrentals/__tests__/createSubRental.test.ts` **6/6 passed**.
+- `node scripts/completion.mjs` verified: Backend 33/42 (79%), Overall ≈ 82%.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 33 / 42 (79%) | +1 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 14 / 14 (100%) | +0 |
+| Overall | mean of five | ≈ 82% | +1 |
+
+Migrations 110 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-09T14:50:11.244Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- 9 actions remaining to reach 100% backend completion (`reserveEquipment`, `packEquipment`, `readyForPickup`, `completePickup`, `startReturn`, `reviewEvidence`, `startInspection`, `passInspection`, `failInspection`).
+- 3 inspection capabilities deliberately omitted until inspection table schema is confirmed.
+
 ## 2026-09-09 — Stage 1: bookCrew action (Backend 76%, Overall 81%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** `bookCrew` action live (+1); Backend 32/42 (76%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 81%.
