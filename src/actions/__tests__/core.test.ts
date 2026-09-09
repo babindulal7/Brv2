@@ -214,6 +214,42 @@ describe('createAction — fails closed', () => {
       expect(execute).not.toHaveBeenCalled()
     })
 
+    /* RULING 2026-09-08 (R-25) — `case.resolve` sets a damage disposition AND a
+       cost, so it is a money write. It used to resolve to `isStaff()`, which
+       admitted the three money-blind roles (P4, N-1). The suite above never
+       caught it because TRIAGE is only asserted for Owner, and Owner passes
+       under either rule. These lock the roles, not just the happy path. */
+    const MONEY_BLIND_ROLES = ['Warehouse', 'Technician', 'Driver'] as const
+
+    it.each(MONEY_BLIND_ROLES)(
+      'denies %s case.resolve — a money-blind role may not price damage (P4/N-1)',
+      async (role) => {
+        const { run, execute } = probe('case.resolve', role)
+        await expect(run()).rejects.toBeInstanceOf(ActionPermissionError)
+        expect(execute).not.toHaveBeenCalled()
+      },
+    )
+
+    it('admits Manager to case.resolve — PERMISSIONS.md §4.3 as corrected', async () => {
+      await expect(probe('case.resolve', 'Manager').run()).resolves.toEqual({ ok: true })
+    })
+
+    it.each(['Admin', 'Coordinator', 'Accounts'] as const)(
+      'denies %s case.resolve — the damage ladder is Owner · Manager, not M+',
+      async (role) => {
+        // §16 V-3: `auth_can_approve_damage()` refuses Admin at every amount,
+        // identically in 0057 and on live. The doc's original "M+" was wrong.
+        const { run } = probe('case.resolve', role)
+        await expect(run()).rejects.toBeInstanceOf(ActionPermissionError)
+      },
+    )
+
+    it('still admits every staff role to crew.assign — FILED, not fixed (R-25)', async () => {
+      // Documents the known gap so the day it is narrowed to C+ this test fails
+      // and is updated deliberately rather than by accident.
+      await expect(probe('crew.assign', 'Warehouse').run()).resolves.toEqual({ ok: true })
+    })
+
     it('denies client.merge to Warehouse, whom client.update admits', async () => {
       await expect(probe('client.update', 'Warehouse').run()).resolves.toEqual({ ok: true })
       await expect(probe('client.merge', 'Warehouse').run()).rejects.toBeInstanceOf(ActionPermissionError)

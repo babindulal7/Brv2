@@ -214,6 +214,27 @@ export function canUpdateBundle(role: SystemRole): boolean {
   return role === 'Owner' || role === 'Admin' || role === 'Manager'
 }
 
+/**
+ * Check if role can set a product model's **preventive-service plan** — the
+ * three intervals and the grace window R-28 puts on `products`.
+ *
+ * Owner · Admin · Manager, from `PERMISSIONS.md` §4.3
+ * (`inventory.edit_service_plan`), which is itself the `products_update` policy
+ * read off the project. Deliberately NOT the wider set that may *record a meter
+ * reading* (`inventory.record_meter`: M+ · Warehouse · Technician): reading a
+ * meter at Return is floor work, and deciding how often a model is serviced is
+ * a fleet policy that costs money and takes gear off the shelf.
+ *
+ * A separate predicate from `canUpdateBundle` although the three roles are the
+ * same today: they are the same by coincidence of two different policies, and
+ * one function serving both would silently move this the day either moves.
+ */
+// RULING 2026-09-08 (R-28): the service plan lives on the model, and Owner/Admin/Manager set it;
+// revert = point `case 'inventory.edit_service_plan'` at `canUpdateBundle` and delete this.
+export function canEditServicePlan(role: SystemRole): boolean {
+  return role === 'Owner' || role === 'Admin' || role === 'Manager'
+}
+
 /* ────────────────────────────────────────────────────────────────────────────
  * The remaining capability rules — ruled 16 Aug 2026, same method as the four
  * above. Derivation table: `CAPABILITY_MAPPING_2026-08-16.md` §4.

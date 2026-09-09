@@ -18,6 +18,7 @@ export * from './PageBody'
 export * from './TableHeaderCell'
 export * from './FilterDrawer'
 export * from './DateField'
+export * from './ServiceDueBadge'
 /*
  * NOT exported (UI_UX_AUDIT_2026-08-28 §4): GateChecklist, MoneyField,
  * BsAdDate, ScannerInput, QuantityChip, EvidenceThumbnail,

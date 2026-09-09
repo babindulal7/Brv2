@@ -18,6 +18,10 @@ import type { ListFilters } from '../../lib/queries/listQuery'
 import { getAssetDetail, INVENTORY_STATES, UNIT_CONDITIONS } from '../../lib/queries/inventory'
 import type { AssetDetailRecord, InventoryUnitRow } from '../../lib/queries/inventory'
 import { Badge } from '../../components/ui/Badge'
+import { ServiceDueBadge } from '../../components/ui/ServiceDueBadge'
+import { ServicePlanCard } from './components/ServicePlanCard'
+import { readServiceDue } from '../../lib/queries/serviceDue'
+import type { ServiceRow } from '../../lib/serviceDue'
 import {
   stockLabel,
   unitLocationOf,
@@ -342,6 +346,31 @@ export default function AssetDetail() {
       return next
     })
   }, [matchedUnitId])
+
+  /* RULING 2026-09-08 (R-28): preventive service, warns only.
+   *
+   * A separate read rather than a column on the unit row, because due-ness is
+   * DERIVED — there is no `is_due` column anywhere and there must not be. One
+   * round trip for the whole table, keyed by unit id.
+   *
+   * `readServiceDue` never throws and returns an empty Map on failure, which is
+   * what keeps a badge from taking an asset page down with it — including on a
+   * project where `0103` is not applied, which is production today. */
+  const [serviceByUnit, setServiceByUnit] = useState<Map<string, ServiceRow>>(new Map())
+  useEffect(() => {
+    let cancelled = false
+    const ids = units.map((u) => u.id)
+    if (ids.length === 0) {
+      setServiceByUnit(new Map())
+      return
+    }
+    void readServiceDue(ids).then((byUnit) => {
+      if (!cancelled) setServiceByUnit(byUnit)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [units])
 
   const toggleUnit = (unitId: string) => {
     setExpandedUnits(prev => {
@@ -688,8 +717,13 @@ export default function AssetDetail() {
                           <td style={{ padding: '10px 8px' }}>
                             {/* `asset_tag` is the NOT NULL unique key (0004:195);
                                 `serial_no` is nullable, so the tag leads. */}
-                            <span className="identifier" style={{ fontWeight: 600, color: 'var(--text)' }}>
-                              {u.assetTag}
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', flexWrap: 'wrap' }}>
+                              <span className="identifier" style={{ fontWeight: 600, color: 'var(--text)' }}>
+                                {u.assetTag}
+                              </span>
+                              {/* R-28: warns only. It sits beside the identifier and
+                                  changes nothing about what the unit may do. */}
+                              <ServiceDueBadge row={serviceByUnit.get(u.id)} />
                             </span>
                           </td>
                           <td style={{ padding: '10px 8px' }}>
@@ -800,6 +834,11 @@ export default function AssetDetail() {
 
       {/* Tab 3: Maintenance */}
       {activeTab === 'Maintenance' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
+        {/* RULING 2026-09-08 (R-28): the interval lives on the MODEL, so the card
+            that sets it lives on the model's page. Without it nothing on this
+            model ever badges — every interval defaults to off. */}
+        <ServicePlanCard productId={product.id} />
         <Card title="Service & Maintenance Record">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
             {/* Summary strip — derived from the fetched unit rows. */}
@@ -883,6 +922,7 @@ export default function AssetDetail() {
             </div>
           </div>
         </Card>
+        </div>
       )}
 
       {/* Tab 4: Money (Omitted for Floor Roles — Law 6) */}

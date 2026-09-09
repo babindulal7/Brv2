@@ -28,6 +28,7 @@ import { gateContext } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
 import { maintenanceGlance, maintenanceDetailGroups } from '../../data/maintenanceIntel'
 import { LogMaintenanceModal, type MaintenanceJobPayload } from './modals/LogMaintenanceModal'
+import { DueForService } from './components/DueForService'
 
 /**
  * RS-08 — `LogMaintenanceModal` mints `MJ-2026-${random}` (the registered
@@ -844,6 +845,11 @@ export function Maintenance() {
       ) : (
         <>
       <KpiStrip items={kpis} columns={money ? 5 : 4} />
+
+      {/* RULING 2026-09-08 (R-28): the saved view. Renders nothing at all when
+          nothing is due, which is the normal state of a catalogue where no model
+          has a preventive plan yet. */}
+      <DueForService />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
         {statusChips.map((c) => (

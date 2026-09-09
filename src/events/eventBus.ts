@@ -96,6 +96,10 @@ export const EVENT_TYPES = {
   EQUIPMENT_CREATED: 'inventory.equipment_created',
   BUNDLE_CREATED: 'inventory.bundle_created',
   BUNDLE_UPDATED: 'inventory.bundle_updated',
+  /* RULING 2026-09-08 (R-28): a model's preventive-service intervals changed.
+     Carries no unit — due-ness is derived per unit at read time and there is
+     no is_due column to invalidate, so a listener re-reads the view. */
+  PRODUCT_SERVICE_PLAN_UPDATED: 'inventory.product_service_plan_updated',
   CLIENT_CREATED: 'client.created',
   CLIENT_UPDATED: 'client.updated',
   CLIENT_STATUS_UPDATED: 'client.status_updated',

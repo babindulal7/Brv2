@@ -177,6 +177,16 @@ async function checkCapability(capability: string, ctx: ActionContext): Promise<
     case 'inventory.update':
       return rbac.canUpdateBundle(ctx.role);
     /*
+     * `inventory.edit_service_plan` — R-28, 8 Sep 2026. Owner · Admin · Manager,
+     * as `PERMISSIONS.md` §4.3 states it. Ruled with the action rather than
+     * after it: an unmapped capability resolves to `undefined`, which this
+     * function's caller reads as a denial for EVERY role including Owner, and
+     * that gap is what made `rental.confirm` unreachable for three days.
+     */
+    // RULING 2026-09-08 (R-28): the preventive-service plan is set by Owner/Admin/Manager.
+    case 'inventory.edit_service_plan':
+      return rbac.canEditServicePlan(ctx.role);
+    /*
      * ── Ruled 16 Aug 2026 — the remaining 24, same method as the four above ──
      *
      * Role sets read from `pg_policies` on the live project, per capability,
@@ -271,7 +281,31 @@ async function checkCapability(capability: string, ctx: ActionContext): Promise<
     case 'client.merge':
       return rbac.canMergeClients(ctx.role);
 
+    // RULING 2026-09-08 (R-25): `case.resolve` sets a damage disposition AND a
+    // cost, so it is a money write and may not resolve to `isStaff()` — that
+    // admitted Warehouse, Technician and Driver, the three money-blind roles
+    // (P4, N-1). PERMISSIONS.md §4.3 as corrected: Owner · Manager under
+    // Rs 25,000, Owner at or above. `canApproveDamage` already encodes exactly
+    // that and was called from nowhere; this is its first caller.
+    //
+    // `'Manager'` is passed as the band because `checkCapability` receives only
+    // the role — the charge is not in scope here. So this gate is the WIDEST
+    // legal set, and the Rs 25,000 banding is enforced where the amount is
+    // known: `lib/damage`'s `approverFor(chargePaisa)` on the way in, and
+    // `auth_can_approve_damage(charge)` in the database. UI ⊆ DB (P3) holds
+    // either way — this can only ever be narrower than the policy, never wider.
+    //
+    // Revert: `return rbac.canWriteSharedTriage(ctx.role);`
     case 'case.resolve':
+      return rbac.canApproveDamage(ctx.role, 'Manager');
+
+    // ⚠ FILED, not fixed: `crew.assign` is still `isStaff()`, but PERMISSIONS.md
+    // §4.7 says `C+` and the §3 grid marks Crew Assist ✕ for Warehouse,
+    // Technician and Driver. Left alone deliberately — there is no C+ role set
+    // in this file, and every set here mirrors a live RLS policy by convention.
+    // Inventing one without reading `crew_assignments`' policy would break that
+    // convention. `bookCrew` is `implemented: false`, so nothing can reach it
+    // today. See RULINGS-2026-09-08 R-25.
     case 'crew.assign':
       return rbac.canWriteSharedTriage(ctx.role);
 

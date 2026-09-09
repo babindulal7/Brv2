@@ -1,3 +1,4 @@
+import type React from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -20,6 +21,8 @@ import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/
 import type { FloorLineInput } from '../../actions/rentals/floorVerb'
 import { CompactButton } from '../../components/ui/TouchTarget'
 import { deliveryTypeLabel } from '../../lib/format'
+import { readServiceDue } from '../../lib/queries/serviceDue'
+import { serviceStatus, type ServiceRow } from '../../lib/serviceDue'
 
 /**
  * **Packing Workspace** — `Packing Workflow.md` v2.1 (Build Locked), wired live.
@@ -102,6 +105,44 @@ const th = { textAlign: 'left' as const, padding: '8px 9px', fontSize: 'var(--t-
  * a smaller target on a gloved-tablet screen is the wrong trade.
  */
 const td = { height: 'var(--row-min-h)', padding: '8px 9px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
+
+/**
+ * RULING 2026-09-08 (R-28) — `Service due — still OK to send`.
+ *
+ * **A warning, and never a gate.** The ruling is explicit: due-ness warns only,
+ * the unit stays bookable, and nothing about this line changes what the row can
+ * do. The Pack checkbox beside it stays enabled, the row still ticks, the
+ * dispatch still runs. The floor is told the camera is due for a clean; the
+ * floor decides.
+ *
+ * That is why the sentence carries `still OK to send` rather than only `Service
+ * due`. A bare warning on a packing screen reads as a stop sign at 6 AM, and the
+ * one thing this must not do is stop a job.
+ *
+ * Rendered only where the row IS a physical unit (`assetId`); a quantity row
+ * stands for a count with no unit behind it and there is nothing to service.
+ */
+const ServiceDueLine: React.FC<{ row: ServiceRow | undefined }> = ({ row }) => {
+  if (row === undefined) return null
+  const status = serviceStatus(row)
+  if (status === null) return null
+  return (
+    <span
+      title={status.detail}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        marginTop: 2,
+        fontSize: 'var(--t-meta)',
+        color: 'var(--st-progress-fg)',
+      }}
+    >
+      <Icon name="tool" size={11} />
+      {status.label} — still OK to send
+    </span>
+  )
+}
 
 /**
  * One checklist row — one physical unit (`booking_line_units` row) on a
@@ -723,6 +764,27 @@ export default function PackingWorkspace() {
     )
   }
 
+  /* RULING 2026-09-08 (R-28): which of these units are due for a service.
+     One read for the whole checklist, keyed by `product_units.id`; quantity rows
+     carry no unit and are not asked about. `readServiceDue` never throws — a
+     warning that "warns only" must not be able to take the packing screen down,
+     and on a project without `0103` applied it simply returns nothing. */
+  const [serviceByUnit, setServiceByUnit] = useState<Map<string, ServiceRow>>(new Map())
+  useEffect(() => {
+    let cancelled = false
+    const ids = rows.map((r) => r.assetId).filter((id): id is string => id !== null)
+    if (ids.length === 0) {
+      setServiceByUnit(new Map())
+      return
+    }
+    void readServiceDue(ids).then((byUnit) => {
+      if (!cancelled) setServiceByUnit(byUnit)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [rows])
+
   const scannableUnits = rows.map((r) => ({
     id: r.key,
     name: r.name,
@@ -1214,6 +1276,7 @@ export default function PackingWorkspace() {
                                     {r.serial}
                                   </Link>
                                 )}
+                                <ServiceDueLine row={r.assetId === null ? undefined : serviceByUnit.get(r.assetId)} />
                               </span>
                             </label>
 
@@ -1270,7 +1333,7 @@ export default function PackingWorkspace() {
                                     }}
                                   />
                                 </td>
-                                <td style={td}>
+                                <td style={{ ...td, whiteSpace: 'normal' }}>
                                   <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                     <span style={{ fontWeight: 600 }}>{r.name}</span>
                                     {r.required && (
@@ -1279,6 +1342,7 @@ export default function PackingWorkspace() {
                                       </span>
                                     )}
                                   </span>
+                                  <ServiceDueLine row={r.assetId === null ? undefined : serviceByUnit.get(r.assetId)} />
                                 </td>
                                 <td className="identifier" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                                   {r.serial ? (
