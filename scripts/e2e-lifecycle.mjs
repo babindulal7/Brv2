@@ -639,8 +639,7 @@ const STEPS = [
   {
     id: 'L7',
     title: 'A partial return: one unit back, one missing',
-    expect: 'red',
-    red: 'Return does not write the case. Marking a unit missing sets booking_line_units.missing_reason, and nothing opens a `cases` row of type Missing from it — that lives in floorVerb.ts, app-side, and R-26 releases every hold at Returned including the missing unit\'s.',
+    expect: 'green',
     async run() {
       await as('Warehouse', async () => {
         await q(
@@ -649,6 +648,13 @@ const STEPS = [
             where asset_id = $1
               and booking_line_id in (select id from booking_lines where booking_id = $2)`,
           [UNITS[0], bookingIds.a],
+        )
+        await q(
+          `insert into booking_line_units
+             (client_uuid, booking_line_id, asset_id, qty, unit_state, missing_reason, created_by)
+           values
+             (gen_random_uuid(), (select id from booking_lines where booking_id = $1 limit 1), $2, 1, 'Missing', 'Lost on location during shoot', $3)`,
+          [bookingIds.a, UNITS[1], U.Warehouse],
         )
         await transition('a', 'On Rent', 'Returned', 'Warehouse')
       })
@@ -821,6 +827,29 @@ const STEPS = [
     title: 'Closed needs a settled invoice',
     expect: 'green',
     async run() {
+      /* Refused while open cases exist (Gate 3e) */
+      let closeWithOpenCaseRefused = false
+      try {
+        await as('Coordinator', async () => {
+          await transition('a', 'Returned', 'Closed', 'Coordinator')
+        })
+      } catch (err) {
+        closeWithOpenCaseRefused = true
+        assert(
+          String(err).includes('open cases'),
+          `expected open cases gate rejection, got: ${String(err)}`,
+        )
+      }
+      assert(closeWithOpenCaseRefused, 'booking closed while open cases were still pending')
+
+      /* Manager resolves the missing item case so the booking can lawfully close */
+      await as('Manager', async () => {
+        await q(
+          `update cases set status = 'Resolved', settled_at = now() where linked_booking_id = $1 and type = 'Missing'`,
+          [bookingIds.a],
+        )
+      })
+
       /* The ACCEPTED half, on the booking this script has settled. */
       await as('Coordinator', async () => {
         await transition('a', 'Returned', 'Closed', 'Coordinator')
