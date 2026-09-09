@@ -4,6 +4,78 @@
 
 
 
+## 2026-09-09 — Stage 1: cancel_booking RPC, client own rows RLS, updateClient and cancelRental (9/9 DB enforcement 100%, Backend 52%, Overall 75%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** All 9 DB enforcement gates in Postgres (100%); `cancel_booking` RPC built; `updateClient` and `cancelRental` actions live (+2); Lifecycle 13/14 (93%), Overall at 75%.
+
+### Did
+
+- **Built and committed Migration 0109 (`0109_cancel_booking_rpc.sql`):**
+  - Created server-owned `public.cancel_booking(jsonb)` and overloaded `cancel_booking(uuid, text, uuid)` RPCs.
+  - Enforced permissions: Coordinator, Manager, Admin, Owner (C+) before Packed; Manager, Admin, Owner (M+) for Packed bookings.
+  - Refused cancellations for bookings On Rent, Returned, Closed, or with units already Picked Up.
+  - Required stated reason of at least 10 non-whitespace characters.
+  - Updated `bookings.cancelled_at`, `cancelled_by`, `cancellation_reason` (bypassing `reject_direct_booking_stage_write` via SECURITY DEFINER).
+  - Automatically fired `trg_reservations_released_on_cancellation` (0100) to release all active holds in the same transaction.
+  - Recorded immutable audit entry in `audit_events`.
+- **Built and committed Migration 0110 (`0110_client_own_rows_rls.sql`):**
+  - Closed the 9th and final DB Enforcement gate (`client own rows`).
+  - Defined `auth_client_id()` resolving the client UUID bound to the current auth user (via `portal_users` or verified email).
+  - Updated RLS policies `clients_select`, `bookings_select`, and `booking_lines_select`: internal staff continue reading all rows (`auth_is_staff()`), while Client portal users see strictly their own rows (`id = auth_client_id()`, `client_id = auth_client_id()`).
+  - Preserved Law 6 money-masking on `invoices` and `payments` (`auth_is_finance_or_admin()`).
+- **Implemented `updateClient` action (`src/actions/clients/updateClient.ts`):**
+  - Marked `implemented: true` with `client.update` permission.
+  - Added input validation, phone normalization, PAN validation, and blocked immutable identity columns.
+  - Connected `safeUpdate('clients', ...)` with non-monetary returning columns and primary contact sync on `client_contacts`.
+  - Emitted `EVENT_TYPES.CLIENT_UPDATED` with changed keys.
+  - Connected `ClientDetail.tsx` `onSave` to `updateClient` when a real client row exists.
+  - Created 10 unit tests in `src/actions/clients/__tests__/updateClient.test.ts` (all passing).
+- **Implemented `cancelRental` action (`src/actions/rentals/cancelRental.ts`):**
+  - Marked `implemented: true` with `rental.cancel` permission.
+  - Integrated with `cancel_booking` RPC and handled unpersisted `draft-new` gracefully.
+  - Emitted `EVENT_TYPES.RENTAL_CANCELLED`.
+  - Created 8 unit tests in `src/actions/rentals/__tests__/cancelRental.test.ts` (all passing).
+- **Updated `scripts/e2e-lifecycle.mjs` and `scripts/completion.mjs`:**
+  - Added step `L14` asserting client row isolation across `clients`, `bookings`, and `booking_lines`.
+  - Mapped `'client own rows': 'L14'`, bringing DB enforcement to **9/9 (100%)**.
+
+### Verified
+
+- `tsc --noEmit` **exit 0**, 0 errors.
+- `node scripts/check-pglite.mjs` **108/108 applied, 0 failed**.
+- `node scripts/e2e-lifecycle.mjs` **13/14 green, 1 known-red (L7), 0 failed**.
+- `npm test` **138 test files passed (2,944 tests)** + 18 new action tests passed.
+- `node scripts/completion.mjs --migrations` verified.
+- `node scripts/lint-progress.mjs` verified.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 22 / 42 (52%) | +2 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +1 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 13 / 14 (93%) | +1 |
+| Overall | mean of five | ≈ 75% | +3 |
+Migrations 108 files · check:pglite 108/108 applied, 0 failed. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-09T14:12:36.395Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- **Features to build (20 actions):** 20 actions remaining in `src/actions/` marked `implemented: false`.
+- **Known-red lifecycle steps (1):**
+  - L7 (partial return: case generation for missing unit).
+- **Gates not yet in Postgres:** 0 (all 9 of 9 DB enforcement gates in Postgres verified).
+- **Rulings open (2):** §4.45(b) Maintenance cost column, §4.52 bundle component removal.
+Next session starts with: Stage 1 — L7 (partial return missing unit case trigger in Postgres) or remaining backend actions.
+
 ## 2026-09-09 — Stage 1: issue_invoice RPC and invoice immutability gate (8/9 DB enforcement, Overall 72%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** `issue_invoice` RPC built; invoice immutability gate mapped; DB enforcement at 8/9 (89%), Overall at 72%.
