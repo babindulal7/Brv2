@@ -65,6 +65,9 @@ vi.mock('../../../lib/queries/useList', () => ({ useList: () => EMPTY_LIST }))
 // `financeRestriction` and the fetchers, and both pull in the Supabase client at
 // module load. Stubbed so the suite needs no environment.
 vi.mock('../../../lib/supabase', () => ({ supabase: {}, newClientUuid: () => 'uuid-test' }))
+vi.mock('../../../actions/clients/updateClient', () => ({
+  updateClient: vi.fn().mockResolvedValue({ success: true, clientId: 'uuid-fixture', changedKeys: [] }),
+}))
 
 // jsdom ships no matchMedia; lib/device asks for it on mount.
 window.matchMedia = ((q: string) => ({
