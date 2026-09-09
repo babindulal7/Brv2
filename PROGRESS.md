@@ -4,6 +4,54 @@
 
 
 
+## 2026-09-09 — Stage 1: reviewEvidence action (Backend 81%, Overall 82%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** `reviewEvidence` action live (+1); Backend 34/42 (81%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 82%.
+
+### Did
+
+- **Implemented `reviewEvidence` action (`src/actions/rentals/reviewEvidence.ts`):**
+  - Marked `implemented: true` with `evidence.review` capability (`canWriteFloor(role)`: Owner, Admin, Manager, Warehouse).
+  - Validates `evidenceId` and action (`review` | `remove`).
+  - Resolves target evidence row from `evidence_files` (by UUID, `client_uuid`, or `original_filename`).
+  - When `action === 'remove'`, writes `removed_at`, `removed_by`, and `removal_reason` to satisfy DB check constraint `evidence_files_removal_needs_a_reason`.
+  - When `action === 'review'`, updates `processing_step: 'Human Review'`, `match_state`, `matched_item_id`, and `matched_serial`.
+  - Safely updates `evidence_files` using `safeUpdate` with Law 8 idempotency key.
+  - Emits domain event `EVENT_TYPES.EVIDENCE_REVIEWED`.
+- **Created Comprehensive Unit Tests (`src/actions/rentals/__tests__/reviewEvidence.test.ts`):**
+  - 6/6 tests covering input validation, removal flow with reasons and timestamps, human review approval with unit/serial matching, and non-existent target rejection.
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 type errors)**.
+- `node ./node_modules/vitest/vitest.mjs run src/actions/rentals/__tests__/reviewEvidence.test.ts` **6/6 passed**.
+- `node scripts/completion.mjs` verified: Backend 34/42 (81%), Overall ≈ 82%.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 34 / 42 (81%) | +1 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 14 / 14 (100%) | +0 |
+| Overall | mean of five | ≈ 82% | +0 |
+
+Migrations 110 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-09T14:50:11.244Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- 8 actions remaining to reach 100% backend completion (`reserveEquipment`, `packEquipment`, `readyForPickup`, `completePickup`, `startReturn`, `startInspection`, `passInspection`, `failInspection`).
+- 3 inspection capabilities deliberately omitted until inspection table schema is confirmed.
+
 ## 2026-09-09 — Stage 1: createSubRental action (Backend 79%, Overall 82%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** `createSubRental` action live (+1); Backend 33/42 (79%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 82%.
