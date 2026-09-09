@@ -4,6 +4,54 @@
 
 
 
+## 2026-09-09 — Stage 1: saveDraft action (Backend 57%, Overall 76%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** `saveDraft` action live (+1); Backend 24/42 (57%); DB enforcement 9/9 (100%); Lifecycle 13/14 (93%), Overall at 76%.
+
+### Did
+
+- **Implemented `saveDraft` action (`src/actions/rentals/saveDraft.ts`):**
+  - Marked `implemented: true` with `rental.draft` capability (handled by `canWriteBookingDesk`).
+  - Added input validation for `id` (required non-empty string).
+  - Handled unpersisted drafts (`id === 'draft-new'`) from `NewRental.tsx`, acknowledging local state without hitting the database and emitting `EVENT_TYPES.DRAFT_SAVED`.
+  - Handled persisted bookings / floor workspaces (`id` = UUID or `booking_no`) from `PackingWorkspace.tsx`, resolving bare booking numbers and updating `bookings` via `safeUpdate` with Law 8 idempotency key and updated timestamps/notes.
+  - Emitted `EVENT_TYPES.DRAFT_SAVED` with booking ID, timestamp, and user ID.
+  - Created 7 unit tests in `src/actions/rentals/__tests__/saveDraft.test.ts` (all passing).
+
+### Verified
+
+- `tsc --noEmit` **exit 0**, 0 errors.
+- `node ./node_modules/vitest/vitest.mjs run src/actions/rentals/__tests__/saveDraft.test.ts` **7/7 passed**.
+- `node ./node_modules/vitest/vitest.mjs run src/actions/rentals/__tests__/ src/actions/clients/__tests__/` **295/295 passed across 12 test files**.
+- `node scripts/completion.mjs` verified: Backend 24/42 (57%).
+- `node scripts/lint-progress.mjs` verified.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 24 / 42 (57%) | +1 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 13 / 14 (93%) | +0 |
+| Overall | mean of five | ≈ 76% | +0 |
+
+Migrations 109 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-09T14:19:00.034Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- 18 actions remaining to reach 100% backend completion (`voidInvoice`, `refundPayment`, `reserveEquipment`, `resolveCase`, `bookCrew`, etc.).
+- 3 inspection capabilities deliberately omitted until inspection table schema is confirmed.
+- Lifecycle step L7 (partial return missing unit case creation in Postgres) to bring Lifecycle to 14/14 (100%).
+
 ## 2026-09-09 — Stage 1: extend_booking RPC, extendRental action (Backend 55%, Overall 76%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** `extend_booking` RPC built; `extendRental` action live (+1); Backend 23/42 (55%); DB enforcement 9/9 (100%); Lifecycle 13/14 (93%), Overall at 76%.
