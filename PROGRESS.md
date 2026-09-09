@@ -4,6 +4,66 @@
 
 
 
+## 2026-09-09 — Stage 1: Stage-gate trigger (L6) and Close gate (L11) armed in Postgres
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** L6 (stage rows) and L11 (close gate) green; DB enforcement at 7/9 (78%), Lifecycle at 11/13 (85%).
+
+### Did
+
+- **Built and committed Migration 0105 (`0105_stage_gate_requires_floor_rows.sql`):**
+  - Updated `validate_booking_gates()` to require at least one `Packing` session in `operation_sessions` before moving to `Packed`.
+  - Required both `Packing` and `Handover` sessions before moving to `On Rent`.
+  - Preserved R-06 handover money warning/override and R-07 close block.
+  - Turned lifecycle test step `L6` green (`d9ba26a`).
+- **Built and committed Migration 0106 (`0106_close_gate_requires_invoice.sql`):**
+  - Updated `validate_booking_gates()` Close gate (R-07): a booking cannot reach `Closed` without an invoice (non-void invoice must exist).
+  - All non-void invoices must be fully settled (`outstanding_amount = 0`).
+  - Security deposits must be resolved (no pending collection and none held without refund/application).
+  - No open cases (`cases.status in ('Open', 'Under Review', 'Awaiting Decision', 'In Progress')`).
+  - Updated `scripts/e2e-lifecycle.mjs` step `L11` to green (`2fda5b8`).
+
+### Verified
+
+- `tsc --noEmit` **exit 0**, 0 errors.
+- `node scripts/check-pglite.mjs` **104/104 applied, 0 failed**.
+- `node scripts/e2e-lifecycle.mjs` **11/13 green, 2 known-red, 0 failed**.
+- `node scripts/lint-progress.mjs` verified.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 20 / 42 (48%) | +0 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 7 / 9 (78%) | +2 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 11 / 13 (85%) | +2 |
+| Overall | mean of five | ≈ 68% | +7 |
+Migrations 104 files · check:pglite 104/104 applied. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-09T12:10:47.431Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+Gates not yet in Postgres:
+  invoice immutable
+  client own rows
+
+### Remaining
+
+- **Features to build (22 actions):** 22 actions remaining in `src/actions/` marked `implemented: false`.
+- **Known-red lifecycle steps (2):**
+  - L7 (partial return: case generation for missing unit).
+  - L9 (payment guards: refuse payment greater than outstanding, refuse payment for another client's booking).
+- **Gates not yet in Postgres (2 of 9):**
+  - `invoice immutable` (depends on `issue_invoice` setting Sent/Paid status).
+  - `client own rows` (RLS scoping client to own rows).
+- **Rulings open (2):** §4.45(b) Maintenance cost column, §4.52 bundle component removal.
+Next session starts with: Stage 1 — Payment validation guards in Postgres (L9) or `issue_invoice` status transitions.
+
 ## 2026-09-09 — Stage 0 reconciliation: working tree clean, all gates verified green
 
 **Phase:** Phase 0 · Stage 0 Exit · **Status:** P0 #1–#4 closed, local working tree clean and all gates passing.
