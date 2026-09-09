@@ -4,6 +4,53 @@
 
 
 
+## 2026-09-09 — Stage 1: resolveCase action (Backend 60%, Overall 77%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** `resolveCase` action live (+1); Backend 25/42 (60%); DB enforcement 9/9 (100%); Lifecycle 13/14 (93%), Overall at 77%.
+
+### Did
+
+- **Implemented `resolveCase` action (`src/actions/cases/resolveCase.ts`):**
+  - Marked `implemented: true` with `case.resolve` capability (mapped in core permission system to `canApproveDamage` / Owner & Manager per R-25 / R-27).
+  - Supported bare case numbers (e.g. `CASE-2026-001`) and resolved to UUID via `cases_v`.
+  - Added input validation for `id` (required non-empty string), `resolution` (`'Resolved'` | `'Closed'`), and non-negative financial allocation amounts (`assessed_amount`, `charged_to_client_amount`, `waived_amount`, etc.).
+  - Executed safe update via `safeUpdate('cases' as never, ...)` with Law 8 idempotency key and `{ returnRow: false }` to comply with Law 6 column grants on revoked allocation columns.
+  - Emitted `EVENT_TYPES.CASE_RESOLVED` with case ID, resolution, and disposition metadata.
+  - Created 7 unit tests in `src/actions/cases/__tests__/resolveCase.test.ts` (all passing).
+
+### Verified
+
+- `tsc --noEmit` **exit 0**, 0 errors.
+- `node ./node_modules/vitest/vitest.mjs run src/actions/cases/__tests__/resolveCase.test.ts` **7/7 passed**.
+- `node scripts/completion.mjs` verified: Backend 25/42 (60%).
+- `node scripts/lint-progress.mjs` verified.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 25 / 42 (60%) | +1 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 13 / 14 (93%) | +0 |
+| Overall | mean of five | ≈ 77% | +1 |
+
+Migrations 109 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-09T14:19:00.034Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- 17 actions remaining to reach 100% backend completion (`voidInvoice`, `refundPayment`, `reserveEquipment`, `bookCrew`, etc.).
+- 3 inspection capabilities deliberately omitted until inspection table schema is confirmed.
+- Lifecycle step L7 (partial return missing unit case creation in Postgres) to bring Lifecycle to 14/14 (100%).
+
 ## 2026-09-09 — Stage 1: saveDraft action (Backend 57%, Overall 76%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** `saveDraft` action live (+1); Backend 24/42 (57%); DB enforcement 9/9 (100%); Lifecycle 13/14 (93%), Overall at 76%.
