@@ -4,6 +4,55 @@
 
 
 
+## 2026-09-09 — Stage 1: refundPayment action (Backend 69%, Overall 80%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** `refundPayment` action live (+1); Backend 29/42 (69%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 80%.
+
+### Did
+
+- **Implemented `refundPayment` action (`src/actions/payments/refundPayment.ts`):**
+  - Marked `implemented: true` with `payment.refund` capability (`canRecordPayment(role, online)`).
+  - Flexible target resolution: resolves payments directly by ID/number or through associated invoice.
+  - Enforces Law 4: payments are immutable; reversals are compensating append-only ledger entries.
+  - Inserts into `payment_reversals` via `idempotentInsert` with `reversal_no` (`REV-YYYY-XXXX`), `original_payment_id`, positive `amount`, `reason` (>= 10 chars), `reversed_by`, and `approved_by`.
+  - Integrates with database trigger `trg_payment_reversal_sync` which automatically nets the reversal and recalculates invoice payment state.
+  - Emits domain event `EVENT_TYPES.PAYMENT_REFUNDED`.
+- **Created Comprehensive Unit Tests (`src/actions/payments/__tests__/refundPayment.test.ts`):**
+  - 7/7 tests covering validation, payment/invoice resolution, Law 4/8 compliance, and domain event emissions.
+  - Verified regression safety with existing `RefundPaymentModal.identity.test.tsx` (7/7 tests green).
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 type errors)**.
+- `node ./node_modules/vitest/vitest.mjs run src/actions/payments/__tests__/refundPayment.test.ts` **7/7 passed**.
+- `node ./node_modules/vitest/vitest.mjs run src/modules/finance/__tests__/RefundPaymentModal.identity.test.tsx` **7/7 passed**.
+- `node scripts/completion.mjs` verified: Backend 29/42 (69%), Overall ≈ 80%.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 29 / 42 (69%) | +1 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 14 / 14 (100%) | +0 |
+| Overall | mean of five | ≈ 80% | +1 |
+
+Migrations 110 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-09T14:50:11.244Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- 13 actions remaining to reach 100% backend completion (`createDocument`, `reserveEquipment`, `packEquipment`, `readyForPickup`, etc.).
+- 3 inspection capabilities deliberately omitted until inspection table schema is confirmed.
+
 ## 2026-09-09 — Stage 1: mergeClients action (Backend 67%, Overall 79%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** `mergeClients` action live (+1); Backend 28/42 (67%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 79%.
