@@ -4,6 +4,52 @@
 
 
 
+## 2026-09-09 — Stage 1: startReturn action (Backend 83%, Overall 83%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** `startReturn` action live (+1); Backend 35/42 (83%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 83%.
+
+### Did
+
+- **Implemented `startReturn` action (`src/actions/rentals/startReturn.ts`):**
+  - Marked `implemented: true` with `rental.return` capability (`canWriteFloor(role)`: Owner, Admin, Manager, Warehouse).
+  - Validates `id` as booking ID or booking number.
+  - Resolves target booking (by UUID or `booking_no`).
+  - Checks if an active `In Progress` return session already exists; if not, calculates next sequential `session_no` for this booking and inserts a new `operation_sessions` record (`operation: 'Return'`, `state: 'In Progress'`).
+  - Emits domain event `EVENT_TYPES.RENTAL_RETURN_STARTED`.
+- **Created Comprehensive Unit Tests (`src/actions/rentals/__tests__/startReturn.test.ts`):**
+  - 5/5 tests covering validation, session creation, sequential session numbering, reuse of open in-progress sessions, and non-existent booking rejection.
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 type errors)**.
+- `node ./node_modules/vitest/vitest.mjs run src/actions/rentals/__tests__/startReturn.test.ts` **5/5 passed**.
+- `node scripts/completion.mjs` verified: Backend 35/42 (83%), Overall ≈ 83%.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 35 / 42 (83%) | +1 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 14 / 14 (100%) | +0 |
+| Overall | mean of five | ≈ 83% | +1 |
+
+Migrations 110 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-09T14:50:11.244Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- 7 actions remaining to reach 100% backend completion (`completePickup`, `packEquipment`, `readyForPickup`, `reserveEquipment`, `startInspection`, `passInspection`, `failInspection`).
+- 3 inspection capabilities deliberately omitted until inspection table schema is confirmed.
+
 ## 2026-09-09 — Stage 1: reviewEvidence action (Backend 81%, Overall 82%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** `reviewEvidence` action live (+1); Backend 34/42 (81%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 82%.
