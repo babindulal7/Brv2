@@ -91,7 +91,7 @@ import type { LineKind, SystemRole } from '../../types/database'
  * trigger is known to disagree with `lib/money.ts` by up to Rs 0.98 per invoice
  * (SPEC-P0-1 §2.2 / P1-4 — the trigger rounds to 2 dp and hardcodes 0.13, the
  * engine rounds to the whole rupee at each step). Foundation rules the app's
- * arithmetic canonical, so the trigger is what changes; until `0081` lands, the
+ * arithmetic canonical, so the trigger is what changes; until `0098` lands, the
  * figure this module feeds the engine and the figure the row comes back with can
  * differ in the last rupee. The modal states that rather than implying the
  * preview is the receipt.

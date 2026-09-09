@@ -74,7 +74,7 @@ import { newClientUuid } from '../../../lib/supabase'
  * ⚠ The totals shown are the ENGINE's. The invoice's stored figures are the
  * database's, derived by `recalculate_invoice_totals()`, and the live trigger is
  * known to disagree with the engine by up to Rs 0.98 per invoice until
- * `0081_invoice_totals_match_engine` lands (SPEC-P0-1 §2.2). The panel says so
+ * `0098_invoice_totals_match_engine` lands (SPEC-P0-1 §2.2). The panel says so
  * rather than presenting the preview as the receipt.
  */
 
@@ -556,7 +556,7 @@ export function CreateInvoiceModal({ isOpen, onClose, bookingNo, onSuccess }: Cr
               </div>
               <span style={{ color: 'var(--muted)' }}>
                 Computed by the money engine. The invoice’s stored figures are the database’s, derived when the lines
-                land, and the two can differ by a rupee until migration 0081 aligns the trigger with the engine
+                land, and the two can differ by a rupee until migration 0098 aligns the trigger with the engine
                 (SPEC-P0-1 §2.2) — so the saved invoice is read back from the ledger, never assumed from here.
               </span>
             </div>

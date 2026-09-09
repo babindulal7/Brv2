@@ -303,9 +303,9 @@ commit;
 --     insert into payments (…, payment_type, amount, status) values (…, 'Advance Payment', 1000, 'Received');
 --     select paid_amount, outstanding_amount, status from invoices where id = …;  -- paid 1000
 --     insert into payments (…, payment_type, amount, status) values (…, 'Refund', 400, 'Received');
---     select paid_amount from invoices where id = …;  -- STILL 1000. Before 0081: 1400.
+--     select paid_amount from invoices where id = …;  -- STILL 1000. Before 0098: 1400.
 --     insert into payments (…, payment_type, amount, status) values (…, 'Security Deposit', 5000, 'Received');
---     select paid_amount from invoices where id = …;  -- STILL 1000. Before 0081: 6400.
+--     select paid_amount from invoices where id = …;  -- STILL 1000. Before 0098: 6400.
 --     insert into payment_reversals (…, original_payment_id, amount) values (…, <the 1000 payment>, 1000);
 --     select paid_amount, outstanding_amount, status from invoices where id = …;
 --     -- paid 0, outstanding = total, status back to 'Sent'. Before 0087: unchanged, still 'Paid'.

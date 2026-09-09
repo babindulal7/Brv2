@@ -28,7 +28,7 @@ Three migrations that change existing triggers. None adds a feature; each remove
 | | Migration | Fixes |
 |---|---|---|
 | 1.1 | `0080_draft_is_sticky` | R-02 and R-03 are mutually impossible without it |
-| 1.2 | `0081_invoice_totals_match_engine` | P1-4; absorbs the drafted `0079` |
+| 1.2 | `0098_invoice_totals_match_engine` (written as `0081`, renumbered 8 Sep per R-26 step 1) | P1-4; absorbs the drafted `0079` |
 | 1.3 | `0083_reopen_clears_closed_at` | R-09 is impossible without it |
 
 Ship 1.2 with the §2.8 reference case as a pgTAP test. It is the first test in the project's history to reach a database, and PLAN §4.42 has been asking for exactly it.
@@ -115,6 +115,6 @@ Named so they are not mistaken for oversights:
 - **P1-2 evidence and signatures.** Blocked by DEL-22 — no storage bucket exists in any migration and no `storage.from()` call exists in `src`. That is a P2 gating a P1 and should be re-ranked. Evidence v1.1 already specifies derivatives, content-hash de-duplication and retention, so it is spec-following, not design.
 - **P1-3 `damage_findings`.** Phase 1. Until it lands, the fourth close gate is vacuously true — honest, but weak.
 - **RES-01 / RES-02 / RES-06.** The refutation downgraded these on the premise that floor-verb offline policy is unruled. Foundation v2.0 already rules floor work offline **yes**, money and approvals **never**. By the addendum's own words they re-raise to **P1**. Silent loss of every unit after the first on a multi-unit return is precisely the failure a warehouse tablet exists to prevent.
-- **FORMS-09.** The VAT rate lives in `localStorage`, so two devices can price the same booking differently. Filed P3; it is a money-correctness defect against a Foundation lock. `0081` reads `system_settings` — which holds zero rows, so it will fall through to the default until the store is backed properly.
+- **FORMS-09.** The VAT rate lives in `localStorage`, so two devices can price the same booking differently. Filed P3; it is a money-correctness defect against a Foundation lock. `0098` reads `system_settings` — which holds zero rows, so it will fall through to the default until the store is backed properly.
 - **P1-1 `NOW_AD`.** Real, unbounded on a long-lived tab, worth a hook. But the "every return invisible" figure is an artefact of the seed stamping every `return_at` at 06:00 NPT. Do not let a fixture outrank things that are broken unconditionally.
 - **P1-6, P1-10, CI, hosting.** Phases 3 and 4, unchanged.

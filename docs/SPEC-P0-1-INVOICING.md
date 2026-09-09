@@ -57,7 +57,7 @@ Live `recalculate_invoice_totals` rounds to 2 dp, hardcodes `0.13`, ignores the 
 
 Foundation already rules the app's arithmetic canonical, so **the trigger changes, not the engine**. No further decision is needed.
 
-**Migration `0081_invoice_totals_match_engine`:**
+**Migration `0098_invoice_totals_match_engine`:**
 
 ```sql
 v_rate := coalesce(
@@ -153,7 +153,7 @@ The live trigger already defines the lawful shape: `voided_at`, `voided_by`, `vo
 ## 4. Order of work
 
 1. `0080_draft_is_sticky`
-2. `0081_invoice_totals_match_engine` + the reference-case pgTAP test
+2. `0098_invoice_totals_match_engine` + the reference-case pgTAP test
 3. `0082_handover_gate_advisory`
 4. `createInvoice` + modal wiring
 5. `issueInvoice`

@@ -93,7 +93,7 @@ import type { Paisa } from '../../lib/money'
  * ⚠ The live trigger rounds to 2 dp and hardcodes `0.13`, where `lib/money`
  * rounds to the whole rupee at each step (Rs 0.98 per invoice on the §2.8
  * reference case). Foundation rules the app's arithmetic canonical, so **the
- * trigger changes** — `0081_invoice_totals_match_engine`, SPEC-P0-1 §2.2. When
+ * trigger changes** — `0098_invoice_totals_match_engine`, SPEC-P0-1 §2.2. When
  * it lands, these figures follow it without a change here.
  *
  * ## R-17 · percentage discounts only

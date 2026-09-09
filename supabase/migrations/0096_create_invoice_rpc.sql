@@ -106,7 +106,7 @@
 --
 -- ⚠ The live trigger rounds to 2 dp and hardcodes `0.13` where `lib/money.ts`
 -- rounds to the whole rupee and reads the rate from the row. That disagreement
--- is MONEY-03 and its fix is `0081_invoice_totals_match_engine`; this function
+-- is MONEY-03 and its fix is `0098_invoice_totals_match_engine`; this function
 -- returns whatever the trigger computed, so it inherits the fix for free and
 -- adds no third opinion.
 --
@@ -819,6 +819,6 @@ commit;
 --     Law 6 grant contract is SEC-04 / DB-02 and wants the registry-driven
 --     arming the audit recommends, not a one-off widening bolted to this file.
 --   · **The trigger's 2 dp and hardcoded 0.13.** MONEY-03 /
---     `0081_invoice_totals_match_engine`. This function returns whatever the
+--     `0098_invoice_totals_match_engine`. This function returns whatever the
 --     trigger computed and adds no second opinion.
 -- =============================================================================
