@@ -4,6 +4,61 @@
 
 
 
+## 2026-09-09 — Stage 1: Payments validation guards in Postgres (L9 green, Lifecycle 12/13, Overall 70%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** L9 (payment guards) green; Lifecycle at 12/13 (92%), Overall at 70%.
+
+### Did
+
+- **Built and committed Migration 0107 (`0107_payments_validation_guards.sql`):**
+  - Created `validate_payment()` trigger function `BEFORE INSERT ON payments`.
+  - Enforced that payments cannot overpay an invoice (`NEW.amount` cannot exceed invoice's `outstanding_amount` for Advance Payments).
+  - Enforced client integrity: `payments.client_id` must match `bookings.client_id` (refusing payments posted against another client's booking).
+  - Enforced invoice-booking consistency: if `invoice_id` is supplied, it must belong to the same booking and client.
+  - Refused payments against `Void` invoices.
+  - Turned lifecycle test step `L9` green (`6924d67`).
+
+### Verified
+
+- `tsc --noEmit` **exit 0**, 0 errors.
+- `node scripts/check-pglite.mjs` **105/105 applied, 0 failed**.
+- `node scripts/e2e-lifecycle.mjs` **12/13 green, 1 known-red, 0 failed**.
+- `node scripts/lint-progress.mjs` verified.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 20 / 42 (48%) | +0 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 7 / 9 (78%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 12 / 13 (92%) | +1 |
+| Overall | mean of five | ≈ 70% | +2 |
+Migrations 105 files · check:pglite 105/105 applied. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-09T12:18:35.710Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+Gates not yet in Postgres:
+  invoice immutable
+  client own rows
+
+### Remaining
+
+- **Features to build (22 actions):** 22 actions remaining in `src/actions/` marked `implemented: false`.
+- **Known-red lifecycle steps (1):**
+  - L7 (partial return: case generation for missing unit).
+- **Gates not yet in Postgres (2 of 9):**
+  - `invoice immutable` (depends on `issue_invoice` setting Sent/Paid status).
+  - `client own rows` (RLS scoping client to own rows).
+- **Rulings open (2):** §4.45(b) Maintenance cost column, §4.52 bundle component removal.
+Next session starts with: Stage 1 — `issue_invoice` status transitions (`invoice immutable`) or L7 (partial return case trigger).
+
 ## 2026-09-09 — Stage 1: Stage-gate trigger (L6) and Close gate (L11) armed in Postgres
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** L6 (stage rows) and L11 (close gate) green; DB enforcement at 7/9 (78%), Lifecycle at 11/13 (85%).
