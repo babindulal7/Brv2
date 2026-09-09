@@ -4,6 +4,54 @@
 
 
 
+## 2026-09-09 — Stage 1: mergeClients action (Backend 67%, Overall 79%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** `mergeClients` action live (+1); Backend 28/42 (67%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 79%.
+
+### Did
+
+- **Implemented `mergeClients` action (`src/actions/clients/mergeClients.ts`):**
+  - Marked `implemented: true` with `client.merge` capability (`canMergeClients(role)`: Owner, Admin, Manager).
+  - Resolves both `survivorId` and `duplicateId` via `getClientRecord` (supporting both UUID and human client codes like `C-0001`).
+  - Enforces preconditions: clients cannot merge into themselves; neither party may be previously deactivated or merged.
+  - Repoints all related records to the survivor account: bookings, invoices, security deposits, cases, contacts, documents, and notes.
+  - Updates duplicate client via `safeUpdate` (`status: 'Deactivated'`, `merged_into_client_id: survivorId`, `deactivation_reason`).
+  - Records permanent merge record in `client_merges` via `idempotentInsert` with structured `moved_summary` counts.
+  - Emits domain event `EVENT_TYPES.CLIENT_MERGED`.
+- **Created Unit Tests (`src/actions/clients/__tests__/mergeClients.test.ts`):**
+  - 8/8 tests covering validation, resolution, duplicate prevention, table repointing, deactivation, and domain event emission.
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 type errors)**.
+- `node ./node_modules/vitest/vitest.mjs run src/actions/clients/__tests__/mergeClients.test.ts` **8/8 passed**.
+- `node scripts/completion.mjs` verified: Backend 28/42 (67%), Overall ≈ 79%.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 28 / 42 (67%) | +1 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 14 / 14 (100%) | +0 |
+| Overall | mean of five | ≈ 79% | +0 |
+
+Migrations 110 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-09T14:50:11.244Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- 14 actions remaining to reach 100% backend completion (`refundPayment`, `createDocument`, `reserveEquipment`, `packEquipment`, etc.).
+- 3 inspection capabilities deliberately omitted until inspection table schema is confirmed.
+
 ## 2026-09-09 — Stage 1: createMaintenanceJob & completeMaintenance actions (Backend 64%, Overall 79%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** `createMaintenanceJob` and `completeMaintenance` live (+2); Backend 27/42 (64%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 79%.
