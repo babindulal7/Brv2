@@ -4,6 +4,67 @@
 
 
 
+## 2026-09-09 — Stage 1: extend_booking RPC, extendRental action (Backend 55%, Overall 76%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** `extend_booking` RPC built; `extendRental` action live (+1); Backend 23/42 (55%); DB enforcement 9/9 (100%); Lifecycle 13/14 (93%), Overall at 76%.
+
+### Did
+
+- **Built and committed Migration 0111 (`0111_extend_booking_rpc.sql`):**
+  - Created server-owned `public.extend_booking(jsonb)` and overloaded `extend_booking(uuid, integer, text, uuid)` RPCs.
+  - Enforced permissions: Coordinator, Manager, Admin, Owner (C+) per `PERMISSIONS.md:204`.
+  - Refused extensions if booking is Cancelled, Returned, or Closed; validated stage is Quote, Booked, Packed, or On Rent.
+  - Required positive extension days (`days >= 1`) and stated reason of at least 10 non-whitespace characters.
+  - Updated `bookings.return_at` by N days.
+  - Incremented `booking_lines.days` by N days on active lines.
+  - Expands `period` on active `inventory_reservations` to the new return timestamp, dynamically re-triggering the GiST exclusion constraint (`inventory_reservations_no_double_booking`) and capacity ceiling (`check_reservation_capacity_ceiling`) to guarantee no collision with subsequent bookings.
+  - Reprices any Draft invoice by updating `invoice_lines.days` which triggers `recalculate_invoice_totals`.
+  - Recorded immutable audit entry in `audit_events`.
+- **Implemented `extendRental` action (`src/actions/rentals/extendRental.ts`):**
+  - Marked `implemented: true` with `rental.extend` capability.
+  - Added input validation for booking ID, days (integer >= 1), and reason (>= 10 chars).
+  - Supported bare booking numbers by resolving to UUID before dispatching to RPC.
+  - Dispatched to `extend_booking` RPC and emitted `EVENT_TYPES.RENTAL_EXTENDED`.
+  - Created 8 unit tests in `src/actions/rentals/__tests__/extendRental.test.ts` (all passing).
+- **Connected `ExtendRentalModal.tsx`:**
+  - Widened call from `{ id: bookingId }` placeholder to `{ id: bookingId, days, reason: reason.trim() }`.
+  - Removed outdated placeholder warning comment.
+
+### Verified
+
+- `tsc --noEmit` **exit 0**, 0 errors.
+- `node scripts/check-pglite.mjs` **109/109 applied, 0 failed**.
+- `node ./node_modules/vitest/vitest.mjs run src/actions/rentals/__tests__/extendRental.test.ts` **8/8 passed**.
+- `node ./node_modules/vitest/vitest.mjs run src/actions/rentals/__tests__/ src/actions/clients/__tests__/` **288/288 passed across 11 test files**.
+- `node scripts/completion.mjs --migrations` verified.
+- `node scripts/lint-progress.mjs` verified.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 23 / 42 (55%) | +1 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 13 / 14 (93%) | +0 |
+| Overall | mean of five | ≈ 76% | +1 |
+
+Migrations 109 files · check:pglite 109/109 applied, 0 failed. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-09T14:19:00.034Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- 19 actions remaining to reach 100% backend completion (`saveDraft`, `voidInvoice`, `refundPayment`, `reserveEquipment`, `resolveCase`, `bookCrew`, etc.).
+- 3 inspection capabilities deliberately omitted until inspection table schema is confirmed.
+- Lifecycle step L7 (partial return missing unit case creation in Postgres) to bring Lifecycle to 14/14 (100%).
+
 ## 2026-09-09 — Stage 1: cancel_booking RPC, client own rows RLS, updateClient and cancelRental (9/9 DB enforcement 100%, Backend 52%, Overall 75%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** All 9 DB enforcement gates in Postgres (100%); `cancel_booking` RPC built; `updateClient` and `cancelRental` actions live (+2); Lifecycle 13/14 (93%), Overall at 75%.
