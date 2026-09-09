@@ -4,6 +4,66 @@
 
 
 
+## 2026-09-09 — Stage 1: issue_invoice RPC and invoice immutability gate (8/9 DB enforcement, Overall 72%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** `issue_invoice` RPC built; invoice immutability gate mapped; DB enforcement at 8/9 (89%), Overall at 72%.
+
+### Did
+
+- **Built and committed Migration 0108 (`0108_issue_invoice_rpc.sql`):**
+  - Created `issue_invoice(jsonb)` and `issue_invoice(uuid)` RPC.
+  - Enforced authorization: caller must have role Owner, Admin, Manager, or Accounts (R-05) and `auth_can_view_money()`.
+  - Enforced preconditions: invoice must exist, have status `Draft`, have at least one line (`invoice_lines`), and cannot be voided.
+  - Minted unique `invoice_no` using `next_document_number('invoice')` (R-15).
+  - Derived `due_date` from `issue_date` + client payment terms.
+  - Set status to `Paid` (if fully settled up front), `Partially Paid`, or `Sent`.
+  - Tested that once issued, figures are immutable under `reject_invoice_edit_after_issue()` (Law 4).
+- **Updated `scripts/e2e-lifecycle.mjs`:**
+  - L8 now creates and issues the invoice, verifying `invoice_no`, `issue_date`, `status: Sent`, and asserting that direct edits to figures fail under `reject_invoice_edit_after_issue()`.
+  - L10 payments advance the issued invoice status to `Paid` (`row.status === 'Paid'` asserted, shortfall note removed).
+- **Updated `scripts/completion.mjs`:**
+  - Mapped `'invoice immutable': 'L8'`, raising DB enforcement to 8/9 (89%).
+
+### Verified
+
+- `tsc --noEmit` **exit 0**, 0 errors.
+- `node scripts/check-pglite.mjs` **106/106 applied, 0 failed**.
+- `node scripts/e2e-lifecycle.mjs` **12/13 green, 1 known-red, 0 failed**.
+- `node scripts/completion.mjs --migrations` verified.
+- `node scripts/lint-progress.mjs` verified.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 20 / 42 (48%) | +0 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 8 / 9 (89%) | +1 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 12 / 13 (92%) | +0 |
+| Overall | mean of five | ≈ 72% | +2 |
+Migrations 106 files · check:pglite 106/106 applied, 0 failed. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-09T13:36:18.738Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+Gates not yet in Postgres:
+  client own rows
+
+### Remaining
+
+- **Features to build (22 actions):** 22 actions remaining in `src/actions/` marked `implemented: false`.
+- **Known-red lifecycle steps (1):**
+  - L7 (partial return: case generation for missing unit).
+- **Gates not yet in Postgres (1 of 9):**
+  - `client own rows` (RLS scoping client to own rows).
+- **Rulings open (2):** §4.45(b) Maintenance cost column, §4.52 bundle component removal.
+Next session starts with: Stage 1 — L7 (partial return missing unit case trigger) or `client own rows` RLS.
+
 ## 2026-09-09 — Stage 1: Payments validation guards in Postgres (L9 green, Lifecycle 12/13, Overall 70%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** L9 (payment guards) green; Lifecycle at 12/13 (92%), Overall at 70%.
