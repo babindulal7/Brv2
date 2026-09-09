@@ -4,6 +4,54 @@
 
 
 
+## 2026-09-09 — Stage 1: open_missing_case_on_return trigger (Lifecycle 100%, Overall 78%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** `0112_partial_return_missing_case.sql` live; Lifecycle 14/14 (100%); DB enforcement 9/9 (100%); Backend 25/42 (60%); Overall at 78%.
+
+### Did
+
+- **Built and applied Migration `0112_partial_return_missing_case.sql`:**
+  - Added `open_missing_case_on_return()` trigger function and trigger `trg_return_missing_case` on `booking_stage_transitions`.
+  - When a booking moves to `'Returned'`, any serialized item whose return was not logged (`booking_line_units.returned_at IS NULL`) triggers automatic creation of a `cases` row of type `'Missing'` parented on the booking.
+  - Generates sequential `case_no` conforming to `^CASE-[0-9]{4}-[0-9]{4}$`.
+  - Guarantees no missing equipment is dropped, tying directly into Gate 3(e) (`validate_booking_gates`), which blocks closing bookings until all open cases are settled.
+- **Turned Lifecycle Step L7 Green:**
+  - Upgraded L7 in `scripts/e2e-lifecycle.mjs` from `expect: 'red'` to `expect: 'green'`.
+  - In L11, exercised Gate 3(e) to prove that closing is refused while the missing case is open, then resolved the case via Manager role and completed the close.
+  - All 14 lifecycle steps now pass green (`14/14 green, 0 known-red, 0 failed`).
+
+### Verified
+
+- `node scripts/check-pglite.mjs` **110/110 applied, 0 failed**.
+- `node scripts/e2e-lifecycle.mjs` **14/14 green, 0 known-red, 0 failed**.
+- `node scripts/completion.mjs` verified: Lifecycle 14/14 (100%), DB enforcement 9/9 (100%), Overall ≈ 78%.
+- `node scripts/lint-progress.mjs` verified.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 25 / 42 (60%) | +0 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 14 / 14 (100%) | +1 |
+| Overall | mean of five | ≈ 78% | +1 |
+
+Migrations 110 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-09T14:50:11.244Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- 17 actions remaining to reach 100% backend completion (`createMaintenanceJob`, `completeMaintenance`, `mergeClients`, `refundPayment`, etc.).
+- 3 inspection capabilities deliberately omitted until inspection table schema is confirmed.
+
 ## 2026-09-09 — Stage 1: resolveCase action (Backend 60%, Overall 77%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** `resolveCase` action live (+1); Backend 25/42 (60%); DB enforcement 9/9 (100%); Lifecycle 13/14 (93%), Overall at 77%.
