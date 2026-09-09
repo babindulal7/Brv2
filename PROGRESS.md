@@ -4,6 +4,53 @@
 
 
 
+## 2026-09-09 — Stage 1: createDocument action (Backend 71%, Overall 80%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** `createDocument` action live (+1); Backend 30/42 (71%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 80%.
+
+### Did
+
+- **Implemented `createDocument` action (`src/actions/documents/createDocument.ts`):**
+  - Marked `implemented: true` with `document.create` capability (`canWriteBookingDesk(role)`: Owner, Admin, Manager, Coordinator, Warehouse).
+  - Generates sequential `document_no` conforming to `DOC-YYYY-XXXX`.
+  - Maps document types safely to the Postgres `document_type` enum (`Quotation`, `Rental Agreement`, `Packing List`, `Delivery Note`, `Return Report`, etc.).
+  - Inserts official document entry into `document_registry` with `client_uuid` (Law 8), `file_url`, `lifecycle_status: 'Draft'`, and audit tracking.
+  - If linked to a booking (`relatedBookingId`), resolves booking and creates association row in `booking_documents` with mapped `booking_document_type` and `origin: 'Generated'`.
+  - Emits domain event `EVENT_TYPES.DOCUMENT_CREATED`.
+- **Created Comprehensive Unit Tests (`src/actions/documents/__tests__/createDocument.test.ts`):**
+  - 4/4 tests covering validation, standalone document creation, booking resolution, and `booking_documents` junction registration.
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 type errors)**.
+- `node ./node_modules/vitest/vitest.mjs run src/actions/documents/__tests__/createDocument.test.ts` **4/4 passed**.
+- `node scripts/completion.mjs` verified: Backend 30/42 (71%), Overall ≈ 80%.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 30 / 42 (71%) | +1 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 14 / 14 (100%) | +0 |
+| Overall | mean of five | ≈ 80% | +0 |
+
+Migrations 110 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-09T14:50:11.244Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- 12 actions remaining to reach 100% backend completion (`reserveEquipment`, `packEquipment`, `readyForPickup`, `completePickup`, `startReturn`, etc.).
+- 3 inspection capabilities deliberately omitted until inspection table schema is confirmed.
+
 ## 2026-09-09 — Stage 1: refundPayment action (Backend 69%, Overall 80%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** `refundPayment` action live (+1); Backend 29/42 (69%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 80%.
