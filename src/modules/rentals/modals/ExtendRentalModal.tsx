@@ -132,15 +132,12 @@ export function ExtendRentalModal({
        * below (which fires BookingDetail's "Rental Extended" toast) is never
        * reached on this path.
        *
-       * ⚠ `ExtendRentalInput` is `{ id: string }` — its own comment calls it a
-       * "Placeholder for actual input schema". So the days, the rate, the
-       * charge and the reason the operator typed have nowhere to go. That is
-       * survivable only while the action refuses; whoever sets
-       * `implemented: true` must widen the input FIRST, or this screen will
-       * report an extension that saved a booking id and nothing else. Left
-       * un-widened here because `src/actions/` is not this pass's file.
+       * Call extendRental action with validated bookingId, days, and reason.
        */
-      await extendRental({ id: bookingId }, { userId: user.id, role: user.role })
+      await extendRental(
+        { id: bookingId, days, reason: reason.trim() },
+        { userId: user.id, role: user.role },
+      )
 
       /*
        * The screen-level `DomainEvents.emit(RENTAL_EXTENDED, …)` that stood
