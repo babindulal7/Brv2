@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabase'
 import { generateClientUuid, idempotentInsert, safeUpdate } from '../../lib/dataAccess'
+import { operationSessionId } from '../../lib/deterministicId'
 import { applyBookingTransition } from '../../lib/bookingTransition'
 import { logAuditEvent } from '../../lib/audit'
 import { captureError } from '../../lib/monitoring'
@@ -1030,7 +1031,39 @@ export async function runFloorVerb(
     )
   }
 
-  const sessionId = resumed?.id ?? generateClientUuid()
+  /**
+   * The session's number, hoisted above the id because the id is now derived
+   * from it (PLAN.md §4.43(d).3, `lib/deterministicId.ts`).
+   *
+   * `session_no` is 1-based within `(booking_id, operation)` and carries
+   * `operation_sessions_session_no_unique` (`0003:85`), so id and constraint
+   * agree by construction.
+   */
+  const nextSessionNo = (latest?.session_no ?? 0) + 1
+
+  /**
+   * **Deterministic, not random.** Two devices working this booking in the dead
+   * zone compute the same id and their child rows merge; `crypto.randomUUID()`
+   * gave them two sessions, and the loser's whole shift referenced one that the
+   * unique index would never let exist.
+   *
+   * Note what this does NOT change: `client_uuid` above stays random per action.
+   * That is Law 8's idempotency key for *this press*, and two devices genuinely
+   * pressing twice are two actions. Only the row's identity is shared.
+   *
+   * A consequence worth stating: because the id is now shared, a second device's
+   * insert collides on the PRIMARY KEY rather than on `client_uuid`, so
+   * `idempotentInsert` throws instead of resolving. That is the intended trade —
+   * a loud sync conflict over a silently detached shift — but it means the
+   * replay path must treat a PK collision on `operation_sessions` as "already
+   * landed", not as a failure. Filed with the oplog work (Phase 3), which is the
+   * first thing that will replay these.
+   */
+  // RULING 2026-09-07 (R-22): key is (booking_id, operation, session_no), not
+  // §4.43(d).3's operational_day — that key is wider than one_packing_per_booking,
+  // merges the morning and evening collections, and reads a localStorage-only
+  // setting. Revert: restore `generateClientUuid()` here.
+  const sessionId = resumed?.id ?? (await operationSessionId(booking.id, operation, nextSessionNo))
 
   if (resumed === null) {
     await idempotentInsert('operation_sessions', {
@@ -1038,7 +1071,7 @@ export async function runFloorVerb(
       client_uuid: actionUuid,
       booking_id: booking.id,
       operation,
-      session_no: (latest?.session_no ?? 0) + 1,
+      session_no: nextSessionNo,
       state: 'In Progress',
       started_at: occurredAt,
       started_by: ctx.userId,
