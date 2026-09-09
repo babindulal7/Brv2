@@ -4,6 +4,53 @@
 
 
 
+## 2026-09-09 — Stage 1: reserveEquipment action (Backend 93%, Overall 85%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** `reserveEquipment` action live (+1); Backend 39/42 (93%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 85%.
+
+### Did
+
+- **Implemented `reserveEquipment` action (`src/actions/inventory/reserveEquipment.ts`):**
+  - Marked `implemented: true` with `inventory.reserve` capability (`canWriteBookingDesk(role)`: Owner, Admin, Manager, Coordinator).
+  - Strictly adheres to R-26: does **not** write to `inventory_reservations` directly from typescript actions (enforced by `confirmRental.test.ts:664` source regex check).
+  - Supports booking line physical unit allocation via `booking_line_units` table with Law 8 idempotency.
+  - Automatically transitions bookings from `Draft` / `Quote` stages to `Booked` via `applyBookingTransition` if target is a booking, triggering Postgres trigger `0100` which manages `inventory_reservations` safely within the database engine.
+  - Emits domain event `EVENT_TYPES.INVENTORY_RESERVED`.
+- **Created Comprehensive Unit Tests (`src/actions/inventory/__tests__/reserveEquipment.test.ts`):**
+  - 5/5 unit tests verifying input validation, target booking resolution, `applyBookingTransition` orchestration, unit assignment insertion into `booking_line_units`, and non-existent target error handling.
+  - Passes full `confirmRental.test.ts` suite (56/56 passing, verifying zero violations of R-26).
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 type errors)**.
+- `node ./node_modules/vitest/vitest.mjs run src/actions/inventory/__tests__/reserveEquipment.test.ts src/actions/rentals/__tests__/confirmRental.test.ts` **61/61 passed**.
+- `node scripts/completion.mjs` verified: Backend 39/42 (93%), Overall ≈ 85%.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 39 / 42 (93%) | +1 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 14 / 14 (100%) | +0 |
+| Overall | mean of five | ≈ 85% | +1 |
+
+Migrations 110 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-09T14:50:11.244Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- 3 actions remaining (`startInspection`, `passInspection`, `failInspection`).
+- 3 inspection capabilities declared but not yet mapped in permissions dispatcher.
+
 ## 2026-09-09 — Stage 1: readyForPickup action (Backend 90%, Overall 84%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** `readyForPickup` action live (+1); Backend 38/42 (90%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 84%.
