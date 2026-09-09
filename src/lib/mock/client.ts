@@ -684,7 +684,7 @@ const numberOf = (v: unknown): number => {
  * **Totals mirror `recalculate_invoice_totals`, not `lib/money.ts`.** The
  * trigger owns the stored figures and rounds to 2 dp; `money.ts` rounds to the
  * whole rupee. They disagree by up to a rupee (MONEY-03) and the fix is
- * `0081_invoice_totals_match_engine` — when it lands, this changes with it.
+ * `0098_invoice_totals_match_engine` — when it lands, this changes with it.
  * `vat_rate` is read from the row rather than hardcoded, which is `0079`'s
  * change; the live project has not taken 0079 yet, so live still hardcodes 0.13
  * and this mimics the migration chain a rebuild produces, not the lagging live
