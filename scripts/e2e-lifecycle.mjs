@@ -691,8 +691,7 @@ const STEPS = [
   {
     id: 'L9',
     title: 'Four payments that must all be refused',
-    expect: 'red',
-    red: 'Nothing refuses an overpayment and nothing scopes a payment to its own client. `payments` carries CHECK (amount > 0) and CHECK (payment_type <> \'Security Deposit\') and that is the whole of it — no over-outstanding guard, no cross-client guard, and the money-blind refusal is RLS silently matching no row rather than a stated rule. MONEY, unbuilt.',
+    expect: 'green',
     async run() {
       const insert = `insert into payments
           (client_uuid, payment_no, booking_id, invoice_id, client_id, branch_id, amount, payment_type, payment_date, received_by)
