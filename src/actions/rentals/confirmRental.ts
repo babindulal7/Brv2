@@ -6,8 +6,10 @@ import { applyBookingTransition } from '../../lib/bookingTransition'
 import { BOOKING_STATUS, STATUS_ORDER, type BookingStatus } from '../../lib/workflow'
 import {
   planAssignment,
-  reserveAssignedUnits,
-  releaseReservations,
+  findCollidingHolds,
+  describeCollisions,
+  readHeldForBooking,
+  availabilityRules,
   AssignmentIncompleteError,
 } from '../../lib/queries/availability'
 
@@ -78,20 +80,35 @@ import {
  *    PAN, a stacked discount above 10% without reason and approver, a Blocked
  *    client, or a client over credit limit."*
  *
- * **The first of those is now done — 16 Aug 2026.** Confirm reserves inventory
- * for the booking dates before it moves the stage; see the AUTO ASSIGN SERIALS
- * block in `execute`. Both reasons this paragraph previously gave for not doing
- * it have been addressed rather than worked around:
+ * **The first of those is done, and since 8 Sep 2026 it is done by the database.**
  *
- *  - *"`inventory_reservations` is Booqable-mastered besides
- *    (`dataAccess.ts:201`)"* — ruled otherwise on 16 Aug, PLAN.md §4.30(a). It
- *    was removed from `BOOQABLE_READ_ONLY_TABLES`, deliberately overriding
- *    bridge spec §5.1, because it holds the schema's only double-booking
- *    exclusion and the alternative table holds none.
- *  - *"belongs in one transaction with the stage move, which PostgREST cannot
- *    offer a client"* — still true, and still not solved. It is compensated
- *    instead: a failed transition releases the holds. That is honest but it is
- *    not atomic, and the server-side function remains the real fix.
+ * From 16 Aug this action reserved inventory itself, before moving the stage,
+ * and then compensated — released the holds — if the stage did not move. The
+ * comment here said what was wrong with that: *"belongs in one transaction with
+ * the stage move, which PostgREST cannot offer a client … the server-side
+ * function remains the real fix."*
+ *
+ * RULING 2026-09-08 (R-26) built it. `0100_reservations_written_by_transition.sql`
+ * hangs the reservation off `after insert on booking_stage_transitions`, so the
+ * hold and the stage move are one transaction by construction: a refused hold
+ * raises inside the transition INSERT and the booking is still a Quote. Nothing
+ * to order wrong, nothing to compensate, and — the reason it is a P0 rather than
+ * a tidy-up — **no way to skip it.** Reproduced before the fix: two bookings for
+ * one camera over overlapping dates, both confirmed straight over PostgREST,
+ * `inventory_reservations` still at zero rows, the GiST exclusion never offered
+ * a row to reject.
+ *
+ * What is left here is a READ. `planAssignment` still decides which units the
+ * booking wants (it is what refuses a booking with nothing free, in a sentence
+ * an operator can act on), and `findCollidingHolds` names the booking already
+ * holding a unit so the refusal reads *"#912 has it"* rather than `23P01`.
+ * Neither is a gate. If either says yes and the database says no, the database
+ * wins and the confirm is refused whole — which is the whole point of moving the
+ * write.
+ *
+ *  - The 16 Aug note that *"`inventory_reservations` is Booqable-mastered
+ *    (`dataAccess.ts:201`)"* was ruled otherwise on 16 Aug, PLAN.md §4.30(a),
+ *    and is moot here now: this file writes nothing to that table at all.
  *
  * The remaining three of that first list — calendar, payment status, Rental
  * Agreement — and the whole Critical-condition list are still not synthesised
@@ -223,6 +240,12 @@ export type ConfirmRentalResult = {
    * `quantityReserved`/`quantityHolds` below and is not added in here, because a
    * cable held by a count is not a body with a serial on it and the floor
    * screens treat the two differently.
+   *
+   * ⚠ Since R-26 this is **read back from the database after the transition
+   * committed**, not counted from what this action wrote — it writes nothing.
+   * The trigger reserves from `booking_line_units` and the line remainder, so on
+   * a booking whose serials moved between creation and confirm the plan's number
+   * and the table's number differ, and the table is the one that is true.
    */
   unitsReserved: number
   /**
@@ -282,27 +305,16 @@ async function readLiveLines(bookingId: string): Promise<Array<{ id: string; qty
   return (data ?? []) as unknown as Array<{ id: string; qty: number }>
 }
 
-/**
- * The sentence naming holds a rollback could not give back.
+/*
+ * RULING 2026-09-08 (R-26): `strandedNote` used to live here.
  *
- * `releaseReservations` is best-effort by construction — it is called from a
- * failure path and must not replace the real error with a second one — so it
- * returns the ids it released and the difference is what is still live against a
- * booking that was never confirmed. Until 7 Sep 2026 that difference went only to
- * `captureError`, which nobody on the floor reads (INV-05): the stock stayed off
- * the shelf and the only clue was a `released_reason` on rows nobody knew to look
- * for. Empty string when everything came back, so the message is unchanged in the
- * ordinary case.
+ * It named the holds a failed rollback could not give back — a sentence that only
+ * had to exist because this action wrote reservations in one statement and moved
+ * the stage in another, so a failure between them left live holds against a
+ * booking that was never confirmed. The database writes both in one transaction
+ * now (`0100`), so there is no compensation, nothing half-runs, and nothing can
+ * be stranded. Deleted rather than kept for a case that can no longer arise.
  */
-function strandedNote(written: readonly string[], released: readonly string[]): string {
-  const stranded = written.filter((id) => !released.includes(id))
-  if (stranded.length === 0) return ''
-  return (
-    ` ⚠ ${stranded.length} hold${stranded.length === 1 ? '' : 's'} could not be released and ` +
-    `${stranded.length === 1 ? 'is' : 'are'} still live — inventory_reservations ${stranded.join(', ')}. ` +
-    `Release ${stranded.length === 1 ? 'it' : 'them'} by hand or the stock stays off the shelf.`
-  )
-}
 
 /** The stage the database holds now. This is the persistence check — see execute. */
 async function readStage(bookingId: string): Promise<BookingStatus | null> {
@@ -442,10 +454,11 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
      * PROGRESS.md identified as the single blocker sitting under Packing,
      * Handover, Return, Reset and Evidence equally.
      *
-     * Ruled 16 Aug (PLAN.md §4.30): the assignment is written to
+     * Ruled 16 Aug (PLAN.md §4.30): the assignment is held in
      * `inventory_reservations`, the only table carrying a double-booking
-     * exclusion. `lib/availability` decides; `lib/queries/availability` fetches
-     * and writes. Nothing about availability is decided in this file — Law 1.
+     * exclusion. `lib/availability` decides; `lib/queries/availability` fetches.
+     * Since R-26 (8 Sep) **Postgres writes** — see `0100`. Nothing about
+     * availability is decided in this file — Law 1.
      *
      * ## Serials are only half of it — 7 Sep 2026
      *
@@ -461,46 +474,58 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
      * `enforce_inventory_reservation_capacity()` — live since 11 Aug — has been
      * guarding with nothing to guard.
      *
-     * Nothing in the ORDER below changed. Reserve, verify, then move the stage.
+     * ## The ORDER, and what is left of it — 8 Sep 2026
      *
-     * ## Why reserve BEFORE moving the stage
+     * It used to be: reserve, verify the reservation, move the stage, and give
+     * the units back if the stage did not move. Three of those four steps were
+     * compensation for not having a transaction.
      *
-     * `0003:1478` — *"If reservation fails on any line, Confirm is rejected
-     * with the conflicting line named."* Reserving first is what makes that
-     * possible: a failure leaves the booking at Quote, untouched, which is the
-     * truth. The other order would produce a Booked booking with no gear behind
-     * it, and Booked is the stage the floor acts on.
+     * It is now: PLAN (a read — refuse a booking nothing is free for, in an
+     * operator's words), PRE-CHECK (a read — name the booking already holding a
+     * unit), then ONE INSERT. The hold and the stage move commit together or
+     * neither does, because `0100`'s trigger hangs off that same insert.
      *
-     * ⚠ It has one cost, recorded rather than hidden. `0003:1488` marks a
-     * `TRIGGER REQUIRED` — *"no row may exist for a booking at stage Quote or
-     * Draft"* — and for the moment between these two writes, rows do exist
-     * against a Quote. That trigger has never been built (checked live 16 Aug),
-     * so the database accepts either order today; if it is ever built it will
-     * reject this sequence, and the fix is the same server-side function the
-     * next paragraph names. The window is milliseconds, invisible to any
-     * screen, and self-healing in both directions: the transition follows, or
-     * the release below runs.
+     * ## Why the two reads survive the trigger
      *
-     * ## This is two writes, not one transaction
+     * Neither is a gate — the database is the arbiter and cannot be talked past.
+     * They exist for the sentence. Without them a Confirm that collides comes
+     * back as
      *
-     * PostgREST cannot give a browser a transaction. If the stage move fails
-     * after the units are held, the holds are **released** (Law 3 — released,
-     * never deleted) and the booking stays at Quote. That is compensation, not
-     * atomicity. The real fix is the Postgres function PLAN.md already records
-     * for booking creation, doing both server-side under one commit.
+     *     conflicting key value violates exclusion constraint
+     *     "inventory_reservations_no_double_booking"
+     *
+     * which tells an operator at 6 AM nothing at all. With them it comes back
+     * naming the booking to ring. A read that only improves an error message is
+     * worth one round trip; a read that decided anything would be a second
+     * implementation of the rule, which is what Law 10 forbids.
      */
     const assignment = await planAssignment(booking.id)
     if (!assignment.complete) throw new AssignmentIncompleteError(assignment)
 
     /*
-     * `reserveAssignedUnits` verifies its own write before it returns — it
-     * compares the rows that came back against the number the plan decided on
-     * and reads them back live (INV-05). Two of `idempotentInsert`'s branches
-     * report success having written nothing, so without that check this line
-     * could hand back a reservation that does not exist and the stage would move
-     * on a booking holding no stock at all. It throws rather than under-reporting.
+     * RULING 2026-09-08 (R-26): the database writes reservations; this is a
+     * courtesy check only. Same question the constraint asks — the units this
+     * plan wants, held live by another booking over an overlapping window —
+     * asked under the same bracket convention (`availabilityRules().bounds`,
+     * which is `RENTAL_WINDOW_BOUNDS`, which is what `0100` writes as `'[)'`).
+     *
+     * Racy by construction and that is fine: another session can take the unit
+     * between this line and the insert below. Silence here is not permission,
+     * it is only the absence of a better sentence.
      */
-    const reservation = await reserveAssignedUnits(assignment, { userId: ctx.userId })
+    const wanted = assignment.lines.flatMap((entry) =>
+      entry.kind === 'serialised' ? entry.outcome.assigned.map((unit) => unit.unitId) : [],
+    )
+    const collisions = await findCollidingHolds(
+      wanted,
+      assignment.window,
+      availabilityRules().bounds,
+      booking.id,
+    )
+    const collision = describeCollisions(collisions)
+    if (collision !== null) {
+      throw new Error(`${booking.booking_no} was not confirmed: ${collision}`)
+    }
 
     const clientUuid = input.clientUuid ?? generateClientUuid()
     const occurredAt = input.occurredAt ?? new Date().toISOString()
@@ -518,17 +543,12 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
     })
 
     if (!ok) {
-      /* The stock is already held at this point. Give it back before reporting
-         the refusal, or a booking that was never confirmed keeps a camera — or
-         forty cables — off the shelf until someone finds it by hand. */
-      const released = await releaseReservations(
-        reservation.reservationIds,
-        `Rolled back: ${booking.booking_no} was not confirmed (${plan.blockers.map((b) => b.label).join('; ')}).`,
-      )
+      /* Nothing to give back. The holds are written by the same INSERT this
+         refused, so a refusal leaves no rows behind — which is the difference
+         between this branch and the four-branch rollback it replaced. */
       throw new Error(
         `${booking.booking_no} was not confirmed: ` +
-          plan.blockers.map((b) => `${b.label}${b.blocking === null ? '' : ` (${b.blocking})`}`).join('; ') +
-          strandedNote(reservation.reservationIds, released),
+          plan.blockers.map((b) => `${b.label}${b.blocking === null ? '' : ` (${b.blocking})`}`).join('; '),
       )
     }
 
@@ -541,32 +561,24 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
      * fires even when `navigator.onLine` is true. The stage is what the whole
      * action exists to change, so it is read back and compared. A Confirm that
      * cannot be seen in `bookings.stage` is reported as not confirmed.
+     *
+     * This is now also the reservation's persistence check. Under R-26 the two
+     * cannot disagree — one transaction writes both — so a stage that moved is
+     * a booking that holds its stock, and there is no separate rollback to run
+     * when it did not.
      */
     const persisted = await readStage(booking.id)
     if (persisted !== to) {
-      /*
-       * ⚠ The units are held and the booking did NOT move. Release them.
-       *
-       * This branch was missed when Auto Assign Serials was first wired and a
-       * test caught it — and it is the *more likely* of the two failures, not
-       * the exotic one: it is the path `idempotentInsert` takes when a write is
-       * queued offline or swallowed by the `'Failed to fetch'` / 408 branch
-       * (`dataAccess.ts:49-53`), which fires even when `navigator.onLine` is
-       * true. Without this, a confirm that visibly failed would leave every
-       * unit on the booking held against a Quote, invisibly, until someone
-       * found them by hand.
-       */
-      const released = await releaseReservations(
-        reservation.reservationIds,
-        `Rolled back: ${booking.booking_no} did not reach ${to} — the confirm was queued or rejected.`,
-      )
       throw new Error(
         `${booking.booking_no} is still at ${persisted ?? 'an unreadable stage'} — the confirm was queued or ` +
-          'rejected rather than applied, so treat the booking as NOT confirmed. Check the connection and ' +
-          'try again.' +
-          strandedNote(reservation.reservationIds, released),
+          'rejected rather than applied, so treat the booking as NOT confirmed. Nothing is held against it. ' +
+          'Check the connection and try again.',
       )
     }
+
+    /* What the DATABASE holds, not what this action intended — see
+       `readHeldForBooking`. Read after the commit, like the stage above. */
+    const held = await readHeldForBooking(booking.id)
 
     const units = lines.reduce((total, line) => total + line.qty, 0)
 
@@ -579,9 +591,9 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
         stage: { from: booking.stage, to },
         lines: lines.length,
         units,
-        unitsReserved: reservation.units,
-        quantityReserved: reservation.quantityReserved,
-        quantityHolds: reservation.quantityHolds,
+        unitsReserved: held.units,
+        quantityReserved: held.quantityReserved,
+        quantityHolds: held.quantityHolds,
       },
       events: [
         {
@@ -595,9 +607,9 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
             to,
             lines: lines.length,
             units,
-            unitsReserved: reservation.units,
-            quantityReserved: reservation.quantityReserved,
-            quantityHolds: reservation.quantityHolds,
+            unitsReserved: held.units,
+            quantityReserved: held.quantityReserved,
+            quantityHolds: held.quantityHolds,
             occurredAt,
             userId: ctx.userId,
           },

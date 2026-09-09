@@ -3,10 +3,11 @@ import {
   parseTstzRange,
   toTstzRangeLiteral,
   planAssignment,
-  reserveAssignedUnits,
-  releaseReservations,
+  findCollidingHolds,
+  describeCollisions,
+  readHeldForBooking,
+  availabilityRules,
   AssignmentIncompleteError,
-  ReservationNotPersistedError,
 } from '../availability'
 import { windowsOverlap, RENTAL_WINDOW_BOUNDS, type RentalWindow } from '../../availability'
 
@@ -382,17 +383,6 @@ function holdBulk(qty: number, bookingNo = 'B-880'): void {
 const SERIAL_LINE: LineSpec = { lineId: LINE_SERIAL, productId: P_SERIAL, qty: 1, description: 'Sony FX3' }
 const QTY_LINE: LineSpec = { lineId: LINE_QTY, productId: P_QTY, qty: 2, description: 'BNC Cable 3m' }
 
-const CTX = { userId: 'usr-owner' }
-
-async function messageOf(run: Promise<unknown>): Promise<string> {
-  try {
-    await run
-  } catch (failure) {
-    return failure instanceof Error ? failure.message : String(failure)
-  }
-  throw new Error('expected the call to reject, and it resolved')
-}
-
 /* ── The split ───────────────────────────────────────────────────────────── */
 
 describe('planAssignment — the tracking-mode split (INV-02)', () => {
@@ -511,192 +501,191 @@ describe('planAssignment — the tracking-mode split (INV-02)', () => {
   })
 })
 
-/* ── The write ───────────────────────────────────────────────────────────── */
+/* ── The courtesy check that replaced the write (R-26) ───────────────────── */
 
-describe('reserveAssignedUnits — what reaches inventory_reservations', () => {
+/**
+ * RULING 2026-09-08 (R-26). Everything that used to be below this line —
+ * `reserveAssignedUnits` and `releaseReservations`, fourteen cases across three
+ * describes — tested an application write path into `inventory_reservations`
+ * that no longer exists. Postgres writes the holds now, from the Booked
+ * transition (`0100_reservations_written_by_transition.sql`).
+ *
+ * Those cases are not re-homed here and should not be: they proved that the app
+ * wrote the right ROWS, and the header above already said what they could never
+ * prove — *"the arbiters are not emulated"*. The behaviour they stood in for is
+ * now tested where it can actually be executed, against a real Postgres, in
+ * `scripts/e2e-lifecycle.mjs` (`npm run check:lifecycle`, R-27): L2 asserts one
+ * reservation appears at Booked, L3 that an overlapping second confirm is
+ * refused and the booking stays a Quote, L5 that the quantity ceiling refuses,
+ * and L7 that a return releases.
+ *
+ * What is left on this side is a READ, and reads are what this suite is for.
+ */
+describe('findCollidingHolds — the same question the constraint asks', () => {
+  const BOUNDS = availabilityRules().bounds
+  const WINDOW = { fromAd: PICKUP, toAd: RETURN }
+
   beforeEach(() => {
     db.reset()
   })
 
-  /**
-   * ⭐ The other half of INV-02: ONE row naming the PRODUCT, carrying the line's
-   * own qty and no `asset_id`. That is the shape
-   * `inventory_reservations_serialised_xor_quantity` was written for and the one
-   * the live capacity trigger reads through
-   * `idx_inventory_reservations_product_period`.
-   */
-  it('writes ONE product-level hold for a quantity line, never a row per item', async () => {
-    seed({ lines: [QTY_LINE], quantityTotal: 5 })
-    holdBulk(3)
-
-    const plan = await planAssignment(BOOKING_ID)
-    const result = await reserveAssignedUnits(plan, CTX)
-
-    expect(db.state.inserts).toHaveLength(1)
-    const payload = db.state.inserts[0]?.payload ?? {}
-    expect(payload).toMatchObject({
-      booking_id: BOOKING_ID,
-      booking_line_id: LINE_QTY,
-      product_id: P_QTY,
-      qty: 2,
-      created_by: 'usr-owner',
+  /** One live SERIAL hold, as `readHolds` reads it back (embedded booking_no). */
+  function holdUnit(unitId: string, bookingNo: string, period = OVERLAPPING, released = false): void {
+    db.rows('inventory_reservations').push({
+      id: `hold-${bookingNo}-${unitId}`,
+      booking_id: `other-${bookingNo}`,
+      booking_line_id: 'other-line',
+      asset_id: unitId,
+      product_id: null,
+      qty: 1,
+      period,
+      released_at: released ? '2026-09-07T00:00:00.000Z' : null,
+      bookings: { booking_no: bookingNo },
     })
-    expect(payload['asset_id']).toBeUndefined()
-    /* Law 8 — the ROW's own key, minted per row because it carries `unique`. */
-    expect(payload['client_uuid']).toBe('key-0001')
-    /* The plan's own convention, so the bracket the database compares is the one
-       the check ran under. §4.30(b) is half-open, hence the `)`. */
-    expect(payload['period']).toBe(`[${PICKUP},${RETURN})`)
+  }
 
-    expect(result.units).toBe(0)
-    expect(result.quantityHolds).toBe(1)
-    expect(result.quantityReserved).toBe(2)
-    expect(result.reservationIds).toHaveLength(1)
+  it('says nothing when no live hold names a unit this booking wants', async () => {
+    expect(await findCollidingHolds(['unit-1', 'unit-2'], WINDOW, BOUNDS, BOOKING_ID)).toEqual([])
   })
 
-  it('writes one asset hold of qty 1 per unit for a serialised line, unchanged', async () => {
-    seed({ lines: [SERIAL_LINE], serialUnits: 3 })
+  it('names the booking already holding a wanted unit over an overlapping window', async () => {
+    holdUnit('unit-1', 'B-912')
 
-    const plan = await planAssignment(BOOKING_ID)
-    const result = await reserveAssignedUnits(plan, CTX)
+    const collisions = await findCollidingHolds(['unit-1'], WINDOW, BOUNDS, BOOKING_ID)
 
-    expect(db.state.inserts).toHaveLength(1)
-    const payload = db.state.inserts[0]?.payload ?? {}
-    expect(payload).toMatchObject({ asset_id: 'unit-1', qty: 1 })
-    expect(payload['product_id']).toBeUndefined()
-    expect(result.units).toBe(1)
-    expect(result.quantityHolds).toBe(0)
-    expect(result.quantityReserved).toBe(0)
+    expect(collisions).toEqual([{ unitId: 'unit-1', bookingNo: 'B-912' }])
   })
 
-  it('writes both shapes for a mixed booking and reports them separately', async () => {
-    seed({ lines: [SERIAL_LINE, QTY_LINE], serialUnits: 2, quantityTotal: 5 })
+  it('ignores a released hold — Law 3 keeps the row, and a released row holds nothing', async () => {
+    holdUnit('unit-1', 'B-912', OVERLAPPING, true)
 
-    const plan = await planAssignment(BOOKING_ID)
-    const result = await reserveAssignedUnits(plan, CTX)
-
-    expect(db.state.inserts).toHaveLength(2)
-    expect(result.units).toBe(1)
-    expect(result.quantityHolds).toBe(1)
-    expect(result.quantityReserved).toBe(2)
-    expect(result.reservationIds).toHaveLength(2)
+    expect(await findCollidingHolds(['unit-1'], WINDOW, BOUNDS, BOOKING_ID)).toEqual([])
   })
 
-  it('refuses an incomplete plan outright and writes nothing', async () => {
-    seed({ lines: [QTY_LINE], quantityTotal: 5 })
-    holdBulk(4)
+  it('ignores a hold on a unit this plan did not ask for', async () => {
+    holdUnit('unit-3', 'B-912')
 
-    const plan = await planAssignment(BOOKING_ID)
+    expect(await findCollidingHolds(['unit-1'], WINDOW, BOUNDS, BOOKING_ID)).toEqual([])
+  })
 
-    await expect(reserveAssignedUnits(plan, CTX)).rejects.toBeInstanceOf(AssignmentIncompleteError)
-    expect(db.state.inserts).toHaveLength(0)
+  /**
+   * The bracket, end to end. `RENTAL_WINDOW_BOUNDS` is `half-open` and `0100`
+   * writes `tstzrange(pickup_at, return_at, '[)')`; a hold starting exactly when
+   * this window ends therefore does not collide. If this case ever flips, the app
+   * and the constraint have stopped asking the same question.
+   */
+  it('does not collide with a hold that starts exactly when this window ends', async () => {
+    holdUnit('unit-1', 'B-912', '["2026-08-18 12:15:00+00","2026-08-20 04:00:00+00")')
+
+    expect(await findCollidingHolds(['unit-1'], WINDOW, BOUNDS, BOOKING_ID)).toEqual([])
+  })
+
+  it('never reports the booking against itself — its own holds are excluded', async () => {
+    db.rows('inventory_reservations').push({
+      id: 'own-hold',
+      booking_id: BOOKING_ID,
+      booking_line_id: LINE_SERIAL,
+      asset_id: 'unit-1',
+      product_id: null,
+      qty: 1,
+      period: OVERLAPPING,
+      released_at: null,
+      bookings: { booking_no: 'B-715' },
+    })
+
+    expect(await findCollidingHolds(['unit-1'], WINDOW, BOUNDS, BOOKING_ID)).toEqual([])
+  })
+
+  it('asks nothing at all when the plan wants no serials — the live catalogue case', async () => {
+    holdUnit('unit-1', 'B-912')
+
+    expect(await findCollidingHolds([], WINDOW, BOUNDS, BOOKING_ID)).toEqual([])
   })
 })
 
-/* ── INV-05 ──────────────────────────────────────────────────────────────── */
-
-describe('reserveAssignedUnits — the exact-count and read-back contract (INV-05)', () => {
-  beforeEach(() => {
-    db.reset()
+describe('describeCollisions — the sentence an operator can act on', () => {
+  it('is null when nothing collides, so the caller has one thing to test', () => {
+    expect(describeCollisions([])).toBeNull()
   })
 
-  /**
-   * ⭐ The defect. `idempotentInsert` returns `{ data: <the payload you sent>,
-   * error: null }` on the offline queue and on the `'Failed to fetch'` / 408
-   * retry — which fires even when `navigator.onLine` is true — and the echoed
-   * payload carries no `id`. Before 7 Sep 2026 the loop simply skipped it and
-   * reported success, so Confirm moved the stage on a booking holding nothing.
-   */
-  it('throws rather than reporting success when a write lands no row', async () => {
-    seed({ lines: [SERIAL_LINE, QTY_LINE], serialUnits: 2, quantityTotal: 5 })
-    db.state.insertIds = ['res-1', null]
+  it('names one booking once however many of its units are in the way', () => {
+    const sentence = describeCollisions([
+      { unitId: 'unit-1', bookingNo: 'B-912' },
+      { unitId: 'unit-2', bookingNo: 'B-912' },
+    ])
 
-    const plan = await planAssignment(BOOKING_ID)
-
-    await expect(reserveAssignedUnits(plan, CTX)).rejects.toBeInstanceOf(ReservationNotPersistedError)
+    expect(sentence).toBe('2 units are already held for these dates by booking B-912.')
   })
 
-  it('leaves no partial holds behind — what did land is released, never deleted', async () => {
-    seed({ lines: [SERIAL_LINE, QTY_LINE], serialUnits: 2, quantityTotal: 5 })
-    db.state.insertIds = ['res-1', null]
+  it('lists every booking involved, sorted, so the operator knows who to ring', () => {
+    const sentence = describeCollisions([
+      { unitId: 'unit-2', bookingNo: 'B-920' },
+      { unitId: 'unit-1', bookingNo: 'B-912' },
+    ])
 
-    const plan = await planAssignment(BOOKING_ID)
-    await expect(reserveAssignedUnits(plan, CTX)).rejects.toThrow()
-
-    const rows = db.rows('inventory_reservations')
-    expect(rows).toHaveLength(1)
-    /* Law 3 — released, with a reason, never removed. */
-    expect(rows[0]?.['id']).toBe('res-1')
-    expect(rows[0]?.['released_at']).not.toBeNull()
-    expect(String(rows[0]?.['released_reason'])).toContain('B-715')
+    expect(sentence).toBe('2 units are already held for these dates by bookings B-912, B-920.')
   })
 
-  /**
-   * The check the count alone cannot make: every id came back, and the rows are
-   * not live in the database anyway. An unverified hold is exactly as dangerous
-   * as a missing one, so it is treated as a failure rather than as an unknown.
-   */
-  it('reads the rows back and refuses when they are not live', async () => {
-    seed({ lines: [QTY_LINE], quantityTotal: 5 })
-    db.state.insertIds = ['ghost']
-    db.state.ghostIds.add('ghost')
-
-    const plan = await planAssignment(BOOKING_ID)
-
-    await expect(reserveAssignedUnits(plan, CTX)).rejects.toBeInstanceOf(ReservationNotPersistedError)
-  })
-
-  /**
-   * A refusal by the arbiter — the GiST exclusion, or 0045's ceiling — means
-   * *"someone took it since you looked"*, and Law 12 wants the operator told what
-   * is free NOW rather than handed a Postgres string. The re-read runs after the
-   * compensation, so it describes the world the operator is actually looking at.
-   */
-  it('re-reads availability and says what is free now when the database refuses', async () => {
-    seed({ lines: [QTY_LINE], quantityTotal: 5 })
-    db.state.insertThrowsOn.set(1, 'Reservation rejected: product would have 12 units held at once')
-
-    const plan = await planAssignment(BOOKING_ID)
-    /* Someone else's hold lands between the plan and the write. */
-    holdBulk(4, 'B-881')
-
-    const message = await messageOf(reserveAssignedUnits(plan, CTX))
-    expect(message).toContain('Reservation rejected')
-    expect(message).toContain('Re-read just now')
-    expect(message).toContain('B-881')
-  })
-
-  /** A hold the compensation could not give back is NAMED, not merely logged. */
-  it('names the holds a failed rollback left live', async () => {
-    seed({ lines: [SERIAL_LINE, QTY_LINE], serialUnits: 2, quantityTotal: 5 })
-    db.state.insertIds = ['res-1', null]
-    db.state.releaseErrors.add('res-1')
-
-    const plan = await planAssignment(BOOKING_ID)
-
-    const message = await messageOf(reserveAssignedUnits(plan, CTX))
-    expect(message).toContain('still live')
-    expect(message).toContain('res-1')
-  })
-})
-
-describe('releaseReservations', () => {
-  beforeEach(() => {
-    db.reset()
-  })
-
-  it('returns the ids it released, so a caller can name the ones it could not', async () => {
-    db.rows('inventory_reservations').push(
-      { id: 'a', released_at: null, released_reason: null },
-      { id: 'b', released_at: null, released_reason: null },
+  it('says "1 unit is" rather than "1 units are"', () => {
+    expect(describeCollisions([{ unitId: 'unit-1', bookingNo: 'B-912' }])).toBe(
+      '1 unit is already held for these dates by booking B-912.',
     )
-    db.state.releaseErrors.add('b')
+  })
+})
 
-    const released = await releaseReservations(['a', 'b'], 'Rolled back: test')
+describe('readHeldForBooking — what the DATABASE holds, read back', () => {
+  beforeEach(() => {
+    db.reset()
+  })
 
-    expect(released).toEqual(['a'])
-    expect(db.rows('inventory_reservations')[0]?.['released_reason']).toBe('Rolled back: test')
-    /* Law 3 — the row that could not be released is still there, and still live. */
-    expect(db.rows('inventory_reservations')[1]?.['released_at']).toBeNull()
+  it('reports zeroes for a booking holding nothing', async () => {
+    expect(await readHeldForBooking(BOOKING_ID)).toEqual({
+      units: 0,
+      quantityHolds: 0,
+      quantityReserved: 0,
+    })
+  })
+
+  /**
+   * The two shapes are counted separately for the reason the result type gives:
+   * one product row can hold forty cables, and a cable held by a count is not a
+   * body with a serial on it.
+   */
+  it('counts serial holds as rows and quantity holds as rows AND items', async () => {
+    db.rows('inventory_reservations').push(
+      { booking_id: BOOKING_ID, asset_id: 'unit-1', product_id: null, qty: 1, released_at: null },
+      { booking_id: BOOKING_ID, asset_id: 'unit-2', product_id: null, qty: 1, released_at: null },
+      { booking_id: BOOKING_ID, asset_id: null, product_id: P_QTY, qty: 40, released_at: null },
+    )
+
+    expect(await readHeldForBooking(BOOKING_ID)).toEqual({
+      units: 2,
+      quantityHolds: 1,
+      quantityReserved: 40,
+    })
+  })
+
+  it('leaves released rows out — they are history, not stock off the shelf', async () => {
+    db.rows('inventory_reservations').push(
+      { booking_id: BOOKING_ID, asset_id: 'unit-1', product_id: null, qty: 1, released_at: null },
+      {
+        booking_id: BOOKING_ID,
+        asset_id: 'unit-2',
+        product_id: null,
+        qty: 1,
+        released_at: '2026-09-07T00:00:00.000Z',
+      },
+    )
+
+    expect((await readHeldForBooking(BOOKING_ID)).units).toBe(1)
+  })
+
+  it('counts only this booking, never the whole table', async () => {
+    db.rows('inventory_reservations').push(
+      { booking_id: BOOKING_ID, asset_id: 'unit-1', product_id: null, qty: 1, released_at: null },
+      { booking_id: 'other-booking', asset_id: 'unit-9', product_id: null, qty: 1, released_at: null },
+    )
+
+    expect((await readHeldForBooking(BOOKING_ID)).units).toBe(1)
   })
 })
